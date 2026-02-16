@@ -22,6 +22,29 @@ class UnitOpDefinitionResponse(UnitOpDefinitionBase):
     class Config:
         from_attributes = True
 
+# ProtocolRole Schemas
+class ProtocolRoleBase(BaseModel):
+    name: str
+    color: str = "#94a3b8"
+    sort_order: int = 0
+
+class ProtocolRoleCreate(ProtocolRoleBase):
+    pass
+
+class ProtocolRoleUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+    sort_order: Optional[int] = None
+
+class ProtocolRoleResponse(ProtocolRoleBase):
+    id: UUID
+    protocol_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # Protocol Schemas
 class ProtocolBase(BaseModel):
     name: str
@@ -42,6 +65,7 @@ class ProtocolUpdate(BaseModel):
 class ProtocolResponse(ProtocolBase):
     id: UUID
     project_id: UUID
+    roles: List[ProtocolRoleResponse] = []
     created_at: datetime
     updated_at: datetime
 

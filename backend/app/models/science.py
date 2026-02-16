@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional, Any
-from sqlalchemy import String, ForeignKey, Enum
+from sqlalchemy import String, Integer, ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -32,12 +32,13 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     description: Mapped[Optional[str]] = mapped_column(String)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
     
-    # The template graph structure (nodes, edges, viewport)
+    # The template graph structure (nodes, edges, viewport, layout, time settings)
     graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="protocols")
     experiments: Mapped[List["Experiment"]] = relationship(back_populates="protocol")
+    roles: Mapped[List["ProtocolRole"]] = relationship(back_populates="protocol", cascade="all, delete-orphan", order_by="ProtocolRole.sort_order")
 
 class Experiment(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "experiments"
@@ -66,3 +67,14 @@ class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
     
     # Configuration schema (JSONSchema) for this operation
     param_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+class ProtocolRole(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "protocol_roles"
+
+    protocol_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    color: Mapped[str] = mapped_column(String, nullable=False, default="#94a3b8")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Relationships
+    protocol: Mapped["Protocol"] = relationship(back_populates="roles")
