@@ -1,0 +1,7 @@
+# Initial Concept
+
+AI-Powered Co-Pilot for Process Development. We are building a "Digital Run Book" specifically for Process Development (PD) in biotech
+
+## Objectives
+
+Current electronic lab notebooks (ELNs) like Benchling are "libraries" designed for retrospective documentation. They are too rigid and click-heavy to be used by scientists during an experiment. Consequently, scientists resort to paper or excel at the bench, leading to data loss and Friday afternoon transcription fatigue. We are creating a tablet-first, voice-enabled mobile app that acts as a flight deck for execution. With a voice-first interface, users can talk to the app to execute tasks hands-free, such as "Add a 10-minute agitation step here." The app will either have a wake-up call or a button. Users can still do things by hand during experiments by clicking and typing. Users can snap a photo of their existing paper run sheets or SOPs, and the AI (LLM + OCR) instantly converts them into structured digital runs, eliminating double entry. The LLM will ask for clarification if it doesn't understand how to update the graph and will ask for approval. At the same time, it will be able to memorize users' standard run sheets so it doesn't have to keep prompting the user for clarification if it has done so already in the past. The system will feature a graph-based, copy-on-write architecture (PostgreSQL + JSONB).
