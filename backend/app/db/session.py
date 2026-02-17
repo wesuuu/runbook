@@ -1,12 +1,14 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    AsyncSession,
+    async_sessionmaker,
+)
 
-# Database URL (Should match environment variable/alembic.ini)
-SQLALCHEMY_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/runbook"
+from app.core.config import settings
 
 engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL,
-    echo=True, # Set to False in production
+    settings.database_url,
+    echo=True,
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -15,6 +17,7 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
     autoflush=False,
 )
+
 
 async def get_db():
     async with AsyncSessionLocal() as session:

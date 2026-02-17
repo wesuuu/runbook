@@ -1,17 +1,17 @@
 <script lang="ts">
-    import { onMount } from "svelte";
-    import { api } from "../lib/api";
-    import Link from "../lib/Link.svelte";
-    import { Button, buttonVariants } from "$lib/components/ui/button";
-    import * as Table from "$lib/components/ui/table";
+    import { onMount } from 'svelte';
+    import { api } from '$lib/api';
+    import { getCurrentOrg } from '$lib/auth.svelte';
+    import { Button, buttonVariants } from '$lib/components/ui/button';
+    import * as Table from '$lib/components/ui/table';
     import {
         Card,
         CardContent,
         CardHeader,
         CardTitle,
         CardDescription,
-    } from "$lib/components/ui/card";
-    import { Plus } from "lucide-svelte";
+    } from '$lib/components/ui/card';
+    import { Plus } from 'lucide-svelte';
 
     interface Project {
         id: string;
@@ -27,9 +27,9 @@
     async function loadProjects() {
         loading = true;
         try {
-            // Check if the API returns a wrapper e.g. { projects: [...] } or just [...]
-            // Adjust based on api response structure
-            const res = await api.get<any>("/projects");
+            const org = getCurrentOrg();
+            const query = org ? `?organization_id=${org.id}` : '';
+            const res = await api.get<any>(`/projects${query}`);
             projects = Array.isArray(res) ? res : res.projects || [];
         } catch (e: any) {
             error = e.message;
@@ -49,9 +49,9 @@
                 Manage your scientific projects.
             </p>
         </div>
-        <Link to="/projects/new" class={buttonVariants()}>
+        <a href="/projects/new" class={buttonVariants()}>
             <Plus class="mr-2 h-4 w-4" /> New Project
-        </Link>
+        </a>
     </div>
 
     {#if loading}
@@ -66,9 +66,7 @@
         <Card>
             <CardHeader>
                 <CardTitle>All Projects</CardTitle>
-                <CardDescription
-                    >A list of all projects in your organization.</CardDescription
-                >
+                <CardDescription>A list of all projects in your organization.</CardDescription>
             </CardHeader>
             <CardContent>
                 {#if projects.length === 0}
@@ -77,44 +75,32 @@
                     </div>
                 {:else}
                     <Table.Root>
-                        <Table.Caption
-                            >A list of your recent projects.</Table.Caption
-                        >
+                        <Table.Caption>A list of your recent projects.</Table.Caption>
                         <Table.Header>
                             <Table.Row>
                                 <Table.Head>Name</Table.Head>
                                 <Table.Head>Description</Table.Head>
                                 <Table.Head>Organization</Table.Head>
-                                <Table.Head class="text-right"
-                                    >Actions</Table.Head
-                                >
+                                <Table.Head class="text-right">Actions</Table.Head>
                             </Table.Row>
                         </Table.Header>
                         <Table.Body>
                             {#each projects as project}
                                 <Table.Row>
                                     <Table.Cell class="font-medium">
-                                        <Link
-                                            to={`/projects/${project.id}`}
+                                        <a
+                                            href="/projects/{project.id}"
                                             class="font-semibold text-primary hover:underline"
                                         >
                                             {project.name}
-                                        </Link>
+                                        </a>
                                     </Table.Cell>
-                                    <Table.Cell
-                                        >{project.description ||
-                                            "-"}</Table.Cell
-                                    >
-                                    <Table.Cell
-                                        >{project.organization?.name ||
-                                            "N/A"}</Table.Cell
-                                    >
+                                    <Table.Cell>{project.description || '-'}</Table.Cell>
+                                    <Table.Cell>{project.organization?.name || 'N/A'}</Table.Cell>
                                     <Table.Cell class="text-right">
-                                        <Link to={`/projects/${project.id}`}>
-                                            <Button variant="ghost" size="sm"
-                                                >View</Button
-                                            >
-                                        </Link>
+                                        <a href="/projects/{project.id}">
+                                            <Button variant="ghost" size="sm">View</Button>
+                                        </a>
                                     </Table.Cell>
                                 </Table.Row>
                             {/each}

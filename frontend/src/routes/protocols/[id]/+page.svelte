@@ -1,18 +1,20 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, setContext } from "svelte";
+    import { page } from '$app/stores';
     import {
         SvelteFlow,
         Background,
         Controls,
         MiniMap,
+        Position,
+        SelectionMode,
         type Node,
         type Edge,
         type Viewport,
     } from "@xyflow/svelte";
     import "@xyflow/svelte/dist/style.css";
 
-    import { api } from "../lib/api";
-    import Link from "../lib/Link.svelte";
+    import { api } from "$lib/api";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
     import UnitOpNode from "$lib/components/UnitOpNode.svelte";
     import SwimLaneNode from "$lib/components/SwimLaneNode.svelte";
@@ -20,7 +22,7 @@
     import TimeAxis from "$lib/components/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/CreateUnitOpModal.svelte";
 
-    let { params } = $props();
+    const id = $derived($page.params.id);
 
     // --- Node Types ---
     const nodeTypes = { unitOp: UnitOpNode, swimLane: SwimLaneNode };
@@ -42,13 +44,133 @@
 
     // Layout / time settings
     let layout = $state<"horizontal" | "vertical">("horizontal");
+    let handleOrientation = $state<"horizontal" | "vertical">("horizontal");
     let timeEnabled = $state(false);
     let startTime = $state("08:00");
     let pixelsPerHour = $state(200);
 
+    // Interaction mode: pan (default) vs select
+    let interactionMode = $state<"pan" | "select">("pan");
+
+    // Track unsaved changes
+    let hasUnsavedChanges = $state(false);
+    let lastSavedState = $state<string>("");
+
+    // Compute current state as JSON for comparison
+    const currentState = $derived(() => {
+        return JSON.stringify({
+            nodes,
+            edges,
+            layout,
+            handleOrientation,
+            timeEnabled,
+            startTime,
+            pixelsPerHour,
+        });
+    });
+
+    // Track changes
+    $effect(() => {
+        if (lastSavedState && currentState() !== lastSavedState) {
+            hasUnsavedChanges = true;
+        }
+    });
+
+    // Provide handle orientation and node actions to child node components via context
+    setContext("protocolHandleOrientation", {
+        get value() {
+            return handleOrientation;
+        },
+    });
+
+    setContext("branchValidation", {
+        get invalidNodeIds() {
+            return branchInvalidNodeIds();
+        },
+    });
+
+    setContext("nodeActions", {
+        setNodeHandleOrientation(
+            nodeId: string,
+            orientation: "horizontal" | "vertical" | null,
+        ) {
+            const effective = orientation ?? handleOrientation;
+            nodes = nodes.map((n) => {
+                if (n.id === nodeId && n.type === "unitOp") {
+                    const newData = { ...n.data };
+                    if (orientation === null) {
+                        delete newData.handleOrientation;
+                        delete newData.sourcePosition;
+                        delete newData.targetPosition;
+                    } else {
+                        newData.handleOrientation = orientation;
+                        delete newData.sourcePosition;
+                        delete newData.targetPosition;
+                    }
+                    return {
+                        ...n,
+                        data: newData,
+                        sourcePosition:
+                            effective === "horizontal"
+                                ? Position.Right
+                                : Position.Bottom,
+                        targetPosition:
+                            effective === "horizontal"
+                                ? Position.Left
+                                : Position.Top,
+                    };
+                }
+                return n;
+            });
+        },
+        setNodeHandlePosition(
+            nodeId: string,
+            handleType: "source" | "target",
+            position: Position,
+        ) {
+            nodes = nodes.map((n) => {
+                if (n.id === nodeId && n.type === "unitOp") {
+                    const newData = { ...n.data };
+                    // Store per-handle positions and clear the preset orientation
+                    delete newData.handleOrientation;
+                    if (handleType === "source") {
+                        newData.sourcePosition = position;
+                        // Keep existing target or derive from protocol default
+                        if (!newData.targetPosition) {
+                            newData.targetPosition =
+                                handleOrientation === "horizontal"
+                                    ? Position.Left
+                                    : Position.Top;
+                        }
+                    } else {
+                        newData.targetPosition = position;
+                        // Keep existing source or derive from protocol default
+                        if (!newData.sourcePosition) {
+                            newData.sourcePosition =
+                                handleOrientation === "horizontal"
+                                    ? Position.Right
+                                    : Position.Bottom;
+                        }
+                    }
+                    return {
+                        ...n,
+                        data: newData,
+                        sourcePosition: newData.sourcePosition as Position,
+                        targetPosition: newData.targetPosition as Position,
+                    };
+                }
+                return n;
+            });
+        },
+    });
+
     // Inline name editing
     let editingName = $state(false);
     let nameInput = $state("");
+
+    // Inline description editing
+    let editingDescription = $state(false);
+    let descriptionInput = $state("");
 
     // Inspector — watch for node selection changes via SvelteFlow's built-in selection
     let selectedNodeId = $state<string | null>(null);
@@ -99,24 +221,100 @@
         return map;
     });
 
+    // --- Branch-to-swimlane validation ---
+    const branchValidationErrors = $derived(() => {
+        const errors: Array<{
+            sourceNodeId: string;
+            sourceNodeLabel: string;
+            duplicateLane: string | null;
+            targetNodeLabels: string[];
+        }> = [];
+
+        // Build outgoing edge map: sourceId -> [targetId, ...]
+        const outgoingMap = new Map<string, string[]>();
+        for (const edge of edges) {
+            if (!outgoingMap.has(edge.source)) outgoingMap.set(edge.source, []);
+            outgoingMap.get(edge.source)!.push(edge.target);
+        }
+
+        // Exception: no swimlanes + purely linear → skip
+        const hasSwimlanes = nodes.some((n) => n.type === "swimLane");
+        const hasBranching = [...outgoingMap.values()].some((t) => t.length >= 2);
+        if (!hasSwimlanes && !hasBranching) return errors;
+
+        // Node lookup map
+        const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+        // For each branching node, group targets by parentId
+        for (const [sourceId, targetIds] of outgoingMap) {
+            if (targetIds.length < 2) continue;
+            const src = nodeMap.get(sourceId);
+            if (!src || src.type !== "unitOp") continue;
+
+            const laneGroups = new Map<string | null, string[]>();
+            for (const tid of targetIds) {
+                const t = nodeMap.get(tid);
+                if (!t || t.type !== "unitOp") continue;
+                const lane = t.parentId ?? null;
+                if (!laneGroups.has(lane)) laneGroups.set(lane, []);
+                laneGroups.get(lane)!.push(tid);
+            }
+
+            for (const [lane, group] of laneGroups) {
+                if (group.length >= 2) {
+                    errors.push({
+                        sourceNodeId: sourceId,
+                        sourceNodeLabel: (src.data as any).label || "Unnamed",
+                        duplicateLane: lane,
+                        targetNodeLabels: group.map(
+                            (id) => (nodeMap.get(id)?.data as any)?.label || "Unnamed",
+                        ),
+                    });
+                }
+            }
+        }
+        return errors;
+    });
+
+    const branchInvalidNodeIds = $derived(() => {
+        const ids = new Set<string>();
+        for (const err of branchValidationErrors()) {
+            ids.add(err.sourceNodeId);
+        }
+        return ids;
+    });
+
     // --- Data Loading ---
     async function loadData() {
         try {
             unitOps = await api.get("/science/unit-ops");
 
-            if (params.id && params.id !== "new") {
-                protocol = await api.get(`/science/protocols/${params.id}`);
+            if (id && id !== "new") {
+                protocol = await api.get(`/science/protocols/${id}`);
                 roles = protocol.roles || [];
 
                 if (protocol.graph && protocol.graph.nodes) {
                     nodes = protocol.graph.nodes;
                     edges = protocol.graph.edges || [];
                     layout = protocol.graph.layout || "horizontal";
+                    handleOrientation =
+                        protocol.graph.handleOrientation || "horizontal";
                     timeEnabled = protocol.graph.timeEnabled || false;
                     startTime = protocol.graph.startTime || "08:00";
                     pixelsPerHour = protocol.graph.pixelsPerHour || 200;
                 }
             }
+            // Initialize saved state for change tracking
+            lastSavedState = JSON.stringify({
+                nodes,
+                edges,
+                layout,
+                handleOrientation,
+                timeEnabled,
+                startTime,
+                pixelsPerHour,
+            });
+            hasUnsavedChanges = false;
         } catch (e: any) {
             error = e.message;
         } finally {
@@ -151,6 +349,32 @@
         else if (e.key === "Escape") editingName = false;
     }
 
+    // --- Description Editing ---
+    async function saveDescription() {
+        if (!protocol) {
+            editingDescription = false;
+            return;
+        }
+        try {
+            await api.put(`/science/protocols/${protocol.id}`, {
+                description: descriptionInput.trim(),
+            });
+            protocol.description = descriptionInput.trim();
+        } catch (e) {
+            // silent
+        }
+        editingDescription = false;
+    }
+
+    function startEditingDescription() {
+        descriptionInput = protocol?.description || "";
+        editingDescription = true;
+    }
+
+    function handleDescriptionKeydown(e: KeyboardEvent) {
+        if (e.key === "Escape") editingDescription = false;
+    }
+
     // --- Save Protocol ---
     async function save() {
         if (!protocol) return;
@@ -164,6 +388,7 @@
                     type: n.type,
                     position: n.position,
                     parentId: n.parentId,
+                    zIndex: n.zIndex,
                     data: n.data,
                     width: n.measured?.width,
                     height: n.measured?.height,
@@ -175,6 +400,7 @@
                     target: e.target,
                 })),
                 layout,
+                handleOrientation,
                 timeEnabled,
                 startTime,
                 pixelsPerHour,
@@ -185,6 +411,17 @@
             });
             saveMessage = "Saved!";
             setTimeout(() => (saveMessage = null), 2000);
+            // Mark as saved
+            lastSavedState = JSON.stringify({
+                nodes,
+                edges,
+                layout,
+                handleOrientation,
+                timeEnabled,
+                startTime,
+                pixelsPerHour,
+            });
+            hasUnsavedChanges = false;
         } catch (e: any) {
             saveMessage = `Failed: ${e.message}`;
         } finally {
@@ -263,6 +500,7 @@
         const newNode: Node = {
             id: crypto.randomUUID(),
             type: "unitOp",
+            zIndex: 1,
             position,
             parentId,
             data: {
@@ -283,6 +521,7 @@
         nodeId: string,
         params: Record<string, any>,
         duration: number,
+        description: string,
     ) {
         nodes = nodes.map((n) => {
             if (n.id === nodeId) {
@@ -292,6 +531,7 @@
                         ...n.data,
                         params,
                         duration_min: duration,
+                        description,
                     },
                 };
             }
@@ -323,6 +563,7 @@
             const laneNode: Node = {
                 id: `lane-${(role as any).id}`,
                 type: "swimLane",
+                zIndex: -1,
                 position:
                     layout === "horizontal"
                         ? { x: laneX, y: laneY }
@@ -426,6 +667,21 @@
 
     onMount(() => {
         loadData();
+
+        // Warn user if they try to leave with unsaved changes
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = "";
+                return "";
+            }
+        };
+
+        window.addEventListener("beforeunload", handleBeforeUnload);
+
+        return () => {
+            window.removeEventListener("beforeunload", handleBeforeUnload);
+        };
     });
 </script>
 
@@ -446,16 +702,32 @@
             {:else if protocol}
                 <button class="name-display" onclick={startEditingName}>
                     {protocol.name}
-                    <span class="edit-hint">✏️</span>
+                    <span class="edit-hint">&#9998;</span>
                 </button>
             {:else}
                 <span class="name-placeholder">Loading...</span>
             {/if}
 
             {#if protocol}
-                <Link href="/projects/{protocol.project_id}" class="back-link">
-                    ← Back to Project
-                </Link>
+                {#if editingDescription}
+                    <textarea
+                        bind:value={descriptionInput}
+                        onblur={saveDescription}
+                        onkeydown={handleDescriptionKeydown}
+                        class="description-input"
+                        rows="2"
+                        placeholder="Add a description..."
+                        autofocus
+                    ></textarea>
+                {:else}
+                    <button class="description-display" onclick={startEditingDescription}>
+                        {protocol.description || "Add description..."}
+                    </button>
+                {/if}
+
+                <a href="/projects/{protocol.project_id}" class="back-link">
+                    &#8592; Back to Project
+                </a>
             {/if}
         </div>
 
@@ -494,7 +766,7 @@
                         <span class="role-name">{role.name}</span>
                         <button
                             class="role-delete-btn"
-                            onclick={() => deleteRole(role.id)}>✕</button
+                            onclick={() => deleteRole(role.id)}>&#10005;</button
                         >
                     </div>
                 {/each}
@@ -535,7 +807,7 @@
                                 class="cat-chevron"
                                 class:collapsed={collapsedCategories.has(
                                     category,
-                                )}>▾</span
+                                )}>&#9662;</span
                             >
                             <span
                                 class="cat-add-btn"
@@ -591,7 +863,7 @@
 
         <!-- Drag hint -->
         <div class="drag-hint">
-            <span>⬆ Drag nodes to canvas to add</span>
+            <span>Drag nodes to canvas to add</span>
         </div>
 
         <!-- Save Button -->
@@ -623,13 +895,75 @@
     >
         <!-- Toolbar -->
         <div class="canvas-toolbar">
+            <div class="mode-toggle">
+                <button
+                    class="mode-btn"
+                    class:active={interactionMode === "pan"}
+                    onclick={() => (interactionMode = "pan")}
+                    title="Pan mode (hold Shift to select)"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v6"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+                </button>
+                <button
+                    class="mode-btn"
+                    class:active={interactionMode === "select"}
+                    onclick={() => (interactionMode = "select")}
+                    title="Select mode (drag to select nodes)"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>
+                </button>
+            </div>
+
+            <div class="toolbar-divider"></div>
+
             <button
                 class="toolbar-btn"
                 class:active={layout === "horizontal"}
                 onclick={toggleLayout}
                 title="Toggle orientation"
             >
-                {layout === "horizontal" ? "↔ Horizontal" : "↕ Vertical"}
+                {layout === "horizontal" ? "&#8596; Horizontal" : "&#8597; Vertical"}
+            </button>
+
+            <div class="toolbar-divider"></div>
+
+            <button
+                class="toolbar-btn"
+                class:active={handleOrientation === "horizontal"}
+                onclick={() => {
+                    handleOrientation =
+                        handleOrientation === "horizontal"
+                            ? "vertical"
+                            : "horizontal";
+                    // Update node-level sourcePosition/targetPosition so
+                    // NodeWrapper recalculates handle bounds for edge routing
+                    const src =
+                        handleOrientation === "horizontal"
+                            ? Position.Right
+                            : Position.Bottom;
+                    const tgt =
+                        handleOrientation === "horizontal"
+                            ? Position.Left
+                            : Position.Top;
+                    nodes = nodes.map((n) => {
+                        if (
+                            n.type === "unitOp" &&
+                            !n.data.handleOrientation
+                        ) {
+                            return {
+                                ...n,
+                                sourcePosition: src,
+                                targetPosition: tgt,
+                            };
+                        }
+                        return n;
+                    });
+                }}
+                title="Toggle handle orientation"
+            >
+                {handleOrientation === "horizontal"
+                    ? "&#8594; Handles H"
+                    : "&#8595; Handles V"}
             </button>
 
             <div class="toolbar-divider"></div>
@@ -639,7 +973,7 @@
                 class:active={timeEnabled}
                 onclick={() => (timeEnabled = !timeEnabled)}
             >
-                🕐 Time: {timeEnabled ? "ON" : "OFF"}
+                Time: {timeEnabled ? "ON" : "OFF"}
             </button>
 
             {#if timeEnabled}
@@ -654,6 +988,27 @@
                 </label>
             {/if}
         </div>
+
+        <!-- Branch validation banner -->
+        {#if branchValidationErrors().length > 0}
+            <div class="validation-banner">
+                <span class="validation-icon">&#x26A0;</span>
+                <div class="validation-content">
+                    {#each branchValidationErrors() as err}
+                        <div class="validation-item">
+                            <strong>{err.sourceNodeLabel}</strong> branches to
+                            {err.targetNodeLabels.join(" & ")} in
+                            {#if err.duplicateLane === null}
+                                <em>no swimlane</em>
+                            {:else}
+                                the <em>same swimlane</em>
+                            {/if}
+                            — move each branch target to a different role.
+                        </div>
+                    {/each}
+                </div>
+            </div>
+        {/if}
 
         <!-- Time axis overlay -->
         {#if timeEnabled}
@@ -671,7 +1026,16 @@
                 <p>Loading protocol...</p>
             </div>
         {:else}
-            <SvelteFlow bind:nodes bind:edges bind:viewport {nodeTypes} fitView>
+            <SvelteFlow
+                bind:nodes
+                bind:edges
+                bind:viewport
+                {nodeTypes}
+                fitView
+                selectionMode={SelectionMode.Partial}
+                selectionOnDrag={interactionMode === "select"}
+                panOnDrag={interactionMode === "pan"}
+            >
                 <Background />
                 <Controls />
                 <MiniMap />
@@ -769,16 +1133,49 @@
         color: #94a3b8;
     }
 
-    :global(.back-link) {
+    .description-input {
+        width: 100%;
+        font-size: 12px;
+        padding: 6px 8px;
+        border: 1.5px solid hsl(173, 58%, 39%);
+        border-radius: 6px;
+        outline: none;
+        color: #334155;
+        box-sizing: border-box;
+        font-family: inherit;
+        resize: vertical;
+        margin-top: 6px;
+    }
+
+    .description-display {
         display: block;
         font-size: 12px;
-        color: #94a3b8 !important;
+        color: #94a3b8;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+        text-align: left;
+        width: 100%;
+        margin-top: 6px;
+        line-height: 1.4;
+        word-break: break-word;
+    }
+
+    .description-display:hover {
+        color: hsl(173, 58%, 39%);
+    }
+
+    .back-link {
+        display: block;
+        font-size: 12px;
+        color: #94a3b8;
         margin-top: 6px;
         text-decoration: none;
     }
 
-    :global(.back-link:hover) {
-        color: hsl(173, 58%, 39%) !important;
+    .back-link:hover {
+        color: hsl(173, 58%, 39%);
     }
 
     /* ── Sidebar Sections ── */
@@ -1147,6 +1544,38 @@
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     }
 
+    .mode-toggle {
+        display: flex;
+        border: 1px solid hsl(240, 5.9%, 90%);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .mode-btn {
+        padding: 5px 8px;
+        border: none;
+        background: white;
+        color: #475569;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+    }
+
+    .mode-btn:first-child {
+        border-right: 1px solid hsl(240, 5.9%, 90%);
+    }
+
+    .mode-btn:hover {
+        background: #f8fafc;
+    }
+
+    .mode-btn.active {
+        background: hsl(173, 58%, 39%);
+        color: white;
+    }
+
     .toolbar-btn {
         padding: 5px 10px;
         border: 1px solid hsl(240, 5.9%, 90%);
@@ -1193,6 +1622,49 @@
         font-size: 11px;
         font-family: "JetBrains Mono", monospace;
         width: 80px;
+    }
+
+    .validation-banner {
+        position: absolute;
+        top: 56px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 14px;
+        background: #fffbeb;
+        border: 1px solid #f59e0b;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+        max-width: 520px;
+    }
+
+    .validation-icon {
+        font-size: 16px;
+        line-height: 1.4;
+        flex-shrink: 0;
+    }
+
+    .validation-content {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .validation-item {
+        font-size: 12px;
+        color: #92400e;
+        line-height: 1.4;
+    }
+
+    .validation-item strong {
+        font-weight: 700;
+    }
+
+    .validation-item em {
+        font-style: italic;
     }
 
     .canvas-loading {

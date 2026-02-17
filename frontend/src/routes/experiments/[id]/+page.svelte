@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { page } from '$app/stores';
     import {
         SvelteFlow,
         Background,
@@ -9,10 +10,9 @@
     } from "@xyflow/svelte";
     import "@xyflow/svelte/dist/style.css";
 
-    import { api } from "../lib/api";
-    import Link from "../lib/Link.svelte";
+    import { api } from "$lib/api";
 
-    let { params } = $props();
+    const id = $derived($page.params.id);
 
     let experiment = $state<any>(null);
     let loading = $state(true);
@@ -27,17 +27,10 @@
 
     async function loadData() {
         try {
-            experiment = await api.get(`/science/experiments/${params.id}`);
+            experiment = await api.get(`/science/experiments/${id}`);
             if (experiment.graph) {
-                // Mark nodes as distinct for execution if needed
                 nodes = experiment.graph.nodes || [];
-                // Map execution status to styles?
                 edges = experiment.graph.edges || [];
-            }
-
-            // Load existing execution data
-            if (experiment.execution_data) {
-                // Merge?
             }
         } catch (e: any) {
             error = e.message;
@@ -50,7 +43,6 @@
         if (!experiment || !selectedNode) return;
 
         try {
-            // Update local state
             const updatedExecutionData = {
                 ...experiment.execution_data,
                 [selectedNode.id]: {
@@ -64,15 +56,13 @@
             });
 
             experiment.execution_data = updatedExecutionData;
-            alert("Data logged!");
         } catch (e: any) {
-            alert(`Failed to save: ${e.message}`);
+            console.error(`Failed to save: ${e.message}`);
         }
     }
 
     function onNodeClick({ node }: { node: Node }) {
         selectedNode = node;
-        // Load existing data for this node
         nodeData =
             (experiment.execution_data && experiment.execution_data[node.id]) ||
             {};
@@ -83,7 +73,6 @@
     });
 </script>
 
-```html
 <div class="h-[calc(100vh-64px)] flex bg-slate-50">
     <!-- Main Execution View -->
     <div class="flex-1 relative border-r border-slate-200">
@@ -93,12 +82,12 @@
             <h1 class="font-bold text-slate-800">
                 {experiment?.name || "Loading..."}
             </h1>
-            <Link
-                to={`/projects/${experiment?.project_id}`}
+            <a
+                href="/projects/{experiment?.project_id}"
                 class="text-xs text-slate-500 hover:text-teal-600"
             >
                 &larr; Back to Project
-            </Link>
+            </a>
         </div>
 
         {#if loading}
@@ -125,8 +114,6 @@
                 ID: {selectedNode.id}
             </div>
 
-            <!-- Dynamic Form based on UnitOp Schema would go here -->
-            <!-- For now, simple key-value log -->
             <div class="space-y-4">
                 <div>
                     <label
