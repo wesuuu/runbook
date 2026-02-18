@@ -3,6 +3,7 @@
     import { page } from '$app/stores';
     import { api } from "$lib/api";
     import { getUser } from "$lib/auth.svelte";
+    import { generateSopPdf, generateBatchRecordPdf } from "$lib/pdf";
 
     const id = $derived($page.params.id);
 
@@ -119,6 +120,58 @@
     function allRolesAssigned() {
         const swimLanes = getSwimLaneNodes();
         return swimLanes.every((lane: any) => getRoleAssignment(lane.id));
+    }
+
+    function getStepsForRole(laneNodeId: string) {
+        if (!experiment?.graph) return [];
+        const nodes = experiment.graph.nodes || [];
+        return nodes
+            .filter((n: any) => n.type === "unitOp" && n.parentId === laneNodeId)
+            .sort((a: any, b: any) => a.position.x - b.position.x)
+            .map((n: any) => ({
+                id: n.id,
+                name: n.data.label,
+                category: n.data.category,
+                description: n.data.description,
+                params: n.data.params,
+                duration_min: n.data.duration_min,
+            }));
+    }
+
+    function downloadSopForRole(laneNodeId: string, roleName: string) {
+        const steps = getStepsForRole(laneNodeId);
+        generateSopPdf(
+            experiment.name,
+            protocol?.name || "Unknown Protocol",
+            roleName,
+            steps
+        );
+    }
+
+    function downloadBatchRecord() {
+        const swimLanes = getSwimLaneNodes();
+        const allSteps = swimLanes.flatMap((lane: any) => {
+            const steps = getStepsForRole(lane.id);
+            return steps.map((s: any) => ({
+                ...s,
+                roleId: lane.id,
+                roleName: lane.data.label,
+            }));
+        });
+
+        const roles = swimLanes.map((lane: any) => ({
+            id: lane.id,
+            name: lane.data.label,
+            color: lane.data.color,
+        }));
+
+        generateBatchRecordPdf(
+            experiment.name,
+            protocol?.name || "Unknown Protocol",
+            roles,
+            allSteps,
+            false
+        );
     }
 
     onMount(() => {
@@ -250,6 +303,50 @@
                                     {/if}
                                 </div>
                             {/each}
+                        </div>
+                    </div>
+                {/if}
+
+                <!-- Documents Section -->
+                {#if getSwimLaneNodes().length > 0}
+                    <div class="mb-8 p-6 bg-white border border-slate-200 rounded-lg">
+                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                            Documents
+                        </h2>
+                        <p class="text-sm text-slate-600 mb-6">
+                            Download SOPs and batch record for your experiment.
+                        </p>
+
+                        <div class="space-y-3">
+                            {#each getSwimLaneNodes() as lane}
+                                <button
+                                    onclick={() =>
+                                        downloadSopForRole(lane.id, lane.data.label)
+                                    }
+                                    class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                                >
+                                    <div class="flex items-center justify-between">
+                                        <span class="font-medium text-slate-900">
+                                            Download SOP — {lane.data.label}
+                                        </span>
+                                        <span class="text-slate-400">↓</span>
+                                    </div>
+                                </button>
+                            {/each}
+
+                            <hr class="my-3" />
+
+                            <button
+                                onclick={downloadBatchRecord}
+                                class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium text-slate-900">
+                                        Download Blank Batch Record
+                                    </span>
+                                    <span class="text-slate-400">↓</span>
+                                </div>
+                            </button>
                         </div>
                     </div>
                 {/if}
