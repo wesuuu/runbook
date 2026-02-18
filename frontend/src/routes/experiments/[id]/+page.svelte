@@ -4,6 +4,7 @@
     import { api } from "$lib/api";
     import { getUser } from "$lib/auth.svelte";
     import { generateSopPdf, generateBatchRecordPdf } from "$lib/pdf";
+    import RoleWizard from "$lib/components/RoleWizard.svelte";
 
     const id = $derived($page.params.id);
 
@@ -172,6 +173,22 @@
             allSteps,
             false
         );
+    }
+
+    function getCurrentUserAssignment() {
+        const user = getUser();
+        if (!user) return null;
+        return roleAssignments.find((a) => a.user_id === user.id);
+    }
+
+    function getWizardSteps() {
+        const assignment = getCurrentUserAssignment();
+        if (!assignment) return [];
+        return getStepsForRole(assignment.lane_node_id);
+    }
+
+    function handleExecutionDataUpdate(updatedData: Record<string, any>) {
+        experiment.execution_data = updatedData;
     }
 
     onMount(() => {
@@ -401,7 +418,130 @@
                 {/if}
             </div>
 
-        <!-- ACTIVE, COMPLETED, ARCHIVED: Placeholder for now -->
+        <!-- ACTIVE State: Multi-page Wizard or Observer View -->
+        {:else if experiment.status === "ACTIVE"}
+            <div class="min-h-screen bg-slate-50">
+                <div class="max-w-4xl mx-auto px-6 py-8">
+                    <!-- Header -->
+                    <div class="mb-8">
+                        <div class="flex items-center justify-between mb-2">
+                            <div>
+                                <h1 class="text-3xl font-bold text-slate-900">
+                                    {experiment.name}
+                                </h1>
+                                {#if protocol}
+                                    <p class="text-sm text-slate-500 mt-1">
+                                        Protocol: {protocol.name}
+                                    </p>
+                                {/if}
+                            </div>
+                            <span class="inline-block text-xs font-semibold px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full">
+                                Running
+                            </span>
+                        </div>
+                        <a
+                            href="/projects/{experiment.project_id}"
+                            class="text-sm text-slate-500 hover:text-slate-700"
+                        >
+                            ← Back to project
+                        </a>
+                    </div>
+
+                    <!-- Assigned User View (Wizard) -->
+                    {#if getCurrentUserAssignment()}
+                        <div class="bg-white rounded-lg border border-slate-200 p-8">
+                            <RoleWizard
+                                steps={getWizardSteps()}
+                                experimentId={experiment.id}
+                                executionData={experiment.execution_data || {}}
+                                onDataUpdate={handleExecutionDataUpdate}
+                            />
+                        </div>
+                    {:else}
+                        <!-- Observer View (Non-Assigned User) -->
+                        <div class="space-y-6">
+                            <div class="bg-white rounded-lg border border-slate-200 p-6">
+                                <h2 class="text-lg font-semibold text-slate-900 mb-4">
+                                    Experiment Status
+                                </h2>
+                                <p class="text-slate-600 mb-4">
+                                    You are not assigned to a role in this experiment. Below is the current status.
+                                </p>
+
+                                <!-- Role Status Table -->
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm">
+                                        <thead>
+                                            <tr class="border-b border-slate-200">
+                                                <th class="text-left py-3 px-4 font-semibold text-slate-700">
+                                                    Role
+                                                </th>
+                                                <th class="text-left py-3 px-4 font-semibold text-slate-700">
+                                                    Assigned To
+                                                </th>
+                                                <th class="text-center py-3 px-4 font-semibold text-slate-700">
+                                                    Progress
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {#each getSwimLaneNodes() as lane}
+                                                {@const assignment = getRoleAssignment(lane.id)}
+                                                {@const steps = getStepsForRole(lane.id)}
+                                                {@const completedCount = steps.filter(
+                                                    (s) =>
+                                                        experiment.execution_data?.[s.id]?.status ===
+                                                        "completed"
+                                                ).length}
+                                                <tr class="border-b border-slate-100 hover:bg-slate-50">
+                                                    <td class="py-3 px-4 font-medium text-slate-900">
+                                                        {lane.data.label}
+                                                    </td>
+                                                    <td class="py-3 px-4 text-slate-600">
+                                                        {#if assignment}
+                                                            {#each projectMembers.filter(
+                                                                (m) =>
+                                                                    m.id === assignment.user_id
+                                                            ) as member}
+                                                                {member.full_name ||
+                                                                    member.email}
+                                                            {/each}
+                                                        {:else}
+                                                            <span class="text-slate-400">
+                                                                Unassigned
+                                                            </span>
+                                                        {/if}
+                                                    </td>
+                                                    <td class="py-3 px-4 text-center">
+                                                        {#if steps.length > 0}
+                                                            <span
+                                                                class="inline-block text-xs font-semibold px-2 py-1 rounded {completedCount ===
+                                                                steps.length
+                                                                    ? 'bg-emerald-100 text-emerald-700'
+                                                                    : completedCount > 0
+                                                                      ? 'bg-blue-100 text-blue-700'
+                                                                      : 'bg-slate-100 text-slate-600'}"
+                                                            >
+                                                                {completedCount} / {steps.length}
+                                                            </span>
+                                                        {:else}
+                                                            <span class="text-slate-400">
+                                                                --
+                                                            </span>
+                                                        {/if}
+                                                    </td>
+                                                </tr>
+                                            {/each}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+            </div>
+
+        <!-- COMPLETED, ARCHIVED: Placeholder for now -->
         {:else}
             <div class="max-w-5xl mx-auto px-6 py-8">
                 <div class="mb-8">
@@ -409,7 +549,7 @@
                         <h1 class="text-3xl font-bold text-slate-900">
                             {experiment.name}
                         </h1>
-                        <span class="inline-block text-xs font-semibold px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full">
+                        <span class="inline-block text-xs font-semibold px-3 py-1 bg-slate-100 text-slate-700 rounded-full">
                             {experiment.status}
                         </span>
                     </div>
@@ -424,9 +564,7 @@
                 <div class="p-8 bg-white border border-slate-200 rounded-lg text-center text-slate-500">
                     <p class="text-lg font-medium mb-2">Experiment {experiment.status}</p>
                     <p class="text-sm">
-                        {#if experiment.status === "ACTIVE"}
-                            Multi-page wizard runner coming soon
-                        {:else if experiment.status === "COMPLETED"}
+                        {#if experiment.status === "COMPLETED"}
                             Completed results view coming soon
                         {:else}
                             View coming soon
