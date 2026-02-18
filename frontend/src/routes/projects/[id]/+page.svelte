@@ -35,6 +35,7 @@
     // -- Experiment Modal --
     let showExperimentModal = $state(false);
     let newExperimentName = $state('');
+    let selectedProtocolId = $state<string | null>(null);
 
     // -- Form State for "New Project" mode --
     let form = $state({ name: '', description: '', organization_id: '' });
@@ -179,12 +180,17 @@
         if (!newExperimentName) return;
 
         try {
-            const newExp: any = await api.post('/science/experiments', {
+            const payload: any = {
                 name: newExperimentName,
                 project_id: project.id,
-            });
+            };
+            if (selectedProtocolId) {
+                payload.protocol_id = selectedProtocolId;
+            }
+            const newExp: any = await api.post('/science/experiments', payload);
             showExperimentModal = false;
             newExperimentName = '';
+            selectedProtocolId = null;
             goto(`/experiments/${newExp.id}`);
         } catch (e: any) {
             console.error(e);
@@ -353,9 +359,17 @@
                                 class="w-full py-1.5 pl-8 pr-2.5 border border-slate-200 rounded-lg text-[13px] text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-400/15"
                             />
                         </div>
-                        <span class="text-[13px] text-slate-400 font-medium">
-                            {filteredExperiments().length} of {experiments.length} experiment{experiments.length !== 1 ? 's' : ''}
-                        </span>
+                        <div class="flex items-center gap-4">
+                            <span class="text-[13px] text-slate-400 font-medium">
+                                {filteredExperiments().length} of {experiments.length} experiment{experiments.length !== 1 ? 's' : ''}
+                            </span>
+                            <button
+                                class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
+                                onclick={() => (showExperimentModal = true)}
+                            >
+                                + New Experiment
+                            </button>
+                        </div>
                     </div>
 
                     {#if filteredExperiments().length === 0}
@@ -383,7 +397,8 @@
                                 <tr class="border-t border-b border-slate-100">
                                     <th class="w-[100px] text-left py-2.5 px-4 pl-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide">ID</th>
                                     <th class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Experiment Name</th>
-                                    <th class="w-[130px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Status</th>
+                                    <th class="w-[150px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Protocol</th>
+                                    <th class="w-[100px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Status</th>
                                     <th class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Last Modified</th>
                                 </tr>
                             </thead>
@@ -395,6 +410,15 @@
                                     >
                                         <td class="py-3.5 px-4 pl-8 text-xs text-slate-400 font-mono font-medium whitespace-nowrap">{shortId(exp.id)}</td>
                                         <td class="py-3.5 px-4 text-sm font-semibold text-slate-800">{exp.name}</td>
+                                        <td class="py-3.5 px-4 text-[13px] text-slate-500 whitespace-nowrap">
+                                            {#if exp.protocol_id}
+                                                {#each protocols.filter((p: any) => p.id === exp.protocol_id) as proto}
+                                                    <span class="text-slate-600 font-medium">{proto.name}</span>
+                                                {/each}
+                                            {:else}
+                                                <span class="text-slate-400">--</span>
+                                            {/if}
+                                        </td>
                                         <td class="py-3.5 px-4 whitespace-nowrap">
                                             <span class="inline-block text-xs font-semibold px-3 py-0.5 rounded-full {statusClasses(exp.status)}">
                                                 {statusLabel(exp.status)}
@@ -508,16 +532,37 @@
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
             />
         </div>
+        <div>
+            <label
+                for="protocol-select"
+                class="block text-sm font-medium text-gray-700 mb-1"
+                >Protocol (Optional)</label
+            >
+            <select
+                id="protocol-select"
+                bind:value={selectedProtocolId}
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+            >
+                <option value={null}>No protocol</option>
+                {#each protocols as proto}
+                    <option value={proto.id}>{proto.name}</option>
+                {/each}
+            </select>
+        </div>
         <div class="flex justify-end gap-2 pt-2">
             <button
-                onclick={() => (showExperimentModal = false)}
+                onclick={() => {
+                    showExperimentModal = false;
+                    selectedProtocolId = null;
+                }}
                 class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
             >
                 Cancel
             </button>
             <button
                 onclick={createExperiment}
-                class="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors"
+                disabled={!newExperimentName}
+                class="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
                 Create
             </button>
