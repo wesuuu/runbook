@@ -541,7 +541,229 @@
                 </div>
             </div>
 
-        <!-- COMPLETED, ARCHIVED: Placeholder for now -->
+        <!-- COMPLETED State: Summary & Results -->
+        {:else if experiment.status === "COMPLETED"}
+            <div class="min-h-screen bg-slate-50">
+                <div class="max-w-5xl mx-auto px-6 py-8">
+                    <!-- Header -->
+                    <div class="mb-8">
+                        <div class="flex items-center justify-between mb-2">
+                            <div>
+                                <h1 class="text-3xl font-bold text-slate-900">
+                                    {experiment.name}
+                                </h1>
+                                {#if protocol}
+                                    <p class="text-sm text-slate-500 mt-1">
+                                        Protocol: {protocol.name}
+                                    </p>
+                                {/if}
+                            </div>
+                            <span class="inline-block text-xs font-semibold px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full">
+                                Completed
+                            </span>
+                        </div>
+                        <a
+                            href="/projects/{experiment.project_id}"
+                            class="text-sm text-slate-500 hover:text-slate-700"
+                        >
+                            ← Back to project
+                        </a>
+                    </div>
+
+                    <!-- Experiment Info -->
+                    <div class="grid grid-cols-2 gap-6 mb-8">
+                        <div class="bg-white rounded-lg border border-slate-200 p-6">
+                            <h3 class="text-sm font-semibold text-slate-500 uppercase mb-2">
+                                Status
+                            </h3>
+                            <p class="text-lg font-bold text-emerald-600">
+                                Completed
+                            </p>
+                        </div>
+                        <div class="bg-white rounded-lg border border-slate-200 p-6">
+                            <h3 class="text-sm font-semibold text-slate-500 uppercase mb-2">
+                                Completed
+                            </h3>
+                            <p class="text-lg font-bold text-slate-900">
+                                {Object.values(experiment.execution_data || {}).filter(
+                                    (d: any) => d.status === "completed"
+                                ).length} / {Object.keys(experiment.execution_data || {})
+                                    .length} steps
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Results Summary -->
+                    <div class="bg-white rounded-lg border border-slate-200 p-6 mb-8">
+                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                            Results Summary
+                        </h2>
+
+                        <div class="space-y-6">
+                            {#each getSwimLaneNodes() as lane}
+                                {@const steps = getStepsForRole(lane.id)}
+                                {@const assignment = getRoleAssignment(lane.id)}
+                                <div class="pb-6 border-b border-slate-100 last:pb-0 last:border-0">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <h3 class="font-semibold text-slate-900">
+                                            {lane.data.label}
+                                        </h3>
+                                        {#if assignment}
+                                            <span class="text-sm text-slate-600">
+                                                {#each projectMembers.filter(
+                                                    (m) => m.id === assignment.user_id
+                                                ) as member}
+                                                    {member.full_name ||
+                                                        member.email}
+                                                {/each}
+                                            </span>
+                                        {/if}
+                                    </div>
+
+                                    <div class="space-y-3">
+                                        {#each steps as step}
+                                            {@const stepData =
+                                                experiment.execution_data?.[
+                                                    step.id
+                                                ]}
+                                            <div class="p-3 bg-slate-50 rounded border border-slate-200">
+                                                <div class="flex items-start justify-between mb-2">
+                                                    <div>
+                                                        <p class="font-medium text-slate-900">
+                                                            {step.name}
+                                                        </p>
+                                                        {#if step.description}
+                                                            <p class="text-xs text-slate-600 mt-1">
+                                                                {step.description}
+                                                            </p>
+                                                        {/if}
+                                                    </div>
+                                                    <span
+                                                        class="inline-block text-xs font-semibold px-2 py-1 rounded {stepData?.status ===
+                                                        'completed'
+                                                            ? 'bg-emerald-100 text-emerald-700'
+                                                            : 'bg-slate-100 text-slate-600'}"
+                                                    >
+                                                        {stepData?.status?.replace(
+                                                            /_/g,
+                                                            " "
+                                                        ) || "PENDING"}
+                                                    </span>
+                                                </div>
+
+                                                {#if stepData?.value || stepData?.notes}
+                                                    <div class="grid grid-cols-2 gap-4 text-sm">
+                                                        {#if stepData?.value}
+                                                            <div>
+                                                                <p class="text-xs text-slate-600 font-semibold mb-1">
+                                                                    Value
+                                                                </p>
+                                                                <p class="font-mono text-slate-900">
+                                                                    {stepData.value}
+                                                                </p>
+                                                            </div>
+                                                        {/if}
+                                                        {#if stepData?.notes}
+                                                            <div>
+                                                                <p class="text-xs text-slate-600 font-semibold mb-1">
+                                                                    Notes
+                                                                </p>
+                                                                <p class="text-slate-700">
+                                                                    {stepData.notes}
+                                                                </p>
+                                                            </div>
+                                                        {/if}
+                                                    </div>
+                                                {/if}
+
+                                                {#if stepData?.timestamp}
+                                                    <p class="text-xs text-slate-500 mt-2">
+                                                        {new Date(
+                                                            stepData.timestamp
+                                                        ).toLocaleString()}
+                                                    </p>
+                                                {/if}
+                                            </div>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
+
+                    <!-- Documents Section -->
+                    <div class="bg-white rounded-lg border border-slate-200 p-6 mb-8">
+                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                            Documents
+                        </h2>
+
+                        <div class="space-y-3">
+                            <button
+                                onclick={() => {
+                                    const swimLanes = getSwimLaneNodes();
+                                    const allSteps = swimLanes.flatMap(
+                                        (lane: any) => {
+                                            const steps = getStepsForRole(lane.id);
+                                            return steps.map((s: any) => ({
+                                                ...s,
+                                                roleId: lane.id,
+                                                roleName: lane.data.label,
+                                            }));
+                                        }
+                                    );
+
+                                    const roles = swimLanes.map((lane: any) => ({
+                                        id: lane.id,
+                                        name: lane.data.label,
+                                        color: lane.data.color,
+                                    }));
+
+                                    generateBatchRecordPdf(
+                                        experiment.name,
+                                        protocol?.name ||
+                                            "Unknown Protocol",
+                                        roles,
+                                        allSteps,
+                                        true,
+                                        experiment.execution_data
+                                    );
+                                }}
+                                class="w-full text-left px-4 py-3 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium text-emerald-900">
+                                        Download Completed Batch Record
+                                    </span>
+                                    <span class="text-emerald-600">↓</span>
+                                </div>
+                            </button>
+
+                            <button
+                                disabled
+                                title="Retroactive batch record upload coming soon"
+                                class="w-full text-left px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium text-slate-700">
+                                        Upload Batch Record (Coming Soon)
+                                    </span>
+                                    <span class="text-slate-400">↑</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <a
+                        href="/projects/{experiment.project_id}"
+                        class="inline-block text-slate-600 hover:text-slate-800 font-medium"
+                    >
+                        ← Back to project
+                    </a>
+                </div>
+            </div>
+
+        <!-- ARCHIVED: Placeholder -->
         {:else}
             <div class="max-w-5xl mx-auto px-6 py-8">
                 <div class="mb-8">
@@ -563,13 +785,7 @@
 
                 <div class="p-8 bg-white border border-slate-200 rounded-lg text-center text-slate-500">
                     <p class="text-lg font-medium mb-2">Experiment {experiment.status}</p>
-                    <p class="text-sm">
-                        {#if experiment.status === "COMPLETED"}
-                            Completed results view coming soon
-                        {:else}
-                            View coming soon
-                        {/if}
-                    </p>
+                    <p class="text-sm">This experiment is {experiment.status.toLowerCase()}.</p>
                 </div>
             </div>
         {/if}
