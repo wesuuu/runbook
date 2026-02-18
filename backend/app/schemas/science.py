@@ -14,6 +14,12 @@ class UnitOpDefinitionBase(BaseModel):
 class UnitOpDefinitionCreate(UnitOpDefinitionBase):
     pass
 
+class UnitOpDefinitionUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    param_schema: Optional[Dict[str, Any]] = None
+
 class UnitOpDefinitionResponse(UnitOpDefinitionBase):
     id: UUID
     created_at: datetime
@@ -100,6 +106,52 @@ class ExperimentResponse(ExperimentBase):
     id: UUID
     project_id: UUID
     protocol_id: Optional[UUID]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Experiment Role Assignment Schemas
+class ExperimentRoleAssignmentBase(BaseModel):
+    lane_node_id: str
+    role_name: str
+    user_id: UUID
+
+class ExperimentRoleAssignmentCreate(ExperimentRoleAssignmentBase):
+    pass
+
+class ExperimentRoleAssignmentResponse(ExperimentRoleAssignmentBase):
+    id: UUID
+    experiment_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ExperimentRoleAssignmentListResponse(BaseModel):
+    items: List[ExperimentRoleAssignmentResponse] = []
+
+# Equipment Schemas
+class EquipmentBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    equipment_type: Optional[str] = None
+    location: Optional[str] = None
+
+class EquipmentCreate(EquipmentBase):
+    pass
+
+class EquipmentUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    equipment_type: Optional[str] = None
+    location: Optional[str] = None
+
+class EquipmentResponse(EquipmentBase):
+    id: UUID
+    organization_id: UUID
     created_at: datetime
     updated_at: datetime
 

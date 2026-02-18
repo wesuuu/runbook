@@ -473,3 +473,322 @@ async def test_list_experiments_for_project(
     )
     assert resp.status_code == 200
     assert len(resp.json()) >= 1
+
+
+# --- Project Members ---
+
+@pytest.mark.asyncio
+async def test_get_project_members(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test getting members of a project."""
+    resp = await client.get(
+        f"/science/projects/{test_project.id}/members",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    members = resp.json()
+    assert isinstance(members, list)
+    # test_user is the owner of test_project and should be in the list
+    member_ids = [m["id"] for m in members]
+    assert str(test_user.id) in member_ids
+
+
+@pytest.mark.asyncio
+async def test_get_project_members_no_perm(
+    client: AsyncClient,
+    second_auth_headers: dict,
+    test_project: Project,
+):
+    """Test that user without VIEW perm cannot get members."""
+    resp = await client.get(
+        f"/science/projects/{test_project.id}/members",
+        headers=second_auth_headers,
+    )
+    assert resp.status_code == 403
+
+
+# --- Experiment Role Assignments ---
+
+@pytest.mark.asyncio
+async def test_create_role_assignment(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test creating a role assignment."""
+    experiment = Experiment(
+        name="Assignment Test Experiment",
+        project_id=test_project.id,
+        graph={
+            "nodes": [
+                {
+                    "id": "lane-role-1",
+                    "type": "swimLane",
+                    "data": {"label": "Scientist"},
+                }
+            ]
+        },
+        execution_data={},
+    )
+    db_session.add(experiment)
+    await db_session.flush()
+
+    resp = await client.post(
+        f"/science/experiments/{experiment.id}/role-assignments",
+        json={
+            "lane_node_id": "lane-role-1",
+            "role_name": "Scientist",
+            "user_id": str(test_user.id),
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["lane_node_id"] == "lane-role-1"
+    assert data["role_name"] == "Scientist"
+    assert data["user_id"] == str(test_user.id)
+
+
+@pytest.mark.asyncio
+async def test_get_role_assignments(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test listing role assignments."""
+    from app.models.science import ExperimentRoleAssignment
+
+    experiment = Experiment(
+        name="List Assignment Experiment",
+        project_id=test_project.id,
+        graph={
+            "nodes": [
+                {
+                    "id": "lane-role-1",
+                    "type": "swimLane",
+                    "data": {"label": "Scientist"},
+                }
+            ]
+        },
+        execution_data={},
+    )
+    db_session.add(experiment)
+    await db_session.flush()
+
+    assignment = ExperimentRoleAssignment(
+        experiment_id=experiment.id,
+        lane_node_id="lane-role-1",
+        role_name="Scientist",
+        user_id=test_user.id,
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/science/experiments/{experiment.id}/role-assignments",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "items" in data
+    assert len(data["items"]) == 1
+    assert data["items"][0]["lane_node_id"] == "lane-role-1"
+
+
+@pytest.mark.asyncio
+async def test_update_role_assignment(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    second_user: User,
+    db_session: AsyncSession,
+):
+    """Test updating a role assignment by reassigning to a different user."""
+    experiment = Experiment(
+        name="Update Assignment Experiment",
+        project_id=test_project.id,
+        graph={
+            "nodes": [
+                {
+                    "id": "lane-role-1",
+                    "type": "swimLane",
+                    "data": {"label": "Scientist"},
+                }
+            ]
+        },
+        execution_data={},
+    )
+    db_session.add(experiment)
+    await db_session.flush()
+
+    # Create initial assignment
+    resp = await client.post(
+        f"/science/experiments/{experiment.id}/role-assignments",
+        json={
+            "lane_node_id": "lane-role-1",
+            "role_name": "Scientist",
+            "user_id": str(test_user.id),
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+
+    # Update to assign to second_user
+    resp = await client.post(
+        f"/science/experiments/{experiment.id}/role-assignments",
+        json={
+            "lane_node_id": "lane-role-1",
+            "role_name": "Scientist",
+            "user_id": str(second_user.id),
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["user_id"] == str(second_user.id)
+
+
+@pytest.mark.asyncio
+async def test_delete_role_assignment(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test deleting a role assignment."""
+    from app.models.science import ExperimentRoleAssignment
+
+    experiment = Experiment(
+        name="Delete Assignment Experiment",
+        project_id=test_project.id,
+        graph={
+            "nodes": [
+                {
+                    "id": "lane-role-1",
+                    "type": "swimLane",
+                    "data": {"label": "Scientist"},
+                }
+            ]
+        },
+        execution_data={},
+    )
+    db_session.add(experiment)
+    await db_session.flush()
+
+    assignment = ExperimentRoleAssignment(
+        experiment_id=experiment.id,
+        lane_node_id="lane-role-1",
+        role_name="Scientist",
+        user_id=test_user.id,
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+
+    resp = await client.delete(
+        f"/science/experiments/{experiment.id}/role-assignments/{assignment.id}",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_transition_to_active_with_all_roles_assigned(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test that experiment can transition to ACTIVE when all roles are assigned."""
+    from app.models.science import ExperimentRoleAssignment
+
+    experiment = Experiment(
+        name="Ready to Start",
+        project_id=test_project.id,
+        status="PLANNED",
+        graph={
+            "nodes": [
+                {
+                    "id": "lane-role-1",
+                    "type": "swimLane",
+                    "data": {"label": "Scientist"},
+                }
+            ]
+        },
+        execution_data={},
+    )
+    db_session.add(experiment)
+    await db_session.flush()
+
+    # Assign the role
+    assignment = ExperimentRoleAssignment(
+        experiment_id=experiment.id,
+        lane_node_id="lane-role-1",
+        role_name="Scientist",
+        user_id=test_user.id,
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+
+    # Transition to ACTIVE
+    resp = await client.put(
+        f"/science/experiments/{experiment.id}",
+        json={"status": "ACTIVE"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ACTIVE"
+
+
+@pytest.mark.asyncio
+async def test_transition_to_active_without_all_roles_assigned(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Test that experiment cannot transition to ACTIVE if not all roles are assigned."""
+    experiment = Experiment(
+        name="Not Ready to Start",
+        project_id=test_project.id,
+        status="PLANNED",
+        graph={
+            "nodes": [
+                {
+                    "id": "lane-role-1",
+                    "type": "swimLane",
+                    "data": {"label": "Scientist"},
+                },
+                {
+                    "id": "lane-role-2",
+                    "type": "swimLane",
+                    "data": {"label": "QC"},
+                },
+            ]
+        },
+        execution_data={},
+    )
+    db_session.add(experiment)
+    await db_session.flush()
+
+    # Don't assign any roles
+
+    # Try to transition to ACTIVE - should fail
+    resp = await client.put(
+        f"/science/experiments/{experiment.id}",
+        json={"status": "ACTIVE"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "not all roles have assigned users" in resp.json()["detail"]

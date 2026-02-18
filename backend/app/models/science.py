@@ -88,6 +88,35 @@ class Experiment(Base, UUIDMixin, TimestampMixin):
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="experiments")
     protocol: Mapped["Protocol"] = relationship(back_populates="experiments")
+    role_assignments: Mapped[List["ExperimentRoleAssignment"]] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan"
+    )
+
+
+class ExperimentRoleAssignment(Base, UUIDMixin, TimestampMixin):
+    """
+    Assigns a user to a role (swimlane) within an experiment.
+
+    lane_node_id is the stable identifier from the snapshotted experiment.graph,
+    e.g., "lane-{role_uuid}". This allows assignments to remain valid even if
+    the source ProtocolRole is later deleted.
+    """
+    __tablename__ = "experiment_role_assignments"
+
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    )
+    lane_node_id: Mapped[str] = mapped_column(String, nullable=False)
+    role_name: Mapped[str] = mapped_column(String, nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False
+    )
+
+    # Relationships
+    experiment: Mapped["Experiment"] = relationship(
+        back_populates="role_assignments"
+    )
+    user: Mapped["app.models.iam.User"] = relationship()
 
 
 class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
@@ -121,3 +150,15 @@ class ProtocolRole(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     protocol: Mapped["Protocol"] = relationship(back_populates="roles")
+
+
+class Equipment(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "equipment"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String)
+    equipment_type: Mapped[Optional[str]] = mapped_column(String)
+    location: Mapped[Optional[str]] = mapped_column(String)
