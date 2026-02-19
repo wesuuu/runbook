@@ -16,6 +16,7 @@
 
     import { api } from "$lib/api";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
+    import { getCurrentOrg } from "$lib/auth.svelte";
     import UnitOpNode from "$lib/components/UnitOpNode.svelte";
     import SwimLaneNode from "$lib/components/SwimLaneNode.svelte";
     import Inspector from "$lib/components/Inspector.svelte";
@@ -31,6 +32,8 @@
     let protocol = $state<any>(null);
     let unitOps = $state<any[]>([]);
     let roles = $state<any[]>([]);
+    let orgEquipment = $state<any[]>([]);
+    let equipmentConflicts = $state<Map<string, string[]>>(new Map());
     let loading = $state(true);
     let error = $state<string | null>(null);
     let saving = $state(false);
@@ -46,7 +49,6 @@
     let layout = $state<"horizontal" | "vertical">("horizontal");
     let handleOrientation = $state<"horizontal" | "vertical">("horizontal");
     let timeEnabled = $state(false);
-    let startTime = $state("08:00");
     let pixelsPerHour = $state(200);
 
     // Interaction mode: pan (default) vs select
@@ -64,7 +66,6 @@
             layout,
             handleOrientation,
             timeEnabled,
-            startTime,
             pixelsPerHour,
         });
     });
@@ -73,6 +74,13 @@
     $effect(() => {
         if (lastSavedState && currentState() !== lastSavedState) {
             hasUnsavedChanges = true;
+        }
+    });
+
+    // Detect equipment conflicts when edges or nodes change
+    $effect(() => {
+        if (nodes.length > 0 && edges.length > 0) {
+            detectEquipmentConflicts();
         }
     });
 
@@ -162,6 +170,65 @@
                 return n;
             });
         },
+        onNodeResized(nodeId: string, width: number, height: number) {
+            if (!timeEnabled) return; // free-form resize, no duration sync
+            const sizePx = layout === "horizontal" ? width : height;
+            let minutes = (sizePx / pixelsPerHour) * 60;
+            minutes = Math.round(minutes / 5) * 5; // snap to 5-min
+            minutes = Math.max(5, minutes);         // minimum 5 min
+            // Re-snap the visual size
+            const snappedPx = (minutes / 60) * pixelsPerHour;
+            nodes = nodes.map(n => {
+                if (n.id !== nodeId) return n;
+                return {
+                    ...n,
+                    data: { ...n.data, duration_min: minutes },
+                    width: layout === "horizontal" ? snappedPx : n.width,
+                    height: layout === "vertical" ? snappedPx : n.height,
+                };
+            });
+        },
+        deleteNode(nodeId: string) {
+            const node = nodes.find((n) => n.id === nodeId);
+            if (!node) return;
+            const label = (node.data.label as string) || "this item";
+            const kind = node.type === "swimLane" ? "role lane" : "unit operation";
+            if (!confirm(`Delete ${kind} "${label}"? This cannot be undone.`)) return;
+
+            // Unparent children before removing the node
+            const parent = nodes.find((n) => n.id === nodeId);
+            nodes = nodes
+                .map((n) => {
+                    if (n.parentId === nodeId) {
+                        return {
+                            ...n,
+                            parentId: undefined,
+                            position: {
+                                x: n.position.x + (parent?.position.x || 0),
+                                y: n.position.y + (parent?.position.y || 0),
+                            },
+                        };
+                    }
+                    return n;
+                })
+                .filter((n) => n.id !== nodeId);
+
+            edges = edges.filter(
+                (e) => e.source !== nodeId && e.target !== nodeId,
+            );
+
+            // Clear inspector if the deleted node was selected
+            if (selectedNodeId === nodeId) {
+                selectedNodeId = null;
+            }
+        },
+    });
+
+    setContext("timelineConfig", {
+        get enabled() { return timeEnabled; },
+        get pixelsPerHour() { return pixelsPerHour; },
+        get layout() { return layout; },
+        get snapMinutes() { return 5; },
     });
 
     // Inline name editing
@@ -185,6 +252,18 @@
             ? nodes.find((n) => n.id === selectedNodeId) || null
             : null,
     );
+
+    const hasUnitOpNodes = $derived(nodes.some((n) => n.type === "unitOp"));
+
+    async function previewSop() {
+        if (!protocol) return;
+        await save();
+        const name = protocol.name.replace(/\s+/g, '_');
+        api.downloadBlob(
+            `/science/protocols/${protocol.id}/pdf/sop`,
+            `SOP_Preview_${name}.pdf`
+        );
+    }
 
     // Search
     let searchQuery = $state("");
@@ -284,10 +363,52 @@
         return ids;
     });
 
+    // --- Timeline helpers ---
+    const totalHours = $derived(() => {
+        if (!timeEnabled) return 8;
+        let maxEnd = 0;
+        for (const n of nodes) {
+            if (n.type !== "unitOp") continue;
+            const pos = layout === "horizontal" ? n.position.x : n.position.y;
+            const dur = (n.data.duration_min as number) || 30;
+            const sizePx = (dur / 60) * pixelsPerHour;
+            maxEnd = Math.max(maxEnd, pos + sizePx);
+        }
+        return Math.max(8, Math.ceil(maxEnd / pixelsPerHour) + 1);
+    });
+
+    const snapGridPx = $derived((5 / 60) * pixelsPerHour);
+
+    function applyTimelineSizing() {
+        nodes = nodes.map(n => {
+            if (n.type !== "unitOp") return n;
+            const dur = (n.data.duration_min as number) || 30;
+            const sizePx = (dur / 60) * pixelsPerHour;
+            return {
+                ...n,
+                width: layout === "horizontal" ? sizePx : n.width,
+                height: layout === "vertical" ? sizePx : n.height,
+            };
+        });
+    }
+
+    function clearTimelineSizing() {
+        nodes = nodes.map(n => {
+            if (n.type !== "unitOp") return n;
+            return { ...n, width: undefined, height: undefined };
+        });
+    }
+
     // --- Data Loading ---
     async function loadData() {
         try {
             unitOps = await api.get("/science/unit-ops");
+
+            // Load organization equipment
+            const org = getCurrentOrg();
+            if (org?.id) {
+                orgEquipment = await api.get(`/iam/organizations/${org.id}/equipment`);
+            }
 
             if (id && id !== "new") {
                 protocol = await api.get(`/science/protocols/${id}`);
@@ -300,10 +421,15 @@
                     handleOrientation =
                         protocol.graph.handleOrientation || "horizontal";
                     timeEnabled = protocol.graph.timeEnabled || false;
-                    startTime = protocol.graph.startTime || "08:00";
                     pixelsPerHour = protocol.graph.pixelsPerHour || 200;
+                    detectEquipmentConflicts();
                 }
             }
+            // Apply timeline sizing if loaded with timeline enabled
+            if (timeEnabled) {
+                applyTimelineSizing();
+            }
+
             // Initialize saved state for change tracking
             lastSavedState = JSON.stringify({
                 nodes,
@@ -311,7 +437,6 @@
                 layout,
                 handleOrientation,
                 timeEnabled,
-                startTime,
                 pixelsPerHour,
             });
             hasUnsavedChanges = false;
@@ -390,8 +515,8 @@
                     parentId: n.parentId,
                     zIndex: n.zIndex,
                     data: n.data,
-                    width: n.measured?.width,
-                    height: n.measured?.height,
+                    width: n.width ?? n.measured?.width,
+                    height: n.height ?? n.measured?.height,
                     style: n.style,
                 })),
                 edges: edges.map((e) => ({
@@ -402,7 +527,6 @@
                 layout,
                 handleOrientation,
                 timeEnabled,
-                startTime,
                 pixelsPerHour,
             };
 
@@ -418,7 +542,6 @@
                 layout,
                 handleOrientation,
                 timeEnabled,
-                startTime,
                 pixelsPerHour,
             });
             hasUnsavedChanges = false;
@@ -497,16 +620,28 @@
             }
         }
 
+        // Compute dimensions for timeline sizing
+        let nodeWidth: number | undefined;
+        let nodeHeight: number | undefined;
+        if (timeEnabled) {
+            const sizePx = (30 / 60) * pixelsPerHour; // default 30min
+            if (layout === "horizontal") nodeWidth = sizePx;
+            else nodeHeight = sizePx;
+        }
+
         const newNode: Node = {
             id: crypto.randomUUID(),
             type: "unitOp",
             zIndex: 1,
             position,
             parentId,
+            width: nodeWidth,
+            height: nodeHeight,
             data: {
                 label: op.name,
                 unitOpId: op.id,
                 category: op.category,
+                description: op.description || "",
                 duration_min: 30,
                 params: defaultParams,
                 paramSchema: op.param_schema || {},
@@ -516,28 +651,109 @@
         nodes = [...nodes, newNode];
     }
 
+    // --- Equipment Management ---
+    async function handleCreateEquipment(data: { name: string; description: string; equipment_type: string; location: string }): Promise<any> {
+        const org = getCurrentOrg();
+        if (!org?.id) throw new Error("No organization");
+
+        const newEquipment: any = await api.post(
+            `/iam/organizations/${org.id}/equipment`,
+            {
+                name: data.name,
+                description: data.description,
+                equipment_type: data.equipment_type,
+                location: data.location,
+            }
+        );
+
+        orgEquipment = [...orgEquipment, newEquipment];
+        return newEquipment;
+    }
+
+    // --- Equipment Conflict Detection ---
+    function detectEquipmentConflicts() {
+        const adjacency = new Map<string, Set<string>>();
+        for (const e of edges) {
+            if (!adjacency.has(e.source)) adjacency.set(e.source, new Set());
+            adjacency.get(e.source)!.add(e.target);
+        }
+
+        function reachable(start: string): Set<string> {
+            const visited = new Set<string>();
+            const queue = [start];
+            while (queue.length) {
+                const cur = queue.shift()!;
+                for (const next of adjacency.get(cur) ?? []) {
+                    if (!visited.has(next)) { visited.add(next); queue.push(next); }
+                }
+            }
+            return visited;
+        }
+
+        const unitOpNodes = nodes.filter(n => n.type === "unitOp");
+        const conflicts = new Map<string, string[]>();
+
+        for (let i = 0; i < unitOpNodes.length; i++) {
+            for (let j = i + 1; j < unitOpNodes.length; j++) {
+                const a = unitOpNodes[i], b = unitOpNodes[j];
+                const aReach = reachable(a.id), bReach = reachable(b.id);
+                const concurrent = !aReach.has(b.id) && !bReach.has(a.id);
+                if (!concurrent) continue;
+
+                const aEq = (a.data?.equipment as any[] ?? []);
+                const bEq = (b.data?.equipment as any[] ?? []);
+                for (const ae of aEq) {
+                    if (ae.shareable) continue;
+                    const match = bEq.find((be: any) => be.equipment_id === ae.equipment_id && !be.shareable);
+                    if (match) {
+                        if (!conflicts.has(a.id)) conflicts.set(a.id, []);
+                        if (!conflicts.has(b.id)) conflicts.set(b.id, []);
+                        conflicts.get(a.id)!.push(ae.equipment_id);
+                        conflicts.get(b.id)!.push(ae.equipment_id);
+                    }
+                }
+            }
+        }
+        equipmentConflicts = conflicts;
+    }
+
     // --- Inspector Apply ---
     function handleInspectorApply(
         nodeId: string,
         params: Record<string, any>,
         duration: number,
         description: string,
-    ) {
+        equipment: any[] = [],
+        paramSchema: Record<string, any> = {},
+        position?: { x: number; y: number },
+    ): void {
         nodes = nodes.map((n) => {
             if (n.id === nodeId) {
+                let width = n.width;
+                let height = n.height;
+                if (timeEnabled) {
+                    const sizePx = (duration / 60) * pixelsPerHour;
+                    if (layout === "horizontal") width = sizePx;
+                    else height = sizePx;
+                }
                 return {
                     ...n,
+                    width,
+                    height,
+                    position: position ?? n.position,
                     data: {
                         ...n.data,
                         params,
                         duration_min: duration,
                         description,
+                        equipment,
+                        paramSchema,
                     },
                 };
             }
             return n;
         });
-        selectedNodeId = null;
+        detectEquipmentConflicts();
     }
 
     // --- Roles ---
@@ -658,6 +874,21 @@
         } catch (e: any) {
             console.error("Failed to create unit op:", e);
         }
+    }
+
+    // --- Save as New Unit Op (from Inspector) ---
+    async function handleSaveAsNew(
+        name: string,
+        paramSchema: Record<string, any>,
+        category: string,
+    ): Promise<void> {
+        const created = await api.post('/science/unit-ops', {
+            name,
+            category: category || 'General',
+            description: '',
+            param_schema: paramSchema,
+        });
+        unitOps = [...unitOps, created];
     }
 
     function openCreateModal(category: string) {
@@ -876,6 +1107,15 @@
                     {saveMessage}
                 </p>
             {/if}
+            {#if hasUnitOpNodes}
+                <button
+                    class="preview-sop-btn"
+                    onclick={previewSop}
+                    disabled={!protocol}
+                >
+                    Preview SOP
+                </button>
+            {/if}
             <button
                 class="save-btn"
                 onclick={save}
@@ -971,22 +1211,17 @@
             <button
                 class="toolbar-btn"
                 class:active={timeEnabled}
-                onclick={() => (timeEnabled = !timeEnabled)}
+                onclick={() => {
+                    timeEnabled = !timeEnabled;
+                    if (timeEnabled) {
+                        applyTimelineSizing();
+                    } else {
+                        clearTimelineSizing();
+                    }
+                }}
             >
                 Time: {timeEnabled ? "ON" : "OFF"}
             </button>
-
-            {#if timeEnabled}
-                <div class="toolbar-divider"></div>
-                <label class="toolbar-label">
-                    Start
-                    <input
-                        type="time"
-                        bind:value={startTime}
-                        class="toolbar-time-input"
-                    />
-                </label>
-            {/if}
         </div>
 
         <!-- Branch validation banner -->
@@ -1014,7 +1249,7 @@
         {#if timeEnabled}
             <TimeAxis
                 {layout}
-                {startTime}
+                totalHours={totalHours()}
                 {pixelsPerHour}
                 viewportTransform={viewport}
             />
@@ -1032,9 +1267,12 @@
                 bind:viewport
                 {nodeTypes}
                 fitView
+                elevateNodesOnSelect={false}
                 selectionMode={SelectionMode.Partial}
                 selectionOnDrag={interactionMode === "select"}
                 panOnDrag={interactionMode === "pan"}
+                snapToGrid={timeEnabled}
+                snapGrid={timeEnabled ? [snapGridPx, snapGridPx] : [1, 1]}
             >
                 <Background />
                 <Controls />
@@ -1048,7 +1286,11 @@
         <Inspector
             node={selectedNode}
             allNodes={nodes}
+            {orgEquipment}
+            {equipmentConflicts}
             onApply={handleInspectorApply}
+            onSaveAsNew={handleSaveAsNew}
+            onCreateEquipment={handleCreateEquipment}
             onClose={() => (selectedNodeId = null)}
         />
     {/if}
@@ -1499,6 +1741,29 @@
         color: hsl(0, 84.2%, 60.2%);
     }
 
+    .preview-sop-btn {
+        width: 100%;
+        padding: 9px 16px;
+        background: white;
+        color: hsl(173, 58%, 39%);
+        border: 1px solid hsl(173, 58%, 39%);
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-bottom: 8px;
+    }
+
+    .preview-sop-btn:hover:not(:disabled) {
+        background: hsl(173, 58%, 96%);
+    }
+
+    .preview-sop-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
     .save-btn {
         width: 100%;
         padding: 10px 16px;
@@ -1604,24 +1869,6 @@
         width: 1px;
         height: 20px;
         background: hsl(240, 5.9%, 90%);
-    }
-
-    .toolbar-label {
-        font-size: 11px;
-        color: #475569;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-
-    .toolbar-time-input {
-        padding: 3px 6px;
-        border: 1px solid hsl(240, 5.9%, 90%);
-        border-radius: 4px;
-        font-size: 11px;
-        font-family: "JetBrains Mono", monospace;
-        width: 80px;
     }
 
     .validation-banner {

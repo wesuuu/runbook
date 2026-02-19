@@ -62,9 +62,39 @@ async function request<T>(method: string, endpoint: string, body?: unknown): Pro
     return response.json();
 }
 
+async function downloadBlob(endpoint: string, filename: string): Promise<void> {
+    const headers: HeadersInit = {};
+    const token = getToken();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, { headers });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            goto('/login');
+            throw new ApiError(401, 'Session expired');
+        }
+        throw new ApiError(response.status, 'Download failed');
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
 export const api = {
     get: <T>(endpoint: string) => request<T>('GET', endpoint),
     post: <T>(endpoint: string, body: unknown) => request<T>('POST', endpoint, body),
     put: <T>(endpoint: string, body: unknown) => request<T>('PUT', endpoint, body),
     delete: <T>(endpoint: string) => request<T>('DELETE', endpoint),
+    downloadBlob,
 };

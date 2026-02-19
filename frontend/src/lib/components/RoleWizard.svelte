@@ -174,7 +174,7 @@
             <div
                 class="bg-teal-600 h-2 rounded-full transition-all duration-300"
                 style="width: {progress.percent}%"
-            />
+            ></div>
         </div>
     </div>
 
@@ -279,7 +279,7 @@
                         placeholder="Enter any notes or observations"
                         rows="4"
                         class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                    />
+                    ></textarea>
                 </div>
 
                 <!-- Media Input Buttons (Stubbed) -->

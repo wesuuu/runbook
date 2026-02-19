@@ -1,13 +1,15 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, require_permission
 from app.db.session import get_db
+from app.services.pdf import generate_sop_pdf, generate_batch_record_pdf
 from app.models.iam import (
     User,
     ObjectType,
@@ -357,6 +359,341 @@ async def update_protocol_role(
     await db.commit()
     await db.refresh(role)
     return role
+
+
+def _topo_sort_nodes(
+    component_ids: set[str],
+    edges: list[dict],
+    node_map: dict[str, dict],
+) -> list[dict]:
+    """Topologically sort nodes within a connected component.
+
+    Falls back to x-position ordering for nodes at the same depth
+    or when cycles exist.
+    """
+    directed: dict[str, list[str]] = {nid: [] for nid in component_ids}
+    in_degree: dict[str, int] = {nid: 0 for nid in component_ids}
+    for e in edges:
+        src, tgt = e.get("source"), e.get("target")
+        if src in component_ids and tgt in component_ids:
+            directed[src].append(tgt)
+            in_degree[tgt] = in_degree.get(tgt, 0) + 1
+
+    # Kahn's algorithm — use x-position to break ties
+    def _x(nid: str) -> float:
+        return node_map[nid].get("position", {}).get("x", 0)
+
+    queue = sorted(
+        [nid for nid in component_ids if in_degree[nid] == 0],
+        key=_x,
+    )
+    result: list[str] = []
+    while queue:
+        curr = queue.pop(0)
+        result.append(curr)
+        for neighbor in directed[curr]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                queue.append(neighbor)
+                queue.sort(key=_x)
+
+    # Remaining nodes (cycles) — append sorted by x-position
+    visited = set(result)
+    for nid in sorted(component_ids - visited, key=_x):
+        result.append(nid)
+
+    return [node_map[nid] for nid in result]
+
+
+def _find_connected_components(
+    unit_ops: list[dict],
+    edges: list[dict],
+) -> list[list[dict]]:
+    """Group unit-op nodes into connected components based on edges.
+
+    Each component is topologically sorted by edge direction,
+    with x-position as tie-breaker.
+    """
+    node_map = {n["id"]: n for n in unit_ops}
+    unit_op_ids = set(node_map.keys())
+
+    # Build undirected adjacency for component discovery
+    adj: dict[str, set[str]] = {nid: set() for nid in unit_op_ids}
+    for e in edges:
+        src, tgt = e.get("source"), e.get("target")
+        if src in unit_op_ids and tgt in unit_op_ids:
+            adj[src].add(tgt)
+            adj[tgt].add(src)
+
+    # BFS to find components
+    visited: set[str] = set()
+    components: list[list[dict]] = []
+    for nid in unit_op_ids:
+        if nid in visited:
+            continue
+        comp_ids: set[str] = set()
+        queue = [nid]
+        while queue:
+            curr = queue.pop(0)
+            if curr in visited:
+                continue
+            visited.add(curr)
+            comp_ids.add(curr)
+            for neighbor in adj[curr]:
+                if neighbor not in visited:
+                    queue.append(neighbor)
+        sorted_nodes = _topo_sort_nodes(comp_ids, edges, node_map)
+        components.append(sorted_nodes)
+
+    # Sort components by the x-position of their first node
+    components.sort(
+        key=lambda c: c[0].get("position", {}).get("x", 0) if c else 0,
+    )
+    return components
+
+
+def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
+    """Extract roles and ordered steps from a protocol/experiment graph.
+
+    Returns:
+        (roles_with_steps, flat_steps) where roles_with_steps is a list
+        of dicts with role_name and steps, and flat_steps is all steps
+        with role_name attached (for batch record).
+    """
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+
+    unit_ops = sorted(
+        [n for n in nodes if n.get("type") == "unitOp"],
+        key=lambda n: n.get("position", {}).get("x", 0),
+    )
+    swim_lanes = {
+        n["id"]: n for n in nodes if n.get("type") == "swimLane"
+    }
+
+    # Check if any unitOps are parented to swimlanes
+    any_parented = any(
+        n.get("parentId") and n["parentId"] in swim_lanes
+        for n in unit_ops
+    )
+
+    def _step_dict(node: dict, role_name: str) -> dict:
+        data = node.get("data", {})
+        return {
+            "id": node["id"],
+            "name": data.get("label", "Unnamed"),
+            "description": data.get("description", ""),
+            "params": data.get("params"),
+            "param_schema": data.get("paramSchema"),
+            "duration_min": data.get("duration_min"),
+            "role_name": role_name,
+        }
+
+    roles_with_steps: list[dict] = []
+    flat_steps: list[dict] = []
+
+    if any_parented and swim_lanes:
+        # Group by swimlane
+        for lane_id, lane in swim_lanes.items():
+            lane_name = lane.get("data", {}).get("label", "Unknown Role")
+            lane_steps = [
+                _step_dict(n, lane_name)
+                for n in unit_ops
+                if n.get("parentId") == lane_id
+            ]
+            if lane_steps:
+                roles_with_steps.append({
+                    "role_name": lane_name,
+                    "steps": lane_steps,
+                })
+                flat_steps.extend(lane_steps)
+
+        # Include orphaned steps (not parented to any lane)
+        orphans = [
+            n for n in unit_ops
+            if not n.get("parentId") or n["parentId"] not in swim_lanes
+        ]
+        if orphans:
+            orphan_steps = [_step_dict(n, "Unassigned") for n in orphans]
+            roles_with_steps.append({
+                "role_name": "Unassigned",
+                "steps": orphan_steps,
+            })
+            flat_steps.extend(orphan_steps)
+    else:
+        # No swimlane parenting — group by connected components
+        components = _find_connected_components(unit_ops, edges)
+        multi_process = len(components) > 1
+
+        for comp_nodes in components:
+            first_label = comp_nodes[0].get("data", {}).get(
+                "label", "Process"
+            ) if comp_nodes else "Process"
+            process_name = first_label if multi_process else ""
+            comp_steps = [_step_dict(n, process_name) for n in comp_nodes]
+            roles_with_steps.append({
+                "role_name": process_name,
+                "steps": comp_steps,
+            })
+            flat_steps.extend(comp_steps)
+
+    return roles_with_steps, flat_steps
+
+
+# --- Protocol PDF ---
+
+@router.get("/protocols/{protocol_id}/pdf/sop")
+async def get_protocol_sop_pdf(
+    protocol_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate an SOP PDF preview from a protocol's graph."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Protocol).where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    graph = protocol.graph or {}
+    roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
+
+    pdf_bytes = generate_sop_pdf(
+        protocol_name=protocol.name,
+        protocol_description=protocol.description or "",
+        experiment_name=None,
+        roles_with_steps=roles_with_steps,
+    )
+
+    filename = f"SOP_Preview_{protocol.name}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# --- Experiment PDFs ---
+
+@router.get("/experiments/{experiment_id}/pdf/sop")
+async def get_experiment_sop_pdf(
+    experiment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate an SOP PDF from an experiment's snapshot graph."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.EXPERIMENT,
+        experiment_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Experiment).where(Experiment.id == experiment_id)
+    )
+    experiment = result.scalar_one_or_none()
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    # Get protocol name and description
+    protocol_name = "Unknown Protocol"
+    protocol_description = ""
+    if experiment.protocol_id:
+        result = await db.execute(
+            select(Protocol).where(Protocol.id == experiment.protocol_id)
+        )
+        proto = result.scalar_one_or_none()
+        if proto:
+            protocol_name = proto.name
+            protocol_description = proto.description or ""
+
+    graph = experiment.graph or {}
+    roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
+
+    pdf_bytes = generate_sop_pdf(
+        protocol_name=protocol_name,
+        protocol_description=protocol_description,
+        experiment_name=experiment.name,
+        roles_with_steps=roles_with_steps,
+    )
+
+    filename = f"SOP_{experiment.name}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/experiments/{experiment_id}/pdf/batch-record")
+async def get_experiment_batch_record_pdf(
+    experiment_id: UUID,
+    filled: bool = Query(False),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a batch record PDF from an experiment's snapshot graph."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.EXPERIMENT,
+        experiment_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Experiment).where(Experiment.id == experiment_id)
+    )
+    experiment = result.scalar_one_or_none()
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    # Get protocol name
+    protocol_name = "Unknown Protocol"
+    if experiment.protocol_id:
+        result = await db.execute(
+            select(Protocol).where(Protocol.id == experiment.protocol_id)
+        )
+        proto = result.scalar_one_or_none()
+        if proto:
+            protocol_name = proto.name
+
+    graph = experiment.graph or {}
+    roles_with_steps, flat_steps = _parse_graph_roles_and_steps(graph)
+
+    # Build roles list for sign-off
+    roles = [
+        {"id": r["role_name"], "name": r["role_name"]}
+        for r in roles_with_steps
+        if r["role_name"]
+    ]
+    if not roles:
+        roles = [{"id": "all", "name": "All Steps"}]
+
+    pdf_bytes = generate_batch_record_pdf(
+        protocol_name=protocol_name,
+        experiment_name=experiment.name,
+        roles=roles,
+        steps=flat_steps,
+        filled=filled,
+        execution_data=experiment.execution_data if filled else None,
+    )
+
+    suffix = "COMPLETED" if filled else "BLANK"
+    filename = f"BatchRecord_{experiment.name}_{suffix}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/protocols/{protocol_id}/roles/{role_id}")

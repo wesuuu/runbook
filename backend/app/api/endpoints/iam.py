@@ -18,6 +18,7 @@ from app.models.iam import (
     PermissionLevel,
     Role,
 )
+from app.models.science import Equipment
 from app.schemas.iam import (
     OrganizationCreate,
     OrganizationResponse,
@@ -32,7 +33,13 @@ from app.schemas.iam import (
     PermissionResponse,
     UserSearchResponse,
 )
+from app.schemas.science import (
+    EquipmentCreate,
+    EquipmentResponse,
+    EquipmentUpdate,
+)
 from app.services.permissions import check_permission
+from app.models.execution import AuditLog
 
 router = APIRouter()
 
@@ -53,6 +60,24 @@ async def _require_org_admin(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Org admin required",
+        )
+    return membership
+
+
+async def _require_org_member(
+    db: AsyncSession, user_id: UUID, org_id: UUID
+) -> OrganizationMember:
+    result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.organization_id == org_id,
+        )
+    )
+    membership = result.scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not an org member",
         )
     return membership
 
@@ -582,3 +607,142 @@ async def list_permissions(
         )
     )
     return result.scalars().all()
+
+
+# --- Equipment ---
+
+
+@router.get(
+    "/organizations/{org_id}/equipment",
+    response_model=List[EquipmentResponse],
+)
+async def list_equipment(
+    org_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all equipment in an organization."""
+    await _require_org_member(db, user.id, org_id)
+
+    result = await db.execute(
+        select(Equipment).where(Equipment.organization_id == org_id)
+    )
+    return result.scalars().all()
+
+
+@router.post(
+    "/organizations/{org_id}/equipment",
+    response_model=EquipmentResponse,
+    status_code=201,
+)
+async def create_equipment(
+    org_id: UUID,
+    body: EquipmentCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create equipment in an organization. Any org member can create."""
+    await _require_org_member(db, user.id, org_id)
+
+    equipment = Equipment(
+        organization_id=org_id,
+        name=body.name,
+        description=body.description,
+        equipment_type=body.equipment_type,
+        location=body.location,
+    )
+    db.add(equipment)
+    await db.flush()
+
+    # Log to audit trail
+    audit = AuditLog(
+        entity_type="equipment",
+        entity_id=equipment.id,
+        action="create",
+        actor_id=user.id,
+        changes={"name": body.name},
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(equipment)
+    return equipment
+
+
+@router.put(
+    "/equipment/{equipment_id}",
+    response_model=EquipmentResponse,
+)
+async def update_equipment(
+    equipment_id: UUID,
+    body: EquipmentUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update equipment. Any org member can update."""
+    result = await db.execute(
+        select(Equipment).where(Equipment.id == equipment_id)
+    )
+    equipment = result.scalar_one_or_none()
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipment not found")
+
+    await _require_org_member(db, user.id, equipment.organization_id)
+
+    changes = {}
+    if body.name is not None:
+        changes["name"] = body.name
+        equipment.name = body.name
+    if body.description is not None:
+        changes["description"] = body.description
+        equipment.description = body.description
+    if body.equipment_type is not None:
+        changes["equipment_type"] = body.equipment_type
+        equipment.equipment_type = body.equipment_type
+    if body.location is not None:
+        changes["location"] = body.location
+        equipment.location = body.location
+
+    # Log to audit trail
+    if changes:
+        audit = AuditLog(
+            entity_type="equipment",
+            entity_id=equipment.id,
+            action="update",
+            actor_id=user.id,
+            changes=changes,
+        )
+        db.add(audit)
+
+    await db.commit()
+    await db.refresh(equipment)
+    return equipment
+
+
+@router.delete("/equipment/{equipment_id}")
+async def delete_equipment(
+    equipment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete equipment. Any org member can delete."""
+    result = await db.execute(
+        select(Equipment).where(Equipment.id == equipment_id)
+    )
+    equipment = result.scalar_one_or_none()
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipment not found")
+
+    await _require_org_member(db, user.id, equipment.organization_id)
+
+    # Log to audit trail before deleting
+    audit = AuditLog(
+        entity_type="equipment",
+        entity_id=equipment.id,
+        action="delete",
+        actor_id=user.id,
+        changes={"name": equipment.name},
+    )
+    db.add(audit)
+    await db.delete(equipment)
+    await db.commit()
+    return {"ok": True}

@@ -199,33 +199,45 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Buffer Preparation",
             "category": "Media Prep",
-            "description": "Prepare buffer solution with specified components",
+            "description": "Prepare {{volume_L}}L of {{buffer_name}} by dissolving {{components}} in {{solvent}}. Adjust to pH {{pH_target}} (+/- {{pH_tolerance}}) using {{pH_agent}}. Store at {{storage_temp_c}}°C.",
             "param_schema": {
                 "type": "object",
                 "properties": {
-                    "buffer_type": {"type": "string"},
-                    "volume_L": {"type": "number"},
-                    "pH_target": {"type": "number"},
+                    "buffer_name": {"type": "string", "title": "Buffer Name", "default": "PBS"},
+                    "volume_L": {"type": "number", "title": "Final Volume (L)", "default": 10},
+                    "components": {"type": "string", "title": "Components", "default": "NaCl, KCl, Na2HPO4, KH2PO4"},
+                    "concentration_mM": {"type": "number", "title": "Target Concentration (mM)", "default": 137},
+                    "pH_target": {"type": "number", "title": "Target pH", "default": 7.4},
+                    "pH_tolerance": {"type": "number", "title": "pH Tolerance (+/-)", "default": 0.1},
+                    "pH_agent": {"type": "string", "title": "pH Adjustment Agent", "default": "NaOH / HCl"},
+                    "solvent": {"type": "string", "title": "Solvent", "default": "WFI (Water for Injection)"},
+                    "storage_temp_c": {"type": "number", "title": "Storage Temperature (C)", "default": 4},
                 },
             },
         },
         {
             "name": "Media Preparation",
             "category": "Media Prep",
-            "description": "Prepare cell culture media",
+            "description": "Reconstitute {{volume_L}}L of {{media_name}} using {{basal_medium}}. Add {{supplements}}, adjust to pH {{pH_target}}, verify osmolality at {{osmolality_mOsm}} mOsm/kg. Sterile filter: {{filter_after}}. Store at {{storage_temp_c}}°C.",
             "param_schema": {
                 "type": "object",
                 "properties": {
-                    "media_type": {"type": "string"},
-                    "volume_L": {"type": "number"},
-                    "supplements": {"type": "array", "items": {"type": "string"}},
+                    "media_name": {"type": "string", "title": "Media Name", "default": "DMEM/F-12"},
+                    "volume_L": {"type": "number", "title": "Final Volume (L)", "default": 10},
+                    "basal_medium": {"type": "string", "title": "Basal Medium", "default": "DMEM/F-12 powder"},
+                    "supplements": {"type": "string", "title": "Supplements", "default": "10% FBS, 1% L-glutamine, 1% Pen/Strep"},
+                    "glucose_g_L": {"type": "number", "title": "Glucose Concentration (g/L)", "default": 4.5},
+                    "pH_target": {"type": "number", "title": "Target pH", "default": 7.2},
+                    "osmolality_mOsm": {"type": "number", "title": "Target Osmolality (mOsm/kg)", "default": 300},
+                    "filter_after": {"type": "boolean", "title": "Sterile Filter After Prep", "default": True},
+                    "storage_temp_c": {"type": "number", "title": "Storage Temperature (C)", "default": 4},
                 },
             },
         },
         {
             "name": "Seeding",
             "category": "Cell Culture",
-            "description": "Seed cells into bioreactor or vessel",
+            "description": "Seed cells at {{cell_density}} cells/mL into {{vessel_type}} with {{volume_mL}}mL working volume.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -238,7 +250,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Incubation",
             "category": "Cell Culture",
-            "description": "Incubate cells under controlled conditions",
+            "description": "Incubate at {{temperature_C}}°C with {{CO2_percent}}% CO2 at {{rpm}} RPM for {{duration_hours}} hours.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -252,7 +264,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Cell Counting",
             "category": "Cell Culture",
-            "description": "Count cells and assess viability",
+            "description": "Count cells using {{method}} method with {{dilution_factor}}x dilution factor.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -264,7 +276,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Transfection",
             "category": "Cell Culture",
-            "description": "Transfect cells with DNA/RNA",
+            "description": "Transfect cells using {{reagent}} with {{dna_amount_ug}}ug DNA via {{method}} method.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -277,7 +289,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Harvest",
             "category": "Cell Culture",
-            "description": "Harvest cells from culture vessel",
+            "description": "Harvest cells using {{method}} method, centrifuge at {{centrifuge_rcf}}xg.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -289,7 +301,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Centrifugation",
             "category": "Purification",
-            "description": "Separate components by centrifugal force",
+            "description": "Centrifuge at {{rcf_g}}xg for {{duration_min}} minutes at {{temperature_C}}°C.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -302,7 +314,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Filtration",
             "category": "Purification",
-            "description": "Filter solution through membrane",
+            "description": "Filter {{volume_L}}L through {{filter_type}} membrane ({{filter_size_um}}um pore size).",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -315,7 +327,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Chromatography",
             "category": "Purification",
-            "description": "Purify target molecule via chromatography",
+            "description": "Purify using {{column_type}} column with {{resin}} resin at {{flow_rate_mL_min}} mL/min flow rate.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -328,7 +340,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "pH Adjustment",
             "category": "Reaction",
-            "description": "Adjust pH of solution",
+            "description": "Adjust solution to pH {{target_pH}} using {{acid_or_base}}.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -340,7 +352,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Mixing",
             "category": "Reaction",
-            "description": "Mix components together",
+            "description": "Mix at {{speed_rpm}} RPM for {{duration_min}} minutes at {{temperature_C}}°C.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -353,7 +365,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Sample Collection",
             "category": "Analytics",
-            "description": "Collect sample for analysis",
+            "description": "Collect {{volume_mL}}mL sample into {{container_type}}, store at {{storage_temp_C}}°C.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -366,7 +378,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Assay",
             "category": "Analytics",
-            "description": "Run analytical assay on sample",
+            "description": "Run {{assay_type}} assay using {{method}} method.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -378,7 +390,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Fill",
             "category": "Fill/Finish",
-            "description": "Fill product into final containers",
+            "description": "Fill {{fill_volume_mL}}mL into {{container_type}} at {{fill_speed}} speed.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -391,7 +403,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Lyophilization",
             "category": "Fill/Finish",
-            "description": "Freeze-dry product",
+            "description": "Lyophilize at {{shelf_temp_C}}°C shelf temperature, {{chamber_pressure_mTorr}} mTorr chamber pressure for {{duration_hours}} hours.",
             "param_schema": {
                 "type": "object",
                 "properties": {
@@ -404,7 +416,7 @@ async def seed_unit_ops(db: AsyncSession):
         {
             "name": "Visual Inspection",
             "category": "Quality Control",
-            "description": "Visually inspect product for defects",
+            "description": "Perform {{inspection_type}} visual inspection. Acceptance criteria: {{acceptance_criteria}}.",
             "param_schema": {
                 "type": "object",
                 "properties": {
