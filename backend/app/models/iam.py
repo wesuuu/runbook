@@ -23,12 +23,13 @@ class PrincipalType(str, Enum):
 class ObjectType(str, Enum):
     PROJECT = "PROJECT"
     PROTOCOL = "PROTOCOL"
-    EXPERIMENT = "EXPERIMENT"
+    RUN = "RUN"
 
 
 class PermissionLevel(str, Enum):
     VIEW = "VIEW"
     EDIT = "EDIT"
+    APPROVE = "APPROVE"
     ADMIN = "ADMIN"
 
 
@@ -36,7 +37,8 @@ class PermissionLevel(str, Enum):
 PERMISSION_RANK = {
     PermissionLevel.VIEW: 1,
     PermissionLevel.EDIT: 2,
-    PermissionLevel.ADMIN: 3,
+    PermissionLevel.APPROVE: 3,
+    PermissionLevel.ADMIN: 4,
 }
 
 

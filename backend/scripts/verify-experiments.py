@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Verification script for experiments feature.
-Tests the complete workflow: create project -> protocol -> experiment
+Verification script for runs feature.
+Tests the complete workflow: create project -> protocol -> run
 """
 
 import asyncio
@@ -21,7 +21,7 @@ from app.models.iam import (
     ObjectType,
     PermissionLevel,
 )
-from app.models.science import Project, Protocol, Experiment, ProtocolRole
+from app.models.science import Project, Protocol, Run, ProtocolRole, RunRoleAssignment
 from app.core.security import hash_password
 from sqlalchemy import select
 
@@ -31,7 +31,7 @@ async def main():
     db = AsyncSessionLocal()
 
     print("=" * 60)
-    print("EXPERIMENTS FEATURE VERIFICATION TEST")
+    print("RUNS FEATURE VERIFICATION TEST")
     print("=" * 60)
 
     try:
@@ -125,28 +125,26 @@ async def main():
         print(f"   ✓ Protocol created: {protocol.id}")
         print(f"   ✓ Role created: {role.id}")
 
-        # 5. Create experiment from protocol
-        print("\n5. Creating experiment from protocol...")
-        experiment = Experiment(
-            name="Test Experiment",
+        # 5. Create run from protocol
+        print("\n5. Creating run from protocol...")
+        run_obj = Run(
+            name="Test Run",
             project_id=project.id,
             protocol_id=protocol.id,
             status="PLANNED",
             graph=protocol.graph.copy(),
             execution_data={},
         )
-        db.add(experiment)
+        db.add(run_obj)
         await db.flush()
-        print(f"   ✓ Experiment created: {experiment.id}")
-        print(f"   ✓ Status: {experiment.status}")
-        print(f"   ✓ Graph nodes: {len(experiment.graph.get('nodes', []))}")
+        print(f"   ✓ Run created: {run_obj.id}")
+        print(f"   ✓ Status: {run_obj.status}")
+        print(f"   ✓ Graph nodes: {len(run_obj.graph.get('nodes', []))}")
 
         # 6. Test role assignment
         print("\n6. Testing role assignment...")
-        from app.models.science import ExperimentRoleAssignment
-
-        assignment = ExperimentRoleAssignment(
-            experiment_id=experiment.id,
+        assignment = RunRoleAssignment(
+            run_id=run_obj.id,
             lane_node_id="lane-1",
             role_name="Scientist",
             user_id=user.id,
@@ -160,18 +158,18 @@ async def main():
         # 7. Verify all relationships
         print("\n7. Verifying relationships...")
 
-        # Check experiment is linked to protocol
+        # Check run is linked to protocol
         result = await db.execute(
-            select(Experiment).where(Experiment.id == experiment.id)
+            select(Run).where(Run.id == run_obj.id)
         )
-        exp = result.scalar_one()
-        assert exp.protocol_id == protocol.id
-        print("   ✓ Experiment linked to protocol")
+        fetched_run = result.scalar_one()
+        assert fetched_run.protocol_id == protocol.id
+        print("   ✓ Run linked to protocol")
 
         # Check role assignments
         result = await db.execute(
-            select(ExperimentRoleAssignment).where(
-                ExperimentRoleAssignment.experiment_id == experiment.id
+            select(RunRoleAssignment).where(
+                RunRoleAssignment.run_id == run_obj.id
             )
         )
         assignments = result.scalars().all()
@@ -194,13 +192,13 @@ async def main():
         print(f"  Organization ID:  {org.id}")
         print(f"  Project ID:       {project.id}")
         print(f"  Protocol ID:      {protocol.id}")
-        print(f"  Experiment ID:    {experiment.id}")
+        print(f"  Run ID:           {run_obj.id}")
         print(f"  Role ID:          {role.id}")
         print(f"  Assignment ID:    {assignment.id}")
         print("\nYou can now test in the browser with:")
         print(f"  1. Login with: test-xxx@example.com / testpass123")
         print(f"  2. Navigate to the project")
-        print(f"  3. Create a new experiment (this should work without 500 error)")
+        print(f"  3. Create a new run (this should work without 500 error)")
 
     except Exception as e:
         print(f"\n❌ ERROR: {str(e)}")

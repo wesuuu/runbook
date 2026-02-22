@@ -132,7 +132,7 @@ def _build_param_sentence(
 
 def generate_sop_pdf(
     protocol_name: str,
-    experiment_name: str | None,
+    run_name: str | None,
     roles_with_steps: list[dict[str, Any]],
     protocol_description: str = "",
 ) -> bytes:
@@ -140,7 +140,7 @@ def generate_sop_pdf(
 
     Args:
         protocol_name: Name of the protocol.
-        experiment_name: Optional experiment name (None for protocol preview).
+        run_name: Optional run name (None for protocol preview).
         roles_with_steps: List of dicts, each with:
             - role_name: str (empty string if no roles)
             - steps: list of dicts with keys:
@@ -159,61 +159,69 @@ def generate_sop_pdf(
     w = pdf.epw  # effective page width
 
     # ── Title ──
-    pdf.set_font("Helvetica", "B", 22)
+    pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(15, 23, 42)
-    pdf.cell(0, 12, "Standard Operating Procedure", align="C")
-    pdf.ln(16)
+    pdf.cell(0, 10, "Standard Operating Procedure", align="C")
+    pdf.ln(12)
 
     # ── Document info ──
     half = w / 2
 
-    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_font("Helvetica", "B", 10)
     pdf.set_text_color(51, 65, 85)
-    pdf.cell(half, 7, f"Protocol: {protocol_name}", align="L")
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(half, 7, f"Date: {today}", align="R")
-    pdf.ln(8)
+    pdf.cell(half, 6, f"Protocol: {protocol_name}", align="L")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(half, 6, f"Date: {today}", align="R")
+    pdf.ln(7)
 
-    if experiment_name:
-        pdf.set_font("Helvetica", "B", 11)
+    if run_name:
+        pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(51, 65, 85)
-        pdf.cell(half, 7, f"Experiment: {experiment_name}", align="L")
-        pdf.ln(8)
+        pdf.cell(half, 6, f"Run: {run_name}", align="L")
+        pdf.ln(7)
 
     # ── Protocol description ──
     if protocol_description:
-        pdf.ln(4)
+        pdf.ln(2)
         pdf.set_font("Helvetica", "", 10)
         pdf.set_text_color(71, 85, 105)
         pdf.multi_cell(w, 5, protocol_description)
-        pdf.ln(4)
+        pdf.ln(2)
 
     # Divider
     pdf.set_draw_color(200, 200, 200)
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + w, pdf.get_y())
-    pdf.ln(8)
+    pdf.ln(6)
+
+    # Check if roles are real named roles (swimlane-based) vs unnamed
+    # process groups. Only force page breaks between named roles.
+    has_named_roles = any(
+        rd.get("role_name") for rd in roles_with_steps
+    )
 
     # ── Steps by role ──
+    step_counter = 0
     for role_idx, role_data in enumerate(roles_with_steps):
         role_name = role_data["role_name"]
         steps = role_data["steps"]
 
-        # Page break between roles (not before the first)
-        if role_idx > 0:
+        # Page break between named roles only (not unnamed process groups)
+        if role_idx > 0 and has_named_roles and role_name:
             pdf.add_page()
 
-        # Role header (for multi-role docs)
-        if multi_role and role_name:
-            pdf.set_font("Helvetica", "B", 16)
+        # Role header (for multi-role docs with named roles)
+        if multi_role and role_name and has_named_roles:
+            pdf.set_font("Helvetica", "B", 14)
             pdf.set_text_color(15, 23, 42)
-            pdf.cell(0, 10, role_name)
-            pdf.ln(12)
+            pdf.cell(0, 8, role_name)
+            pdf.ln(10)
             pdf.set_draw_color(200, 200, 200)
             pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + w, pdf.get_y())
-            pdf.ln(8)
+            pdf.ln(6)
 
-        # Numbered steps
-        for idx, step in enumerate(steps, start=1):
+        # Numbered steps (continuous numbering across groups)
+        for step in steps:
+            step_counter += 1
             name = step.get("name", "Unnamed Step")
             description = step.get("description", "")
             params = step.get("params")
@@ -221,10 +229,10 @@ def generate_sop_pdf(
             duration = step.get("duration_min")
 
             # Step number and name
-            pdf.set_font("Helvetica", "B", 12)
+            pdf.set_font("Helvetica", "B", 11)
             pdf.set_text_color(15, 23, 42)
-            pdf.cell(0, 7, f"{idx}. {name}")
-            pdf.ln(8)
+            pdf.cell(0, 6, f"{step_counter}. {name}")
+            pdf.ln(7)
 
             # Render template placeholders in description
             has_templates = description and "{{" in description
@@ -237,7 +245,7 @@ def generate_sop_pdf(
                 pdf.set_font("Helvetica", "", 10)
                 pdf.set_text_color(51, 65, 85)
                 pdf.multi_cell(w - 8, 5, description)
-                pdf.ln(3)
+                pdf.ln(2)
 
             # Parameters as a prose sentence (skip when templates
             # already inlined the values into the description)
@@ -248,7 +256,7 @@ def generate_sop_pdf(
                     pdf.set_font("Helvetica", "", 10)
                     pdf.set_text_color(51, 65, 85)
                     pdf.multi_cell(w - 8, 5, param_text)
-                    pdf.ln(3)
+                    pdf.ln(2)
 
             # Duration as prose
             if duration:
@@ -256,20 +264,20 @@ def generate_sop_pdf(
                 pdf.set_font("Helvetica", "I", 10)
                 pdf.set_text_color(100, 116, 139)
                 pdf.cell(0, 5, f"Allow {duration} minutes for this step.")
-                pdf.ln(5)
+                pdf.ln(4)
 
-            pdf.ln(5)
+            pdf.ln(3)
 
     # ── Signature block ──
-    pdf.ln(10)
+    pdf.ln(6)
     pdf.set_draw_color(200, 200, 200)
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + w, pdf.get_y())
-    pdf.ln(8)
+    pdf.ln(6)
 
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(15, 23, 42)
-    pdf.cell(0, 7, "Approvals")
-    pdf.ln(12)
+    pdf.cell(0, 6, "Approvals")
+    pdf.ln(10)
 
     sig_w = (w - 10) / 2
     y_start = pdf.get_y()
@@ -297,9 +305,84 @@ def generate_sop_pdf(
     return bytes(pdf.output())
 
 
+def _wrap_text(pdf: FPDF, text: str, max_width: float) -> list[str]:
+    """Split text into lines that fit within max_width."""
+    if not text:
+        return [""]
+    if pdf.get_string_width(text) <= max_width:
+        return [text]
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        test = f"{current} {word}".strip() if current else word
+        if pdf.get_string_width(test) <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            # If a single word is too wide, add it anyway (will be truncated)
+            current = word
+    if current:
+        lines.append(current)
+    return lines if lines else [""]
+
+
+def _draw_table_row(
+    pdf: FPDF,
+    col_widths: list[float],
+    row_vals: list[str],
+    line_h: float = 4,
+    min_h: float = 8,
+    aligns: list[str] | None = None,
+    fill: bool = False,
+) -> None:
+    """Draw a table row with text wrapping fully contained in cells."""
+    if aligns is None:
+        aligns = ["C"] * len(row_vals)
+
+    pad = 1  # 1mm internal padding
+
+    # Pre-wrap all cells to determine the row height
+    wrapped: list[list[str]] = []
+    max_lines = 1
+    for i, val in enumerate(row_vals):
+        lines = _wrap_text(pdf, val, col_widths[i] - pad * 2)
+        wrapped.append(lines)
+        max_lines = max(max_lines, len(lines))
+    row_h = max(min_h, max_lines * line_h + pad * 2)
+
+    x_start = pdf.l_margin
+    y_start = pdf.get_y()
+
+    # Page break if row doesn't fit
+    page_bottom = pdf.h - pdf.b_margin
+    if y_start + row_h > page_bottom:
+        pdf.add_page()
+        y_start = pdf.get_y()
+
+    # Draw cell borders (and optional fill), then render text line by line
+    for i, lines in enumerate(wrapped):
+        x = x_start + sum(col_widths[:i])
+        cell_w = col_widths[i]
+
+        # Border + fill
+        if fill:
+            pdf.rect(x, y_start, cell_w, row_h, style="DF")
+        else:
+            pdf.rect(x, y_start, cell_w, row_h, style="D")
+
+        # Render each wrapped line using cell() — no cursor side-effects
+        for j, line in enumerate(lines):
+            pdf.set_xy(x + pad, y_start + pad + j * line_h)
+            pdf.cell(cell_w - pad * 2, line_h, line, border=0, align=aligns[i])
+
+    pdf.set_xy(x_start, y_start + row_h)
+
+
 def generate_batch_record_pdf(
     protocol_name: str,
-    experiment_name: str,
+    run_name: str,
     roles: list[dict[str, Any]],
     steps: list[dict[str, Any]],
     filled: bool = False,
@@ -309,7 +392,7 @@ def generate_batch_record_pdf(
 
     Args:
         protocol_name: Name of the protocol.
-        experiment_name: Name of the experiment.
+        run_name: Name of the run.
         roles: List of dicts with keys: id, name, color.
         steps: List of dicts with keys:
             id, name, description, role_name, params, duration_min.
@@ -336,37 +419,58 @@ def generate_batch_record_pdf(
     half = w / 2
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_text_color(51, 65, 85)
-    pdf.cell(half, 6, f"Experiment: {experiment_name}", align="L")
+    pdf.cell(half, 6, f"Run: {run_name}", align="L")
     pdf.cell(half, 6, f"Date: {today}", align="R")
     pdf.ln(7)
     pdf.cell(half, 6, f"Protocol: {protocol_name}", align="L")
     pdf.cell(half, 6, "Lot/Batch #: _______________", align="R")
     pdf.ln(14)
 
-    # Table header
-    col_widths = [
-        w * 0.05,   # #
-        w * 0.14,   # Role
-        w * 0.16,   # Step Name
-        w * 0.25,   # Description
-        w * 0.16,   # Value/Result
-        w * 0.10,   # Units
-        w * 0.14,   # Initials
-    ]
-    headers = ["#", "Role", "Step Name", "Description", "Value / Result",
-               "Units", "Initials"]
+    # Determine if any step has a real role
+    has_roles = any(
+        s.get("role_name") and s["role_name"] not in ("", "--", "Unassigned")
+        for s in steps
+    )
+
+    # Build columns dynamically — omit Role if no roles
+    if has_roles:
+        col_widths = [
+            w * 0.05,   # #
+            w * 0.13,   # Role
+            w * 0.17,   # Step Name
+            w * 0.30,   # Description
+            w * 0.20,   # Value/Result
+            w * 0.15,   # Initials
+        ]
+        headers = ["#", "Role", "Step", "Description", "Value / Result",
+                   "Initials"]
+        header_aligns = ["C"] * 6
+    else:
+        col_widths = [
+            w * 0.05,   # #
+            w * 0.20,   # Step Name
+            w * 0.40,   # Description
+            w * 0.20,   # Value/Result
+            w * 0.15,   # Initials
+        ]
+        headers = ["#", "Step", "Description", "Value / Result",
+                   "Initials"]
+        header_aligns = ["C"] * 5
 
     pdf.set_fill_color(30, 41, 59)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 8)
 
-    for i, hdr in enumerate(headers):
-        pdf.cell(col_widths[i], 8, hdr, border=1, fill=True, align="C")
-    pdf.ln()
+    _draw_table_row(
+        pdf, col_widths, headers,
+        line_h=4, min_h=8,
+        aligns=header_aligns, fill=True,
+    )
 
     # Table rows
     pdf.set_text_color(51, 65, 85)
     pdf.set_font("Helvetica", "", 8)
+    pdf.set_draw_color(200, 200, 200)
 
     exec_data = execution_data or {}
 
@@ -391,49 +495,55 @@ def generate_batch_record_pdf(
             else:
                 full_desc = desc or param_summary or "--"
 
-        row_vals = [
-            str(idx),
-            step.get("role_name", "--"),
-            step.get("name", "--"),
-            full_desc,
-            row_data.get("value", "________________") if filled
-            else "________________",
-            row_data.get("units", "____") if filled else "____",
-            row_data.get("initials", "____") if filled else "____",
-        ]
+        if has_roles:
+            row_vals = [
+                str(idx),
+                step.get("role_name", "") or "",
+                step.get("name", "--"),
+                full_desc,
+                row_data.get("value", "") if filled else "",
+                row_data.get("initials", "") if filled else "",
+            ]
+            aligns = ["C", "C", "L", "L", "C", "C"]
+        else:
+            row_vals = [
+                str(idx),
+                step.get("name", "--"),
+                full_desc,
+                row_data.get("value", "") if filled else "",
+                row_data.get("initials", "") if filled else "",
+            ]
+            aligns = ["C", "L", "L", "C", "C"]
 
-        # Calculate row height based on description length
-        desc_text = row_vals[3]
-        desc_lines = max(1, len(desc_text) // 30 + 1)
-        row_h = max(8, desc_lines * 5 + 3)
-
-        for i, val in enumerate(row_vals):
-            pdf.cell(col_widths[i], row_h, val, border=1, align="C")
-        pdf.ln()
+        _draw_table_row(
+            pdf, col_widths, row_vals,
+            line_h=4, min_h=8, aligns=aligns,
+        )
 
     pdf.ln(12)
 
-    # Role sign-off section
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.set_text_color(15, 23, 42)
-    pdf.cell(0, 7, "Role Sign-Off")
-    pdf.ln(10)
+    # Role sign-off section (only if roles exist)
+    if roles:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 7, "Role Sign-Off")
+        pdf.ln(10)
 
-    pdf.set_font("Helvetica", "", 9)
-    pdf.set_text_color(51, 65, 85)
-
-    for role in roles:
-        role_name = role.get("name", "Unknown")
-        pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(0, 6, role_name)
-        pdf.ln(12)
-        y = pdf.get_y()
-        pdf.line(pdf.l_margin, y, pdf.l_margin + 80, y)
-        pdf.ln(2)
-        pdf.set_font("Helvetica", "", 7)
-        pdf.set_text_color(100, 100, 100)
-        pdf.cell(0, 4, "Signature / Date")
-        pdf.ln(8)
+        pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(51, 65, 85)
+
+        for role in roles:
+            role_name = role.get("name", "Unknown")
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(0, 6, role_name)
+            pdf.ln(12)
+            y = pdf.get_y()
+            pdf.line(pdf.l_margin, y, pdf.l_margin + 80, y)
+            pdf.ln(2)
+            pdf.set_font("Helvetica", "", 7)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(0, 4, "Signature / Date")
+            pdf.ln(8)
+            pdf.set_text_color(51, 65, 85)
 
     return bytes(pdf.output())

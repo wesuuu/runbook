@@ -16,7 +16,7 @@ from app.models.iam import (
     PermissionLevel,
     Role,
 )
-from app.models.science import Project, Protocol, Experiment
+from app.models.science import Project, Protocol, Run
 from app.core.security import hash_password
 from app.services.permissions import check_permission
 
@@ -254,7 +254,7 @@ async def test_protocol_inherits_project(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_experiment_inherits_project(db_session: AsyncSession):
+async def test_run_inherits_project(db_session: AsyncSession):
     org, user = await _setup_org_and_user(db_session, is_admin=False)
     project = await _create_project(db_session, org)
 
@@ -266,18 +266,18 @@ async def test_experiment_inherits_project(db_session: AsyncSession):
         permission_level=PermissionLevel.EDIT.value,
     ))
 
-    experiment = Experiment(
-        name="Test Experiment",
+    run_obj = Run(
+        name="Test Run",
         project_id=project.id,
         graph={},
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     assert await check_permission(
         db_session, user.id,
-        ObjectType.EXPERIMENT, experiment.id,
+        ObjectType.RUN, run_obj.id,
         PermissionLevel.EDIT,
     ) is True
 

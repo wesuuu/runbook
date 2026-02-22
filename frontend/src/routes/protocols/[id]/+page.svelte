@@ -22,6 +22,7 @@
     import Inspector from "$lib/components/Inspector.svelte";
     import TimeAxis from "$lib/components/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/CreateUnitOpModal.svelte";
+    import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
 
     const id = $derived($page.params.id);
 
@@ -53,6 +54,19 @@
 
     // Interaction mode: pan (default) vs select
     let interactionMode = $state<"pan" | "select">("pan");
+
+    // Versioning + approval state
+    let protocolStatus = $state<string>("DRAFT");
+    let versionNumber = $state(0);
+    let showVersionHistory = $state(false);
+    let versions = $state<any[]>([]);
+    let versionsLoading = $state(false);
+    let approvalRequired = $state(false);
+
+    // Version browsing (prev/next navigation)
+    let previewingVersion = $state<number | null>(null);
+    let previewLoading = $state(false);
+    let savedStateBeforePreview = $state<string | null>(null);
 
     // Track unsaved changes
     let hasUnsavedChanges = $state(false);
@@ -413,6 +427,16 @@
             if (id && id !== "new") {
                 protocol = await api.get(`/science/protocols/${id}`);
                 roles = protocol.roles || [];
+                protocolStatus = protocol.status || "DRAFT";
+                versionNumber = protocol.version_number || 0;
+
+                // Fetch project settings for approval requirement
+                try {
+                    const proj = await api.get(`/projects/${protocol.project_id}`);
+                    approvalRequired = proj.settings?.require_protocol_approval || false;
+                } catch {
+                    // Ignore — approval not required if project fetch fails
+                }
 
                 if (protocol.graph && protocol.graph.nodes) {
                     nodes = protocol.graph.nodes;
@@ -503,6 +527,35 @@
     // --- Save Protocol ---
     async function save() {
         if (!protocol) return;
+
+        // Block save while previewing old version
+        if (previewingVersion !== null) {
+            saveMessage = "Exit version preview before saving";
+            setTimeout(() => (saveMessage = null), 3000);
+            return;
+        }
+
+        // Block save if pending approval
+        if (protocolStatus === "PENDING_APPROVAL") {
+            saveMessage = "Cannot save while pending approval";
+            setTimeout(() => (saveMessage = null), 3000);
+            return;
+        }
+
+        // Warn if approved — saving reverts to draft
+        if (protocolStatus === "APPROVED") {
+            if (!confirm("This protocol is approved. Saving will revert it to Draft status. Continue?")) {
+                return;
+            }
+        }
+
+        // Ask to overwrite if a version already exists
+        if (versionNumber > 0) {
+            if (!confirm(`This will save as v${versionNumber + 1} (overwriting v${versionNumber}). Continue?`)) {
+                return;
+            }
+        }
+
         saving = true;
         saveMessage = null;
 
@@ -530,10 +583,12 @@
                 pixelsPerHour,
             };
 
-            await api.put(`/science/protocols/${protocol.id}`, {
+            const updated: any = await api.put(`/science/protocols/${protocol.id}`, {
                 graph: graphData,
             });
-            saveMessage = "Saved!";
+            protocolStatus = updated.status || "DRAFT";
+            versionNumber = updated.version_number || 0;
+            saveMessage = `Saved (v${versionNumber})`;
             setTimeout(() => (saveMessage = null), 2000);
             // Mark as saved
             lastSavedState = JSON.stringify({
@@ -549,6 +604,151 @@
             saveMessage = `Failed: ${e.message}`;
         } finally {
             saving = false;
+        }
+    }
+
+    // --- Version History ---
+    async function loadVersions() {
+        if (!protocol) return;
+        versionsLoading = true;
+        try {
+            versions = await api.get(`/science/protocols/${protocol.id}/versions`);
+        } catch (e: any) {
+            console.error("Failed to load versions:", e);
+        } finally {
+            versionsLoading = false;
+        }
+    }
+
+    async function revertToVersion(versionNum: number) {
+        if (!protocol) return;
+        if (!confirm(`Revert to version ${versionNum}? This creates a new version with the old graph.`)) return;
+
+        try {
+            const updated: any = await api.post(
+                `/science/protocols/${protocol.id}/revert/${versionNum}`,
+            );
+            // Reload everything from the response
+            protocol = updated;
+            protocolStatus = updated.status || "DRAFT";
+            versionNumber = updated.version_number || 0;
+
+            if (updated.graph && updated.graph.nodes) {
+                nodes = updated.graph.nodes;
+                edges = updated.graph.edges || [];
+                layout = updated.graph.layout || "horizontal";
+                handleOrientation = updated.graph.handleOrientation || "horizontal";
+                timeEnabled = updated.graph.timeEnabled || false;
+                pixelsPerHour = updated.graph.pixelsPerHour || 200;
+            }
+            if (timeEnabled) applyTimelineSizing();
+
+            lastSavedState = JSON.stringify({
+                nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour,
+            });
+            hasUnsavedChanges = false;
+
+            saveMessage = `Reverted to v${versionNum}`;
+            setTimeout(() => (saveMessage = null), 2000);
+
+            // Refresh version list
+            await loadVersions();
+        } catch (e: any) {
+            saveMessage = `Revert failed: ${e.message}`;
+        }
+    }
+
+    function toggleVersionHistory() {
+        showVersionHistory = !showVersionHistory;
+        if (showVersionHistory) loadVersions();
+    }
+
+    // --- Version Browsing (prev/next arrows) ---
+    async function browseVersion(direction: 'prev' | 'next') {
+        if (!protocol || previewLoading) return;
+
+        // Determine which version to load
+        const currentPreview = previewingVersion ?? versionNumber;
+        const targetVersion = direction === 'prev' ? currentPreview - 1 : currentPreview + 1;
+
+        // Going forward past the current version exits preview
+        if (targetVersion > versionNumber) {
+            exitPreview();
+            return;
+        }
+        if (targetVersion < 1) return;
+
+        previewLoading = true;
+        try {
+            // Save current state before first preview
+            if (previewingVersion === null) {
+                savedStateBeforePreview = JSON.stringify({
+                    nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour,
+                });
+            }
+
+            const ver: any = await api.get(
+                `/science/protocols/${protocol.id}/versions/${targetVersion}`,
+            );
+
+            if (ver.graph && ver.graph.nodes) {
+                nodes = ver.graph.nodes;
+                edges = ver.graph.edges || [];
+                layout = ver.graph.layout || 'horizontal';
+                handleOrientation = ver.graph.handleOrientation || 'horizontal';
+                timeEnabled = ver.graph.timeEnabled || false;
+                pixelsPerHour = ver.graph.pixelsPerHour || 200;
+            }
+            if (timeEnabled) applyTimelineSizing();
+            previewingVersion = targetVersion;
+        } catch (e: any) {
+            saveMessage = `Failed to load v${targetVersion}: ${e.message}`;
+            setTimeout(() => (saveMessage = null), 2000);
+        } finally {
+            previewLoading = false;
+        }
+    }
+
+    function exitPreview() {
+        if (savedStateBeforePreview) {
+            const saved = JSON.parse(savedStateBeforePreview);
+            nodes = saved.nodes;
+            edges = saved.edges;
+            layout = saved.layout || 'horizontal';
+            handleOrientation = saved.handleOrientation || 'horizontal';
+            timeEnabled = saved.timeEnabled || false;
+            pixelsPerHour = saved.pixelsPerHour || 200;
+            if (timeEnabled) applyTimelineSizing();
+        }
+        previewingVersion = null;
+        savedStateBeforePreview = null;
+    }
+
+    async function restorePreviewedVersion() {
+        if (previewingVersion === null) return;
+        const vNum = previewingVersion;
+        // Clear preview state first so revert operates cleanly
+        previewingVersion = null;
+        savedStateBeforePreview = null;
+        await revertToVersion(vNum);
+    }
+
+    // --- Approval ---
+    async function submitForApproval() {
+        if (!protocol) return;
+        if (hasUnsavedChanges) {
+            if (!confirm("You have unsaved changes. Save first before submitting?")) return;
+            await save();
+        }
+        try {
+            const updated: any = await api.post(
+                `/science/protocols/${protocol.id}/submit-for-approval`,
+            );
+            protocolStatus = updated.status || "PENDING_APPROVAL";
+            saveMessage = "Submitted for approval";
+            setTimeout(() => (saveMessage = null), 2000);
+        } catch (e: any) {
+            saveMessage = `Submit failed: ${e.message}`;
         }
     }
 
@@ -570,6 +770,18 @@
     function onDrop(event: DragEvent) {
         event.preventDefault();
         if (!event.dataTransfer) return;
+
+        if (previewingVersion !== null) {
+            saveMessage = "Exit version preview before editing";
+            setTimeout(() => (saveMessage = null), 3000);
+            return;
+        }
+
+        if (protocolStatus === "PENDING_APPROVAL") {
+            saveMessage = "Cannot edit while pending approval";
+            setTimeout(() => (saveMessage = null), 3000);
+            return;
+        }
 
         const opData = event.dataTransfer.getData("application/svelteflow");
         if (!opData) return;
@@ -940,6 +1152,23 @@
             {/if}
 
             {#if protocol}
+                <!-- Status badge -->
+                {#if approvalRequired || protocolStatus !== "DRAFT"}
+                    <div class="status-row">
+                        <span
+                            class="status-badge"
+                            class:draft={protocolStatus === "DRAFT"}
+                            class:pending={protocolStatus === "PENDING_APPROVAL"}
+                            class:approved={protocolStatus === "APPROVED"}
+                        >
+                            {protocolStatus === "PENDING_APPROVAL" ? "Pending Approval" : protocolStatus === "APPROVED" ? "Approved" : "Draft"}
+                        </span>
+                        {#if versionNumber > 0}
+                            <span class="version-tag">v{versionNumber}</span>
+                        {/if}
+                    </div>
+                {/if}
+
                 {#if editingDescription}
                     <textarea
                         bind:value={descriptionInput}
@@ -1102,7 +1331,7 @@
             {#if saveMessage}
                 <p
                     class="save-msg"
-                    class:error={saveMessage.startsWith("Failed")}
+                    class:error={saveMessage.startsWith("Failed") || saveMessage.startsWith("Cannot")}
                 >
                     {saveMessage}
                 </p>
@@ -1119,10 +1348,19 @@
             <button
                 class="save-btn"
                 onclick={save}
-                disabled={saving || !protocol}
+                disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || previewingVersion !== null}
             >
-                {saving ? "Saving..." : "Save Protocol"}
+                {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked (Pending)" : "Save Protocol"}
             </button>
+            {#if approvalRequired && protocolStatus === "DRAFT"}
+                <button
+                    class="submit-approval-btn"
+                    onclick={submitForApproval}
+                    disabled={!protocol}
+                >
+                    Submit for Approval
+                </button>
+            {/if}
         </div>
     </aside>
 
@@ -1222,7 +1460,55 @@
             >
                 Time: {timeEnabled ? "ON" : "OFF"}
             </button>
+
+            <div class="toolbar-divider"></div>
+
+            <button
+                class="toolbar-btn"
+                onclick={toggleVersionHistory}
+            >
+                History{versionNumber > 0 ? ` (v${versionNumber})` : ""}
+            </button>
+
+            {#if versionNumber > 0}
+                <div class="version-nav">
+                    <button
+                        class="version-nav-btn"
+                        onclick={() => browseVersion('prev')}
+                        disabled={previewLoading || (previewingVersion ?? versionNumber) <= 1}
+                        title="Previous version"
+                    >&#x2039;</button>
+                    <span class="version-nav-label">
+                        {#if previewingVersion !== null}
+                            v{previewingVersion}
+                        {:else}
+                            v{versionNumber}
+                        {/if}
+                    </span>
+                    <button
+                        class="version-nav-btn"
+                        onclick={() => browseVersion('next')}
+                        disabled={previewLoading || previewingVersion === null}
+                        title="Next version"
+                    >&#x203A;</button>
+                </div>
+            {/if}
         </div>
+
+        <!-- Version preview banner -->
+        {#if previewingVersion !== null}
+            <div class="preview-banner">
+                <span>Viewing <strong>v{previewingVersion}</strong> of {versionNumber} (read-only preview)</span>
+                <div class="preview-banner-actions">
+                    <button class="preview-banner-btn restore" onclick={restorePreviewedVersion}>
+                        Restore this version
+                    </button>
+                    <button class="preview-banner-btn exit" onclick={exitPreview}>
+                        Back to current
+                    </button>
+                </div>
+            </div>
+        {/if}
 
         <!-- Branch validation banner -->
         {#if branchValidationErrors().length > 0}
@@ -1302,6 +1588,17 @@
         onClose={() => (showCreateModal = false)}
         onCreate={handleCreateUnitOp}
     />
+
+    <!-- ============= VERSION HISTORY DRAWER ============= -->
+    {#if showVersionHistory}
+        <VersionHistoryDrawer
+            {versions}
+            currentVersion={versionNumber}
+            loading={versionsLoading}
+            onRevert={revertToVersion}
+            onClose={() => (showVersionHistory = false)}
+        />
+    {/if}
 </div>
 
 <style>
@@ -1871,6 +2168,100 @@
         background: hsl(240, 5.9%, 90%);
     }
 
+    .version-nav {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        border: 1px solid hsl(240, 5.9%, 90%);
+        border-radius: 6px;
+        background: white;
+        overflow: hidden;
+    }
+
+    .version-nav-btn {
+        padding: 4px 8px;
+        border: none;
+        background: transparent;
+        font-size: 16px;
+        font-weight: 600;
+        color: #475569;
+        cursor: pointer;
+        line-height: 1;
+        transition: background 0.15s;
+    }
+
+    .version-nav-btn:hover:not(:disabled) {
+        background: #f1f5f9;
+    }
+
+    .version-nav-btn:disabled {
+        color: #cbd5e1;
+        cursor: not-allowed;
+    }
+
+    .version-nav-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: #334155;
+        min-width: 24px;
+        text-align: center;
+        font-family: monospace;
+    }
+
+    .preview-banner {
+        position: absolute;
+        top: 56px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 16px;
+        background: #eff6ff;
+        border: 1px solid #3b82f6;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+        font-size: 12px;
+        color: #1e40af;
+        white-space: nowrap;
+    }
+
+    .preview-banner-actions {
+        display: flex;
+        gap: 6px;
+    }
+
+    .preview-banner-btn {
+        padding: 4px 10px;
+        border-radius: 5px;
+        border: none;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 0.15s;
+    }
+
+    .preview-banner-btn.restore {
+        background: hsl(173, 58%, 39%);
+        color: white;
+    }
+
+    .preview-banner-btn.restore:hover {
+        background: hsl(173, 58%, 33%);
+    }
+
+    .preview-banner-btn.exit {
+        background: white;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+
+    .preview-banner-btn.exit:hover {
+        background: #f8fafc;
+    }
+
     .validation-banner {
         position: absolute;
         top: 56px;
@@ -1937,5 +2328,69 @@
         to {
             transform: rotate(360deg);
         }
+    }
+
+    /* Status badge */
+    .status-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+    }
+
+    .status-badge {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .status-badge.draft {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+
+    .status-badge.pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .status-badge.approved {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .version-tag {
+        font-size: 10px;
+        font-weight: 600;
+        color: #94a3b8;
+        font-family: monospace;
+    }
+
+    /* Submit for approval button */
+    .submit-approval-btn {
+        width: 100%;
+        padding: 9px 16px;
+        background: white;
+        color: #92400e;
+        border: 1px solid #f59e0b;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-top: 8px;
+        font-family: inherit;
+    }
+
+    .submit-approval-btn:hover:not(:disabled) {
+        background: #fffbeb;
+    }
+
+    .submit-approval-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 </style>

@@ -71,6 +71,8 @@ class ProtocolUpdate(BaseModel):
 class ProtocolResponse(ProtocolBase):
     id: UUID
     project_id: UUID
+    status: str = "DRAFT"
+    version_number: int = 0
     roles: List[ProtocolRoleResponse] = []
     created_at: datetime
     updated_at: datetime
@@ -78,31 +80,59 @@ class ProtocolResponse(ProtocolBase):
     class Config:
         from_attributes = True
 
-# Experiment Schemas
-class ExperimentStatus(str, Enum):
+
+# Protocol Version Schemas
+class ProtocolVersionListItem(BaseModel):
+    id: UUID
+    version_number: int
+    name: str
+    change_summary: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ProtocolVersionResponse(ProtocolVersionListItem):
+    protocol_id: UUID
+    graph: Dict[str, Any] = Field(default_factory=dict)
+    description: Optional[str] = None
+    created_by_id: Optional[UUID] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Protocol Approval Schemas
+class ProtocolApprovalAction(BaseModel):
+    comment: Optional[str] = None
+
+# Run Schemas
+class RunStatus(str, Enum):
     PLANNED = "PLANNED"
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
     ARCHIVED = "ARCHIVED"
 
-class ExperimentBase(BaseModel):
+class RunBase(BaseModel):
     name: str
-    status: ExperimentStatus = ExperimentStatus.PLANNED
+    status: RunStatus = RunStatus.PLANNED
     graph: Dict[str, Any] = Field(default_factory=dict)
     execution_data: Dict[str, Any] = Field(default_factory=dict)
 
-class ExperimentCreate(BaseModel):
+class RunCreate(BaseModel):
     name: str
     project_id: UUID
     protocol_id: Optional[UUID] = None
 
-class ExperimentUpdate(BaseModel):
+class RunUpdate(BaseModel):
     name: Optional[str] = None
-    status: Optional[ExperimentStatus] = None
+    status: Optional[RunStatus] = None
     graph: Optional[Dict[str, Any]] = None
     execution_data: Optional[Dict[str, Any]] = None
 
-class ExperimentResponse(ExperimentBase):
+class RunResponse(RunBase):
     id: UUID
     project_id: UUID
     protocol_id: Optional[UUID]
@@ -112,26 +142,26 @@ class ExperimentResponse(ExperimentBase):
     class Config:
         from_attributes = True
 
-# Experiment Role Assignment Schemas
-class ExperimentRoleAssignmentBase(BaseModel):
+# Run Role Assignment Schemas
+class RunRoleAssignmentBase(BaseModel):
     lane_node_id: str
     role_name: str
     user_id: UUID
 
-class ExperimentRoleAssignmentCreate(ExperimentRoleAssignmentBase):
+class RunRoleAssignmentCreate(RunRoleAssignmentBase):
     pass
 
-class ExperimentRoleAssignmentResponse(ExperimentRoleAssignmentBase):
+class RunRoleAssignmentResponse(RunRoleAssignmentBase):
     id: UUID
-    experiment_id: UUID
+    run_id: UUID
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
 
-class ExperimentRoleAssignmentListResponse(BaseModel):
-    items: List[ExperimentRoleAssignmentResponse] = []
+class RunRoleAssignmentListResponse(BaseModel):
+    items: List[RunRoleAssignmentResponse] = []
 
 # Equipment Schemas
 class EquipmentBase(BaseModel):

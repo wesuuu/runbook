@@ -12,7 +12,7 @@ from app.models.iam import (
     PermissionLevel,
     PERMISSION_RANK,
 )
-from app.models.science import Project, Protocol, Experiment
+from app.models.science import Project, Protocol, Run
 
 
 def _meets_level(
@@ -45,11 +45,11 @@ async def _get_org_id_for_object(
         )
         return result.scalar_one_or_none()
 
-    if object_type == ObjectType.EXPERIMENT:
+    if object_type == ObjectType.RUN:
         result = await db.execute(
             select(Project.organization_id)
-            .join(Experiment, Experiment.project_id == Project.id)
-            .where(Experiment.id == object_id)
+            .join(Run, Run.project_id == Project.id)
+            .where(Run.id == object_id)
         )
         return result.scalar_one_or_none()
 
@@ -61,7 +61,7 @@ async def _get_parent_project_id(
     object_type: ObjectType,
     object_id: UUID,
 ) -> UUID | None:
-    """Get the parent project_id for a protocol or experiment."""
+    """Get the parent project_id for a protocol or run."""
     if object_type == ObjectType.PROTOCOL:
         result = await db.execute(
             select(Protocol.project_id).where(
@@ -70,10 +70,10 @@ async def _get_parent_project_id(
         )
         return result.scalar_one_or_none()
 
-    if object_type == ObjectType.EXPERIMENT:
+    if object_type == ObjectType.RUN:
         result = await db.execute(
-            select(Experiment.project_id).where(
-                Experiment.id == object_id
+            select(Run.project_id).where(
+                Run.id == object_id
             )
         )
         return result.scalar_one_or_none()
@@ -105,7 +105,7 @@ async def check_permission(
     1. Org admin → full access to everything in that org
     2. Individual permission on object → use it (overrides team)
     3. Team permissions on object → use highest across user's teams
-    4. Protocol/Experiment → inherit from parent Project
+    4. Protocol/Run → inherit from parent Project
     5. No match → deny
     """
     # 1. Check org admin
@@ -157,8 +157,8 @@ async def check_permission(
             )
             return highest >= PERMISSION_RANK[required_level]
 
-    # 4. Inherit from parent project for protocols/experiments
-    if object_type in (ObjectType.PROTOCOL, ObjectType.EXPERIMENT):
+    # 4. Inherit from parent project for protocols/runs
+    if object_type in (ObjectType.PROTOCOL, ObjectType.RUN):
         project_id = await _get_parent_project_id(
             db, object_type, object_id
         )

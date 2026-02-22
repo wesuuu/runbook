@@ -22,20 +22,37 @@
 
     let project = $state<any>(null);
     let protocols = $state<any[]>([]);
-    let experiments = $state<any[]>([]);
+    let runs = $state<any[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
 
     // -- Tab State --
-    let activeTab = $state<'experiments' | 'protocols' | 'settings'>('experiments');
+    let activeTab = $state<'runs' | 'protocols' | 'activity' | 'settings'>('runs');
 
     // -- Search --
     let searchQuery = $state('');
 
-    // -- Experiment Modal --
-    let showExperimentModal = $state(false);
-    let newExperimentName = $state('');
+    // -- Run Modal --
+    let showRunModal = $state(false);
+    let newRunName = $state('');
     let selectedProtocolId = $state<string | null>(null);
+
+    // -- Activity State --
+    let activityItems = $state<any[]>([]);
+    let activityTotal = $state(0);
+    let activityOffset = $state(0);
+    let activityLoading = $state(false);
+    let activityLoaded = $state(false);
+    const activityLimit = 50;
+
+    // -- Settings State --
+    let requireApproval = $state(false);
+    let approvers = $state<any[]>([]);
+    let orgMembers = $state<any[]>([]);
+    let settingsLoaded = $state(false);
+    let settingsSaving = $state(false);
+    let settingsMessage = $state<string | null>(null);
+    let newApproverUserId = $state<string>('');
 
     // -- Form State for "New Project" mode --
     let form = $state({ name: '', description: '', organization_id: '' });
@@ -56,15 +73,19 @@
         );
     });
 
-    const filteredExperiments = $derived(() => {
-        if (!searchQuery.trim()) return experiments;
+    const filteredRuns = $derived(() => {
+        if (!searchQuery.trim()) return runs;
         const q = searchQuery.toLowerCase();
-        return experiments.filter(
-            (e) =>
-                e.name.toLowerCase().includes(q) ||
-                (e.status && e.status.toLowerCase().includes(q)),
+        return runs.filter(
+            (r) =>
+                r.name.toLowerCase().includes(q) ||
+                (r.status && r.status.toLowerCase().includes(q)),
         );
     });
+
+    const showProtocolStatus = $derived(
+        project?.settings?.require_protocol_approval || false,
+    );
 
     function shortId(idStr: string): string {
         return idStr.slice(0, 8).toUpperCase();
@@ -124,6 +145,152 @@
         }
     }
 
+    function actionVerb(action: string): string {
+        switch (action) {
+            case 'CREATE': return 'created';
+            case 'UPDATE': return 'updated';
+            case 'DELETE': return 'deleted';
+            case 'ARCHIVE': return 'archived';
+            default: return action.toLowerCase();
+        }
+    }
+
+    function actionColor(action: string): string {
+        switch (action) {
+            case 'CREATE': return 'bg-emerald-500';
+            case 'UPDATE': return 'bg-blue-500';
+            case 'DELETE': return 'bg-red-500';
+            default: return 'bg-slate-400';
+        }
+    }
+
+    function entityBadgeClasses(entityType: string): string {
+        switch (entityType) {
+            case 'Project': return 'bg-purple-50 text-purple-600 border-purple-200';
+            case 'Protocol': return 'bg-sky-50 text-sky-600 border-sky-200';
+            case 'Run': return 'bg-amber-50 text-amber-600 border-amber-200';
+            default: return 'bg-slate-50 text-slate-600 border-slate-200';
+        }
+    }
+
+    function changedKeys(changes: Record<string, any>): string[] {
+        return Object.keys(changes).filter(
+            (k) => k !== 'graph' && k !== 'execution_data' && k !== 'version_number' && k !== 'reverted_to_version',
+        );
+    }
+
+    function versionSummary(item: any): string | null {
+        if (!item.changes) return null;
+        const vn = item.changes.version_number;
+        const revertedFrom = item.changes.reverted_to_version;
+        if (revertedFrom != null && vn != null) {
+            return `Reverted to v${revertedFrom} → saved as v${vn}`;
+        }
+        if (vn != null) {
+            return `v${vn}`;
+        }
+        return null;
+    }
+
+    async function loadActivity(offset: number = 0) {
+        activityLoading = true;
+        try {
+            const data: any = await api.get(
+                `/projects/${id}/activity?offset=${offset}&limit=${activityLimit}`,
+            );
+            activityItems = data.items;
+            activityTotal = data.total;
+            activityOffset = data.offset;
+            activityLoaded = true;
+        } catch (e: any) {
+            console.error('Failed to load activity:', e);
+        } finally {
+            activityLoading = false;
+        }
+    }
+
+    async function loadSettings() {
+        if (settingsLoaded || !project) return;
+        try {
+            requireApproval = project.settings?.require_protocol_approval || false;
+            approvers = await api.get(`/projects/${id}/approvers`);
+
+            // Load org members for the approver dropdown
+            const members = await api.get(`/science/projects/${id}/members`);
+            orgMembers = members as any[];
+
+            settingsLoaded = true;
+        } catch (e: any) {
+            console.error('Failed to load settings:', e);
+        }
+    }
+
+    async function saveSettings() {
+        if (!project) return;
+        settingsSaving = true;
+        settingsMessage = null;
+        try {
+            const updated: any = await api.put(`/projects/${id}`, {
+                settings: {
+                    ...project.settings,
+                    require_protocol_approval: requireApproval,
+                },
+            });
+            project = updated;
+            settingsMessage = 'Settings saved';
+            setTimeout(() => (settingsMessage = null), 2000);
+        } catch (e: any) {
+            settingsMessage = `Failed: ${e.message}`;
+        } finally {
+            settingsSaving = false;
+        }
+    }
+
+    async function addApprover() {
+        if (!newApproverUserId) return;
+        try {
+            const entry: any = await api.post(`/projects/${id}/approvers`, {
+                principal_type: 'USER',
+                principal_id: newApproverUserId,
+            });
+            approvers = [...approvers, entry];
+            newApproverUserId = '';
+        } catch (e: any) {
+            settingsMessage = `Failed: ${e.message}`;
+            setTimeout(() => (settingsMessage = null), 3000);
+        }
+    }
+
+    async function removeApprover(permId: string) {
+        try {
+            await api.delete(`/projects/${id}/approvers/${permId}`);
+            approvers = approvers.filter((a: any) => a.id !== permId);
+        } catch (e: any) {
+            console.error('Failed to remove approver:', e);
+        }
+    }
+
+    function protocolStatusClasses(status: string): string {
+        switch (status?.toUpperCase()) {
+            case 'APPROVED':
+                return 'bg-emerald-50 text-emerald-600 border border-emerald-200';
+            case 'PENDING_APPROVAL':
+                return 'bg-amber-50 text-amber-600 border border-amber-200';
+            case 'DRAFT':
+            default:
+                return 'bg-slate-100 text-slate-500 border border-slate-200';
+        }
+    }
+
+    function protocolStatusLabel(status: string): string {
+        switch (status?.toUpperCase()) {
+            case 'APPROVED': return 'Approved';
+            case 'PENDING_APPROVAL': return 'Pending';
+            case 'DRAFT':
+            default: return 'Draft';
+        }
+    }
+
     onMount(() => {
         if (id === 'new') {
             loadCreateData();
@@ -140,12 +307,12 @@
             const [p, protos, exps] = await Promise.all([
                 api.get(`/projects/${id}`),
                 api.get(`/science/projects/${id}/protocols`),
-                api.get(`/science/projects/${id}/experiments`),
+                api.get(`/science/projects/${id}/runs`),
             ]);
 
             project = p;
             protocols = protos as any[];
-            experiments = exps as any[];
+            runs = exps as any[];
         } catch (e: any) {
             error = e.message;
         } finally {
@@ -176,22 +343,22 @@
         }
     }
 
-    async function createExperiment() {
-        if (!newExperimentName) return;
+    async function createRun() {
+        if (!newRunName) return;
 
         try {
             const payload: any = {
-                name: newExperimentName,
+                name: newRunName,
                 project_id: project.id,
             };
             if (selectedProtocolId) {
                 payload.protocol_id = selectedProtocolId;
             }
-            const newExp: any = await api.post('/science/experiments', payload);
-            showExperimentModal = false;
-            newExperimentName = '';
+            const newRun: any = await api.post('/science/runs', payload);
+            showRunModal = false;
+            newRunName = '';
             selectedProtocolId = null;
-            goto(`/experiments/${newExp.id}`);
+            goto(`/runs/${newRun.id}`);
         } catch (e: any) {
             console.error(e);
         }
@@ -293,7 +460,7 @@
                     <div class="flex items-center gap-3 pb-5">
                         <div class="flex items-center gap-1.5 text-[13px] text-slate-500 font-medium">
                             <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
-                            <span>{experiments.length} Active Experiment{experiments.length !== 1 ? 's' : ''}</span>
+                            <span>{runs.length} Active Run{runs.length !== 1 ? 's' : ''}</span>
                         </div>
                         <span class="w-[3px] h-[3px] rounded-full bg-slate-300"></span>
                         <div class="flex items-center gap-1.5 text-[13px] text-slate-500 font-medium">
@@ -305,12 +472,12 @@
 
                 <!-- Action buttons -->
                 <div class="shrink-0 flex gap-2.5 items-start pt-6">
-                    {#if activeTab === 'experiments'}
+                    {#if activeTab === 'runs'}
                         <button
                             class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
-                            onclick={() => (showExperimentModal = true)}
+                            onclick={() => (showRunModal = true)}
                         >
-                            + New Experiment
+                            + New Run
                         </button>
                     {:else if activeTab === 'protocols'}
                         <button
@@ -326,10 +493,10 @@
             <!-- Tab Navigation -->
             <nav class="flex px-8 border-b border-gray-200">
                 <button
-                    class="px-5 py-3 text-sm font-medium text-slate-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-all -mb-px hover:text-slate-800 {activeTab === 'experiments' ? '!text-slate-900 !font-semibold !border-slate-900' : ''}"
-                    onclick={() => { activeTab = 'experiments'; searchQuery = ''; }}
+                    class="px-5 py-3 text-sm font-medium text-slate-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-all -mb-px hover:text-slate-800 {activeTab === 'runs' ? '!text-slate-900 !font-semibold !border-slate-900' : ''}"
+                    onclick={() => { activeTab = 'runs'; searchQuery = ''; }}
                 >
-                    Experiments
+                    Runs
                 </button>
                 <button
                     class="px-5 py-3 text-sm font-medium text-slate-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-all -mb-px hover:text-slate-800 {activeTab === 'protocols' ? '!text-slate-900 !font-semibold !border-slate-900' : ''}"
@@ -338,8 +505,14 @@
                     Protocols
                 </button>
                 <button
+                    class="px-5 py-3 text-sm font-medium text-slate-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-all -mb-px hover:text-slate-800 {activeTab === 'activity' ? '!text-slate-900 !font-semibold !border-slate-900' : ''}"
+                    onclick={() => { activeTab = 'activity'; searchQuery = ''; if (!activityLoaded) loadActivity(); }}
+                >
+                    Activity
+                </button>
+                <button
                     class="px-5 py-3 text-sm font-medium text-slate-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-all -mb-px hover:text-slate-800 {activeTab === 'settings' ? '!text-slate-900 !font-semibold !border-slate-900' : ''}"
-                    onclick={() => { activeTab = 'settings'; searchQuery = ''; }}
+                    onclick={() => { activeTab = 'settings'; searchQuery = ''; loadSettings(); }}
                 >
                     Settings
                 </button>
@@ -347,7 +520,7 @@
 
             <!-- Tab Content -->
             <div class="min-h-[300px]">
-                {#if activeTab === 'experiments'}
+                {#if activeTab === 'runs'}
                     <!-- Toolbar -->
                     <div class="flex justify-between items-center px-8 py-4">
                         <div class="relative w-60">
@@ -355,39 +528,39 @@
                             <input
                                 type="text"
                                 bind:value={searchQuery}
-                                placeholder="Filter experiments..."
+                                placeholder="Filter runs..."
                                 class="w-full py-1.5 pl-8 pr-2.5 border border-slate-200 rounded-lg text-[13px] text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-400/15"
                             />
                         </div>
                         <div class="flex items-center gap-4">
                             <span class="text-[13px] text-slate-400 font-medium">
-                                {filteredExperiments().length} of {experiments.length} experiment{experiments.length !== 1 ? 's' : ''}
+                                {filteredRuns().length} of {runs.length} run{runs.length !== 1 ? 's' : ''}
                             </span>
                             <button
                                 class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
-                                onclick={() => (showExperimentModal = true)}
+                                onclick={() => (showRunModal = true)}
                             >
-                                + New Experiment
+                                + New Run
                             </button>
                         </div>
                     </div>
 
-                    {#if filteredExperiments().length === 0}
+                    {#if filteredRuns().length === 0}
                         <div class="flex flex-col items-center justify-center py-16 px-8 text-center gap-2">
-                            {#if experiments.length === 0}
+                            {#if runs.length === 0}
                                 <div class="w-12 h-12 text-slate-300 mb-2">
                                     <svg class="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
                                 </div>
-                                <p class="text-[15px] font-semibold text-slate-600">No experiments yet</p>
-                                <p class="text-[13px] text-slate-400 mb-4">Create your first experiment to get started.</p>
+                                <p class="text-[15px] font-semibold text-slate-600">No runs yet</p>
+                                <p class="text-[13px] text-slate-400 mb-4">Create your first run to get started.</p>
                                 <button
                                     class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
-                                    onclick={() => (showExperimentModal = true)}
+                                    onclick={() => (showRunModal = true)}
                                 >
-                                    + New Experiment
+                                    + New Run
                                 </button>
                             {:else}
-                                <p class="text-[15px] font-semibold text-slate-600">No matching experiments</p>
+                                <p class="text-[15px] font-semibold text-slate-600">No matching runs</p>
                                 <p class="text-[13px] text-slate-400">Try a different search term.</p>
                             {/if}
                         </div>
@@ -396,23 +569,23 @@
                             <thead>
                                 <tr class="border-t border-b border-slate-100">
                                     <th class="w-[100px] text-left py-2.5 px-4 pl-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide">ID</th>
-                                    <th class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Experiment Name</th>
+                                    <th class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Run Name</th>
                                     <th class="w-[150px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Protocol</th>
                                     <th class="w-[100px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Status</th>
                                     <th class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Last Modified</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {#each filteredExperiments() as exp}
+                                {#each filteredRuns() as r}
                                     <tr
                                         class="border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50"
-                                        onclick={() => goto(`/experiments/${exp.id}`)}
+                                        onclick={() => goto(`/runs/${r.id}`)}
                                     >
-                                        <td class="py-3.5 px-4 pl-8 text-xs text-slate-400 font-mono font-medium whitespace-nowrap">{shortId(exp.id)}</td>
-                                        <td class="py-3.5 px-4 text-sm font-semibold text-slate-800">{exp.name}</td>
+                                        <td class="py-3.5 px-4 pl-8 text-xs text-slate-400 font-mono font-medium whitespace-nowrap">{shortId(r.id)}</td>
+                                        <td class="py-3.5 px-4 text-sm font-semibold text-slate-800">{r.name}</td>
                                         <td class="py-3.5 px-4 text-[13px] text-slate-500 whitespace-nowrap">
-                                            {#if exp.protocol_id}
-                                                {#each protocols.filter((p: any) => p.id === exp.protocol_id) as proto}
+                                            {#if r.protocol_id}
+                                                {#each protocols.filter((p: any) => p.id === r.protocol_id) as proto}
                                                     <span class="text-slate-600 font-medium">{proto.name}</span>
                                                 {/each}
                                             {:else}
@@ -420,17 +593,17 @@
                                             {/if}
                                         </td>
                                         <td class="py-3.5 px-4 whitespace-nowrap">
-                                            <span class="inline-block text-xs font-semibold px-3 py-0.5 rounded-full {statusClasses(exp.status)}">
-                                                {statusLabel(exp.status)}
+                                            <span class="inline-block text-xs font-semibold px-3 py-0.5 rounded-full {statusClasses(r.status)}">
+                                                {statusLabel(r.status)}
                                             </span>
                                         </td>
-                                        <td class="py-3.5 px-4 pr-8 text-[13px] text-slate-400 font-medium whitespace-nowrap text-right">{formatDate(exp.updated_at || exp.created_at)}</td>
+                                        <td class="py-3.5 px-4 pr-8 text-[13px] text-slate-400 font-medium whitespace-nowrap text-right">{formatDate(r.updated_at || r.created_at)}</td>
                                     </tr>
                                 {/each}
                             </tbody>
                         </table>
                         <div class="flex justify-between items-center px-8 py-3.5 border-t border-slate-100">
-                            <span class="text-[13px] text-slate-400 font-medium">Showing {filteredExperiments().length} of {experiments.length} records</span>
+                            <span class="text-[13px] text-slate-400 font-medium">Showing {filteredRuns().length} of {runs.length} records</span>
                         </div>
                     {/if}
 
@@ -477,6 +650,10 @@
                                     <th class="w-[100px] text-left py-2.5 px-4 pl-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide">ID</th>
                                     <th class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Protocol Name</th>
                                     <th class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Description</th>
+                                    <th class="w-[80px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Version</th>
+                                    {#if showProtocolStatus}
+                                        <th class="w-[110px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Status</th>
+                                    {/if}
                                     <th class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Last Modified</th>
                                 </tr>
                             </thead>
@@ -489,6 +666,14 @@
                                         <td class="py-3.5 px-4 pl-8 text-xs text-slate-400 font-mono font-medium whitespace-nowrap">{shortId(proto.id)}</td>
                                         <td class="py-3.5 px-4 text-sm font-semibold text-slate-800">{proto.name}</td>
                                         <td class="py-3.5 px-4 text-[13px] text-slate-500 max-w-[300px] whitespace-nowrap overflow-hidden text-ellipsis">{proto.description || '--'}</td>
+                                        <td class="py-3.5 px-4 text-xs text-slate-400 font-mono font-medium whitespace-nowrap">{proto.version_number ? `v${proto.version_number}` : '--'}</td>
+                                        {#if showProtocolStatus}
+                                            <td class="py-3.5 px-4 whitespace-nowrap">
+                                                <span class="inline-block text-xs font-semibold px-3 py-0.5 rounded-full {protocolStatusClasses(proto.status)}">
+                                                    {protocolStatusLabel(proto.status)}
+                                                </span>
+                                            </td>
+                                        {/if}
                                         <td class="py-3.5 px-4 pr-8 text-[13px] text-slate-400 font-medium whitespace-nowrap text-right">{formatDate(proto.updated_at || proto.created_at)}</td>
                                     </tr>
                                 {/each}
@@ -499,23 +684,194 @@
                         </div>
                     {/if}
 
-                {:else if activeTab === 'settings'}
+                {:else if activeTab === 'activity'}
                     <div class="p-8">
+                        {#if activityLoading && !activityLoaded}
+                            <div class="flex items-center justify-center py-16 text-sm text-slate-400">
+                                Loading activity...
+                            </div>
+                        {:else if activityItems.length === 0}
+                            <div class="flex flex-col items-center justify-center py-16 text-center gap-2">
+                                <div class="w-12 h-12 text-slate-300 mb-2">
+                                    <svg class="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+                                </div>
+                                <p class="text-[15px] font-semibold text-slate-600">No activity yet</p>
+                                <p class="text-[13px] text-slate-400">Changes to this project and its protocols and runs will appear here.</p>
+                            </div>
+                        {:else}
+                            <!-- Timeline -->
+                            <div class="relative pl-7">
+                                <!-- Vertical line -->
+                                <div class="absolute left-[9px] top-2 bottom-2 w-px bg-slate-200"></div>
+
+                                {#each activityItems as item}
+                                    <div class="relative pb-6 last:pb-0">
+                                        <!-- Dot -->
+                                        <div class="absolute -left-7 top-1 w-[18px] h-[18px] rounded-full border-2 border-white {actionColor(item.action)} shadow-sm"></div>
+
+                                        <!-- Content -->
+                                        <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                            <span class="text-sm font-semibold text-slate-800">
+                                                {item.actor_name || item.actor_email || 'System'}
+                                            </span>
+                                            <span class="text-sm text-slate-500">
+                                                {actionVerb(item.action)}
+                                            </span>
+                                            <span class="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border {entityBadgeClasses(item.entity_type)}">
+                                                {item.entity_type}
+                                            </span>
+                                            {#if item.entity_name}
+                                                <span class="text-sm font-medium text-slate-700">
+                                                    {item.entity_name}
+                                                </span>
+                                            {/if}
+                                            <span class="text-xs text-slate-400 font-medium">
+                                                {formatDate(item.created_at)}
+                                            </span>
+                                        </div>
+
+                                        <!-- Version info + changed fields -->
+                                        {#if versionSummary(item)}
+                                            <p class="mt-1 text-xs font-medium text-teal-600">
+                                                {versionSummary(item)}
+                                            </p>
+                                        {/if}
+                                        {#if item.action === 'UPDATE' && item.changes && changedKeys(item.changes).length > 0}
+                                            <p class="mt-1 text-xs text-slate-400">
+                                                Changed: {changedKeys(item.changes).join(', ')}
+                                            </p>
+                                        {/if}
+                                    </div>
+                                {/each}
+                            </div>
+
+                            <!-- Pagination -->
+                            {#if activityTotal > activityLimit}
+                                <div class="flex justify-between items-center pt-6 mt-6 border-t border-slate-100">
+                                    <span class="text-[13px] text-slate-400 font-medium">
+                                        Showing {activityOffset + 1}–{Math.min(activityOffset + activityLimit, activityTotal)} of {activityTotal}
+                                    </span>
+                                    <div class="flex gap-2">
+                                        <button
+                                            class="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                            disabled={activityOffset === 0 || activityLoading}
+                                            onclick={() => loadActivity(Math.max(0, activityOffset - activityLimit))}
+                                        >
+                                            Previous
+                                        </button>
+                                        <button
+                                            class="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                            disabled={activityOffset + activityLimit >= activityTotal || activityLoading}
+                                            onclick={() => loadActivity(activityOffset + activityLimit)}
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            {/if}
+                        {/if}
+                    </div>
+
+                {:else if activeTab === 'settings'}
+                    <div class="p-8 max-w-2xl">
                         <h3 class="text-lg font-bold text-slate-900 mb-1.5">Project Settings</h3>
                         <p class="text-sm text-slate-500 mb-6">Manage project configuration.</p>
-                        <div class="text-sm text-slate-400 py-10 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                            Settings coming soon.
+
+                        {#if settingsMessage}
+                            <div class="mb-4 text-sm font-medium {settingsMessage.startsWith('Failed') ? 'text-red-600' : 'text-emerald-600'}">
+                                {settingsMessage}
+                            </div>
+                        {/if}
+
+                        <!-- Protocol Approval Section -->
+                        <div class="bg-white border border-slate-200 rounded-lg p-6 mb-6">
+                            <h4 class="text-sm font-bold text-slate-800 mb-1">Protocol Approval</h4>
+                            <p class="text-xs text-slate-500 mb-4">Require protocols to be approved before they can be used in runs.</p>
+
+                            <label class="flex items-center gap-3 cursor-pointer mb-4">
+                                <input
+                                    type="checkbox"
+                                    bind:checked={requireApproval}
+                                    class="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                />
+                                <span class="text-sm text-slate-700 font-medium">Require protocol approval before use</span>
+                            </label>
+
+                            <button
+                                class="px-4 py-2 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                onclick={saveSettings}
+                                disabled={settingsSaving}
+                            >
+                                {settingsSaving ? 'Saving...' : 'Save Settings'}
+                            </button>
                         </div>
+
+                        <!-- Approvers Section (only visible when approval is enabled) -->
+                        {#if requireApproval}
+                            <div class="bg-white border border-slate-200 rounded-lg p-6">
+                                <h4 class="text-sm font-bold text-slate-800 mb-1">Approvers</h4>
+                                <p class="text-xs text-slate-500 mb-4">Users who can approve or reject protocols in this project.</p>
+
+                                <!-- Current approvers -->
+                                {#if approvers.length === 0}
+                                    <p class="text-xs text-slate-400 mb-4">No approvers assigned yet. Org admins can always approve.</p>
+                                {:else}
+                                    <div class="space-y-2 mb-4">
+                                        {#each approvers as approver}
+                                            <div class="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg">
+                                                <div class="flex items-center gap-2">
+                                                    <div class="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold">
+                                                        {(approver.name || '?')[0].toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-sm font-medium text-slate-700">{approver.name || 'Unknown'}</p>
+                                                        {#if approver.email}
+                                                            <p class="text-xs text-slate-400">{approver.email}</p>
+                                                        {/if}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    class="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                                                    onclick={() => removeApprover(approver.id)}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {/if}
+
+                                <!-- Add approver -->
+                                <div class="flex gap-2">
+                                    <select
+                                        bind:value={newApproverUserId}
+                                        class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                    >
+                                        <option value="">Select a user...</option>
+                                        {#each orgMembers.filter((m) => !approvers.some((a) => a.principal_id === m.id)) as member}
+                                            <option value={member.id}>{member.full_name || member.email}</option>
+                                        {/each}
+                                    </select>
+                                    <button
+                                        class="px-4 py-2 text-sm font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onclick={addApprover}
+                                        disabled={!newApproverUserId}
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                            </div>
+                        {/if}
                     </div>
                 {/if}
             </div>
     </div>
 {/if}
 
-<!-- EXPERIMENT MODAL -->
-<Modal bind:open={showExperimentModal} title="New Experiment">
+<!-- RUN MODAL -->
+<Modal bind:open={showRunModal} title="New Run">
     <p class="text-sm text-gray-500 mb-4">
-        Start a new experiment execution.
+        Start a new run from a protocol.
     </p>
     <div class="space-y-3">
         <div>
@@ -527,7 +883,7 @@
             <input
                 id="exp-name"
                 type="text"
-                bind:value={newExperimentName}
+                bind:value={newRunName}
                 placeholder="e.g. CHO-DG44 Run 1"
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
             />
@@ -552,7 +908,7 @@
         <div class="flex justify-end gap-2 pt-2">
             <button
                 onclick={() => {
-                    showExperimentModal = false;
+                    showRunModal = false;
                     selectedProtocolId = null;
                 }}
                 class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
@@ -560,8 +916,8 @@
                 Cancel
             </button>
             <button
-                onclick={createExperiment}
-                disabled={!newExperimentName}
+                onclick={createRun}
+                disabled={!newRunName}
                 class="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
                 Create

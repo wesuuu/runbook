@@ -21,10 +21,11 @@ from app.models.iam import (
 from app.models.science import (
     UnitOpDefinition,
     Protocol,
-    Experiment,
+    ProtocolVersion,
+    Run,
     ProtocolRole,
     Project,
-    ExperimentRoleAssignment,
+    RunRoleAssignment,
 )
 from app.schemas.science import (
     UnitOpDefinitionCreate,
@@ -36,12 +37,15 @@ from app.schemas.science import (
     ProtocolRoleCreate,
     ProtocolRoleUpdate,
     ProtocolRoleResponse,
-    ExperimentCreate,
-    ExperimentUpdate,
-    ExperimentResponse,
-    ExperimentRoleAssignmentCreate,
-    ExperimentRoleAssignmentResponse,
-    ExperimentRoleAssignmentListResponse,
+    ProtocolVersionListItem,
+    ProtocolVersionResponse,
+    ProtocolApprovalAction,
+    RunCreate,
+    RunUpdate,
+    RunResponse,
+    RunRoleAssignmentCreate,
+    RunRoleAssignmentResponse,
+    RunRoleAssignmentListResponse,
 )
 from app.schemas.iam import UserSearchResponse
 from app.services.audit import log_audit
@@ -161,7 +165,8 @@ async def create_protocol(
 
     await log_audit(
         db, user.id, "CREATE", "Protocol",
-        new_protocol.id, {"name": protocol.name},
+        new_protocol.id,
+        {"name": protocol.name, "version_number": new_protocol.version_number},
     )
 
     await db.commit()
@@ -245,11 +250,39 @@ async def update_protocol(
         raise HTTPException(status_code=404, detail="Protocol not found")
 
     changes = update_data.model_dump(exclude_unset=True)
+
+    # Block edits while pending approval
+    if protocol.status == "PENDING_APPROVAL" and "graph" in changes:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot edit protocol while pending approval",
+        )
+
+    # If graph is being updated, create a version snapshot
+    if "graph" in changes:
+        protocol.version_number += 1
+        version = ProtocolVersion(
+            protocol_id=protocol.id,
+            version_number=protocol.version_number,
+            graph=changes["graph"],
+            name=changes.get("name", protocol.name),
+            description=changes.get("description", protocol.description),
+            created_by_id=user.id,
+        )
+        db.add(version)
+
+        # Revert approved protocol to draft on edit
+        if protocol.status == "APPROVED":
+            protocol.status = "DRAFT"
+
     for key, value in changes.items():
         setattr(protocol, key, value)
 
+    audit_changes = dict(changes)
+    if "graph" in changes:
+        audit_changes["version_number"] = protocol.version_number
     await log_audit(
-        db, user.id, "UPDATE", "Protocol", protocol.id, changes,
+        db, user.id, "UPDATE", "Protocol", protocol.id, audit_changes,
     )
 
     await db.commit()
@@ -453,7 +486,7 @@ def _find_connected_components(
 
 
 def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
-    """Extract roles and ordered steps from a protocol/experiment graph.
+    """Extract roles and ordered steps from a protocol/run graph.
 
     Returns:
         (roles_with_steps, flat_steps) where roles_with_steps is a list
@@ -540,6 +573,324 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
     return roles_with_steps, flat_steps
 
 
+# --- Protocol Version History ---
+
+@router.get(
+    "/protocols/{protocol_id}/versions",
+    response_model=List[ProtocolVersionListItem],
+)
+async def list_protocol_versions(
+    protocol_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(ProtocolVersion)
+        .options(selectinload(ProtocolVersion.created_by))
+        .where(ProtocolVersion.protocol_id == protocol_id)
+        .order_by(ProtocolVersion.version_number.desc())
+    )
+    versions = result.scalars().all()
+
+    return [
+        ProtocolVersionListItem(
+            id=v.id,
+            version_number=v.version_number,
+            name=v.name,
+            change_summary=v.change_summary,
+            created_by_name=(
+                v.created_by.full_name or v.created_by.email
+                if v.created_by else None
+            ),
+            created_at=v.created_at,
+        )
+        for v in versions
+    ]
+
+
+@router.get(
+    "/protocols/{protocol_id}/versions/{version_number}",
+    response_model=ProtocolVersionResponse,
+)
+async def get_protocol_version(
+    protocol_id: UUID,
+    version_number: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(ProtocolVersion)
+        .options(selectinload(ProtocolVersion.created_by))
+        .where(
+            ProtocolVersion.protocol_id == protocol_id,
+            ProtocolVersion.version_number == version_number,
+        )
+    )
+    version = result.scalar_one_or_none()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return ProtocolVersionResponse(
+        id=version.id,
+        protocol_id=version.protocol_id,
+        version_number=version.version_number,
+        graph=version.graph,
+        name=version.name,
+        description=version.description,
+        change_summary=version.change_summary,
+        created_by_id=version.created_by_id,
+        created_by_name=(
+            version.created_by.full_name or version.created_by.email
+            if version.created_by else None
+        ),
+        created_at=version.created_at,
+    )
+
+
+@router.post(
+    "/protocols/{protocol_id}/revert/{version_number}",
+    response_model=ProtocolResponse,
+)
+async def revert_protocol_version(
+    protocol_id: UUID,
+    version_number: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    if protocol.status == "PENDING_APPROVAL":
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot revert protocol while pending approval",
+        )
+
+    result = await db.execute(
+        select(ProtocolVersion).where(
+            ProtocolVersion.protocol_id == protocol_id,
+            ProtocolVersion.version_number == version_number,
+        )
+    )
+    old_version = result.scalar_one_or_none()
+    if not old_version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    # Create new version with the reverted graph
+    protocol.version_number += 1
+    protocol.graph = old_version.graph
+
+    new_version = ProtocolVersion(
+        protocol_id=protocol.id,
+        version_number=protocol.version_number,
+        graph=old_version.graph,
+        name=protocol.name,
+        description=protocol.description,
+        created_by_id=user.id,
+        change_summary=f"Reverted to v{version_number}",
+    )
+    db.add(new_version)
+
+    if protocol.status == "APPROVED":
+        protocol.status = "DRAFT"
+
+    await log_audit(
+        db, user.id, "UPDATE", "Protocol", protocol.id,
+        {
+            "reverted_to_version": version_number,
+            "version_number": protocol.version_number,
+        },
+    )
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol.id)
+    )
+    return result.scalar_one()
+
+
+# --- Protocol Approval ---
+
+@router.post(
+    "/protocols/{protocol_id}/submit-for-approval",
+    response_model=ProtocolResponse,
+)
+async def submit_protocol_for_approval(
+    protocol_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    if protocol.status != "DRAFT":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot submit: protocol is {protocol.status}",
+        )
+
+    protocol.status = "PENDING_APPROVAL"
+
+    await log_audit(
+        db, user.id, "UPDATE", "Protocol", protocol.id,
+        {"status": "PENDING_APPROVAL"},
+    )
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol.id)
+    )
+    return result.scalar_one()
+
+
+@router.post(
+    "/protocols/{protocol_id}/approve",
+    response_model=ProtocolResponse,
+)
+async def approve_protocol(
+    protocol_id: UUID,
+    action: ProtocolApprovalAction,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Require APPROVE permission on the parent project
+    result = await db.execute(
+        select(Protocol).where(Protocol.id == protocol_id)
+    )
+    protocol_obj = result.scalar_one_or_none()
+    if not protocol_obj:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT,
+        protocol_obj.project_id, PermissionLevel.APPROVE,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="APPROVE permission required on project",
+        )
+
+    if protocol_obj.status != "PENDING_APPROVAL":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot approve: protocol is {protocol_obj.status}",
+        )
+
+    protocol_obj.status = "APPROVED"
+
+    await log_audit(
+        db, user.id, "UPDATE", "Protocol", protocol_obj.id,
+        {"status": "APPROVED", "comment": action.comment},
+    )
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol_obj.id)
+    )
+    return result.scalar_one()
+
+
+@router.post(
+    "/protocols/{protocol_id}/reject",
+    response_model=ProtocolResponse,
+)
+async def reject_protocol(
+    protocol_id: UUID,
+    action: ProtocolApprovalAction,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Require APPROVE permission on the parent project
+    result = await db.execute(
+        select(Protocol).where(Protocol.id == protocol_id)
+    )
+    protocol_obj = result.scalar_one_or_none()
+    if not protocol_obj:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT,
+        protocol_obj.project_id, PermissionLevel.APPROVE,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="APPROVE permission required on project",
+        )
+
+    if protocol_obj.status != "PENDING_APPROVAL":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot reject: protocol is {protocol_obj.status}",
+        )
+
+    protocol_obj.status = "DRAFT"
+
+    await log_audit(
+        db, user.id, "UPDATE", "Protocol", protocol_obj.id,
+        {"status": "DRAFT", "action": "rejected", "comment": action.comment},
+    )
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol_obj.id)
+    )
+    return result.scalar_one()
+
+
 # --- Protocol PDF ---
 
 @router.get("/protocols/{protocol_id}/pdf/sop")
@@ -569,7 +920,7 @@ async def get_protocol_sop_pdf(
     pdf_bytes = generate_sop_pdf(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
-        experiment_name=None,
+        run_name=None,
         roles_with_steps=roles_with_steps,
     )
 
@@ -581,52 +932,52 @@ async def get_protocol_sop_pdf(
     )
 
 
-# --- Experiment PDFs ---
+# --- Run PDFs ---
 
-@router.get("/experiments/{experiment_id}/pdf/sop")
-async def get_experiment_sop_pdf(
-    experiment_id: UUID,
+@router.get("/runs/{run_id}/pdf/sop")
+async def get_run_sop_pdf(
+    run_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate an SOP PDF from an experiment's snapshot graph."""
+    """Generate an SOP PDF from a run's snapshot graph."""
     allowed = await check_permission(
-        db, user.id, ObjectType.EXPERIMENT,
-        experiment_id, PermissionLevel.VIEW,
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(Experiment).where(Experiment.id == experiment_id)
+        select(Run).where(Run.id == run_id)
     )
-    experiment = result.scalar_one_or_none()
-    if not experiment:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    run_obj = result.scalar_one_or_none()
+    if not run_obj:
+        raise HTTPException(status_code=404, detail="Run not found")
 
     # Get protocol name and description
     protocol_name = "Unknown Protocol"
     protocol_description = ""
-    if experiment.protocol_id:
+    if run_obj.protocol_id:
         result = await db.execute(
-            select(Protocol).where(Protocol.id == experiment.protocol_id)
+            select(Protocol).where(Protocol.id == run_obj.protocol_id)
         )
         proto = result.scalar_one_or_none()
         if proto:
             protocol_name = proto.name
             protocol_description = proto.description or ""
 
-    graph = experiment.graph or {}
+    graph = run_obj.graph or {}
     roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
 
     pdf_bytes = generate_sop_pdf(
         protocol_name=protocol_name,
         protocol_description=protocol_description,
-        experiment_name=experiment.name,
+        run_name=run_obj.name,
         roles_with_steps=roles_with_steps,
     )
 
-    filename = f"SOP_{experiment.name}.pdf".replace(" ", "_")
+    filename = f"SOP_{run_obj.name}.pdf".replace(" ", "_")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -634,39 +985,39 @@ async def get_experiment_sop_pdf(
     )
 
 
-@router.get("/experiments/{experiment_id}/pdf/batch-record")
-async def get_experiment_batch_record_pdf(
-    experiment_id: UUID,
+@router.get("/runs/{run_id}/pdf/batch-record")
+async def get_run_batch_record_pdf(
+    run_id: UUID,
     filled: bool = Query(False),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a batch record PDF from an experiment's snapshot graph."""
+    """Generate a batch record PDF from a run's snapshot graph."""
     allowed = await check_permission(
-        db, user.id, ObjectType.EXPERIMENT,
-        experiment_id, PermissionLevel.VIEW,
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(Experiment).where(Experiment.id == experiment_id)
+        select(Run).where(Run.id == run_id)
     )
-    experiment = result.scalar_one_or_none()
-    if not experiment:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    run_obj = result.scalar_one_or_none()
+    if not run_obj:
+        raise HTTPException(status_code=404, detail="Run not found")
 
     # Get protocol name
     protocol_name = "Unknown Protocol"
-    if experiment.protocol_id:
+    if run_obj.protocol_id:
         result = await db.execute(
-            select(Protocol).where(Protocol.id == experiment.protocol_id)
+            select(Protocol).where(Protocol.id == run_obj.protocol_id)
         )
         proto = result.scalar_one_or_none()
         if proto:
             protocol_name = proto.name
 
-    graph = experiment.graph or {}
+    graph = run_obj.graph or {}
     roles_with_steps, flat_steps = _parse_graph_roles_and_steps(graph)
 
     # Build roles list for sign-off
@@ -680,15 +1031,15 @@ async def get_experiment_batch_record_pdf(
 
     pdf_bytes = generate_batch_record_pdf(
         protocol_name=protocol_name,
-        experiment_name=experiment.name,
+        run_name=run_obj.name,
         roles=roles,
         steps=flat_steps,
         filled=filled,
-        execution_data=experiment.execution_data if filled else None,
+        execution_data=run_obj.execution_data if filled else None,
     )
 
     suffix = "COMPLETED" if filled else "BLANK"
-    filename = f"BatchRecord_{experiment.name}_{suffix}.pdf".replace(" ", "_")
+    filename = f"BatchRecord_{run_obj.name}_{suffix}.pdf".replace(" ", "_")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -725,19 +1076,19 @@ async def delete_protocol_role(
     return {"ok": True}
 
 
-# --- Experiments ---
+# --- Runs ---
 
 @router.post(
-    "/experiments", response_model=ExperimentResponse, status_code=201,
+    "/runs", response_model=RunResponse, status_code=201,
 )
-async def create_experiment(
-    experiment: ExperimentCreate,
+async def create_run(
+    run_in: RunCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROJECT,
-        experiment.project_id, PermissionLevel.EDIT,
+        run_in.project_id, PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(
@@ -746,65 +1097,65 @@ async def create_experiment(
         )
 
     result = await db.execute(
-        select(Project).where(Project.id == experiment.project_id)
+        select(Project).where(Project.id == run_in.project_id)
     )
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
     initial_graph = {}
-    if experiment.protocol_id:
+    if run_in.protocol_id:
         result = await db.execute(
-            select(Protocol).where(Protocol.id == experiment.protocol_id)
+            select(Protocol).where(Protocol.id == run_in.protocol_id)
         )
         protocol = result.scalar_one_or_none()
         if protocol:
             initial_graph = protocol.graph.copy() if protocol.graph else {}
 
-    new_experiment = Experiment(
-        name=experiment.name,
-        project_id=experiment.project_id,
-        protocol_id=experiment.protocol_id,
+    run_obj = Run(
+        name=run_in.name,
+        project_id=run_in.project_id,
+        protocol_id=run_in.protocol_id,
         graph=initial_graph,
         execution_data={},
     )
-    db.add(new_experiment)
+    db.add(run_obj)
     await db.flush()
 
     await log_audit(
-        db, user.id, "CREATE", "Experiment",
-        new_experiment.id, {"name": experiment.name},
+        db, user.id, "CREATE", "Run",
+        run_obj.id, {"name": run_in.name},
     )
 
     await db.commit()
-    await db.refresh(new_experiment)
-    return new_experiment
+    await db.refresh(run_obj)
+    return run_obj
 
 
-@router.get("/experiments/{experiment_id}", response_model=ExperimentResponse)
-async def get_experiment(
-    experiment_id: UUID,
+@router.get("/runs/{run_id}", response_model=RunResponse)
+async def get_run(
+    run_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.EXPERIMENT,
-        experiment_id, PermissionLevel.VIEW,
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(Experiment).where(Experiment.id == experiment_id)
+        select(Run).where(Run.id == run_id)
     )
-    experiment = result.scalar_one_or_none()
-    if not experiment:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    return experiment
+    run_obj = result.scalar_one_or_none()
+    if not run_obj:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run_obj
 
 
 @router.get(
-    "/projects/{project_id}/experiments",
-    response_model=List[ExperimentResponse],
+    "/projects/{project_id}/runs",
+    response_model=List[RunResponse],
     dependencies=[
         Depends(
             require_permission(
@@ -813,54 +1164,54 @@ async def get_experiment(
         )
     ],
 )
-async def list_project_experiments(
+async def list_project_runs(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Experiment).where(Experiment.project_id == project_id)
+        select(Run).where(Run.project_id == project_id)
     )
     return result.scalars().all()
 
 
 @router.put(
-    "/experiments/{experiment_id}", response_model=ExperimentResponse,
+    "/runs/{run_id}", response_model=RunResponse,
 )
-async def update_experiment(
-    experiment_id: UUID,
-    update_data: ExperimentUpdate,
+async def update_run(
+    run_id: UUID,
+    update_data: RunUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.EXPERIMENT,
-        experiment_id, PermissionLevel.EDIT,
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(Experiment).where(Experiment.id == experiment_id)
+        select(Run).where(Run.id == run_id)
     )
-    experiment = result.scalar_one_or_none()
-    if not experiment:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    run_obj = result.scalar_one_or_none()
+    if not run_obj:
+        raise HTTPException(status_code=404, detail="Run not found")
 
     # Validate status transition to ACTIVE
     new_status = update_data.status.value if update_data.status else None
-    current_status = experiment.status if isinstance(experiment.status, str) else experiment.status.value
+    current_status = run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
     if (new_status and
         new_status == "ACTIVE" and
         current_status != "ACTIVE"):
         # Check that all swimlane roles in the graph have assignments
-        graph = experiment.graph or {}
+        graph = run_obj.graph or {}
         nodes = graph.get("nodes", [])
         swimlane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
 
         if swimlane_nodes:
             result = await db.execute(
-                select(ExperimentRoleAssignment)
-                .where(ExperimentRoleAssignment.experiment_id == experiment_id)
+                select(RunRoleAssignment)
+                .where(RunRoleAssignment.run_id == run_id)
             )
             assignments = result.scalars().all()
             assigned_lanes = {a.lane_node_id for a in assignments}
@@ -869,20 +1220,20 @@ async def update_experiment(
             if assigned_lanes != required_lanes:
                 raise HTTPException(
                     status_code=422,
-                    detail="Cannot start experiment: not all roles have assigned users",
+                    detail="Cannot start run: not all roles have assigned users",
                 )
 
     changes = update_data.model_dump(exclude_unset=True)
     for key, value in changes.items():
-        setattr(experiment, key, value)
+        setattr(run_obj, key, value)
 
     await log_audit(
-        db, user.id, "UPDATE", "Experiment", experiment.id, changes,
+        db, user.id, "UPDATE", "Run", run_obj.id, changes,
     )
 
     await db.commit()
-    await db.refresh(experiment)
-    return experiment
+    await db.refresh(run_obj)
+    return run_obj
 
 
 # --- Project Members ---
@@ -974,58 +1325,58 @@ async def get_project_members(
     return users
 
 
-# --- Experiment Role Assignments ---
+# --- Run Role Assignments ---
 
 @router.get(
-    "/experiments/{experiment_id}/role-assignments",
-    response_model=ExperimentRoleAssignmentListResponse,
+    "/runs/{run_id}/role-assignments",
+    response_model=RunRoleAssignmentListResponse,
 )
-async def get_experiment_role_assignments(
-    experiment_id: UUID,
+async def get_run_role_assignments(
+    run_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all role assignments for an experiment."""
+    """Get all role assignments for a run."""
     allowed = await check_permission(
-        db, user.id, ObjectType.EXPERIMENT,
-        experiment_id, PermissionLevel.VIEW,
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(ExperimentRoleAssignment)
-        .where(ExperimentRoleAssignment.experiment_id == experiment_id)
+        select(RunRoleAssignment)
+        .where(RunRoleAssignment.run_id == run_id)
     )
     assignments = result.scalars().all()
-    return ExperimentRoleAssignmentListResponse(items=assignments)
+    return RunRoleAssignmentListResponse(items=assignments)
 
 
 @router.post(
-    "/experiments/{experiment_id}/role-assignments",
-    response_model=ExperimentRoleAssignmentResponse,
+    "/runs/{run_id}/role-assignments",
+    response_model=RunRoleAssignmentResponse,
     status_code=201,
 )
-async def create_experiment_role_assignment(
-    experiment_id: UUID,
-    assignment: ExperimentRoleAssignmentCreate,
+async def create_run_role_assignment(
+    run_id: UUID,
+    assignment: RunRoleAssignmentCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Assign a user to a role in an experiment."""
+    """Assign a user to a role in a run."""
     allowed = await check_permission(
-        db, user.id, ObjectType.EXPERIMENT,
-        experiment_id, PermissionLevel.EDIT,
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(Experiment).where(Experiment.id == experiment_id)
+        select(Run).where(Run.id == run_id)
     )
-    experiment = result.scalar_one_or_none()
-    if not experiment:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    run_obj = result.scalar_one_or_none()
+    if not run_obj:
+        raise HTTPException(status_code=404, detail="Run not found")
 
     # Verify user exists
     result = await db.execute(
@@ -1036,10 +1387,10 @@ async def create_experiment_role_assignment(
 
     # Check if assignment already exists for this lane
     result = await db.execute(
-        select(ExperimentRoleAssignment)
+        select(RunRoleAssignment)
         .where(and_(
-            ExperimentRoleAssignment.experiment_id == experiment_id,
-            ExperimentRoleAssignment.lane_node_id == assignment.lane_node_id,
+            RunRoleAssignment.run_id == run_id,
+            RunRoleAssignment.lane_node_id == assignment.lane_node_id,
         ))
     )
     existing = result.scalar_one_or_none()
@@ -1052,8 +1403,8 @@ async def create_experiment_role_assignment(
         return existing
 
     # Create new assignment
-    new_assignment = ExperimentRoleAssignment(
-        experiment_id=experiment_id,
+    new_assignment = RunRoleAssignment(
+        run_id=run_id,
         lane_node_id=assignment.lane_node_id,
         role_name=assignment.role_name,
         user_id=assignment.user_id,
@@ -1064,26 +1415,26 @@ async def create_experiment_role_assignment(
     return new_assignment
 
 
-@router.delete("/experiments/{experiment_id}/role-assignments/{assignment_id}")
-async def delete_experiment_role_assignment(
-    experiment_id: UUID,
+@router.delete("/runs/{run_id}/role-assignments/{assignment_id}")
+async def delete_run_role_assignment(
+    run_id: UUID,
     assignment_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove a user's role assignment."""
     allowed = await check_permission(
-        db, user.id, ObjectType.EXPERIMENT,
-        experiment_id, PermissionLevel.EDIT,
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(ExperimentRoleAssignment)
+        select(RunRoleAssignment)
         .where(and_(
-            ExperimentRoleAssignment.id == assignment_id,
-            ExperimentRoleAssignment.experiment_id == experiment_id,
+            RunRoleAssignment.id == assignment_id,
+            RunRoleAssignment.run_id == run_id,
         ))
     )
     assignment = result.scalar_one_or_none()

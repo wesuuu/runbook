@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional, Any
 
-from sqlalchemy import String, Integer, ForeignKey, Enum
+from sqlalchemy import String, Integer, ForeignKey, Enum, Index, desc
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -9,7 +9,7 @@ from app.models.base import Base
 from app.models.mixins import UUIDMixin, TimestampMixin
 
 
-class ExperimentStatus(str, Enum):
+class RunStatus(str, Enum):
     PLANNED = "PLANNED"
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
@@ -26,12 +26,15 @@ class Project(Base, UUIDMixin, TimestampMixin):
     )
     owner_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     owner_id: Mapped[Optional[uuid.UUID]] = mapped_column(nullable=True)
+    settings: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}", nullable=False
+    )
 
     # Relationships
     organization: Mapped["Organization"] = relationship(
         "app.models.iam.Organization", back_populates="projects"
     )
-    experiments: Mapped[List["Experiment"]] = relationship(
+    runs: Mapped[List["Run"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
     protocols: Mapped[List["Protocol"]] = relationship(
@@ -47,13 +50,19 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id"), nullable=False
     )
+    status: Mapped[str] = mapped_column(
+        String, default="DRAFT", server_default="DRAFT", nullable=False
+    )
+    version_number: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     # The template graph structure
     graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="protocols")
-    experiments: Mapped[List["Experiment"]] = relationship(
+    runs: Mapped[List["Run"]] = relationship(
         back_populates="protocol"
     )
     roles: Mapped[List["ProtocolRole"]] = relationship(
@@ -61,10 +70,15 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="ProtocolRole.sort_order",
     )
+    versions: Mapped[List["ProtocolVersion"]] = relationship(
+        back_populates="protocol",
+        cascade="all, delete-orphan",
+        order_by="ProtocolVersion.version_number.desc()",
+    )
 
 
-class Experiment(Base, UUIDMixin, TimestampMixin):
-    __tablename__ = "experiments"
+class Run(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "runs"
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -73,8 +87,8 @@ class Experiment(Base, UUIDMixin, TimestampMixin):
     protocol_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("protocols.id"), nullable=True
     )
-    status: Mapped[ExperimentStatus] = mapped_column(
-        String, default=ExperimentStatus.PLANNED, nullable=False
+    status: Mapped[RunStatus] = mapped_column(
+        String, default=RunStatus.PLANNED, nullable=False
     )
 
     # Snapshot of the protocol graph + deviations
@@ -86,25 +100,25 @@ class Experiment(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    project: Mapped["Project"] = relationship(back_populates="experiments")
-    protocol: Mapped["Protocol"] = relationship(back_populates="experiments")
-    role_assignments: Mapped[List["ExperimentRoleAssignment"]] = relationship(
-        back_populates="experiment", cascade="all, delete-orphan"
+    project: Mapped["Project"] = relationship(back_populates="runs")
+    protocol: Mapped["Protocol"] = relationship(back_populates="runs")
+    role_assignments: Mapped[List["RunRoleAssignment"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
     )
 
 
-class ExperimentRoleAssignment(Base, UUIDMixin, TimestampMixin):
+class RunRoleAssignment(Base, UUIDMixin, TimestampMixin):
     """
-    Assigns a user to a role (swimlane) within an experiment.
+    Assigns a user to a role (swimlane) within a run.
 
-    lane_node_id is the stable identifier from the snapshotted experiment.graph,
+    lane_node_id is the stable identifier from the snapshotted run.graph,
     e.g., "lane-{role_uuid}". This allows assignments to remain valid even if
     the source ProtocolRole is later deleted.
     """
-    __tablename__ = "experiment_role_assignments"
+    __tablename__ = "run_role_assignments"
 
-    experiment_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
     )
     lane_node_id: Mapped[str] = mapped_column(String, nullable=False)
     role_name: Mapped[str] = mapped_column(String, nullable=False)
@@ -113,7 +127,7 @@ class ExperimentRoleAssignment(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    experiment: Mapped["Experiment"] = relationship(
+    run: Mapped["Run"] = relationship(
         back_populates="role_assignments"
     )
     user: Mapped["app.models.iam.User"] = relationship()
@@ -150,6 +164,34 @@ class ProtocolRole(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     protocol: Mapped["Protocol"] = relationship(back_populates="roles")
+
+
+class ProtocolVersion(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "protocol_versions"
+    __table_args__ = (
+        Index(
+            "ix_proto_ver_lookup",
+            "protocol_id",
+            "version_number",
+            unique=True,
+        ),
+    )
+
+    protocol_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String)
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    change_summary: Mapped[Optional[str]] = mapped_column(String)
+
+    # Relationships
+    protocol: Mapped["Protocol"] = relationship(back_populates="versions")
+    created_by: Mapped[Optional["app.models.iam.User"]] = relationship()
 
 
 class Equipment(Base, UUIDMixin, TimestampMixin):

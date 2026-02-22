@@ -7,7 +7,7 @@
 
     const id = $derived($page.params.id);
 
-    let experiment = $state<any>(null);
+    let run = $state<any>(null);
     let protocol = $state<any>(null);
     let roleAssignments = $state<any[]>([]);
     let projectMembers = $state<any[]>([]);
@@ -25,22 +25,22 @@
 
     async function loadData() {
         try {
-            experiment = await api.get(`/science/experiments/${id}`);
+            run = await api.get(`/science/runs/${id}`);
 
             // Load protocol if linked
-            if (experiment.protocol_id) {
-                protocol = await api.get(`/science/protocols/${experiment.protocol_id}`);
+            if (run.protocol_id) {
+                protocol = await api.get(`/science/protocols/${run.protocol_id}`);
             }
 
             // Load role assignments
             const assignResp = await api.get(
-                `/science/experiments/${id}/role-assignments`
+                `/science/runs/${id}/role-assignments`
             );
             roleAssignments = assignResp.items || [];
 
             // Load project members
             const membersResp = await api.get(
-                `/science/projects/${experiment.project_id}/members`
+                `/science/projects/${run.project_id}/members`
             );
             projectMembers = membersResp || [];
         } catch (e: any) {
@@ -63,7 +63,7 @@
                 );
                 if (existing) {
                     await api.delete(
-                        `/science/experiments/${id}/role-assignments/${existing.id}`
+                        `/science/runs/${id}/role-assignments/${existing.id}`
                     );
                     roleAssignments = roleAssignments.filter(
                         (a) => a.lane_node_id !== laneNodeId
@@ -72,7 +72,7 @@
             } else {
                 // Create or update assignment
                 const resp = await api.post(
-                    `/science/experiments/${id}/role-assignments`,
+                    `/science/runs/${id}/role-assignments`,
                     {
                         lane_node_id: laneNodeId,
                         role_name: roleName,
@@ -95,11 +95,11 @@
         }
     }
 
-    async function startExperiment() {
+    async function startRun() {
         try {
             savingStatus = true;
-            await api.put(`/science/experiments/${id}`, { status: "ACTIVE" });
-            experiment = await api.get(`/science/experiments/${id}`);
+            await api.put(`/science/runs/${id}`, { status: "ACTIVE" });
+            run = await api.get(`/science/runs/${id}`);
             showStartConfirm = false;
         } catch (e: any) {
             error = e.message;
@@ -109,8 +109,8 @@
     }
 
     function getSwimLaneNodes() {
-        if (!experiment?.graph) return [];
-        return (experiment.graph.nodes || []).filter((n: any) => n.type === "swimLane");
+        if (!run?.graph) return [];
+        return (run.graph.nodes || []).filter((n: any) => n.type === "swimLane");
     }
 
     function getRoleAssignment(laneNodeId: string) {
@@ -123,8 +123,8 @@
     }
 
     function getAllUnitOpSteps() {
-        if (!experiment?.graph) return [];
-        const nodes = experiment.graph.nodes || [];
+        if (!run?.graph) return [];
+        const nodes = run.graph.nodes || [];
         return nodes
             .filter((n: any) => n.type === "unitOp")
             .sort((a: any, b: any) => a.position.x - b.position.x)
@@ -140,7 +140,7 @@
     }
 
     function getStepsForRole(laneNodeId: string) {
-        if (!experiment?.graph) return [];
+        if (!run?.graph) return [];
         const all = getAllUnitOpSteps();
         const parented = all.filter((s: any) => s.parentId === laneNodeId);
         if (parented.length > 0) return parented;
@@ -153,18 +153,18 @@
     }
 
     function downloadSop() {
-        const name = experiment.name.replace(/\s+/g, '_');
+        const name = run.name.replace(/\s+/g, '_');
         api.downloadBlob(
-            `/science/experiments/${id}/pdf/sop`,
+            `/science/runs/${id}/pdf/sop`,
             `SOP_${name}.pdf`
         );
     }
 
     function downloadBatchRecord(filled: boolean = false) {
-        const name = experiment.name.replace(/\s+/g, '_');
+        const name = run.name.replace(/\s+/g, '_');
         const suffix = filled ? 'COMPLETED' : 'BLANK';
         api.downloadBlob(
-            `/science/experiments/${id}/pdf/batch-record?filled=${filled}`,
+            `/science/runs/${id}/pdf/batch-record?filled=${filled}`,
             `BatchRecord_${name}_${suffix}.pdf`
         );
     }
@@ -182,7 +182,7 @@
     }
 
     function handleExecutionDataUpdate(updatedData: Record<string, any>) {
-        experiment.execution_data = updatedData;
+        run.execution_data = updatedData;
     }
 
     onMount(() => {
@@ -195,36 +195,36 @@
         <div class="flex items-center justify-center h-screen text-slate-500">
             <div class="text-center">
                 <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-400 mx-auto mb-3"></div>
-                Loading experiment...
+                Loading run...
             </div>
         </div>
     {:else if error}
         <div class="flex items-center justify-center h-screen">
             <div class="text-center">
-                <div class="text-red-500 font-semibold mb-2">Error loading experiment</div>
+                <div class="text-red-500 font-semibold mb-2">Error loading run</div>
                 <div class="text-slate-500 text-sm">{error}</div>
             </div>
         </div>
-    {:else if !experiment}
+    {:else if !run}
         <div class="flex items-center justify-center h-screen text-slate-500">
-            Experiment not found
+            Run not found
         </div>
     {:else}
         <!-- PLANNED State: Setup & Role Assignment -->
-        {#if experiment.status === "PLANNED"}
+        {#if run.status === "PLANNED"}
             <div class="max-w-5xl mx-auto px-6 py-8">
                 <!-- Header -->
                 <div class="mb-8">
                     <div class="flex items-center justify-between mb-2">
                         <h1 class="text-3xl font-bold text-slate-900">
-                            {experiment.name}
+                            {run.name}
                         </h1>
                         <span class="inline-block text-xs font-semibold px-3 py-1 bg-slate-200 text-slate-700 rounded-full">
                             Planned
                         </span>
                     </div>
                     <a
-                        href="/projects/{experiment.project_id}"
+                        href="/projects/{run.project_id}"
                         class="text-sm text-slate-500 hover:text-slate-700"
                     >
                         ← Back to project
@@ -265,7 +265,7 @@
                             Role Assignments
                         </h2>
                         <p class="text-sm text-slate-600 mb-6">
-                            Assign team members to each role. All roles must be assigned before starting the experiment.
+                            Assign team members to each role. All roles must be assigned before starting the run.
                         </p>
 
                         <div class="space-y-4">
@@ -325,7 +325,7 @@
                             Documents
                         </h2>
                         <p class="text-sm text-slate-600 mb-6">
-                            Download SOPs and batch record for your experiment.
+                            Download SOPs and batch record for your run.
                         </p>
 
                         <div class="space-y-3">
@@ -361,7 +361,7 @@
                 <!-- Action Buttons -->
                 <div class="flex justify-between items-center">
                     <a
-                        href="/projects/{experiment.project_id}"
+                        href="/projects/{run.project_id}"
                         class="text-slate-600 hover:text-slate-800 text-sm font-medium"
                     >
                         ← Back to project
@@ -373,7 +373,7 @@
                             disabled={!allRolesAssigned()}
                             class="px-6 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed"
                         >
-                            Start Experiment
+                            Start Run
                         </button>
                     {/if}
                 </div>
@@ -383,7 +383,7 @@
                     <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                         <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm">
                             <h3 class="text-lg font-bold text-slate-900 mb-4">
-                                Start Experiment?
+                                Start Run?
                             </h3>
                             <p class="text-slate-600 mb-6">
                                 Once started, users can begin logging results for their assigned roles.
@@ -396,7 +396,7 @@
                                     Cancel
                                 </button>
                                 <button
-                                    onclick={startExperiment}
+                                    onclick={startRun}
                                     disabled={savingStatus}
                                     class="px-4 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
                                 >
@@ -409,7 +409,7 @@
             </div>
 
         <!-- ACTIVE State: Multi-page Wizard or Observer View -->
-        {:else if experiment.status === "ACTIVE"}
+        {:else if run.status === "ACTIVE"}
             <div class="min-h-screen bg-slate-50">
                 <div class="max-w-4xl mx-auto px-6 py-8">
                     <!-- Header -->
@@ -417,7 +417,7 @@
                         <div class="flex items-center justify-between mb-2">
                             <div>
                                 <h1 class="text-3xl font-bold text-slate-900">
-                                    {experiment.name}
+                                    {run.name}
                                 </h1>
                                 {#if protocol}
                                     <p class="text-sm text-slate-500 mt-1">
@@ -430,7 +430,7 @@
                             </span>
                         </div>
                         <a
-                            href="/projects/{experiment.project_id}"
+                            href="/projects/{run.project_id}"
                             class="text-sm text-slate-500 hover:text-slate-700"
                         >
                             ← Back to project
@@ -442,8 +442,8 @@
                         <div class="bg-white rounded-lg border border-slate-200 p-8">
                             <RoleWizard
                                 steps={getWizardSteps()}
-                                experimentId={experiment.id}
-                                executionData={experiment.execution_data || {}}
+                                runId={run.id}
+                                executionData={run.execution_data || {}}
                                 onDataUpdate={handleExecutionDataUpdate}
                             />
                         </div>
@@ -452,10 +452,10 @@
                         <div class="space-y-6">
                             <div class="bg-white rounded-lg border border-slate-200 p-6">
                                 <h2 class="text-lg font-semibold text-slate-900 mb-4">
-                                    Experiment Status
+                                    Run Status
                                 </h2>
                                 <p class="text-slate-600 mb-4">
-                                    You are not assigned to a role in this experiment. Below is the current status.
+                                    You are not assigned to a role in this run. Below is the current status.
                                 </p>
 
                                 <!-- Role Status Table -->
@@ -480,7 +480,7 @@
                                                 {@const steps = getStepsForRole(lane.id)}
                                                 {@const completedCount = steps.filter(
                                                     (s) =>
-                                                        experiment.execution_data?.[s.id]?.status ===
+                                                        run.execution_data?.[s.id]?.status ===
                                                         "completed"
                                                 ).length}
                                                 <tr class="border-b border-slate-100 hover:bg-slate-50">
@@ -569,7 +569,7 @@
             </div>
 
         <!-- COMPLETED State: Summary & Results -->
-        {:else if experiment.status === "COMPLETED"}
+        {:else if run.status === "COMPLETED"}
             <div class="min-h-screen bg-slate-50">
                 <div class="max-w-5xl mx-auto px-6 py-8">
                     <!-- Header -->
@@ -577,7 +577,7 @@
                         <div class="flex items-center justify-between mb-2">
                             <div>
                                 <h1 class="text-3xl font-bold text-slate-900">
-                                    {experiment.name}
+                                    {run.name}
                                 </h1>
                                 {#if protocol}
                                     <p class="text-sm text-slate-500 mt-1">
@@ -590,14 +590,14 @@
                             </span>
                         </div>
                         <a
-                            href="/projects/{experiment.project_id}"
+                            href="/projects/{run.project_id}"
                             class="text-sm text-slate-500 hover:text-slate-700"
                         >
                             ← Back to project
                         </a>
                     </div>
 
-                    <!-- Experiment Info -->
+                    <!-- Run Info -->
                     <div class="grid grid-cols-2 gap-6 mb-8">
                         <div class="bg-white rounded-lg border border-slate-200 p-6">
                             <h3 class="text-sm font-semibold text-slate-500 uppercase mb-2">
@@ -612,9 +612,9 @@
                                 Completed
                             </h3>
                             <p class="text-lg font-bold text-slate-900">
-                                {Object.values(experiment.execution_data || {}).filter(
+                                {Object.values(run.execution_data || {}).filter(
                                     (d: any) => d.status === "completed"
-                                ).length} / {Object.keys(experiment.execution_data || {})
+                                ).length} / {Object.keys(run.execution_data || {})
                                     .length} steps
                             </p>
                         </div>
@@ -650,7 +650,7 @@
                                     <div class="space-y-3">
                                         {#each steps as step}
                                             {@const stepData =
-                                                experiment.execution_data?.[
+                                                run.execution_data?.[
                                                     step.id
                                                 ]}
                                             <div class="p-3 bg-slate-50 rounded border border-slate-200">
@@ -767,7 +767,7 @@
 
                     <!-- Footer -->
                     <a
-                        href="/projects/{experiment.project_id}"
+                        href="/projects/{run.project_id}"
                         class="inline-block text-slate-600 hover:text-slate-800 font-medium"
                     >
                         ← Back to project
@@ -781,14 +781,14 @@
                 <div class="mb-8">
                     <div class="flex items-center justify-between mb-2">
                         <h1 class="text-3xl font-bold text-slate-900">
-                            {experiment.name}
+                            {run.name}
                         </h1>
                         <span class="inline-block text-xs font-semibold px-3 py-1 bg-slate-100 text-slate-700 rounded-full">
-                            {experiment.status}
+                            {run.status}
                         </span>
                     </div>
                     <a
-                        href="/projects/{experiment.project_id}"
+                        href="/projects/{run.project_id}"
                         class="text-sm text-slate-500 hover:text-slate-700"
                     >
                         ← Back to project
@@ -796,8 +796,8 @@
                 </div>
 
                 <div class="p-8 bg-white border border-slate-200 rounded-lg text-center text-slate-500">
-                    <p class="text-lg font-medium mb-2">Experiment {experiment.status}</p>
-                    <p class="text-sm">This experiment is {experiment.status.toLowerCase()}.</p>
+                    <p class="text-lg font-medium mb-2">Run {run.status}</p>
+                    <p class="text-sm">This run is {run.status.toLowerCase()}.</p>
                 </div>
             </div>
         {/if}

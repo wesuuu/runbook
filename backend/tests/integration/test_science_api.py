@@ -11,7 +11,7 @@ from app.models.iam import (
     ObjectType,
     PermissionLevel,
 )
-from app.models.science import Project, Protocol, Experiment
+from app.models.science import Project, Protocol, Run
 
 
 # --- Unit Ops ---
@@ -340,35 +340,35 @@ async def test_delete_protocol_role(
     assert resp.status_code == 200
 
 
-# --- Experiments ---
+# --- Runs ---
 
 @pytest.mark.asyncio
-async def test_create_experiment(
+async def test_create_run(
     client: AsyncClient,
     auth_headers: dict,
     test_project: Project,
 ):
     resp = await client.post(
-        "/science/experiments",
+        "/science/runs",
         json={
-            "name": "New Experiment",
+            "name": "New Run",
             "project_id": str(test_project.id),
         },
         headers=auth_headers,
     )
     assert resp.status_code == 201
-    assert resp.json()["name"] == "New Experiment"
+    assert resp.json()["name"] == "New Run"
 
 
 @pytest.mark.asyncio
-async def test_create_experiment_no_project_perm(
+async def test_create_run_no_project_perm(
     client: AsyncClient,
     second_auth_headers: dict,
     test_project: Project,
     second_user: User,
 ):
     resp = await client.post(
-        "/science/experiments",
+        "/science/runs",
         json={
             "name": "Should Fail",
             "project_id": str(test_project.id),
@@ -379,96 +379,96 @@ async def test_create_experiment_no_project_perm(
 
 
 @pytest.mark.asyncio
-async def test_get_experiment_with_perm(
+async def test_get_run_with_perm(
     client: AsyncClient,
     auth_headers: dict,
     test_project: Project,
     db_session: AsyncSession,
 ):
-    experiment = Experiment(
-        name="Readable Experiment",
+    run_obj = Run(
+        name="Readable Run",
         project_id=test_project.id,
         graph={},
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/experiments/{experiment.id}",
+        f"/science/runs/{run_obj.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
-    assert resp.json()["name"] == "Readable Experiment"
+    assert resp.json()["name"] == "Readable Run"
 
 
 @pytest.mark.asyncio
-async def test_get_experiment_without_perm(
+async def test_get_run_without_perm(
     client: AsyncClient,
     second_auth_headers: dict,
     test_project: Project,
     db_session: AsyncSession,
     second_user: User,
 ):
-    experiment = Experiment(
-        name="Secret Experiment",
+    run_obj = Run(
+        name="Secret Run",
         project_id=test_project.id,
         graph={},
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/experiments/{experiment.id}",
+        f"/science/runs/{run_obj.id}",
         headers=second_auth_headers,
     )
     assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_update_experiment_with_edit_perm(
+async def test_update_run_with_edit_perm(
     client: AsyncClient,
     auth_headers: dict,
     test_project: Project,
     db_session: AsyncSession,
 ):
-    experiment = Experiment(
-        name="Editable Experiment",
+    run_obj = Run(
+        name="Editable Run",
         project_id=test_project.id,
         graph={},
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/experiments/{experiment.id}",
-        json={"name": "Updated Experiment"},
+        f"/science/runs/{run_obj.id}",
+        json={"name": "Updated Run"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
-    assert resp.json()["name"] == "Updated Experiment"
+    assert resp.json()["name"] == "Updated Run"
 
 
 @pytest.mark.asyncio
-async def test_list_experiments_for_project(
+async def test_list_runs_for_project(
     client: AsyncClient,
     auth_headers: dict,
     test_project: Project,
     db_session: AsyncSession,
 ):
-    experiment = Experiment(
-        name="Listed Experiment",
+    run_obj = Run(
+        name="Listed Run",
         project_id=test_project.id,
         graph={},
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/projects/{test_project.id}/experiments",
+        f"/science/projects/{test_project.id}/runs",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -512,7 +512,7 @@ async def test_get_project_members_no_perm(
     assert resp.status_code == 403
 
 
-# --- Experiment Role Assignments ---
+# --- Run Role Assignments ---
 
 @pytest.mark.asyncio
 async def test_create_role_assignment(
@@ -523,8 +523,8 @@ async def test_create_role_assignment(
     db_session: AsyncSession,
 ):
     """Test creating a role assignment."""
-    experiment = Experiment(
-        name="Assignment Test Experiment",
+    run_obj = Run(
+        name="Assignment Test Run",
         project_id=test_project.id,
         graph={
             "nodes": [
@@ -537,11 +537,11 @@ async def test_create_role_assignment(
         },
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/experiments/{experiment.id}/role-assignments",
+        f"/science/runs/{run_obj.id}/role-assignments",
         json={
             "lane_node_id": "lane-role-1",
             "role_name": "Scientist",
@@ -565,10 +565,10 @@ async def test_get_role_assignments(
     db_session: AsyncSession,
 ):
     """Test listing role assignments."""
-    from app.models.science import ExperimentRoleAssignment
+    from app.models.science import RunRoleAssignment
 
-    experiment = Experiment(
-        name="List Assignment Experiment",
+    run_obj = Run(
+        name="List Assignment Run",
         project_id=test_project.id,
         graph={
             "nodes": [
@@ -581,11 +581,11 @@ async def test_get_role_assignments(
         },
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
-    assignment = ExperimentRoleAssignment(
-        experiment_id=experiment.id,
+    assignment = RunRoleAssignment(
+        run_id=run_obj.id,
         lane_node_id="lane-role-1",
         role_name="Scientist",
         user_id=test_user.id,
@@ -594,7 +594,7 @@ async def test_get_role_assignments(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/experiments/{experiment.id}/role-assignments",
+        f"/science/runs/{run_obj.id}/role-assignments",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -614,8 +614,8 @@ async def test_update_role_assignment(
     db_session: AsyncSession,
 ):
     """Test updating a role assignment by reassigning to a different user."""
-    experiment = Experiment(
-        name="Update Assignment Experiment",
+    run_obj = Run(
+        name="Update Assignment Run",
         project_id=test_project.id,
         graph={
             "nodes": [
@@ -628,12 +628,12 @@ async def test_update_role_assignment(
         },
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     # Create initial assignment
     resp = await client.post(
-        f"/science/experiments/{experiment.id}/role-assignments",
+        f"/science/runs/{run_obj.id}/role-assignments",
         json={
             "lane_node_id": "lane-role-1",
             "role_name": "Scientist",
@@ -645,7 +645,7 @@ async def test_update_role_assignment(
 
     # Update to assign to second_user
     resp = await client.post(
-        f"/science/experiments/{experiment.id}/role-assignments",
+        f"/science/runs/{run_obj.id}/role-assignments",
         json={
             "lane_node_id": "lane-role-1",
             "role_name": "Scientist",
@@ -667,10 +667,10 @@ async def test_delete_role_assignment(
     db_session: AsyncSession,
 ):
     """Test deleting a role assignment."""
-    from app.models.science import ExperimentRoleAssignment
+    from app.models.science import RunRoleAssignment
 
-    experiment = Experiment(
-        name="Delete Assignment Experiment",
+    run_obj = Run(
+        name="Delete Assignment Run",
         project_id=test_project.id,
         graph={
             "nodes": [
@@ -683,11 +683,11 @@ async def test_delete_role_assignment(
         },
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
-    assignment = ExperimentRoleAssignment(
-        experiment_id=experiment.id,
+    assignment = RunRoleAssignment(
+        run_id=run_obj.id,
         lane_node_id="lane-role-1",
         role_name="Scientist",
         user_id=test_user.id,
@@ -696,7 +696,7 @@ async def test_delete_role_assignment(
     await db_session.flush()
 
     resp = await client.delete(
-        f"/science/experiments/{experiment.id}/role-assignments/{assignment.id}",
+        f"/science/runs/{run_obj.id}/role-assignments/{assignment.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -710,10 +710,10 @@ async def test_transition_to_active_with_all_roles_assigned(
     test_user: User,
     db_session: AsyncSession,
 ):
-    """Test that experiment can transition to ACTIVE when all roles are assigned."""
-    from app.models.science import ExperimentRoleAssignment
+    """Test that run can transition to ACTIVE when all roles are assigned."""
+    from app.models.science import RunRoleAssignment
 
-    experiment = Experiment(
+    run_obj = Run(
         name="Ready to Start",
         project_id=test_project.id,
         status="PLANNED",
@@ -728,12 +728,12 @@ async def test_transition_to_active_with_all_roles_assigned(
         },
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     # Assign the role
-    assignment = ExperimentRoleAssignment(
-        experiment_id=experiment.id,
+    assignment = RunRoleAssignment(
+        run_id=run_obj.id,
         lane_node_id="lane-role-1",
         role_name="Scientist",
         user_id=test_user.id,
@@ -743,7 +743,7 @@ async def test_transition_to_active_with_all_roles_assigned(
 
     # Transition to ACTIVE
     resp = await client.put(
-        f"/science/experiments/{experiment.id}",
+        f"/science/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )
@@ -758,8 +758,8 @@ async def test_transition_to_active_without_all_roles_assigned(
     test_project: Project,
     db_session: AsyncSession,
 ):
-    """Test that experiment cannot transition to ACTIVE if not all roles are assigned."""
-    experiment = Experiment(
+    """Test that run cannot transition to ACTIVE if not all roles are assigned."""
+    run_obj = Run(
         name="Not Ready to Start",
         project_id=test_project.id,
         status="PLANNED",
@@ -779,14 +779,14 @@ async def test_transition_to_active_without_all_roles_assigned(
         },
         execution_data={},
     )
-    db_session.add(experiment)
+    db_session.add(run_obj)
     await db_session.flush()
 
     # Don't assign any roles
 
     # Try to transition to ACTIVE - should fail
     resp = await client.put(
-        f"/science/experiments/{experiment.id}",
+        f"/science/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )

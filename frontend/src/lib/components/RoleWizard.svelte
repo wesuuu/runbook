@@ -22,12 +22,12 @@
 
     let {
         steps = [],
-        experimentId,
+        runId,
         executionData = {},
         onDataUpdate,
     }: {
         steps: Step[];
-        experimentId: string;
+        runId: string;
         executionData: Record<string, any>;
         onDataUpdate?: (data: Record<string, any>) => void;
     } = $props();
@@ -74,7 +74,7 @@
                 },
             };
 
-            await api.put(`/science/experiments/${experimentId}`, {
+            await api.put(`/science/runs/${runId}`, {
                 execution_data: updatedExecutionData,
             });
 
