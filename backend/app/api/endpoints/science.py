@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -893,9 +893,60 @@ async def reject_protocol(
 
 # --- Protocol PDF ---
 
+
+async def _get_pdf_format(db: AsyncSession, project_id: UUID) -> dict | None:
+    """Fetch pdf_format from a project's settings JSONB."""
+    result = await db.execute(
+        select(Project.settings).where(Project.id == project_id)
+    )
+    settings = result.scalar_one_or_none()
+    if settings and isinstance(settings, dict):
+        return settings.get("pdf_format")
+    return None
+
+
+def _build_format_overrides(
+    font_size: Optional[str],
+    font_family: Optional[str],
+    header_color: Optional[str],
+    row_spacing: Optional[str],
+) -> dict | None:
+    """Build a format overrides dict from query params.
+
+    Returns None if no overrides were supplied.
+    """
+    overrides: dict = {}
+    if font_size is not None:
+        overrides["font_size"] = font_size
+    if font_family is not None:
+        overrides["font_family"] = font_family
+    if header_color is not None:
+        try:
+            overrides["header_color"] = [int(c) for c in header_color.split(",")]
+        except (ValueError, AttributeError):
+            pass
+    if row_spacing is not None:
+        overrides["row_spacing"] = row_spacing
+    return overrides or None
+
+
+def _merge_format(base: dict | None, overrides: dict | None) -> dict | None:
+    """Merge format overrides on top of base project format."""
+    if not overrides:
+        return base
+    if not base:
+        return overrides
+    return {**base, **overrides}
+
+
 @router.get("/protocols/{protocol_id}/pdf/sop")
 async def get_protocol_sop_pdf(
     protocol_id: UUID,
+    disposition: Optional[str] = Query(None),
+    font_size: Optional[str] = Query(None),
+    font_family: Optional[str] = Query(None),
+    header_color: Optional[str] = Query(None),
+    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -916,19 +967,203 @@ async def get_protocol_sop_pdf(
 
     graph = protocol.graph or {}
     roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
+    pdf_format = await _get_pdf_format(db, protocol.project_id)
+    overrides = _build_format_overrides(
+        font_size, font_family, header_color, row_spacing,
+    )
+    pdf_format = _merge_format(pdf_format, overrides)
 
     pdf_bytes = generate_sop_pdf(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         run_name=None,
         roles_with_steps=roles_with_steps,
+        format_options=pdf_format,
     )
 
+    disp = disposition or "attachment"
     filename = f"SOP_Preview_{protocol.name}.pdf".replace(" ", "_")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    )
+
+
+@router.get("/protocols/{protocol_id}/pdf/batch-record")
+async def get_protocol_batch_record_pdf(
+    protocol_id: UUID,
+    disposition: Optional[str] = Query(None),
+    font_size: Optional[str] = Query(None),
+    font_family: Optional[str] = Query(None),
+    header_color: Optional[str] = Query(None),
+    row_spacing: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a batch record PDF preview from a protocol's graph."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Protocol).where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    graph = protocol.graph or {}
+    roles_with_steps, flat_steps = _parse_graph_roles_and_steps(graph)
+    pdf_format = await _get_pdf_format(db, protocol.project_id)
+    overrides = _build_format_overrides(
+        font_size, font_family, header_color, row_spacing,
+    )
+    pdf_format = _merge_format(pdf_format, overrides)
+
+    roles = [
+        {"id": r["role_name"], "name": r["role_name"]}
+        for r in roles_with_steps
+        if r["role_name"]
+    ]
+    if not roles:
+        roles = [{"id": "all", "name": "All Steps"}]
+
+    pdf_bytes = generate_batch_record_pdf(
+        protocol_name=protocol.name,
+        run_name="Preview",
+        roles=roles,
+        steps=flat_steps,
+        filled=False,
+        execution_data=None,
+        format_options=pdf_format,
+    )
+
+    disp = disposition or "attachment"
+    filename = f"BatchRecord_Preview_{protocol.name}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    )
+
+
+# --- Protocol PDF Preview from graph payload ---
+
+@router.post("/protocols/{protocol_id}/pdf/sop")
+async def preview_protocol_sop_pdf(
+    protocol_id: UUID,
+    body: dict,
+    disposition: Optional[str] = Query(None),
+    font_size: Optional[str] = Query(None),
+    font_family: Optional[str] = Query(None),
+    header_color: Optional[str] = Query(None),
+    row_spacing: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate an SOP PDF from a graph payload (unsaved preview)."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Protocol).where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    graph = body.get("graph", {})
+    roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
+    pdf_format = await _get_pdf_format(db, protocol.project_id)
+    overrides = _build_format_overrides(
+        font_size, font_family, header_color, row_spacing,
+    )
+    pdf_format = _merge_format(pdf_format, overrides)
+
+    pdf_bytes = generate_sop_pdf(
+        protocol_name=protocol.name,
+        protocol_description=protocol.description or "",
+        run_name=None,
+        roles_with_steps=roles_with_steps,
+        format_options=pdf_format,
+    )
+
+    disp = disposition or "inline"
+    filename = f"SOP_Preview_{protocol.name}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    )
+
+
+@router.post("/protocols/{protocol_id}/pdf/batch-record")
+async def preview_protocol_batch_record_pdf(
+    protocol_id: UUID,
+    body: dict,
+    disposition: Optional[str] = Query(None),
+    font_size: Optional[str] = Query(None),
+    font_family: Optional[str] = Query(None),
+    header_color: Optional[str] = Query(None),
+    row_spacing: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a batch record PDF from a graph payload (unsaved preview)."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Protocol).where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    graph = body.get("graph", {})
+    roles_with_steps, flat_steps = _parse_graph_roles_and_steps(graph)
+    pdf_format = await _get_pdf_format(db, protocol.project_id)
+    overrides = _build_format_overrides(
+        font_size, font_family, header_color, row_spacing,
+    )
+    pdf_format = _merge_format(pdf_format, overrides)
+
+    roles = [
+        {"id": r["role_name"], "name": r["role_name"]}
+        for r in roles_with_steps
+        if r["role_name"]
+    ]
+    if not roles:
+        roles = [{"id": "all", "name": "All Steps"}]
+
+    pdf_bytes = generate_batch_record_pdf(
+        protocol_name=protocol.name,
+        run_name="Preview",
+        roles=roles,
+        steps=flat_steps,
+        filled=False,
+        execution_data=None,
+        format_options=pdf_format,
+    )
+
+    disp = disposition or "inline"
+    filename = f"BatchRecord_Preview_{protocol.name}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
     )
 
 
@@ -937,6 +1172,11 @@ async def get_protocol_sop_pdf(
 @router.get("/runs/{run_id}/pdf/sop")
 async def get_run_sop_pdf(
     run_id: UUID,
+    disposition: Optional[str] = Query(None),
+    font_size: Optional[str] = Query(None),
+    font_family: Optional[str] = Query(None),
+    header_color: Optional[str] = Query(None),
+    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -955,9 +1195,10 @@ async def get_run_sop_pdf(
     if not run_obj:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Get protocol name and description
+    # Get protocol name, description, and project settings
     protocol_name = "Unknown Protocol"
     protocol_description = ""
+    pdf_format = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -966,6 +1207,12 @@ async def get_run_sop_pdf(
         if proto:
             protocol_name = proto.name
             protocol_description = proto.description or ""
+            pdf_format = await _get_pdf_format(db, proto.project_id)
+
+    overrides = _build_format_overrides(
+        font_size, font_family, header_color, row_spacing,
+    )
+    pdf_format = _merge_format(pdf_format, overrides)
 
     graph = run_obj.graph or {}
     roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
@@ -975,13 +1222,15 @@ async def get_run_sop_pdf(
         protocol_description=protocol_description,
         run_name=run_obj.name,
         roles_with_steps=roles_with_steps,
+        format_options=pdf_format,
     )
 
+    disp = disposition or "attachment"
     filename = f"SOP_{run_obj.name}.pdf".replace(" ", "_")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
     )
 
 
@@ -989,6 +1238,11 @@ async def get_run_sop_pdf(
 async def get_run_batch_record_pdf(
     run_id: UUID,
     filled: bool = Query(False),
+    disposition: Optional[str] = Query(None),
+    font_size: Optional[str] = Query(None),
+    font_family: Optional[str] = Query(None),
+    header_color: Optional[str] = Query(None),
+    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1007,8 +1261,9 @@ async def get_run_batch_record_pdf(
     if not run_obj:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Get protocol name
+    # Get protocol name and project settings
     protocol_name = "Unknown Protocol"
+    pdf_format = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -1016,6 +1271,12 @@ async def get_run_batch_record_pdf(
         proto = result.scalar_one_or_none()
         if proto:
             protocol_name = proto.name
+            pdf_format = await _get_pdf_format(db, proto.project_id)
+
+    overrides = _build_format_overrides(
+        font_size, font_family, header_color, row_spacing,
+    )
+    pdf_format = _merge_format(pdf_format, overrides)
 
     graph = run_obj.graph or {}
     roles_with_steps, flat_steps = _parse_graph_roles_and_steps(graph)
@@ -1036,14 +1297,16 @@ async def get_run_batch_record_pdf(
         steps=flat_steps,
         filled=filled,
         execution_data=run_obj.execution_data if filled else None,
+        format_options=pdf_format,
     )
 
+    disp = disposition or "attachment"
     suffix = "COMPLETED" if filled else "BLANK"
     filename = f"BatchRecord_{run_obj.name}_{suffix}.pdf".replace(" ", "_")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
     )
 
 

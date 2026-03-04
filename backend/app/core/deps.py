@@ -10,13 +10,18 @@ from app.db.session import get_db
 from app.models.iam import User, ObjectType, PermissionLevel
 from app.services.permissions import check_permission
 
-_bearer = HTTPBearer()
+_bearer = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
     user_id = decode_access_token(credentials.credentials)
     if user_id is None:
         raise HTTPException(

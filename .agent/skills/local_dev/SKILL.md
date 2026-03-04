@@ -1,5 +1,5 @@
 ---
-name: Local Development Environment
+name: local_dev 
 description: Instructions for configuring and interacting with the local development environment, specifically for database connections and process management.
 ---
 

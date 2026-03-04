@@ -11,22 +11,67 @@ from typing import Any
 from fpdf import FPDF
 
 
+# ── Default format options ──
+
+DEFAULT_FORMAT: dict[str, Any] = {
+    "font_family": "Helvetica",
+    "font_size": "medium",       # small | medium | large
+    "header_color": [30, 41, 59],  # RGB for table header / section accents
+    "row_spacing": "normal",     # compact | normal | relaxed
+}
+
+# Font-size presets: maps (size_name) → (body, step_title, section_title, doc_title)
+_FONT_SIZES = {
+    "small":  {"body": 8,  "step_title": 9,  "section": 12, "title": 16, "table": 7},
+    "medium": {"body": 10, "step_title": 11, "section": 14, "title": 18, "table": 8},
+    "large":  {"body": 12, "step_title": 13, "section": 16, "title": 20, "table": 10},
+}
+
+# Row-spacing presets: maps name → (line_h, min_row_h, step_gap)
+_ROW_SPACING = {
+    "compact":  {"line_h": 3.5, "min_row_h": 6,  "step_gap": 2},
+    "normal":   {"line_h": 4,   "min_row_h": 8,  "step_gap": 3},
+    "relaxed":  {"line_h": 5,   "min_row_h": 10, "step_gap": 5},
+}
+
+
+def _resolve_format(fmt: dict[str, Any] | None) -> dict[str, Any]:
+    """Merge user format options with defaults."""
+    resolved = dict(DEFAULT_FORMAT)
+    if fmt:
+        for k, v in fmt.items():
+            if v is not None:
+                resolved[k] = v
+    return resolved
+
+
+def _fs(fmt: dict[str, Any]) -> dict[str, int]:
+    """Get font-size preset dict from format."""
+    return _FONT_SIZES.get(fmt["font_size"], _FONT_SIZES["medium"])
+
+
+def _rs(fmt: dict[str, Any]) -> dict[str, float]:
+    """Get row-spacing preset dict from format."""
+    return _ROW_SPACING.get(fmt["row_spacing"], _ROW_SPACING["normal"])
+
+
 class _SopPdf(FPDF):
     """Custom FPDF subclass for SOP documents."""
 
-    def __init__(self) -> None:
+    def __init__(self, font_family: str = "Helvetica") -> None:
         super().__init__(orientation="P", unit="mm", format="Letter")
         self.set_auto_page_break(auto=True, margin=25)
+        self._ff = font_family
 
     def header(self) -> None:
-        self.set_font("Helvetica", "I", 9)
+        self.set_font(self._ff, "I", 9)
         self.set_text_color(120, 120, 120)
         self.cell(0, 6, "STANDARD OPERATING PROCEDURE", align="C")
         self.ln(10)
 
     def footer(self) -> None:
         self.set_y(-20)
-        self.set_font("Helvetica", "", 8)
+        self.set_font(self._ff, "", 8)
         self.set_text_color(150, 150, 150)
         self.cell(0, 5, f"Page {self.page_no()}/{{nb}}", align="C")
 
@@ -34,19 +79,20 @@ class _SopPdf(FPDF):
 class _BatchPdf(FPDF):
     """Custom FPDF subclass for batch record documents."""
 
-    def __init__(self) -> None:
+    def __init__(self, font_family: str = "Helvetica") -> None:
         super().__init__(orientation="P", unit="mm", format="Letter")
         self.set_auto_page_break(auto=True, margin=25)
+        self._ff = font_family
 
     def header(self) -> None:
-        self.set_font("Helvetica", "I", 9)
+        self.set_font(self._ff, "I", 9)
         self.set_text_color(120, 120, 120)
         self.cell(0, 6, "BATCH RECORD", align="C")
         self.ln(10)
 
     def footer(self) -> None:
         self.set_y(-20)
-        self.set_font("Helvetica", "", 8)
+        self.set_font(self._ff, "", 8)
         self.set_text_color(150, 150, 150)
         self.cell(0, 5, f"Page {self.page_no()}/{{nb}}", align="C")
 
@@ -135,6 +181,7 @@ def generate_sop_pdf(
     run_name: str | None,
     roles_with_steps: list[dict[str, Any]],
     protocol_description: str = "",
+    format_options: dict[str, Any] | None = None,
 ) -> bytes:
     """Generate a numbered instruction-manual style SOP PDF.
 
@@ -146,11 +193,18 @@ def generate_sop_pdf(
             - steps: list of dicts with keys:
                 name, description, params, param_schema, duration_min
         protocol_description: Optional description of the protocol.
+        format_options: Optional dict overriding PDF formatting defaults.
 
     Returns:
         PDF file contents as bytes.
     """
-    pdf = _SopPdf()
+    fmt = _resolve_format(format_options)
+    ff = fmt["font_family"]
+    fs = _fs(fmt)
+    rs = _rs(fmt)
+    hc = fmt["header_color"]
+
+    pdf = _SopPdf(font_family=ff)
     pdf.alias_nb_pages()
     pdf.add_page()
 
@@ -159,23 +213,24 @@ def generate_sop_pdf(
     w = pdf.epw  # effective page width
 
     # ── Title ──
-    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_font(ff, "B", fs["title"])
     pdf.set_text_color(15, 23, 42)
     pdf.cell(0, 10, "Standard Operating Procedure", align="C")
     pdf.ln(12)
 
     # ── Document info ──
     half = w / 2
+    info_size = fs["body"]
 
-    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_font(ff, "B", info_size)
     pdf.set_text_color(51, 65, 85)
     pdf.cell(half, 6, f"Protocol: {protocol_name}", align="L")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font(ff, "", info_size)
     pdf.cell(half, 6, f"Date: {today}", align="R")
     pdf.ln(7)
 
     if run_name:
-        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_font(ff, "B", info_size)
         pdf.set_text_color(51, 65, 85)
         pdf.cell(half, 6, f"Run: {run_name}", align="L")
         pdf.ln(7)
@@ -183,13 +238,13 @@ def generate_sop_pdf(
     # ── Protocol description ──
     if protocol_description:
         pdf.ln(2)
-        pdf.set_font("Helvetica", "", 10)
+        pdf.set_font(ff, "", fs["body"])
         pdf.set_text_color(71, 85, 105)
         pdf.multi_cell(w, 5, protocol_description)
         pdf.ln(2)
 
     # Divider
-    pdf.set_draw_color(200, 200, 200)
+    pdf.set_draw_color(*hc)
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + w, pdf.get_y())
     pdf.ln(6)
 
@@ -211,11 +266,11 @@ def generate_sop_pdf(
 
         # Role header (for multi-role docs with named roles)
         if multi_role and role_name and has_named_roles:
-            pdf.set_font("Helvetica", "B", 14)
+            pdf.set_font(ff, "B", fs["section"])
             pdf.set_text_color(15, 23, 42)
             pdf.cell(0, 8, role_name)
             pdf.ln(10)
-            pdf.set_draw_color(200, 200, 200)
+            pdf.set_draw_color(*hc)
             pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + w, pdf.get_y())
             pdf.ln(6)
 
@@ -229,7 +284,7 @@ def generate_sop_pdf(
             duration = step.get("duration_min")
 
             # Step number and name
-            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_font(ff, "B", fs["step_title"])
             pdf.set_text_color(15, 23, 42)
             pdf.cell(0, 6, f"{step_counter}. {name}")
             pdf.ln(7)
@@ -242,7 +297,7 @@ def generate_sop_pdf(
             # Description as prose paragraph
             if description:
                 pdf.set_x(pdf.l_margin + 8)
-                pdf.set_font("Helvetica", "", 10)
+                pdf.set_font(ff, "", fs["body"])
                 pdf.set_text_color(51, 65, 85)
                 pdf.multi_cell(w - 8, 5, description)
                 pdf.ln(2)
@@ -253,7 +308,7 @@ def generate_sop_pdf(
                 param_text = _build_param_sentence(params, param_schema)
                 if param_text:
                     pdf.set_x(pdf.l_margin + 8)
-                    pdf.set_font("Helvetica", "", 10)
+                    pdf.set_font(ff, "", fs["body"])
                     pdf.set_text_color(51, 65, 85)
                     pdf.multi_cell(w - 8, 5, param_text)
                     pdf.ln(2)
@@ -261,12 +316,12 @@ def generate_sop_pdf(
             # Duration as prose
             if duration:
                 pdf.set_x(pdf.l_margin + 8)
-                pdf.set_font("Helvetica", "I", 10)
+                pdf.set_font(ff, "I", fs["body"])
                 pdf.set_text_color(100, 116, 139)
                 pdf.cell(0, 5, f"Allow {duration} minutes for this step.")
                 pdf.ln(4)
 
-            pdf.ln(3)
+            pdf.ln(rs["step_gap"])
 
     # ── Signature block ──
     pdf.ln(6)
@@ -274,7 +329,7 @@ def generate_sop_pdf(
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + w, pdf.get_y())
     pdf.ln(6)
 
-    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_font(ff, "B", fs["step_title"])
     pdf.set_text_color(15, 23, 42)
     pdf.cell(0, 6, "Approvals")
     pdf.ln(10)
@@ -282,7 +337,7 @@ def generate_sop_pdf(
     sig_w = (w - 10) / 2
     y_start = pdf.get_y()
 
-    pdf.set_font("Helvetica", "", 9)
+    pdf.set_font(ff, "", 9)
     pdf.set_text_color(100, 100, 100)
 
     # Prepared by
@@ -387,6 +442,7 @@ def generate_batch_record_pdf(
     steps: list[dict[str, Any]],
     filled: bool = False,
     execution_data: dict[str, Any] | None = None,
+    format_options: dict[str, Any] | None = None,
 ) -> bytes:
     """Generate a batch record PDF in tabular format.
 
@@ -398,11 +454,18 @@ def generate_batch_record_pdf(
             id, name, description, role_name, params, duration_min.
         filled: If True, fill values from execution_data.
         execution_data: Dict mapping step ID to execution data.
+        format_options: Optional dict overriding PDF formatting defaults.
 
     Returns:
         PDF file contents as bytes.
     """
-    pdf = _BatchPdf()
+    fmt = _resolve_format(format_options)
+    ff = fmt["font_family"]
+    fs = _fs(fmt)
+    rs = _rs(fmt)
+    hc = fmt["header_color"]
+
+    pdf = _BatchPdf(font_family=ff)
     pdf.alias_nb_pages()
     pdf.add_page()
 
@@ -410,14 +473,14 @@ def generate_batch_record_pdf(
     w = pdf.epw
 
     # Title
-    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_font(ff, "B", fs["title"])
     pdf.set_text_color(15, 23, 42)
     pdf.cell(0, 10, "Batch Record", align="C")
     pdf.ln(14)
 
     # Header info
     half = w / 2
-    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_font(ff, "B", fs["body"])
     pdf.set_text_color(51, 65, 85)
     pdf.cell(half, 6, f"Run: {run_name}", align="L")
     pdf.cell(half, 6, f"Date: {today}", align="R")
@@ -457,19 +520,22 @@ def generate_batch_record_pdf(
                    "Initials"]
         header_aligns = ["C"] * 5
 
-    pdf.set_fill_color(30, 41, 59)
+    pdf.set_fill_color(*hc)
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_font(ff, "B", fs["table"])
+
+    table_line_h = rs["line_h"]
+    table_min_h = rs["min_row_h"]
 
     _draw_table_row(
         pdf, col_widths, headers,
-        line_h=4, min_h=8,
+        line_h=table_line_h, min_h=table_min_h,
         aligns=header_aligns, fill=True,
     )
 
     # Table rows
     pdf.set_text_color(51, 65, 85)
-    pdf.set_font("Helvetica", "", 8)
+    pdf.set_font(ff, "", fs["table"])
     pdf.set_draw_color(200, 200, 200)
 
     exec_data = execution_data or {}
@@ -517,30 +583,30 @@ def generate_batch_record_pdf(
 
         _draw_table_row(
             pdf, col_widths, row_vals,
-            line_h=4, min_h=8, aligns=aligns,
+            line_h=table_line_h, min_h=table_min_h, aligns=aligns,
         )
 
     pdf.ln(12)
 
     # Role sign-off section (only if roles exist)
     if roles:
-        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_font(ff, "B", fs["step_title"])
         pdf.set_text_color(15, 23, 42)
         pdf.cell(0, 7, "Role Sign-Off")
         pdf.ln(10)
 
-        pdf.set_font("Helvetica", "", 9)
+        pdf.set_font(ff, "", 9)
         pdf.set_text_color(51, 65, 85)
 
         for role in roles:
             role_name = role.get("name", "Unknown")
-            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_font(ff, "B", 9)
             pdf.cell(0, 6, role_name)
             pdf.ln(12)
             y = pdf.get_y()
             pdf.line(pdf.l_margin, y, pdf.l_margin + 80, y)
             pdf.ln(2)
-            pdf.set_font("Helvetica", "", 7)
+            pdf.set_font(ff, "", 7)
             pdf.set_text_color(100, 100, 100)
             pdf.cell(0, 4, "Signature / Date")
             pdf.ln(8)

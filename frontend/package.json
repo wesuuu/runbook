@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "dev:local": "VITE_API_HOST=localhost vite dev",
+    "dev:tailscale": "VITE_API_HOST=100.120.2.59 vite dev --port 5174",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"

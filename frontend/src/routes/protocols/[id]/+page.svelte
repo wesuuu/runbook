@@ -23,6 +23,7 @@
     import TimeAxis from "$lib/components/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/CreateUnitOpModal.svelte";
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
+    import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
 
     const id = $derived($page.params.id);
 
@@ -48,7 +49,7 @@
 
     // Layout / time settings
     let layout = $state<"horizontal" | "vertical">("horizontal");
-    let handleOrientation = $state<"horizontal" | "vertical">("horizontal");
+    let handleOrientation = $state<"horizontal" | "vertical">("vertical");
     let timeEnabled = $state(false);
     let pixelsPerHour = $state(200);
 
@@ -62,6 +63,10 @@
     let versions = $state<any[]>([]);
     let versionsLoading = $state(false);
     let approvalRequired = $state(false);
+
+    // PDF preview drawer
+    let showPdfDrawer = $state(false);
+    let projectPdfFormat = $state<Record<string, any>>({});
 
     // Version browsing (prev/next navigation)
     let previewingVersion = $state<number | null>(null);
@@ -269,14 +274,10 @@
 
     const hasUnitOpNodes = $derived(nodes.some((n) => n.type === "unitOp"));
 
-    async function previewSop() {
+    function openPdfPreview() {
         if (!protocol) return;
-        await save();
-        const name = protocol.name.replace(/\s+/g, '_');
-        api.downloadBlob(
-            `/science/protocols/${protocol.id}/pdf/sop`,
-            `SOP_Preview_${name}.pdf`
-        );
+        showVersionHistory = false;
+        showPdfDrawer = true;
     }
 
     // Search
@@ -430,10 +431,11 @@
                 protocolStatus = protocol.status || "DRAFT";
                 versionNumber = protocol.version_number || 0;
 
-                // Fetch project settings for approval requirement
+                // Fetch project settings for approval requirement and PDF format
                 try {
                     const proj = await api.get(`/projects/${protocol.project_id}`);
                     approvalRequired = proj.settings?.require_protocol_approval || false;
+                    projectPdfFormat = proj.settings?.pdf_format || {};
                 } catch {
                     // Ignore — approval not required if project fetch fails
                 }
@@ -443,7 +445,7 @@
                     edges = protocol.graph.edges || [];
                     layout = protocol.graph.layout || "horizontal";
                     handleOrientation =
-                        protocol.graph.handleOrientation || "horizontal";
+                        protocol.graph.handleOrientation || "vertical";
                     timeEnabled = protocol.graph.timeEnabled || false;
                     pixelsPerHour = protocol.graph.pixelsPerHour || 200;
                     detectEquipmentConflicts();
@@ -637,7 +639,7 @@
                 nodes = updated.graph.nodes;
                 edges = updated.graph.edges || [];
                 layout = updated.graph.layout || "horizontal";
-                handleOrientation = updated.graph.handleOrientation || "horizontal";
+                handleOrientation = updated.graph.handleOrientation || "vertical";
                 timeEnabled = updated.graph.timeEnabled || false;
                 pixelsPerHour = updated.graph.pixelsPerHour || 200;
             }
@@ -660,7 +662,10 @@
 
     function toggleVersionHistory() {
         showVersionHistory = !showVersionHistory;
-        if (showVersionHistory) loadVersions();
+        if (showVersionHistory) {
+            showPdfDrawer = false;
+            loadVersions();
+        }
     }
 
     // --- Version Browsing (prev/next arrows) ---
@@ -695,7 +700,7 @@
                 nodes = ver.graph.nodes;
                 edges = ver.graph.edges || [];
                 layout = ver.graph.layout || 'horizontal';
-                handleOrientation = ver.graph.handleOrientation || 'horizontal';
+                handleOrientation = ver.graph.handleOrientation || 'vertical';
                 timeEnabled = ver.graph.timeEnabled || false;
                 pixelsPerHour = ver.graph.pixelsPerHour || 200;
             }
@@ -715,7 +720,7 @@
             nodes = saved.nodes;
             edges = saved.edges;
             layout = saved.layout || 'horizontal';
-            handleOrientation = saved.handleOrientation || 'horizontal';
+            handleOrientation = saved.handleOrientation || 'vertical';
             timeEnabled = saved.timeEnabled || false;
             pixelsPerHour = saved.pixelsPerHour || 200;
             if (timeEnabled) applyTimelineSizing();
@@ -842,7 +847,7 @@
         }
 
         const newNode: Node = {
-            id: crypto.randomUUID(),
+            id: globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36),
             type: "unitOp",
             zIndex: 1,
             position,
@@ -1339,10 +1344,10 @@
             {#if hasUnitOpNodes}
                 <button
                     class="preview-sop-btn"
-                    onclick={previewSop}
+                    onclick={openPdfPreview}
                     disabled={!protocol}
                 >
-                    Preview SOP
+                    Preview Documents
                 </button>
             {/if}
             <button
@@ -1597,6 +1602,33 @@
             loading={versionsLoading}
             onRevert={revertToVersion}
             onClose={() => (showVersionHistory = false)}
+        />
+    {/if}
+
+    <!-- ============= PDF PREVIEW DRAWER ============= -->
+    {#if showPdfDrawer && protocol}
+        <PdfPreviewDrawer
+            protocolId={protocol.id}
+            protocolName={protocol.name}
+            projectId={protocol.project_id}
+            initialFormat={projectPdfFormat}
+            mode="protocol"
+            graph={{
+                nodes: nodes.map((n) => ({
+                    id: n.id,
+                    type: n.type,
+                    position: n.position,
+                    parentId: n.parentId,
+                    data: n.data,
+                })),
+                edges: edges.map((e) => ({
+                    id: e.id,
+                    source: e.source,
+                    target: e.target,
+                })),
+            }}
+            onClose={() => (showPdfDrawer = false)}
+            onFormatSaved={(fmt) => (projectPdfFormat = fmt)}
         />
     {/if}
 </div>

@@ -12,6 +12,7 @@ from app.models.iam import (
     PermissionLevel,
     PERMISSION_RANK,
 )
+from app.core.config import settings
 from app.models.science import Project, Protocol, Run
 
 
@@ -102,12 +103,16 @@ async def check_permission(
     """Check if user has at least required_level on the object.
 
     Resolution order:
-    1. Org admin → full access to everything in that org
-    2. Individual permission on object → use it (overrides team)
-    3. Team permissions on object → use highest across user's teams
-    4. Protocol/Run → inherit from parent Project
-    5. No match → deny
+    1. Auth disabled → always allow
+    2. Org admin → full access to everything in that org
+    3. Individual permission on object → use it (overrides team)
+    4. Team permissions on object → use highest across user's teams
+    5. Protocol/Run → inherit from parent Project
+    6. No match → deny
     """
+    if not settings.auth_enabled:
+        return True
+
     # 1. Check org admin
     org_id = await _get_org_id_for_object(db, object_type, object_id)
     if org_id is None:

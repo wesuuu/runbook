@@ -1,5 +1,5 @@
 ---
-name: Start Backend Server
+name: backend_dev
 description: Starts the FastAPI backend server in development mode using Uvicorn.
 ---
 
@@ -8,5 +8,5 @@ description: Starts the FastAPI backend server in development mode using Uvicorn
 To start the backend server, run the following command from the project root:
 
 ```bash
-cd backend && ../.venv/bin/uvicorn app.main:app --reload --port 8000
+cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```

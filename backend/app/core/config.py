@@ -8,8 +8,9 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-key-change-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    auth_enabled: bool = True
 
-    model_config = {"env_prefix": "RUNBOOK_"}
+    model_config = {"env_prefix": "RUNBOOK_", "env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

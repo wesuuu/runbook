@@ -1,7 +1,6 @@
 import { goto } from '$app/navigation';
 import { getToken, logout } from '$lib/auth.svelte';
-
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '$lib/config';
 
 export class ApiError extends Error {
     status: number;
@@ -34,6 +33,7 @@ async function request<T>(method: string, endpoint: string, body?: unknown): Pro
     }
 
     const response = await fetch(`${API_BASE}${endpoint}`, config);
+    console.log(API_BASE + endpoint, config);
 
     if (!response.ok) {
         if (response.status === 401) {
@@ -91,10 +91,94 @@ async function downloadBlob(endpoint: string, filename: string): Promise<void> {
     URL.revokeObjectURL(url);
 }
 
+async function fetchBlobUrl(endpoint: string): Promise<string> {
+    const headers: HeadersInit = {};
+    const token = getToken();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, { headers });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            goto('/login');
+            throw new ApiError(401, 'Session expired');
+        }
+        throw new ApiError(response.status, 'Failed to fetch PDF');
+    }
+
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+}
+
+async function postBlobUrl(endpoint: string, body: unknown): Promise<string> {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const token = getToken();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            goto('/login');
+            throw new ApiError(401, 'Session expired');
+        }
+        throw new ApiError(response.status, 'Failed to fetch PDF');
+    }
+
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+}
+
+async function postDownloadBlob(endpoint: string, body: unknown, filename: string): Promise<void> {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const token = getToken();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            goto('/login');
+            throw new ApiError(401, 'Session expired');
+        }
+        throw new ApiError(response.status, 'Download failed');
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
 export const api = {
     get: <T>(endpoint: string) => request<T>('GET', endpoint),
     post: <T>(endpoint: string, body: unknown) => request<T>('POST', endpoint, body),
     put: <T>(endpoint: string, body: unknown) => request<T>('PUT', endpoint, body),
     delete: <T>(endpoint: string) => request<T>('DELETE', endpoint),
     downloadBlob,
+    fetchBlobUrl,
+    postBlobUrl,
+    postDownloadBlob,
 };

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.deps import get_current_user
 from app.core.security import hash_password, verify_password, create_access_token
 from app.db.session import get_db
@@ -52,7 +53,18 @@ async def login(
         select(User).where(User.email == body.email)
     )
     user = result.scalar_one_or_none()
-    if user is None or not verify_password(body.password, user.hashed_password):
+
+    if not settings.auth_enabled:
+        # Auth disabled: find user by email, or fall back to first user
+        if user is None:
+            result = await db.execute(select(User).limit(1))
+            user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Auth is disabled but no users exist in the database",
+            )
+    elif user is None or not verify_password(body.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
