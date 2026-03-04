@@ -19,7 +19,9 @@
     import { getCurrentOrg } from "$lib/auth.svelte";
     import UnitOpNode from "$lib/components/UnitOpNode.svelte";
     import SwimLaneNode from "$lib/components/SwimLaneNode.svelte";
+    import ProcessStartNode from "$lib/components/ProcessStartNode.svelte";
     import Inspector from "$lib/components/Inspector.svelte";
+    import ProcessStartInspector from "$lib/components/ProcessStartInspector.svelte";
     import TimeAxis from "$lib/components/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/CreateUnitOpModal.svelte";
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
@@ -28,7 +30,7 @@
     const id = $derived($page.params.id);
 
     // --- Node Types ---
-    const nodeTypes = { unitOp: UnitOpNode, swimLane: SwimLaneNode };
+    const nodeTypes = { unitOp: UnitOpNode, swimLane: SwimLaneNode, processStart: ProcessStartNode };
 
     // --- State ---
     let protocol = $state<any>(null);
@@ -123,7 +125,7 @@
         ) {
             const effective = orientation ?? handleOrientation;
             nodes = nodes.map((n) => {
-                if (n.id === nodeId && n.type === "unitOp") {
+                if (n.id === nodeId && (n.type === "unitOp" || n.type === "processStart")) {
                     const newData = { ...n.data };
                     if (orientation === null) {
                         delete newData.handleOrientation;
@@ -156,7 +158,7 @@
             position: Position,
         ) {
             nodes = nodes.map((n) => {
-                if (n.id === nodeId && n.type === "unitOp") {
+                if (n.id === nodeId && (n.type === "unitOp" || n.type === "processStart")) {
                     const newData = { ...n.data };
                     // Store per-handle positions and clear the preset orientation
                     delete newData.handleOrientation;
@@ -211,7 +213,7 @@
             const node = nodes.find((n) => n.id === nodeId);
             if (!node) return;
             const label = (node.data.label as string) || "this item";
-            const kind = node.type === "swimLane" ? "role lane" : "unit operation";
+            const kind = node.type === "swimLane" ? "role lane" : node.type === "processStart" ? "process start" : "unit operation";
             if (!confirm(`Delete ${kind} "${label}"? This cannot be undone.`)) return;
 
             // Unparent children before removing the node
@@ -262,7 +264,7 @@
     let selectedNodeId = $state<string | null>(null);
 
     $effect(() => {
-        const sel = nodes.find((n) => n.type === "unitOp" && n.selected);
+        const sel = nodes.find((n) => (n.type === "unitOp" || n.type === "processStart") && n.selected);
         selectedNodeId = sel ? sel.id : null;
     });
 
@@ -375,7 +377,79 @@
         for (const err of branchValidationErrors()) {
             ids.add(err.sourceNodeId);
         }
+        // Also highlight nodes from processStart validation
+        for (const id of processStartInvalidNodeIds()) {
+            ids.add(id);
+        }
         return ids;
+    });
+
+    // --- Process Start validation ---
+    const processStartValidationErrors = $derived(() => {
+        const errors: Array<{
+            componentFirstNodeLabel: string;
+            processStartCount: number;
+        }> = [];
+
+        // Build undirected adjacency for component discovery (unitOps + processStarts)
+        const relevantNodes = nodes.filter(
+            (n) => n.type === "unitOp" || n.type === "processStart",
+        );
+        if (relevantNodes.length === 0) return errors;
+
+        const nodeMap = new Map(relevantNodes.map((n) => [n.id, n]));
+        const nodeIds = new Set(nodeMap.keys());
+        const adj: Map<string, Set<string>> = new Map();
+        for (const nid of nodeIds) adj.set(nid, new Set());
+        for (const e of edges) {
+            if (nodeIds.has(e.source) && nodeIds.has(e.target)) {
+                adj.get(e.source)!.add(e.target);
+                adj.get(e.target)!.add(e.source);
+            }
+        }
+
+        // BFS to find connected components
+        const visited = new Set<string>();
+        const components: Array<Set<string>> = [];
+        for (const nid of nodeIds) {
+            if (visited.has(nid)) continue;
+            const comp = new Set<string>();
+            const queue = [nid];
+            while (queue.length) {
+                const curr = queue.shift()!;
+                if (visited.has(curr)) continue;
+                visited.add(curr);
+                comp.add(curr);
+                for (const neighbor of adj.get(curr) ?? []) {
+                    if (!visited.has(neighbor)) queue.push(neighbor);
+                }
+            }
+            components.push(comp);
+        }
+
+        for (const comp of components) {
+            const compNodes = [...comp].map((id) => nodeMap.get(id)!);
+            const unitOpsInComp = compNodes.filter((n) => n.type === "unitOp");
+            const processStartsInComp = compNodes.filter((n) => n.type === "processStart");
+
+            // Skip components with no unit ops (orphaned processStart)
+            if (unitOpsInComp.length === 0) continue;
+
+            if (processStartsInComp.length !== 1) {
+                const first = unitOpsInComp[0];
+                errors.push({
+                    componentFirstNodeLabel: (first.data as any).label || "Unnamed",
+                    processStartCount: processStartsInComp.length,
+                });
+            }
+        }
+        return errors;
+    });
+
+    const processStartInvalidNodeIds = $derived(() => {
+        // Currently we don't highlight specific nodes for this validation
+        // to avoid conflating with branch validation highlights
+        return new Set<string>();
     });
 
     // --- Timeline helpers ---
@@ -800,6 +874,46 @@
             y: (event.clientY - bounds.top - viewport.y) / viewport.zoom,
         };
 
+        // Handle Process Start node
+        if (op._nodeType === "processStart") {
+            // Check if dropped inside a swimlane
+            let parentId: string | undefined;
+            for (const n of nodes) {
+                if (n.type === "swimLane") {
+                    const laneX = n.position.x;
+                    const laneY = n.position.y;
+                    const laneW = (n.measured?.width || n.width || 600) as number;
+                    const laneH = (n.measured?.height || n.height || 200) as number;
+                    if (
+                        position.x >= laneX &&
+                        position.x <= laneX + laneW &&
+                        position.y >= laneY &&
+                        position.y <= laneY + laneH
+                    ) {
+                        parentId = n.id;
+                        position.x -= laneX;
+                        position.y -= laneY;
+                        break;
+                    }
+                }
+            }
+
+            const newNode: Node = {
+                id: globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36),
+                type: "processStart",
+                zIndex: 1,
+                position,
+                parentId,
+                width: 220,
+                data: {
+                    label: "New Process",
+                    description: "",
+                },
+            };
+            nodes = [...nodes, newNode];
+            return;
+        }
+
         // Set default params from param_schema
         const defaultParams: Record<string, any> = {};
         if (op.param_schema?.properties) {
@@ -971,6 +1085,35 @@
             return n;
         });
         detectEquipmentConflicts();
+    }
+
+    // --- Process Start Inspector Apply ---
+    function handleProcessStartInspectorApply(
+        nodeId: string,
+        label: string,
+        description: string,
+    ): void {
+        nodes = nodes.map((n) => {
+            if (n.id === nodeId) {
+                return {
+                    ...n,
+                    data: {
+                        ...n.data,
+                        label,
+                        description,
+                    },
+                };
+            }
+            return n;
+        });
+    }
+
+    // --- isValidConnection ---
+    function isValidConnection(connection: { target: string }): boolean {
+        const targetNode = nodes.find((n) => n.id === connection.target);
+        // Reject connections targeting a processStart node
+        if (targetNode?.type === "processStart") return false;
+        return true;
     }
 
     // --- Roles ---
@@ -1248,6 +1391,35 @@
             />
         </div>
 
+        <!-- Process Start -->
+        <div class="sidebar-section">
+            <div class="section-header-row">
+                <span class="section-title">PROCESS</span>
+            </div>
+            <div class="cat-ops">
+                <div
+                    role="button"
+                    tabindex="0"
+                    class="op-item"
+                    draggable="true"
+                    ondragstart={(e) => {
+                        if (!e.dataTransfer) return;
+                        e.dataTransfer.setData(
+                            "application/svelteflow",
+                            JSON.stringify({ _nodeType: "processStart" }),
+                        );
+                        e.dataTransfer.effectAllowed = "move";
+                    }}
+                >
+                    <span class="op-icon" style="color: #6366f1;">&#x25B6;</span>
+                    <div class="op-info">
+                        <span class="op-name">Process Start</span>
+                        <span class="op-desc">Beginning of a process chain</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Unit Operations -->
         <div class="ops-list">
             <div class="section-header-row">
@@ -1430,7 +1602,7 @@
                             : Position.Top;
                     nodes = nodes.map((n) => {
                         if (
-                            n.type === "unitOp" &&
+                            (n.type === "unitOp" || n.type === "processStart") &&
                             !n.data.handleOrientation
                         ) {
                             return {
@@ -1536,6 +1708,24 @@
             </div>
         {/if}
 
+        <!-- Process Start validation banner -->
+        {#if processStartValidationErrors().length > 0}
+            <div class="validation-banner process-start-warning">
+                <span class="validation-icon">&#x26A0;</span>
+                <div class="validation-content">
+                    {#each processStartValidationErrors() as err}
+                        <div class="validation-item">
+                            {#if err.processStartCount === 0}
+                                Chain containing <strong>{err.componentFirstNodeLabel}</strong> has no Process Start node — add one to define a section header in the PDF.
+                            {:else}
+                                Chain containing <strong>{err.componentFirstNodeLabel}</strong> has {err.processStartCount} Process Start nodes — each chain should have exactly one.
+                            {/if}
+                        </div>
+                    {/each}
+                </div>
+            </div>
+        {/if}
+
         <!-- Time axis overlay -->
         {#if timeEnabled}
             <TimeAxis
@@ -1557,6 +1747,7 @@
                 bind:edges
                 bind:viewport
                 {nodeTypes}
+                {isValidConnection}
                 fitView
                 elevateNodesOnSelect={false}
                 selectionMode={SelectionMode.Partial}
@@ -1574,16 +1765,24 @@
 
     <!-- ============= INSPECTOR ============= -->
     {#if selectedNode}
-        <Inspector
-            node={selectedNode}
-            allNodes={nodes}
-            {orgEquipment}
-            {equipmentConflicts}
-            onApply={handleInspectorApply}
-            onSaveAsNew={handleSaveAsNew}
-            onCreateEquipment={handleCreateEquipment}
-            onClose={() => (selectedNodeId = null)}
-        />
+        {#if selectedNode.type === "processStart"}
+            <ProcessStartInspector
+                node={selectedNode}
+                onApply={handleProcessStartInspectorApply}
+                onClose={() => (selectedNodeId = null)}
+            />
+        {:else}
+            <Inspector
+                node={selectedNode}
+                allNodes={nodes}
+                {orgEquipment}
+                {equipmentConflicts}
+                onApply={handleInspectorApply}
+                onSaveAsNew={handleSaveAsNew}
+                onCreateEquipment={handleCreateEquipment}
+                onClose={() => (selectedNodeId = null)}
+            />
+        {/if}
     {/if}
 
     <!-- ============= CREATE MODAL ============= -->
@@ -2331,6 +2530,10 @@
 
     .validation-item strong {
         font-weight: 700;
+    }
+
+    .validation-banner.process-start-warning {
+        top: 108px;
     }
 
     .validation-item em {

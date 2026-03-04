@@ -500,6 +500,7 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
         [n for n in nodes if n.get("type") == "unitOp"],
         key=lambda n: n.get("position", {}).get("x", 0),
     )
+    process_starts = [n for n in nodes if n.get("type") == "processStart"]
     swim_lanes = {
         n["id"]: n for n in nodes if n.get("type") == "swimLane"
     }
@@ -522,6 +523,15 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
             "role_name": role_name,
         }
 
+    def _find_process_start_for_component(
+        comp_node_ids: set[str],
+    ) -> dict | None:
+        """Find the processStart node connected to a component."""
+        for ps in process_starts:
+            if ps["id"] in comp_node_ids:
+                return ps
+        return None
+
     roles_with_steps: list[dict] = []
     flat_steps: list[dict] = []
 
@@ -529,16 +539,32 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
         # Group by swimlane
         for lane_id, lane in swim_lanes.items():
             lane_name = lane.get("data", {}).get("label", "Unknown Role")
-            lane_steps = [
-                _step_dict(n, lane_name)
-                for n in unit_ops
-                if n.get("parentId") == lane_id
+            lane_ops = [
+                n for n in unit_ops if n.get("parentId") == lane_id
             ]
+            lane_steps = [_step_dict(n, lane_name) for n in lane_ops]
+
+            # Check for processStart parented to this lane
+            lane_ps = [
+                ps for ps in process_starts
+                if ps.get("parentId") == lane_id
+            ]
+            process_name = ""
+            process_description = ""
+            if lane_ps:
+                ps_data = lane_ps[0].get("data", {})
+                process_name = ps_data.get("label", "")
+                process_description = ps_data.get("description", "")
+
             if lane_steps:
-                roles_with_steps.append({
+                entry: dict = {
                     "role_name": lane_name,
                     "steps": lane_steps,
-                })
+                }
+                if process_name:
+                    entry["process_name"] = process_name
+                    entry["process_description"] = process_description
+                roles_with_steps.append(entry)
                 flat_steps.extend(lane_steps)
 
         # Include orphaned steps (not parented to any lane)
@@ -555,19 +581,46 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
             flat_steps.extend(orphan_steps)
     else:
         # No swimlane parenting — group by connected components
-        components = _find_connected_components(unit_ops, edges)
-        multi_process = len(components) > 1
+        # Include processStart nodes in component discovery
+        all_relevant = unit_ops + process_starts
+        components = _find_connected_components(all_relevant, edges)
 
         for comp_nodes in components:
-            first_label = comp_nodes[0].get("data", {}).get(
-                "label", "Process"
-            ) if comp_nodes else "Process"
-            process_name = first_label if multi_process else ""
-            comp_steps = [_step_dict(n, process_name) for n in comp_nodes]
-            roles_with_steps.append({
-                "role_name": process_name,
+            # Separate processStart from unitOps in this component
+            comp_unit_ops = [
+                n for n in comp_nodes if n.get("type") == "unitOp"
+            ]
+            comp_ps = [
+                n for n in comp_nodes if n.get("type") == "processStart"
+            ]
+
+            # Skip components with no unit ops (orphaned processStart)
+            if not comp_unit_ops:
+                continue
+
+            process_name = ""
+            process_description = ""
+            if comp_ps:
+                ps_data = comp_ps[0].get("data", {})
+                process_name = ps_data.get("label", "")
+                process_description = ps_data.get("description", "")
+
+            # Fallback: use first unit op label when no processStart
+            role_name = process_name
+            if not role_name and len(components) > 1:
+                role_name = comp_unit_ops[0].get("data", {}).get(
+                    "label", "Process"
+                )
+
+            comp_steps = [_step_dict(n, role_name) for n in comp_unit_ops]
+            entry = {
+                "role_name": role_name,
                 "steps": comp_steps,
-            })
+            }
+            if process_name:
+                entry["process_name"] = process_name
+                entry["process_description"] = process_description
+            roles_with_steps.append(entry)
             flat_steps.extend(comp_steps)
 
     return roles_with_steps, flat_steps
@@ -979,6 +1032,10 @@ async def get_protocol_sop_pdf(
         run_name=None,
         roles_with_steps=roles_with_steps,
         format_options=pdf_format,
+        version_number=protocol.version_number,
+        last_modified=protocol.updated_at.strftime("%B %d, %Y")
+        if protocol.updated_at
+        else None,
     )
 
     disp = disposition or "attachment"
@@ -1040,6 +1097,7 @@ async def get_protocol_batch_record_pdf(
         filled=False,
         execution_data=None,
         format_options=pdf_format,
+        roles_with_steps=roles_with_steps,
     )
 
     disp = disposition or "attachment"
@@ -1094,6 +1152,10 @@ async def preview_protocol_sop_pdf(
         run_name=None,
         roles_with_steps=roles_with_steps,
         format_options=pdf_format,
+        version_number=protocol.version_number,
+        last_modified=protocol.updated_at.strftime("%B %d, %Y")
+        if protocol.updated_at
+        else None,
     )
 
     disp = disposition or "inline"
@@ -1156,6 +1218,7 @@ async def preview_protocol_batch_record_pdf(
         filled=False,
         execution_data=None,
         format_options=pdf_format,
+        roles_with_steps=roles_with_steps,
     )
 
     disp = disposition or "inline"
@@ -1199,6 +1262,8 @@ async def get_run_sop_pdf(
     protocol_name = "Unknown Protocol"
     protocol_description = ""
     pdf_format = None
+    proto_version: int | None = None
+    proto_modified: str | None = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -1208,6 +1273,9 @@ async def get_run_sop_pdf(
             protocol_name = proto.name
             protocol_description = proto.description or ""
             pdf_format = await _get_pdf_format(db, proto.project_id)
+            proto_version = proto.version_number
+            if proto.updated_at:
+                proto_modified = proto.updated_at.strftime("%B %d, %Y")
 
     overrides = _build_format_overrides(
         font_size, font_family, header_color, row_spacing,
@@ -1223,6 +1291,8 @@ async def get_run_sop_pdf(
         run_name=run_obj.name,
         roles_with_steps=roles_with_steps,
         format_options=pdf_format,
+        version_number=proto_version,
+        last_modified=proto_modified,
     )
 
     disp = disposition or "attachment"
@@ -1298,6 +1368,7 @@ async def get_run_batch_record_pdf(
         filled=filled,
         execution_data=run_obj.execution_data if filled else None,
         format_options=pdf_format,
+        roles_with_steps=roles_with_steps,
     )
 
     disp = disposition or "attachment"
