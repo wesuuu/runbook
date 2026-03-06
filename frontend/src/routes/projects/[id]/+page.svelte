@@ -26,13 +26,89 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
 
-    // -- Tab State --
-    let activeTab = $state<"protocols" | "runs" | "activity" | "settings">(
-        "protocols",
-    );
+    // -- Tab State (derived from URL ?tab= param) --
+    type TabName = "protocols" | "runs" | "activity" | "settings";
+    const validTabs: TabName[] = ["protocols", "runs", "activity", "settings"];
+
+    const activeTab: TabName = $derived.by(() => {
+        const t = $page.url.searchParams.get("tab");
+        if (t && validTabs.includes(t as TabName)) return t as TabName;
+        return "protocols";
+    });
+
+    function setTab(tab: TabName) {
+        if (tab === activeTab) return;
+        goto(`?tab=${tab}`, { replaceState: false, keepFocus: true, noScroll: true });
+    }
+
+    // Lazy-load data when tab changes (works for both clicks and back/forward)
+    $effect(() => {
+        if (activeTab === "activity" && !activityLoaded) loadActivity(0);
+        if (activeTab === "settings") loadSettings();
+    });
 
     // -- Search --
     let searchQuery = $state("");
+
+    // -- Sorting --
+    type SortDir = "asc" | "desc";
+    let protoSortKey = $state<string>("updated_at");
+    let protoSortDir = $state<SortDir>("desc");
+    let runSortKey = $state<string>("updated_at");
+    let runSortDir = $state<SortDir>("desc");
+
+    function toggleSort(
+        tab: "protocols" | "runs",
+        key: string,
+    ) {
+        if (tab === "protocols") {
+            if (protoSortKey === key) {
+                protoSortDir = protoSortDir === "asc" ? "desc" : "asc";
+            } else {
+                protoSortKey = key;
+                protoSortDir = key === "name" ? "asc" : "desc";
+            }
+            protoPage = 1;
+        } else {
+            if (runSortKey === key) {
+                runSortDir = runSortDir === "asc" ? "desc" : "asc";
+            } else {
+                runSortKey = key;
+                runSortDir = key === "name" ? "asc" : "desc";
+            }
+            runPage = 1;
+        }
+    }
+
+    function sortIndicator(tab: "protocols" | "runs", key: string): string {
+        const activeKey = tab === "protocols" ? protoSortKey : runSortKey;
+        const dir = tab === "protocols" ? protoSortDir : runSortDir;
+        if (activeKey !== key) return "";
+        return dir === "asc" ? " \u25B2" : " \u25BC";
+    }
+
+    function compareValues(a: any, b: any, key: string, dir: SortDir): number {
+        let va = a[key];
+        let vb = b[key];
+        // Fallback for date fields
+        if (key === "updated_at") {
+            va = va || a.created_at;
+            vb = vb || b.created_at;
+        }
+        if (va == null && vb == null) return 0;
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        if (typeof va === "string") va = va.toLowerCase();
+        if (typeof vb === "string") vb = vb.toLowerCase();
+        const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+        return dir === "asc" ? cmp : -cmp;
+    }
+
+    // -- Pagination --
+    let protoPageSize = $state(25);
+    let protoPage = $state(1);
+    let runPageSize = $state(25);
+    let runPage = $state(1);
 
     // -- Run Modal --
     let showRunModal = $state(false);
@@ -46,6 +122,56 @@
     let activityLoading = $state(false);
     let activityLoaded = $state(false);
     const activityLimit = 50;
+
+    // -- Activity Filters --
+    let activityEntityFilter = $state<string[]>([]);  // empty = all
+    let activityActionFilter = $state<string[]>([]);  // empty = all
+    let activitySearch = $state("");
+    let activitySearchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+    const allEntityTypes = ["Project", "Protocol", "Run"];
+    const allActionTypes = [
+        { value: "CREATE", label: "Created" },
+        { value: "UPDATE", label: "Updated" },
+        { value: "DELETE", label: "Deleted" },
+        { value: "STEP_COMPLETE", label: "Step Complete" },
+        { value: "STEP_UNCOMPLETE", label: "Step Uncomplete" },
+        { value: "STEP_EDIT", label: "Step Edit" },
+    ];
+
+    function toggleEntityFilter(type: string) {
+        if (activityEntityFilter.includes(type)) {
+            activityEntityFilter = activityEntityFilter.filter((t) => t !== type);
+        } else {
+            activityEntityFilter = [...activityEntityFilter, type];
+        }
+        activityLoaded = false;
+        loadActivity(0);
+    }
+
+    function toggleActionFilter(act: string) {
+        if (activityActionFilter.includes(act)) {
+            activityActionFilter = activityActionFilter.filter((a) => a !== act);
+        } else {
+            activityActionFilter = [...activityActionFilter, act];
+        }
+        activityLoaded = false;
+        loadActivity(0);
+    }
+
+    function clearActivityFilters() {
+        activityEntityFilter = [];
+        activityActionFilter = [];
+        activitySearch = "";
+        activityLoaded = false;
+        loadActivity(0);
+    }
+
+    const hasActiveFilters = $derived(
+        activityEntityFilter.length > 0 ||
+        activityActionFilter.length > 0 ||
+        activitySearch.trim().length > 0,
+    );
 
     // -- Settings State --
     let requireApproval = $state(false);
@@ -66,23 +192,54 @@
     );
 
     const filteredProtocols = $derived(() => {
-        if (!searchQuery.trim()) return protocols;
-        const q = searchQuery.toLowerCase();
-        return protocols.filter(
-            (p) =>
-                p.name.toLowerCase().includes(q) ||
-                (p.description && p.description.toLowerCase().includes(q)),
-        );
+        let list = protocols;
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            list = list.filter(
+                (p) =>
+                    p.name.toLowerCase().includes(q) ||
+                    (p.description && p.description.toLowerCase().includes(q)),
+            );
+        }
+        list = [...list].sort((a, b) => compareValues(a, b, protoSortKey, protoSortDir));
+        return list;
+    });
+
+    const protoTotalFiltered = $derived(filteredProtocols().length);
+    const protoTotalPages = $derived(Math.max(1, Math.ceil(protoTotalFiltered / protoPageSize)));
+    const paginatedProtocols = $derived(() => {
+        const all = filteredProtocols();
+        const start = (protoPage - 1) * protoPageSize;
+        return all.slice(start, start + protoPageSize);
     });
 
     const filteredRuns = $derived(() => {
-        if (!searchQuery.trim()) return runs;
-        const q = searchQuery.toLowerCase();
-        return runs.filter(
-            (r) =>
-                r.name.toLowerCase().includes(q) ||
-                (r.status && r.status.toLowerCase().includes(q)),
-        );
+        let list = runs;
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            list = list.filter(
+                (r) =>
+                    r.name.toLowerCase().includes(q) ||
+                    (r.status && r.status.toLowerCase().includes(q)),
+            );
+        }
+        list = [...list].sort((a, b) => compareValues(a, b, runSortKey, runSortDir));
+        return list;
+    });
+
+    const runTotalFiltered = $derived(filteredRuns().length);
+    const runTotalPages = $derived(Math.max(1, Math.ceil(runTotalFiltered / runPageSize)));
+    const paginatedRuns = $derived(() => {
+        const all = filteredRuns();
+        const start = (runPage - 1) * runPageSize;
+        return all.slice(start, start + runPageSize);
+    });
+
+    // Reset to page 1 when search query changes
+    $effect(() => {
+        searchQuery;
+        protoPage = 1;
+        runPage = 1;
     });
 
     const showProtocolStatus = $derived(true);
@@ -158,6 +315,12 @@
                 return "deleted";
             case "ARCHIVE":
                 return "archived";
+            case "STEP_EDIT":
+                return "edited";
+            case "STEP_COMPLETE":
+                return "completed step in";
+            case "STEP_UNCOMPLETE":
+                return "uncompleted step in";
             default:
                 return action.toLowerCase();
         }
@@ -171,9 +334,18 @@
                 return "bg-blue-500";
             case "DELETE":
                 return "bg-red-500";
+            case "STEP_EDIT":
+                return "bg-amber-500";
             default:
                 return "bg-slate-400";
         }
+    }
+
+    function stepEditSummary(changes: Record<string, any>): string | null {
+        if (!changes?.step_name || !changes?.field_label) return null;
+        const old_val = changes.old_value ?? "empty";
+        const new_val = changes.new_value ?? "empty";
+        return `${changes.step_name}: ${changes.field_label} from ${old_val} to ${new_val}`;
     }
 
     function entityBadgeClasses(entityType: string): string {
@@ -215,8 +387,20 @@
     async function loadActivity(offset: number = 0) {
         activityLoading = true;
         try {
+            const params = new URLSearchParams();
+            params.set("offset", String(offset));
+            params.set("limit", String(activityLimit));
+            if (activityEntityFilter.length > 0) {
+                params.set("entity_type", activityEntityFilter.join(","));
+            }
+            if (activityActionFilter.length > 0) {
+                params.set("action", activityActionFilter.join(","));
+            }
+            if (activitySearch.trim()) {
+                params.set("search", activitySearch.trim());
+            }
             const data: any = await api.get(
-                `/projects/${id}/activity?offset=${offset}&limit=${activityLimit}`,
+                `/projects/${id}/activity?${params.toString()}`,
             );
             activityItems = data.items;
             activityTotal = data.total;
@@ -589,7 +773,7 @@
                     ? '!text-slate-900 !font-semibold !border-slate-900'
                     : ''}"
                 onclick={() => {
-                    activeTab = "protocols";
+                    setTab("protocols");
                     searchQuery = "";
                 }}
             >
@@ -601,7 +785,7 @@
                     ? '!text-slate-900 !font-semibold !border-slate-900'
                     : ''}"
                 onclick={() => {
-                    activeTab = "runs";
+                    setTab("runs");
                     searchQuery = "";
                 }}
             >
@@ -614,9 +798,8 @@
                     ? '!text-slate-900 !font-semibold !border-slate-900'
                     : ''}"
                 onclick={() => {
-                    activeTab = "activity";
+                    setTab("activity");
                     searchQuery = "";
-                    if (!activityLoaded) loadActivity();
                 }}
             >
                 Activity
@@ -627,9 +810,8 @@
                     ? '!text-slate-900 !font-semibold !border-slate-900'
                     : ''}"
                 onclick={() => {
-                    activeTab = "settings";
+                    setTab("settings");
                     searchQuery = "";
-                    loadSettings();
                 }}
             >
                 Settings
@@ -712,25 +894,28 @@
                                     >ID</th
                                 >
                                 <th
-                                    class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
-                                    >Run Name</th
+                                    class="text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {runSortKey === 'name' ? 'text-slate-700' : 'text-slate-400'}"
+                                    onclick={() => toggleSort("runs", "name")}
+                                    >Run Name{sortIndicator("runs", "name")}</th
                                 >
                                 <th
                                     class="w-[150px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
                                     >Protocol</th
                                 >
                                 <th
-                                    class="w-[100px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
-                                    >Status</th
+                                    class="w-[100px] text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {runSortKey === 'status' ? 'text-slate-700' : 'text-slate-400'}"
+                                    onclick={() => toggleSort("runs", "status")}
+                                    >Status{sortIndicator("runs", "status")}</th
                                 >
                                 <th
-                                    class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
-                                    >Last Modified</th
+                                    class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {runSortKey === 'updated_at' ? 'text-slate-700' : 'text-slate-400'}"
+                                    onclick={() => toggleSort("runs", "updated_at")}
+                                    >Last Modified{sortIndicator("runs", "updated_at")}</th
                                 >
                             </tr>
                         </thead>
                         <tbody>
-                            {#each filteredRuns() as r}
+                            {#each paginatedRuns() as r}
                                 <tr
                                     class="border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50"
                                     onclick={() => goto(`/runs/${r.id}`)}
@@ -778,12 +963,43 @@
                             {/each}
                         </tbody>
                     </table>
+                    <!-- Pagination -->
                     <div
                         class="flex justify-between items-center px-8 py-3.5 border-t border-slate-100"
                     >
-                        <span class="text-[13px] text-slate-400 font-medium"
-                            >Showing {filteredRuns().length} of {runs.length} records</span
-                        >
+                        <div class="flex items-center gap-2">
+                            <span class="text-[13px] text-slate-400 font-medium">
+                                Showing {Math.min((runPage - 1) * runPageSize + 1, runTotalFiltered)}–{Math.min(runPage * runPageSize, runTotalFiltered)} of {runTotalFiltered}
+                            </span>
+                            {#if runTotalFiltered > 25}
+                                <select
+                                    class="ml-2 text-[12px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 bg-white"
+                                    bind:value={runPageSize}
+                                    onchange={() => { runPage = 1; }}
+                                >
+                                    <option value={25}>25 / page</option>
+                                    <option value={50}>50 / page</option>
+                                    <option value={100}>100 / page</option>
+                                </select>
+                            {/if}
+                        </div>
+                        {#if runTotalPages > 1}
+                            <div class="flex items-center gap-1">
+                                <button
+                                    class="px-2.5 py-1 text-[12px] font-medium rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    disabled={runPage <= 1}
+                                    onclick={() => { runPage = runPage - 1; }}
+                                >Prev</button>
+                                <span class="text-[12px] text-slate-500 px-2">
+                                    {runPage} / {runTotalPages}
+                                </span>
+                                <button
+                                    class="px-2.5 py-1 text-[12px] font-medium rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    disabled={runPage >= runTotalPages}
+                                    onclick={() => { runPage = runPage + 1; }}
+                                >Next</button>
+                            </div>
+                        {/if}
                     </div>
                 {/if}
             {:else if activeTab === "protocols"}
@@ -866,31 +1082,35 @@
                                     >ID</th
                                 >
                                 <th
-                                    class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
-                                    >Protocol Name</th
+                                    class="text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'name' ? 'text-slate-700' : 'text-slate-400'}"
+                                    onclick={() => toggleSort("protocols", "name")}
+                                    >Protocol Name{sortIndicator("protocols", "name")}</th
                                 >
                                 <th
                                     class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
                                     >Description</th
                                 >
                                 <th
-                                    class="w-[80px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
-                                    >Version</th
+                                    class="w-[80px] text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'version_number' ? 'text-slate-700' : 'text-slate-400'}"
+                                    onclick={() => toggleSort("protocols", "version_number")}
+                                    >Version{sortIndicator("protocols", "version_number")}</th
                                 >
                                 {#if showProtocolStatus}
                                     <th
-                                        class="w-[110px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
-                                        >Status</th
+                                        class="w-[110px] text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'status' ? 'text-slate-700' : 'text-slate-400'}"
+                                        onclick={() => toggleSort("protocols", "status")}
+                                        >Status{sortIndicator("protocols", "status")}</th
                                     >
                                 {/if}
                                 <th
-                                    class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
-                                    >Last Modified</th
+                                    class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'updated_at' ? 'text-slate-700' : 'text-slate-400'}"
+                                    onclick={() => toggleSort("protocols", "updated_at")}
+                                    >Last Modified{sortIndicator("protocols", "updated_at")}</th
                                 >
                             </tr>
                         </thead>
                         <tbody>
-                            {#each filteredProtocols() as proto}
+                            {#each paginatedProtocols() as proto}
                                 <tr
                                     class="border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50"
                                     onclick={() =>
@@ -940,17 +1160,110 @@
                             {/each}
                         </tbody>
                     </table>
+                    <!-- Pagination -->
                     <div
                         class="flex justify-between items-center px-8 py-3.5 border-t border-slate-100"
                     >
-                        <span class="text-[13px] text-slate-400 font-medium"
-                            >Showing {filteredProtocols().length} of {protocols.length}
-                            records</span
-                        >
+                        <div class="flex items-center gap-2">
+                            <span class="text-[13px] text-slate-400 font-medium">
+                                Showing {Math.min((protoPage - 1) * protoPageSize + 1, protoTotalFiltered)}–{Math.min(protoPage * protoPageSize, protoTotalFiltered)} of {protoTotalFiltered}
+                            </span>
+                            {#if protoTotalFiltered > 25}
+                                <select
+                                    class="ml-2 text-[12px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 bg-white"
+                                    bind:value={protoPageSize}
+                                    onchange={() => { protoPage = 1; }}
+                                >
+                                    <option value={25}>25 / page</option>
+                                    <option value={50}>50 / page</option>
+                                    <option value={100}>100 / page</option>
+                                </select>
+                            {/if}
+                        </div>
+                        {#if protoTotalPages > 1}
+                            <div class="flex items-center gap-1">
+                                <button
+                                    class="px-2.5 py-1 text-[12px] font-medium rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    disabled={protoPage <= 1}
+                                    onclick={() => { protoPage = protoPage - 1; }}
+                                >Prev</button>
+                                <span class="text-[12px] text-slate-500 px-2">
+                                    {protoPage} / {protoTotalPages}
+                                </span>
+                                <button
+                                    class="px-2.5 py-1 text-[12px] font-medium rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    disabled={protoPage >= protoTotalPages}
+                                    onclick={() => { protoPage = protoPage + 1; }}
+                                >Next</button>
+                            </div>
+                        {/if}
                     </div>
                 {/if}
             {:else if activeTab === "activity"}
                 <div class="p-8">
+                    <!-- Filter Bar -->
+                    <div class="mb-6 space-y-3">
+                        <!-- Row 1: Entity type pills + search -->
+                        <div class="flex flex-wrap items-center gap-3">
+                            <div class="flex items-center gap-1.5">
+                                {#each allEntityTypes as et}
+                                    <button
+                                        class="px-2.5 py-1 text-xs font-medium rounded-full border transition-colors {activityEntityFilter.includes(et)
+                                            ? entityBadgeClasses(et) + ' ring-1 ring-offset-1'
+                                            : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300'}"
+                                        onclick={() => toggleEntityFilter(et)}
+                                    >
+                                        {et}
+                                    </button>
+                                {/each}
+                            </div>
+
+                            <div class="h-5 w-px bg-slate-200"></div>
+
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                {#each allActionTypes as at}
+                                    <button
+                                        class="px-2.5 py-1 text-xs font-medium rounded-full border transition-colors {activityActionFilter.includes(at.value)
+                                            ? 'bg-slate-800 text-white border-slate-800'
+                                            : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300'}"
+                                        onclick={() => toggleActionFilter(at.value)}
+                                    >
+                                        {at.label}
+                                    </button>
+                                {/each}
+                            </div>
+
+                            <div class="ml-auto flex items-center gap-2">
+                                {#if hasActiveFilters}
+                                    <button
+                                        class="text-xs text-slate-400 hover:text-slate-600 underline"
+                                        onclick={clearActivityFilters}
+                                    >
+                                        Clear filters
+                                    </button>
+                                {/if}
+                                <div class="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Search activity..."
+                                        class="w-48 pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
+                                        bind:value={activitySearch}
+                                        oninput={() => {
+                                            if (activitySearchDebounce) clearTimeout(activitySearchDebounce);
+                                            activitySearchDebounce = setTimeout(() => {
+                                                activityLoaded = false;
+                                                loadActivity(0);
+                                            }, 400);
+                                        }}
+                                    />
+                                    <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     {#if activityLoading && !activityLoaded}
                         <div
                             class="flex items-center justify-center py-16 text-sm text-slate-400"
@@ -975,13 +1288,28 @@
                                     /></svg
                                 >
                             </div>
-                            <p class="text-[15px] font-semibold text-slate-600">
-                                No activity yet
-                            </p>
-                            <p class="text-[13px] text-slate-400">
-                                Changes to this project and its protocols and
-                                runs will appear here.
-                            </p>
+                            {#if hasActiveFilters}
+                                <p class="text-[15px] font-semibold text-slate-600">
+                                    No matching activity
+                                </p>
+                                <p class="text-[13px] text-slate-400">
+                                    Try adjusting your filters or search term.
+                                </p>
+                                <button
+                                    class="mt-2 text-xs text-slate-500 hover:text-slate-700 underline"
+                                    onclick={clearActivityFilters}
+                                >
+                                    Clear all filters
+                                </button>
+                            {:else}
+                                <p class="text-[15px] font-semibold text-slate-600">
+                                    No activity yet
+                                </p>
+                                <p class="text-[13px] text-slate-400">
+                                    Changes to this project and its protocols and
+                                    runs will appear here.
+                                </p>
+                            {/if}
                         </div>
                     {:else}
                         <!-- Timeline -->
@@ -1043,7 +1371,11 @@
                                             {versionSummary(item)}
                                         </p>
                                     {/if}
-                                    {#if item.action === "UPDATE" && item.changes && changedKeys(item.changes).length > 0}
+                                    {#if item.action === "STEP_EDIT" && item.changes}
+                                        <p class="mt-1 text-xs text-amber-600">
+                                            {stepEditSummary(item.changes) || ""}
+                                        </p>
+                                    {:else if item.action === "UPDATE" && item.changes && changedKeys(item.changes).length > 0}
                                         <p class="mt-1 text-xs text-slate-400">
                                             Changed: {changedKeys(
                                                 item.changes,

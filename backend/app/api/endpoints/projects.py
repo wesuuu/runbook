@@ -2,6 +2,7 @@ from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+import sqlalchemy
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -256,6 +257,9 @@ async def get_project_activity(
     project_id: UUID,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    entity_type: str | None = Query(None, description="Filter by entity type (comma-separated: Project,Protocol,Run)"),
+    action: str | None = Query(None, description="Filter by action (comma-separated: CREATE,UPDATE,DELETE,STEP_EDIT,STEP_COMPLETE,STEP_UNCOMPLETE)"),
+    search: str | None = Query(None, description="Search entity names and change details"),
     db: AsyncSession = Depends(get_db),
 ):
     # Verify project exists
@@ -277,22 +281,96 @@ async def get_project_activity(
     run_ids = list(run_result.scalars().all())
 
     # Build filter conditions for all related entities
-    conditions = [
-        (AuditLog.entity_type == "Project")
-        & (AuditLog.entity_id == project_id),
-    ]
-    if protocol_ids:
+    # When entity_type filter is set, only include matching types
+    entity_types_filter = (
+        [t.strip() for t in entity_type.split(",") if t.strip()]
+        if entity_type
+        else None
+    )
+
+    conditions = []
+    if not entity_types_filter or "Project" in entity_types_filter:
         conditions.append(
-            (AuditLog.entity_type == "Protocol")
-            & (AuditLog.entity_id.in_(protocol_ids))
+            (AuditLog.entity_type == "Project")
+            & (AuditLog.entity_id == project_id),
         )
-    if run_ids:
-        conditions.append(
-            (AuditLog.entity_type == "Run")
-            & (AuditLog.entity_id.in_(run_ids))
-        )
+    if not entity_types_filter or "Protocol" in entity_types_filter:
+        if protocol_ids:
+            conditions.append(
+                (AuditLog.entity_type == "Protocol")
+                & (AuditLog.entity_id.in_(protocol_ids))
+            )
+    if not entity_types_filter or "Run" in entity_types_filter:
+        if run_ids:
+            conditions.append(
+                (AuditLog.entity_type == "Run")
+                & (AuditLog.entity_id.in_(run_ids))
+            )
+
+    if not conditions:
+        return AuditLogPage(items=[], total=0, offset=offset, limit=limit)
 
     base_filter = or_(*conditions)
+
+    # Apply action filter
+    if action:
+        actions = [a.strip() for a in action.split(",") if a.strip()]
+        if actions:
+            base_filter = base_filter & AuditLog.action.in_(actions)
+
+    # Apply text search (entity names + changes JSONB)
+    if search and search.strip():
+        search_term = f"%{search.strip().lower()}%"
+        # Find entity IDs whose names match the search
+        name_match_conditions = []
+        if not entity_types_filter or "Protocol" in entity_types_filter:
+            if protocol_ids:
+                matching_protos = await db.execute(
+                    select(Protocol.id).where(
+                        Protocol.id.in_(protocol_ids),
+                        func.lower(Protocol.name).like(search_term),
+                    )
+                )
+                matched_proto_ids = list(matching_protos.scalars().all())
+                if matched_proto_ids:
+                    name_match_conditions.append(
+                        (AuditLog.entity_type == "Protocol")
+                        & AuditLog.entity_id.in_(matched_proto_ids)
+                    )
+        if not entity_types_filter or "Run" in entity_types_filter:
+            if run_ids:
+                matching_runs = await db.execute(
+                    select(Run.id).where(
+                        Run.id.in_(run_ids),
+                        func.lower(Run.name).like(search_term),
+                    )
+                )
+                matched_run_ids = list(matching_runs.scalars().all())
+                if matched_run_ids:
+                    name_match_conditions.append(
+                        (AuditLog.entity_type == "Run")
+                        & AuditLog.entity_id.in_(matched_run_ids)
+                    )
+        if not entity_types_filter or "Project" in entity_types_filter:
+            proj_name_result = await db.execute(
+                select(Project.name).where(
+                    Project.id == project_id,
+                    func.lower(Project.name).like(search_term),
+                )
+            )
+            if proj_name_result.scalar_one_or_none():
+                name_match_conditions.append(
+                    (AuditLog.entity_type == "Project")
+                    & (AuditLog.entity_id == project_id)
+                )
+
+        # Also match against changes JSONB text
+        changes_match = func.lower(
+            func.cast(AuditLog.changes, sqlalchemy.Text)
+        ).like(search_term)
+        name_match_conditions.append(changes_match)
+
+        base_filter = base_filter & or_(*name_match_conditions)
 
     # Get total count
     count_result = await db.execute(

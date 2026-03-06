@@ -321,7 +321,7 @@
                         </span>
                     </div>
                     <a
-                        href="/projects/{run.project_id}"
+                        href="/projects/{run.project_id}?tab=runs"
                         class="text-sm text-slate-500 hover:text-slate-700"
                     >
                         ← Back to project
@@ -574,7 +574,7 @@
                 <!-- Action Buttons -->
                 <div class="flex justify-between items-center">
                     <a
-                        href="/projects/{run.project_id}"
+                        href="/projects/{run.project_id}?tab=runs"
                         class="text-slate-600 hover:text-slate-800 text-sm font-medium"
                     >
                         ← Back to project
@@ -641,7 +641,7 @@
                             </span>
                         </div>
                         <a
-                            href="/projects/{run.project_id}"
+                            href="/projects/{run.project_id}?tab=runs"
                             class="text-sm text-slate-500 hover:text-slate-700"
                         >
                             ← Back to project
@@ -836,7 +836,7 @@
                             </span>
                         </div>
                         <a
-                            href="/projects/{run.project_id}"
+                            href="/projects/{run.project_id}?tab=runs"
                             class="text-sm text-slate-500 hover:text-slate-700"
                         >
                             ← Back to project
@@ -1027,7 +1027,7 @@
                     <!-- Footer -->
                     <div class="flex justify-between items-center">
                         <a
-                            href="/projects/{run.project_id}"
+                            href="/projects/{run.project_id}?tab=runs"
                             class="text-slate-600 hover:text-slate-800 font-medium"
                         >
                             ← Back to project
@@ -1124,7 +1124,7 @@
                             </span>
                         </div>
                         <a
-                            href="/projects/{run.project_id}"
+                            href="/projects/{run.project_id}?tab=runs"
                             class="text-sm text-slate-500 hover:text-slate-700"
                         >
                             ← Back to project
@@ -1328,7 +1328,7 @@
                     <!-- Footer -->
                     <div class="flex justify-between items-center">
                         <a
-                            href="/projects/{run.project_id}"
+                            href="/projects/{run.project_id}?tab=runs"
                             class="text-slate-600 hover:text-slate-800 font-medium"
                         >
                             ← Back to project
@@ -1413,7 +1413,7 @@
                         </span>
                     </div>
                     <a
-                        href="/projects/{run.project_id}"
+                        href="/projects/{run.project_id}?tab=runs"
                         class="text-sm text-slate-500 hover:text-slate-700"
                     >
                         ← Back to project

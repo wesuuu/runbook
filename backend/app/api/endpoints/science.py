@@ -1763,12 +1763,28 @@ async def update_run(
         if target_status == "EDITED":
             old_exec = run_obj.execution_data or {}
             new_exec = update_data.execution_data
+
+            # Build step name + param schema lookup from graph
+            graph = run_obj.graph or {}
+            _node_map: dict[str, dict] = {}
+            for n in graph.get("nodes", []):
+                if n.get("type") == "unitOp":
+                    _node_map[n["id"]] = n.get("data", {})
+
             for step_id, new_step in new_exec.items():
                 if not isinstance(new_step, dict):
                     continue
                 old_step = old_exec.get(step_id, {})
                 if not isinstance(old_step, dict):
                     continue
+
+                node_data = _node_map.get(step_id, {})
+                step_name = node_data.get("label", step_id)
+                param_schema_props = (
+                    (node_data.get("paramSchema") or {})
+                    .get("properties", {})
+                )
+
                 old_results = old_step.get("results", {})
                 new_results = new_step.get("results", {})
                 # Only set original_results if not already set (preserve
@@ -1783,6 +1799,31 @@ async def update_run(
                     new_step["edited_at"] = (
                         datetime.now(timezone.utc).isoformat()
                     )
+
+                # Audit each individual field change
+                if old_results and new_results:
+                    for field_key in set(old_results) | set(new_results):
+                        old_val = old_results.get(field_key)
+                        new_val = new_results.get(field_key)
+                        if old_val != new_val:
+                            prop = param_schema_props.get(field_key, {})
+                            field_label = (
+                                prop.get("title")
+                                or field_key.replace("_", " ").title()
+                            )
+                            await log_audit(
+                                db, user.id, "STEP_EDIT", "Run",
+                                run_obj.id,
+                                {
+                                    "step_id": step_id,
+                                    "step_name": step_name,
+                                    "field": field_key,
+                                    "field_label": field_label,
+                                    "old_value": old_val,
+                                    "new_value": new_val,
+                                },
+                            )
+
                 # Also handle legacy value field
                 old_value = old_step.get("value")
                 new_value = new_step.get("value")
@@ -1795,6 +1836,18 @@ async def update_run(
                     new_step["edited_by_user_id"] = str(user.id)
                     new_step["edited_at"] = (
                         datetime.now(timezone.utc).isoformat()
+                    )
+                    await log_audit(
+                        db, user.id, "STEP_EDIT", "Run",
+                        run_obj.id,
+                        {
+                            "step_id": step_id,
+                            "step_name": step_name,
+                            "field": "value",
+                            "field_label": "Value",
+                            "old_value": old_value,
+                            "new_value": new_value,
+                        },
                     )
 
     # Audit log step completions by diffing execution_data

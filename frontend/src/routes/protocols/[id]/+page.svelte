@@ -1397,7 +1397,7 @@
                     </button>
                 {/if}
 
-                <a href="/projects/{protocol.project_id}" class="back-link">
+                <a href="/projects/{protocol.project_id}?tab=protocols" class="back-link">
                     &#8592; Back to Project
                 </a>
             {/if}
