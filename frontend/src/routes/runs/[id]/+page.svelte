@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import { api } from "$lib/api";
     import { getUser } from "$lib/auth.svelte";
@@ -22,6 +22,21 @@
 
     // Temp state for assignment updates
     let assignmentChanges = $state<Record<string, string>>({});
+
+    // Load data whenever id changes
+    $effect(() => {
+        if (id) {
+            loading = true;
+            error = null;
+            loadData();
+        }
+    });
+
+    onMount(() => {
+        if (id) {
+            loadData();
+        }
+    });
 
     async function loadData() {
         try {
@@ -185,9 +200,6 @@
         run.execution_data = updatedData;
     }
 
-    onMount(() => {
-        loadData();
-    });
 </script>
 
 <div class="min-h-screen bg-slate-50">
