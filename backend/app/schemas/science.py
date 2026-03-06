@@ -89,6 +89,7 @@ class ProtocolVersionListItem(BaseModel):
     change_summary: Optional[str] = None
     created_by_name: Optional[str] = None
     created_at: datetime
+    is_draft: bool = False
 
     class Config:
         from_attributes = True
@@ -136,6 +137,7 @@ class RunResponse(RunBase):
     id: UUID
     project_id: UUID
     protocol_id: Optional[UUID]
+    started_by_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 

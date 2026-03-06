@@ -230,6 +230,7 @@ async def list_project_protocols(
 async def update_protocol(
     protocol_id: UUID,
     update_data: ProtocolUpdate,
+    save_as_draft: bool = Query(False),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -258,29 +259,71 @@ async def update_protocol(
             detail="Cannot edit protocol while pending approval",
         )
 
-    # If graph is being updated, create a version snapshot
-    if "graph" in changes:
-        protocol.version_number += 1
-        version = ProtocolVersion(
-            protocol_id=protocol.id,
-            version_number=protocol.version_number,
-            graph=changes["graph"],
-            name=changes.get("name", protocol.name),
-            description=changes.get("description", protocol.description),
-            created_by_id=user.id,
-        )
-        db.add(version)
+    # If graph is being updated and save_as_draft is True
+    if "graph" in changes and save_as_draft:
+        new_graph = changes["graph"]
+        # Check if graph actually changed compared to current protocol
+        if new_graph != protocol.graph:
+            # Create/update draft version without modifying main protocol
+            draft_version_number = protocol.version_number + 1
 
-        # Revert approved protocol to draft on edit
-        if protocol.status == "APPROVED":
-            protocol.status = "DRAFT"
+            # Check if draft already exists
+            existing_draft = await db.execute(
+                select(ProtocolVersion).where(
+                    (ProtocolVersion.protocol_id == protocol_id)
+                    & (ProtocolVersion.version_number == draft_version_number)
+                    & (ProtocolVersion.is_draft == True)
+                )
+            )
+            draft = existing_draft.scalar_one_or_none()
 
-    for key, value in changes.items():
-        setattr(protocol, key, value)
+            if draft:
+                # Update existing draft
+                draft.graph = new_graph
+            else:
+                # Create new draft version
+                draft = ProtocolVersion(
+                    protocol_id=protocol.id,
+                    version_number=draft_version_number,
+                    graph=new_graph,
+                    name=changes.get("name", protocol.name),
+                    description=changes.get("description", protocol.description),
+                    created_by_id=user.id,
+                    is_draft=True,
+                )
+                db.add(draft)
 
-    audit_changes = dict(changes)
-    if "graph" in changes:
-        audit_changes["version_number"] = protocol.version_number
+            audit_changes = {"action": "saved_draft", "draft_version": draft_version_number}
+        else:
+            # No meaningful changes to graph
+            audit_changes = {"action": "save_draft_attempt", "result": "no_changes"}
+    else:
+        # Normal save: update protocol graph and create version
+        if "graph" in changes:
+            protocol.version_number += 1
+            version = ProtocolVersion(
+                protocol_id=protocol.id,
+                version_number=protocol.version_number,
+                graph=changes["graph"],
+                name=changes.get("name", protocol.name),
+                description=changes.get("description", protocol.description),
+                created_by_id=user.id,
+                is_draft=False,
+            )
+            db.add(version)
+
+            # Revert approved protocol to draft on edit
+            if protocol.status == "APPROVED":
+                protocol.status = "DRAFT"
+
+        # Update protocol fields (name, description, etc.)
+        for key, value in changes.items():
+            setattr(protocol, key, value)
+
+        audit_changes = dict(changes)
+        if "graph" in changes:
+            audit_changes["version_number"] = protocol.version_number
+
     await log_audit(
         db, user.id, "UPDATE", "Protocol", protocol.id, audit_changes,
     )
@@ -940,6 +983,66 @@ async def reject_protocol(
     return result.scalar_one()
 
 
+@router.post(
+    "/protocols/{protocol_id}/publish-draft",
+    response_model=ProtocolResponse,
+)
+async def publish_draft_version(
+    protocol_id: UUID,
+    version_number: int = Query(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Publish a draft version: set is_draft=False and update main protocol."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    # Find the draft version
+    version_result = await db.execute(
+        select(ProtocolVersion)
+        .where(
+            (ProtocolVersion.protocol_id == protocol_id)
+            & (ProtocolVersion.version_number == version_number)
+            & (ProtocolVersion.is_draft == True)
+        )
+    )
+    draft = version_result.scalar_one_or_none()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft version not found")
+
+    # Mark as published (not a draft) and update main protocol
+    draft.is_draft = False
+    protocol.graph = draft.graph
+    protocol.version_number = version_number
+
+    await log_audit(
+        db, user.id, "UPDATE", "Protocol", protocol.id,
+        {"action": "published_draft", "version_number": version_number},
+    )
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol.id)
+    )
+    return result.scalar_one()
+
+
 # --- Protocol PDF ---
 
 
@@ -1557,17 +1660,25 @@ async def update_run(
     if (new_status and
         new_status == "ACTIVE" and
         current_status != "ACTIVE"):
+        # Check that at least one person is assigned to the run
+        result = await db.execute(
+            select(RunRoleAssignment)
+            .where(RunRoleAssignment.run_id == run_id)
+        )
+        assignments = result.scalars().all()
+
+        if not assignments:
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot start run: at least one person must be assigned",
+            )
+
         # Check that all swimlane roles in the graph have assignments
         graph = run_obj.graph or {}
         nodes = graph.get("nodes", [])
         swimlane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
 
         if swimlane_nodes:
-            result = await db.execute(
-                select(RunRoleAssignment)
-                .where(RunRoleAssignment.run_id == run_id)
-            )
-            assignments = result.scalars().all()
             assigned_lanes = {a.lane_node_id for a in assignments}
             required_lanes = {n["id"] for n in swimlane_nodes}
 
@@ -1577,9 +1688,16 @@ async def update_run(
                     detail="Cannot start run: not all roles have assigned users",
                 )
 
+        # Set started_by_id when run transitions to ACTIVE
+        run_obj.started_by_id = user.id
+
     changes = update_data.model_dump(exclude_unset=True)
     for key, value in changes.items():
         setattr(run_obj, key, value)
+
+    # Also track started_by_id in changes for audit log if it was set
+    if new_status == "ACTIVE" and current_status != "ACTIVE":
+        changes["started_by_id"] = str(user.id)
 
     await log_audit(
         db, user.id, "UPDATE", "Run", run_obj.id, changes,
@@ -1750,10 +1868,20 @@ async def create_run_role_assignment(
     existing = result.scalar_one_or_none()
     if existing:
         # Update existing assignment
+        old_user_id = existing.user_id
         existing.user_id = assignment.user_id
         existing.role_name = assignment.role_name
         await db.commit()
         await db.refresh(existing)
+        await log_audit(
+            db, user.id, "UPDATE", "RunRoleAssignment", existing.id,
+            {
+                "old_user_id": str(old_user_id),
+                "new_user_id": str(assignment.user_id),
+                "lane_node_id": assignment.lane_node_id,
+                "role_name": assignment.role_name,
+            },
+        )
         return existing
 
     # Create new assignment
@@ -1766,6 +1894,15 @@ async def create_run_role_assignment(
     db.add(new_assignment)
     await db.commit()
     await db.refresh(new_assignment)
+    await log_audit(
+        db, user.id, "CREATE", "RunRoleAssignment", new_assignment.id,
+        {
+            "run_id": str(run_id),
+            "user_id": str(assignment.user_id),
+            "lane_node_id": assignment.lane_node_id,
+            "role_name": assignment.role_name,
+        },
+    )
     return new_assignment
 
 
@@ -1795,6 +1932,17 @@ async def delete_run_role_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
+    assignment_data = {
+        "run_id": str(assignment.run_id),
+        "user_id": str(assignment.user_id),
+        "lane_node_id": assignment.lane_node_id,
+        "role_name": assignment.role_name,
+    }
+
     await db.delete(assignment)
     await db.commit()
+    await log_audit(
+        db, user.id, "DELETE", "RunRoleAssignment", assignment_id,
+        assignment_data,
+    )
     return {"ok": True}

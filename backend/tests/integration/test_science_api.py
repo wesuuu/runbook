@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import (
@@ -791,4 +792,461 @@ async def test_transition_to_active_without_all_roles_assigned(
         headers=auth_headers,
     )
     assert resp.status_code == 422
+    # Should fail because no one is assigned at all
+    assert "at least one person" in resp.json()["detail"]
+
+
+# --- Protocol Publishing ---
+
+
+@pytest.mark.asyncio
+async def test_publish_protocol_success(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Test that publishing a draft version updates the main protocol."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    # Save as draft (creates draft version v1)
+    resp = await client.put(
+        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        json={"graph": {"nodes": [{"id": "test"}], "edges": []}},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    # Publish the draft
+    resp = await client.post(
+        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    result = resp.json()
+    assert result["version_number"] == 1
+    assert len(result["graph"]["nodes"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_save_as_draft_creates_draft_version(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Test that save_as_draft creates a draft version without modifying main protocol."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+    original_version = protocol.version_number
+
+    # Save as draft
+    resp = await client.put(
+        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        json={"graph": {"nodes": [{"id": "draft"}], "edges": []}},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    # Check that main protocol version_number didn't change
+    result = resp.json()
+    assert result["version_number"] == original_version
+
+    # Check versions list includes the draft
+    resp = await client.get(
+        f"/science/protocols/{protocol.id}/versions",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    versions = resp.json()
+    draft_found = any(v.get("version_number") == 1 for v in versions)
+    assert draft_found
+
+
+@pytest.mark.asyncio
+async def test_publish_draft_not_found(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Test publishing non-existent draft version."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    resp = await client.post(
+        f"/science/protocols/{protocol.id}/publish-draft?version_number=999",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_save_draft_no_changes(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Test that saving identical graph doesn't create new version."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [{"id": "1"}], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    # Try to save the exact same graph
+    resp = await client.put(
+        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        json={"graph": {"nodes": [{"id": "1"}], "edges": []}},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    # Check that no new version was created
+    resp = await client.get(
+        f"/science/protocols/{protocol.id}/versions",
+        headers=auth_headers,
+    )
+    versions = resp.json()
+    # Should not have v1 since no changes
+    assert all(v["version_number"] != 1 for v in versions)
+
+
+@pytest.mark.asyncio
+async def test_start_run_without_assignments_fails(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Test that starting a run without any assignments fails."""
+    run_obj = Run(
+        name="Unassigned Run",
+        project_id=test_project.id,
+        graph={"nodes": [], "edges": []},
+        execution_data={},
+    )
+    db_session.add(run_obj)
+    await db_session.flush()
+
+    resp = await client.put(
+        f"/science/runs/{run_obj.id}",
+        json={"status": "ACTIVE"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "at least one person" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_start_run_with_swimlanes_requires_all_assigned(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test that starting a run with swimlanes requires all to be assigned."""
+    run_obj = Run(
+        name="Partial Assignment Run",
+        project_id=test_project.id,
+        graph={
+            "nodes": [
+                {
+                    "id": "lane-role-1",
+                    "type": "swimLane",
+                    "data": {"label": "Scientist"},
+                },
+                {
+                    "id": "lane-role-2",
+                    "type": "swimLane",
+                    "data": {"label": "Technician"},
+                },
+            ]
+        },
+        execution_data={},
+    )
+    db_session.add(run_obj)
+    await db_session.flush()
+
+    # Assign only one role
+    from app.models.science import RunRoleAssignment
+    assignment = RunRoleAssignment(
+        run_id=run_obj.id,
+        lane_node_id="lane-role-1",
+        role_name="Scientist",
+        user_id=test_user.id,
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+
+    # Try to start - should fail because second role is not assigned
+    resp = await client.put(
+        f"/science/runs/{run_obj.id}",
+        json={"status": "ACTIVE"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
     assert "not all roles have assigned users" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_start_run_succeeds_with_one_assignment_no_swimlanes(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test that starting a run succeeds with one assignment even without swimlanes."""
+    run_obj = Run(
+        name="Simple Run",
+        project_id=test_project.id,
+        graph={"nodes": [], "edges": []},
+        execution_data={},
+    )
+    db_session.add(run_obj)
+    await db_session.flush()
+
+    from app.models.science import RunRoleAssignment
+    assignment = RunRoleAssignment(
+        run_id=run_obj.id,
+        lane_node_id="general",
+        role_name="Executor",
+        user_id=test_user.id,
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+
+    resp = await client.put(
+        f"/science/runs/{run_obj.id}",
+        json={"status": "ACTIVE"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ACTIVE"
+
+
+@pytest.mark.asyncio
+async def test_start_run_succeeds_with_all_swimlanes_assigned(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    second_user: User,
+    db_session: AsyncSession,
+):
+    """Test that starting a run succeeds when all swimlanes are assigned."""
+    run_obj = Run(
+        name="Full Assignment Run",
+        project_id=test_project.id,
+        graph={
+            "nodes": [
+                {
+                    "id": "lane-role-1",
+                    "type": "swimLane",
+                    "data": {"label": "Scientist"},
+                },
+                {
+                    "id": "lane-role-2",
+                    "type": "swimLane",
+                    "data": {"label": "Technician"},
+                },
+            ]
+        },
+        execution_data={},
+    )
+    db_session.add(run_obj)
+    await db_session.flush()
+
+    from app.models.science import RunRoleAssignment
+    assignment1 = RunRoleAssignment(
+        run_id=run_obj.id,
+        lane_node_id="lane-role-1",
+        role_name="Scientist",
+        user_id=test_user.id,
+    )
+    assignment2 = RunRoleAssignment(
+        run_id=run_obj.id,
+        lane_node_id="lane-role-2",
+        role_name="Technician",
+        user_id=second_user.id,
+    )
+    db_session.add(assignment1)
+    db_session.add(assignment2)
+    await db_session.flush()
+
+    resp = await client.put(
+        f"/science/runs/{run_obj.id}",
+        json={"status": "ACTIVE"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ACTIVE"
+
+
+@pytest.mark.asyncio
+async def test_started_by_id_set_on_active_transition(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test that started_by_id is set when run transitions to ACTIVE."""
+    run_obj = Run(
+        name="Test Started By Run",
+        project_id=test_project.id,
+        graph={"nodes": []},
+        execution_data={},
+    )
+    db_session.add(run_obj)
+    await db_session.flush()
+
+    from app.models.science import RunRoleAssignment
+    # Assign at least one person
+    assignment = RunRoleAssignment(
+        run_id=run_obj.id,
+        lane_node_id="general",
+        role_name="General",
+        user_id=test_user.id,
+    )
+    db_session.add(assignment)
+    await db_session.commit()
+
+    # Transition to ACTIVE
+    resp = await client.put(
+        f"/science/runs/{run_obj.id}",
+        json={"status": "ACTIVE"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ACTIVE"
+
+    # Verify started_by_id is set
+    await db_session.refresh(run_obj)
+    assert run_obj.started_by_id == test_user.id
+
+
+@pytest.mark.asyncio
+async def test_assignment_operations_audit_logged(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test that assignment CREATE, UPDATE, and DELETE operations are audited."""
+    from uuid import UUID
+    from app.models.execution import AuditLog
+
+    run_obj = Run(
+        name="Test Audit Run",
+        project_id=test_project.id,
+        graph={"nodes": []},
+        execution_data={},
+    )
+    db_session.add(run_obj)
+    await db_session.flush()
+
+    # Create assignment
+    resp = await client.post(
+        f"/science/runs/{run_obj.id}/role-assignments",
+        json={
+            "lane_node_id": "general",
+            "role_name": "General",
+            "user_id": str(test_user.id),
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    assignment_id = UUID(resp.json()["id"])
+
+    # Verify CREATE audit log
+    result = await db_session.execute(
+        select(AuditLog)
+        .where(
+            (AuditLog.entity_type == "RunRoleAssignment")
+            & (AuditLog.entity_id == assignment_id)
+            & (AuditLog.action == "CREATE")
+        )
+    )
+    create_log = result.scalar_one_or_none()
+    assert create_log is not None
+    assert create_log.actor_id == test_user.id
+    assert "lane_node_id" in create_log.changes
+    assert "user_id" in create_log.changes
+
+    # Update assignment (same endpoint, replaces existing assignment)
+    resp = await client.post(
+        f"/science/runs/{run_obj.id}/role-assignments",
+        json={
+            "lane_node_id": "general",
+            "role_name": "General",
+            "user_id": str(test_user.id),  # Same user, just updating
+        },
+        headers=auth_headers,
+    )
+    # Endpoint returns 201 for both create and update
+    assert resp.status_code in [200, 201]
+
+    # Verify UPDATE audit log
+    result = await db_session.execute(
+        select(AuditLog)
+        .where(
+            (AuditLog.entity_type == "RunRoleAssignment")
+            & (AuditLog.entity_id == assignment_id)
+            & (AuditLog.action == "UPDATE")
+        )
+    )
+    update_log = result.scalar_one_or_none()
+    assert update_log is not None
+    assert update_log.actor_id == test_user.id
+
+    # Delete assignment
+    resp = await client.delete(
+        f"/science/runs/{run_obj.id}/role-assignments/{assignment_id}",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    # Verify DELETE audit log
+    result = await db_session.execute(
+        select(AuditLog)
+        .where(
+            (AuditLog.entity_type == "RunRoleAssignment")
+            & (AuditLog.entity_id == assignment_id)
+            & (AuditLog.action == "DELETE")
+        )
+    )
+    delete_log = result.scalar_one_or_none()
+    assert delete_log is not None
+    assert delete_log.actor_id == test_user.id
+    assert "lane_node_id" in delete_log.changes

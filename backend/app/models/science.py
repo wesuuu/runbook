@@ -99,9 +99,17 @@ class Run(Base, UUIDMixin, TimestampMixin):
         JSONB, default=dict
     )
 
+    # User who started this run (used for locking role-less runs)
+    started_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="runs")
     protocol: Mapped["Protocol"] = relationship(back_populates="runs")
+    started_by: Mapped[Optional["User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[started_by_id]
+    )
     role_assignments: Mapped[List["RunRoleAssignment"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
@@ -188,6 +196,9 @@ class ProtocolVersion(Base, UUIDMixin, TimestampMixin):
         ForeignKey("users.id"), nullable=True
     )
     change_summary: Mapped[Optional[str]] = mapped_column(String)
+    is_draft: Mapped[bool] = mapped_column(
+        default=False, server_default="false", nullable=False
+    )
 
     # Relationships
     protocol: Mapped["Protocol"] = relationship(back_populates="versions")
