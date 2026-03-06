@@ -95,15 +95,36 @@ class _SopPdf(FPDF):
 class _BatchPdf(FPDF):
     """Custom FPDF subclass for batch record documents."""
 
-    def __init__(self, font_family: str = "Helvetica") -> None:
+    def __init__(
+        self,
+        font_family: str = "Helvetica",
+        protocol_title: str = "",
+        version_label: str = "",
+        last_modified: str = "",
+    ) -> None:
         super().__init__(orientation="P", unit="mm", format="Letter")
         self.set_auto_page_break(auto=True, margin=25)
         self._ff = font_family
+        self._protocol_title = protocol_title
+        self._version_label = version_label
+        self._last_modified = last_modified
 
     def header(self) -> None:
+        w = self.epw
         self.set_font(self._ff, "I", 9)
         self.set_text_color(120, 120, 120)
-        self.cell(0, 6, "BATCH RECORD", align="C")
+        # Left: "BATCH RECORD: Protocol Title"
+        header_left = "BATCH RECORD"
+        if self._protocol_title:
+            header_left = f"{header_left}: {self._protocol_title}"
+        self.cell(w / 2, 6, header_left, align="L")
+        # Right: version + date
+        right_parts: list[str] = []
+        if self._version_label:
+            right_parts.append(self._version_label)
+        if self._last_modified:
+            right_parts.append(self._last_modified)
+        self.cell(w / 2, 6, "  |  ".join(right_parts), align="R")
         self.ln(10)
 
     def footer(self) -> None:
@@ -486,6 +507,9 @@ def generate_batch_record_pdf(
     execution_data: dict[str, Any] | None = None,
     format_options: dict[str, Any] | None = None,
     roles_with_steps: list[dict[str, Any]] | None = None,
+    is_role_based: bool = True,
+    version_number: int | None = None,
+    last_modified: str | None = None,
 ) -> bytes:
     """Generate a batch record PDF in tabular format.
 
@@ -500,6 +524,10 @@ def generate_batch_record_pdf(
         format_options: Optional dict overriding PDF formatting defaults.
         roles_with_steps: Optional list of role dicts with process_name
             and process_description for section headers.
+        is_role_based: If True, protocol uses swimlane roles; if False,
+            process-based organization (one table per process).
+        version_number: Optional protocol version number.
+        last_modified: Optional last-modified date string.
 
     Returns:
         PDF file contents as bytes.
@@ -510,32 +538,52 @@ def generate_batch_record_pdf(
     rs = _rs(fmt)
     hc = fmt["header_color"]
 
-    pdf = _BatchPdf(font_family=ff)
+    version_label = f"v{version_number}" if version_number else ""
+    modified_str = last_modified or ""
+
+    pdf = _BatchPdf(
+        font_family=ff,
+        protocol_title=protocol_name,
+        version_label=version_label,
+        last_modified=modified_str,
+    )
     pdf.alias_nb_pages()
     pdf.add_page()
 
-    today = date.today().strftime("%B %d, %Y")
     w = pdf.epw
 
-    # Title
-    pdf.set_font(ff, "B", fs["title"])
-    pdf.set_text_color(15, 23, 42)
-    pdf.cell(0, 10, "Batch Record", align="C")
-    pdf.ln(14)
+    # Add spacing after header
+    pdf.ln(6)
 
-    # Header info
-    half = w / 2
-    pdf.set_font(ff, "B", fs["body"])
-    pdf.set_text_color(51, 65, 85)
-    pdf.cell(half, 6, f"Run: {run_name}", align="L")
-    pdf.cell(half, 6, f"Date: {today}", align="R")
-    pdf.ln(7)
-    pdf.cell(half, 6, f"Protocol: {protocol_name}", align="L")
-    pdf.cell(half, 6, "Lot/Batch #: _______________", align="R")
-    pdf.ln(14)
+    # Helper function to draw Date and Lot/Batch fields
+    def draw_batch_fields():
+        half = w / 2
+        pdf.set_font(ff, "B", fs["body"])
+        pdf.set_text_color(51, 65, 85)
 
-    # Determine if any step has a real role
-    has_roles = any(
+        # First row: Date and Lot/Batch
+        pdf.cell(half * 0.2, 6, "Date:", align="L")
+        # Underline for date (operator writes in)
+        date_x = pdf.get_x()
+        date_y = pdf.get_y() + 4
+        pdf.line(date_x, date_y, pdf.l_margin + half - 5, date_y)
+        pdf.cell(half * 0.8, 6, "", align="L")  # Space for the underline
+
+        # Right column: Lot/Batch
+        pdf.set_x(pdf.l_margin + half)
+        pdf.cell(half * 0.3, 6, "Lot/Batch #:", align="L")
+        # Underline for lot/batch (operator writes in)
+        lot_x = pdf.get_x()
+        lot_y = pdf.get_y() + 4
+        pdf.line(lot_x, lot_y, pdf.l_margin + w - 5, lot_y)
+        pdf.cell(half * 0.7, 6, "", align="L")  # Space for the underline
+        pdf.ln(10)
+
+    # Draw batch fields at the top of the first page
+    draw_batch_fields()
+
+    # Determine if any step has a real role (only for role-based protocols)
+    has_roles = is_role_based and any(
         s.get("role_name") and s["role_name"] not in ("", "--", "Unassigned")
         for s in steps
     )
@@ -565,125 +613,212 @@ def generate_batch_record_pdf(
                    "Initials"]
         header_aligns = ["C"] * 5
 
-    pdf.set_fill_color(*hc)
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_font(ff, "B", fs["table"])
-
     table_line_h = rs["line_h"]
     table_min_h = rs["min_row_h"]
-
-    _draw_table_row(
-        pdf, col_widths, headers,
-        line_h=table_line_h, min_h=table_min_h,
-        aligns=header_aligns, fill=True,
-    )
-
-    # Table rows
-    pdf.set_text_color(51, 65, 85)
-    pdf.set_font(ff, "", fs["table"])
-    pdf.set_draw_color(200, 200, 200)
-
     exec_data = execution_data or {}
-
-    # Detect process sections for per-section numbering
     rws = roles_with_steps or []
-    has_process_sections = any(
-        rd.get("process_name") for rd in rws
-    )
 
-    # Build a map from step ID to its process section info
-    step_section_map: dict[str, dict[str, str]] = {}
-    if has_process_sections:
-        for rd in rws:
-            pname = rd.get("process_name", "")
-            pdesc = rd.get("process_description", "")
-            for s in rd.get("steps", []):
-                step_section_map[s.get("id", "")] = {
-                    "process_name": pname,
-                    "process_description": pdesc,
-                }
+    # Check if we should generate separate tables per process
+    multi_process = not is_role_based and len(rws) > 1
 
-    step_counter = 0
-    current_section = ""
-    num_cols = len(col_widths)
+    if multi_process:
+        # Generate separate table for each process
+        for proc_idx, process_entry in enumerate(rws):
+            if proc_idx > 0:
+                pdf.add_page()
+                # Add spacing after header on new page
+                pdf.ln(6)
+                # Draw batch fields on each new page
+                draw_batch_fields()
 
-    for step in steps:
-        step_id = step.get("id", "")
-        row_data = exec_data.get(step_id, {}) if filled else {}
-
-        # Section header row for process sections
-        if has_process_sections and step_id in step_section_map:
-            section_info = step_section_map[step_id]
-            section_name = section_info.get("process_name", "")
-            if section_name and section_name != current_section:
-                current_section = section_name
-                step_counter = 0  # Reset numbering for new section
-
-                # Draw section header spanning full width
-                section_label = section_name
-                section_desc = section_info.get("process_description", "")
-                if section_desc:
-                    section_label = f"{section_name} - {section_desc}"
-
-                pdf.set_font(ff, "B", fs["table"])
-                # Use a light tint of the header color for fill
-                pdf.set_fill_color(
-                    min(hc[0] + 200, 245),
-                    min(hc[1] + 200, 245),
-                    min(hc[2] + 200, 245),
-                )
-                pdf.set_text_color(*hc)
-                _draw_table_row(
-                    pdf, [w], [section_label],
-                    line_h=table_line_h, min_h=table_min_h,
-                    aligns=["L"], fill=True,
-                )
-                pdf.set_text_color(51, 65, 85)
-                pdf.set_font(ff, "", fs["table"])
-
-        step_counter += 1
-
-        # Build description: use step description + param summary
-        desc = step.get("description", "") or ""
-        has_templates = desc and "{{" in desc
-        if has_templates:
-            desc = _render_template(desc, step.get("params"))
-
-        if has_templates:
-            full_desc = desc or "--"
-        else:
-            param_summary = _build_param_sentence(
-                step.get("params"), step.get("param_schema"),
+            process_name = (
+                process_entry.get("process_name") or
+                process_entry.get("role_name") or ""
             )
-            if desc and param_summary:
-                full_desc = f"{desc} {param_summary}"
-            else:
-                full_desc = desc or param_summary or "--"
+            if process_name:
+                # Print process title above table
+                pdf.set_font(ff, "B", fs["section"])
+                pdf.set_text_color(*hc)
+                pdf.cell(0, 8, process_name)
+                pdf.ln(8)
 
-        if has_roles:
-            row_vals = [
-                str(step_counter),
-                step.get("role_name", "") or "",
-                step.get("name", "--"),
-                full_desc,
-                row_data.get("value", "") if filled else "",
-                row_data.get("initials", "") if filled else "",
-            ]
-            aligns = ["C", "C", "L", "L", "C", "C"]
-        else:
-            row_vals = [
-                str(step_counter),
-                step.get("name", "--"),
-                full_desc,
-                row_data.get("value", "") if filled else "",
-                row_data.get("initials", "") if filled else "",
-            ]
-            aligns = ["C", "L", "L", "C", "C"]
+            # Draw table header for this process
+            pdf.set_fill_color(*hc)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font(ff, "B", fs["table"])
+            _draw_table_row(
+                pdf, col_widths, headers,
+                line_h=table_line_h, min_h=table_min_h,
+                aligns=header_aligns, fill=True,
+            )
+
+            # Draw rows for this process
+            pdf.set_text_color(51, 65, 85)
+            pdf.set_font(ff, "", fs["table"])
+            pdf.set_draw_color(200, 200, 200)
+
+            step_counter = 0
+            for step in process_entry.get("steps", []):
+                step_counter += 1
+                step_id = step.get("id", "")
+                row_data = exec_data.get(step_id, {}) if filled else {}
+
+                # Build description
+                desc = step.get("description", "") or ""
+                has_templates = desc and "{{" in desc
+                if has_templates:
+                    desc = _render_template(desc, step.get("params"))
+
+                if has_templates:
+                    full_desc = desc or "--"
+                else:
+                    param_summary = _build_param_sentence(
+                        step.get("params"), step.get("param_schema"),
+                    )
+                    if desc and param_summary:
+                        full_desc = f"{desc} {param_summary}"
+                    else:
+                        full_desc = desc or param_summary or "--"
+
+                if has_roles:
+                    row_vals = [
+                        str(step_counter),
+                        step.get("role_name", "") or "",
+                        step.get("name", "--"),
+                        full_desc,
+                        row_data.get("value", "") if filled else "",
+                        row_data.get("initials", "") if filled else "",
+                    ]
+                    aligns = ["C", "C", "L", "L", "C", "C"]
+                else:
+                    row_vals = [
+                        str(step_counter),
+                        step.get("name", "--"),
+                        full_desc,
+                        row_data.get("value", "") if filled else "",
+                        row_data.get("initials", "") if filled else "",
+                    ]
+                    aligns = ["C", "L", "L", "C", "C"]
+
+                _draw_table_row(
+                    pdf, col_widths, row_vals,
+                    line_h=table_line_h, min_h=table_min_h, aligns=aligns,
+                )
+    else:
+        # Single table with optional section headers
+        pdf.set_fill_color(*hc)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font(ff, "B", fs["table"])
 
         _draw_table_row(
-            pdf, col_widths, row_vals,
-            line_h=table_line_h, min_h=table_min_h, aligns=aligns,
+            pdf, col_widths, headers,
+            line_h=table_line_h, min_h=table_min_h,
+            aligns=header_aligns, fill=True,
         )
+
+        # Table rows
+        pdf.set_text_color(51, 65, 85)
+        pdf.set_font(ff, "", fs["table"])
+        pdf.set_draw_color(200, 200, 200)
+
+        # Detect process sections for per-section numbering
+        has_process_sections = any(
+            rd.get("process_name") for rd in rws
+        )
+
+        # Build a map from step ID to its process section info
+        step_section_map: dict[str, dict[str, str]] = {}
+        if has_process_sections:
+            for rd in rws:
+                pname = rd.get("process_name", "")
+                pdesc = rd.get("process_description", "")
+                for s in rd.get("steps", []):
+                    step_section_map[s.get("id", "")] = {
+                        "process_name": pname,
+                        "process_description": pdesc,
+                    }
+
+        step_counter = 0
+        current_section = ""
+        num_cols = len(col_widths)
+
+        for step in steps:
+            step_id = step.get("id", "")
+            row_data = exec_data.get(step_id, {}) if filled else {}
+
+            # Section header row for process sections
+            if has_process_sections and step_id in step_section_map:
+                section_info = step_section_map[step_id]
+                section_name = section_info.get("process_name", "")
+                if section_name and section_name != current_section:
+                    current_section = section_name
+                    step_counter = 0  # Reset numbering for new section
+
+                    # Draw section header spanning full width
+                    section_label = section_name
+                    section_desc = section_info.get("process_description", "")
+                    if section_desc:
+                        section_label = f"{section_name} - {section_desc}"
+
+                    pdf.set_font(ff, "B", fs["table"])
+                    # Use a light tint of the header color for fill
+                    pdf.set_fill_color(
+                        min(hc[0] + 200, 245),
+                        min(hc[1] + 200, 245),
+                        min(hc[2] + 200, 245),
+                    )
+                    pdf.set_text_color(*hc)
+                    _draw_table_row(
+                        pdf, [w], [section_label],
+                        line_h=table_line_h, min_h=table_min_h,
+                        aligns=["L"], fill=True,
+                    )
+                    pdf.set_text_color(51, 65, 85)
+                    pdf.set_font(ff, "", fs["table"])
+
+            step_counter += 1
+
+            # Build description: use step description + param summary
+            desc = step.get("description", "") or ""
+            has_templates = desc and "{{" in desc
+            if has_templates:
+                desc = _render_template(desc, step.get("params"))
+
+            if has_templates:
+                full_desc = desc or "--"
+            else:
+                param_summary = _build_param_sentence(
+                    step.get("params"), step.get("param_schema"),
+                )
+                if desc and param_summary:
+                    full_desc = f"{desc} {param_summary}"
+                else:
+                    full_desc = desc or param_summary or "--"
+
+            if has_roles:
+                row_vals = [
+                    str(step_counter),
+                    step.get("role_name", "") or "",
+                    step.get("name", "--"),
+                    full_desc,
+                    row_data.get("value", "") if filled else "",
+                    row_data.get("initials", "") if filled else "",
+                ]
+                aligns = ["C", "C", "L", "L", "C", "C"]
+            else:
+                row_vals = [
+                    str(step_counter),
+                    step.get("name", "--"),
+                    full_desc,
+                    row_data.get("value", "") if filled else "",
+                    row_data.get("initials", "") if filled else "",
+                ]
+                aligns = ["C", "L", "L", "C", "C"]
+
+            _draw_table_row(
+                pdf, col_widths, row_vals,
+                line_h=table_line_h, min_h=table_min_h, aligns=aligns,
+            )
 
     pdf.ln(12)
 

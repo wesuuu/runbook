@@ -371,16 +371,14 @@
     }
 
     async function createRun() {
-        if (!newRunName) return;
+        if (!newRunName || !selectedProtocolId) return;
 
         try {
             const payload: any = {
                 name: newRunName,
                 project_id: project.id,
+                protocol_id: selectedProtocolId,
             };
-            if (selectedProtocolId) {
-                payload.protocol_id = selectedProtocolId;
-            }
             const newRun: any = await api.post("/science/runs", payload);
             showRunModal = false;
             newRunName = "";
@@ -665,20 +663,12 @@
                             class="w-full py-1.5 pl-8 pr-2.5 border border-slate-200 rounded-lg text-[13px] text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-400/15"
                         />
                     </div>
-                    <div class="flex items-center gap-4">
-                        <span class="text-[13px] text-slate-400 font-medium">
-                            {filteredRuns().length} of {runs.length} run{runs.length !==
-                            1
-                                ? "s"
-                                : ""}
-                        </span>
-                        <button
-                            class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
-                            onclick={() => (showRunModal = true)}
-                        >
-                            + New Run
-                        </button>
-                    </div>
+                    <span class="text-[13px] text-slate-400 font-medium">
+                        {filteredRuns().length} of {runs.length} run{runs.length !==
+                        1
+                            ? "s"
+                            : ""}
+                    </span>
                 </div>
 
                 {#if filteredRuns().length === 0}
@@ -703,15 +693,9 @@
                             <p class="text-[15px] font-semibold text-slate-600">
                                 No runs yet
                             </p>
-                            <p class="text-[13px] text-slate-400 mb-4">
+                            <p class="text-[13px] text-slate-400">
                                 Create your first run to get started.
                             </p>
-                            <button
-                                class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
-                                onclick={() => (showRunModal = true)}
-                            >
-                                + New Run
-                            </button>
                         {:else}
                             <p class="text-[15px] font-semibold text-slate-600">
                                 No matching runs
@@ -1285,14 +1269,14 @@
             <label
                 for="protocol-select"
                 class="block text-sm font-medium text-gray-700 mb-1"
-                >Protocol (Optional)</label
+                >Protocol</label
             >
             <select
                 id="protocol-select"
                 bind:value={selectedProtocolId}
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
             >
-                <option value={null}>No protocol</option>
+                <option value="">Select a protocol</option>
                 {#each protocols as proto}
                     <option value={proto.id}>{proto.name}</option>
                 {/each}
@@ -1310,7 +1294,7 @@
             </button>
             <button
                 onclick={createRun}
-                disabled={!newRunName}
+                disabled={!newRunName || !selectedProtocolId}
                 class="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
                 Create

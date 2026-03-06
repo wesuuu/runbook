@@ -485,13 +485,14 @@ def _find_connected_components(
     return components
 
 
-def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
+def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict], bool]:
     """Extract roles and ordered steps from a protocol/run graph.
 
     Returns:
-        (roles_with_steps, flat_steps) where roles_with_steps is a list
-        of dicts with role_name and steps, and flat_steps is all steps
-        with role_name attached (for batch record).
+        (roles_with_steps, flat_steps, is_role_based) where roles_with_steps
+        is a list of dicts with role_name and steps, flat_steps is all steps
+        with role_name attached (for batch record), and is_role_based indicates
+        whether grouping is swimlane-based (True) or process-based (False).
     """
     nodes = graph.get("nodes", [])
     edges = graph.get("edges", [])
@@ -579,6 +580,7 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
                 "steps": orphan_steps,
             })
             flat_steps.extend(orphan_steps)
+        return roles_with_steps, flat_steps, True  # is_role_based
     else:
         # No swimlane parenting — group by connected components
         # Include processStart nodes in component discovery
@@ -605,16 +607,11 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
                 process_name = ps_data.get("label", "")
                 process_description = ps_data.get("description", "")
 
-            # Fallback: use first unit op label when no processStart
-            role_name = process_name
-            if not role_name and len(components) > 1:
-                role_name = comp_unit_ops[0].get("data", {}).get(
-                    "label", "Process"
-                )
-
-            comp_steps = [_step_dict(n, role_name) for n in comp_unit_ops]
+            # In process-based mode, role_name is always empty (no swimlane roles)
+            # Process sections use process_name instead for section headers
+            comp_steps = [_step_dict(n, "") for n in comp_unit_ops]
             entry = {
-                "role_name": role_name,
+                "role_name": "",  # Empty for process-based
                 "steps": comp_steps,
             }
             if process_name:
@@ -622,8 +619,7 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict]]:
                 entry["process_description"] = process_description
             roles_with_steps.append(entry)
             flat_steps.extend(comp_steps)
-
-    return roles_with_steps, flat_steps
+        return roles_with_steps, flat_steps, False  # is_role_based
 
 
 # --- Protocol Version History ---
@@ -1019,7 +1015,7 @@ async def get_protocol_sop_pdf(
         raise HTTPException(status_code=404, detail="Protocol not found")
 
     graph = protocol.graph or {}
-    roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
+    roles_with_steps, _, _ = _parse_graph_roles_and_steps(graph)
     pdf_format = await _get_pdf_format(db, protocol.project_id)
     overrides = _build_format_overrides(
         font_size, font_family, header_color, row_spacing,
@@ -1074,20 +1070,22 @@ async def get_protocol_batch_record_pdf(
         raise HTTPException(status_code=404, detail="Protocol not found")
 
     graph = protocol.graph or {}
-    roles_with_steps, flat_steps = _parse_graph_roles_and_steps(graph)
+    roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
     pdf_format = await _get_pdf_format(db, protocol.project_id)
     overrides = _build_format_overrides(
         font_size, font_family, header_color, row_spacing,
     )
     pdf_format = _merge_format(pdf_format, overrides)
 
-    roles = [
-        {"id": r["role_name"], "name": r["role_name"]}
-        for r in roles_with_steps
-        if r["role_name"]
-    ]
-    if not roles:
-        roles = [{"id": "all", "name": "All Steps"}]
+    # Only build role list for swimlane-based protocols
+    if is_role_based:
+        roles = [
+            {"id": r["role_name"], "name": r["role_name"]}
+            for r in roles_with_steps
+            if r["role_name"]
+        ]
+    else:
+        roles = []
 
     pdf_bytes = generate_batch_record_pdf(
         protocol_name=protocol.name,
@@ -1098,6 +1096,11 @@ async def get_protocol_batch_record_pdf(
         execution_data=None,
         format_options=pdf_format,
         roles_with_steps=roles_with_steps,
+        is_role_based=is_role_based,
+        version_number=protocol.version_number,
+        last_modified=protocol.updated_at.strftime("%B %d, %Y")
+        if protocol.updated_at
+        else None,
     )
 
     disp = disposition or "attachment"
@@ -1139,7 +1142,7 @@ async def preview_protocol_sop_pdf(
         raise HTTPException(status_code=404, detail="Protocol not found")
 
     graph = body.get("graph", {})
-    roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
+    roles_with_steps, _, _ = _parse_graph_roles_and_steps(graph)
     pdf_format = await _get_pdf_format(db, protocol.project_id)
     overrides = _build_format_overrides(
         font_size, font_family, header_color, row_spacing,
@@ -1195,20 +1198,22 @@ async def preview_protocol_batch_record_pdf(
         raise HTTPException(status_code=404, detail="Protocol not found")
 
     graph = body.get("graph", {})
-    roles_with_steps, flat_steps = _parse_graph_roles_and_steps(graph)
+    roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
     pdf_format = await _get_pdf_format(db, protocol.project_id)
     overrides = _build_format_overrides(
         font_size, font_family, header_color, row_spacing,
     )
     pdf_format = _merge_format(pdf_format, overrides)
 
-    roles = [
-        {"id": r["role_name"], "name": r["role_name"]}
-        for r in roles_with_steps
-        if r["role_name"]
-    ]
-    if not roles:
-        roles = [{"id": "all", "name": "All Steps"}]
+    # Only build role list for swimlane-based protocols
+    if is_role_based:
+        roles = [
+            {"id": r["role_name"], "name": r["role_name"]}
+            for r in roles_with_steps
+            if r["role_name"]
+        ]
+    else:
+        roles = []
 
     pdf_bytes = generate_batch_record_pdf(
         protocol_name=protocol.name,
@@ -1219,6 +1224,11 @@ async def preview_protocol_batch_record_pdf(
         execution_data=None,
         format_options=pdf_format,
         roles_with_steps=roles_with_steps,
+        is_role_based=is_role_based,
+        version_number=protocol.version_number,
+        last_modified=protocol.updated_at.strftime("%B %d, %Y")
+        if protocol.updated_at
+        else None,
     )
 
     disp = disposition or "inline"
@@ -1283,7 +1293,7 @@ async def get_run_sop_pdf(
     pdf_format = _merge_format(pdf_format, overrides)
 
     graph = run_obj.graph or {}
-    roles_with_steps, _ = _parse_graph_roles_and_steps(graph)
+    roles_with_steps, _, _ = _parse_graph_roles_and_steps(graph)
 
     pdf_bytes = generate_sop_pdf(
         protocol_name=protocol_name,
@@ -1334,6 +1344,8 @@ async def get_run_batch_record_pdf(
     # Get protocol name and project settings
     protocol_name = "Unknown Protocol"
     pdf_format = None
+    protocol_version = None
+    protocol_modified = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -1341,6 +1353,10 @@ async def get_run_batch_record_pdf(
         proto = result.scalar_one_or_none()
         if proto:
             protocol_name = proto.name
+            protocol_version = proto.version_number
+            protocol_modified = (
+                proto.updated_at.strftime("%B %d, %Y") if proto.updated_at else None
+            )
             pdf_format = await _get_pdf_format(db, proto.project_id)
 
     overrides = _build_format_overrides(
@@ -1349,16 +1365,17 @@ async def get_run_batch_record_pdf(
     pdf_format = _merge_format(pdf_format, overrides)
 
     graph = run_obj.graph or {}
-    roles_with_steps, flat_steps = _parse_graph_roles_and_steps(graph)
+    roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    # Build roles list for sign-off
-    roles = [
-        {"id": r["role_name"], "name": r["role_name"]}
-        for r in roles_with_steps
-        if r["role_name"]
-    ]
-    if not roles:
-        roles = [{"id": "all", "name": "All Steps"}]
+    # Build roles list for sign-off (only for swimlane-based protocols)
+    if is_role_based:
+        roles = [
+            {"id": r["role_name"], "name": r["role_name"]}
+            for r in roles_with_steps
+            if r["role_name"]
+        ]
+    else:
+        roles = []
 
     pdf_bytes = generate_batch_record_pdf(
         protocol_name=protocol_name,
@@ -1369,6 +1386,9 @@ async def get_run_batch_record_pdf(
         execution_data=run_obj.execution_data if filled else None,
         format_options=pdf_format,
         roles_with_steps=roles_with_steps,
+        is_role_based=is_role_based,
+        version_number=protocol_version,
+        last_modified=protocol_modified,
     )
 
     disp = disposition or "attachment"
