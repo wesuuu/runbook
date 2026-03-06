@@ -9,6 +9,7 @@ DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/runbook"
 
 DEFAULT_OPS = [
     # --- Media Prep ---
+    # --- Media Prep ---
     {
         "name": "Buffer Mix",
         "category": "Media Prep",
@@ -19,6 +20,13 @@ DEFAULT_OPS = [
                 "volume_ml": {"type": "number", "title": "Volume (mL)", "default": 500},
                 "mix_time_min": {"type": "number", "title": "Mix Time (min)", "default": 45}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "actual_volume_ml": {"type": "number", "title": "Actual Volume", "unit": "mL"}
+            },
+            "required": ["actual_volume_ml"]
         }
     },
     {
@@ -31,6 +39,13 @@ DEFAULT_OPS = [
                 "filter_type": {"type": "string", "title": "Filter Type", "enum": ["Depth Filter", "Sterile Filter", "TFF"]},
                 "pore_size_um": {"type": "number", "title": "Pore Size (µm)", "default": 0.22}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "filtrate_volume_ml": {"type": "number", "title": "Filtrate Volume", "unit": "mL"}
+            },
+            "required": ["filtrate_volume_ml"]
         }
     },
     # --- Cell Culture ---
@@ -46,6 +61,13 @@ DEFAULT_OPS = [
                 "duration_min": {"type": "number", "title": "Thaw Duration (min)", "default": 2.0},
                 "media_source": {"type": "string", "title": "Media Source", "x-ref-type": "media_prep"}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "actual_duration_min": {"type": "number", "title": "Actual Duration", "unit": "min"}
+            },
+            "required": ["actual_duration_min"]
         }
     },
     {
@@ -60,6 +82,13 @@ DEFAULT_OPS = [
                 "vessel_type": {"type": "string", "title": "Vessel Type", "enum": ["Shake Flask", "Bioreactor", "T-Flask"]},
                 "media_source": {"type": "string", "title": "Media Source", "x-ref-type": "media_prep"}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "actual_density": {"type": "number", "title": "Actual Density", "unit": "cells/mL"}
+            },
+            "required": ["actual_density"]
         }
     },
     # --- Reaction ---
@@ -74,6 +103,13 @@ DEFAULT_OPS = [
                 "temperature_c": {"type": "number", "title": "Temperature (°C)", "default": 37.0},
                 "agitation_rpm": {"type": "integer", "title": "Agitation (RPM)", "default": 150}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "measured_ph": {"type": "number", "title": "Measured pH"}
+            },
+            "required": ["measured_ph"]
         }
     },
     {
@@ -87,6 +123,13 @@ DEFAULT_OPS = [
                 "tolerance": {"type": "number", "title": "Tolerance (±)", "default": 0.1},
                 "acid_base_type": {"type": "string", "title": "Acid / Base Type", "enum": ["NaOH / HCl", "KOH / H2SO4", "Tris / Citric Acid"]}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "measured_ph": {"type": "number", "title": "Measured pH"}
+            },
+            "required": ["measured_ph"]
         }
     },
     {
@@ -100,6 +143,13 @@ DEFAULT_OPS = [
                 "volume_ml": {"type": "number", "title": "Feed Volume (mL)", "default": 50},
                 "media_source": {"type": "string", "title": "Media Source", "x-ref-type": "media_prep"}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "actual_volume_ml": {"type": "number", "title": "Actual Volume", "unit": "mL"}
+            },
+            "required": ["actual_volume_ml"]
         }
     },
     # --- Incubate ---
@@ -115,6 +165,12 @@ DEFAULT_OPS = [
                 "co2_percent": {"type": "number", "title": "CO₂ (%)", "default": 5.0},
                 "humidity_percent": {"type": "number", "title": "Humidity (%)", "default": 95.0}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "actual_duration_hr": {"type": "number", "title": "Actual Duration", "unit": "hr"}
+            }
         }
     },
     {
@@ -127,6 +183,13 @@ DEFAULT_OPS = [
                 "target_temp_c": {"type": "number", "title": "Target Temp (°C)", "default": 37.0},
                 "hold_time_min": {"type": "number", "title": "Hold Time (min)", "default": 60}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "actual_temp_c": {"type": "number", "title": "Actual Temperature", "unit": "°C"}
+            },
+            "required": ["actual_temp_c"]
         }
     },
     # --- Harvest ---
@@ -141,6 +204,13 @@ DEFAULT_OPS = [
                 "speed_rpm": {"type": "integer", "title": "Centrifuge Speed (RPM)", "default": 3000},
                 "duration_min": {"type": "number", "title": "Duration (min)", "default": 15}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "yield_g": {"type": "number", "title": "Yield", "unit": "g"}
+            },
+            "required": ["yield_g"]
         }
     },
     # --- Purification ---
@@ -155,6 +225,13 @@ DEFAULT_OPS = [
                 "flow_rate_ml_min": {"type": "number", "title": "Flow Rate (mL/min)", "default": 5.0},
                 "load_volume_ml": {"type": "number", "title": "Load Volume (mL)", "default": 100}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "recovery_percent": {"type": "number", "title": "Recovery", "unit": "%"}
+            },
+            "required": ["recovery_percent"]
         }
     },
     # --- Quality Check ---
@@ -168,6 +245,14 @@ DEFAULT_OPS = [
                 "method": {"type": "string", "title": "Method", "enum": ["Trypan Blue", "Vi-CELL", "Hemocytometer"]},
                 "sample_volume_ul": {"type": "number", "title": "Sample Volume (µL)", "default": 500}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "viable_cell_density": {"type": "number", "title": "Viable Cell Density", "unit": "cells/mL"},
+                "viability": {"type": "number", "title": "Viability", "unit": "%"}
+            },
+            "required": ["viable_cell_density"]
         }
     },
     {
@@ -180,6 +265,13 @@ DEFAULT_OPS = [
                 "assay_type": {"type": "string", "title": "Assay Type", "enum": ["Trypan Blue Exclusion", "Alamar Blue", "MTT"]},
                 "threshold_percent": {"type": "number", "title": "Viability Threshold (%)", "default": 90.0}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "viability_percent": {"type": "number", "title": "Viability", "unit": "%"}
+            },
+            "required": ["viability_percent"]
         }
     },
     # --- Analytics ---
@@ -194,6 +286,13 @@ DEFAULT_OPS = [
                 "injection_volume_ul": {"type": "number", "title": "Injection Volume (µL)", "default": 10},
                 "run_time_min": {"type": "number", "title": "Run Time (min)", "default": 30}
             }
+        },
+        "result_schema": {
+            "type": "object",
+            "properties": {
+                "peak_area": {"type": "number", "title": "Peak Area"}
+            },
+            "required": ["peak_area"]
         }
     },
 ]
@@ -218,6 +317,7 @@ async def seed_unit_ops():
                 existing.category = op_data["category"]
                 existing.description = op_data["description"]
                 existing.param_schema = op_data["param_schema"]
+                existing.result_schema = op_data.get("result_schema", {})
         
         await session.commit()
         print(f"Done. {len(DEFAULT_OPS)} unit ops seeded.")

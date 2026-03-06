@@ -10,6 +10,7 @@ class UnitOpDefinitionBase(BaseModel):
     category: str = "General"
     description: Optional[str] = None
     param_schema: Dict[str, Any] = Field(default_factory=dict)
+    result_schema: Dict[str, Any] = Field(default_factory=dict)
 
 class UnitOpDefinitionCreate(UnitOpDefinitionBase):
     pass
@@ -19,6 +20,7 @@ class UnitOpDefinitionUpdate(BaseModel):
     category: Optional[str] = None
     description: Optional[str] = None
     param_schema: Optional[Dict[str, Any]] = None
+    result_schema: Optional[Dict[str, Any]] = None
 
 class UnitOpDefinitionResponse(UnitOpDefinitionBase):
     id: UUID
@@ -114,6 +116,7 @@ class RunStatus(str, Enum):
     PLANNED = "PLANNED"
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
+    EDITED = "EDITED"
     ARCHIVED = "ARCHIVED"
 
 class RunBase(BaseModel):

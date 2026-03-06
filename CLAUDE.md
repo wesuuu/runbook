@@ -59,8 +59,9 @@ npm run check      # svelte-check + tsc type checking
 - **Routing**: Hash-based client-side routing via custom `Router.svelte`/`Route.svelte` components
 - **Key pages**: `ProtocolEditor.svelte` (XYFlow graph editor), `ExperimentRunner.svelte`, `Projects.svelte`, `ProjectDetail.svelte`
 - **Graph editor**: `@xyflow/svelte` with custom node types — `UnitOpNode.svelte` (operations) and `SwimLaneNode.svelte` (roles/phases). Inspector panel for node properties, time axis, horizontal/vertical layout switching.
-- **API client**: `lib/api.ts` — wrapper around fetch with error handling, hardcoded to `http://localhost:8000`
+- **API client**: `lib/api.ts` — wrapper around fetch with error handling. API host configured via `VITE_API_HOST` env var (defaults to `localhost`), set in `lib/config.ts`.
 - **UI components**: shadcn-svelte components live in `lib/components/ui/`
+- **Form validation**: Zod schemas + centralized helpers in `lib/validation.ts`. Use `validate(schema, data)` for all form validation — no form framework, just Zod directly. See `RoleWizard.svelte` for usage pattern.
 - **Path alias**: `$lib` → `src/lib`
 
 ### Database

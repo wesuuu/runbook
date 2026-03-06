@@ -13,6 +13,7 @@ class RunStatus(str, Enum):
     PLANNED = "PLANNED"
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
+    EDITED = "EDITED"
     ARCHIVED = "ARCHIVED"
 
 
@@ -153,6 +154,11 @@ class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
     # Configuration schema (JSONSchema) for this operation
     param_schema: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict
+    )
+
+    # Result schema (JSONSchema) — what the scientist records during execution
+    result_schema: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}", nullable=False
     )
 
 

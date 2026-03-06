@@ -601,7 +601,7 @@
     }
 
     // --- Save Protocol ---
-    async function save() {
+    async function saveDraft() {
         if (!protocol) return;
 
         // Block save while previewing old version
@@ -616,20 +616,6 @@
             saveMessage = "Cannot save while pending approval";
             setTimeout(() => (saveMessage = null), 3000);
             return;
-        }
-
-        // Warn if approved — saving reverts to draft
-        if (protocolStatus === "APPROVED") {
-            if (!confirm("This protocol is approved. Saving will revert it to Draft status. Continue?")) {
-                return;
-            }
-        }
-
-        // Ask to overwrite if a version already exists
-        if (versionNumber > 0) {
-            if (!confirm(`This will save as v${versionNumber + 1} (overwriting v${versionNumber}). Continue?`)) {
-                return;
-            }
         }
 
         saving = true;
@@ -659,13 +645,91 @@
                 pixelsPerHour,
             };
 
-            const updated: any = await api.put(`/science/protocols/${protocol.id}`, {
+            // Save as draft (creates draft version without modifying main protocol)
+            const updated: any = await api.put(`/science/protocols/${protocol.id}?save_as_draft=true`, {
                 graph: graphData,
             });
-            protocolStatus = updated.status || "DRAFT";
-            versionNumber = updated.version_number || 0;
-            saveMessage = `Saved (v${versionNumber})`;
+            // Reload versions to show the new draft
+            await loadVersions();
+            saveMessage = `Draft saved (v${versionNumber + 1})`;
             setTimeout(() => (saveMessage = null), 2000);
+            // Mark as saved
+            lastSavedState = JSON.stringify({
+                nodes,
+                edges,
+                layout,
+                handleOrientation,
+                timeEnabled,
+                pixelsPerHour,
+            });
+            hasUnsavedChanges = false;
+        } catch (e: any) {
+            saveMessage = `Failed: ${e.message}`;
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function saveAndPublish() {
+        if (!protocol) return;
+
+        // Block save while previewing old version
+        if (previewingVersion !== null) {
+            saveMessage = "Exit version preview before saving";
+            setTimeout(() => (saveMessage = null), 3000);
+            return;
+        }
+
+        // Block if already approved or pending
+        if (protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED") {
+            saveMessage = protocolStatus === "APPROVED" ? "Already published" : "Cannot save while pending approval";
+            setTimeout(() => (saveMessage = null), 3000);
+            return;
+        }
+
+        saving = true;
+        saveMessage = null;
+
+        try {
+            const graphData = {
+                nodes: nodes.map((n) => ({
+                    id: n.id,
+                    type: n.type,
+                    position: n.position,
+                    parentId: n.parentId,
+                    zIndex: n.zIndex,
+                    data: n.data,
+                    width: n.width ?? n.measured?.width,
+                    height: n.height ?? n.measured?.height,
+                    style: n.style,
+                })),
+                edges: edges.map((e) => ({
+                    id: e.id,
+                    source: e.source,
+                    target: e.target,
+                })),
+                layout,
+                handleOrientation,
+                timeEnabled,
+                pixelsPerHour,
+            };
+
+            // Save as draft first
+            const draftResponse: any = await api.put(`/science/protocols/${protocol.id}?save_as_draft=true`, {
+                graph: graphData,
+            });
+            const draftVersionNumber = versionNumber + 1;
+
+            // Then publish the draft
+            const publishResponse: any = await api.post(
+                `/science/protocols/${protocol.id}/publish-draft?version_number=${draftVersionNumber}`,
+            );
+
+            protocolStatus = publishResponse.status || "APPROVED";
+            versionNumber = publishResponse.version_number || draftVersionNumber;
+            saveMessage = "Published";
+            setTimeout(() => (saveMessage = null), 2000);
+
             // Mark as saved
             lastSavedState = JSON.stringify({
                 nodes,
@@ -1522,22 +1586,24 @@
                     Preview Documents
                 </button>
             {/if}
-            <button
-                class="save-btn"
-                onclick={save}
-                disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || previewingVersion !== null}
-            >
-                {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked (Pending)" : "Save Protocol"}
-            </button>
-            {#if approvalRequired && protocolStatus === "DRAFT"}
+            <div class="button-group">
                 <button
-                    class="submit-approval-btn"
-                    onclick={submitForApproval}
-                    disabled={!protocol}
+                    class="save-btn"
+                    onclick={saveDraft}
+                    disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || previewingVersion !== null}
+                    title="Save changes as a draft (no publish)"
                 >
-                    Submit for Approval
+                    {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked" : "Save Draft"}
                 </button>
-            {/if}
+                <button
+                    class="publish-btn"
+                    onclick={saveAndPublish}
+                    disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || previewingVersion !== null}
+                    title={approvalRequired ? "Submit protocol for approval" : "Publish protocol"}
+                >
+                    {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : approvalRequired ? "Submit for Approval" : "Publish"}
+                </button>
+            </div>
         </div>
     </aside>
 
@@ -2255,6 +2321,14 @@
     .sidebar-footer {
         padding: 12px 16px;
         border-top: 1px solid hsl(240, 5.9%, 90%);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 8px;
     }
 
     .save-msg {
@@ -2293,7 +2367,7 @@
     }
 
     .save-btn {
-        width: 100%;
+        flex: 1;
         padding: 10px 16px;
         background: hsl(173, 58%, 39%);
         color: white;
@@ -2310,6 +2384,28 @@
     }
 
     .save-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .publish-btn {
+        flex: 1;
+        padding: 10px 16px;
+        background: hsl(34, 97%, 49%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .publish-btn:hover:not(:disabled) {
+        background: hsl(34, 97%, 44%);
+    }
+
+    .publish-btn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
     }

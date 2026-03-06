@@ -10,6 +10,8 @@ from typing import Any
 
 from fpdf import FPDF
 
+from app.services.fonts import FONTS_DIR
+
 
 # ── Default format options ──
 
@@ -211,6 +213,50 @@ def _build_param_sentence(
     if len(parts) == 1:
         return parts[0] + "."
     return ", ".join(parts[:-1]) + ", and " + parts[-1] + "."
+
+
+def _get_initials(display_name: str) -> str:
+    """Derive initials from a display name.
+
+    "John Smith" → "J.S."
+    "Alice" → "A."
+    "alice@example.com" → "A."
+    """
+    name = display_name.strip()
+    if not name:
+        return ""
+    # If it looks like an email, use the local part
+    if "@" in name:
+        name = name.split("@")[0]
+    parts = name.split()
+    initials = ".".join(p[0].upper() for p in parts if p) + "."
+    return initials
+
+
+_CURSIVE_FONT_PATH = str(FONTS_DIR / "DancingScript-Regular.ttf")
+
+
+def _draw_cursive_initials(
+    pdf: FPDF,
+    text: str,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    font_size: float = 12,
+) -> None:
+    """Render initials in cursive font, centered in the given cell area."""
+    if not text:
+        return
+    saved_family = pdf.font_family
+    saved_size = pdf.font_size_pt
+    saved_style = pdf.font_style
+
+    pdf.set_font("Cursive", "", font_size)
+    pdf.set_xy(x, y + (h - font_size * 0.35) / 2)
+    pdf.cell(w, font_size * 0.35, text, border=0, align="C")
+
+    pdf.set_font(saved_family, saved_style, saved_size)
 
 
 def generate_sop_pdf(
@@ -498,6 +544,191 @@ def _draw_table_row(
     pdf.set_xy(x_start, y_start + row_h)
 
 
+def _get_editable_params(
+    param_schema: dict[str, Any] | None,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Return editable (non x-ref-type) properties from a param schema."""
+    if not param_schema:
+        return []
+    props = param_schema.get("properties", {})
+    return [
+        (key, prop) for key, prop in props.items()
+        if not prop.get("x-ref-type")
+    ]
+
+
+def _draw_multi_param_row(
+    pdf: FPDF,
+    col_widths: list[float],
+    row_vals: list[str],
+    value_col_idx: int,
+    params: list[tuple[str, dict[str, Any]]],
+    results: dict[str, Any] | None,
+    line_h: float = 4,
+    min_h: float = 8,
+    aligns: list[str] | None = None,
+    original_results: dict[str, Any] | None = None,
+    editor_initials: str = "",
+    edited_at: str = "",
+) -> None:
+    """Draw a batch record row with sub-rows in the Value column.
+
+    The Value column is split into one sub-row per parameter, with
+    internal horizontal dividers. All other columns span the full height.
+
+    When original_results is provided, edited parameters show the
+    original value with strikethrough, the editor initials + date on
+    the same line, and the new value below (GMP audit trail).
+    """
+    if aligns is None:
+        aligns = ["C"] * len(row_vals)
+
+    pad = 1
+    num_params = len(params)
+    orig = original_results or {}
+
+    # Calculate per-param sub-row height: edited params need an extra line
+    param_sub_heights: list[float] = []
+    for key, _prop in params:
+        is_edited = (
+            orig
+            and key in orig
+            and results
+            and results.get(key) != orig.get(key)
+        )
+        if is_edited:
+            # label + strikethrough original + new value = 3 content lines
+            sub_h = max(min_h, line_h * 4 + pad * 4)
+        else:
+            sub_h = max(min_h, line_h * 3 + pad * 4)
+        param_sub_heights.append(sub_h)
+    total_value_h = sum(param_sub_heights)
+
+    # Pre-wrap non-value columns to find their natural height
+    wrapped: list[list[str]] = []
+    for i, val in enumerate(row_vals):
+        if i == value_col_idx:
+            wrapped.append([])  # placeholder, drawn separately
+        else:
+            lines = _wrap_text(pdf, val, col_widths[i] - pad * 2)
+            wrapped.append(lines)
+
+    text_h = max(
+        (len(lines) * line_h + pad * 2) for i, lines in enumerate(wrapped)
+        if i != value_col_idx and lines
+    ) if any(lines for i, lines in enumerate(wrapped) if i != value_col_idx) else min_h
+
+    row_h = max(min_h, text_h, total_value_h)
+
+    x_start = pdf.l_margin
+    y_start = pdf.get_y()
+
+    # Page break if row doesn't fit
+    page_bottom = pdf.h - pdf.b_margin
+    if y_start + row_h > page_bottom:
+        pdf.add_page()
+        y_start = pdf.get_y()
+
+    value_w = col_widths[value_col_idx]
+    value_x = x_start + sum(col_widths[:value_col_idx])
+
+    # Draw non-value cells (spanning full row height)
+    for i, lines in enumerate(wrapped):
+        if i == value_col_idx:
+            continue
+        x = x_start + sum(col_widths[:i])
+        cell_w = col_widths[i]
+        pdf.rect(x, y_start, cell_w, row_h, style="D")
+        for j, line in enumerate(lines):
+            pdf.set_xy(x + pad, y_start + pad + j * line_h)
+            pdf.cell(cell_w - pad * 2, line_h, line, border=0, align=aligns[i])
+
+    # Draw value column outer border
+    pdf.rect(value_x, y_start, value_w, row_h, style="D")
+
+    # Draw each parameter sub-row inside the value column
+    results = results or {}
+    inner_w = value_w - pad * 2
+
+    saved_family = pdf.font_family
+    saved_size = pdf.font_size_pt
+    saved_style = pdf.font_style
+
+    # Scale sub-row heights proportionally if total_value_h < row_h
+    scale = row_h / total_value_h if total_value_h > 0 else 1
+    cumulative_y = 0.0
+
+    for p_idx, (key, prop) in enumerate(params):
+        actual_sub_h = param_sub_heights[p_idx] * scale
+        sub_y = y_start + cumulative_y
+        cumulative_y += actual_sub_h
+
+        label = prop.get("title") or key.replace("_", " ").title()
+        unit = prop.get("unit", "")
+        if unit:
+            label = f"{label} ({unit})"
+
+        is_edited = (
+            orig
+            and key in orig
+            and results.get(key) != orig.get(key)
+        )
+
+        # Internal horizontal divider (skip for first sub-row)
+        if p_idx > 0:
+            pdf.set_draw_color(200, 200, 200)
+            pdf.line(value_x, sub_y, value_x + value_w, sub_y)
+            pdf.set_draw_color(0, 0, 0)
+
+        # Bold label on first line
+        pdf.set_xy(value_x + pad, sub_y + pad)
+        pdf.set_font(saved_family, "B", saved_size)
+        pdf.cell(inner_w, line_h, label, border=0, align="L")
+
+        if is_edited:
+            # Strikethrough original value in gray, with editor
+            # initials + date on the same line (GMP correction format)
+            orig_val = _format_value(orig[key])
+            annotation = ""
+            if editor_initials or edited_at:
+                parts = [p for p in (editor_initials, edited_at) if p]
+                annotation = "  " + " ".join(parts)
+
+            pdf.set_xy(value_x + pad, sub_y + pad + line_h)
+            pdf.set_text_color(160, 160, 160)
+            pdf.set_font(saved_family, "S", saved_size)
+            struck_w = pdf.get_string_width(orig_val)
+            pdf.cell(struck_w, line_h, orig_val, border=0, align="L")
+            # Editor initials + date in normal (non-struck) style
+            if annotation:
+                pdf.set_font(saved_family, "I", max(saved_size - 1, 6))
+                pdf.cell(inner_w - struck_w, line_h, annotation,
+                         border=0, align="L")
+
+            # New value on third line in normal style
+            new_val = _format_value(results[key]) if results.get(key) is not None else ""
+            pdf.set_xy(value_x + pad, sub_y + pad + line_h * 2)
+            pdf.set_text_color(51, 65, 85)
+            pdf.set_font(saved_family, "", saved_size)
+            pdf.cell(inner_w, line_h, new_val, border=0, align="L")
+        else:
+            # Value on second line (filled mode) or blank for handwriting
+            filled_val = results.get(key)
+            display_val = (
+                _format_value(filled_val)
+                if filled_val is not None and filled_val != ""
+                else ""
+            )
+            pdf.set_xy(value_x + pad, sub_y + pad + line_h)
+            pdf.set_font(saved_family, "", saved_size)
+            pdf.cell(inner_w, line_h, display_val, border=0, align="L")
+
+    # Restore original font state
+    pdf.set_text_color(51, 65, 85)
+    pdf.set_font(saved_family, saved_style, saved_size)
+    pdf.set_xy(x_start, y_start + row_h)
+
+
 def generate_batch_record_pdf(
     protocol_name: str,
     run_name: str,
@@ -510,6 +741,9 @@ def generate_batch_record_pdf(
     is_role_based: bool = True,
     version_number: int | None = None,
     last_modified: str | None = None,
+    user_map: dict[str, str] | None = None,
+    started_by_id: str | None = None,
+    run_status: str | None = None,
 ) -> bytes:
     """Generate a batch record PDF in tabular format.
 
@@ -547,6 +781,7 @@ def generate_batch_record_pdf(
         version_label=version_label,
         last_modified=modified_str,
     )
+    pdf.add_font("Cursive", "", _CURSIVE_FONT_PATH)
     pdf.alias_nb_pages()
     pdf.add_page()
 
@@ -617,6 +852,56 @@ def generate_batch_record_pdf(
     table_min_h = rs["min_row_h"]
     exec_data = execution_data or {}
     rws = roles_with_steps or []
+    umap = user_map or {}
+
+    def _step_initials(step_id: str) -> str:
+        """Get cursive initials for the user who completed a step."""
+        if not filled or not umap:
+            return ""
+        sd = exec_data.get(step_id, {})
+        if sd.get("status") != "completed":
+            return ""
+        uid = sd.get("completed_by_user_id", "")
+        name = umap.get(uid, "")
+        # Fallback to started_by_id for legacy runs
+        if not name and started_by_id:
+            name = umap.get(started_by_id, "")
+        return _get_initials(name) if name else ""
+
+    def _step_editor_initials(step_id: str) -> str:
+        """Get initials for the user who edited a step (GMP)."""
+        if not filled or not umap:
+            return ""
+        sd = exec_data.get(step_id, {})
+        editor_uid = sd.get("edited_by_user_id", "")
+        if not editor_uid:
+            return ""
+        name = umap.get(editor_uid, "")
+        return _get_initials(name) if name else ""
+
+    def _step_original_results(step_id: str) -> dict[str, Any] | None:
+        """Get original_results for an edited step, if any."""
+        if not filled:
+            return None
+        sd = exec_data.get(step_id, {})
+        return sd.get("original_results")
+
+    def _step_edited_at(step_id: str) -> str:
+        """Get formatted edited_at date for a step."""
+        if not filled:
+            return ""
+        sd = exec_data.get(step_id, {})
+        raw = sd.get("edited_at", "")
+        if not raw:
+            return ""
+        try:
+            from datetime import datetime as _dt
+            dt = _dt.fromisoformat(raw.replace("Z", "+00:00"))
+            return dt.strftime("%m/%d/%y")
+        except (ValueError, AttributeError):
+            return raw[:10] if len(raw) >= 10 else raw
+
+    initials_col = len(col_widths) - 1  # last column is always Initials
 
     # Check if we should generate separate tables per process
     multi_process = not is_role_based and len(rws) > 1
@@ -680,30 +965,65 @@ def generate_batch_record_pdf(
                     else:
                         full_desc = desc or param_summary or "--"
 
+                editable = _get_editable_params(step.get("param_schema"))
+                use_multi = len(editable) > 1
+                results = row_data.get("results", {}) if filled else {}
+                initials = _step_initials(step_id)
+                editor_initials = _step_editor_initials(step_id)
+                orig_results = _step_original_results(step_id)
+                edited_at = _step_edited_at(step_id)
+
                 if has_roles:
                     row_vals = [
                         str(step_counter),
                         step.get("role_name", "") or "",
                         step.get("name", "--"),
                         full_desc,
-                        row_data.get("value", "") if filled else "",
-                        row_data.get("initials", "") if filled else "",
+                        row_data.get("value", "") if filled and not use_multi else "",
+                        "",  # initials drawn separately in cursive
                     ]
                     aligns = ["C", "C", "L", "L", "C", "C"]
+                    value_col = 4
                 else:
                     row_vals = [
                         str(step_counter),
                         step.get("name", "--"),
                         full_desc,
-                        row_data.get("value", "") if filled else "",
-                        row_data.get("initials", "") if filled else "",
+                        row_data.get("value", "") if filled and not use_multi else "",
+                        "",  # initials drawn separately in cursive
                     ]
                     aligns = ["C", "L", "L", "C", "C"]
+                    value_col = 3
 
-                _draw_table_row(
-                    pdf, col_widths, row_vals,
-                    line_h=table_line_h, min_h=table_min_h, aligns=aligns,
-                )
+                y_before = pdf.get_y()
+                if use_multi:
+                    _draw_multi_param_row(
+                        pdf, col_widths, row_vals,
+                        value_col_idx=value_col,
+                        params=editable,
+                        results=results,
+                        line_h=table_line_h, min_h=table_min_h,
+                        aligns=aligns,
+                        original_results=orig_results,
+                        editor_initials=editor_initials,
+                        edited_at=edited_at,
+                    )
+                else:
+                    _draw_table_row(
+                        pdf, col_widths, row_vals,
+                        line_h=table_line_h, min_h=table_min_h, aligns=aligns,
+                    )
+                y_after = pdf.get_y()
+
+                # Initials column: only the completer (editor info is
+                # rendered inline with the strikethrough in the Value col)
+                if initials:
+                    ix = pdf.l_margin + sum(col_widths[:initials_col])
+                    _draw_cursive_initials(
+                        pdf, initials, ix, y_before,
+                        col_widths[initials_col], y_after - y_before,
+                    )
+                    pdf.set_xy(pdf.l_margin, y_after)
     else:
         # Single table with optional section headers
         pdf.set_fill_color(*hc)
@@ -795,30 +1115,65 @@ def generate_batch_record_pdf(
                 else:
                     full_desc = desc or param_summary or "--"
 
+            editable = _get_editable_params(step.get("param_schema"))
+            use_multi = len(editable) > 1
+            results = row_data.get("results", {}) if filled else {}
+            initials = _step_initials(step_id)
+            editor_initials = _step_editor_initials(step_id)
+            orig_results = _step_original_results(step_id)
+            edited_at = _step_edited_at(step_id)
+
             if has_roles:
                 row_vals = [
                     str(step_counter),
                     step.get("role_name", "") or "",
                     step.get("name", "--"),
                     full_desc,
-                    row_data.get("value", "") if filled else "",
-                    row_data.get("initials", "") if filled else "",
+                    row_data.get("value", "") if filled and not use_multi else "",
+                    "",  # initials drawn separately in cursive
                 ]
                 aligns = ["C", "C", "L", "L", "C", "C"]
+                value_col = 4
             else:
                 row_vals = [
                     str(step_counter),
                     step.get("name", "--"),
                     full_desc,
-                    row_data.get("value", "") if filled else "",
-                    row_data.get("initials", "") if filled else "",
+                    row_data.get("value", "") if filled and not use_multi else "",
+                    "",  # initials drawn separately in cursive
                 ]
                 aligns = ["C", "L", "L", "C", "C"]
+                value_col = 3
 
-            _draw_table_row(
-                pdf, col_widths, row_vals,
-                line_h=table_line_h, min_h=table_min_h, aligns=aligns,
-            )
+            y_before = pdf.get_y()
+            if use_multi:
+                _draw_multi_param_row(
+                    pdf, col_widths, row_vals,
+                    value_col_idx=value_col,
+                    params=editable,
+                    results=results,
+                    line_h=table_line_h, min_h=table_min_h,
+                    aligns=aligns,
+                    original_results=orig_results,
+                    editor_initials=editor_initials,
+                    edited_at=edited_at,
+                )
+            else:
+                _draw_table_row(
+                    pdf, col_widths, row_vals,
+                    line_h=table_line_h, min_h=table_min_h, aligns=aligns,
+                )
+            y_after = pdf.get_y()
+
+            # Initials column: only the completer (editor info is
+            # rendered inline with the strikethrough in the Value col)
+            if initials:
+                ix = pdf.l_margin + sum(col_widths[:initials_col])
+                _draw_cursive_initials(
+                    pdf, initials, ix, y_before,
+                    col_widths[initials_col], y_after - y_before,
+                )
+                pdf.set_xy(pdf.l_margin, y_after)
 
     pdf.ln(12)
 

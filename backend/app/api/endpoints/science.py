@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -80,6 +81,7 @@ async def create_unit_op(
         category=unit_op.category,
         description=unit_op.description,
         param_schema=unit_op.param_schema,
+        result_schema=unit_op.result_schema,
     )
     db.add(new_op)
     await db.commit()
@@ -1480,6 +1482,36 @@ async def get_run_batch_record_pdf(
     else:
         roles = []
 
+    # Build user_map for electronic initials on filled records
+    user_map: dict[str, str] = {}
+    started_by_id_str: str | None = None
+    if filled and run_obj.execution_data:
+        user_ids = set()
+        for step_data in run_obj.execution_data.values():
+            if isinstance(step_data, dict):
+                uid = step_data.get("completed_by_user_id")
+                if uid:
+                    user_ids.add(uid)
+                # Also collect editor user IDs for GMP edited records
+                editor_uid = step_data.get("edited_by_user_id")
+                if editor_uid:
+                    user_ids.add(editor_uid)
+        # Fallback: include started_by_id for legacy runs without
+        # per-step completed_by_user_id
+        if run_obj.started_by_id:
+            started_by_id_str = str(run_obj.started_by_id)
+            user_ids.add(started_by_id_str)
+        if user_ids:
+            result = await db.execute(
+                select(User).where(User.id.in_(user_ids))
+            )
+            for u in result.scalars().all():
+                user_map[str(u.id)] = u.full_name or u.email
+
+    run_status = (
+        run_obj.status if isinstance(run_obj.status, str)
+        else run_obj.status.value
+    )
     pdf_bytes = generate_batch_record_pdf(
         protocol_name=protocol_name,
         run_name=run_obj.name,
@@ -1492,6 +1524,9 @@ async def get_run_batch_record_pdf(
         is_role_based=is_role_based,
         version_number=protocol_version,
         last_modified=protocol_modified,
+        user_map=user_map if filled else None,
+        started_by_id=started_by_id_str,
+        run_status=run_status,
     )
 
     disp = disposition or "attachment"
@@ -1654,42 +1689,132 @@ async def update_run(
     if not run_obj:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Validate status transition to ACTIVE
+    # Validate status transitions
     new_status = update_data.status.value if update_data.status else None
     current_status = run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
-    if (new_status and
-        new_status == "ACTIVE" and
-        current_status != "ACTIVE"):
-        # Check that at least one person is assigned to the run
-        result = await db.execute(
-            select(RunRoleAssignment)
-            .where(RunRoleAssignment.run_id == run_id)
-        )
-        assignments = result.scalars().all()
 
-        if not assignments:
+    if new_status and new_status != current_status:
+        valid_transitions = {
+            "PLANNED": {"ACTIVE"},
+            "ACTIVE": {"COMPLETED"},
+            "COMPLETED": {"EDITED"},
+            "EDITED": {"EDITED"},
+        }
+        allowed_next = valid_transitions.get(current_status, set())
+        if new_status not in allowed_next:
             raise HTTPException(
                 status_code=422,
-                detail="Cannot start run: at least one person must be assigned",
+                detail=f"Cannot transition from {current_status} to {new_status}",
             )
 
-        # Check that all swimlane roles in the graph have assignments
-        graph = run_obj.graph or {}
-        nodes = graph.get("nodes", [])
-        swimlane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
+        if new_status == "ACTIVE":
+            # Check that at least one person is assigned to the run
+            result = await db.execute(
+                select(RunRoleAssignment)
+                .where(RunRoleAssignment.run_id == run_id)
+            )
+            assignments = result.scalars().all()
 
-        if swimlane_nodes:
-            assigned_lanes = {a.lane_node_id for a in assignments}
-            required_lanes = {n["id"] for n in swimlane_nodes}
-
-            if assigned_lanes != required_lanes:
+            if not assignments:
                 raise HTTPException(
                     status_code=422,
-                    detail="Cannot start run: not all roles have assigned users",
+                    detail="Cannot start run: at least one person must be assigned",
                 )
 
-        # Set started_by_id when run transitions to ACTIVE
-        run_obj.started_by_id = user.id
+            # Check that all swimlane roles in the graph have assignments
+            graph = run_obj.graph or {}
+            nodes = graph.get("nodes", [])
+            swimlane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
+
+            if swimlane_nodes:
+                assigned_lanes = {a.lane_node_id for a in assignments}
+                required_lanes = {n["id"] for n in swimlane_nodes}
+
+                if assigned_lanes != required_lanes:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Cannot start run: not all roles have assigned users",
+                    )
+
+            # Set started_by_id when run transitions to ACTIVE
+            run_obj.started_by_id = user.id
+
+        elif new_status == "COMPLETED":
+            # Validate all unit op steps are completed
+            exec_data = update_data.execution_data or run_obj.execution_data or {}
+            graph = run_obj.graph or {}
+            nodes = graph.get("nodes", [])
+            unit_op_ids = [n["id"] for n in nodes if n.get("type") == "unitOp"]
+
+            incomplete = [
+                sid for sid in unit_op_ids
+                if exec_data.get(sid, {}).get("status") != "completed"
+            ]
+            if incomplete:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Cannot complete run: not all steps are completed",
+                )
+
+    # Preserve original_results when transitioning to EDITED or saving
+    # while already in EDITED status (GMP audit trail)
+    if update_data.execution_data is not None:
+        target_status = new_status or current_status
+        if target_status == "EDITED":
+            old_exec = run_obj.execution_data or {}
+            new_exec = update_data.execution_data
+            for step_id, new_step in new_exec.items():
+                if not isinstance(new_step, dict):
+                    continue
+                old_step = old_exec.get(step_id, {})
+                if not isinstance(old_step, dict):
+                    continue
+                old_results = old_step.get("results", {})
+                new_results = new_step.get("results", {})
+                # Only set original_results if not already set (preserve
+                # the very first completion data) and results differ
+                if (
+                    old_results
+                    and new_results != old_results
+                    and "original_results" not in new_step
+                ):
+                    new_step["original_results"] = old_results
+                    new_step["edited_by_user_id"] = str(user.id)
+                    new_step["edited_at"] = (
+                        datetime.now(timezone.utc).isoformat()
+                    )
+                # Also handle legacy value field
+                old_value = old_step.get("value")
+                new_value = new_step.get("value")
+                if (
+                    old_value
+                    and new_value != old_value
+                    and "original_value" not in new_step
+                ):
+                    new_step["original_value"] = old_value
+                    new_step["edited_by_user_id"] = str(user.id)
+                    new_step["edited_at"] = (
+                        datetime.now(timezone.utc).isoformat()
+                    )
+
+    # Audit log step completions by diffing execution_data
+    if update_data.execution_data is not None:
+        old_exec = run_obj.execution_data or {}
+        new_exec = update_data.execution_data
+        for step_id, step_data in new_exec.items():
+            old_step = old_exec.get(step_id, {})
+            old_status = old_step.get("status")
+            new_step_status = step_data.get("status") if isinstance(step_data, dict) else None
+            if new_step_status == "completed" and old_status != "completed":
+                await log_audit(
+                    db, user.id, "STEP_COMPLETE", "Run", run_obj.id,
+                    {"step_id": step_id, "results": step_data.get("results", {})}
+                )
+            elif old_status == "completed" and new_step_status != "completed":
+                await log_audit(
+                    db, user.id, "STEP_UNCOMPLETE", "Run", run_obj.id,
+                    {"step_id": step_id}
+                )
 
     changes = update_data.model_dump(exclude_unset=True)
     for key, value in changes.items():
@@ -1780,7 +1905,7 @@ async def get_project_members(
         select(OrganizationMember)
         .where(and_(
             OrganizationMember.organization_id == project.organization_id,
-            OrganizationMember.is_admin is True,
+            OrganizationMember.is_admin == True,
         ))
     )
     for om in result.scalars().all():

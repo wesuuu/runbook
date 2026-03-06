@@ -85,9 +85,7 @@
         );
     });
 
-    const showProtocolStatus = $derived(
-        project?.settings?.require_protocol_approval || false,
-    );
+    const showProtocolStatus = $derived(true);
 
     function shortId(idStr: string): string {
         return idStr.slice(0, 8).toUpperCase();
@@ -309,9 +307,9 @@
     function protocolStatusLabel(status: string): string {
         switch (status?.toUpperCase()) {
             case "APPROVED":
-                return "Approved";
+                return "Published";
             case "PENDING_APPROVAL":
-                return "Pending";
+                return "Pending Approval";
             case "DRAFT":
             default:
                 return "Draft";
