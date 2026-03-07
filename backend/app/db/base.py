@@ -12,3 +12,4 @@ from app.models.science import (
     ProtocolVersion,
 )
 from app.models.execution import AuditLog
+from app.models.ai import AiProviderConfig, RunImage, ImageConversation

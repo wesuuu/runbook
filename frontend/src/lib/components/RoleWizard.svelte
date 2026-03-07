@@ -5,6 +5,8 @@
         firstError,
         type FieldErrors,
     } from "$lib/validation";
+    import ImageAnalysisDialog from "./ImageAnalysisDialog.svelte";
+    import ImageGallery from "./ImageGallery.svelte";
 
     interface SchemaProperty {
         type?: string;
@@ -63,6 +65,16 @@
     let saving = $state(false);
     let saveError = $state<string | null>(null);
     let fieldErrors = $state<FieldErrors>({});
+
+    // Image capture state
+    let fileInput: HTMLInputElement | undefined = $state();
+    let uploading = $state(false);
+    let showAnalysisDialog = $state(false);
+    let activeImageId = $state('');
+    let activeImagePath = $state('');
+    let stepImages = $state<Record<string, any[]>>({});
+    let confirmedImageIds = $state<Set<string>>(new Set());
+    let aiFilledFields = $state<Set<string>>(new Set());
 
     $effect(() => {
         const newStepData: Record<string, StepResult> = {};
@@ -139,6 +151,7 @@
             currentStepIdx++;
             saveError = null;
             fieldErrors = {};
+            aiFilledFields = new Set();
         }
     }
 
@@ -147,6 +160,7 @@
             currentStepIdx--;
             saveError = null;
             fieldErrors = {};
+            aiFilledFields = new Set();
         }
     }
 
@@ -244,6 +258,112 @@
         }
     }
 
+    // Load images for the current step
+    async function loadStepImages(stepId: string) {
+        try {
+            const resp = await api.get<{ items: any[] }>(`/ai/runs/${runId}/images`);
+            const all = resp.items || [];
+            // Group by step_id
+            const grouped: Record<string, any[]> = {};
+            for (const img of all) {
+                if (!grouped[img.step_id]) grouped[img.step_id] = [];
+                grouped[img.step_id].push(img);
+            }
+            stepImages = grouped;
+
+            // Fetch conversation status for each image to track confirmed ones
+            const confirmed = new Set<string>();
+            for (const img of all) {
+                try {
+                    const detail = await api.get<{ conversation?: { status: string } }>(
+                        `/ai/runs/${runId}/images/${img.id}`
+                    );
+                    if (detail.conversation?.status === 'confirmed') {
+                        confirmed.add(img.id);
+                    }
+                } catch {
+                    // Skip — image detail not critical
+                }
+            }
+            confirmedImageIds = confirmed;
+        } catch {
+            // Non-critical — gallery just won't show
+        }
+    }
+
+    // Load images when step changes
+    $effect(() => {
+        if (currentStep?.id && runId && !draftMode) {
+            loadStepImages(currentStep.id);
+        }
+    });
+
+    function triggerCapture() {
+        fileInput?.click();
+    }
+
+    async function handleFileCapture(e: Event) {
+        const input = e.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file || !currentStep) return;
+
+        uploading = true;
+        saveError = null;
+        try {
+            const resp = await api.uploadFile<{
+                id: string;
+                file_path: string;
+                step_id: string;
+            }>(`/ai/runs/${runId}/steps/${currentStep.id}/images`, file);
+
+            activeImageId = resp.id;
+            activeImagePath = resp.file_path;
+            showAnalysisDialog = true;
+
+            // Refresh gallery
+            await loadStepImages(currentStep.id);
+        } catch (e: any) {
+            saveError = e.message || 'Failed to upload image';
+        } finally {
+            uploading = false;
+            // Reset input so the same file can be re-selected
+            input.value = '';
+        }
+    }
+
+    function handleConfirmValues(values: Record<string, any>) {
+        if (!currentStep) return;
+        // Populate form fields with confirmed values
+        if (!currentData.results) currentData.results = {};
+        const newAiFields = new Set(aiFilledFields);
+        for (const [key, value] of Object.entries(values)) {
+            currentData.results[key] = value;
+            newAiFields.add(key);
+        }
+        aiFilledFields = newAiFields;
+        if (!currentData.status || currentData.status === 'pending') {
+            currentData.status = 'in_progress';
+        }
+        // Clear any field errors for confirmed keys
+        for (const key of Object.keys(values)) {
+            if (fieldErrors[key]) {
+                const { [key]: _, ...rest } = fieldErrors;
+                fieldErrors = rest;
+            }
+        }
+        // Mark image as confirmed
+        if (activeImageId) {
+            confirmedImageIds = new Set([...confirmedImageIds, activeImageId]);
+        }
+        saveStepData();
+    }
+
+    function handleGalleryImageClick(image: any) {
+        activeImageId = image.id;
+        activeImagePath = image.file_path;
+        showAnalysisDialog = true;
+    }
+
     function getCategoryColor(category?: string): string {
         switch (category?.toLowerCase()) {
             case "media prep":
@@ -306,6 +426,7 @@
                         currentStepIdx = i;
                         saveError = null;
                         fieldErrors = {};
+                        aiFilledFields = new Set();
                     }}
                     class="w-3 h-3 rounded-full transition-all {i === currentStepIdx
                         ? 'bg-teal-600 scale-125'
@@ -371,14 +492,25 @@
                     <!-- Schema-driven fields from paramSchema -->
                     {#each editableFields as [key, prop]}
                         {@const expected = currentStep.params?.[key]}
+                        {@const isAiFilled = aiFilledFields.has(key)}
                         <div>
-                            <label
-                                for="result-{key}"
-                                class="block text-base font-medium text-slate-700 mb-1"
-                            >
-                                {prop.title || key}
-                                <span class="text-red-400">*</span>
-                            </label>
+                            <div class="flex items-center gap-2 mb-1">
+                                <label
+                                    for="result-{key}"
+                                    class="block text-base font-medium text-slate-700"
+                                >
+                                    {prop.title || key}
+                                    <span class="text-red-400">*</span>
+                                </label>
+                                {#if isAiFilled}
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs font-semibold">
+                                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+                                        </svg>
+                                        AI filled
+                                    </span>
+                                {/if}
+                            </div>
                             {#if expected !== undefined && expected !== null && expected !== ""}
                                 <p class="text-sm text-slate-400 mb-2">
                                     Expected: <span class="font-mono font-medium text-slate-500">{expected}</span>
@@ -395,7 +527,7 @@
                                             prop.type,
                                         )}
                                     onblur={saveStepData}
-                                    class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : 'border-slate-300'}"
+                                    class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
                                 >
                                     <option value="">Select...</option>
                                     {#each prop.enum as option}
@@ -416,7 +548,7 @@
                                         )}
                                     onblur={saveStepData}
                                     placeholder={expected !== undefined ? `Expected: ${expected}` : `Enter ${(prop.title || key).toLowerCase()}`}
-                                    class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : 'border-slate-300'}"
+                                    class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
                                 />
                             {/if}
                             {#if firstError(fieldErrors, key)}
@@ -473,30 +605,54 @@
                     ></textarea>
                 </div>
 
-                <!-- Media Input Buttons (Stubbed) -->
-                <div class="pt-2">
-                    <p class="text-sm text-slate-500 mb-3 font-medium">
-                        Attach media (coming soon)
-                    </p>
-                    <div class="flex gap-3">
-                        <button
-                            disabled
-                            title="Voice input coming soon"
-                            class="flex items-center gap-2.5 px-5 py-3 border border-slate-300 rounded-xl text-base text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <span class="text-xl">🎤</span>
-                            <span>Voice Memo</span>
-                        </button>
-                        <button
-                            disabled
-                            title="Photo capture coming soon"
-                            class="flex items-center gap-2.5 px-5 py-3 border border-slate-300 rounded-xl text-base text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <span class="text-xl">📷</span>
-                            <span>Take Photo</span>
-                        </button>
+                <!-- Media Input Buttons -->
+                {#if !readonly && !draftMode}
+                    <div class="pt-2">
+                        <p class="text-sm text-slate-500 mb-3 font-medium">
+                            Capture data
+                        </p>
+                        <div class="flex gap-3">
+                            <button
+                                disabled
+                                title="Voice input coming soon"
+                                class="flex items-center gap-2.5 px-5 py-3 border border-slate-300 rounded-xl text-base text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <span class="text-xl">🎤</span>
+                                <span>Voice Memo</span>
+                            </button>
+                            <button
+                                onclick={triggerCapture}
+                                disabled={uploading}
+                                class="flex items-center gap-2.5 px-5 py-3 border border-teal-300 rounded-xl text-base text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {#if uploading}
+                                    <span class="animate-spin text-xl">...</span>
+                                    <span>Uploading...</span>
+                                {:else}
+                                    <span class="text-xl">📷</span>
+                                    <span>Take Photo</span>
+                                {/if}
+                            </button>
+                        </div>
+                        <input
+                            bind:this={fileInput}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            capture="environment"
+                            onchange={handleFileCapture}
+                            class="hidden"
+                        />
                     </div>
-                </div>
+
+                    <!-- Image Gallery for Current Step -->
+                    {#if currentStep && stepImages[currentStep.id]?.length}
+                        <ImageGallery
+                            images={stepImages[currentStep.id]}
+                            {confirmedImageIds}
+                            onImageClick={handleGalleryImageClick}
+                        />
+                    {/if}
+                {/if}
             </div>
 
             <!-- Error Message -->
@@ -571,5 +727,17 @@
                 </button>
             {/if}
         </div>
+    {/if}
+
+    <!-- AI Analysis Dialog -->
+    {#if currentStep}
+        <ImageAnalysisDialog
+            bind:open={showAnalysisDialog}
+            runId={runId}
+            stepId={currentStep.id}
+            imageId={activeImageId}
+            imagePath={activeImagePath}
+            onConfirm={handleConfirmValues}
+        />
     {/if}
 </div>

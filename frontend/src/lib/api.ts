@@ -172,11 +172,49 @@ async function postDownloadBlob(endpoint: string, body: unknown, filename: strin
     URL.revokeObjectURL(url);
 }
 
+async function uploadFile<T>(endpoint: string, file: File, fieldName = 'file'): Promise<T> {
+    const form = new FormData();
+    form.append(fieldName, file);
+
+    const headers: HeadersInit = {};
+    const token = getToken();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: form,
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            goto('/login');
+            throw new ApiError(401, 'Session expired');
+        }
+        let errorMessage = 'Upload failed';
+        let errorData = null;
+        try {
+            const errorJson = await response.json();
+            errorMessage = errorJson.detail || errorJson.message || errorMessage;
+            errorData = errorJson;
+        } catch {
+            // ignore
+        }
+        throw new ApiError(response.status, errorMessage, errorData);
+    }
+
+    return response.json();
+}
+
 export const api = {
     get: <T>(endpoint: string) => request<T>('GET', endpoint),
     post: <T>(endpoint: string, body: unknown) => request<T>('POST', endpoint, body),
     put: <T>(endpoint: string, body: unknown) => request<T>('PUT', endpoint, body),
     delete: <T>(endpoint: string) => request<T>('DELETE', endpoint),
+    uploadFile,
     downloadBlob,
     fetchBlobUrl,
     postBlobUrl,
