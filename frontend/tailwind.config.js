@@ -53,7 +53,8 @@ const config = {
                 sm: "calc(var(--radius) - 4px)"
             },
             fontFamily: {
-                sans: ["Inter", "sans-serif"]
+                sans: ["'DM Sans'", "system-ui", "sans-serif"],
+                display: ["'Instrument Serif'", "Georgia", "serif"]
             }
         }
     }

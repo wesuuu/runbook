@@ -288,11 +288,11 @@
 
 </script>
 
-<div class="min-h-screen bg-slate-50">
+<div class="min-h-screen bg-background">
     {#if loading}
-        <div class="flex items-center justify-center h-screen text-slate-500">
+        <div class="flex items-center justify-center h-screen text-muted-foreground">
             <div class="text-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-400 mx-auto mb-3"></div>
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-border mx-auto mb-3"></div>
                 Loading run...
             </div>
         </div>
@@ -300,11 +300,11 @@
         <div class="flex items-center justify-center h-screen">
             <div class="text-center">
                 <div class="text-red-500 font-semibold mb-2">Error loading run</div>
-                <div class="text-slate-500 text-sm">{error}</div>
+                <div class="text-muted-foreground text-sm">{error}</div>
             </div>
         </div>
     {:else if !run}
-        <div class="flex items-center justify-center h-screen text-slate-500">
+        <div class="flex items-center justify-center h-screen text-muted-foreground">
             Run not found
         </div>
     {:else}
@@ -314,16 +314,16 @@
                 <!-- Header -->
                 <div class="mb-8">
                     <div class="flex items-center justify-between mb-2">
-                        <h1 class="text-3xl font-bold text-slate-900">
+                        <h1 class="text-3xl font-bold text-foreground">
                             {run.name}
                         </h1>
-                        <span class="inline-block text-xs font-semibold px-3 py-1 bg-slate-200 text-slate-700 rounded-full">
+                        <span class="inline-block text-xs font-semibold px-3 py-1 bg-muted text-foreground/80 rounded-full">
                             Planned
                         </span>
                     </div>
                     <a
                         href="/projects/{run.project_id}?tab=runs"
-                        class="text-sm text-slate-500 hover:text-slate-700"
+                        class="text-sm text-muted-foreground hover:text-foreground/80"
                     >
                         ← Back to project
                     </a>
@@ -337,18 +337,18 @@
 
                 <!-- Protocol Info -->
                 {#if protocol}
-                    <div class="mb-8 p-6 bg-white border border-slate-200 rounded-lg">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-2">
+                    <div class="mb-8 p-6 card-warm rounded-xl">
+                        <h2 class="text-lg font-semibold text-foreground mb-2">
                             Protocol
                         </h2>
                         <div class="space-y-2">
-                            <p class="text-slate-700 font-medium">{protocol.name}</p>
+                            <p class="text-foreground/80 font-medium">{protocol.name}</p>
                             {#if protocol.description}
-                                <p class="text-slate-600 text-sm">{protocol.description}</p>
+                                <p class="text-muted-foreground text-sm">{protocol.description}</p>
                             {/if}
                             <a
                                 href="/protocols/{protocol.id}"
-                                class="inline-block text-sm text-teal-600 hover:text-teal-700 font-medium mt-2"
+                                class="inline-block text-sm text-primary hover:text-primary/80 font-medium mt-2"
                             >
                                 View protocol →
                             </a>
@@ -358,11 +358,11 @@
 
                 <!-- Role Assignments -->
                 {#if getSwimLaneNodes().length > 0}
-                    <div class="mb-8 p-6 bg-white border border-slate-200 rounded-lg">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                    <div class="mb-8 p-6 card-warm rounded-xl">
+                        <h2 class="text-lg font-semibold text-foreground mb-6">
                             Role Assignments
                         </h2>
-                        <p class="text-sm text-slate-600 mb-6">
+                        <p class="text-sm text-muted-foreground mb-6">
                             Assign team members to each role. All roles must be assigned before starting the run.
                         </p>
 
@@ -370,9 +370,9 @@
                             {#each getSwimLaneNodes() as lane}
                                 {@const assignment = getRoleAssignment(lane.id)}
                                 {@const selectedUserId = assignmentChanges[lane.id] ?? assignment?.user_id ?? ""}
-                                <div class="flex items-end gap-4 p-4 bg-slate-50 rounded-lg">
+                                <div class="flex items-end gap-4 p-4 bg-background rounded-lg">
                                     <div class="flex-1">
-                                        <label class="block text-sm font-medium text-slate-700 mb-2">
+                                        <label class="block text-sm font-medium text-foreground/80 mb-2">
                                             {lane.data.label}
                                         </label>
                                         <select
@@ -380,7 +380,7 @@
                                             onchange={(e) => {
                                                 assignmentChanges[lane.id] = e.currentTarget.value;
                                             }}
-                                            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+                                            class="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
                                         >
                                             <option value="">Select user...</option>
                                             {#each projectMembers as member}
@@ -395,7 +395,7 @@
                                             onclick={() =>
                                                 updateRoleAssignment(lane.id, lane.data.label, selectedUserId)
                                             }
-                                            class="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors"
+                                            class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
                                         >
                                             Save
                                         </button>
@@ -420,16 +420,16 @@
                 {#if getSwimLaneNodes().length === 0}
                     {@const assignment = getRoleAssignment("__run__")}
                     {@const selectedUserId = assignmentChanges["__run__"] ?? assignment?.user_id ?? ""}
-                    <div class="mb-8 p-6 bg-white border border-slate-200 rounded-lg">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-2">
+                    <div class="mb-8 p-6 card-warm rounded-xl">
+                        <h2 class="text-lg font-semibold text-foreground mb-2">
                             Run Assignee
                         </h2>
-                        <p class="text-sm text-slate-600 mb-4">
+                        <p class="text-sm text-muted-foreground mb-4">
                             Assign a team member to this run before starting.
                         </p>
-                        <div class="flex items-end gap-4 p-4 bg-slate-50 rounded-lg">
+                        <div class="flex items-end gap-4 p-4 bg-background rounded-lg">
                             <div class="flex-1">
-                                <label class="block text-sm font-medium text-slate-700 mb-2">
+                                <label class="block text-sm font-medium text-foreground/80 mb-2">
                                     Operator
                                 </label>
                                 <select
@@ -437,7 +437,7 @@
                                     onchange={(e) => {
                                         assignmentChanges["__run__"] = e.currentTarget.value;
                                     }}
-                                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+                                    class="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
                                 >
                                     <option value="">Select user...</option>
                                     {#each projectMembers as member}
@@ -452,7 +452,7 @@
                                     onclick={() =>
                                         updateRoleAssignment("__run__", "Operator", selectedUserId)
                                     }
-                                    class="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors"
+                                    class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
                                 >
                                     Save
                                 </button>
@@ -473,41 +473,41 @@
 
                 <!-- Electronic Batch Record -->
                 {#if getAllUnitOpSteps().length > 0}
-                    <div class="mb-8 p-6 bg-white border border-slate-200 rounded-lg">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                    <div class="mb-8 p-6 card-warm rounded-xl">
+                        <h2 class="text-lg font-semibold text-foreground mb-6">
                             Electronic Batch Record
                         </h2>
-                        <p class="text-sm text-slate-600 mb-4">
+                        <p class="text-sm text-muted-foreground mb-4">
                             {getAllUnitOpSteps().length} steps in this run.
                         </p>
 
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm">
                                 <thead>
-                                    <tr class="border-b border-slate-200">
-                                        <th class="text-left py-3 px-4 font-semibold text-slate-700 w-8">#</th>
-                                        <th class="text-left py-3 px-4 font-semibold text-slate-700">Step</th>
-                                        <th class="text-left py-3 px-4 font-semibold text-slate-700">Category</th>
-                                        <th class="text-left py-3 px-4 font-semibold text-slate-700">Duration</th>
-                                        <th class="text-left py-3 px-4 font-semibold text-slate-700">Parameters</th>
+                                    <tr class="border-b border-border">
+                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80 w-8">#</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80">Step</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80">Category</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80">Duration</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80">Parameters</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {#each getAllUnitOpSteps() as step, i}
-                                        <tr class="border-b border-slate-100 hover:bg-slate-50">
-                                            <td class="py-3 px-4 text-slate-500 font-mono">{i + 1}</td>
+                                        <tr class="border-b border-border/60 hover:bg-background">
+                                            <td class="py-3 px-4 text-muted-foreground font-mono">{i + 1}</td>
                                             <td class="py-3 px-4">
-                                                <p class="font-medium text-slate-900">{step.name}</p>
+                                                <p class="font-medium text-foreground">{step.name}</p>
                                                 {#if step.description}
-                                                    <p class="text-xs text-slate-500 mt-1">{step.description}</p>
+                                                    <p class="text-xs text-muted-foreground mt-1">{step.description}</p>
                                                 {/if}
                                             </td>
                                             <td class="py-3 px-4">
-                                                <span class="inline-block text-xs font-semibold px-2 py-1 bg-slate-100 text-slate-700 rounded">
+                                                <span class="inline-block text-xs font-semibold px-2 py-1 bg-muted text-foreground/80 rounded">
                                                     {step.category || '—'}
                                                 </span>
                                             </td>
-                                            <td class="py-3 px-4 text-slate-700">
+                                            <td class="py-3 px-4 text-foreground/80">
                                                 {step.duration_min ? `${step.duration_min} min` : '—'}
                                             </td>
                                             <td class="py-3 px-4">
@@ -515,13 +515,13 @@
                                                     <div class="space-y-1">
                                                         {#each Object.entries(step.params) as [key, value]}
                                                             <div class="text-xs">
-                                                                <span class="text-slate-500">{key.replace(/_/g, ' ')}:</span>
-                                                                <span class="font-medium text-slate-800 ml-1">{value}</span>
+                                                                <span class="text-muted-foreground">{key.replace(/_/g, ' ')}:</span>
+                                                                <span class="font-medium text-foreground ml-1">{value}</span>
                                                             </div>
                                                         {/each}
                                                     </div>
                                                 {:else}
-                                                    <span class="text-slate-400">—</span>
+                                                    <span class="text-muted-foreground/60">—</span>
                                                 {/if}
                                             </td>
                                         </tr>
@@ -534,24 +534,24 @@
 
                 <!-- Documents Section -->
                 {#if getAllUnitOpSteps().length > 0}
-                    <div class="mb-8 p-6 bg-white border border-slate-200 rounded-lg">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                    <div class="mb-8 p-6 card-warm rounded-xl">
+                        <h2 class="text-lg font-semibold text-foreground mb-6">
                             Documents
                         </h2>
-                        <p class="text-sm text-slate-600 mb-6">
+                        <p class="text-sm text-muted-foreground mb-6">
                             Download SOPs and batch record for your run.
                         </p>
 
                         <div class="space-y-3">
                             <button
                                 onclick={downloadSop}
-                                class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                                class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
                             >
                                 <div class="flex items-center justify-between">
-                                    <span class="font-medium text-slate-900">
+                                    <span class="font-medium text-foreground">
                                         Download SOP
                                     </span>
-                                    <span class="text-slate-400">↓</span>
+                                    <span class="text-muted-foreground/60">↓</span>
                                 </div>
                             </button>
 
@@ -559,13 +559,13 @@
 
                             <button
                                 onclick={() => downloadBatchRecord(false)}
-                                class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                                class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
                             >
                                 <div class="flex items-center justify-between">
-                                    <span class="font-medium text-slate-900">
+                                    <span class="font-medium text-foreground">
                                         Download Blank Batch Record
                                     </span>
-                                    <span class="text-slate-400">↓</span>
+                                    <span class="text-muted-foreground/60">↓</span>
                                 </div>
                             </button>
                         </div>
@@ -576,7 +576,7 @@
                 <div class="flex justify-between items-center">
                     <a
                         href="/projects/{run.project_id}?tab=runs"
-                        class="text-slate-600 hover:text-slate-800 text-sm font-medium"
+                        class="text-muted-foreground hover:text-foreground text-sm font-medium"
                     >
                         ← Back to project
                     </a>
@@ -584,7 +584,7 @@
                     <button
                         onclick={() => (showStartConfirm = true)}
                         disabled={!allRolesAssigned()}
-                        class="px-6 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed"
+                        class="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
                     >
                         Start Run
                     </button>
@@ -594,23 +594,23 @@
                 {#if showStartConfirm}
                     <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                         <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm">
-                            <h3 class="text-lg font-bold text-slate-900 mb-4">
+                            <h3 class="text-lg font-bold text-foreground mb-4">
                                 Start Run?
                             </h3>
-                            <p class="text-slate-600 mb-6">
+                            <p class="text-muted-foreground mb-6">
                                 Once started, users can begin logging results for their assigned roles.
                             </p>
                             <div class="flex justify-end gap-3">
                                 <button
                                     onclick={() => (showStartConfirm = false)}
-                                    class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition-colors"
+                                    class="px-4 py-2 bg-muted text-foreground/80 rounded-lg font-medium hover:bg-muted transition-colors"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     onclick={startRun}
                                     disabled={savingStatus}
-                                    class="px-4 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                                    class="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
                                 >
                                     {savingStatus ? "Starting..." : "Start"}
                                 </button>
@@ -622,17 +622,17 @@
 
         <!-- ACTIVE State: Multi-page Wizard or Observer View -->
         {:else if run.status === "ACTIVE"}
-            <div class="min-h-screen bg-slate-50">
+            <div class="min-h-screen bg-background">
                 <div class="max-w-4xl mx-auto px-6 py-8">
                     <!-- Header -->
                     <div class="mb-8">
                         <div class="flex items-center justify-between mb-2">
                             <div>
-                                <h1 class="text-3xl font-bold text-slate-900">
+                                <h1 class="text-3xl font-bold text-foreground">
                                     {run.name}
                                 </h1>
                                 {#if protocol}
-                                    <p class="text-sm text-slate-500 mt-1">
+                                    <p class="text-sm text-muted-foreground mt-1">
                                         Protocol: {protocol.name}
                                     </p>
                                 {/if}
@@ -643,7 +643,7 @@
                         </div>
                         <a
                             href="/projects/{run.project_id}?tab=runs"
-                            class="text-sm text-slate-500 hover:text-slate-700"
+                            class="text-sm text-muted-foreground hover:text-foreground/80"
                         >
                             ← Back to project
                         </a>
@@ -651,7 +651,7 @@
 
                     <!-- Assigned User View (Wizard) -->
                     {#if getCurrentUserAssignment()}
-                        <div class="bg-white rounded-lg border border-slate-200 p-8">
+                        <div class="bg-white rounded-lg border border-border p-8">
                             <RoleWizard
                                 steps={getWizardSteps()}
                                 runId={run.id}
@@ -669,23 +669,23 @@
                         {#if showCompleteConfirm}
                             <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                                 <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm">
-                                    <h3 class="text-lg font-bold text-slate-900 mb-4">
+                                    <h3 class="text-lg font-bold text-foreground mb-4">
                                         Complete Run?
                                     </h3>
-                                    <p class="text-slate-600 mb-6">
+                                    <p class="text-muted-foreground mb-6">
                                         All steps have been completed. Finalizing will mark this run as complete. You can still edit it later if needed.
                                     </p>
                                     <div class="flex justify-end gap-3">
                                         <button
                                             onclick={() => (showCompleteConfirm = false)}
-                                            class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition-colors"
+                                            class="px-4 py-2 bg-muted text-foreground/80 rounded-lg font-medium hover:bg-muted transition-colors"
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             onclick={completeRun}
                                             disabled={completingRun}
-                                            class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                                            class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
                                         >
                                             {completingRun ? 'Completing...' : 'Complete Run'}
                                         </button>
@@ -696,11 +696,11 @@
                     {:else}
                         <!-- Observer View (Non-Assigned User) -->
                         <div class="space-y-6">
-                            <div class="bg-white rounded-lg border border-slate-200 p-6">
-                                <h2 class="text-lg font-semibold text-slate-900 mb-4">
+                            <div class="bg-white rounded-lg border border-border p-6">
+                                <h2 class="text-lg font-semibold text-foreground mb-4">
                                     Run Status
                                 </h2>
-                                <p class="text-slate-600 mb-4">
+                                <p class="text-muted-foreground mb-4">
                                     You are not assigned to a role in this run. Below is the current status.
                                 </p>
 
@@ -708,14 +708,14 @@
                                 <div class="overflow-x-auto">
                                     <table class="w-full text-sm">
                                         <thead>
-                                            <tr class="border-b border-slate-200">
-                                                <th class="text-left py-3 px-4 font-semibold text-slate-700">
+                                            <tr class="border-b border-border">
+                                                <th class="text-left py-3 px-4 font-semibold text-foreground/80">
                                                     Role
                                                 </th>
-                                                <th class="text-left py-3 px-4 font-semibold text-slate-700">
+                                                <th class="text-left py-3 px-4 font-semibold text-foreground/80">
                                                     Assigned To
                                                 </th>
-                                                <th class="text-center py-3 px-4 font-semibold text-slate-700">
+                                                <th class="text-center py-3 px-4 font-semibold text-foreground/80">
                                                     Progress
                                                 </th>
                                             </tr>
@@ -729,11 +729,11 @@
                                                         run.execution_data?.[s.id]?.status ===
                                                         "completed"
                                                 ).length}
-                                                <tr class="border-b border-slate-100 hover:bg-slate-50">
-                                                    <td class="py-3 px-4 font-medium text-slate-900">
+                                                <tr class="border-b border-border/60 hover:bg-background">
+                                                    <td class="py-3 px-4 font-medium text-foreground">
                                                         {lane.data.label}
                                                     </td>
-                                                    <td class="py-3 px-4 text-slate-600">
+                                                    <td class="py-3 px-4 text-muted-foreground">
                                                         {#if assignment}
                                                             {#each projectMembers.filter(
                                                                 (m) =>
@@ -743,7 +743,7 @@
                                                                     member.email}
                                                             {/each}
                                                         {:else}
-                                                            <span class="text-slate-400">
+                                                            <span class="text-muted-foreground/60">
                                                                 Unassigned
                                                             </span>
                                                         {/if}
@@ -756,12 +756,12 @@
                                                                     ? 'bg-emerald-100 text-emerald-700'
                                                                     : completedCount > 0
                                                                       ? 'bg-blue-100 text-blue-700'
-                                                                      : 'bg-slate-100 text-slate-600'}"
+                                                                      : 'bg-muted text-muted-foreground'}"
                                                             >
                                                                 {completedCount} / {steps.length}
                                                             </span>
                                                         {:else}
-                                                            <span class="text-slate-400">
+                                                            <span class="text-muted-foreground/60">
                                                                 --
                                                             </span>
                                                         {/if}
@@ -777,21 +777,21 @@
 
                     <!-- Documents (available to all users) -->
                     {#if getAllUnitOpSteps().length > 0}
-                        <div class="mt-8 bg-white rounded-lg border border-slate-200 p-6">
-                            <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                        <div class="mt-8 bg-white rounded-lg border border-border p-6">
+                            <h2 class="text-lg font-semibold text-foreground mb-6">
                                 Documents
                             </h2>
 
                             <div class="space-y-3">
                                 <button
                                     onclick={downloadSop}
-                                    class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                                    class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
                                 >
                                     <div class="flex items-center justify-between">
-                                        <span class="font-medium text-slate-900">
+                                        <span class="font-medium text-foreground">
                                             Download SOP
                                         </span>
-                                        <span class="text-slate-400">↓</span>
+                                        <span class="text-muted-foreground/60">↓</span>
                                     </div>
                                 </button>
 
@@ -799,13 +799,13 @@
 
                                 <button
                                     onclick={() => downloadBatchRecord(false)}
-                                    class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                                    class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
                                 >
                                     <div class="flex items-center justify-between">
-                                        <span class="font-medium text-slate-900">
+                                        <span class="font-medium text-foreground">
                                             Download Blank Batch Record
                                         </span>
-                                        <span class="text-slate-400">↓</span>
+                                        <span class="text-muted-foreground/60">↓</span>
                                     </div>
                                 </button>
                             </div>
@@ -816,18 +816,18 @@
 
         <!-- COMPLETED State: Summary & Results -->
         {:else if run.status === "COMPLETED"}
-            <div class="min-h-screen bg-slate-50">
+            <div class="min-h-screen bg-background">
                 <div class="max-w-5xl mx-auto px-6 py-8">
                   {#if !isEditMode}
                     <!-- Header -->
                     <div class="mb-8">
                         <div class="flex items-center justify-between mb-2">
                             <div>
-                                <h1 class="text-3xl font-bold text-slate-900">
+                                <h1 class="text-3xl font-bold text-foreground">
                                     {run.name}
                                 </h1>
                                 {#if protocol}
-                                    <p class="text-sm text-slate-500 mt-1">
+                                    <p class="text-sm text-muted-foreground mt-1">
                                         Protocol: {protocol.name}
                                     </p>
                                 {/if}
@@ -838,7 +838,7 @@
                         </div>
                         <a
                             href="/projects/{run.project_id}?tab=runs"
-                            class="text-sm text-slate-500 hover:text-slate-700"
+                            class="text-sm text-muted-foreground hover:text-foreground/80"
                         >
                             ← Back to project
                         </a>
@@ -846,19 +846,19 @@
 
                     <!-- Run Info -->
                     <div class="grid grid-cols-2 gap-6 mb-8">
-                        <div class="bg-white rounded-lg border border-slate-200 p-6">
-                            <h3 class="text-sm font-semibold text-slate-500 uppercase mb-2">
+                        <div class="bg-white rounded-lg border border-border p-6">
+                            <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-2">
                                 Status
                             </h3>
                             <p class="text-lg font-bold text-emerald-600">
                                 Completed
                             </p>
                         </div>
-                        <div class="bg-white rounded-lg border border-slate-200 p-6">
-                            <h3 class="text-sm font-semibold text-slate-500 uppercase mb-2">
+                        <div class="bg-white rounded-lg border border-border p-6">
+                            <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-2">
                                 Completed
                             </h3>
-                            <p class="text-lg font-bold text-slate-900">
+                            <p class="text-lg font-bold text-foreground">
                                 {Object.values(run.execution_data || {}).filter(
                                     (d: any) => d.status === "completed"
                                 ).length} / {Object.keys(run.execution_data || {})
@@ -868,8 +868,8 @@
                     </div>
 
                     <!-- Results Summary -->
-                    <div class="bg-white rounded-lg border border-slate-200 p-6 mb-8">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h2 class="text-lg font-semibold text-foreground mb-6">
                             Results Summary
                         </h2>
 
@@ -877,13 +877,13 @@
                             {#each getSwimLaneNodes() as lane}
                                 {@const steps = getStepsForRole(lane.id)}
                                 {@const assignment = getRoleAssignment(lane.id)}
-                                <div class="pb-6 border-b border-slate-100 last:pb-0 last:border-0">
+                                <div class="pb-6 border-b border-border/60 last:pb-0 last:border-0">
                                     <div class="flex items-center justify-between mb-4">
-                                        <h3 class="font-semibold text-slate-900">
+                                        <h3 class="font-semibold text-foreground">
                                             {lane.data.label}
                                         </h3>
                                         {#if assignment}
-                                            <span class="text-sm text-slate-600">
+                                            <span class="text-sm text-muted-foreground">
                                                 {#each projectMembers.filter(
                                                     (m) => m.id === assignment.user_id
                                                 ) as member}
@@ -900,14 +900,14 @@
                                                 run.execution_data?.[
                                                     step.id
                                                 ]}
-                                            <div class="p-3 bg-slate-50 rounded border border-slate-200">
+                                            <div class="p-3 bg-background rounded border border-border">
                                                 <div class="flex items-start justify-between mb-2">
                                                     <div>
-                                                        <p class="font-medium text-slate-900">
+                                                        <p class="font-medium text-foreground">
                                                             {step.name}
                                                         </p>
                                                         {#if step.description}
-                                                            <p class="text-xs text-slate-600 mt-1">
+                                                            <p class="text-xs text-muted-foreground mt-1">
                                                                 {step.description}
                                                             </p>
                                                         {/if}
@@ -916,7 +916,7 @@
                                                         class="inline-block text-xs font-semibold px-2 py-1 rounded {stepData?.status ===
                                                         'completed'
                                                             ? 'bg-emerald-100 text-emerald-700'
-                                                            : 'bg-slate-100 text-slate-600'}"
+                                                            : 'bg-muted text-muted-foreground'}"
                                                     >
                                                         {stepData?.status?.replace(
                                                             /_/g,
@@ -931,10 +931,10 @@
                                                             <div class="grid grid-cols-2 gap-3">
                                                                 {#each Object.entries(stepData.results) as [key, val]}
                                                                     <div>
-                                                                        <p class="text-xs text-slate-600 font-semibold mb-0.5">
+                                                                        <p class="text-xs text-muted-foreground font-semibold mb-0.5">
                                                                             {key.replace(/_/g, ' ')}
                                                                         </p>
-                                                                        <p class="font-mono text-slate-900">
+                                                                        <p class="font-mono text-foreground">
                                                                             {val}
                                                                         </p>
                                                                     </div>
@@ -942,20 +942,20 @@
                                                             </div>
                                                         {:else if stepData?.value}
                                                             <div>
-                                                                <p class="text-xs text-slate-600 font-semibold mb-0.5">
+                                                                <p class="text-xs text-muted-foreground font-semibold mb-0.5">
                                                                     Value
                                                                 </p>
-                                                                <p class="font-mono text-slate-900">
+                                                                <p class="font-mono text-foreground">
                                                                     {stepData.value}
                                                                 </p>
                                                             </div>
                                                         {/if}
                                                         {#if stepData?.notes}
                                                             <div>
-                                                                <p class="text-xs text-slate-600 font-semibold mb-0.5">
+                                                                <p class="text-xs text-muted-foreground font-semibold mb-0.5">
                                                                     Notes
                                                                 </p>
-                                                                <p class="text-slate-700">
+                                                                <p class="text-foreground/80">
                                                                     {stepData.notes}
                                                                 </p>
                                                             </div>
@@ -964,7 +964,7 @@
                                                 {/if}
 
                                                 {#if stepData?.timestamp}
-                                                    <p class="text-xs text-slate-500 mt-2">
+                                                    <p class="text-xs text-muted-foreground mt-2">
                                                         {new Date(
                                                             stepData.timestamp
                                                         ).toLocaleString()}
@@ -979,21 +979,21 @@
                     </div>
 
                     <!-- Documents Section -->
-                    <div class="bg-white rounded-lg border border-slate-200 p-6 mb-8">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h2 class="text-lg font-semibold text-foreground mb-6">
                             Documents
                         </h2>
 
                         <div class="space-y-3">
                             <button
                                 onclick={downloadSop}
-                                class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                                class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
                             >
                                 <div class="flex items-center justify-between">
-                                    <span class="font-medium text-slate-900">
+                                    <span class="font-medium text-foreground">
                                         Download SOP
                                     </span>
-                                    <span class="text-slate-400">↓</span>
+                                    <span class="text-muted-foreground/60">↓</span>
                                 </div>
                             </button>
 
@@ -1001,13 +1001,13 @@
 
                             <button
                                 onclick={() => downloadBatchRecord(false)}
-                                class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                                class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
                             >
                                 <div class="flex items-center justify-between">
-                                    <span class="font-medium text-slate-900">
+                                    <span class="font-medium text-foreground">
                                         Download Blank Batch Record
                                     </span>
-                                    <span class="text-slate-400">↓</span>
+                                    <span class="text-muted-foreground/60">↓</span>
                                 </div>
                             </button>
 
@@ -1043,7 +1043,7 @@
                     <div class="flex justify-between items-center">
                         <a
                             href="/projects/{run.project_id}?tab=runs"
-                            class="text-slate-600 hover:text-slate-800 font-medium"
+                            class="text-muted-foreground hover:text-foreground font-medium"
                         >
                             ← Back to project
                         </a>
@@ -1059,11 +1059,11 @@
                     <div class="mb-8">
                         <div class="flex items-center justify-between mb-2">
                             <div>
-                                <h1 class="text-3xl font-bold text-slate-900">
+                                <h1 class="text-3xl font-bold text-foreground">
                                     {run.name}
                                 </h1>
                                 {#if protocol}
-                                    <p class="text-sm text-slate-500 mt-1">
+                                    <p class="text-sm text-muted-foreground mt-1">
                                         Protocol: {protocol.name}
                                     </p>
                                 {/if}
@@ -1080,7 +1080,7 @@
                     </div>
 
                     <!-- Edit Wizard (draft mode — no API calls until Save) -->
-                    <div class="bg-white rounded-lg border border-slate-200 p-8 mb-8">
+                    <div class="bg-white rounded-lg border border-border p-8 mb-8">
                         <RoleWizard
                             steps={getAllUnitOpSteps()}
                             runId={run.id}
@@ -1100,14 +1100,14 @@
                     <div class="flex justify-between items-center">
                         <button
                             onclick={cancelEditMode}
-                            class="px-6 py-2 bg-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-300 transition-colors"
+                            class="px-6 py-2 bg-muted text-foreground/80 rounded-lg font-medium hover:bg-muted transition-colors"
                         >
                             Cancel
                         </button>
                         <button
                             onclick={saveEdits}
                             disabled={savingEdits}
-                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
                         >
                             {savingEdits ? 'Saving...' : 'Save Edits'}
                         </button>
@@ -1118,18 +1118,18 @@
 
         <!-- EDITED State: Read-only summary with edit annotations -->
         {:else if run.status === "EDITED"}
-            <div class="min-h-screen bg-slate-50">
+            <div class="min-h-screen bg-background">
                 <div class="max-w-5xl mx-auto px-6 py-8">
                   {#if !isEditMode}
                     <!-- Header -->
                     <div class="mb-8">
                         <div class="flex items-center justify-between mb-2">
                             <div>
-                                <h1 class="text-3xl font-bold text-slate-900">
+                                <h1 class="text-3xl font-bold text-foreground">
                                     {run.name}
                                 </h1>
                                 {#if protocol}
-                                    <p class="text-sm text-slate-500 mt-1">
+                                    <p class="text-sm text-muted-foreground mt-1">
                                         Protocol: {protocol.name}
                                     </p>
                                 {/if}
@@ -1140,7 +1140,7 @@
                         </div>
                         <a
                             href="/projects/{run.project_id}?tab=runs"
-                            class="text-sm text-slate-500 hover:text-slate-700"
+                            class="text-sm text-muted-foreground hover:text-foreground/80"
                         >
                             ← Back to project
                         </a>
@@ -1153,19 +1153,19 @@
 
                     <!-- Run Info -->
                     <div class="grid grid-cols-2 gap-6 mb-8">
-                        <div class="bg-white rounded-lg border border-slate-200 p-6">
-                            <h3 class="text-sm font-semibold text-slate-500 uppercase mb-2">
+                        <div class="bg-white rounded-lg border border-border p-6">
+                            <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-2">
                                 Status
                             </h3>
                             <p class="text-lg font-bold text-amber-600">
                                 Edited
                             </p>
                         </div>
-                        <div class="bg-white rounded-lg border border-slate-200 p-6">
-                            <h3 class="text-sm font-semibold text-slate-500 uppercase mb-2">
+                        <div class="bg-white rounded-lg border border-border p-6">
+                            <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-2">
                                 Steps
                             </h3>
-                            <p class="text-lg font-bold text-slate-900">
+                            <p class="text-lg font-bold text-foreground">
                                 {Object.values(run.execution_data || {}).filter(
                                     (d: any) => d.status === "completed"
                                 ).length} / {Object.keys(run.execution_data || {})
@@ -1175,8 +1175,8 @@
                     </div>
 
                     <!-- Edited Results Summary -->
-                    <div class="bg-white rounded-lg border border-slate-200 p-6 mb-8">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h2 class="text-lg font-semibold text-foreground mb-6">
                             Results Summary
                         </h2>
 
@@ -1184,14 +1184,14 @@
                             {#each getSwimLaneNodes().length > 0 ? getSwimLaneNodes() : [{ id: '__all__', data: { label: 'All Steps' } }] as lane}
                                 {@const steps = lane.id === '__all__' ? getAllUnitOpSteps() : getStepsForRole(lane.id)}
                                 {@const assignment = lane.id === '__all__' ? null : getRoleAssignment(lane.id)}
-                                <div class="pb-6 border-b border-slate-100 last:pb-0 last:border-0">
+                                <div class="pb-6 border-b border-border/60 last:pb-0 last:border-0">
                                     {#if lane.id !== '__all__'}
                                         <div class="flex items-center justify-between mb-4">
-                                            <h3 class="font-semibold text-slate-900">
+                                            <h3 class="font-semibold text-foreground">
                                                 {lane.data.label}
                                             </h3>
                                             {#if assignment}
-                                                <span class="text-sm text-slate-600">
+                                                <span class="text-sm text-muted-foreground">
                                                     {#each projectMembers.filter(
                                                         (m) => m.id === assignment.user_id
                                                     ) as member}
@@ -1208,14 +1208,14 @@
                                             {@const origResults = stepData?.original_results}
                                             {@const origValue = stepData?.original_value}
                                             {@const isEdited = !!(origResults || origValue)}
-                                            <div class="p-3 rounded border {isEdited ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}">
+                                            <div class="p-3 rounded border {isEdited ? 'bg-amber-50 border-amber-200' : 'bg-background border-border'}">
                                                 <div class="flex items-start justify-between mb-2">
                                                     <div>
-                                                        <p class="font-medium text-slate-900">
+                                                        <p class="font-medium text-foreground">
                                                             {step.name}
                                                         </p>
                                                         {#if step.description}
-                                                            <p class="text-xs text-slate-600 mt-1">
+                                                            <p class="text-xs text-muted-foreground mt-1">
                                                                 {step.description}
                                                             </p>
                                                         {/if}
@@ -1229,7 +1229,7 @@
                                                         <span
                                                             class="inline-block text-xs font-semibold px-2 py-1 rounded {stepData?.status === 'completed'
                                                                 ? 'bg-emerald-100 text-emerald-700'
-                                                                : 'bg-slate-100 text-slate-600'}"
+                                                                : 'bg-muted text-muted-foreground'}"
                                                         >
                                                             {stepData?.status?.replace(/_/g, " ") || "PENDING"}
                                                         </span>
@@ -1242,18 +1242,18 @@
                                                             <div class="grid grid-cols-2 gap-3">
                                                                 {#each Object.entries(stepData.results) as [key, val]}
                                                                     <div>
-                                                                        <p class="text-xs text-slate-600 font-semibold mb-0.5">
+                                                                        <p class="text-xs text-muted-foreground font-semibold mb-0.5">
                                                                             {getParamLabel(key, step)}
                                                                         </p>
                                                                         {#if origResults && key in origResults && origResults[key] !== val}
-                                                                            <p class="font-mono text-slate-400 line-through">
+                                                                            <p class="font-mono text-muted-foreground/60 line-through">
                                                                                 {origResults[key]}
                                                                             </p>
-                                                                            <p class="font-mono text-slate-900">
+                                                                            <p class="font-mono text-foreground">
                                                                                 {val}
                                                                             </p>
                                                                         {:else}
-                                                                            <p class="font-mono text-slate-900">
+                                                                            <p class="font-mono text-foreground">
                                                                                 {val}
                                                                             </p>
                                                                         {/if}
@@ -1262,18 +1262,18 @@
                                                             </div>
                                                         {:else if stepData?.value}
                                                             <div>
-                                                                <p class="text-xs text-slate-600 font-semibold mb-0.5">
+                                                                <p class="text-xs text-muted-foreground font-semibold mb-0.5">
                                                                     Value
                                                                 </p>
                                                                 {#if origValue && origValue !== stepData.value}
-                                                                    <p class="font-mono text-slate-400 line-through">
+                                                                    <p class="font-mono text-muted-foreground/60 line-through">
                                                                         {origValue}
                                                                     </p>
-                                                                    <p class="font-mono text-slate-900">
+                                                                    <p class="font-mono text-foreground">
                                                                         {stepData.value}
                                                                     </p>
                                                                 {:else}
-                                                                    <p class="font-mono text-slate-900">
+                                                                    <p class="font-mono text-foreground">
                                                                         {stepData.value}
                                                                     </p>
                                                                 {/if}
@@ -1281,10 +1281,10 @@
                                                         {/if}
                                                         {#if stepData?.notes}
                                                             <div>
-                                                                <p class="text-xs text-slate-600 font-semibold mb-0.5">
+                                                                <p class="text-xs text-muted-foreground font-semibold mb-0.5">
                                                                     Notes
                                                                 </p>
-                                                                <p class="text-slate-700">
+                                                                <p class="text-foreground/80">
                                                                     {stepData.notes}
                                                                 </p>
                                                             </div>
@@ -1293,7 +1293,7 @@
                                                 {/if}
 
                                                 {#if stepData?.timestamp}
-                                                    <p class="text-xs text-slate-500 mt-2">
+                                                    <p class="text-xs text-muted-foreground mt-2">
                                                         {new Date(stepData.timestamp).toLocaleString()}
                                                     </p>
                                                 {/if}
@@ -1306,21 +1306,21 @@
                     </div>
 
                     <!-- Documents Section -->
-                    <div class="bg-white rounded-lg border border-slate-200 p-6 mb-8">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-6">
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h2 class="text-lg font-semibold text-foreground mb-6">
                             Documents
                         </h2>
 
                         <div class="space-y-3">
                             <button
                                 onclick={downloadSop}
-                                class="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                                class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
                             >
                                 <div class="flex items-center justify-between">
-                                    <span class="font-medium text-slate-900">
+                                    <span class="font-medium text-foreground">
                                         Download SOP
                                     </span>
-                                    <span class="text-slate-400">↓</span>
+                                    <span class="text-muted-foreground/60">↓</span>
                                 </div>
                             </button>
 
@@ -1358,7 +1358,7 @@
                     <div class="flex justify-between items-center">
                         <a
                             href="/projects/{run.project_id}?tab=runs"
-                            class="text-slate-600 hover:text-slate-800 font-medium"
+                            class="text-muted-foreground hover:text-foreground font-medium"
                         >
                             ← Back to project
                         </a>
@@ -1374,11 +1374,11 @@
                     <div class="mb-8">
                         <div class="flex items-center justify-between mb-2">
                             <div>
-                                <h1 class="text-3xl font-bold text-slate-900">
+                                <h1 class="text-3xl font-bold text-foreground">
                                     {run.name}
                                 </h1>
                                 {#if protocol}
-                                    <p class="text-sm text-slate-500 mt-1">
+                                    <p class="text-sm text-muted-foreground mt-1">
                                         Protocol: {protocol.name}
                                     </p>
                                 {/if}
@@ -1394,7 +1394,7 @@
                         </div>
                     </div>
 
-                    <div class="bg-white rounded-lg border border-slate-200 p-8 mb-8">
+                    <div class="bg-white rounded-lg border border-border p-8 mb-8">
                         <RoleWizard
                             steps={getAllUnitOpSteps()}
                             runId={run.id}
@@ -1413,14 +1413,14 @@
                     <div class="flex justify-between items-center">
                         <button
                             onclick={cancelEditMode}
-                            class="px-6 py-2 bg-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-300 transition-colors"
+                            class="px-6 py-2 bg-muted text-foreground/80 rounded-lg font-medium hover:bg-muted transition-colors"
                         >
                             Cancel
                         </button>
                         <button
                             onclick={saveEdits}
                             disabled={savingEdits}
-                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
                         >
                             {savingEdits ? 'Saving...' : 'Save Edits'}
                         </button>
@@ -1434,22 +1434,22 @@
             <div class="max-w-5xl mx-auto px-6 py-8">
                 <div class="mb-8">
                     <div class="flex items-center justify-between mb-2">
-                        <h1 class="text-3xl font-bold text-slate-900">
+                        <h1 class="text-3xl font-bold text-foreground">
                             {run.name}
                         </h1>
-                        <span class="inline-block text-xs font-semibold px-3 py-1 bg-slate-100 text-slate-700 rounded-full">
+                        <span class="inline-block text-xs font-semibold px-3 py-1 bg-muted text-foreground/80 rounded-full">
                             {run.status}
                         </span>
                     </div>
                     <a
                         href="/projects/{run.project_id}?tab=runs"
-                        class="text-sm text-slate-500 hover:text-slate-700"
+                        class="text-sm text-muted-foreground hover:text-foreground/80"
                     >
                         ← Back to project
                     </a>
                 </div>
 
-                <div class="p-8 bg-white border border-slate-200 rounded-lg text-center text-slate-500">
+                <div class="p-8 card-warm rounded-xl text-center text-muted-foreground">
                     <p class="text-lg font-medium mb-2">Run {run.status}</p>
                     <p class="text-sm">This run is {run.status.toLowerCase()}.</p>
                 </div>
