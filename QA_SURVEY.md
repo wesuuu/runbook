@@ -6,15 +6,15 @@
 
 ## Summary
 
-| Category | Critical | High | Medium | Low | Total |
-|----------|----------|------|--------|-----|-------|
-| Functionality | 2 | 1 | 0 | 0 | 3 |
-| UI/UX | 0 | 0 | 3 | 2 | 5 |
-| Performance | 0 | 1 | 0 | 0 | 1 |
-| Security | 0 | 1 | 0 | 0 | 1 |
-| Data | 0 | 0 | 2 | 0 | 2 |
-| Accessibility | 0 | 0 | 0 | 1 | 1 |
-| **Total** | **2** | **3** | **5** | **3** | **13** |
+| Category | Critical | High | Medium | Low | Fixed/Deferred | Total |
+|----------|----------|------|--------|-----|----------------|-------|
+| Functionality | ~~2~~ 0 | ~~1~~ 0 | 0 | 0 | 3 (2 fixed, 1 deferred) | 3 |
+| UI/UX | 0 | 0 | 3 | 2 | 0 | 5 |
+| Performance | 0 | 1 | 0 | 0 | 0 | 1 |
+| Security | 0 | 1 | 0 | 0 | 0 | 1 |
+| Data | 0 | 0 | 2 | 0 | 0 | 2 |
+| Accessibility | 0 | 0 | 0 | 1 | 0 | 1 |
+| **Total** | **0** | **2** | **5** | **3** | **3** | **13** |
 
 *Last surveyed: 2026-03-07*
 *Users tested: admin@bioprocess.com, scientist1@bioprocess.com, viewer@bioprocess.com*
@@ -24,7 +24,7 @@
 ## Issues
 
 ### [QA-0001] Dashboard and Projects endpoints return 500/503 for non-admin users
-- **Severity**: Critical
+- **Severity**: ~~Critical~~ **FIXED**
 - **Category**: Functionality
 - **Page**: / (Dashboard), /projects
 - **User**: scientist1@bioprocess.com (Upstream Team)
@@ -38,9 +38,10 @@
 - **Console Errors**: None (error handled gracefully in UI)
 - **Network Errors**: `GET /dashboard?org_id=...` → 503, `GET /projects?organization_id=...` → 503
 - **Recommendation**: Investigate the backend `/dashboard` and `/projects` endpoints for errors when the requesting user is not an org admin. Check database connection pool health — the server has been running since March 2 and may have exhausted connections. Add backend error logging with tracebacks for 500s.
+- **Resolution**: Was caused by backend server degradation after extended uptime (QA-0002). Both endpoints return 200 for admin and non-admin users after server restart. Confirmed via curl with scientist1 and admin tokens.
 
 ### [QA-0002] Backend server degrades over time — eventually returns 500 for all users
-- **Severity**: Critical
+- **Severity**: ~~Critical~~ **DEFERRED**
 - **Category**: Functionality
 - **Page**: All API-dependent pages
 - **User**: All users
@@ -52,9 +53,10 @@
 - **Expected**: Backend should handle sustained operation without degradation
 - **Actual**: After extended runtime, complex query endpoints start failing with 500 while simple endpoints still work. Suggests database connection pool exhaustion or session leak.
 - **Recommendation**: Add connection pool monitoring. Check SQLAlchemy async session lifecycle — ensure sessions are properly closed after each request (verify `get_db` dependency disposes sessions). Consider adding a health check endpoint that validates DB connectivity. Add `pool_recycle` and `pool_pre_ping` settings to the engine config.
+- **Reason**: Server restart resolved the immediate issue. Root cause (missing `pool_recycle`/`pool_pre_ping` in `db/session.py` engine config) still needs to be addressed but requires load testing to verify. Session disposal in `get_db` looks correct (`async with` + `session.close()`).
 
 ### [QA-0003] Settings Organization tab shows "No members found" for non-admin users
-- **Severity**: High
+- **Severity**: ~~High~~ **FIXED**
 - **Category**: Functionality
 - **Page**: /settings (Organization tab)
 - **User**: scientist1@bioprocess.com (Upstream Team)
@@ -65,6 +67,7 @@
 - **Expected**: Non-admin users should see organization members (read-only), or the member list should show a clear "access denied" message
 - **Actual**: Shows "No members found" as if the org is empty — misleading. The API either returns an empty list or fails silently.
 - **Recommendation**: Either grant read access to the member list endpoint for all org members, or show a "You don't have permission to view members" message instead of the misleading "No members found."
+- **Resolution**: The backend already allows any org member to list members (no admin required). The "No members found" was caused by `loadMembers()` silently catching API errors and setting `members = []`. Fixed frontend to show proper error message on failure (`membersError` state + error display in template). Added 2 backend tests: `test_list_org_members_as_non_admin` (200 with full list) and `test_list_org_members_non_member_forbidden` (403). Also fixed pre-existing broken `Role` import in `tests/conftest.py`.
 
 ### [QA-0004] Non-admin users see "Invite Member" button on Organization settings
 - **Severity**: High

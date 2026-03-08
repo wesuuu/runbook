@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select, and_
+from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -229,14 +229,139 @@ async def get_protocol(
 )
 async def list_project_protocols(
     project_id: UUID,
+    include_archived: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
+    stmt = (
         select(Protocol)
         .options(selectinload(Protocol.roles))
         .where(Protocol.project_id == project_id)
     )
+    if not include_archived:
+        stmt = stmt.where(Protocol.status != "ARCHIVED")
+    result = await db.execute(stmt)
     return result.scalars().all()
+
+
+@router.delete("/protocols/{protocol_id}", status_code=200)
+async def delete_or_archive_protocol(
+    protocol_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete or archive a protocol.
+
+    - PENDING_APPROVAL → blocked (must reject first)
+    - DRAFT + empty graph + no runs → hard delete
+    - Otherwise → archive (set status=ARCHIVED)
+    """
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROTOCOL,
+        protocol_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="EDIT permission required")
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    if protocol.status == "PENDING_APPROVAL":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a protocol pending approval. Reject it first.",
+        )
+
+    if protocol.status == "ARCHIVED":
+        raise HTTPException(
+            status_code=400, detail="Protocol is already archived",
+        )
+
+    # Check if runs exist for this protocol
+    run_count_result = await db.execute(
+        select(func.count()).where(Run.protocol_id == protocol_id)
+    )
+    run_count = run_count_result.scalar() or 0
+
+    # Determine if graph is empty (no nodes)
+    graph = protocol.graph or {}
+    nodes = graph.get("nodes", [])
+    graph_is_empty = len(nodes) == 0
+
+    if protocol.status == "DRAFT" and graph_is_empty and run_count == 0:
+        # Hard delete
+        await log_audit(
+            db, user.id, "DELETE", "Protocol",
+            protocol.id,
+            {"name": protocol.name, "action": "hard_delete"},
+        )
+        await db.delete(protocol)
+        await db.commit()
+        return {"action": "deleted", "protocol_id": str(protocol_id)}
+    else:
+        # Archive
+        old_status = protocol.status
+        protocol.status = "ARCHIVED"
+        await log_audit(
+            db, user.id, "ARCHIVE", "Protocol",
+            protocol.id,
+            {
+                "name": protocol.name,
+                "previous_status": old_status,
+                "run_count": run_count,
+                "had_graph": not graph_is_empty,
+            },
+        )
+        await db.commit()
+        return {"action": "archived", "protocol_id": str(protocol_id)}
+
+
+@router.put("/protocols/{protocol_id}/unarchive", response_model=ProtocolResponse)
+async def unarchive_protocol(
+    protocol_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unarchive a protocol back to DRAFT. Requires ADMIN on project."""
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    if protocol.status != "ARCHIVED":
+        raise HTTPException(
+            status_code=400, detail="Protocol is not archived",
+        )
+
+    # Require ADMIN on the parent project (or org admin)
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT,
+        protocol.project_id, PermissionLevel.ADMIN,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="Project ADMIN permission required to unarchive",
+        )
+
+    protocol.status = "DRAFT"
+    await log_audit(
+        db, user.id, "UNARCHIVE", "Protocol",
+        protocol.id,
+        {"name": protocol.name, "restored_to": "DRAFT"},
+    )
+    await db.commit()
+    await db.refresh(protocol)
+    return protocol
 
 
 @router.put("/protocols/{protocol_id}", response_model=ProtocolResponse)
@@ -1672,8 +1797,16 @@ async def create_run(
             select(Protocol).where(Protocol.id == run_in.protocol_id)
         )
         protocol = result.scalar_one_or_none()
-        if protocol:
-            initial_graph = protocol.graph.copy() if protocol.graph else {}
+        if protocol is None:
+            raise HTTPException(
+                status_code=404, detail="Protocol not found"
+            )
+        if protocol.status == "ARCHIVED":
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot create run from archived protocol",
+            )
+        initial_graph = protocol.graph.copy() if protocol.graph else {}
 
     run_obj = Run(
         name=run_in.name,

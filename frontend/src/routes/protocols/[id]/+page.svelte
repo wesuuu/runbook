@@ -618,6 +618,13 @@
             return;
         }
 
+        // Block save if archived
+        if (protocolStatus === "ARCHIVED") {
+            saveMessage = "Cannot save an archived protocol";
+            setTimeout(() => (saveMessage = null), 3000);
+            return;
+        }
+
         saving = true;
         saveMessage = null;
 
@@ -680,9 +687,9 @@
             return;
         }
 
-        // Block if already approved or pending
-        if (protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED") {
-            saveMessage = protocolStatus === "APPROVED" ? "Already published" : "Cannot save while pending approval";
+        // Block if already approved, pending, or archived
+        if (protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED") {
+            saveMessage = protocolStatus === "ARCHIVED" ? "Cannot save an archived protocol" : protocolStatus === "APPROVED" ? "Already published" : "Cannot save while pending approval";
             setTimeout(() => (saveMessage = null), 3000);
             return;
         }
@@ -895,6 +902,37 @@
         }
     }
 
+    // --- Archive / Delete ---
+    async function unarchiveProtocol() {
+        if (!protocol) return;
+        try {
+            await api.put(`/science/protocols/${protocol.id}/unarchive`, {});
+            await loadData();
+        } catch (e: any) {
+            console.error('Failed to unarchive:', e);
+            saveMessage = `Failed to unarchive: ${e instanceof Error ? e.message : 'An error occurred'}`;
+            setTimeout(() => (saveMessage = null), 3000);
+        }
+    }
+
+    async function deleteOrArchiveProtocol() {
+        if (!protocol) return;
+        if (!confirm('Are you sure you want to delete/archive this protocol?')) return;
+        try {
+            await api.delete(`/science/protocols/${protocol.id}`);
+            // Navigate back to the project page
+            if (protocol.project_id) {
+                window.location.href = `/projects/${protocol.project_id}`;
+            } else {
+                window.location.href = '/';
+            }
+        } catch (e: any) {
+            console.error('Failed to delete/archive protocol:', e);
+            saveMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
+            setTimeout(() => (saveMessage = null), 3000);
+        }
+    }
+
     // --- Drag & Drop ---
     function onDragStart(event: DragEvent, op: any) {
         if (!event.dataTransfer) return;
@@ -922,6 +960,12 @@
 
         if (protocolStatus === "PENDING_APPROVAL") {
             saveMessage = "Cannot edit while pending approval";
+            setTimeout(() => (saveMessage = null), 3000);
+            return;
+        }
+
+        if (protocolStatus === "ARCHIVED") {
+            saveMessage = "Cannot edit an archived protocol";
             setTimeout(() => (saveMessage = null), 3000);
             return;
         }
@@ -1590,20 +1634,28 @@
                 <button
                     class="save-btn"
                     onclick={saveDraft}
-                    disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || previewingVersion !== null}
+                    disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "ARCHIVED" || previewingVersion !== null}
                     title="Save changes as a draft (no publish)"
                 >
-                    {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked" : "Save Draft"}
+                    {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked" : protocolStatus === "ARCHIVED" ? "Archived" : "Save Draft"}
                 </button>
                 <button
                     class="publish-btn"
                     onclick={saveAndPublish}
-                    disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || previewingVersion !== null}
+                    disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED" || previewingVersion !== null}
                     title={approvalRequired ? "Submit protocol for approval" : "Publish protocol"}
                 >
                     {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : approvalRequired ? "Submit for Approval" : "Publish"}
                 </button>
             </div>
+            {#if protocol && protocolStatus !== "PENDING_APPROVAL"}
+                <button
+                    class="delete-archive-btn"
+                    onclick={protocolStatus === "ARCHIVED" ? unarchiveProtocol : deleteOrArchiveProtocol}
+                >
+                    {protocolStatus === "ARCHIVED" ? "Unarchive" : protocolStatus === "APPROVED" ? "Archive" : "Delete"}
+                </button>
+            {/if}
         </div>
     </aside>
 
@@ -1737,6 +1789,16 @@
                 </div>
             {/if}
         </div>
+
+        <!-- Archive banner -->
+        {#if protocolStatus === 'ARCHIVED'}
+            <div class="archive-banner">
+                <span>This protocol is archived and cannot be edited.</span>
+                <button class="preview-banner-btn restore" onclick={unarchiveProtocol}>
+                    Unarchive
+                </button>
+            </div>
+        {/if}
 
         <!-- Version preview banner -->
         {#if previewingVersion !== null}
@@ -2568,6 +2630,45 @@
         cursor: pointer;
         font-family: inherit;
         transition: all 0.15s;
+    }
+
+    .archive-banner {
+        position: absolute;
+        top: 56px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 16px;
+        background: #f8fafc;
+        border: 1px solid #94a3b8;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(100, 116, 139, 0.15);
+        font-size: 12px;
+        color: #475569;
+        white-space: nowrap;
+    }
+
+    .delete-archive-btn {
+        width: 100%;
+        padding: 8px 16px;
+        background: white;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 0.15s;
+        margin-top: 4px;
+    }
+
+    .delete-archive-btn:hover {
+        background: #fef2f2;
+        border-color: #f87171;
     }
 
     .preview-banner-btn.restore {

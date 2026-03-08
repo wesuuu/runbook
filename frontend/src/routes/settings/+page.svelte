@@ -187,6 +187,7 @@
     // Organization members
     let members = $state<any[]>([]);
     let membersLoading = $state(false);
+    let membersError = $state('');
     let inviteEmail = $state('');
     let inviteSearchResults = $state<any[]>([]);
     let inviteSearching = $state(false);
@@ -330,10 +331,12 @@
         const org = getCurrentOrg();
         if (!org) return;
         membersLoading = true;
+        membersError = '';
         try {
             members = await api.get(`/iam/organizations/${org.id}/members`);
-        } catch {
+        } catch (e: unknown) {
             members = [];
+            membersError = e instanceof Error ? e.message : 'Failed to load members.';
         } finally {
             membersLoading = false;
         }
@@ -530,6 +533,8 @@
             <CardContent>
                 {#if membersLoading}
                     <p class="text-sm text-muted-foreground py-4 text-center">Loading members...</p>
+                {:else if membersError}
+                    <p class="text-sm text-destructive py-4 text-center">{membersError}</p>
                 {:else if members.length === 0}
                     <p class="text-sm text-muted-foreground py-4 text-center">No members found.</p>
                 {:else}

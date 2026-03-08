@@ -24,6 +24,7 @@
     let runs = $state<any[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
+    let showArchived = $state(false);
 
     // -- Tab State (derived from URL ?tab= param) --
     type TabName = "protocols" | "runs" | "activity" | "settings";
@@ -464,9 +465,16 @@
 
             approvers = await api.get(`/projects/${id}/approvers`);
 
-            // Load org members for the approver dropdown
-            const members = await api.get(`/science/projects/${id}/members`);
-            orgMembers = members as any[];
+            // Load org members for dropdowns (approvers + permission grants)
+            const org = getCurrentOrg();
+            if (org) {
+                const memberList = await api.get<any[]>(`/iam/organizations/${org.id}/members`);
+                orgMembers = memberList.map((m: any) => ({
+                    id: m.user_id,
+                    full_name: m.full_name,
+                    email: m.email,
+                }));
+            }
 
             if (permissionsEnabled) {
                 await loadProjectPermissions();
@@ -623,6 +631,8 @@
                 return "bg-emerald-50 text-emerald-600 border border-emerald-200";
             case "PENDING_APPROVAL":
                 return "bg-amber-50 text-amber-600 border border-amber-200";
+            case "ARCHIVED":
+                return "bg-slate-100 text-slate-500 border border-slate-200";
             case "DRAFT":
             default:
                 return "bg-slate-100 text-slate-500 border border-slate-200";
@@ -635,6 +645,8 @@
                 return "Published";
             case "PENDING_APPROVAL":
                 return "Pending Approval";
+            case "ARCHIVED":
+                return "Archived";
             case "DRAFT":
             default:
                 return "Draft";
@@ -664,9 +676,13 @@
         try {
             if (id === "new") return;
 
+            const protocolsUrl = showArchived
+                ? `/science/projects/${id}/protocols?include_archived=true`
+                : `/science/projects/${id}/protocols`;
+
             const [p, protos, exps] = await Promise.all([
                 api.get(`/projects/${id}`),
-                api.get(`/science/projects/${id}/protocols`),
+                api.get(protocolsUrl),
                 api.get(`/science/projects/${id}/runs`),
             ]);
 
@@ -679,6 +695,26 @@
             loading = false;
         }
     }
+
+    async function reloadProtocols() {
+        try {
+            const protocolsUrl = showArchived
+                ? `/science/projects/${id}/protocols?include_archived=true`
+                : `/science/projects/${id}/protocols`;
+            const result = await api.get(protocolsUrl);
+            protocols = result as any[];
+        } catch (e: unknown) {
+            console.error('Failed to reload protocols:', e instanceof Error ? e.message : e);
+        }
+    }
+
+    // Re-fetch protocols when showArchived changes
+    $effect(() => {
+        showArchived;
+        if (project && id !== "new") {
+            reloadProtocols();
+        }
+    });
 
     async function createProtocol() {
         try {
@@ -700,6 +736,25 @@
             goto(`/protocols/${newProto.id}`);
         } catch (e: unknown) {
             console.error(e instanceof Error ? e.message : e);
+        }
+    }
+
+    async function deleteOrArchiveProtocol(protocolId: string) {
+        if (!confirm('Are you sure you want to delete/archive this protocol?')) return;
+        try {
+            await api.delete(`/science/protocols/${protocolId}`);
+            await reloadProtocols();
+        } catch (e: any) {
+            console.error('Failed to delete/archive protocol:', e);
+        }
+    }
+
+    async function unarchiveProtocol(protocolId: string) {
+        try {
+            await api.put(`/science/protocols/${protocolId}/unarchive`, {});
+            await reloadProtocols();
+        } catch (e: any) {
+            console.error('Failed to unarchive protocol:', e);
         }
     }
 
@@ -1210,12 +1265,22 @@
                             class="w-full py-1.5 pl-8 pr-2.5 border border-slate-200 rounded-lg text-[13px] text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-400/15"
                         />
                     </div>
-                    <span class="text-[13px] text-slate-400 font-medium">
-                        {filteredProtocols().length} of {protocols.length} protocol{protocols.length !==
-                        1
-                            ? "s"
-                            : ""}
-                    </span>
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-1.5 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                bind:checked={showArchived}
+                                class="w-3.5 h-3.5 rounded border-slate-300 text-slate-600 focus:ring-slate-400 cursor-pointer"
+                            />
+                            <span class="text-[12px] text-slate-400 font-medium">Show archived</span>
+                        </label>
+                        <span class="text-[13px] text-slate-400 font-medium">
+                            {filteredProtocols().length} of {protocols.length} protocol{protocols.length !==
+                            1
+                                ? "s"
+                                : ""}
+                        </span>
+                    </div>
                 </div>
 
                 {#if filteredProtocols().length === 0}
@@ -1288,9 +1353,13 @@
                                     >
                                 {/if}
                                 <th
-                                    class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'updated_at' ? 'text-slate-700' : 'text-slate-400'}"
+                                    class="w-[130px] text-right py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'updated_at' ? 'text-slate-700' : 'text-slate-400'}"
                                     onclick={() => toggleSort("protocols", "updated_at")}
                                     >Last Modified{sortIndicator("protocols", "updated_at")}</th
+                                >
+                                <th
+                                    class="w-[100px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
+                                    ></th
                                 >
                             </tr>
                         </thead>
@@ -1335,12 +1404,36 @@
                                         </td>
                                     {/if}
                                     <td
-                                        class="py-3.5 px-4 pr-8 text-[13px] text-slate-400 font-medium whitespace-nowrap text-right"
+                                        class="py-3.5 px-4 text-[13px] text-slate-400 font-medium whitespace-nowrap text-right"
                                         >{formatDate(
                                             proto.updated_at ||
                                                 proto.created_at,
                                         )}</td
                                     >
+                                    <td class="py-3.5 px-4 pr-8 text-right whitespace-nowrap">
+                                        {#if proto.status?.toUpperCase() === 'ARCHIVED'}
+                                            <button
+                                                class="text-[12px] font-medium text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded border border-slate-200 hover:border-slate-300 bg-white transition-colors"
+                                                onclick={(e: MouseEvent) => { e.stopPropagation(); unarchiveProtocol(proto.id); }}
+                                            >
+                                                Unarchive
+                                            </button>
+                                        {:else if proto.status?.toUpperCase() === 'DRAFT'}
+                                            <button
+                                                class="text-[12px] font-medium text-red-500 hover:text-red-700 px-2.5 py-1 rounded border border-red-200 hover:border-red-300 bg-white transition-colors"
+                                                onclick={(e: MouseEvent) => { e.stopPropagation(); deleteOrArchiveProtocol(proto.id); }}
+                                            >
+                                                Delete
+                                            </button>
+                                        {:else if proto.status?.toUpperCase() === 'APPROVED'}
+                                            <button
+                                                class="text-[12px] font-medium text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded border border-slate-200 hover:border-slate-300 bg-white transition-colors"
+                                                onclick={(e: MouseEvent) => { e.stopPropagation(); deleteOrArchiveProtocol(proto.id); }}
+                                            >
+                                                Archive
+                                            </button>
+                                        {/if}
+                                    </td>
                                 </tr>
                             {/each}
                         </tbody>
@@ -1937,7 +2030,7 @@
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
             >
                 <option value="">Select a protocol</option>
-                {#each protocols as proto}
+                {#each protocols.filter((p: any) => p.status?.toUpperCase() !== 'ARCHIVED') as proto}
                     <option value={proto.id}>{proto.name}</option>
                 {/each}
             </select>

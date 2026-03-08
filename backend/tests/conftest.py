@@ -22,7 +22,6 @@ from app.models.iam import (
     PrincipalType,
     ObjectType,
     PermissionLevel,
-    Role,
 )
 from app.models.science import Project
 

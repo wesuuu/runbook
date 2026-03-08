@@ -94,6 +94,48 @@ async def test_add_org_member_non_admin_forbidden(
 
 
 @pytest.mark.asyncio
+async def test_list_org_members_as_non_admin(
+    client: AsyncClient,
+    second_auth_headers: dict,
+    test_org: Organization,
+    second_user: User,
+    db_session: AsyncSession,
+):
+    """Non-admin org members should be able to list all org members."""
+    db_session.add(OrganizationMember(
+        user_id=second_user.id,
+        organization_id=test_org.id,
+        role="MEMBER",
+    ))
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/iam/organizations/{test_org.id}/members",
+        headers=second_auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) >= 2  # test_user (admin) + second_user (member)
+    emails = [m["email"] for m in data]
+    assert "second@example.com" in emails
+    assert "testuser@example.com" in emails
+
+
+@pytest.mark.asyncio
+async def test_list_org_members_non_member_forbidden(
+    client: AsyncClient,
+    second_auth_headers: dict,
+    test_org: Organization,
+):
+    """Users who are not org members should get 403."""
+    resp = await client.get(
+        f"/iam/organizations/{test_org.id}/members",
+        headers=second_auth_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_remove_org_member(
     client: AsyncClient,
     auth_headers: dict,
