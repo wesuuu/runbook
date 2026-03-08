@@ -27,15 +27,21 @@ async def health_check():
     return {"status": "ok", "service": "runbook-backend"}
 
 
-from app.api.endpoints import auth, projects, iam, science, ai
+from app.api.endpoints import auth, projects, iam, science, ai, dashboard
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])
 app.include_router(iam.router, prefix="/iam", tags=["iam"])
 app.include_router(science.router, prefix="/science", tags=["science"])
 app.include_router(ai.router, prefix="/ai", tags=["ai"])
+app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 
 # Static file serving for uploaded images
 _uploads_dir = Path(settings.image_storage_path)
 _uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads/images", StaticFiles(directory=str(_uploads_dir)), name="uploads")
+
+# Static file serving for avatars
+_avatars_dir = Path("./uploads/avatars")
+_avatars_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads/avatars", StaticFiles(directory=str(_avatars_dir)), name="avatars")

@@ -3,8 +3,9 @@
     import { page } from '$app/stores';
     import { beforeNavigate } from '$app/navigation';
     import { goto } from '$app/navigation';
-    import { initialize, isAuthenticated, isInitialized } from '$lib/auth.svelte';
+    import { initialize, isAuthenticated, isInitialized, getUserPreferences } from '$lib/auth.svelte';
     import UserMenu from '$lib/components/UserMenu.svelte';
+    import ProjectsDropdown from '$lib/components/ProjectsDropdown.svelte';
     import '../app.css';
 
     let { children } = $props();
@@ -13,7 +14,10 @@
 
     const isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
     const showNav = $derived(!isPublicRoute && isAuthenticated());
-    const isFullBleed = $derived($page.url.pathname.startsWith('/protocols/'));
+    const isFullBleed = $derived(
+        $page.url.pathname.startsWith('/protocols/') ||
+        $page.url.pathname.startsWith('/export')
+    );
 
     onMount(async () => {
         await initialize();
@@ -34,6 +38,23 @@
             cancel();
             goto('/login');
         }
+    });
+
+    // Apply user preferences to <html> element
+    $effect(() => {
+        if (!isInitialized() || !isAuthenticated()) return;
+        const prefs = getUserPreferences();
+        const html = document.documentElement;
+
+        // Font size
+        html.classList.remove('text-sm', 'text-base', 'text-lg');
+        const fontMap: Record<string, string> = { small: 'text-sm', medium: 'text-base', large: 'text-lg' };
+        html.classList.add(fontMap[prefs.font_size] || 'text-base');
+
+        // Density
+        html.classList.remove('density-compact', 'density-comfortable');
+        if (prefs.density === 'compact') html.classList.add('density-compact');
+        else html.classList.add('density-comfortable');
     });
 </script>
 
@@ -61,16 +82,11 @@
                 <div class="flex items-center space-x-4 text-sm font-medium">
                     <a
                         href="/"
-                        class="text-muted-foreground hover:text-foreground transition-colors"
+                        class="{$page.url.pathname === '/' ? 'text-foreground font-semibold' : 'text-muted-foreground'} hover:text-foreground transition-colors"
                     >
                         Dashboard
                     </a>
-                    <a
-                        href="/projects"
-                        class="text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                        Projects
-                    </a>
+                    <ProjectsDropdown />
                     <UserMenu />
                 </div>
             </nav>

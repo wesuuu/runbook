@@ -47,6 +47,32 @@
         if (activeTab === "settings") loadSettings();
     });
 
+    // -- Multi-run export --
+    let selectedRunIds = $state<Set<string>>(new Set());
+    const exportableRuns = $derived(
+        runs.filter((r: any) => r.status === 'COMPLETED' || r.status === 'EDITED')
+    );
+
+    function toggleRunSelection(runId: string) {
+        const next = new Set(selectedRunIds);
+        if (next.has(runId)) {
+            next.delete(runId);
+        } else {
+            next.add(runId);
+        }
+        selectedRunIds = next;
+    }
+
+    function toggleAllExportable() {
+        const exportableIds = exportableRuns.map((r: any) => r.id);
+        const allSelected = exportableIds.every((id: string) => selectedRunIds.has(id));
+        if (allSelected) {
+            selectedRunIds = new Set();
+        } else {
+            selectedRunIds = new Set(exportableIds);
+        }
+    }
+
     // -- Search --
     let searchQuery = $state("");
 
@@ -843,12 +869,25 @@
                             class="w-full py-1.5 pl-8 pr-2.5 border border-slate-200 rounded-lg text-[13px] text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-400/15"
                         />
                     </div>
-                    <span class="text-[13px] text-slate-400 font-medium">
-                        {filteredRuns().length} of {runs.length} run{runs.length !==
-                        1
-                            ? "s"
-                            : ""}
-                    </span>
+                    <div class="flex items-center gap-4">
+                        {#if selectedRunIds.size > 0}
+                            <button
+                                class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                onclick={() => goto(`/export?runs=${[...selectedRunIds].join(',')}`)}
+                            >
+                                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                Export {selectedRunIds.size} Run{selectedRunIds.size !== 1 ? 's' : ''}
+                            </button>
+                        {/if}
+                        <span class="text-[13px] text-slate-400 font-medium">
+                            {filteredRuns().length} of {runs.length} run{runs.length !==
+                            1
+                                ? "s"
+                                : ""}
+                        </span>
+                    </div>
                 </div>
 
                 {#if filteredRuns().length === 0}
@@ -889,8 +928,17 @@
                     <table class="w-full border-collapse">
                         <thead>
                             <tr class="border-t border-b border-slate-100">
+                                <th class="w-[40px] py-2.5 px-2 pl-6">
+                                    <input
+                                        type="checkbox"
+                                        class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                        checked={exportableRuns.length > 0 && exportableRuns.every((r) => selectedRunIds.has(r.id))}
+                                        onclick={(e) => { e.stopPropagation(); toggleAllExportable(); }}
+                                        title="Select all exportable runs (Completed/Edited)"
+                                    />
+                                </th>
                                 <th
-                                    class="w-[100px] text-left py-2.5 px-4 pl-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
+                                    class="w-[80px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
                                     >ID</th
                                 >
                                 <th
@@ -917,11 +965,23 @@
                         <tbody>
                             {#each paginatedRuns() as r}
                                 <tr
-                                    class="border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50"
+                                    class="border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50 {selectedRunIds.has(r.id) ? 'bg-blue-50/50' : ''}"
                                     onclick={() => goto(`/runs/${r.id}`)}
                                 >
+                                    <td class="py-3.5 px-2 pl-6">
+                                        {#if r.status === 'COMPLETED' || r.status === 'EDITED'}
+                                            <input
+                                                type="checkbox"
+                                                class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                checked={selectedRunIds.has(r.id)}
+                                                onclick={(e) => { e.stopPropagation(); toggleRunSelection(r.id); }}
+                                            />
+                                        {:else}
+                                            <span class="block w-3.5 h-3.5"></span>
+                                        {/if}
+                                    </td>
                                     <td
-                                        class="py-3.5 px-4 pl-8 text-xs text-slate-400 font-mono font-medium whitespace-nowrap"
+                                        class="py-3.5 px-4 text-xs text-slate-400 font-mono font-medium whitespace-nowrap"
                                         >{shortId(r.id)}</td
                                     >
                                     <td
@@ -1632,3 +1692,4 @@
         </div>
     </div>
 </Modal>
+

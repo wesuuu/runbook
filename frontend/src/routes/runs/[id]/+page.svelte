@@ -3,6 +3,7 @@
     import { page } from '$app/stores';
     import { api } from "$lib/api";
     import { getUser } from "$lib/auth.svelte";
+    import { goto } from '$app/navigation';
     import RoleWizard from "$lib/components/RoleWizard.svelte";
 
     const id = $derived($page.params.id);
@@ -1021,6 +1022,20 @@
                                     <span class="text-emerald-600">↓</span>
                                 </div>
                             </button>
+
+                            <hr class="my-3" />
+
+                            <button
+                                onclick={() => goto(`/export?runs=${id}`)}
+                                class="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium text-blue-900">
+                                        Export Data (CSV / Excel / JSON)
+                                    </span>
+                                    <span class="text-blue-600">↓</span>
+                                </div>
+                            </button>
                         </div>
                     </div>
 
@@ -1320,6 +1335,20 @@
                                         Download Edited Batch Record
                                     </span>
                                     <span class="text-amber-600">↓</span>
+                                </div>
+                            </button>
+
+                            <hr class="my-3" />
+
+                            <button
+                                onclick={() => goto(`/export?runs=${id}`)}
+                                class="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium text-blue-900">
+                                        Export Data (CSV / Excel / JSON)
+                                    </span>
+                                    <span class="text-blue-600">↓</span>
                                 </div>
                             </button>
                         </div>

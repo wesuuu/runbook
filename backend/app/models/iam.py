@@ -1,8 +1,9 @@
 import uuid
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy import String, ForeignKey, Boolean, UniqueConstraint, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -84,6 +85,11 @@ class User(Base, UUIDMixin, TimestampMixin):
     )
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String)
+    job_title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    avatar_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    preferences: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}", nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships

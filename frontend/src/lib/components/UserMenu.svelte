@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { getUser, getCurrentOrg, getOrgs, switchOrg, logout } from '$lib/auth.svelte';
+    import { API_BASE } from '$lib/config';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 
     function getInitials(): string {
@@ -17,6 +18,11 @@
         return user.email[0].toUpperCase();
     }
 
+    const avatarSrc = $derived(() => {
+        const u = getUser();
+        return u?.avatar_url ? `${API_BASE}${u.avatar_url}` : null;
+    });
+
     function handleSignOut() {
         logout();
         goto('/login');
@@ -31,13 +37,21 @@
 
 <DropdownMenu.Root>
     <DropdownMenu.Trigger>
-        <button
-            class="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold hover:opacity-90 transition-opacity"
-        >
-            {getInitials()}
-        </button>
+        {#if avatarSrc()}
+            <img
+                src={avatarSrc()}
+                alt="Avatar"
+                class="w-8 h-8 rounded-full object-cover hover:opacity-90 transition-opacity cursor-pointer"
+            />
+        {:else}
+            <button
+                class="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold hover:opacity-90 transition-opacity"
+            >
+                {getInitials()}
+            </button>
+        {/if}
     </DropdownMenu.Trigger>
-    <DropdownMenu.Content align="end" class="w-56">
+    <DropdownMenu.Content align="end" class="w-56" style="background-color: white; z-index: 100;">
         <div class="px-2 py-1.5">
             <p class="text-sm font-medium">{getUser()?.full_name || 'User'}</p>
             <p class="text-xs text-muted-foreground">{getUser()?.email}</p>

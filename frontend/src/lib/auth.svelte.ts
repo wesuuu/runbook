@@ -4,6 +4,9 @@ interface User {
     id: string;
     email: string;
     full_name: string | null;
+    job_title: string | null;
+    avatar_url: string | null;
+    preferences: Record<string, string>;
     is_active: boolean;
 }
 
@@ -42,6 +45,19 @@ export function getOrgs(): Org[] {
 
 export function isInitialized(): boolean {
     return initialized;
+}
+
+export function getUserPreferences(): Record<string, string> {
+    return user?.preferences ?? {};
+}
+
+export async function refreshUser(): Promise<void> {
+    if (!token) return;
+    try {
+        user = await authFetch<User>('GET', '/auth/me');
+    } catch {
+        // ignore
+    }
 }
 
 async function authFetch<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
