@@ -72,8 +72,8 @@
             const data: Dashboard = await api.get(`/dashboard?org_id=${org.id}`);
             dashboard = data;
             activityItems = data.activity;
-        } catch (e: any) {
-            error = e.message || 'Failed to load dashboard';
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'Failed to load dashboard';
         } finally {
             loading = false;
         }
@@ -226,11 +226,10 @@
     <div class="max-w-6xl mx-auto">
         <!-- Greeting -->
         <div class="mb-8">
-            <h1 class="text-3xl tracking-tight text-foreground">
-                <span class="font-display italic">Good to see you,</span>
-                <span class="font-semibold">{userName}</span>
+            <h1 class="text-2xl font-bold tracking-tight text-foreground">
+                {userName}'s Dashboard
             </h1>
-            <p class="text-sm text-muted-foreground mt-1.5 tracking-wide">Here's what's happening across your projects today.</p>
+            <p class="text-sm text-muted-foreground mt-1">What's happening across your projects today.</p>
         </div>
 
         <!-- Counters -->

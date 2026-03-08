@@ -540,8 +540,8 @@
                 pixelsPerHour,
             });
             hasUnsavedChanges = false;
-        } catch (e: any) {
-            error = e.message;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             loading = false;
         }
@@ -663,8 +663,8 @@
                 pixelsPerHour,
             });
             hasUnsavedChanges = false;
-        } catch (e: any) {
-            saveMessage = `Failed: ${e.message}`;
+        } catch (e: unknown) {
+            saveMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
         } finally {
             saving = false;
         }
@@ -740,8 +740,8 @@
                 pixelsPerHour,
             });
             hasUnsavedChanges = false;
-        } catch (e: any) {
-            saveMessage = `Failed: ${e.message}`;
+        } catch (e: unknown) {
+            saveMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
         } finally {
             saving = false;
         }
@@ -753,8 +753,8 @@
         versionsLoading = true;
         try {
             versions = await api.get(`/science/protocols/${protocol.id}/versions`);
-        } catch (e: any) {
-            console.error("Failed to load versions:", e);
+        } catch (e: unknown) {
+            console.error("Failed to load versions:", e instanceof Error ? e.message : e);
         } finally {
             versionsLoading = false;
         }
@@ -793,8 +793,8 @@
 
             // Refresh version list
             await loadVersions();
-        } catch (e: any) {
-            saveMessage = `Revert failed: ${e.message}`;
+        } catch (e: unknown) {
+            saveMessage = `Revert failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
         }
     }
 
@@ -844,8 +844,8 @@
             }
             if (timeEnabled) applyTimelineSizing();
             previewingVersion = targetVersion;
-        } catch (e: any) {
-            saveMessage = `Failed to load v${targetVersion}: ${e.message}`;
+        } catch (e: unknown) {
+            saveMessage = `Failed to load v${targetVersion}: ${e instanceof Error ? e.message : 'An error occurred'}`;
             setTimeout(() => (saveMessage = null), 2000);
         } finally {
             previewLoading = false;
@@ -890,8 +890,8 @@
             protocolStatus = updated.status || "PENDING_APPROVAL";
             saveMessage = "Submitted for approval";
             setTimeout(() => (saveMessage = null), 2000);
-        } catch (e: any) {
-            saveMessage = `Submit failed: ${e.message}`;
+        } catch (e: unknown) {
+            saveMessage = `Submit failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
         }
     }
 
@@ -1221,8 +1221,8 @@
             };
 
             nodes = [...nodes, laneNode];
-        } catch (e: any) {
-            console.error("Failed to add role:", e);
+        } catch (e: unknown) {
+            console.error("Failed to add role:", e instanceof Error ? e.message : e);
         }
     }
 
@@ -1244,8 +1244,8 @@
                     }
                     return n;
                 });
-        } catch (e: any) {
-            console.error("Failed to delete role:", e);
+        } catch (e: unknown) {
+            console.error("Failed to delete role:", e instanceof Error ? e.message : e);
         }
     }
 
@@ -1295,8 +1295,8 @@
             const created = await api.post("/science/unit-ops", opData);
             unitOps = [...unitOps, created];
             showCreateModal = false;
-        } catch (e: any) {
-            console.error("Failed to create unit op:", e);
+        } catch (e: unknown) {
+            console.error("Failed to create unit op:", e instanceof Error ? e.message : e);
         }
     }
 
@@ -1643,7 +1643,7 @@
                 onclick={toggleLayout}
                 title="Toggle orientation"
             >
-                {layout === "horizontal" ? "&#8596; Horizontal" : "&#8597; Vertical"}
+                {layout === "horizontal" ? "↔ Horizontal" : "↕ Vertical"}
             </button>
 
             <div class="toolbar-divider"></div>
@@ -1683,8 +1683,8 @@
                 title="Toggle handle orientation"
             >
                 {handleOrientation === "horizontal"
-                    ? "&#8594; Handles H"
-                    : "&#8595; Handles V"}
+                    ? "→ Handles H"
+                    : "↓ Handles V"}
             </button>
 
             <div class="toolbar-divider"></div>

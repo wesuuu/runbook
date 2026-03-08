@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import { api } from "$lib/api";
     import { getUser } from "$lib/auth.svelte";
@@ -33,12 +32,6 @@
         }
     });
 
-    onMount(() => {
-        if (id) {
-            loadData();
-        }
-    });
-
     async function loadData() {
         try {
             run = await api.get(`/science/runs/${id}`);
@@ -59,8 +52,8 @@
                 `/science/projects/${run.project_id}/members`
             );
             projectMembers = membersResp || [];
-        } catch (e: any) {
-            error = e.message;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             loading = false;
         }
@@ -105,9 +98,9 @@
                 }
             }
             delete assignmentChanges[laneNodeId];
-        } catch (e: any) {
-            console.error("Failed to update assignment:", e.message);
-            error = e.message;
+        } catch (e: unknown) {
+            console.error("Failed to update assignment:", e instanceof Error ? e.message : e);
+            error = e instanceof Error ? e.message : 'An error occurred';
         }
     }
 
@@ -117,8 +110,8 @@
             await api.put(`/science/runs/${id}`, { status: "ACTIVE" });
             run = await api.get(`/science/runs/${id}`);
             showStartConfirm = false;
-        } catch (e: any) {
-            error = e.message;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             savingStatus = false;
         }
@@ -235,8 +228,8 @@
             });
             run = await api.get(`/science/runs/${id}`);
             showCompleteConfirm = false;
-        } catch (e: any) {
-            error = e.message;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             completingRun = false;
         }
@@ -265,8 +258,8 @@
             run = await api.get(`/science/runs/${id}`);
             isEditMode = false;
             editExecutionData = {};
-        } catch (e: any) {
-            error = e.message;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             savingEdits = false;
         }

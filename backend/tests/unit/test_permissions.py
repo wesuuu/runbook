@@ -14,7 +14,7 @@ from app.models.iam import (
     PrincipalType,
     ObjectType,
     PermissionLevel,
-    Role,
+    TeamRole,
 )
 from app.models.science import Project, Protocol, Run
 from app.core.security import hash_password
@@ -23,7 +23,7 @@ from app.services.permissions import check_permission
 
 # --- Helpers ---
 
-async def _setup_org_and_user(db, is_admin=False):
+async def _setup_org_and_user(db, role="MEMBER"):
     """Create an org and user with membership."""
     org = Organization(name="Perm Test Org")
     db.add(org)
@@ -40,7 +40,7 @@ async def _setup_org_and_user(db, is_admin=False):
     db.add(OrganizationMember(
         user_id=user.id,
         organization_id=org.id,
-        is_admin=is_admin,
+        role=role,
     ))
     await db.flush()
     return org, user
@@ -60,7 +60,7 @@ async def _create_project(db, org):
 
 @pytest.mark.asyncio
 async def test_org_admin_full_access(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=True)
+    org, user = await _setup_org_and_user(db_session, role="ADMIN")
     project = await _create_project(db_session, org)
 
     result = await check_permission(
@@ -73,7 +73,7 @@ async def test_org_admin_full_access(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_org_admin_no_cross_org(db_session: AsyncSession):
-    org1, user = await _setup_org_and_user(db_session, is_admin=True)
+    org1, user = await _setup_org_and_user(db_session, role="ADMIN")
     org2 = Organization(name="Other Org")
     db_session.add(org2)
     await db_session.flush()
@@ -92,7 +92,7 @@ async def test_org_admin_no_cross_org(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_individual_view_can_view(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=False)
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
     db_session.add(ObjectPermission(
@@ -113,7 +113,7 @@ async def test_individual_view_can_view(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_individual_view_cannot_edit(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=False)
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
     db_session.add(ObjectPermission(
@@ -134,7 +134,7 @@ async def test_individual_view_cannot_edit(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_individual_edit_can_edit(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=False)
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
     db_session.add(ObjectPermission(
@@ -162,7 +162,7 @@ async def test_individual_edit_can_edit(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_team_perm_grants_member_access(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=False)
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
     team = Team(name="TestTeam", organization_id=org.id)
@@ -170,7 +170,7 @@ async def test_team_perm_grants_member_access(db_session: AsyncSession):
     await db_session.flush()
 
     db_session.add(TeamMember(
-        user_id=user.id, team_id=team.id, role=Role.MEMBER,
+        user_id=user.id, team_id=team.id, role=TeamRole.MEMBER,
     ))
     db_session.add(ObjectPermission(
         principal_type=PrincipalType.TEAM,
@@ -190,7 +190,7 @@ async def test_team_perm_grants_member_access(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_individual_overrides_team(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=False)
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
     team = Team(name="TestTeam", organization_id=org.id)
@@ -198,7 +198,7 @@ async def test_individual_overrides_team(db_session: AsyncSession):
     await db_session.flush()
 
     db_session.add(TeamMember(
-        user_id=user.id, team_id=team.id, role=Role.MEMBER,
+        user_id=user.id, team_id=team.id, role=TeamRole.MEMBER,
     ))
     # Team has VIEW
     db_session.add(ObjectPermission(
@@ -227,7 +227,7 @@ async def test_individual_overrides_team(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_protocol_inherits_project(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=False)
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
     db_session.add(ObjectPermission(
@@ -255,7 +255,7 @@ async def test_protocol_inherits_project(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_run_inherits_project(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=False)
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
     db_session.add(ObjectPermission(
@@ -284,7 +284,7 @@ async def test_run_inherits_project(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_no_permission_denied(db_session: AsyncSession):
-    org, user = await _setup_org_and_user(db_session, is_admin=False)
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
     # No permission granted at all

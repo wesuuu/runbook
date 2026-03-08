@@ -608,3 +608,85 @@ async def remove_approver(
     await db.delete(perm)
     await db.commit()
     return {"ok": True}
+
+
+# --- Permission Management ---
+
+@router.get("/{project_id}/permissions", response_model=list[dict])
+async def list_project_permissions(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all permission grants on a project. Requires ADMIN on project."""
+    has_perm = await check_permission(
+        db, current_user.id, ObjectType.PROJECT,
+        project_id, PermissionLevel.ADMIN,
+    )
+    if not has_perm:
+        raise HTTPException(403, "Admin access required")
+
+    stmt = select(ObjectPermission).where(
+        ObjectPermission.object_type == ObjectType.PROJECT.value,
+        ObjectPermission.object_id == project_id,
+    )
+    result = await db.execute(stmt)
+    perms = result.scalars().all()
+
+    # Enrich with names
+    items = []
+    for p in perms:
+        item = {
+            "id": str(p.id),
+            "principal_type": p.principal_type,
+            "principal_id": str(p.principal_id),
+            "permission_level": p.permission_level,
+            "name": None,
+            "email": None,
+        }
+        if p.principal_type == PrincipalType.USER.value:
+            user = await db.get(User, p.principal_id)
+            if user:
+                item["name"] = user.full_name
+                item["email"] = user.email
+        elif p.principal_type == PrincipalType.TEAM.value:
+            team = await db.get(Team, p.principal_id)
+            if team:
+                item["name"] = team.name
+        items.append(item)
+
+    return items
+
+
+@router.put("/{project_id}/permissions/{permission_id}")
+async def update_project_permission(
+    project_id: UUID,
+    permission_id: UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update permission level on a grant. Requires ADMIN."""
+    has_perm = await check_permission(
+        db, current_user.id, ObjectType.PROJECT,
+        project_id, PermissionLevel.ADMIN,
+    )
+    if not has_perm:
+        raise HTTPException(403, "Admin access required")
+
+    perm = await db.get(ObjectPermission, permission_id)
+    if not perm or str(perm.object_id) != str(project_id):
+        raise HTTPException(404, "Permission not found")
+
+    level = body.get("permission_level")
+    valid_levels = {e.value for e in PermissionLevel}
+    if level not in valid_levels:
+        raise HTTPException(
+            400,
+            f"Invalid permission_level. Must be one of: {valid_levels}",
+        )
+
+    perm.permission_level = level
+    await db.commit()
+    await db.refresh(perm)
+    return {"id": str(perm.id), "permission_level": perm.permission_level}

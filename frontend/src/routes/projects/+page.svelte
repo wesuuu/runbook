@@ -31,8 +31,8 @@
             const query = org ? `?organization_id=${org.id}` : '';
             const res = await api.get<any>(`/projects${query}`);
             projects = Array.isArray(res) ? res : res.projects || [];
-        } catch (e: any) {
-            error = e.message;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             loading = false;
         }

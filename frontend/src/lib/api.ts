@@ -13,174 +13,104 @@ export class ApiError extends Error {
     }
 }
 
-async function request<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
-    const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-    };
-
+function _authHeaders(contentType?: string): HeadersInit {
+    const headers: HeadersInit = {};
+    if (contentType) {
+        headers['Content-Type'] = contentType;
+    }
     const token = getToken();
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
+    return headers;
+}
 
-    const config: RequestInit = {
-        method,
-        headers,
-    };
+async function _handleErrorResponse(response: Response, fallbackMessage: string): Promise<never> {
+    if (response.status === 401) {
+        logout();
+        goto('/login');
+        throw new ApiError(401, 'Session expired');
+    }
 
+    let errorMessage = fallbackMessage;
+    let errorData = null;
+    try {
+        const errorJson = await response.json();
+        errorMessage = errorJson.detail || errorJson.message || errorMessage;
+        errorData = errorJson;
+    } catch {
+        // Response body not JSON
+    }
+    throw new ApiError(response.status, errorMessage, errorData);
+}
+
+async function _fetchAsBlob(endpoint: string, method = 'GET', body?: unknown): Promise<Blob> {
+    const headers = _authHeaders(body ? 'application/json' : undefined);
+    const config: RequestInit = { method, headers };
     if (body) {
         config.body = JSON.stringify(body);
     }
 
     const response = await fetch(`${API_BASE}${endpoint}`, config);
-    console.log(API_BASE + endpoint, config);
-
     if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            goto('/login');
-            throw new ApiError(401, 'Session expired');
-        }
+        await _handleErrorResponse(response, 'Request failed');
+    }
+    return response.blob();
+}
 
-        let errorMessage = 'An error occurred';
-        let errorData = null;
-        try {
-            const errorJson = await response.json();
-            errorMessage = errorJson.detail || errorJson.message || errorMessage;
-            errorData = errorJson;
-        } catch {
-            // ignore
-        }
-        throw new ApiError(response.status, errorMessage, errorData);
+function _triggerDownload(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+async function request<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
+    const headers = _authHeaders('application/json');
+    const config: RequestInit = { method, headers };
+    if (body) {
+        config.body = JSON.stringify(body);
     }
 
-    // Handle 204 No Content
+    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    if (!response.ok) {
+        await _handleErrorResponse(response, 'An error occurred');
+    }
+
     if (response.status === 204) {
         return {} as T;
     }
-
     return response.json();
 }
 
 async function downloadBlob(endpoint: string, filename: string): Promise<void> {
-    const headers: HeadersInit = {};
-    const token = getToken();
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`${API_BASE}${endpoint}`, { headers });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            goto('/login');
-            throw new ApiError(401, 'Session expired');
-        }
-        throw new ApiError(response.status, 'Download failed');
-    }
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const blob = await _fetchAsBlob(endpoint);
+    _triggerDownload(blob, filename);
 }
 
 async function fetchBlobUrl(endpoint: string): Promise<string> {
-    const headers: HeadersInit = {};
-    const token = getToken();
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`${API_BASE}${endpoint}`, { headers });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            goto('/login');
-            throw new ApiError(401, 'Session expired');
-        }
-        throw new ApiError(response.status, 'Failed to fetch PDF');
-    }
-
-    const blob = await response.blob();
+    const blob = await _fetchAsBlob(endpoint);
     return URL.createObjectURL(blob);
 }
 
 async function postBlobUrl(endpoint: string, body: unknown): Promise<string> {
-    const headers: HeadersInit = { 'Content-Type': 'application/json' };
-    const token = getToken();
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            goto('/login');
-            throw new ApiError(401, 'Session expired');
-        }
-        throw new ApiError(response.status, 'Failed to fetch PDF');
-    }
-
-    const blob = await response.blob();
+    const blob = await _fetchAsBlob(endpoint, 'POST', body);
     return URL.createObjectURL(blob);
 }
 
 async function postDownloadBlob(endpoint: string, body: unknown, filename: string): Promise<void> {
-    const headers: HeadersInit = { 'Content-Type': 'application/json' };
-    const token = getToken();
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            goto('/login');
-            throw new ApiError(401, 'Session expired');
-        }
-        throw new ApiError(response.status, 'Download failed');
-    }
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const blob = await _fetchAsBlob(endpoint, 'POST', body);
+    _triggerDownload(blob, filename);
 }
 
 async function uploadFile<T>(endpoint: string, file: File, fieldName = 'file'): Promise<T> {
     const form = new FormData();
     form.append(fieldName, file);
-
-    const headers: HeadersInit = {};
-    const token = getToken();
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = _authHeaders();
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
@@ -189,23 +119,8 @@ async function uploadFile<T>(endpoint: string, file: File, fieldName = 'file'): 
     });
 
     if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            goto('/login');
-            throw new ApiError(401, 'Session expired');
-        }
-        let errorMessage = 'Upload failed';
-        let errorData = null;
-        try {
-            const errorJson = await response.json();
-            errorMessage = errorJson.detail || errorJson.message || errorMessage;
-            errorData = errorJson;
-        } catch {
-            // ignore
-        }
-        throw new ApiError(response.status, errorMessage, errorData);
+        await _handleErrorResponse(response, 'Upload failed');
     }
-
     return response.json();
 }
 

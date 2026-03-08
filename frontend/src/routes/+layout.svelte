@@ -6,6 +6,7 @@
     import { initialize, isAuthenticated, isInitialized, getUserPreferences } from '$lib/auth.svelte';
     import UserMenu from '$lib/components/UserMenu.svelte';
     import ProjectsDropdown from '$lib/components/ProjectsDropdown.svelte';
+    import NotificationBell from '$lib/components/NotificationBell.svelte';
     import '../app.css';
 
     let { children } = $props();
@@ -62,8 +63,8 @@
     <div class="min-h-screen flex items-center justify-center bg-background">
         <div class="flex flex-col items-center gap-4">
             <div class="relative">
-                <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <span class="font-display text-xl text-primary italic">R</span>
+                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <span class="font-mono text-lg font-medium text-primary">R</span>
                 </div>
                 <div class="absolute inset-0 w-10 h-10 rounded-xl border-2 border-primary/20 animate-ping"></div>
             </div>
@@ -77,13 +78,13 @@
             <nav
                 class="bg-card/80 backdrop-blur-xl border-b border-border/60 px-6 py-3 flex items-center justify-between sticky top-0 z-50"
             >
-                <a href="/" class="flex items-center gap-3 group">
+                <a href="/" class="flex items-center gap-2.5 group">
                     <div
-                        class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all"
+                        class="w-7 h-7 bg-primary rounded-md flex items-center justify-center shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all"
                     >
-                        <span class="font-display text-base text-primary-foreground italic leading-none">R</span>
+                        <span class="font-mono text-sm font-medium text-primary-foreground leading-none">R</span>
                     </div>
-                    <span class="text-lg font-display italic text-foreground tracking-tight">Runbook</span>
+                    <span class="text-[15px] font-semibold text-foreground tracking-tight">Runbook</span>
                 </a>
                 <div class="flex items-center gap-6 text-sm font-medium">
                     <a
@@ -94,6 +95,7 @@
                     </a>
                     <ProjectsDropdown />
                     <div class="w-px h-5 bg-border/60"></div>
+                    <NotificationBell />
                     <UserMenu />
                 </div>
             </nav>

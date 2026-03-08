@@ -10,10 +10,15 @@ from app.models.base import Base
 from app.models.mixins import UUIDMixin, TimestampMixin
 
 
-class Role(str, Enum):
-    OWNER = "OWNER"
+class OrgRole(str, Enum):
+    ADMIN = "ADMIN"
+    BILLING = "BILLING"
     MEMBER = "MEMBER"
-    VIEWER = "VIEWER"
+
+
+class TeamRole(str, Enum):
+    LEAD = "LEAD"
+    MEMBER = "MEMBER"
 
 
 class PrincipalType(str, Enum):
@@ -110,8 +115,8 @@ class TeamMember(Base, UUIDMixin, TimestampMixin):
     team_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("teams.id"), nullable=False
     )
-    role: Mapped[Role] = mapped_column(
-        String, default=Role.MEMBER, nullable=False
+    role: Mapped[str] = mapped_column(
+        String, default=TeamRole.MEMBER, nullable=False
     )
 
     # Relationships
@@ -133,7 +138,9 @@ class OrganizationMember(Base, UUIDMixin, TimestampMixin):
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
     )
-    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    role: Mapped[str] = mapped_column(
+        String, default=OrgRole.MEMBER, nullable=False
+    )
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="org_memberships")

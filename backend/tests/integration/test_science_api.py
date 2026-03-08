@@ -173,7 +173,7 @@ async def test_update_protocol_view_only_forbidden(
     db_session.add(OrganizationMember(
         user_id=second_user.id,
         organization_id=test_org.id,
-        is_admin=False,
+        role="MEMBER",
     ))
     db_session.add(ObjectPermission(
         principal_type=PrincipalType.USER,

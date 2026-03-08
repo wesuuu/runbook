@@ -138,9 +138,9 @@
                 });
                 onDataUpdate?.(updatedExecutionData);
             }
-        } catch (e: any) {
-            saveError = e.message || "Failed to save step data";
-            console.error("Save error:", e);
+        } catch (e: unknown) {
+            saveError = e instanceof Error ? e.message : "Failed to save step data";
+            console.error("Save error:", e instanceof Error ? e.message : e);
         } finally {
             saving = false;
         }
@@ -322,8 +322,8 @@
 
             // Refresh gallery
             await loadStepImages(currentStep.id);
-        } catch (e: any) {
-            saveError = e.message || 'Failed to upload image';
+        } catch (e: unknown) {
+            saveError = e instanceof Error ? e.message : 'Failed to upload image';
         } finally {
             uploading = false;
             // Reset input so the same file can be re-selected

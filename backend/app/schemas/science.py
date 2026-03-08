@@ -184,6 +184,9 @@ class EquipmentUpdate(BaseModel):
     equipment_type: Optional[str] = None
     location: Optional[str] = None
 
+class GraphPayload(BaseModel):
+    graph: Dict[str, Any] = Field(default_factory=dict)
+
 class EquipmentResponse(EquipmentBase):
     id: UUID
     organization_id: UUID

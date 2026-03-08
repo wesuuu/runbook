@@ -118,7 +118,7 @@ async def test_create_equipment_not_member_forbidden(
     db_session.add(OrganizationMember(
         user_id=other_user.id,
         organization_id=other_org.id,
-        is_admin=False,
+        role="MEMBER",
     ))
     await db_session.commit()
 

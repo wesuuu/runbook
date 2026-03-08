@@ -72,8 +72,8 @@
             rows = resp.rows;
             runCount = resp.run_count;
             selectedColumns = new Set(columns.map((c: ColumnDef) => c.key));
-        } catch (e: any) {
-            error = e.message || 'Failed to load preview';
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'Failed to load preview';
             columns = [];
             rows = [];
         } finally {
@@ -136,8 +136,8 @@
                 },
                 filename,
             );
-        } catch (e: any) {
-            error = e.message || 'Download failed';
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'Download failed';
         } finally {
             downloading = false;
         }

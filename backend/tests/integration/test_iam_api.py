@@ -67,13 +67,13 @@ async def test_add_org_member(
 ):
     resp = await client.post(
         f"/iam/organizations/{test_org.id}/members",
-        json={"user_id": str(second_user.id), "is_admin": False},
+        json={"user_id": str(second_user.id), "role": "MEMBER"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["user_id"] == str(second_user.id)
-    assert data["is_admin"] is False
+    assert data["role"] == "MEMBER"
 
 
 @pytest.mark.asyncio
@@ -105,7 +105,7 @@ async def test_remove_org_member(
     db_session.add(OrganizationMember(
         user_id=second_user.id,
         organization_id=test_org.id,
-        is_admin=False,
+        role="MEMBER",
     ))
     await db_session.flush()
 
@@ -127,17 +127,17 @@ async def test_toggle_org_admin(
     db_session.add(OrganizationMember(
         user_id=second_user.id,
         organization_id=test_org.id,
-        is_admin=False,
+        role="MEMBER",
     ))
     await db_session.flush()
 
     resp = await client.patch(
         f"/iam/organizations/{test_org.id}/members/{second_user.id}",
-        json={"is_admin": True},
+        json={"role": "ADMIN"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
-    assert resp.json()["is_admin"] is True
+    assert resp.json()["role"] == "ADMIN"
 
 
 # --- Teams ---
@@ -215,7 +215,7 @@ async def test_add_team_member(
     db_session.add(OrganizationMember(
         user_id=second_user.id,
         organization_id=test_org.id,
-        is_admin=False,
+        role="MEMBER",
     ))
     await db_session.flush()
 
@@ -240,7 +240,7 @@ async def test_remove_team_member(
     db_session.add(OrganizationMember(
         user_id=second_user.id,
         organization_id=test_org.id,
-        is_admin=False,
+        role="MEMBER",
     ))
     db_session.add(TeamMember(
         user_id=second_user.id,

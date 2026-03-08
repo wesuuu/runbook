@@ -27,7 +27,7 @@ async def health_check():
     return {"status": "ok", "service": "runbook-backend"}
 
 
-from app.api.endpoints import auth, projects, iam, science, ai, dashboard
+from app.api.endpoints import auth, projects, iam, science, ai, dashboard, notifications
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])
@@ -35,6 +35,12 @@ app.include_router(iam.router, prefix="/iam", tags=["iam"])
 app.include_router(science.router, prefix="/science", tags=["science"])
 app.include_router(ai.router, prefix="/ai", tags=["ai"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+
+# Dev-only endpoints (webhook echo, etc.)
+if settings.debug:
+    from app.api.endpoints import dev
+    app.include_router(dev.router, prefix="/dev", tags=["dev"])
 
 # Static file serving for uploaded images
 _uploads_dir = Path(settings.image_storage_path)

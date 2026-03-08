@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+logger = logging.getLogger(__name__)
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,9 +56,11 @@ from app.schemas.science import (
     RunRoleAssignmentCreate,
     RunRoleAssignmentResponse,
     RunRoleAssignmentListResponse,
+    GraphPayload,
 )
 from app.schemas.iam import UserSearchResponse
 from app.services.audit import log_audit
+from app.services.notifications import send_notification
 from app.services.permissions import check_permission
 
 router = APIRouter()
@@ -238,6 +243,7 @@ async def list_project_protocols(
 async def update_protocol(
     protocol_id: UUID,
     update_data: ProtocolUpdate,
+    background_tasks: BackgroundTasks,
     save_as_draft: bool = Query(False),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -323,6 +329,36 @@ async def update_protocol(
             # Revert approved protocol to draft on edit
             if protocol.status == "APPROVED":
                 protocol.status = "DRAFT"
+
+                # Notify project admins of reversion
+                proj_result = await db.execute(
+                    select(Project).where(Project.id == protocol.project_id)
+                )
+                proj = proj_result.scalar_one()
+                admin_result = await db.execute(
+                    select(OrganizationMember.user_id).where(
+                        OrganizationMember.organization_id == proj.organization_id,
+                        OrganizationMember.role == "ADMIN",
+                    )
+                )
+                admin_ids = [
+                    row[0] for row in admin_result.all()
+                    if row[0] != user.id
+                ]
+                if admin_ids:
+                    background_tasks.add_task(
+                        send_notification,
+                        db=db,
+                        event_type="PROTOCOL_REVERTED",
+                        org_id=proj.organization_id,
+                        entity_type="protocol",
+                        entity_id=protocol.id,
+                        recipients=admin_ids,
+                        context={
+                            "protocol_name": protocol.name,
+                            "edited_by": user.full_name or user.email,
+                        },
+                    )
 
         # Update protocol fields (name, description, etc.)
         for key, value in changes.items():
@@ -896,6 +932,7 @@ async def submit_protocol_for_approval(
 async def approve_protocol(
     protocol_id: UUID,
     action: ProtocolApprovalAction,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -931,6 +968,35 @@ async def approve_protocol(
     )
 
     await db.commit()
+
+    # Notify protocol author of approval
+    proj = await db.execute(
+        select(Project).where(Project.id == protocol_obj.project_id)
+    )
+    project = proj.scalar_one()
+
+    # Find the protocol author (latest version's created_by_id)
+    ver_result = await db.execute(
+        select(ProtocolVersion.created_by_id)
+        .where(ProtocolVersion.protocol_id == protocol_id)
+        .order_by(ProtocolVersion.version_number.desc())
+        .limit(1)
+    )
+    author_id = ver_result.scalar_one_or_none()
+    if author_id and author_id != user.id:
+        background_tasks.add_task(
+            send_notification,
+            db=db,
+            event_type="PROTOCOL_APPROVED",
+            org_id=project.organization_id,
+            entity_type="protocol",
+            entity_id=protocol_obj.id,
+            recipients=[author_id],
+            context={
+                "protocol_name": protocol_obj.name,
+                "approved_by": user.full_name or user.email,
+            },
+        )
 
     result = await db.execute(
         select(Protocol)
@@ -1084,7 +1150,7 @@ def _build_format_overrides(
         try:
             overrides["header_color"] = [int(c) for c in header_color.split(",")]
         except (ValueError, AttributeError):
-            pass
+            logger.warning("Invalid header_color value: %s", header_color)
     if row_spacing is not None:
         overrides["row_spacing"] = row_spacing
     return overrides or None
@@ -1228,7 +1294,7 @@ async def get_protocol_batch_record_pdf(
 @router.post("/protocols/{protocol_id}/pdf/sop")
 async def preview_protocol_sop_pdf(
     protocol_id: UUID,
-    body: dict,
+    body: GraphPayload,
     disposition: Optional[str] = Query(None),
     font_size: Optional[str] = Query(None),
     font_family: Optional[str] = Query(None),
@@ -1252,7 +1318,7 @@ async def preview_protocol_sop_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    graph = body.get("graph", {})
+    graph = body.graph
     roles_with_steps, _, _ = _parse_graph_roles_and_steps(graph)
     pdf_format = await _get_pdf_format(db, protocol.project_id)
     overrides = _build_format_overrides(
@@ -1284,7 +1350,7 @@ async def preview_protocol_sop_pdf(
 @router.post("/protocols/{protocol_id}/pdf/batch-record")
 async def preview_protocol_batch_record_pdf(
     protocol_id: UUID,
-    body: dict,
+    body: GraphPayload,
     disposition: Optional[str] = Query(None),
     font_size: Optional[str] = Query(None),
     font_family: Optional[str] = Query(None),
@@ -1308,7 +1374,7 @@ async def preview_protocol_batch_record_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    graph = body.get("graph", {})
+    graph = body.graph
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
     pdf_format = await _get_pdf_format(db, protocol.project_id)
     overrides = _build_format_overrides(
@@ -1678,6 +1744,7 @@ async def list_project_runs(
 async def update_run(
     run_id: UUID,
     update_data: RunUpdate,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1889,6 +1956,51 @@ async def update_run(
 
     await db.commit()
     await db.refresh(run_obj)
+
+    # --- Notification hooks for status transitions ---
+    if new_status and new_status != current_status:
+        # Get org_id from the project
+        proj_result = await db.execute(
+            select(Project).where(Project.id == run_obj.project_id)
+        )
+        project = proj_result.scalar_one()
+
+        # Get all assigned user IDs for this run
+        assign_result = await db.execute(
+            select(RunRoleAssignment.user_id)
+            .where(RunRoleAssignment.run_id == run_id)
+        )
+        assigned_user_ids = [row[0] for row in assign_result.all()]
+
+        if new_status == "ACTIVE" and assigned_user_ids:
+            background_tasks.add_task(
+                send_notification,
+                db=db,
+                event_type="RUN_STARTED",
+                org_id=project.organization_id,
+                entity_type="run",
+                entity_id=run_obj.id,
+                recipients=assigned_user_ids,
+                context={
+                    "run_name": run_obj.name,
+                    "started_by": user.full_name or user.email,
+                },
+            )
+        elif new_status == "COMPLETED" and assigned_user_ids:
+            background_tasks.add_task(
+                send_notification,
+                db=db,
+                event_type="RUN_COMPLETED",
+                org_id=project.organization_id,
+                entity_type="run",
+                entity_id=run_obj.id,
+                recipients=assigned_user_ids,
+                context={
+                    "run_name": run_obj.name,
+                    "completed_by": user.full_name or user.email,
+                },
+            )
+
     return run_obj
 
 
@@ -1964,7 +2076,7 @@ async def get_project_members(
         select(OrganizationMember)
         .where(and_(
             OrganizationMember.organization_id == project.organization_id,
-            OrganizationMember.is_admin == True,
+            OrganizationMember.role == "ADMIN",
         ))
     )
     for om in result.scalars().all():
@@ -2016,6 +2128,7 @@ async def get_run_role_assignments(
 async def create_run_role_assignment(
     run_id: UUID,
     assignment: RunRoleAssignmentCreate,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -2066,6 +2179,39 @@ async def create_run_role_assignment(
                 "role_name": assignment.role_name,
             },
         )
+
+        # Notify reassignment
+        if old_user_id != assignment.user_id:
+            proj = await db.execute(
+                select(Project).where(Project.id == run_obj.project_id)
+            )
+            project = proj.scalar_one()
+            old_user_result = await db.execute(
+                select(User).where(User.id == old_user_id)
+            )
+            old_user_obj = old_user_result.scalar_one()
+            new_user_result = await db.execute(
+                select(User).where(User.id == assignment.user_id)
+            )
+            new_user_obj = new_user_result.scalar_one()
+
+            background_tasks.add_task(
+                send_notification,
+                db=db,
+                event_type="ROLE_REASSIGNED",
+                org_id=project.organization_id,
+                entity_type="run",
+                entity_id=run_obj.id,
+                recipients=[old_user_id, assignment.user_id],
+                context={
+                    "run_name": run_obj.name,
+                    "role_name": assignment.role_name,
+                    "old_user_name": old_user_obj.full_name or old_user_obj.email,
+                    "new_user_name": new_user_obj.full_name or new_user_obj.email,
+                    "reassigned_by": user.full_name or user.email,
+                },
+            )
+
         return existing
 
     # Create new assignment
@@ -2087,6 +2233,27 @@ async def create_run_role_assignment(
             "role_name": assignment.role_name,
         },
     )
+
+    # Notify new role assignment
+    proj = await db.execute(
+        select(Project).where(Project.id == run_obj.project_id)
+    )
+    project = proj.scalar_one()
+    background_tasks.add_task(
+        send_notification,
+        db=db,
+        event_type="ROLE_ASSIGNED",
+        org_id=project.organization_id,
+        entity_type="run",
+        entity_id=run_obj.id,
+        recipients=[assignment.user_id],
+        context={
+            "run_name": run_obj.name,
+            "role_name": assignment.role_name,
+            "assigned_by": user.full_name or user.email,
+        },
+    )
+
     return new_assignment
 
 

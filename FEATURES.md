@@ -1,0 +1,203 @@
+# Feature Backlog
+
+Planned features for the Runbook AI Co-Pilot. Each entry is a specification that can be picked up for implementation.
+
+---
+
+### [F-0001] Protocol Delete & Archive with Admin Unarchive
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Full Stack
+- **Description**: Allow users to delete protocols that are still in DRAFT status (no runs, no approvals — essentially unspecified). Protocols that have been specified (APPROVED status, or have associated runs/versions) should be archived instead of deleted. Archived protocols are hidden from default views but retained in the database. Team admins (`Role.OWNER` on team) or organization admins (`OrganizationMember.is_admin`) can unarchive protocols. All delete, archive, and unarchive operations must be recorded in the audit log.
+- **Acceptance Criteria**:
+  - [ ] DRAFT protocols with no runs can be hard-deleted via `DELETE /science/protocols/{id}`
+  - [ ] Attempting to delete a protocol that has runs or is APPROVED/PENDING_APPROVAL archives it instead (sets `status = "ARCHIVED"`)
+  - [ ] Archived protocols are excluded from `GET /science/projects/{project_id}/protocols` by default (add `?include_archived=true` query param to include them)
+  - [ ] `PUT /science/protocols/{id}/unarchive` endpoint restores an archived protocol to DRAFT status; requires ADMIN permission or org admin role
+  - [ ] DELETE action is logged to `audit_logs` with `entity_type=Protocol`, `action=DELETE`, and `changes` containing the deleted protocol data
+  - [ ] ARCHIVE action is logged with `action=ARCHIVE` and `changes` containing `{"old_status": "...", "new_status": "ARCHIVED"}`
+  - [ ] UNARCHIVE action is logged with `action=UNARCHIVE` and `changes` containing `{"old_status": "ARCHIVED", "new_status": "DRAFT"}`
+  - [ ] Frontend protocol table shows a context menu or action button per row with "Delete" (for drafts) or "Archive" (for specified protocols)
+  - [ ] Frontend protocol table hides archived protocols by default; a toggle/filter allows showing them
+  - [ ] Archived protocols display an "ARCHIVED" status badge (distinct styling) in the table
+  - [ ] Admin users see an "Unarchive" action on archived protocol rows
+  - [ ] Confirmation dialog shown before delete or archive actions
+- **Implementation Notes**:
+  - **Backend model** (`backend/app/models/science.py`): Add `"ARCHIVED"` as a valid protocol status value. No new column needed — reuse existing `status` field.
+  - **Backend endpoints** (`backend/app/api/endpoints/science.py`): Add `DELETE /protocols/{id}` (checks for runs/status to decide delete vs archive), add `PUT /protocols/{id}/unarchive`. Use `require_permission(..., PermissionLevel.EDIT)` for delete/archive and `PermissionLevel.ADMIN` for unarchive.
+  - **Backend schemas** (`backend/app/schemas/science.py`): No schema changes needed; `ProtocolResponse.status` already returns the status string.
+  - **List endpoint** (`GET /projects/{project_id}/protocols`): Add `include_archived: bool = False` query param; filter `Protocol.status != "ARCHIVED"` by default.
+  - **Audit logging** (`backend/app/services/audit.py`): Use existing `log_audit()` — actions: `DELETE`, `ARCHIVE`, `UNARCHIVE`.
+  - **Frontend list** (`frontend/src/routes/projects/[id]/+page.svelte`): Add action column to protocol table with dropdown menu (Delete/Archive). Add "Show archived" toggle that passes `?include_archived=true`. Add `ARCHIVED` case to `protocolStatusClasses()`.
+  - **Frontend editor** (`frontend/src/routes/protocols/[id]/+page.svelte`): Add delete/archive button to editor toolbar. Redirect to project page after delete.
+  - **Alembic migration**: Not needed if reusing the `status` string field for `ARCHIVED` value.
+- **Dependencies**: None
+
+### [F-0002] Offline/PWA with Image Capture Queue
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Frontend
+- **Description**: Make the app installable as a PWA with offline support. When disconnected, users can still capture images during experiment runs. Images and pending API calls are queued in IndexedDB and batch-synced when connectivity is restored. Critical for lab environments with spotty Wi-Fi.
+- **Acceptance Criteria**:
+  - [ ] `manifest.json` configured with app name, icons, theme color, and `display: standalone`
+  - [ ] Service worker registered in `+layout.svelte` with cache-first strategy for static assets and network-first for API calls
+  - [ ] App is installable (Add to Home Screen) on tablets and mobile devices
+  - [ ] Offline fallback page shown when navigating to uncached routes while disconnected
+  - [ ] Image captures via camera input in `RoleWizard.svelte` are stored in IndexedDB when offline (file blob + metadata: run_id, step_id, timestamp)
+  - [ ] Visual indicator in the UI showing offline status and number of queued items
+  - [ ] On reconnect, queued images are batch-uploaded to `POST /ai/runs/{run_id}/steps/{step_id}/images` sequentially
+  - [ ] Upload progress shown during sync (X of Y uploaded)
+  - [ ] Failed uploads are retried up to 3 times before flagging for manual retry
+  - [ ] Queued items persist across app restarts (IndexedDB durability)
+- **Implementation Notes**:
+  - **Service worker**: Create `frontend/static/sw.js` or use Workbox via `vite-plugin-pwa`. Register in `frontend/src/routes/+layout.svelte`.
+  - **Manifest**: Create `frontend/static/manifest.json`, link in `frontend/src/app.html`.
+  - **IndexedDB queue**: Create `frontend/src/lib/offlineQueue.ts` — store pending uploads as `{id, runId, stepId, blob, mimeType, timestamp, status}`. Use `idb` npm package for cleaner IndexedDB API.
+  - **Sync manager**: Create `frontend/src/lib/syncManager.ts` — listens for `online` event, drains queue by calling existing `api.ts` upload functions.
+  - **Camera capture** (`frontend/src/lib/components/RoleWizard.svelte`): Modify upload handler to check `navigator.onLine`; if offline, write to IndexedDB instead of calling API.
+  - **Connectivity indicator**: Add to app shell in `+layout.svelte` — small banner or icon using `navigator.onLine` + `online`/`offline` events.
+- **Dependencies**: None
+
+### [F-0003] Batch Image Processing
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Full Stack
+- **Description**: Allow users to upload multiple images at once for a run step and have them analyzed sequentially by the AI vision model. Currently only single-image upload and analysis is supported. Batch processing saves time when capturing multiple instrument readings.
+- **Acceptance Criteria**:
+  - [ ] Camera/file input in `RoleWizard.svelte` accepts `multiple` attribute for selecting several images at once
+  - [ ] Backend `POST /ai/runs/{run_id}/steps/{step_id}/images` accepts multiple files in a single request (or frontend sends them sequentially)
+  - [ ] New endpoint `POST /ai/runs/{run_id}/steps/{step_id}/analyze-batch` triggers analysis on all unanalyzed images for that step
+  - [ ] Images are analyzed sequentially (not concurrently) to avoid overloading the AI provider
+  - [ ] Progress is reported to the frontend (e.g., "Analyzing image 2 of 5")
+  - [ ] Each image gets its own `ImageConversation` with independent extracted values
+  - [ ] Users can review and confirm/reject each image's results individually in `ImageAnalysisDialog.svelte`
+  - [ ] If one image analysis fails, remaining images continue processing
+- **Implementation Notes**:
+  - **Backend endpoint** (`backend/app/api/endpoints/ai.py`): Add `analyze-batch` endpoint that iterates over `RunImage` records for the step, calling `ai_vision.analyze_image()` for each.
+  - **Frontend upload** (`RoleWizard.svelte`): Change file input to `multiple`, loop over `FileList` and upload each via existing endpoint.
+  - **Frontend dialog** (`ImageAnalysisDialog.svelte`): Add batch mode — navigation between images (prev/next), per-image confirm/reject, summary view of all results.
+  - **Image gallery** (`ImageGallery.svelte`): Show analysis status per image (pending, analyzing, confirmed, failed).
+- **Dependencies**: None
+
+### [F-0004] OCR Preprocessing with Tesseract
+- **Status**: Proposed
+- **Priority**: P3 (Low)
+- **Scope**: Backend
+- **Description**: Run Tesseract OCR locally on uploaded images before sending them to the AI vision model. The OCR text is included in the AI prompt as supplemental context, improving accuracy for instrument displays with small text, numeric readouts, and standard labels. This is a preprocessing step, not a replacement for AI vision.
+- **Acceptance Criteria**:
+  - [ ] `pytesseract` added as a backend dependency with Tesseract binary available in the deployment environment
+  - [ ] OCR runs automatically when an image is uploaded (async, non-blocking)
+  - [ ] Extracted OCR text is stored on the `RunImage` record (new `ocr_text` column)
+  - [ ] When `analyze_image()` is called, OCR text is appended to the system prompt as context (e.g., "OCR detected the following text in the image: ...")
+  - [ ] OCR failure does not block image analysis — gracefully falls back to vision-only
+  - [ ] OCR text is visible in the frontend image detail view for transparency
+  - [ ] Configurable toggle to enable/disable OCR preprocessing (per-org or global setting)
+- **Implementation Notes**:
+  - **Dependency**: Add `pytesseract` to `backend/pyproject.toml`. Require `tesseract-ocr` system package.
+  - **Model** (`backend/app/models/ai.py`): Add `ocr_text: Mapped[Optional[str]]` to `RunImage`.
+  - **OCR service**: Create `backend/app/services/ocr.py` — `async def extract_text(image_path: str) -> str` using `pytesseract.image_to_string()` in a thread executor.
+  - **Vision service** (`backend/app/services/ai_vision.py`): In `analyze_image()`, prepend OCR text to the system prompt when available.
+  - **Upload endpoint** (`backend/app/api/endpoints/ai.py`): After saving image, trigger OCR as background task.
+  - **Migration**: Add `ocr_text` nullable text column to `run_images`.
+- **Dependencies**: None
+
+### [F-0005] Image Annotations for AI Guidance
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Full Stack
+- **Description**: Let users draw bounding boxes (and optionally labels) on captured images before sending them to the AI vision model. Annotations are included in the prompt to tell the AI which regions of the image to focus on, improving extraction accuracy for complex instrument panels with multiple readings.
+- **Acceptance Criteria**:
+  - [ ] Annotation canvas overlay on image in `ImageAnalysisDialog.svelte` (or a new `ImageAnnotator.svelte` component)
+  - [ ] Users can draw rectangular bounding boxes on the image
+  - [ ] Each bounding box can have an optional text label (e.g., "pH reading", "temperature")
+  - [ ] Annotations are stored as JSON on the `ImageConversation` or `RunImage` record (`annotations` JSONB column)
+  - [ ] Annotation data format: `[{x, y, width, height, label?}]` as percentages of image dimensions
+  - [ ] When analysis is triggered, annotations are described in the AI prompt (e.g., "The user has highlighted a region at [coordinates] labeled 'pH reading' — extract the value from this region")
+  - [ ] Users can clear or redo annotations before submitting
+  - [ ] Annotations are displayed as overlays when reviewing past analysis results
+- **Implementation Notes**:
+  - **Frontend component**: Create `frontend/src/lib/components/ImageAnnotator.svelte` — HTML5 Canvas overlay on the image, mouse/touch drag to draw rectangles, click to add labels. Use percentage-based coordinates for resolution independence.
+  - **Integration**: Embed in `ImageAnalysisDialog.svelte` before the "Analyze" button. Pass annotations array to the analyze API call.
+  - **Backend model** (`backend/app/models/ai.py`): Add `annotations: Mapped[Optional[dict]]` JSONB column to `RunImage` or pass as request body to the analyze endpoint.
+  - **Vision service** (`backend/app/services/ai_vision.py`): Convert annotation coordinates to natural language descriptions in the system prompt.
+  - **Migration**: Add `annotations` JSONB column if storing on the model.
+- **Dependencies**: None
+
+### [F-0006] result_schema Cleanup & Repurposing
+- **Status**: Proposed
+- **Priority**: P3 (Low)
+- **Scope**: Backend
+- **Description**: The `result_schema` field on `UnitOpDefinition` (added in migration `a62961cc6422`) exists as a JSONB column but is not actively used in any workflow. Decide whether to repurpose it as a validation schema for AI-extracted values (complementing `param_schema` which defines inputs), or remove it to reduce confusion. If repurposed, it should validate the output of image analysis before values are confirmed and written to `execution_data`.
+- **Acceptance Criteria**:
+  - [ ] Decision documented: repurpose as output validation schema OR remove the field
+  - **If repurposed:**
+    - [ ] `result_schema` defines expected output fields (name, type, unit, range) for a unit op's measurable results
+    - [ ] Vision service validates `extracted_values` against `result_schema` before allowing confirmation
+    - [ ] Validation errors are surfaced in `ImageAnalysisDialog.svelte` (e.g., "pH value 14.5 is outside expected range 0-14")
+    - [ ] Seed script (`scripts/seed_unit_ops.py`) updated with result schemas for existing unit ops
+  - **If removed:**
+    - [ ] Column dropped via Alembic migration
+    - [ ] Field removed from `UnitOpDefinitionBase` and `UnitOpDefinitionUpdate` schemas
+    - [ ] Any references in endpoints cleaned up
+- **Implementation Notes**:
+  - **Current location**: `backend/app/models/science.py` line ~159 (`result_schema` JSONB on `UnitOpDefinition`), `backend/app/schemas/science.py` (`UnitOpDefinitionBase`, `UnitOpDefinitionUpdate`).
+  - **If repurposing**: Add validation in `backend/app/services/ai_vision.py` or in the confirm endpoint (`backend/app/api/endpoints/ai.py` `confirm_image_values`). Use JSON Schema validation (`jsonschema` package) to check extracted values match the result_schema.
+  - **If removing**: Generate Alembic migration to drop the column, remove from model/schemas/endpoints.
+- **Dependencies**: None
+
+### [F-0007] AI Capability Expansion — Embeddings & Code Generation
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Full Stack
+- **Description**: Expand the AI integration beyond vision to include: (1) embedding models for semantic search across protocols, experiments, and audit logs, and (2) coding/reasoning models for automated protocol generation from natural language descriptions. Leverages the existing AI provider config system (`backend/app/services/ai_config.py`) which already supports multiple providers and capabilities.
+- **Acceptance Criteria**:
+  - **Semantic Search:**
+    - [ ] New `embedding` capability added to `SUPPORTED_CAPABILITIES` in `backend/app/models/ai.py`
+    - [ ] Embedding vectors stored for protocols (name + description + unit op labels) and experiments
+    - [ ] New `pgvector` extension enabled in PostgreSQL; vector column added to relevant tables (or separate `embeddings` table)
+    - [ ] `POST /ai/embed` endpoint to generate and store embeddings for an entity
+    - [ ] `GET /ai/search?q=...` endpoint returns semantically similar protocols/experiments ranked by cosine similarity
+    - [ ] Frontend search bar enhanced with semantic search option (toggle between text and semantic)
+    - [ ] Embeddings auto-regenerated when protocol/experiment content changes
+  - **Protocol Generation:**
+    - [ ] New `coding` capability added to `SUPPORTED_CAPABILITIES`
+    - [ ] `POST /ai/generate-protocol` endpoint accepts natural language description and returns a protocol graph (nodes + edges JSON)
+    - [ ] Generated protocol is created as a DRAFT that users can review and edit in the protocol editor
+    - [ ] System prompt includes the unit op library (`UnitOpDefinition` catalog) so the model knows available building blocks
+    - [ ] Frontend UI: "Generate with AI" button on the new protocol page, text area for description input
+- **Implementation Notes**:
+  - **AI config** (`backend/app/services/ai_config.py`): Already supports capability-based config resolution. Add `"embedding"` and `"coding"` to `SUPPORTED_CAPABILITIES` and `DEFAULT_CONFIGS`.
+  - **Embeddings**: Add `pgvector` to requirements, enable extension in migration. Create `backend/app/services/embeddings.py` for embed + search. Default model: `ollama:nomic-embed-text` or `openai:text-embedding-3-small`.
+  - **Protocol generation**: Create `backend/app/services/ai_codegen.py`. Use pydantic-ai with structured output matching the protocol graph schema (`{nodes: [...], edges: [...]}`). Feed unit op definitions as context.
+  - **Frontend search**: Enhance search in `frontend/src/routes/projects/[id]/+page.svelte` with semantic toggle. Add generate UI to protocol creation flow.
+  - **Migration**: Enable `pgvector` extension, add vector columns or embeddings table.
+- **Dependencies**: None
+
+### [F-0008] Mobile-Friendly Responsive Design
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Frontend
+- **Description**: The app's tables, navigation, and data views don't scroll or fit well on mobile devices. Tables overflow without usable scroll indicators, the nav bar overflows on small screens, and most pages skip the `sm:` (640px) breakpoint entirely. Since this is a tablet-first app used in labs, mobile/tablet usability is critical. This feature brings full responsive support across all views.
+- **Acceptance Criteria**:
+  - [ ] Navigation bar collapses to a hamburger menu on screens <768px with a slide-out or dropdown menu
+  - [ ] All data tables (Projects list, Protocols tab, Runs tab, Export page) switch to a card-based layout on screens <640px — each row becomes a stacked card showing key fields
+  - [ ] On tablet widths (640px–1024px), tables use horizontal scroll with a visible scroll indicator (gradient fade or scrollbar hint)
+  - [ ] Low-priority table columns (Description, Organization) are hidden on screens <768px; remaining columns resize fluidly
+  - [ ] Fixed-width table columns (`w-[40px]`, `w-[80px]`, `w-[150px]` in project detail) are replaced with responsive min/max widths
+  - [ ] All interactive elements (buttons, checkboxes, dropdown triggers) have a minimum touch target of 44×44px on mobile
+  - [ ] Hover-only interactions (table row highlights, tooltip triggers) have touch-friendly alternatives (tap-to-select, long-press)
+  - [ ] Settings page tab bar wraps or becomes a dropdown/select on screens <480px
+  - [ ] Dashboard counter cards use `grid-cols-2` on mobile instead of `grid-cols-3`
+  - [ ] Global padding reduces from `px-6` to `px-4` on screens <640px
+  - [ ] Export page pagination controls stack vertically on mobile
+  - [ ] No horizontal page-level overflow on any screen width ≥320px
+- **Implementation Notes**:
+  - **Navigation** (`frontend/src/routes/+layout.svelte`): Add a hamburger button visible at `md:hidden`, hide the inline nav links at `hidden md:flex`. Use a sheet/drawer component from shadcn-svelte for the mobile menu.
+  - **Responsive table component**: Create `frontend/src/lib/components/ResponsiveTable.svelte` — a wrapper that renders a `<Table>` on desktop and a card list on mobile using a `sm:` media query or container query. Pass column definitions with a `priority` field to control which columns show at each breakpoint.
+  - **Project detail** (`frontend/src/routes/projects/[id]/+page.svelte`): Replace fixed `w-[...]` column widths with `min-w-0` and `truncate`. Hide Description column below `md:`. Wrap protocol/run tables with ResponsiveTable.
+  - **Export page** (`frontend/src/routes/export/+page.svelte`): Add `overflow-x-auto` with scroll shadow gradient. Stack pagination controls with `flex-wrap`.
+  - **Dashboard** (`frontend/src/routes/+page.svelte`): Change counter grid from `grid-cols-3` to `grid-cols-2 sm:grid-cols-3`.
+  - **Global styles** (`frontend/src/app.css`): Add a utility class for scroll shadows on overflow containers. Add `@media (max-width: 640px)` rules for reduced padding.
+  - **Settings tabs** (`frontend/src/routes/settings/+page.svelte`): Use `overflow-x-auto` on the tab bar or switch to a `<Select>` on mobile.
+  - **Touch targets**: Audit all `<Button size="icon">` and small clickables; add `min-h-11 min-w-11` on mobile breakpoints.
+- **Dependencies**: None

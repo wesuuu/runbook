@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     ai_text_api_key: str = ""
     ai_text_base_url: str = ""
 
+    # Debug mode — enables dev-only endpoints (webhook echo, etc.)
+    debug: bool = False
+
     model_config = {"env_prefix": "RUNBOOK_", "env_file": ".env", "extra": "ignore"}
 
 

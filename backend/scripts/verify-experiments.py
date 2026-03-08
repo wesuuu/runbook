@@ -53,7 +53,7 @@ async def main():
         await db.flush()
         db.add(
             OrganizationMember(
-                user_id=user.id, organization_id=org.id, is_admin=True
+                user_id=user.id, organization_id=org.id, role="ADMIN"
             )
         )
         await db.flush()

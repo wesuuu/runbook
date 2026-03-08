@@ -25,7 +25,7 @@ from app.models.iam import (
     PrincipalType,
     ObjectType,
     PermissionLevel,
-    Role,
+    TeamRole,
 )
 from app.models.science import Project, UnitOpDefinition
 
@@ -87,14 +87,14 @@ async def seed_org(db: AsyncSession):
 
     # Org memberships
     members = [
-        (USER_ADMIN, True),
-        (USER_UPSTREAM_LEAD, False),
-        (USER_DOWNSTREAM_LEAD, False),
-        (USER_SCIENTIST1, False),
-        (USER_SCIENTIST2, False),
-        (USER_VIEWER, False),
+        (USER_ADMIN, "ADMIN"),
+        (USER_UPSTREAM_LEAD, "MEMBER"),
+        (USER_DOWNSTREAM_LEAD, "MEMBER"),
+        (USER_SCIENTIST1, "MEMBER"),
+        (USER_SCIENTIST2, "MEMBER"),
+        (USER_VIEWER, "MEMBER"),
     ]
-    for uid, is_admin in members:
+    for uid, role in members:
         result = await db.execute(
             select(OrganizationMember).where(
                 OrganizationMember.user_id == uid,
@@ -105,7 +105,7 @@ async def seed_org(db: AsyncSession):
             db.add(OrganizationMember(
                 user_id=uid,
                 organization_id=ORG_ID,
-                is_admin=is_admin,
+                role=role,
             ))
     await db.flush()
 
@@ -121,11 +121,11 @@ async def seed_teams(db: AsyncSession):
 
     # Team memberships: (team_id, user_id, role)
     memberships = [
-        (TEAM_UPSTREAM, USER_UPSTREAM_LEAD, Role.OWNER),
-        (TEAM_UPSTREAM, USER_SCIENTIST1, Role.MEMBER),
-        (TEAM_DOWNSTREAM, USER_DOWNSTREAM_LEAD, Role.OWNER),
-        (TEAM_DOWNSTREAM, USER_SCIENTIST2, Role.MEMBER),
-        (TEAM_QA, USER_VIEWER, Role.MEMBER),
+        (TEAM_UPSTREAM, USER_UPSTREAM_LEAD, TeamRole.LEAD),
+        (TEAM_UPSTREAM, USER_SCIENTIST1, TeamRole.MEMBER),
+        (TEAM_DOWNSTREAM, USER_DOWNSTREAM_LEAD, TeamRole.LEAD),
+        (TEAM_DOWNSTREAM, USER_SCIENTIST2, TeamRole.MEMBER),
+        (TEAM_QA, USER_VIEWER, TeamRole.MEMBER),
     ]
     for tid, uid, role in memberships:
         result = await db.execute(

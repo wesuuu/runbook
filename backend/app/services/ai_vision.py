@@ -1,7 +1,10 @@
 import base64
 import json
+import logging
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 import httpx
 from pydantic import BaseModel, Field
@@ -220,7 +223,8 @@ async def _ollama_chat(
     # Try full validation first
     try:
         return ImageAnalysisResult.model_validate(parsed)
-    except Exception:
+    except Exception as e:
+        logger.warning("Full ImageAnalysisResult validation failed, extracting best-effort: %s", e)
         # Validation failed — extract what we can from the parsed JSON
         message = parsed.get("message", "")
         if not isinstance(message, str):
@@ -236,7 +240,7 @@ async def _ollama_chat(
                 try:
                     extracted.append(ExtractedValue.model_validate(rv))
                 except Exception:
-                    pass
+                    logger.debug("Skipping invalid extracted value: %s", rv)
 
         return ImageAnalysisResult(
             message=message or "I analyzed the image but had trouble formatting the results.",

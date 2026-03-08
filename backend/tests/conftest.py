@@ -114,7 +114,7 @@ async def test_org(db_session, test_user) -> Organization:
         OrganizationMember(
             user_id=test_user.id,
             organization_id=org.id,
-            is_admin=True,
+            role="ADMIN",
         )
     )
     await db_session.flush()

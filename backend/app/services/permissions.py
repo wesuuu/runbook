@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, or_, not_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import (
@@ -105,10 +105,11 @@ async def check_permission(
     Resolution order:
     1. Auth disabled → always allow
     2. Org admin → full access to everything in that org
-    3. Individual permission on object → use it (overrides team)
-    4. Team permissions on object → use highest across user's teams
-    5. Protocol/Run → inherit from parent Project
-    6. No match → deny
+    3. permissions_enabled=false on project → implicit EDIT for org members
+    4. Individual permission on object → use it (overrides team)
+    5. Team permissions on object → use highest across user's teams
+    6. Protocol/Run → inherit from parent Project
+    7. No match → deny
     """
     if not settings.auth_enabled:
         return True
@@ -127,10 +128,31 @@ async def check_permission(
     membership = result.scalar_one_or_none()
     if membership is None:
         return False  # Not even in the org
-    if membership.is_admin:
+    if membership.role == "ADMIN":
         return True
 
-    # 2. Individual permission on this object
+    # 2. Check if project has permissions_enabled=false
+    #    If so, all org members get implicit EDIT access (VIEW/EDIT only)
+    if required_level in (PermissionLevel.VIEW, PermissionLevel.EDIT):
+        project_id_to_check: UUID | None = None
+        if object_type == ObjectType.PROJECT:
+            project_id_to_check = object_id
+        elif object_type in (ObjectType.PROTOCOL, ObjectType.RUN):
+            project_id_to_check = await _get_parent_project_id(
+                db, object_type, object_id
+            )
+        if project_id_to_check is not None:
+            result = await db.execute(
+                select(Project.settings).where(
+                    Project.id == project_id_to_check
+                )
+            )
+            proj_settings = result.scalar_one_or_none()
+            if proj_settings is not None:
+                if not proj_settings.get("permissions_enabled", False):
+                    return True
+
+    # 3. Individual permission on this object
     result = await db.execute(
         select(ObjectPermission).where(
             ObjectPermission.principal_type == PrincipalType.USER,
@@ -143,7 +165,7 @@ async def check_permission(
     if individual is not None:
         return _meets_level(individual.permission_level, required_level)
 
-    # 3. Team permissions on this object
+    # 4. Team permissions on this object
     team_ids = await _get_user_team_ids(db, user_id)
     if team_ids:
         result = await db.execute(
@@ -162,7 +184,7 @@ async def check_permission(
             )
             return highest >= PERMISSION_RANK[required_level]
 
-    # 4. Inherit from parent project for protocols/runs
+    # 5. Inherit from parent project for protocols/runs
     if object_type in (ObjectType.PROTOCOL, ObjectType.RUN):
         project_id = await _get_parent_project_id(
             db, object_type, object_id
@@ -173,7 +195,7 @@ async def check_permission(
                 project_id, required_level,
             )
 
-    # 5. Deny
+    # 6. Deny
     return False
 
 
@@ -195,13 +217,29 @@ async def get_visible_project_ids(
     membership = result.scalar_one_or_none()
     if membership is None:
         return []
-    if membership.is_admin:
+    if membership.role == "ADMIN":
         result = await db.execute(
             select(Project.id).where(
                 Project.organization_id == org_id
             )
         )
         return list(result.scalars().all())
+
+    # Collect projects with permissions_enabled=false (open to all org members)
+    result = await db.execute(
+        select(Project.id).where(
+            Project.organization_id == org_id,
+            or_(
+                not_(
+                    Project.settings["permissions_enabled"].as_boolean()
+                ),
+                not_(
+                    Project.settings.has_key("permissions_enabled")
+                ),
+            ),
+        )
+    )
+    project_ids = set(result.scalars().all())
 
     # Collect from individual perms
     result = await db.execute(
@@ -211,7 +249,7 @@ async def get_visible_project_ids(
             ObjectPermission.object_type == ObjectType.PROJECT.value,
         )
     )
-    project_ids = set(result.scalars().all())
+    project_ids.update(result.scalars().all())
 
     # Collect from team perms
     team_ids = await _get_user_team_ids(db, user_id)

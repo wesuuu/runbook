@@ -142,7 +142,7 @@ async def get_dashboard(
         )
     )
     membership = result.scalar_one_or_none()
-    is_admin = membership.is_admin if membership else False
+    is_admin = (membership.role == "ADMIN") if membership else False
 
     # Get visible project IDs for this user
     visible_project_ids = await get_visible_project_ids(db, user_id, org_id)

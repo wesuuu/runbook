@@ -2,7 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
@@ -16,7 +16,8 @@ from app.models.iam import (
     ObjectPermission,
     ObjectType,
     PermissionLevel,
-    Role,
+    OrgRole,
+    TeamRole,
 )
 from app.models.science import Equipment
 from app.schemas.iam import (
@@ -56,7 +57,7 @@ async def _require_org_admin(
         )
     )
     membership = result.scalar_one_or_none()
-    if membership is None or not membership.is_admin:
+    if membership is None or membership.role != "ADMIN":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Org admin required",
@@ -100,7 +101,7 @@ async def create_organization(
 
     # Caller auto-becomes admin
     membership = OrganizationMember(
-        user_id=user.id, organization_id=org.id, is_admin=True,
+        user_id=user.id, organization_id=org.id, role="ADMIN",
     )
     db.add(membership)
     await db.commit()
@@ -184,10 +185,24 @@ async def add_org_member(
             status_code=409, detail="User is already a member"
         )
 
+    # Enforce max 3 admins per org
+    if body.role == "ADMIN":
+        admin_count = await db.execute(
+            select(func.count()).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.role == "ADMIN",
+            )
+        )
+        if (admin_count.scalar() or 0) >= 3:
+            raise HTTPException(
+                status_code=400,
+                detail="Maximum of 3 admins per organization",
+            )
+
     membership = OrganizationMember(
         user_id=body.user_id,
         organization_id=org_id,
-        is_admin=body.is_admin,
+        role=body.role,
     )
     db.add(membership)
     await db.commit()
@@ -223,7 +238,7 @@ async def remove_org_member(
     "/organizations/{org_id}/members/{user_id}",
     response_model=OrgMemberResponse,
 )
-async def toggle_org_admin(
+async def update_org_member_role(
     org_id: UUID,
     user_id: UUID,
     body: OrgMemberUpdate,
@@ -231,6 +246,13 @@ async def toggle_org_admin(
     db: AsyncSession = Depends(get_db),
 ):
     await _require_org_admin(db, user.id, org_id)
+
+    valid_roles = {"ADMIN", "BILLING", "MEMBER"}
+    if body.role not in valid_roles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role. Must be one of: {valid_roles}",
+        )
 
     result = await db.execute(
         select(OrganizationMember).where(
@@ -242,7 +264,21 @@ async def toggle_org_admin(
     if membership is None:
         raise HTTPException(status_code=404, detail="Membership not found")
 
-    membership.is_admin = body.is_admin
+    # Enforce max 3 admins
+    if body.role == "ADMIN" and membership.role != "ADMIN":
+        admin_count = await db.execute(
+            select(func.count()).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.role == "ADMIN",
+            )
+        )
+        if (admin_count.scalar() or 0) >= 3:
+            raise HTTPException(
+                status_code=400,
+                detail="Maximum of 3 admins per organization",
+            )
+
+    membership.role = body.role
     await db.commit()
     await db.refresh(membership)
     return membership
@@ -285,7 +321,7 @@ async def list_org_members(
             id=m.id,
             user_id=m.user_id,
             organization_id=m.organization_id,
-            is_admin=m.is_admin,
+            role=m.role,
             email=u.email if u else None,
             full_name=u.full_name if u else None,
             created_at=m.created_at,
@@ -418,7 +454,7 @@ async def add_team_member(
     tm = TeamMember(
         user_id=body.user_id,
         team_id=team_id,
-        role=Role(body.role),
+        role=TeamRole(body.role),
     )
     db.add(tm)
     await db.commit()

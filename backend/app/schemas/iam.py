@@ -20,18 +20,18 @@ class OrganizationResponse(BaseModel):
 
 class OrgMemberAdd(BaseModel):
     user_id: UUID
-    is_admin: bool = False
+    role: str = "MEMBER"  # ADMIN, BILLING, MEMBER
 
 
 class OrgMemberUpdate(BaseModel):
-    is_admin: bool
+    role: str  # ADMIN, BILLING, MEMBER
 
 
 class OrgMemberResponse(BaseModel):
     id: UUID
     user_id: UUID
     organization_id: UUID
-    is_admin: bool
+    role: str
     email: Optional[str] = None
     full_name: Optional[str] = None
     created_at: datetime

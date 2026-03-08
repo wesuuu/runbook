@@ -35,12 +35,12 @@
     <div class="w-full max-w-sm relative z-10">
         <div class="flex flex-col items-center mb-10">
             <div
-                class="w-14 h-14 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20 mb-4"
+                class="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20 mb-4"
             >
-                <span class="font-display text-2xl text-primary-foreground italic leading-none">R</span>
+                <span class="font-mono text-xl font-medium text-primary-foreground leading-none">R</span>
             </div>
-            <h1 class="font-display text-3xl italic text-foreground tracking-tight">Runbook</h1>
-            <p class="text-sm text-muted-foreground mt-2 tracking-wide">Digital Lab Notebook</p>
+            <h1 class="text-2xl font-bold text-foreground tracking-tight">Runbook</h1>
+            <p class="text-sm text-muted-foreground mt-1.5">Digital Lab Notebook</p>
         </div>
 
         <div class="card-warm rounded-xl p-1">

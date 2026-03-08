@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
@@ -207,6 +206,22 @@
     let settingsSaving = $state(false);
     let settingsMessage = $state<string | null>(null);
     let newApproverUserId = $state<string>("");
+
+    // -- Permissions State --
+    let permissionsEnabled = $state(false);
+    let projectPermissions = $state<any[]>([]);
+    let permissionsLoading = $state(false);
+    let newGrantPrincipalType = $state<'USER' | 'TEAM'>('USER');
+    let newGrantPrincipalId = $state('');
+    let newGrantLevel = $state('EDIT');
+    let teams = $state<any[]>([]);
+
+    const PERMISSION_LEVELS = [
+        { value: 'VIEWER', label: 'Viewer' },
+        { value: 'EDIT', label: 'Editor' },
+        { value: 'APPROVE', label: 'Approver' },
+        { value: 'ADMIN', label: 'Admin' },
+    ] as const;
 
     // -- Form State for "New Project" mode --
     let form = $state({ name: "", description: "", organization_id: "" });
@@ -432,8 +447,8 @@
             activityTotal = data.total;
             activityOffset = data.offset;
             activityLoaded = true;
-        } catch (e: any) {
-            console.error("Failed to load activity:", e);
+        } catch (e: unknown) {
+            console.error("Failed to load activity:", e instanceof Error ? e.message : e);
         } finally {
             activityLoading = false;
         }
@@ -444,6 +459,8 @@
         try {
             requireApproval =
                 project.settings?.require_protocol_approval || false;
+            permissionsEnabled =
+                project.settings?.permissions_enabled || false;
 
             approvers = await api.get(`/projects/${id}/approvers`);
 
@@ -451,9 +468,14 @@
             const members = await api.get(`/science/projects/${id}/members`);
             orgMembers = members as any[];
 
+            if (permissionsEnabled) {
+                await loadProjectPermissions();
+                await loadTeams();
+            }
+
             settingsLoaded = true;
-        } catch (e: any) {
-            console.error("Failed to load settings:", e);
+        } catch (e: unknown) {
+            console.error("Failed to load settings:", e instanceof Error ? e.message : e);
         }
     }
 
@@ -471,8 +493,8 @@
             project = updated;
             settingsMessage = "Settings saved";
             setTimeout(() => (settingsMessage = null), 2000);
-        } catch (e: any) {
-            settingsMessage = `Failed: ${e.message}`;
+        } catch (e: unknown) {
+            settingsMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
         } finally {
             settingsSaving = false;
         }
@@ -487,8 +509,8 @@
             });
             approvers = [...approvers, entry];
             newApproverUserId = "";
-        } catch (e: any) {
-            settingsMessage = `Failed: ${e.message}`;
+        } catch (e: unknown) {
+            settingsMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
             setTimeout(() => (settingsMessage = null), 3000);
         }
     }
@@ -497,9 +519,102 @@
         try {
             await api.delete(`/projects/${id}/approvers/${permId}`);
             approvers = approvers.filter((a: any) => a.id !== permId);
-        } catch (e: any) {
-            console.error("Failed to remove approver:", e);
+        } catch (e: unknown) {
+            console.error("Failed to remove approver:", e instanceof Error ? e.message : e);
         }
+    }
+
+    async function loadProjectPermissions() {
+        permissionsLoading = true;
+        try {
+            projectPermissions = await api.get(`/projects/${id}/permissions`);
+        } catch {
+            projectPermissions = [];
+        } finally {
+            permissionsLoading = false;
+        }
+    }
+
+    async function loadTeams() {
+        const org = getCurrentOrg();
+        if (!org) return;
+        try {
+            teams = await api.get(`/iam/organizations/${org.id}/teams`);
+        } catch {
+            teams = [];
+        }
+    }
+
+    async function togglePermissionsEnabled() {
+        permissionsEnabled = !permissionsEnabled;
+        settingsSaving = true;
+        settingsMessage = null;
+        try {
+            const updated: any = await api.put(`/projects/${id}`, {
+                settings: {
+                    ...project.settings,
+                    permissions_enabled: permissionsEnabled,
+                },
+            });
+            project = updated;
+            settingsMessage = permissionsEnabled
+                ? "Access control enabled"
+                : "Access control disabled — all org members have Editor access";
+            setTimeout(() => (settingsMessage = null), 3000);
+            if (permissionsEnabled) {
+                await loadProjectPermissions();
+                await loadTeams();
+            }
+        } catch (e: unknown) {
+            permissionsEnabled = !permissionsEnabled;
+            settingsMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
+        } finally {
+            settingsSaving = false;
+        }
+    }
+
+    async function addPermissionGrant() {
+        if (!newGrantPrincipalId) return;
+        try {
+            await api.post(`/iam/permissions`, {
+                principal_type: newGrantPrincipalType,
+                principal_id: newGrantPrincipalId,
+                object_type: 'PROJECT',
+                object_id: id,
+                permission_level: newGrantLevel,
+            });
+            newGrantPrincipalId = '';
+            newGrantLevel = 'EDIT';
+            await loadProjectPermissions();
+        } catch (e: unknown) {
+            settingsMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
+            setTimeout(() => (settingsMessage = null), 3000);
+        }
+    }
+
+    async function updatePermissionLevel(permissionId: string, level: string) {
+        try {
+            await api.put(`/projects/${id}/permissions/${permissionId}`, {
+                permission_level: level,
+            });
+            await loadProjectPermissions();
+        } catch (e: unknown) {
+            settingsMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
+            setTimeout(() => (settingsMessage = null), 3000);
+        }
+    }
+
+    async function removePermissionGrant(permissionId: string) {
+        try {
+            await api.delete(`/iam/permissions/${permissionId}`);
+            await loadProjectPermissions();
+        } catch (e: unknown) {
+            console.error("Failed to remove permission:", e instanceof Error ? e.message : e);
+        }
+    }
+
+    function getPermissionLevelLabel(level: string): string {
+        return PERMISSION_LEVELS.find((l) => l.value === level)?.label || level;
     }
 
     function protocolStatusClasses(status: string): string {
@@ -526,8 +641,18 @@
         }
     }
 
-    onMount(() => {
-        if (id === "new") {
+    // Reload data whenever the project id changes (handles dropdown nav + initial load)
+    $effect(() => {
+        const currentId = id;
+        // Reset state for fresh load
+        project = null;
+        protocols = [];
+        runs = [];
+        activityLoaded = false;
+        activityItems = [];
+        error = null;
+
+        if (currentId === "new") {
             loadCreateData();
         } else {
             loadData();
@@ -548,8 +673,8 @@
             project = p;
             protocols = protos as any[];
             runs = exps as any[];
-        } catch (e: any) {
-            error = e.message;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             loading = false;
         }
@@ -573,8 +698,8 @@
                 description: "",
             });
             goto(`/protocols/${newProto.id}`);
-        } catch (e: any) {
-            console.error(e);
+        } catch (e: unknown) {
+            console.error(e instanceof Error ? e.message : e);
         }
     }
 
@@ -592,8 +717,8 @@
             newRunName = "";
             selectedProtocolId = null;
             goto(`/runs/${newRun.id}`);
-        } catch (e: any) {
-            console.error(e);
+        } catch (e: unknown) {
+            console.error(e instanceof Error ? e.message : e);
         }
     }
 
@@ -612,8 +737,8 @@
         try {
             await api.post("/projects", form);
             goto("/projects");
-        } catch (e: any) {
-            console.error(e);
+        } catch (e: unknown) {
+            console.error(e instanceof Error ? e.message : e);
         }
     }
 </script>
@@ -1617,6 +1742,151 @@
                                     class="px-4 py-2 text-sm font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     onclick={addApprover}
                                     disabled={!newApproverUserId}
+                                >
+                                    Add
+                                </button>
+                            </div>
+                        </div>
+                    {/if}
+
+                    <!-- Access Control Section -->
+                    <div
+                        class="bg-white border border-slate-200 rounded-lg p-6 mb-6"
+                    >
+                        <h4 class="text-sm font-bold text-slate-800 mb-1">
+                            Access Control
+                        </h4>
+                        <p class="text-xs text-slate-500 mb-4">
+                            Restrict who can access this project. When off, all organization members have Editor access.
+                        </p>
+
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <button
+                                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors {permissionsEnabled ? 'bg-teal-600' : 'bg-slate-300'}"
+                                role="switch"
+                                aria-checked={permissionsEnabled}
+                                onclick={togglePermissionsEnabled}
+                            >
+                                <span class="pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform {permissionsEnabled ? 'translate-x-4' : 'translate-x-0'}"></span>
+                            </button>
+                            <span class="text-sm text-slate-700 font-medium">
+                                Restrict access to granted users and teams
+                            </span>
+                        </label>
+                    </div>
+
+                    <!-- Permission Grants (only when access control is on) -->
+                    {#if permissionsEnabled}
+                        <div
+                            class="bg-white border border-slate-200 rounded-lg p-6 mb-6"
+                        >
+                            <h4 class="text-sm font-bold text-slate-800 mb-1">
+                                Permission Grants
+                            </h4>
+                            <p class="text-xs text-slate-500 mb-4">
+                                Manage who has access to this project and at what level. Org admins always have full access.
+                            </p>
+
+                            {#if permissionsLoading}
+                                <p class="text-xs text-slate-400 py-3 text-center">Loading permissions...</p>
+                            {:else if projectPermissions.length === 0}
+                                <p class="text-xs text-slate-400 mb-4">
+                                    No grants yet. Only org admins can access this project.
+                                </p>
+                            {:else}
+                                <div class="space-y-2 mb-4">
+                                    {#each projectPermissions as perm}
+                                        <div
+                                            class="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg"
+                                        >
+                                            <div class="flex items-center gap-2">
+                                                <div
+                                                    class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold {perm.principal_type === 'TEAM' ? 'bg-indigo-100 text-indigo-700' : 'bg-teal-100 text-teal-700'}"
+                                                >
+                                                    {perm.principal_type === 'TEAM' ? 'T' : (perm.name || '?')[0].toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm font-medium text-slate-700">
+                                                        {perm.name || 'Unknown'}
+                                                    </p>
+                                                    {#if perm.email}
+                                                        <p class="text-xs text-slate-400">{perm.email}</p>
+                                                    {:else if perm.principal_type === 'TEAM'}
+                                                        <p class="text-xs text-slate-400">Team</p>
+                                                    {/if}
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <select
+                                                    class="px-2 py-1 border border-slate-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                                    value={perm.permission_level}
+                                                    onchange={(e) => updatePermissionLevel(perm.id, e.currentTarget.value)}
+                                                >
+                                                    {#each PERMISSION_LEVELS as level}
+                                                        <option value={level.value}>{level.label}</option>
+                                                    {/each}
+                                                </select>
+                                                <button
+                                                    class="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                                                    onclick={() => removePermissionGrant(perm.id)}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            {/if}
+
+                            <!-- Add Grant -->
+                            <div class="flex gap-2 items-end">
+                                <div class="flex gap-1">
+                                    <button
+                                        class="px-2 py-1.5 text-xs font-medium rounded-l border transition-colors {newGrantPrincipalType === 'USER' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}"
+                                        onclick={() => { newGrantPrincipalType = 'USER'; newGrantPrincipalId = ''; }}
+                                    >
+                                        User
+                                    </button>
+                                    <button
+                                        class="px-2 py-1.5 text-xs font-medium rounded-r border transition-colors {newGrantPrincipalType === 'TEAM' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}"
+                                        onclick={() => { newGrantPrincipalType = 'TEAM'; newGrantPrincipalId = ''; }}
+                                    >
+                                        Team
+                                    </button>
+                                </div>
+                                <select
+                                    bind:value={newGrantPrincipalId}
+                                    class="flex-1 px-3 py-1.5 border border-slate-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                >
+                                    <option value="">
+                                        {newGrantPrincipalType === 'USER' ? 'Select a user...' : 'Select a team...'}
+                                    </option>
+                                    {#if newGrantPrincipalType === 'USER'}
+                                        {#each orgMembers.filter((m) => !projectPermissions.some((p) => p.principal_id === m.id && p.principal_type === 'USER')) as member}
+                                            <option value={member.id}>
+                                                {member.full_name || member.email}
+                                            </option>
+                                        {/each}
+                                    {:else}
+                                        {#each teams.filter((t) => !projectPermissions.some((p) => p.principal_id === t.id && p.principal_type === 'TEAM')) as team}
+                                            <option value={team.id}>
+                                                {team.name}
+                                            </option>
+                                        {/each}
+                                    {/if}
+                                </select>
+                                <select
+                                    bind:value={newGrantLevel}
+                                    class="px-2 py-1.5 border border-slate-200 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                >
+                                    {#each PERMISSION_LEVELS as level}
+                                        <option value={level.value}>{level.label}</option>
+                                    {/each}
+                                </select>
+                                <button
+                                    class="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    onclick={addPermissionGrant}
+                                    disabled={!newGrantPrincipalId}
                                 >
                                     Add
                                 </button>

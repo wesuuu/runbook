@@ -14,7 +14,175 @@
         CardDescription,
     } from '$lib/components/ui/card';
 
-    let activeTab = $state<'organization' | 'teams' | 'profile'>('organization');
+    let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications'>('organization');
+
+    // Notifications
+    let channels = $state<any[]>([]);
+    let channelsLoading = $state(false);
+    let showAddChannel = $state(false);
+    let newChannelType = $state('SLACK');
+    let newChannelName = $state('');
+    let newChannelConfig = $state<Record<string, string>>({});
+    let channelSaving = $state(false);
+    let channelTestResults = $state<Map<string, { status: string; detail: string }>>(new Map());
+    let expandedChannelId = $state<string | null>(null);
+    let channelSubscriptions = $state<Map<string, any[]>>(new Map());
+
+    const CHANNEL_TYPES = [
+        { value: 'SLACK', label: 'Slack' },
+        { value: 'EMAIL', label: 'Email' },
+        { value: 'TEAMS', label: 'Microsoft Teams' },
+        { value: 'DISCORD', label: 'Discord' },
+        { value: 'WEBHOOK', label: 'Webhook' },
+    ] as const;
+
+    const EVENT_TYPES = [
+        { value: 'RUN_STARTED', label: 'Run Started' },
+        { value: 'RUN_COMPLETED', label: 'Run Completed' },
+        { value: 'ROLE_ASSIGNED', label: 'Role Assigned' },
+        { value: 'ROLE_UNASSIGNED', label: 'Role Unassigned' },
+        { value: 'ROLE_REASSIGNED', label: 'Role Reassigned' },
+        { value: 'INVITE_SENT', label: 'Invite Sent' },
+        { value: 'INVITE_ACCEPTED', label: 'Invite Accepted' },
+        { value: 'PROTOCOL_APPROVED', label: 'Protocol Approved' },
+        { value: 'PROTOCOL_REVERTED', label: 'Protocol Reverted' },
+        { value: 'STEP_DEVIATION', label: 'Step Deviation' },
+    ] as const;
+
+    const CONFIG_FIELDS: Record<string, { key: string; label: string; placeholder: string; type?: string }[]> = {
+        SLACK: [
+            { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://hooks.slack.com/services/...' },
+        ],
+        EMAIL: [
+            { key: 'to_address', label: 'Email Address', placeholder: 'you@example.com', type: 'email' },
+        ],
+        TEAMS: [
+            { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://outlook.office.com/webhook/...' },
+        ],
+        DISCORD: [
+            { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://discord.com/api/webhooks/...' },
+        ],
+        WEBHOOK: [
+            { key: 'url', label: 'URL', placeholder: 'https://example.com/webhook' },
+            { key: 'secret', label: 'Secret (optional)', placeholder: 'HMAC signing secret' },
+        ],
+    };
+
+    async function loadChannels() {
+        channelsLoading = true;
+        try {
+            channels = await api.get('/notifications/channels/me');
+        } catch {
+            channels = [];
+        } finally {
+            channelsLoading = false;
+        }
+    }
+
+    async function addChannel() {
+        if (!newChannelName.trim()) return;
+        channelSaving = true;
+        try {
+            await api.post('/notifications/channels/me', {
+                name: newChannelName.trim(),
+                channel_type: newChannelType,
+                config: { ...newChannelConfig },
+                enabled: true,
+            });
+            showAddChannel = false;
+            newChannelName = '';
+            newChannelConfig = {};
+            await loadChannels();
+        } catch (e: unknown) {
+            console.error('Failed to add channel:', e instanceof Error ? e.message : e);
+        } finally {
+            channelSaving = false;
+        }
+    }
+
+    async function toggleChannelEnabled(channelId: string, enabled: boolean) {
+        try {
+            await api.put(`/notifications/channels/me/${channelId}`, { enabled: !enabled });
+            await loadChannels();
+        } catch (e: unknown) {
+            console.error('Failed to toggle channel:', e instanceof Error ? e.message : e);
+        }
+    }
+
+    async function deleteChannel(channelId: string) {
+        try {
+            await api.delete(`/notifications/channels/me/${channelId}`);
+            await loadChannels();
+        } catch (e: unknown) {
+            console.error('Failed to delete channel:', e instanceof Error ? e.message : e);
+        }
+    }
+
+    async function testChannel(channelId: string) {
+        channelTestResults = new Map(channelTestResults);
+        channelTestResults.set(channelId, { status: 'TESTING', detail: 'Sending...' });
+        try {
+            const result = await api.post<{ status: string; detail: string }>(`/notifications/channels/${channelId}/test`);
+            channelTestResults = new Map(channelTestResults);
+            channelTestResults.set(channelId, result);
+            setTimeout(() => {
+                channelTestResults = new Map(channelTestResults);
+                channelTestResults.delete(channelId);
+            }, 5000);
+        } catch (e: unknown) {
+            channelTestResults = new Map(channelTestResults);
+            channelTestResults.set(channelId, { status: 'FAILED', detail: e instanceof Error ? e.message : 'Test failed' });
+        }
+    }
+
+    async function loadSubscriptions(channelId: string) {
+        try {
+            const subs = await api.get<any[]>(`/notifications/channels/${channelId}/subscriptions`);
+            channelSubscriptions = new Map(channelSubscriptions);
+            channelSubscriptions.set(channelId, subs);
+        } catch {
+            channelSubscriptions = new Map(channelSubscriptions);
+            channelSubscriptions.set(channelId, []);
+        }
+    }
+
+    async function toggleExpandChannel(channelId: string) {
+        if (expandedChannelId === channelId) {
+            expandedChannelId = null;
+        } else {
+            expandedChannelId = channelId;
+            if (!channelSubscriptions.has(channelId)) {
+                await loadSubscriptions(channelId);
+            }
+        }
+    }
+
+    function isEventSubscribed(channelId: string, eventType: string): boolean {
+        const subs = channelSubscriptions.get(channelId) || [];
+        return subs.some((s: any) => s.event_type === eventType && s.enabled);
+    }
+
+    async function toggleSubscription(channelId: string, eventType: string) {
+        const subs = channelSubscriptions.get(channelId) || [];
+        const existing = subs.find((s: any) => s.event_type === eventType);
+        try {
+            if (existing && existing.enabled) {
+                await api.delete(`/notifications/channels/${channelId}/subscriptions/${existing.id}`);
+            } else {
+                await api.post(`/notifications/channels/${channelId}/subscriptions`, {
+                    event_type: eventType,
+                    enabled: true,
+                });
+            }
+            await loadSubscriptions(channelId);
+        } catch (e: unknown) {
+            console.error('Failed to toggle subscription:', e instanceof Error ? e.message : e);
+        }
+    }
+
+    function getChannelTypeLabel(type: string): string {
+        return CHANNEL_TYPES.find((t) => t.value === type)?.label || type;
+    }
 
     // Organization members
     let members = $state<any[]>([]);
@@ -70,8 +238,8 @@
             await refreshUser();
             profileMessage = 'Profile saved.';
             setTimeout(() => (profileMessage = ''), 3000);
-        } catch (e: any) {
-            profileMessage = e.message || 'Failed to save.';
+        } catch (e: unknown) {
+            profileMessage = e instanceof Error ? e.message : 'Failed to save.';
         } finally {
             profileSaving = false;
         }
@@ -85,8 +253,8 @@
         try {
             await api.uploadFile('/auth/me/avatar', file);
             await refreshUser();
-        } catch (e: any) {
-            alert(e.message || 'Failed to upload avatar.');
+        } catch (e: unknown) {
+            alert(e instanceof Error ? e.message : 'Failed to upload avatar.');
         } finally {
             avatarUploading = false;
             input.value = '';
@@ -98,8 +266,8 @@
         try {
             await api.delete('/auth/me/avatar');
             await refreshUser();
-        } catch (e: any) {
-            alert(e.message || 'Failed to remove avatar.');
+        } catch (e: unknown) {
+            alert(e instanceof Error ? e.message : 'Failed to remove avatar.');
         } finally {
             avatarUploading = false;
         }
@@ -127,8 +295,8 @@
             confirmPassword = '';
             passwordMessage = 'Password changed.';
             setTimeout(() => (passwordMessage = ''), 3000);
-        } catch (e: any) {
-            passwordError = e.message || 'Failed to change password.';
+        } catch (e: unknown) {
+            passwordError = e instanceof Error ? e.message : 'Failed to change password.';
         } finally {
             passwordSaving = false;
         }
@@ -237,8 +405,8 @@
             inviteEmail = '';
             inviteSearchResults = [];
             await loadMembers();
-        } catch (e: any) {
-            console.error('Failed to invite member:', e);
+        } catch (e: unknown) {
+            console.error('Failed to invite member:', e instanceof Error ? e.message : e);
         }
     }
 
@@ -249,23 +417,33 @@
         try {
             await api.delete(`/iam/organizations/${org.id}/members/${userId}`);
             await loadMembers();
-        } catch (e: any) {
-            console.error('Failed to remove member:', e);
+        } catch (e: unknown) {
+            console.error('Failed to remove member:', e instanceof Error ? e.message : e);
         }
     }
 
-    // Toggle admin status
-    async function toggleAdmin(userId: string, currentIsAdmin: boolean) {
+    // Update member role
+    async function updateMemberRole(userId: string, role: string) {
         const org = getCurrentOrg();
         if (!org) return;
         try {
-            await api.put(`/iam/organizations/${org.id}/members/${userId}`, {
-                is_admin: !currentIsAdmin,
+            await api.patch(`/iam/organizations/${org.id}/members/${userId}`, {
+                role,
             });
             await loadMembers();
-        } catch (e: any) {
-            console.error('Failed to toggle admin:', e);
+        } catch (e: unknown) {
+            console.error('Failed to update role:', e instanceof Error ? e.message : e);
         }
+    }
+
+    const ORG_ROLES = [
+        { value: 'ADMIN', label: 'Admin' },
+        { value: 'BILLING', label: 'Billing' },
+        { value: 'MEMBER', label: 'Member' },
+    ] as const;
+
+    function getOrgRoleLabel(role: string): string {
+        return ORG_ROLES.find((r) => r.value === role)?.label || role;
     }
 
     // Create team
@@ -278,8 +456,8 @@
             });
             newTeamName = '';
             await loadTeams();
-        } catch (e: any) {
-            console.error('Failed to create team:', e);
+        } catch (e: unknown) {
+            console.error('Failed to create team:', e instanceof Error ? e.message : e);
         }
     }
 
@@ -290,8 +468,8 @@
         try {
             await api.delete(`/iam/organizations/${org.id}/teams/${teamId}`);
             await loadTeams();
-        } catch (e: any) {
-            console.error('Failed to delete team:', e);
+        } catch (e: unknown) {
+            console.error('Failed to delete team:', e instanceof Error ? e.message : e);
         }
     }
 
@@ -301,7 +479,7 @@
     });
 </script>
 
-<div class="max-w-4xl mx-auto space-y-6">
+<div class="max-w-4xl mx-auto space-y-8">
     <div>
         <h1 class="text-3xl font-bold tracking-tight">Settings</h1>
         <p class="text-muted-foreground">Manage your organization, teams, and profile.</p>
@@ -326,6 +504,12 @@
             onclick={() => (activeTab = 'profile')}
         >
             Profile
+        </button>
+        <button
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors {activeTab === 'notifications' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            onclick={() => { activeTab = 'notifications'; if (channels.length === 0 && !channelsLoading) loadChannels(); }}
+        >
+            Notifications
         </button>
     </div>
 
@@ -362,12 +546,15 @@
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    {#if member.is_admin}
-                                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">Admin</span>
-                                    {/if}
-                                    <Button variant="ghost" size="sm" onclick={() => toggleAdmin(member.user_id, member.is_admin)}>
-                                        {member.is_admin ? 'Remove Admin' : 'Make Admin'}
-                                    </Button>
+                                    <select
+                                        class="px-2 py-1 border border-border rounded text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                        value={member.role}
+                                        onchange={(e) => updateMemberRole(member.user_id, e.currentTarget.value)}
+                                    >
+                                        {#each ORG_ROLES as r}
+                                            <option value={r.value}>{r.label}</option>
+                                        {/each}
+                                    </select>
                                     <Button variant="ghost" size="sm" class="text-destructive" onclick={() => removeMember(member.user_id)}>
                                         Remove
                                     </Button>
@@ -450,7 +637,7 @@
                             <div>
                                 <div class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/50" onclick={() => toggleTeam(team.id)}>
                                     <div class="flex items-center gap-2">
-                                        <span class="text-xs text-muted-foreground">{expandedTeamId === team.id ? '&#9660;' : '&#9654;'}</span>
+                                        <span class="text-xs text-muted-foreground">{expandedTeamId === team.id ? '▼' : '▶'}</span>
                                         <span class="text-sm font-medium">{team.name}</span>
                                     </div>
                                     <Button variant="ghost" size="sm" class="text-destructive" onclick={(e) => { e.stopPropagation(); deleteTeam(team.id); }}>
@@ -634,5 +821,144 @@
                 {/if}
             </CardContent>
         </Card>
+
+    <!-- Notifications Tab -->
+    {:else if activeTab === 'notifications'}
+        <Card>
+            <CardHeader>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <CardTitle>Notification Channels</CardTitle>
+                        <CardDescription>Configure where you receive notifications — Slack, email, webhooks, and more.</CardDescription>
+                    </div>
+                    <Button size="sm" onclick={() => { showAddChannel = true; newChannelType = 'SLACK'; newChannelName = ''; newChannelConfig = {}; }}>
+                        Add Channel
+                    </Button>
+                </div>
+            </CardHeader>
+            <CardContent>
+                {#if channelsLoading}
+                    <p class="text-sm text-muted-foreground py-4 text-center">Loading channels...</p>
+                {:else if channels.length === 0 && !showAddChannel}
+                    <div class="text-center py-8">
+                        <p class="text-sm text-muted-foreground mb-3">No notification channels configured yet.</p>
+                        <Button size="sm" variant="outline" onclick={() => { showAddChannel = true; newChannelType = 'SLACK'; newChannelName = ''; newChannelConfig = {}; }}>
+                            Add your first channel
+                        </Button>
+                    </div>
+                {:else}
+                    <div class="divide-y divide-border">
+                        {#each channels as channel}
+                            <div class="py-3">
+                                <div class="flex items-center justify-between">
+                                    <button class="flex items-center gap-3 text-left flex-1 min-w-0" onclick={() => toggleExpandChannel(channel.id)}>
+                                        <span class="text-xs text-muted-foreground">{expandedChannelId === channel.id ? '▼' : '▶'}</span>
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-medium truncate">{channel.name}</p>
+                                            <p class="text-xs text-muted-foreground">{getChannelTypeLabel(channel.channel_type)}</p>
+                                        </div>
+                                    </button>
+                                    <div class="flex items-center gap-2 shrink-0">
+                                        {#if channelTestResults.has(channel.id)}
+                                            {@const result = channelTestResults.get(channel.id)}
+                                            <span class="text-xs {result?.status === 'SENT' ? 'text-green-600' : result?.status === 'TESTING' ? 'text-muted-foreground' : 'text-destructive'}">
+                                                {result?.status === 'TESTING' ? 'Sending...' : result?.status === 'SENT' ? 'Sent!' : 'Failed'}
+                                            </span>
+                                        {/if}
+                                        <Button variant="ghost" size="sm" onclick={() => testChannel(channel.id)}>
+                                            Test
+                                        </Button>
+                                        <button
+                                            class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors {channel.enabled ? 'bg-primary' : 'bg-muted'}"
+                                            role="switch"
+                                            aria-checked={channel.enabled}
+                                            onclick={() => toggleChannelEnabled(channel.id, channel.enabled)}
+                                        >
+                                            <span class="pointer-events-none block h-4 w-4 rounded-full bg-background shadow-sm transition-transform {channel.enabled ? 'translate-x-4' : 'translate-x-0'}"></span>
+                                        </button>
+                                        <Button variant="ghost" size="sm" class="text-destructive" onclick={() => deleteChannel(channel.id)}>
+                                            Remove
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {#if expandedChannelId === channel.id}
+                                    <div class="mt-3 ml-7 space-y-3">
+                                        <div>
+                                            <p class="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Subscribed Events</p>
+                                            <div class="grid grid-cols-2 gap-1.5">
+                                                {#each EVENT_TYPES as evt}
+                                                    {@const subscribed = isEventSubscribed(channel.id, evt.value)}
+                                                    <label class="flex items-center gap-2 text-sm cursor-pointer py-1 px-2 rounded hover:bg-muted/50">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={subscribed}
+                                                            onchange={() => toggleSubscription(channel.id, evt.value)}
+                                                            class="rounded border-border"
+                                                        />
+                                                        {evt.label}
+                                                    </label>
+                                                {/each}
+                                            </div>
+                                        </div>
+                                    </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            </CardContent>
+        </Card>
+
+        <!-- Add Channel Form -->
+        {#if showAddChannel}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Add Notification Channel</CardTitle>
+                    <CardDescription>Choose a channel type and configure its settings.</CardDescription>
+                </CardHeader>
+                <CardContent class="space-y-4">
+                    <div class="space-y-2">
+                        <Label>Channel Type</Label>
+                        <div class="flex flex-wrap gap-2">
+                            {#each CHANNEL_TYPES as ct}
+                                <button
+                                    class="px-3 py-1.5 rounded-md text-sm font-medium border transition-colors {newChannelType === ct.value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
+                                    onclick={() => { newChannelType = ct.value; newChannelConfig = {}; }}
+                                >
+                                    {ct.label}
+                                </button>
+                            {/each}
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <Label>Channel Name</Label>
+                        <Input bind:value={newChannelName} placeholder="e.g. My Slack DMs" />
+                    </div>
+
+                    {#each CONFIG_FIELDS[newChannelType] || [] as field}
+                        <div class="space-y-2">
+                            <Label>{field.label}</Label>
+                            <Input
+                                type={field.type || 'text'}
+                                value={newChannelConfig[field.key] || ''}
+                                oninput={(e) => { newChannelConfig = { ...newChannelConfig, [field.key]: e.currentTarget.value }; }}
+                                placeholder={field.placeholder}
+                            />
+                        </div>
+                    {/each}
+
+                    <div class="flex items-center gap-2 pt-2">
+                        <Button onclick={addChannel} disabled={channelSaving || !newChannelName.trim()}>
+                            {channelSaving ? 'Saving...' : 'Add Channel'}
+                        </Button>
+                        <Button variant="outline" onclick={() => { showAddChannel = false; }}>
+                            Cancel
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+        {/if}
     {/if}
 </div>
