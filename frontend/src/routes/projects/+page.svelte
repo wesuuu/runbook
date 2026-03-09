@@ -74,38 +74,55 @@
                         No projects found. Create one to get started.
                     </div>
                 {:else}
-                    <Table.Root>
-                        <Table.Caption>A list of your recent projects.</Table.Caption>
-                        <Table.Header>
-                            <Table.Row>
-                                <Table.Head>Name</Table.Head>
-                                <Table.Head>Description</Table.Head>
-                                <Table.Head>Organization</Table.Head>
-                                <Table.Head class="text-right">Actions</Table.Head>
-                            </Table.Row>
-                        </Table.Header>
-                        <Table.Body>
-                            {#each projects as project}
+                    <!-- Mobile card layout -->
+                    <div class="sm:hidden divide-y divide-border">
+                        {#each projects as project}
+                            <a href="/projects/{project.id}" class="block py-3 px-1 min-h-11">
+                                <div class="font-semibold text-sm text-primary">{project.name}</div>
+                                {#if project.description}
+                                    <div class="text-xs text-muted-foreground mt-1 line-clamp-2">{project.description}</div>
+                                {/if}
+                                {#if project.organization?.name}
+                                    <div class="text-xs text-muted-foreground mt-1">{project.organization.name}</div>
+                                {/if}
+                            </a>
+                        {/each}
+                    </div>
+                    <!-- Desktop table -->
+                    <div class="hidden sm:block">
+                        <Table.Root>
+                            <Table.Caption>A list of your recent projects.</Table.Caption>
+                            <Table.Header>
                                 <Table.Row>
-                                    <Table.Cell class="font-medium">
-                                        <a
-                                            href="/projects/{project.id}"
-                                            class="font-semibold text-primary hover:underline"
-                                        >
-                                            {project.name}
-                                        </a>
-                                    </Table.Cell>
-                                    <Table.Cell>{project.description || '-'}</Table.Cell>
-                                    <Table.Cell>{project.organization?.name || 'N/A'}</Table.Cell>
-                                    <Table.Cell class="text-right">
-                                        <a href="/projects/{project.id}">
-                                            <Button variant="ghost" size="sm">View</Button>
-                                        </a>
-                                    </Table.Cell>
+                                    <Table.Head>Name</Table.Head>
+                                    <Table.Head class="hidden md:table-cell">Description</Table.Head>
+                                    <Table.Head class="hidden md:table-cell">Organization</Table.Head>
+                                    <Table.Head class="text-right">Actions</Table.Head>
                                 </Table.Row>
-                            {/each}
-                        </Table.Body>
-                    </Table.Root>
+                            </Table.Header>
+                            <Table.Body>
+                                {#each projects as project}
+                                    <Table.Row>
+                                        <Table.Cell class="font-medium">
+                                            <a
+                                                href="/projects/{project.id}"
+                                                class="font-semibold text-primary hover:underline"
+                                            >
+                                                {project.name}
+                                            </a>
+                                        </Table.Cell>
+                                        <Table.Cell class="hidden md:table-cell">{project.description || '-'}</Table.Cell>
+                                        <Table.Cell class="hidden md:table-cell">{project.organization?.name || 'N/A'}</Table.Cell>
+                                        <Table.Cell class="text-right">
+                                            <a href="/projects/{project.id}">
+                                                <Button variant="ghost" size="sm">View</Button>
+                                            </a>
+                                        </Table.Cell>
+                                    </Table.Row>
+                                {/each}
+                            </Table.Body>
+                        </Table.Root>
+                    </div>
                 {/if}
             </CardContent>
         </Card>

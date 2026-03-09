@@ -286,7 +286,7 @@
         </div>
 
         <!-- Counters -->
-        <div class="grid grid-cols-3 {dashboard.is_admin ? 'md:grid-cols-6' : 'md:grid-cols-3'} gap-3 mb-10">
+        <div class="grid grid-cols-2 sm:grid-cols-3 {dashboard.is_admin ? 'md:grid-cols-6' : 'sm:grid-cols-3'} gap-3 mb-10">
             {#each counterData as counter, i}
                 <button
                     class="card-warm rounded-xl p-4 text-left hover:border-primary/30 hover:shadow-md transition-all group relative overflow-hidden"

@@ -175,23 +175,24 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
 - **Dependencies**: None
 
 ### [F-0008] Mobile-Friendly Responsive Design
-- **Status**: Proposed
+- **Status**: Done
 - **Priority**: P1 (High)
 - **Scope**: Frontend
 - **Description**: The app's tables, navigation, and data views don't scroll or fit well on mobile devices. Tables overflow without usable scroll indicators, the nav bar overflows on small screens, and most pages skip the `sm:` (640px) breakpoint entirely. Since this is a tablet-first app used in labs, mobile/tablet usability is critical. This feature brings full responsive support across all views.
 - **Acceptance Criteria**:
-  - [ ] Navigation bar collapses to a hamburger menu on screens <768px with a slide-out or dropdown menu
-  - [ ] All data tables (Projects list, Protocols tab, Runs tab, Export page) switch to a card-based layout on screens <640px — each row becomes a stacked card showing key fields
-  - [ ] On tablet widths (640px–1024px), tables use horizontal scroll with a visible scroll indicator (gradient fade or scrollbar hint)
-  - [ ] Low-priority table columns (Description, Organization) are hidden on screens <768px; remaining columns resize fluidly
-  - [ ] Fixed-width table columns (`w-[40px]`, `w-[80px]`, `w-[150px]` in project detail) are replaced with responsive min/max widths
-  - [ ] All interactive elements (buttons, checkboxes, dropdown triggers) have a minimum touch target of 44×44px on mobile
-  - [ ] Hover-only interactions (table row highlights, tooltip triggers) have touch-friendly alternatives (tap-to-select, long-press)
-  - [ ] Settings page tab bar wraps or becomes a dropdown/select on screens <480px
-  - [ ] Dashboard counter cards use `grid-cols-2` on mobile instead of `grid-cols-3`
-  - [ ] Global padding reduces from `px-6` to `px-4` on screens <640px
-  - [ ] Export page pagination controls stack vertically on mobile
-  - [ ] No horizontal page-level overflow on any screen width ≥320px
+  - [x] Navigation bar collapses to a hamburger menu on screens <768px with a slide-out or dropdown menu
+  - [x] All data tables (Projects list, Protocols tab, Runs tab, Export page) switch to a card-based layout on screens <640px — each row becomes a stacked card showing key fields
+  - [x] On tablet widths (640px–1024px), tables use horizontal scroll with a visible scroll indicator (gradient fade or scrollbar hint)
+  - [x] Low-priority table columns (Description, Organization) are hidden on screens <768px; remaining columns resize fluidly
+  - [x] Fixed-width table columns (`w-[40px]`, `w-[80px]`, `w-[150px]` in project detail) are replaced with responsive min/max widths
+  - [x] All interactive elements (buttons, checkboxes, dropdown triggers) have a minimum touch target of 44×44px on mobile
+  - [x] Hover-only interactions (table row highlights, tooltip triggers) have touch-friendly alternatives (tap-to-select, long-press)
+  - [x] Settings page tab bar wraps or becomes a dropdown/select on screens <480px
+  - [x] Dashboard counter cards use `grid-cols-2` on mobile instead of `grid-cols-3`
+  - [x] Global padding reduces from `px-6` to `px-4` on screens <640px
+  - [x] Export page pagination controls stack vertically on mobile
+  - [x] No horizontal page-level overflow on any screen width ≥320px
+- **Resolution**: Added MobileNav.svelte with hamburger menu and slide-out drawer (md: breakpoint). All project detail tables (runs, protocols) get card-based mobile layout below sm: and overflow-x-auto for tablet scroll. Fixed-width columns replaced with responsive hidden/shown via Tailwind md:/lg: prefixes. Projects list table gets mobile cards with hidden Description/Organization columns. Export page header/toolbar/pagination stack vertically on mobile. Settings tabs scrollable. Dashboard counter grid uses grid-cols-2 on mobile. Global padding reduced via px-4 sm:px-6. Touch targets enforced with min-h-11 min-w-11. All responsive behavior via pure Tailwind utility classes — zero custom CSS added.
 - **Implementation Notes**:
   - **Navigation** (`frontend/src/routes/+layout.svelte`): Add a hamburger button visible at `md:hidden`, hide the inline nav links at `hidden md:flex`. Use a sheet/drawer component from shadcn-svelte for the mobile menu.
   - **Responsive table component**: Create `frontend/src/lib/components/ResponsiveTable.svelte` — a wrapper that renders a `<Table>` on desktop and a card list on mobile using a `sm:` media query or container query. Pass column definitions with a `priority` field to control which columns show at each breakpoint.

@@ -11,9 +11,12 @@
     import ProjectsDropdown from '$lib/components/ProjectsDropdown.svelte';
     import NotificationBell from '$lib/components/NotificationBell.svelte';
     import ConnectivityBanner from '$lib/components/ConnectivityBanner.svelte';
+    import MobileNav from '$lib/components/MobileNav.svelte';
     import { Toaster } from '$lib/components/ui/sonner';
     import { onDestroy } from 'svelte';
     import '../app.css';
+
+    let mobileNavOpen = $state(false);
 
     let { children } = $props();
 
@@ -90,28 +93,45 @@
     </div>
 {:else}
     <div class="grain"></div>
+    {#if showNav}
+        <MobileNav bind:open={mobileNavOpen} currentPath={$page.url.pathname} />
+    {/if}
     <div class="min-h-screen bg-background text-foreground font-sans antialiased">
         {#if showNav}
             <nav
-                class="bg-card/80 backdrop-blur-xl border-b border-border/60 px-6 py-3 flex items-center justify-between sticky top-0 z-50"
+                class="bg-card/80 backdrop-blur-xl border-b border-border/60 px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-50"
             >
-                <a href="/" class="flex items-center gap-2.5 group">
-                    <div
-                        class="w-7 h-7 bg-primary rounded-md flex items-center justify-center shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all"
+                <div class="flex items-center gap-2.5">
+                    <!-- Hamburger button (mobile only) -->
+                    <button
+                        class="md:hidden min-h-11 min-w-11 flex items-center justify-center -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        onclick={() => (mobileNavOpen = true)}
+                        aria-label="Open menu"
                     >
-                        <span class="font-mono text-sm font-medium text-primary-foreground leading-none">R</span>
-                    </div>
-                    <span class="text-[15px] font-semibold text-foreground tracking-tight">Runbook</span>
-                </a>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                    </button>
+                    <a href="/" class="flex items-center gap-2.5 group">
+                        <div
+                            class="w-7 h-7 bg-primary rounded-md flex items-center justify-center shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all"
+                        >
+                            <span class="font-mono text-sm font-medium text-primary-foreground leading-none">R</span>
+                        </div>
+                        <span class="text-[15px] font-semibold text-foreground tracking-tight">Runbook</span>
+                    </a>
+                </div>
                 <div class="flex items-center gap-6 text-sm font-medium">
                     <a
                         href="/"
-                        class="relative py-1 transition-colors {$page.url.pathname === '/' ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
+                        class="hidden md:block relative py-1 transition-colors {$page.url.pathname === '/' ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
                     >
                         Dashboard
                     </a>
-                    <ProjectsDropdown />
-                    <div class="w-px h-5 bg-border/60"></div>
+                    <div class="hidden md:block">
+                        <ProjectsDropdown />
+                    </div>
+                    <div class="hidden md:block w-px h-5 bg-border/60"></div>
                     <NotificationBell />
                     <UserMenu />
                 </div>
@@ -122,7 +142,7 @@
         {#if isFullBleed || isPublicRoute}
             {@render children()}
         {:else}
-            <main class="container mx-auto py-8">
+            <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
                 {@render children()}
             </main>
         {/if}

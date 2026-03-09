@@ -866,7 +866,7 @@
         class="min-h-[calc(100vh-57px)] w-full mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
     >
         <!-- Header -->
-        <div class="flex justify-between items-start pt-7 px-8">
+        <div class="flex justify-between items-start pt-5 sm:pt-7 px-4 sm:px-8">
             <div class="flex-1 min-w-0">
                 <!-- Breadcrumb -->
                 <nav class="flex items-center gap-2 mb-2.5 text-[13px]">
@@ -972,7 +972,7 @@
         </div>
 
         <!-- Tab Navigation -->
-        <nav class="flex px-8 border-b border-gray-200">
+        <nav class="flex px-4 sm:px-8 border-b border-gray-200 overflow-x-auto">
             <button
                 class="px-5 py-3 text-sm font-medium text-slate-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-all -mb-px hover:text-slate-800 {activeTab ===
                 'protocols'
@@ -1028,8 +1028,8 @@
         <div class="min-h-[300px]">
             {#if activeTab === "runs"}
                 <!-- Toolbar -->
-                <div class="flex justify-between items-center px-8 py-4">
-                    <div class="relative w-60">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 px-4 sm:px-8 py-4">
+                    <div class="relative w-full sm:w-60">
                         <svg
                             class="absolute left-2.5 top-1/2 -translate-y-1/2 w-[15px] h-[15px] text-slate-400 pointer-events-none"
                             viewBox="0 0 24 24"
@@ -1105,10 +1105,33 @@
                         {/if}
                     </div>
                 {:else}
+                    <!-- Mobile card view for runs -->
+                    <div class="sm:hidden divide-y divide-slate-100 px-4">
+                        {#each paginatedRuns() as r}
+                            <button
+                                class="w-full py-3 text-left min-h-11"
+                                onclick={() => goto(`/runs/${r.id}`)}
+                            >
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-sm font-semibold text-slate-800">{r.name}</span>
+                                    <span class="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full {statusClasses(r.status)}">
+                                        {statusLabel(r.status)}
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs text-slate-400">
+                                    <span class="font-mono">{shortId(r.id)}</span>
+                                    <span>&middot;</span>
+                                    <span>{formatDate(r.updated_at || r.created_at)}</span>
+                                </div>
+                            </button>
+                        {/each}
+                    </div>
+                    <!-- Desktop table view for runs -->
+                    <div class="hidden sm:block overflow-x-auto">
                     <table class="w-full border-collapse">
                         <thead>
                             <tr class="border-t border-b border-slate-100">
-                                <th class="w-[40px] py-2.5 px-2 pl-6">
+                                <th class="min-w-[40px] py-2.5 px-2 pl-4 sm:pl-6">
                                     <input
                                         type="checkbox"
                                         class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -1118,7 +1141,7 @@
                                     />
                                 </th>
                                 <th
-                                    class="w-[80px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
+                                    class="hidden lg:table-cell text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap"
                                     >ID</th
                                 >
                                 <th
@@ -1127,16 +1150,16 @@
                                     >Run Name{sortIndicator("runs", "name")}</th
                                 >
                                 <th
-                                    class="w-[150px] text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
+                                    class="hidden md:table-cell text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap"
                                     >Protocol</th
                                 >
                                 <th
-                                    class="w-[100px] text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {runSortKey === 'status' ? 'text-slate-700' : 'text-slate-400'}"
+                                    class="text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 whitespace-nowrap {runSortKey === 'status' ? 'text-slate-700' : 'text-slate-400'}"
                                     onclick={() => toggleSort("runs", "status")}
                                     >Status{sortIndicator("runs", "status")}</th
                                 >
                                 <th
-                                    class="w-[130px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {runSortKey === 'updated_at' ? 'text-slate-700' : 'text-slate-400'}"
+                                    class="text-right py-2.5 px-4 pr-4 sm:pr-8 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 whitespace-nowrap {runSortKey === 'updated_at' ? 'text-slate-700' : 'text-slate-400'}"
                                     onclick={() => toggleSort("runs", "updated_at")}
                                     >Last Modified{sortIndicator("runs", "updated_at")}</th
                                 >
@@ -1148,7 +1171,7 @@
                                     class="border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50 {selectedRunIds.has(r.id) ? 'bg-blue-50/50' : ''}"
                                     onclick={() => goto(`/runs/${r.id}`)}
                                 >
-                                    <td class="py-3.5 px-2 pl-6">
+                                    <td class="py-3.5 px-2 pl-4 sm:pl-6">
                                         {#if r.status === 'COMPLETED' || r.status === 'EDITED'}
                                             <input
                                                 type="checkbox"
@@ -1161,7 +1184,7 @@
                                         {/if}
                                     </td>
                                     <td
-                                        class="py-3.5 px-4 text-xs text-slate-400 font-mono font-medium whitespace-nowrap"
+                                        class="hidden lg:table-cell py-3.5 px-4 text-xs text-slate-400 font-mono font-medium whitespace-nowrap"
                                         >{shortId(r.id)}</td
                                     >
                                     <td
@@ -1169,7 +1192,7 @@
                                         >{r.name}</td
                                     >
                                     <td
-                                        class="py-3.5 px-4 text-[13px] text-slate-500 whitespace-nowrap"
+                                        class="hidden md:table-cell py-3.5 px-4 text-[13px] text-slate-500 whitespace-nowrap"
                                     >
                                         {#if r.protocol_id}
                                             {#each protocols.filter((p: any) => p.id === r.protocol_id) as proto}
@@ -1194,7 +1217,7 @@
                                         </span>
                                     </td>
                                     <td
-                                        class="py-3.5 px-4 pr-8 text-[13px] text-slate-400 font-medium whitespace-nowrap text-right"
+                                        class="py-3.5 px-4 pr-4 sm:pr-8 text-[13px] text-slate-400 font-medium whitespace-nowrap text-right"
                                         >{formatDate(
                                             r.updated_at || r.created_at,
                                         )}</td
@@ -1203,9 +1226,10 @@
                             {/each}
                         </tbody>
                     </table>
+                    </div>
                     <!-- Pagination -->
                     <div
-                        class="flex justify-between items-center px-8 py-3.5 border-t border-slate-100"
+                        class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 px-4 sm:px-8 py-3.5 border-t border-slate-100"
                     >
                         <div class="flex items-center gap-2">
                             <span class="text-[13px] text-slate-400 font-medium">
@@ -1244,8 +1268,8 @@
                 {/if}
             {:else if activeTab === "protocols"}
                 <!-- Toolbar -->
-                <div class="flex justify-between items-center px-8 py-4">
-                    <div class="relative w-60">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 px-4 sm:px-8 py-4">
+                    <div class="relative w-full sm:w-60">
                         <svg
                             class="absolute left-2.5 top-1/2 -translate-y-1/2 w-[15px] h-[15px] text-slate-400 pointer-events-none"
                             viewBox="0 0 24 24"
@@ -1324,11 +1348,43 @@
                         {/if}
                     </div>
                 {:else}
+                    <!-- Mobile card view for protocols -->
+                    <div class="sm:hidden divide-y divide-slate-100 px-4">
+                        {#each paginatedProtocols() as proto}
+                            <button
+                                class="w-full py-3 text-left min-h-11"
+                                onclick={() => goto(`/protocols/${proto.id}`)}
+                            >
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-sm font-semibold text-slate-800">{proto.name}</span>
+                                    {#if showProtocolStatus}
+                                        <span class="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full {protocolStatusClasses(proto.status)}">
+                                            {protocolStatusLabel(proto.status)}
+                                        </span>
+                                    {/if}
+                                </div>
+                                {#if proto.description}
+                                    <div class="text-xs text-slate-500 line-clamp-1 mb-1">{proto.description}</div>
+                                {/if}
+                                <div class="flex items-center gap-2 text-xs text-slate-400">
+                                    <span class="font-mono">{shortId(proto.id)}</span>
+                                    {#if proto.version_number}
+                                        <span>&middot;</span>
+                                        <span>v{proto.version_number}</span>
+                                    {/if}
+                                    <span>&middot;</span>
+                                    <span>{formatDate(proto.updated_at || proto.created_at)}</span>
+                                </div>
+                            </button>
+                        {/each}
+                    </div>
+                    <!-- Desktop table view for protocols -->
+                    <div class="hidden sm:block overflow-x-auto">
                     <table class="w-full border-collapse">
                         <thead>
                             <tr class="border-t border-b border-slate-100">
                                 <th
-                                    class="w-[100px] text-left py-2.5 px-4 pl-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
+                                    class="hidden lg:table-cell text-left py-2.5 px-4 pl-4 sm:pl-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap"
                                     >ID</th
                                 >
                                 <th
@@ -1337,28 +1393,28 @@
                                     >Protocol Name{sortIndicator("protocols", "name")}</th
                                 >
                                 <th
-                                    class="text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
+                                    class="hidden md:table-cell text-left py-2.5 px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
                                     >Description</th
                                 >
                                 <th
-                                    class="w-[80px] text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'version_number' ? 'text-slate-700' : 'text-slate-400'}"
+                                    class="hidden lg:table-cell text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 whitespace-nowrap {protoSortKey === 'version_number' ? 'text-slate-700' : 'text-slate-400'}"
                                     onclick={() => toggleSort("protocols", "version_number")}
                                     >Version{sortIndicator("protocols", "version_number")}</th
                                 >
                                 {#if showProtocolStatus}
                                     <th
-                                        class="w-[110px] text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'status' ? 'text-slate-700' : 'text-slate-400'}"
+                                        class="text-left py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 whitespace-nowrap {protoSortKey === 'status' ? 'text-slate-700' : 'text-slate-400'}"
                                         onclick={() => toggleSort("protocols", "status")}
                                         >Status{sortIndicator("protocols", "status")}</th
                                     >
                                 {/if}
                                 <th
-                                    class="w-[130px] text-right py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 {protoSortKey === 'updated_at' ? 'text-slate-700' : 'text-slate-400'}"
+                                    class="text-right py-2.5 px-4 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none hover:text-slate-600 whitespace-nowrap {protoSortKey === 'updated_at' ? 'text-slate-700' : 'text-slate-400'}"
                                     onclick={() => toggleSort("protocols", "updated_at")}
                                     >Last Modified{sortIndicator("protocols", "updated_at")}</th
                                 >
                                 <th
-                                    class="w-[100px] text-right py-2.5 px-4 pr-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
+                                    class="text-right py-2.5 px-4 pr-4 sm:pr-8 text-[11px] font-bold text-slate-400 uppercase tracking-wide"
                                     ></th
                                 >
                             </tr>
@@ -1371,7 +1427,7 @@
                                         goto(`/protocols/${proto.id}`)}
                                 >
                                     <td
-                                        class="py-3.5 px-4 pl-8 text-xs text-slate-400 font-mono font-medium whitespace-nowrap"
+                                        class="hidden lg:table-cell py-3.5 px-4 pl-4 sm:pl-8 text-xs text-slate-400 font-mono font-medium whitespace-nowrap"
                                         >{shortId(proto.id)}</td
                                     >
                                     <td
@@ -1379,11 +1435,11 @@
                                         >{proto.name}</td
                                     >
                                     <td
-                                        class="py-3.5 px-4 text-[13px] text-slate-500 max-w-[300px] whitespace-nowrap overflow-hidden text-ellipsis"
+                                        class="hidden md:table-cell py-3.5 px-4 text-[13px] text-slate-500 max-w-[300px] whitespace-nowrap overflow-hidden text-ellipsis"
                                         >{proto.description || "--"}</td
                                     >
                                     <td
-                                        class="py-3.5 px-4 text-xs text-slate-400 font-mono font-medium whitespace-nowrap"
+                                        class="hidden lg:table-cell py-3.5 px-4 text-xs text-slate-400 font-mono font-medium whitespace-nowrap"
                                         >{proto.version_number
                                             ? `v${proto.version_number}`
                                             : "--"}</td
@@ -1410,7 +1466,7 @@
                                                 proto.created_at,
                                         )}</td
                                     >
-                                    <td class="py-3.5 px-4 pr-8 text-right whitespace-nowrap">
+                                    <td class="py-3.5 px-4 pr-4 sm:pr-8 text-right whitespace-nowrap">
                                         {#if proto.status?.toUpperCase() === 'ARCHIVED'}
                                             <button
                                                 class="text-[12px] font-medium text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded border border-slate-200 hover:border-slate-300 bg-white transition-colors"
@@ -1438,9 +1494,10 @@
                             {/each}
                         </tbody>
                     </table>
+                    </div>
                     <!-- Pagination -->
                     <div
-                        class="flex justify-between items-center px-8 py-3.5 border-t border-slate-100"
+                        class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 px-4 sm:px-8 py-3.5 border-t border-slate-100"
                     >
                         <div class="flex items-center gap-2">
                             <span class="text-[13px] text-slate-400 font-medium">

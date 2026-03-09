@@ -493,27 +493,27 @@
     </div>
 
     <!-- Tabs -->
-    <div class="flex border-b border-border">
+    <div class="flex border-b border-border overflow-x-auto">
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors {activeTab === 'organization' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'organization' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = 'organization')}
         >
             Organization
         </button>
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors {activeTab === 'teams' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'teams' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = 'teams')}
         >
             Teams
         </button>
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors {activeTab === 'profile' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'profile' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = 'profile')}
         >
             Profile
         </button>
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors {activeTab === 'notifications' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'notifications' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => { activeTab = 'notifications'; if (channels.length === 0 && !channelsLoading) loadChannels(); }}
         >
             Notifications

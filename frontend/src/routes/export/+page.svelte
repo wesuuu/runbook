@@ -158,11 +158,11 @@
 
 <div class="min-h-screen bg-slate-50 flex flex-col">
     <!-- Top bar -->
-    <header class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shrink-0">
+    <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div class="flex items-center gap-4">
             <button
                 onclick={goBack}
-                class="text-sm text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1"
+                class="text-sm text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
             >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -182,28 +182,28 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
             <!-- Format selector -->
             <div class="flex items-center gap-2">
-                <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Format</span>
+                <span class="text-xs font-medium text-slate-500 uppercase tracking-wide hidden sm:inline">Format</span>
                 <div class="flex rounded-lg border border-slate-200 overflow-hidden">
                     <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors {format === 'csv' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                        class="px-3 py-1.5 text-xs font-medium transition-colors min-h-11 sm:min-h-0 {format === 'csv' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
                         onclick={() => { format = 'csv'; }}
                     >CSV</button>
                     <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors {format === 'xlsx' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                        class="px-3 py-1.5 text-xs font-medium transition-colors min-h-11 sm:min-h-0 {format === 'xlsx' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
                         onclick={() => { format = 'xlsx'; }}
                     >Excel</button>
                     <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors {format === 'json' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                        class="px-3 py-1.5 text-xs font-medium transition-colors min-h-11 sm:min-h-0 {format === 'json' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
                         onclick={() => { format = 'json'; }}
                     >JSON</button>
                 </div>
             </div>
 
             <button
-                class="px-5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                class="px-5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
                 disabled={selectedColumns.size === 0 || rows.length === 0 || downloading}
                 onclick={download}
             >
@@ -222,7 +222,7 @@
     </header>
 
     <!-- Toolbar -->
-    <div class="bg-white border-b border-slate-100 px-6 py-2.5 flex items-center gap-6 shrink-0">
+    <div class="bg-white border-b border-slate-100 px-4 sm:px-6 py-2.5 flex flex-wrap items-center gap-3 sm:gap-6 shrink-0">
         <!-- Layout toggle -->
         <div class="flex items-center gap-2">
             <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Layout</span>
@@ -351,7 +351,7 @@
 
     <!-- Footer / Pagination -->
     {#if rows.length > 0}
-        <div class="bg-white border-t border-slate-200 px-6 py-2.5 flex items-center justify-between shrink-0">
+        <div class="bg-white border-t border-slate-200 px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shrink-0">
             <span class="text-xs text-slate-400">
                 Showing {previewPage * PAGE_SIZE + 1}–{Math.min((previewPage + 1) * PAGE_SIZE, rows.length)} of {rows.length} rows
             </span>
