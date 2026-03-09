@@ -7,6 +7,7 @@
     import UserMenu from '$lib/components/UserMenu.svelte';
     import ProjectsDropdown from '$lib/components/ProjectsDropdown.svelte';
     import NotificationBell from '$lib/components/NotificationBell.svelte';
+    import { Toaster } from '$lib/components/ui/sonner';
     import '../app.css';
 
     let { children } = $props();
@@ -109,4 +110,10 @@
             </main>
         {/if}
     </div>
+    <Toaster
+        position="bottom-right"
+        visibleToasts={5}
+        closeButton={true}
+        richColors={false}
+    />
 {/if}

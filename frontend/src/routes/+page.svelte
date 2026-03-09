@@ -3,6 +3,7 @@
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
     import { getCurrentOrg, getUser } from '$lib/auth.svelte';
+    import CompletionChart from '$lib/components/CompletionChart.svelte';
 
     type RunSummary = {
         id: string;
@@ -37,6 +38,8 @@
         total_protocols: number | null;
     };
 
+    type CompletionTrendItem = { date: string; count: number };
+
     type Dashboard = {
         my_work: {
             needs_action: RunSummary[];
@@ -46,12 +49,14 @@
         };
         activity: ActivityItem[];
         counters: Counters;
+        completion_trend: CompletionTrendItem[];
         is_admin: boolean;
     };
 
     let dashboard = $state<Dashboard | null>(null);
     let loading = $state(true);
     let error = $state<string | null>(null);
+    let trendDays = $state(7);
 
     // Activity feed pagination
     let activityItems = $state<ActivityItem[]>([]);
@@ -69,7 +74,7 @@
         loading = true;
         error = null;
         try {
-            const data: Dashboard = await api.get(`/dashboard?org_id=${org.id}`);
+            const data: Dashboard = await api.get(`/dashboard?org_id=${org.id}&trend_days=${trendDays}`);
             dashboard = data;
             activityItems = data.activity;
         } catch (e: unknown) {
@@ -77,6 +82,11 @@
         } finally {
             loading = false;
         }
+    }
+
+    function toggleTrendDays() {
+        trendDays = trendDays === 7 ? 14 : 7;
+        loadDashboard();
     }
 
     async function loadMoreActivity() {
@@ -250,6 +260,9 @@
                 </button>
             {/each}
         </div>
+
+        <!-- Completion Trend Chart -->
+        <CompletionChart trend={dashboard.completion_trend} onToggleDays={toggleTrendDays} />
 
         <!-- Main grid: My Work + Activity -->
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">

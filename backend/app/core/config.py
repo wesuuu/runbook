@@ -1,3 +1,6 @@
+import warnings
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -9,6 +12,23 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     auth_enabled: bool = True
+
+    @model_validator(mode="after")
+    def _warn_insecure_defaults(self) -> "Settings":
+        if not self.debug:
+            if self.secret_key.startswith("dev-"):
+                warnings.warn(
+                    "RUNBOOK_SECRET_KEY is using the default dev key. "
+                    "Set a secure secret via RUNBOOK_SECRET_KEY env var.",
+                    stacklevel=1,
+                )
+            if "postgres:postgres@localhost" in self.database_url:
+                warnings.warn(
+                    "RUNBOOK_DATABASE_URL is using default local credentials. "
+                    "Set an explicit database URL via RUNBOOK_DATABASE_URL env var.",
+                    stacklevel=1,
+                )
+        return self
 
     # Image storage
     image_storage_path: str = "./uploads/images"

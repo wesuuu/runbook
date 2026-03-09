@@ -64,7 +64,7 @@ async def test_create_project_unauthenticated(
             "organization_id": str(test_org.id),
         },
     )
-    assert resp.status_code == 403  # HTTPBearer missing
+    assert resp.status_code == 401  # auto_error=False → get_current_user raises 401
 
 
 @pytest.mark.asyncio

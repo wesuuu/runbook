@@ -50,6 +50,7 @@ async def _create_project(db, org):
     project = Project(
         name="Test Project",
         organization_id=org.id,
+        settings={"permissions_enabled": True},
     )
     db.add(project)
     await db.flush()

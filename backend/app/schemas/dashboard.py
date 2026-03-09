@@ -47,10 +47,16 @@ class MyWork(BaseModel):
     planned_runs: list[RunSummary] = []
 
 
+class CompletionTrendItem(BaseModel):
+    date: str
+    count: int
+
+
 class DashboardResponse(BaseModel):
     my_work: MyWork
     activity: list[ActivityItem] = []
     counters: Counters
+    completion_trend: list[CompletionTrendItem] = []
     is_admin: bool = False
 
 

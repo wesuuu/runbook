@@ -400,4 +400,4 @@ async def test_list_permissions_unauthenticated(client: AsyncClient):
             "object_id": "00000000-0000-0000-0000-000000000000",
         },
     )
-    assert resp.status_code == 403  # HTTPBearer returns 403 when missing
+    assert resp.status_code == 401  # auto_error=False → get_current_user raises 401

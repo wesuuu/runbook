@@ -1,3 +1,7 @@
+import os
+
+os.environ["RUNBOOK_AUTH_ENABLED"] = "true"
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -153,6 +157,7 @@ async def test_project(db_session, test_org, test_user) -> Project:
         organization_id=test_org.id,
         owner_type="USER",
         owner_id=test_user.id,
+        settings={"permissions_enabled": True},
     )
     db_session.add(project)
     await db_session.flush()

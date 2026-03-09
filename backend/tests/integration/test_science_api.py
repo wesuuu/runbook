@@ -29,7 +29,7 @@ async def test_list_unit_ops_authenticated(
 @pytest.mark.asyncio
 async def test_list_unit_ops_unauthenticated(client: AsyncClient):
     resp = await client.get("/science/unit-ops")
-    assert resp.status_code == 403
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

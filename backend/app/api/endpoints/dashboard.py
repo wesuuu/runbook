@@ -25,6 +25,7 @@ from app.models.science import (
 from app.schemas.dashboard import (
     ActivityItem,
     ActivityPage,
+    CompletionTrendItem,
     Counters,
     DashboardResponse,
     MyWork,
@@ -125,9 +126,36 @@ async def _resolve_names(
     return project_map, proto_map
 
 
+def _compute_completion_trend(
+    runs: list, days: int = 7
+) -> list[CompletionTrendItem]:
+    """Build a per-day completion count for the last N days."""
+    now = datetime.now(timezone.utc)
+    # Build date buckets (oldest first)
+    buckets: dict[str, int] = {}
+    for i in range(days - 1, -1, -1):
+        d = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+        buckets[d] = 0
+
+    for run in runs:
+        status = run.status if isinstance(run.status, str) else run.status.value
+        if status not in ("COMPLETED", "EDITED"):
+            continue
+        if not run.updated_at:
+            continue
+        day_key = run.updated_at.strftime("%Y-%m-%d")
+        if day_key in buckets:
+            buckets[day_key] += 1
+
+    return [
+        CompletionTrendItem(date=d, count=c) for d, c in buckets.items()
+    ]
+
+
 @router.get("", response_model=DashboardResponse)
 async def get_dashboard(
     org_id: UUID = Query(..., description="Current organization ID"),
+    trend_days: int = Query(7, ge=7, le=14, description="Days for completion trend (7 or 14)"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -284,10 +312,14 @@ async def get_dashboard(
         )
         counters.total_protocols = result.scalar() or 0
 
+    # ── Completion trend ──
+    completion_trend = _compute_completion_trend(all_runs, days=trend_days)
+
     return DashboardResponse(
         my_work=my_work,
         activity=activity,
         counters=counters,
+        completion_trend=completion_trend,
         is_admin=is_admin,
     )
 

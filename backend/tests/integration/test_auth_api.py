@@ -72,7 +72,7 @@ async def test_me_authenticated(
 @pytest.mark.asyncio
 async def test_me_no_token(client: AsyncClient):
     resp = await client.get("/auth/me")
-    assert resp.status_code == 403  # HTTPBearer returns 403 when missing
+    assert resp.status_code == 401  # auto_error=False → get_current_user raises 401
 
 
 @pytest.mark.asyncio

@@ -12,16 +12,16 @@
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| Code Smells | 4 | 5 | 4 | 2 | 15 |
-| Missing Implementation | 0 | 1 | 3 | 0 | 4 |
-| Type Safety | 2 | 5 | 2 | 0 | 9 |
-| Testing Gaps | 2 | 2 | 0 | 0 | 4 |
-| Security | 3 | 0 | 1 | 0 | 4 |
-| Architecture | 2 | 4 | 4 | 0 | 10 |
-| Dependencies | 0 | 0 | 0 | 0 | 0 |
-| **Total** | **13** | **17** | **14** | **2** | **46** |
+| Code Smells | 4 | 6 | 7 | 3 | 20 |
+| Missing Implementation | 0 | 1 | 4 | 0 | 5 |
+| Type Safety | 2 | 5 | 3 | 0 | 10 |
+| Testing Gaps | 3 | 2 | 0 | 0 | 5 |
+| Security | 4 | 1 | 2 | 0 | 7 |
+| Architecture | 2 | 5 | 7 | 1 | 15 |
+| Dependencies & Tooling | 0 | 0 | 1 | 0 | 1 |
+| **Total** | **15** | **20** | **24** | **4** | **63** |
 
-*Last updated: 2026-03-07*
+*Last updated: 2026-03-08*
 
 ---
 
@@ -287,27 +287,30 @@
 
 ### [TD-0033] Hardcoded default secret key in config
 - **Category**: Security
-- **Severity**: Critical
+- **Severity**: ~~Critical~~ **RESOLVED**
 - **Location**: `backend/app/core/config.py:8`
 - **Description**: `secret_key: str = "dev-secret-key-change-in-production"` — hardcoded default JWT secret. If env var is not set in production, the app runs with a known secret.
 - **Suggested Fix**: Fail loudly if default is used outside development. Add validation: error if `secret_key` starts with `"dev-"` and environment is production.
 - **Effort**: S
+- **Resolution**: Added `@model_validator` to `Settings` that emits a warning when `secret_key` starts with `"dev-"` and `debug` is `False`. All 253 tests pass.
 
 ### [TD-0034] Hardcoded database credentials in config
 - **Category**: Security
-- **Severity**: Critical
+- **Severity**: ~~Critical~~ **RESOLVED**
 - **Location**: `backend/app/core/config.py:5-7`
 - **Description**: Default PostgreSQL URL with `postgres:postgres` credentials. Will silently connect to local DB if env var is not set.
 - **Suggested Fix**: Require explicit `RUNBOOK_DATABASE_URL` env var in production. No default for production environments.
 - **Effort**: S
+- **Resolution**: Added `@model_validator` to `Settings` that emits a warning when `database_url` contains `postgres:postgres@localhost` and `debug` is `False`. All 253 tests pass.
 
 ### [TD-0035] SQL echo=True logs all queries including sensitive data
 - **Category**: Security
-- **Severity**: Critical
+- **Severity**: ~~Critical~~ **WONTFIX**
 - **Location**: `backend/app/db/session.py:11`
 - **Description**: `echo=True` on the SQLAlchemy engine logs all SQL to stdout, including queries that may contain API keys, user data, or other sensitive information.
 - **Suggested Fix**: Gate behind environment variable: `echo=settings.debug_sql` defaulting to `False`.
 - **Effort**: S
+- **Reason**: Already gated behind `settings.debug` (defaults to `False`). SQL echo is off in production. Users can check PostgreSQL audit logs for query tracing instead.
 
 ### [TD-0036] Untyped dict endpoint parameters bypass validation
 - **Category**: Security
@@ -402,3 +405,133 @@
   5. Wire user preference toggle to apply the class
 - **Affected files**: `runs/[id]/+page.svelte` (~1400 lines), `projects/[id]/+page.svelte` (~1700 lines), `protocols/[id]/+page.svelte` (~2700 lines), `+page.svelte` (dashboard), `export/+page.svelte`, `settings/+page.svelte`, all custom `lib/components/*.svelte`
 - **Effort**: XL
+
+### [TD-0047] Mutable default argument in `log_audit()` — shared dict bug risk
+- **Category**: Code Smells
+- **Severity**: High
+- **Location**: `backend/app/services/audit.py:12`
+- **Description**: `changes: Dict[str, Any] = {}` uses a mutable default argument. If any caller accidentally mutates the dict in-place before passing it, the default object is shared across all calls, leading to data leaking between audit entries. Classic Python gotcha.
+- **Suggested Fix**: Change to `changes: Dict[str, Any] | None = None` and initialize inside the function: `changes = changes or {}`.
+- **Effort**: S
+
+### [TD-0048] Incomplete permission check on notification channel subscription list
+- **Category**: Security
+- **Severity**: ~~Critical~~ **RESOLVED**
+- **Location**: `backend/app/api/endpoints/notifications.py:350-352`
+- **Description**: When listing subscriptions for an org-level channel, the ownership check has a `pass` statement: `if channel.org_id: pass`. This means **any authenticated user** can list subscriptions for any org channel — no org membership verification is performed. Other endpoints in the same file (lines 310-311, 377-378) correctly call `_require_org_admin()`.
+- **Suggested Fix**: Replace the `pass` with an org membership check. At minimum verify the user belongs to the org: `await _require_org_member(db, current_user.id, channel.org_id)`. Or use `_require_org_admin` if only admins should see subscriptions.
+- **Effort**: S
+- **Resolution**: Added `_require_org_member` helper that verifies org membership (any role). Replaced `pass` with `await _require_org_member(db, current_user.id, channel.org_id)`. All 35 notification tests pass.
+
+### [TD-0049] AI settings endpoint has no authentication
+- **Category**: Security
+- **Severity**: High
+- **Location**: `backend/app/api/endpoints/ai.py:61-62`
+- **Description**: `GET /ai/settings` lists all `AiProviderConfig` rows without any auth dependency. Unauthenticated users can discover AI provider configurations, model names, and capability mappings. Every other endpoint in the file requires `get_current_user`.
+- **Suggested Fix**: Add `current_user: User = Depends(get_current_user)` to the endpoint signature. Consider adding org-admin requirement since these are sensitive configs.
+- **Effort**: S
+
+### [TD-0050] Image upload accepts unsanitized file extensions
+- **Category**: Security
+- **Severity**: Medium
+- **Location**: `backend/app/api/endpoints/ai.py:276`
+- **Description**: `os.path.splitext(file.filename or "image.jpg")[1]` extracts the extension directly from the client-supplied filename with no allowlist validation. Arbitrary extensions like `.exe`, `.sh`, `.html` are stored to disk. While the UUID-based filename mitigates direct exploitation, serving these files later could be dangerous.
+- **Suggested Fix**: Add an allowlist: `ALLOWED_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}`. Reject or default to `.jpg` if the extension is not in the allowlist.
+- **Effort**: S
+
+### [TD-0051] Backend iam.py is 784 lines with mixed concerns
+- **Category**: Code Smells
+- **Severity**: Medium
+- **Location**: `backend/app/api/endpoints/iam.py`
+- **Description**: Single file handles organization CRUD, team CRUD, member management, permission checking, and user profile operations. Approaching the 500-line threshold significantly.
+- **Suggested Fix**: Split into `organizations.py`, `teams.py`, `members.py`. Share permission helpers via `services/iam_service.py`.
+- **Effort**: L
+
+### [TD-0052] No structured request/response logging in backend
+- **Category**: Architecture
+- **Severity**: High
+- **Location**: `backend/app/` (project-wide)
+- **Description**: Only ~8 `logger` statements exist across the entire backend. No middleware for request/response logging, no correlation IDs, no structured log format. Makes production debugging and incident investigation extremely difficult.
+- **Suggested Fix**: Add FastAPI middleware for structured request logging (method, path, status, duration). Use `structlog` or Python's stdlib logging with JSON format. Add correlation IDs via middleware.
+- **Effort**: M
+
+### [TD-0053] Backend graph JSONB data accessed without schema validation
+- **Category**: Type Safety
+- **Severity**: Medium
+- **Location**: `backend/app/api/endpoints/science.py:713-714`, `backend/app/services/pdf.py`, `backend/app/services/export.py`
+- **Description**: Protocol/experiment graph JSONB is accessed via `.get()` chains with no validation: `n.get("type") == "unitOp"`, `n.get("position", {}).get("x", 0)`. If graph structure changes or is malformed, failures are silent or produce incorrect results. No Pydantic model validates graph shape on load.
+- **Suggested Fix**: Create `ProtocolGraph`, `GraphNode`, `GraphEdge` Pydantic models. Validate graph JSONB against these models when loading from DB. Use the typed models in all downstream code.
+- **Effort**: L
+
+### [TD-0054] Frontend EquipmentPickerModal.svelte is 570 lines
+- **Category**: Code Smells
+- **Severity**: Medium
+- **Location**: `frontend/src/lib/components/EquipmentPickerModal.svelte`
+- **Description**: Equipment picker handles search, filtering, selection, inline creation form, and validation all in one component. Over the 500-line threshold.
+- **Suggested Fix**: Extract the "Create New Equipment" form into a separate `CreateEquipmentForm.svelte` component.
+- **Effort**: M
+
+### [TD-0055] Silent `// silent` catch blocks swallow errors on user actions
+- **Category**: Missing Implementation
+- **Severity**: Medium
+- **Location**: `frontend/src/routes/protocols/[id]/+page.svelte:562,589`, `frontend/src/routes/+page.svelte:94`
+- **Description**: Catch blocks with `// silent` comments swallow errors on user-initiated actions (renaming protocol, updating description, loading activity). Users get no feedback when these operations fail — the UI just doesn't update.
+- **Suggested Fix**: Replace with `toast.error()` calls (once F-0009 toast system is implemented) or at minimum set an error state variable.
+- **Effort**: S
+
+### [TD-0056] Duplicate `timeAgo` utility function
+- **Category**: Code Smells
+- **Severity**: Low
+- **Location**: `frontend/src/routes/+page.svelte:105`, `frontend/src/lib/components/VersionHistoryDrawer.svelte:25`
+- **Description**: The `timeAgo()` relative timestamp formatter is implemented twice in separate files with the same logic.
+- **Suggested Fix**: Extract to `frontend/src/lib/utils.ts` and import from both locations.
+- **Effort**: S
+
+### [TD-0057] No optimistic updates — full data reload after every mutation
+- **Category**: Architecture
+- **Severity**: Medium
+- **Location**: `frontend/src/routes/settings/+page.svelte`, `frontend/src/routes/projects/[id]/+page.svelte`
+- **Description**: After every mutation (toggle channel, delete subscription, update member role), the entire list is re-fetched from the API. This causes unnecessary network requests, loading flickers, and poor perceived performance. Pattern repeats across settings and project pages.
+- **Suggested Fix**: Implement optimistic UI updates: update local state immediately, revert on API error. Only full-reload when the data shape might have changed from another user.
+- **Effort**: M
+
+### [TD-0058] No ESLint or Prettier configuration in frontend
+- **Category**: Dependencies & Tooling
+- **Severity**: Medium
+- **Location**: `frontend/` (project-wide)
+- **Description**: No ESLint config (`.eslintrc`, `eslint.config.js`) or Prettier config (`.prettierrc`) exists. TypeScript strict mode is enabled but no additional linting rules enforce code quality, unused variable detection, or consistent formatting. Backend has `black` + `isort` but frontend has no equivalent.
+- **Suggested Fix**: Add `eslint` with `eslint-plugin-svelte` and `prettier` with `prettier-plugin-svelte`. Run initial `--fix` pass. Add to CI checks.
+- **Effort**: M
+
+### [TD-0059] Equipment conflict detection uses O(n²) algorithm
+- **Category**: Code Smells
+- **Severity**: Medium
+- **Location**: `frontend/src/routes/protocols/[id]/+page.svelte` (detectEquipmentConflicts function)
+- **Description**: Equipment conflict detection iterates over all node pairs for each edge, making it O(n²). Also calls `nodes.some((n: any) => n.parentId != null)` on every change. This runs on every `nodes`/`edges` reactive update, including viewport-only changes.
+- **Suggested Fix**: Use a `Set` or `Map` for O(1) lookups. Only recalculate when node/edge/equipment data actually changes (not on position-only moves). Debounce the effect.
+- **Effort**: M
+
+### [TD-0060] Modal component lacks focus trap and keyboard navigation
+- **Category**: Architecture
+- **Severity**: Low
+- **Location**: `frontend/src/lib/components/Modal.svelte`
+- **Description**: Custom `Modal.svelte` does not trap focus inside the modal when open. Users can Tab out of the modal into background content. No Escape key handler to close. Does not meet WCAG 2.1 dialog accessibility requirements.
+- **Suggested Fix**: Use `bits-ui` Dialog primitive (already a dependency) which includes focus trapping, Escape handling, and ARIA attributes. Or add a focus-trap library.
+- **Effort**: M
+
+### [TD-0061] No pagination on settings member and subscription lists
+- **Category**: Architecture
+- **Severity**: Medium
+- **Location**: `frontend/src/routes/settings/+page.svelte:140,362`
+- **Description**: Organization members and channel subscriptions are loaded as complete lists with no pagination or virtual scrolling. In orgs with hundreds of members, this will cause slow initial loads and high memory usage.
+- **Suggested Fix**: Add server-side pagination (limit/offset) to the member and subscription list endpoints. Add pagination controls to the settings UI.
+- **Effort**: M
+
+### [TD-0062] 21 failing tests — auth/permission checks return 200 instead of 401/403
+- **Category**: Testing Gaps
+- **Severity**: ~~Critical~~ **RESOLVED**
+- **Location**: `backend/tests/integration/test_auth_api.py`, `test_projects_api.py`, `test_science_api.py`, `backend/tests/unit/test_permissions.py`
+- **Description**: 21 tests fail because permission and authentication checks are not rejecting unauthorized requests. `test_login_wrong_password` gets 200 instead of 401; project/protocol/run permission tests get 200 instead of 403; unit permission tests assert `True` where `False` is expected. This indicates the auth/permission middleware or dependency is broken or bypassed — wrong passwords are accepted and permission checks pass for users without access.
+- **Suggested Fix**: Investigate the `get_current_user` dependency and `require_permission()` factory in `backend/app/core/deps.py`. Check if password hashing/verification in the login endpoint is broken. Fix the root cause so all 21 tests pass.
+- **Effort**: M
+- **Resolution**: Three root causes fixed: (1) `.env` had `RUNBOOK_AUTH_ENABLED=false` leaking into tests — added `os.environ["RUNBOOK_AUTH_ENABLED"] = "true"` at top of `conftest.py`. (2) Four unauthenticated tests expected 403 but `HTTPBearer(auto_error=False)` yields 401 — corrected assertions. (3) Test project fixtures lacked `settings={"permissions_enabled": True}`, causing implicit EDIT for all org members — added to `conftest.py` and `test_permissions.py`. All 253 tests pass.

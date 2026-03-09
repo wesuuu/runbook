@@ -15,6 +15,7 @@
     import "@xyflow/svelte/dist/style.css";
 
     import { api } from "$lib/api";
+    import { toast } from "$lib/toast";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
     import { getCurrentOrg } from "$lib/auth.svelte";
     import UnitOpNode from "$lib/components/UnitOpNode.svelte";
@@ -41,7 +42,6 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
     let saving = $state(false);
-    let saveMessage = $state<string | null>(null);
 
     // Flow state
     let nodes = $state<Node[]>([]);
@@ -606,27 +606,23 @@
 
         // Block save while previewing old version
         if (previewingVersion !== null) {
-            saveMessage = "Exit version preview before saving";
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.warning("Exit version preview before saving");
             return;
         }
 
         // Block save if pending approval
         if (protocolStatus === "PENDING_APPROVAL") {
-            saveMessage = "Cannot save while pending approval";
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.warning("Cannot save while pending approval");
             return;
         }
 
         // Block save if archived
         if (protocolStatus === "ARCHIVED") {
-            saveMessage = "Cannot save an archived protocol";
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.warning("Cannot save an archived protocol");
             return;
         }
 
         saving = true;
-        saveMessage = null;
 
         try {
             const graphData = {
@@ -658,8 +654,7 @@
             });
             // Reload versions to show the new draft
             await loadVersions();
-            saveMessage = `Draft saved (v${versionNumber + 1})`;
-            setTimeout(() => (saveMessage = null), 2000);
+            toast.success(`Draft saved (v${versionNumber + 1})`);
             // Mark as saved
             lastSavedState = JSON.stringify({
                 nodes,
@@ -671,7 +666,7 @@
             });
             hasUnsavedChanges = false;
         } catch (e: unknown) {
-            saveMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
+            toast.error(e instanceof Error ? e.message : 'An error occurred');
         } finally {
             saving = false;
         }
@@ -682,20 +677,17 @@
 
         // Block save while previewing old version
         if (previewingVersion !== null) {
-            saveMessage = "Exit version preview before saving";
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.warning("Exit version preview before saving");
             return;
         }
 
         // Block if already approved, pending, or archived
         if (protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED") {
-            saveMessage = protocolStatus === "ARCHIVED" ? "Cannot save an archived protocol" : protocolStatus === "APPROVED" ? "Already published" : "Cannot save while pending approval";
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.warning(protocolStatus === "ARCHIVED" ? "Cannot save an archived protocol" : protocolStatus === "APPROVED" ? "Already published" : "Cannot save while pending approval");
             return;
         }
 
         saving = true;
-        saveMessage = null;
 
         try {
             const graphData = {
@@ -734,8 +726,7 @@
 
             protocolStatus = publishResponse.status || "APPROVED";
             versionNumber = publishResponse.version_number || draftVersionNumber;
-            saveMessage = "Published";
-            setTimeout(() => (saveMessage = null), 2000);
+            toast.success("Published");
 
             // Mark as saved
             lastSavedState = JSON.stringify({
@@ -748,7 +739,7 @@
             });
             hasUnsavedChanges = false;
         } catch (e: unknown) {
-            saveMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
+            toast.error(e instanceof Error ? e.message : 'An error occurred');
         } finally {
             saving = false;
         }
@@ -795,13 +786,12 @@
             });
             hasUnsavedChanges = false;
 
-            saveMessage = `Reverted to v${versionNum}`;
-            setTimeout(() => (saveMessage = null), 2000);
+            toast.success(`Reverted to v${versionNum}`);
 
             // Refresh version list
             await loadVersions();
         } catch (e: unknown) {
-            saveMessage = `Revert failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
+            toast.error(`Revert failed: ${e instanceof Error ? e.message : 'An error occurred'}`);
         }
     }
 
@@ -852,8 +842,7 @@
             if (timeEnabled) applyTimelineSizing();
             previewingVersion = targetVersion;
         } catch (e: unknown) {
-            saveMessage = `Failed to load v${targetVersion}: ${e instanceof Error ? e.message : 'An error occurred'}`;
-            setTimeout(() => (saveMessage = null), 2000);
+            toast.error(`Failed to load v${targetVersion}: ${e instanceof Error ? e.message : 'An error occurred'}`);
         } finally {
             previewLoading = false;
         }
@@ -895,10 +884,9 @@
                 `/science/protocols/${protocol.id}/submit-for-approval`,
             );
             protocolStatus = updated.status || "PENDING_APPROVAL";
-            saveMessage = "Submitted for approval";
-            setTimeout(() => (saveMessage = null), 2000);
+            toast.success("Submitted for approval");
         } catch (e: unknown) {
-            saveMessage = `Submit failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
+            toast.error(`Submit failed: ${e instanceof Error ? e.message : 'An error occurred'}`);
         }
     }
 
@@ -909,9 +897,7 @@
             await api.put(`/science/protocols/${protocol.id}/unarchive`, {});
             await loadData();
         } catch (e: any) {
-            console.error('Failed to unarchive:', e);
-            saveMessage = `Failed to unarchive: ${e instanceof Error ? e.message : 'An error occurred'}`;
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.error(e instanceof Error ? e.message : 'Failed to unarchive');
         }
     }
 
@@ -927,9 +913,7 @@
                 window.location.href = '/';
             }
         } catch (e: any) {
-            console.error('Failed to delete/archive protocol:', e);
-            saveMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.error(e instanceof Error ? e.message : 'Failed to delete/archive');
         }
     }
 
@@ -953,20 +937,17 @@
         if (!event.dataTransfer) return;
 
         if (previewingVersion !== null) {
-            saveMessage = "Exit version preview before editing";
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.warning("Exit version preview before editing");
             return;
         }
 
         if (protocolStatus === "PENDING_APPROVAL") {
-            saveMessage = "Cannot edit while pending approval";
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.warning("Cannot edit while pending approval");
             return;
         }
 
         if (protocolStatus === "ARCHIVED") {
-            saveMessage = "Cannot edit an archived protocol";
-            setTimeout(() => (saveMessage = null), 3000);
+            toast.warning("Cannot edit an archived protocol");
             return;
         }
 
@@ -1613,14 +1594,6 @@
 
         <!-- Save Button -->
         <div class="sidebar-footer">
-            {#if saveMessage}
-                <p
-                    class="save-msg"
-                    class:error={saveMessage.startsWith("Failed") || saveMessage.startsWith("Cannot")}
-                >
-                    {saveMessage}
-                </p>
-            {/if}
             {#if hasUnitOpNodes}
                 <button
                     class="preview-sop-btn"
@@ -2393,17 +2366,6 @@
         gap: 8px;
     }
 
-    .save-msg {
-        font-size: 11px;
-        text-align: center;
-        margin-bottom: 6px;
-        color: hsl(173, 58%, 39%);
-        font-weight: 500;
-    }
-
-    .save-msg.error {
-        color: hsl(0, 84.2%, 60.2%);
-    }
 
     .preview-sop-btn {
         width: 100%;

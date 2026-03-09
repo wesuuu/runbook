@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { api } from '$lib/api';
+    import { toast } from '$lib/toast';
     import { getUser, getCurrentOrg, getOrgs, refreshUser, getUserPreferences } from '$lib/auth.svelte';
     import { API_BASE } from '$lib/config';
     import { Button } from '$lib/components/ui/button';
@@ -255,7 +256,7 @@
             await api.uploadFile('/auth/me/avatar', file);
             await refreshUser();
         } catch (e: unknown) {
-            alert(e instanceof Error ? e.message : 'Failed to upload avatar.');
+            toast.error(e instanceof Error ? e.message : 'Failed to upload avatar.');
         } finally {
             avatarUploading = false;
             input.value = '';
@@ -268,7 +269,7 @@
             await api.delete('/auth/me/avatar');
             await refreshUser();
         } catch (e: unknown) {
-            alert(e instanceof Error ? e.message : 'Failed to remove avatar.');
+            toast.error(e instanceof Error ? e.message : 'Failed to remove avatar.');
         } finally {
             avatarUploading = false;
         }

@@ -79,6 +79,19 @@ async def _require_org_admin(
         raise HTTPException(403, "Organization admin access required")
 
 
+async def _require_org_member(
+    db: AsyncSession, user_id: UUID, org_id: UUID
+) -> None:
+    """Verify the user belongs to the org (any role). Raises 403 if not."""
+    stmt = select(OrganizationMember.id).where(
+        OrganizationMember.user_id == user_id,
+        OrganizationMember.organization_id == org_id,
+    )
+    result = await db.execute(stmt)
+    if not result.scalar_one_or_none():
+        raise HTTPException(403, "Organization membership required")
+
+
 async def _get_channel_or_404(
     db: AsyncSession, channel_id: UUID
 ) -> NotificationChannel:
@@ -348,8 +361,7 @@ async def list_subscriptions(
     channel = await _get_channel_or_404(db, channel_id)
 
     if channel.org_id:
-        # Org members can view
-        pass
+        await _require_org_member(db, current_user.id, channel.org_id)
     elif channel.user_id != current_user.id:
         raise HTTPException(403, "Not your channel")
 
