@@ -32,6 +32,7 @@ from app.models.science import Project, UnitOpDefinition
 
 # --- Fixed UUIDs for reproducibility ---
 ORG_ID = uuid.UUID("10000000-0000-0000-0000-000000000001")
+ORG_ID_2 = uuid.UUID("10000000-0000-0000-0000-000000000002")
 
 USER_ADMIN = uuid.UUID("20000000-0000-0000-0000-000000000001")
 USER_UPSTREAM_LEAD = uuid.UUID("20000000-0000-0000-0000-000000000002")
@@ -84,27 +85,30 @@ async def seed_users(db: AsyncSession):
 
 async def seed_org(db: AsyncSession):
     await _upsert(db, Organization, ORG_ID, name="BioProcess Inc")
+    await _upsert(db, Organization, ORG_ID_2, name="Acme Biologics")
 
-    # Org memberships
+    # Org memberships — primary org
     members = [
-        (USER_ADMIN, "ADMIN"),
-        (USER_UPSTREAM_LEAD, "MEMBER"),
-        (USER_DOWNSTREAM_LEAD, "MEMBER"),
-        (USER_SCIENTIST1, "MEMBER"),
-        (USER_SCIENTIST2, "MEMBER"),
-        (USER_VIEWER, "MEMBER"),
+        (ORG_ID, USER_ADMIN, "ADMIN"),
+        (ORG_ID, USER_UPSTREAM_LEAD, "MEMBER"),
+        (ORG_ID, USER_DOWNSTREAM_LEAD, "MEMBER"),
+        (ORG_ID, USER_SCIENTIST1, "MEMBER"),
+        (ORG_ID, USER_SCIENTIST2, "MEMBER"),
+        (ORG_ID, USER_VIEWER, "MEMBER"),
+        # Second org — admin is a member of both (for org-switching E2E tests)
+        (ORG_ID_2, USER_ADMIN, "ADMIN"),
     ]
-    for uid, role in members:
+    for org_id, uid, role in members:
         result = await db.execute(
             select(OrganizationMember).where(
                 OrganizationMember.user_id == uid,
-                OrganizationMember.organization_id == ORG_ID,
+                OrganizationMember.organization_id == org_id,
             )
         )
         if result.scalar_one_or_none() is None:
             db.add(OrganizationMember(
                 user_id=uid,
-                organization_id=ORG_ID,
+                organization_id=org_id,
                 role=role,
             ))
     await db.flush()

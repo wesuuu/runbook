@@ -81,6 +81,9 @@ class RunImage(Base, UUIDMixin, TimestampMixin):
     uploaded_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
+    parameter_tags: Mapped[Optional[List[str]]] = mapped_column(
+        JSONB, nullable=True, default=None
+    )
 
     # Relationships
     conversations: Mapped[List["ImageConversation"]] = relationship(

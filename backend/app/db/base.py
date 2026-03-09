@@ -17,3 +17,4 @@ from app.models.notifications import (
     NotificationChannel, NotificationSubscription,
     Notification, NotificationDelivery,
 )
+from app.models.offline import RevokedOfflineToken

@@ -70,10 +70,15 @@
     let fileInput: HTMLInputElement | undefined = $state();
     let uploading = $state(false);
     let showAnalysisDialog = $state(false);
+    let showTagSelector = $state(false);
     let activeImageId = $state('');
     let activeImagePath = $state('');
+    let selectedTags = $state<string[]>([]);
+    const selectedTagSet = $derived(new Set(selectedTags));
+    let savingTags = $state(false);
     let stepImages = $state<Record<string, any[]>>({});
     let confirmedImageIds = $state<Set<string>>(new Set());
+    let imageStatuses = $state<Record<string, string>>({});
     let aiFilledFields = $state<Set<string>>(new Set());
 
     $effect(() => {
@@ -271,21 +276,28 @@
             }
             stepImages = grouped;
 
-            // Fetch conversation status for each image to track confirmed ones
+            // Fetch conversation status for each image
             const confirmed = new Set<string>();
+            const statuses: Record<string, string> = {};
             for (const img of all) {
                 try {
                     const detail = await api.get<{ conversation?: { status: string } }>(
                         `/ai/runs/${runId}/images/${img.id}`
                     );
-                    if (detail.conversation?.status === 'confirmed') {
-                        confirmed.add(img.id);
+                    if (detail.conversation) {
+                        statuses[img.id] = detail.conversation.status;
+                        if (detail.conversation.status === 'confirmed') {
+                            confirmed.add(img.id);
+                        }
+                    } else {
+                        statuses[img.id] = 'captured';
                     }
                 } catch {
-                    // Skip — image detail not critical
+                    statuses[img.id] = 'captured';
                 }
             }
             confirmedImageIds = confirmed;
+            imageStatuses = statuses;
         } catch {
             // Non-critical — gallery just won't show
         }
@@ -318,7 +330,8 @@
 
             activeImageId = resp.id;
             activeImagePath = resp.file_path;
-            showAnalysisDialog = true;
+            selectedTags = [];
+            showTagSelector = true;
 
             // Refresh gallery
             await loadStepImages(currentStep.id);
@@ -330,6 +343,30 @@
             input.value = '';
         }
     }
+
+    function toggleTag(key: string) {
+        if (selectedTags.includes(key)) {
+            selectedTags = selectedTags.filter(t => t !== key);
+        } else {
+            selectedTags = [...selectedTags, key];
+        }
+    }
+
+    async function saveTagsAndClose() {
+        if (!activeImageId) return;
+        savingTags = true;
+        try {
+            await api.put(`/ai/runs/${runId}/images/${activeImageId}/tag`, {
+                parameter_tags: selectedTags,
+            });
+        } catch {
+            // Non-critical — tags are optional
+        } finally {
+            savingTags = false;
+            showTagSelector = false;
+        }
+    }
+
 
     function handleConfirmValues(values: Record<string, any>) {
         if (!currentStep) return;
@@ -649,7 +686,9 @@
                         <ImageGallery
                             images={stepImages[currentStep.id]}
                             {confirmedImageIds}
+                            {imageStatuses}
                             onImageClick={handleGalleryImageClick}
+                            onAnalyzeClick={handleGalleryImageClick}
                         />
                     {/if}
                 {/if}
@@ -726,6 +765,62 @@
                     Finalize Run
                 </button>
             {/if}
+        </div>
+    {/if}
+
+    <!-- Parameter Tag Selector (shown after image capture) -->
+    {#if showTagSelector && currentStep}
+        <div class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div class="bg-white rounded-xl shadow-2xl w-[95%] max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+                <!-- Header -->
+                <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+                    <div>
+                        <h3 class="text-lg font-semibold text-slate-900">Tag Image Parameters</h3>
+                        <p class="text-sm text-slate-500">Select which parameters this image captures</p>
+                    </div>
+                </div>
+                <!-- Body -->
+                <div class="px-6 py-4 overflow-y-auto">
+                    {#if editableFields.length > 0}
+                        <div class="space-y-2">
+                            {#each editableFields as [key, prop] (key)}
+                                {@const isSelected = selectedTagSet.has(key)}
+                                <button
+                                    onclick={() => toggleTag(key)}
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all text-left {isSelected ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200 text-emerald-900' : 'border-slate-200 hover:border-slate-300 text-slate-700'}"
+                                >
+                                    <span class="flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors {isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 bg-white'}">
+                                        {#if isSelected}
+                                            <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        {/if}
+                                    </span>
+                                    <span class="font-medium">{prop.title || key}</span>
+                                    {#if prop.unit}
+                                        <span class="text-slate-400 text-sm">({prop.unit})</span>
+                                    {/if}
+                                </button>
+                            {/each}
+                        </div>
+                        {#if selectedTagSet.size === 0}
+                            <p class="mt-3 text-sm text-amber-600">Select at least one parameter to continue.</p>
+                        {/if}
+                    {:else}
+                        <p class="text-sm text-slate-400">No parameters defined for this step.</p>
+                    {/if}
+                </div>
+                <!-- Footer -->
+                <div class="px-6 py-4 border-t border-slate-200">
+                    <button
+                        onclick={saveTagsAndClose}
+                        disabled={savingTags || (editableFields.length > 0 && selectedTagSet.size === 0)}
+                        class="w-full py-3 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        {savingTags ? 'Saving...' : `Tag ${selectedTagSet.size > 0 ? `(${selectedTagSet.size})` : ''}`}
+                    </button>
+                </div>
+            </div>
         </div>
     {/if}
 

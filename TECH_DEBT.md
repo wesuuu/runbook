@@ -12,14 +12,14 @@
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| Code Smells | 4 | 6 | 7 | 3 | 20 |
+| Code Smells | 2 (+2 resolved) | 6 | 7 | 3 | 20 |
 | Missing Implementation | 0 | 1 | 4 | 0 | 5 |
 | Type Safety | 2 | 5 | 3 | 0 | 10 |
-| Testing Gaps | 3 | 2 | 0 | 0 | 5 |
-| Security | 4 | 1 | 2 | 0 | 7 |
-| Architecture | 2 | 5 | 7 | 1 | 15 |
+| Testing Gaps | 2 | 5 (+1 resolved) | 0 | 0 | 8 |
+| Security | 0 | 1 | 2 | 0 | 3 |
+| Architecture | 2 | 5 | 8 | 1 | 16 |
 | Dependencies & Tooling | 0 | 0 | 1 | 0 | 1 |
-| **Total** | **15** | **20** | **24** | **4** | **63** |
+| **Total** | **10** | **24** | **25** | **4** | **63** |
 
 *Last updated: 2026-03-08*
 
@@ -31,19 +31,21 @@
 
 ### [TD-0001] Backend science.py is a 2300+ line monolith
 - **Category**: Code Smells
-- **Severity**: Critical
+- **Severity**: ~~Critical~~ **RESOLVED**
 - **Location**: `backend/app/api/endpoints/science.py`
 - **Description**: Single endpoint file contains 100+ endpoint functions plus large helper functions like `_parse_graph_roles_and_steps` (~135 lines), `_topo_sort_nodes`, and `_find_connected_components`. File is 4.6x over the 500-line recommendation.
 - **Suggested Fix**: Split into separate routers: `protocols.py`, `runs.py`, `unitops.py`. Move helper functions to a service layer (`services/graph_processing.py`).
 - **Effort**: XL
+- **Resolution**: Split 2640-line monolith into 7 focused endpoint modules (`unit_ops.py`, `protocols.py`, `protocol_versions.py`, `protocol_pdfs.py`, `runs.py`, `export_data.py`, `project_members.py`) and extracted graph helpers to `services/graph_processing.py`. All 271 tests pass. Updated `main.py` router mounts and test imports.
 
 ### [TD-0002] Backend pdf.py is 1200+ lines with no tests
 - **Category**: Code Smells
-- **Severity**: Critical
+- **Severity**: ~~Critical~~ **RESOLVED**
 - **Location**: `backend/app/services/pdf.py`
 - **Description**: Monolithic PDF generation module with `generate_batch_record_pdf` (473 lines), `generate_sop_pdf` (210 lines), and `_draw_multi_param_row` (172 lines). Zero unit test coverage.
 - **Suggested Fix**: Split into `sop_generator.py`, `batch_record_generator.py`, `pdf_base.py`. Add comprehensive unit tests.
 - **Effort**: XL
+- **Resolution**: Split 1204-line monolith into `pdf_base.py` (shared helpers/constants, ~260 lines), `sop_generator.py` (~220 lines), and `batch_record_generator.py` (~500 lines). Original `pdf.py` is now a thin re-export wrapper. Added `test_pdf_helpers.py` (30 tests for pure helper functions) and `test_sop_pdf.py` (14 tests for SOP PDF generation). All 321 tests pass.
 
 ### [TD-0003] Frontend protocol editor is 2700+ lines
 - **Category**: Code Smells
@@ -285,33 +287,6 @@
 - **Suggested Fix**: Create integration tests hitting the PDF preview and export endpoints with sample protocol data.
 - **Effort**: M
 
-### [TD-0033] Hardcoded default secret key in config
-- **Category**: Security
-- **Severity**: ~~Critical~~ **RESOLVED**
-- **Location**: `backend/app/core/config.py:8`
-- **Description**: `secret_key: str = "dev-secret-key-change-in-production"` — hardcoded default JWT secret. If env var is not set in production, the app runs with a known secret.
-- **Suggested Fix**: Fail loudly if default is used outside development. Add validation: error if `secret_key` starts with `"dev-"` and environment is production.
-- **Effort**: S
-- **Resolution**: Added `@model_validator` to `Settings` that emits a warning when `secret_key` starts with `"dev-"` and `debug` is `False`. All 253 tests pass.
-
-### [TD-0034] Hardcoded database credentials in config
-- **Category**: Security
-- **Severity**: ~~Critical~~ **RESOLVED**
-- **Location**: `backend/app/core/config.py:5-7`
-- **Description**: Default PostgreSQL URL with `postgres:postgres` credentials. Will silently connect to local DB if env var is not set.
-- **Suggested Fix**: Require explicit `RUNBOOK_DATABASE_URL` env var in production. No default for production environments.
-- **Effort**: S
-- **Resolution**: Added `@model_validator` to `Settings` that emits a warning when `database_url` contains `postgres:postgres@localhost` and `debug` is `False`. All 253 tests pass.
-
-### [TD-0035] SQL echo=True logs all queries including sensitive data
-- **Category**: Security
-- **Severity**: ~~Critical~~ **WONTFIX**
-- **Location**: `backend/app/db/session.py:11`
-- **Description**: `echo=True` on the SQLAlchemy engine logs all SQL to stdout, including queries that may contain API keys, user data, or other sensitive information.
-- **Suggested Fix**: Gate behind environment variable: `echo=settings.debug_sql` defaulting to `False`.
-- **Effort**: S
-- **Reason**: Already gated behind `settings.debug` (defaults to `False`). SQL echo is off in production. Users can check PostgreSQL audit logs for query tracing instead.
-
 ### [TD-0036] Untyped dict endpoint parameters bypass validation
 - **Category**: Security
 - **Severity**: Medium
@@ -413,15 +388,6 @@
 - **Description**: `changes: Dict[str, Any] = {}` uses a mutable default argument. If any caller accidentally mutates the dict in-place before passing it, the default object is shared across all calls, leading to data leaking between audit entries. Classic Python gotcha.
 - **Suggested Fix**: Change to `changes: Dict[str, Any] | None = None` and initialize inside the function: `changes = changes or {}`.
 - **Effort**: S
-
-### [TD-0048] Incomplete permission check on notification channel subscription list
-- **Category**: Security
-- **Severity**: ~~Critical~~ **RESOLVED**
-- **Location**: `backend/app/api/endpoints/notifications.py:350-352`
-- **Description**: When listing subscriptions for an org-level channel, the ownership check has a `pass` statement: `if channel.org_id: pass`. This means **any authenticated user** can list subscriptions for any org channel — no org membership verification is performed. Other endpoints in the same file (lines 310-311, 377-378) correctly call `_require_org_admin()`.
-- **Suggested Fix**: Replace the `pass` with an org membership check. At minimum verify the user belongs to the org: `await _require_org_member(db, current_user.id, channel.org_id)`. Or use `_require_org_admin` if only admins should see subscriptions.
-- **Effort**: S
-- **Resolution**: Added `_require_org_member` helper that verifies org membership (any role). Replaced `pass` with `await _require_org_member(db, current_user.id, channel.org_id)`. All 35 notification tests pass.
 
 ### [TD-0049] AI settings endpoint has no authentication
 - **Category**: Security
@@ -527,11 +493,92 @@
 - **Suggested Fix**: Add server-side pagination (limit/offset) to the member and subscription list endpoints. Add pagination controls to the settings UI.
 - **Effort**: M
 
-### [TD-0062] 21 failing tests — auth/permission checks return 200 instead of 401/403
+### [TD-0062] Playwright E2E: Login & Authentication Workflow
 - **Category**: Testing Gaps
-- **Severity**: ~~Critical~~ **RESOLVED**
-- **Location**: `backend/tests/integration/test_auth_api.py`, `test_projects_api.py`, `test_science_api.py`, `backend/tests/unit/test_permissions.py`
-- **Description**: 21 tests fail because permission and authentication checks are not rejecting unauthorized requests. `test_login_wrong_password` gets 200 instead of 401; project/protocol/run permission tests get 200 instead of 403; unit permission tests assert `True` where `False` is expected. This indicates the auth/permission middleware or dependency is broken or bypassed — wrong passwords are accepted and permission checks pass for users without access.
-- **Suggested Fix**: Investigate the `get_current_user` dependency and `require_permission()` factory in `backend/app/core/deps.py`. Check if password hashing/verification in the login endpoint is broken. Fix the root cause so all 21 tests pass.
+- **Severity**: ~~High~~ **RESOLVED**
+- **Location**: `frontend/e2e/auth.spec.ts`
+- **Description**: No E2E tests exist for the authentication flow. This is the entry point for every user session and a regression here blocks the entire app.
+- **Test Cases**:
+  - [x] Successful login with valid credentials → redirects to dashboard, user menu shows name/email
+  - [x] Failed login with wrong password → shows error, stays on login page (skips when auth_enabled=false)
+  - [x] Failed login with non-existent email → shows error (skips when auth_enabled=false)
+  - [x] Route protection: unauthenticated user visiting `/projects` redirects to `/login`
+  - [x] Session persistence: refresh page after login → stays authenticated (token in localStorage)
+  - [x] Logout: click sign out → clears token, redirects to `/login`, protected routes no longer accessible
+  - [x] Token expiry: expired JWT → auto-logout on next API call, redirect to `/login`
+  - [x] Organization switching: select different org in user menu → context updates, data reloads for new org
+- **Effort**: L
+- **Resolution**: Set up Playwright E2E infrastructure (`playwright.config.ts`, `e2e/helpers/auth.ts`) with 8 auth tests in `e2e/auth.spec.ts`. Frontend dev server auto-starts on port 5176 to avoid conflicts. Tests 2-3 auto-skip when backend has `auth_enabled=false`. Added second org ("Acme Biologics") to seed data for org-switching test. Added CORS origin for `:5176`. All 6 active tests pass (2 correctly skipped in dev mode).
+
+### [TD-0063] Playwright E2E: Organization Roles & Permissions Workflow
+- **Category**: Testing Gaps
+- **Severity**: High
+- **Location**: `frontend/e2e/` (to be created)
+- **Description**: No E2E tests verify that role-based access control works end-to-end. Permission bugs can silently grant unauthorized access or block legitimate users.
+- **Test Cases**:
+  - [ ] **Org admin capabilities**: Admin can add a new member to the org via settings page
+  - [ ] **Org admin capabilities**: Admin can change a member's role (MEMBER → ADMIN, ADMIN → MEMBER)
+  - [ ] **Org admin capabilities**: Admin can create and delete teams
+  - [ ] **Org admin capabilities**: Admin can create projects
+  - [ ] **Org member restrictions**: Non-admin member cannot see "Add Member" controls on settings page
+  - [ ] **Org member restrictions**: Non-admin cannot change other members' roles
+  - [ ] **Project permissions (strict mode)**: User with VIEW permission can see project but cannot create protocols or runs
+  - [ ] **Project permissions (strict mode)**: User with EDIT permission can create protocols and runs
+  - [ ] **Project permissions (strict mode)**: User with APPROVE permission can approve/reject protocols
+  - [ ] **Project permissions (open mode)**: When `permissions_enabled=false`, all org members get implicit EDIT access
+  - [ ] **Permission denied UX**: Attempting a forbidden action shows a clear error, doesn't silently fail or crash
+- **Suggested Fix**: Create `frontend/e2e/permissions.spec.ts`. Seed multiple test users with different roles (org admin, org member, project viewer, project editor, project approver) in `globalSetup`. Use Playwright's `browser.newContext()` to run parallel sessions as different users.
+- **Effort**: XL
+
+### [TD-0064] Playwright E2E: Protocol Creation & Update Workflow
+- **Category**: Testing Gaps
+- **Severity**: High
+- **Location**: `frontend/e2e/` (to be created)
+- **Description**: No E2E tests cover the protocol lifecycle. The protocol editor is the most complex page in the app (2700+ lines) with graph editing, versioning, and an approval flow — all untested in a real browser.
+- **Test Cases**:
+  - [ ] **Create**: Create new protocol from project page → opens editor with empty canvas
+  - [ ] **Edit graph**: Drag a unit op from sidebar onto canvas → node appears at drop position
+  - [ ] **Connect nodes**: Drag edge from one node's handle to another → edge created
+  - [ ] **Edit node params**: Click node → inspector opens → change parameters → apply → node data updates
+  - [ ] **Save (publish)**: Click save → version number increments, graph persists across page reload
+  - [ ] **Save as draft**: Save as draft → main protocol graph unchanged, draft version visible in version history
+  - [ ] **Publish draft**: Open version history → publish a draft version → becomes the current version
+  - [ ] **Revert version**: Open version history → revert to earlier version → new version created with old graph
+  - [ ] **Add roles/swimlanes**: Create protocol roles → swimlane nodes appear in graph
+  - [ ] **Submit for approval**: Click submit → status changes to PENDING_APPROVAL, edit controls disabled
+  - [ ] **Approve** (as approver): Log in as user with APPROVE permission → approve protocol → status becomes APPROVED, author receives notification
+  - [ ] **Reject** (as approver): Reject protocol with comment → status reverts to DRAFT, author can edit again
+  - [ ] **Edit approved protocol**: Edit an APPROVED protocol → reverts to DRAFT with warning, org admins notified
+  - [ ] **Delete empty draft**: Delete a DRAFT protocol with no graph → hard deleted, removed from project list
+  - [ ] **Archive non-empty**: Delete a protocol with runs → archived instead, can be unarchived by admin
+- **Suggested Fix**: Create `frontend/e2e/protocols.spec.ts`. Seed a project with unit op definitions. For approval tests, use two browser contexts (author + approver). Graph interaction tests will need precise coordinate-based clicks for the XYFlow canvas.
+- **Effort**: XL
+
+### [TD-0065] Playwright E2E: Run Creation & Execution Workflow
+- **Category**: Testing Gaps
+- **Severity**: High
+- **Location**: `frontend/e2e/` (to be created)
+- **Description**: No E2E tests cover run execution, which is the core user-facing workflow (scientists recording lab results). Includes role assignments, multi-user execution, step completion, and GMP edit mode — all untested.
+- **Test Cases**:
+  - [ ] **Create run from protocol**: Create run from an existing protocol → run page shows protocol graph with execution controls
+  - [ ] **Role assignment**: Assign users to swimlane roles in the run setup phase
+  - [ ] **Start validation — missing assignments**: Try to start run with unassigned swimlanes → blocked with validation error
+  - [ ] **Start run**: Assign all roles → start run → status transitions to ACTIVE, assigned users receive RUN_STARTED notification
+  - [ ] **Record step data**: As assigned user, fill in step parameters and mark step as completed
+  - [ ] **Role-locked execution**: User can only complete steps in their assigned swimlane (not others')
+  - [ ] **Complete run**: Complete all steps → mark run as COMPLETED, assigned users receive RUN_COMPLETED notification
+  - [ ] **GMP edit mode**: After completion, transition to EDITED status → modify a recorded value → original value preserved in audit trail
+  - [ ] **Reassign role mid-run**: Change a role assignment on an active run → old user notified of removal, new user notified of assignment
+  - [ ] **Multi-user execution**: Two browser contexts logged in as different assigned users → each can only act on their own lanes
+  - [ ] **Run from ad-hoc (no protocol)**: Create a run without a protocol → empty graph, manual step creation
+- **Suggested Fix**: Create `frontend/e2e/runs.spec.ts`. Seed a project with an approved protocol containing multiple swimlanes and unit ops. Use multiple browser contexts for multi-user scenarios. For notification checks, verify toast/notification UI elements appear rather than checking the database directly.
+- **Effort**: XL
+
+### [TD-0066] Stale ROLE_ASSIGNED notifications persist after role reassignment
+- **Category**: Architecture
+- **Severity**: Medium
+- **Location**: `backend/app/api/endpoints/runs.py:720-800`
+- **Description**: When a user is initially assigned to a run role via `ROLE_ASSIGNED` notification and then the role is reassigned to a different user, the original user's `ROLE_ASSIGNED` notification remains in their notification list. The reassignment creates a new `ROLE_REASSIGNED` notification for both users, but the old `ROLE_ASSIGNED` notification is never removed or invalidated. This means the original user sees both "You were assigned to role X" and "Role X was reassigned" — the first message is misleading since they are no longer assigned.
+- **Suggested Fix**: When a role reassignment occurs in `create_run_role_assignment`, delete or mark as read/dismissed any existing `ROLE_ASSIGNED` notifications for the old user on that run+role. This requires either: (a) querying and deleting matching notifications by `entity_id` + `event_type` + `recipient`, or (b) adding a `dismiss_notifications` helper to the notifications service that invalidates stale assignment notifications when the assignment changes.
 - **Effort**: M
-- **Resolution**: Three root causes fixed: (1) `.env` had `RUNBOOK_AUTH_ENABLED=false` leaking into tests — added `os.environ["RUNBOOK_AUTH_ENABLED"] = "true"` at top of `conftest.py`. (2) Four unauthenticated tests expected 403 but `HTTPBearer(auto_error=False)` yields 401 — corrected assertions. (3) Test project fixtures lacked `settings={"permissions_enabled": True}`, causing implicit EDIT for all org members — added to `conftest.py` and `test_permissions.py`. All 253 tests pass.
+

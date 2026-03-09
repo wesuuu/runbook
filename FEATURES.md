@@ -4,60 +4,60 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
 
 ---
 
-### [F-0001] Protocol Delete & Archive with Admin Unarchive
+### [F-0002] Offline Mode & Async Image Analysis
 - **Status**: Done
-- **Priority**: P2 (Medium)
-- **Scope**: Full Stack
-- **Description**: Allow users to delete protocols that are still in DRAFT status (no runs, no approvals — essentially unspecified). Protocols that have been specified (APPROVED status, or have associated runs/versions) should be archived instead of deleted. Archived protocols are hidden from default views but retained in the database. Team admins (`Role.OWNER` on team) or organization admins (`OrganizationMember.is_admin`) can unarchive protocols. All delete, archive, and unarchive operations must be recorded in the audit log.
-- **Acceptance Criteria**:
-  - [x] DRAFT protocols with no runs can be hard-deleted via `DELETE /science/protocols/{id}`
-  - [x] Attempting to delete a protocol that has runs or is APPROVED/PENDING_APPROVAL archives it instead (sets `status = "ARCHIVED"`)
-  - [x] Archived protocols are excluded from `GET /science/projects/{project_id}/protocols` by default (add `?include_archived=true` query param to include them)
-  - [x] `PUT /science/protocols/{id}/unarchive` endpoint restores an archived protocol to DRAFT status; requires ADMIN permission or org admin role
-  - [x] DELETE action is logged to `audit_logs` with `entity_type=Protocol`, `action=DELETE`, and `changes` containing the deleted protocol data
-  - [x] ARCHIVE action is logged with `action=ARCHIVE` and `changes` containing `{"old_status": "...", "new_status": "ARCHIVED"}`
-  - [x] UNARCHIVE action is logged with `action=UNARCHIVE` and `changes` containing `{"old_status": "ARCHIVED", "new_status": "DRAFT"}`
-  - [x] Frontend protocol table shows a context menu or action button per row with "Delete" (for drafts) or "Archive" (for specified protocols)
-  - [x] Frontend protocol table hides archived protocols by default; a toggle/filter allows showing them
-  - [x] Archived protocols display an "ARCHIVED" status badge (distinct styling) in the table
-  - [x] Admin users see an "Unarchive" action on archived protocol rows
-  - [x] Confirmation dialog shown before delete or archive actions
-- **Resolution**: All 12 acceptance criteria verified implemented. Backend: `DELETE /protocols/{id}` with smart delete-vs-archive logic, `PUT /protocols/{id}/unarchive` with ADMIN permission check, `include_archived` query param on list endpoint, audit logging for all three actions. Frontend: action buttons per row (Delete/Archive/Unarchive), "Show archived" toggle, ARCHIVED status badge with distinct styling, confirmation dialogs. All backend tests pass (47/48 — 1 pre-existing auth test failure unrelated to this feature).
-- **Implementation Notes**:
-  - **Backend model** (`backend/app/models/science.py`): Add `"ARCHIVED"` as a valid protocol status value. No new column needed — reuse existing `status` field.
-  - **Backend endpoints** (`backend/app/api/endpoints/science.py`): Add `DELETE /protocols/{id}` (checks for runs/status to decide delete vs archive), add `PUT /protocols/{id}/unarchive`. Use `require_permission(..., PermissionLevel.EDIT)` for delete/archive and `PermissionLevel.ADMIN` for unarchive.
-  - **Backend schemas** (`backend/app/schemas/science.py`): No schema changes needed; `ProtocolResponse.status` already returns the status string.
-  - **List endpoint** (`GET /projects/{project_id}/protocols`): Add `include_archived: bool = False` query param; filter `Protocol.status != "ARCHIVED"` by default.
-  - **Audit logging** (`backend/app/services/audit.py`): Use existing `log_audit()` — actions: `DELETE`, `ARCHIVE`, `UNARCHIVE`.
-  - **Frontend list** (`frontend/src/routes/projects/[id]/+page.svelte`): Add action column to protocol table with dropdown menu (Delete/Archive). Add "Show archived" toggle that passes `?include_archived=true`. Add `ARCHIVED` case to `protocolStatusClasses()`.
-  - **Frontend editor** (`frontend/src/routes/protocols/[id]/+page.svelte`): Add delete/archive button to editor toolbar. Redirect to project page after delete.
-  - **Alembic migration**: Not needed if reusing the `status` string field for `ARCHIVED` value.
-- **Dependencies**: None
-
-### [F-0002] Offline/PWA with Image Capture Queue
-- **Status**: Proposed
 - **Priority**: P1 (High)
-- **Scope**: Frontend
-- **Description**: Make the app installable as a PWA with offline support. When disconnected, users can still capture images during experiment runs. Images and pending API calls are queued in IndexedDB and batch-synced when connectivity is restored. Critical for lab environments with spotty Wi-Fi.
+- **Scope**: Full Stack
+- **Description**: A four-phase feature that (1) decouples image capture from AI analysis so scientists aren't blocked during runs, (2) makes the app an installable PWA with offline detection, (3) adds an encrypted "Field Mode" for offline run execution with scoped auth tokens, and (4) builds the full offline capture, sync, and recovery UI. Phase 1 (Async Image Analysis) is a prerequisite that delivers value on its own — faster run execution even while online.
 - **Acceptance Criteria**:
-  - [ ] `manifest.json` configured with app name, icons, theme color, and `display: standalone`
-  - [ ] Service worker registered in `+layout.svelte` with cache-first strategy for static assets and network-first for API calls
-  - [ ] App is installable (Add to Home Screen) on tablets and mobile devices
-  - [ ] Offline fallback page shown when navigating to uncached routes while disconnected
-  - [ ] Image captures via camera input in `RoleWizard.svelte` are stored in IndexedDB when offline (file blob + metadata: run_id, step_id, timestamp)
-  - [ ] Visual indicator in the UI showing offline status and number of queued items
-  - [ ] On reconnect, queued images are batch-uploaded to `POST /ai/runs/{run_id}/steps/{step_id}/images` sequentially
-  - [ ] Upload progress shown during sync (X of Y uploaded)
-  - [ ] Failed uploads are retried up to 3 times before flagging for manual retry
-  - [ ] Queued items persist across app restarts (IndexedDB durability)
+  - **Phase 1 — Async Image Analysis (online, no PWA)**
+    - [x] After image capture in RoleWizard, user is shown a parameter tag selector (derived from step's `param_schema`) instead of the blocking AI analysis dialog
+    - [x] `parameter_tags` JSONB field added to `RunImage` model storing which param keys the image relates to (e.g., `["pH", "temperature"]`)
+    - [x] `PUT /ai/runs/{id}/images/{id}/tag` endpoint to set parameter tags on an image
+    - [x] Image gallery in RoleWizard shows status badges per image: `Captured` (no conversation), `Analyzed` (conversation exists, not confirmed), `Confirmed` (conversation confirmed)
+    - [x] Each image in the gallery has an "Analyze" button that opens the existing `ImageAnalysisDialog` for on-demand analysis
+    - [x] `POST /ai/runs/{id}/analyze-pending` batch endpoint triggers sequential analysis on all unanalyzed images in a run
+    - [x] "Analyze All" button on the run detail page triggers batch analysis with progress feedback
+    - [x] Run completion allows unanalyzed images — shows warning "You have N unanalyzed images. Complete anyway?" and creates a notification on confirm
+    - [x] `PENDING_IMAGE_ANALYSIS` notification type created when a run is completed with unanalyzed images; links to the run's image review
+    - [x] Dashboard card shown when the user has runs with pending image analyses: "N images pending analysis across M runs"
+    - [x] `GET /ai/runs/{id}/images` supports `?analyzed=false` filter to list unanalyzed images
+  - **Phase 2 — PWA Shell**
+    - [x] `manifest.webmanifest` configured with app name ("Trellis Runbook"), icons, theme color (`hsl(220 60% 28%)`), background color (`hsl(40 25% 97%)`), and `display: standalone`
+    - [x] Service worker registered via `@vite-pwa/sveltekit` with cache-first for static assets, network-first (3s timeout) for API calls, network-only for `/auth/*`, stale-while-revalidate for Google Fonts
+    - [x] App is installable (Add to Home Screen) on tablets and mobile devices
+    - [x] Offline fallback page (`offline.html`) shown when navigating to uncached routes while disconnected
+    - [x] Visual connectivity indicator in the app shell — amber banner below nav when offline
+    - [x] `auth.svelte.ts` caches user profile and org data in localStorage; `initialize()` distinguishes network failure from 401 and loads cached data when offline instead of logging out
+  - **Phase 3 — Field Mode Backend**
+    - [x] `POST /auth/offline-session` endpoint: validates user password, verifies active role assignment on the run, issues a 7-day scoped JWT (`{ sub, run_id, scope: "offline" }`), logs to audit
+    - [x] Run data prefetch endpoint returns everything needed for offline execution: run, protocol graph, role assignments, param schemas, equipment
+    - [x] `POST /sync/offline-queue` batch endpoint accepts queued actions (image uploads + parameter tags + optional manual values) authenticated with offline token OR normal token
+    - [x] AI-vs-manual value comparison on sync: auto-confirm if within configurable tolerance, flag `OFFLINE_VALUE_DISCREPANCY` notification if mismatch
+    - [x] `OFFLINE_SYNC_PENDING` notification type scheduled as push reminder for active field sessions
+    - [x] Server can revoke/blacklist offline tokens for admin override
+  - **Phase 4 — Field Mode Frontend**
+    - [x] "Go Offline" button on active runs → password confirmation → Web Crypto AES-256-GCM encryption of session (PBKDF2 key derivation, 100k iterations) → prefetch and encrypt run data in IndexedDB
+    - [x] Offline login screen: stripped-down UI showing run name, email (pre-filled), password field, session expiry countdown
+    - [x] Field mode UI: locked to single run execution, minimal nav header, persistent queue counter
+    - [x] Image capture writes to IndexedDB `action-queue` store (unencrypted blob + metadata); parameter tagging uses same Phase 1 UI
+    - [x] Optional manual value entry for step parameters (fields from param_schema) — AI verifies on sync
+    - [x] Inactivity auto-lock after 1 hour: wipes derived key from memory, shows lock screen, queue and encrypted session persist
+    - [x] Explicit "End Field Mode" action: syncs if online, wipes session and queue, requires password confirmation
+    - [x] Sync manager: drains queue on reconnect, Background Sync API registration for Android/Chrome, `visibilitychange` + `online` fallback for Safari/iPad
+    - [x] Expiry warnings at 48h, 24h, 6h, 1h remaining — escalating from amber banner to red to full-screen modal at 1h
+    - [x] Action queue persists independently of session expiry — orphaned queue items recoverable on next normal login
+    - [x] Dashboard card for pending uploads: "N items from [run name] captured [date range] haven't been uploaded" with Sync Now button
+    - [x] Push notification reminders for iPad/Safari where Background Sync is unavailable
+    - [x] "End Field Mode" with unsynced items while offline shows: "N unsynced items. Connect to internet first." with option to stay or lose data
+- **Resolution**: Implemented all 4 phases across backend and frontend. Phase 1: async image analysis with parameter tagging and batch processing. Phase 2: PWA shell with service worker, offline fallback, and connectivity detection. Phase 3: offline auth tokens, prefetch endpoint, sync batch processor, AI-vs-manual comparison, token revocation. Phase 4: Web Crypto encrypted IndexedDB sessions, field mode UI with lock screen/expiry warnings, sync manager with Background Sync + fallback, orphan recovery dashboard card. 354 backend tests passing, no new frontend type errors.
 - **Implementation Notes**:
-  - **Service worker**: Create `frontend/static/sw.js` or use Workbox via `vite-plugin-pwa`. Register in `frontend/src/routes/+layout.svelte`.
-  - **Manifest**: Create `frontend/static/manifest.json`, link in `frontend/src/app.html`.
-  - **IndexedDB queue**: Create `frontend/src/lib/offlineQueue.ts` — store pending uploads as `{id, runId, stepId, blob, mimeType, timestamp, status}`. Use `idb` npm package for cleaner IndexedDB API.
-  - **Sync manager**: Create `frontend/src/lib/syncManager.ts` — listens for `online` event, drains queue by calling existing `api.ts` upload functions.
-  - **Camera capture** (`frontend/src/lib/components/RoleWizard.svelte`): Modify upload handler to check `navigator.onLine`; if offline, write to IndexedDB instead of calling API.
-  - **Connectivity indicator**: Add to app shell in `+layout.svelte` — small banner or icon using `navigator.onLine` + `online`/`offline` events.
-- **Dependencies**: None
+  - **Phase 1 backend**: Add `parameter_tags` JSONB column to `run_images` (migration). New endpoints in `ai.py`: `PUT /images/{id}/tag`, `POST /runs/{id}/analyze-pending`. Add filtering to `GET /runs/{id}/images`. New notification type in notifications service.
+  - **Phase 1 frontend**: Modify `RoleWizard.svelte` — after upload, show tag selector instead of opening `ImageAnalysisDialog`. Add status badges to `ImageGallery.svelte`. Add "Analyze" per-image button and "Analyze All" on run detail. Dashboard pending analysis card. Run completion warning for unanalyzed images.
+  - **Phase 2**: Install `@vite-pwa/sveltekit`. Configure in `vite.config.ts`. Create `public/offline.html`. Modify `auth.svelte.ts` for offline-safe initialization. Add connectivity banner to `+layout.svelte`.
+  - **Phase 3**: New `POST /auth/offline-session` endpoint with scoped JWT. `POST /sync/offline-queue` batch processor. Tolerance-based AI-vs-manual comparison. Push notification scheduling.
+  - **Phase 4**: Web Crypto API (PBKDF2 + AES-GCM) for session encryption. IndexedDB stores: `field-sessions` (encrypted) and `action-queue` (unencrypted, persists beyond session). Sync manager with Background Sync registration. Inactivity detection via interaction tracking + `setInterval`. Orphaned queue recovery on normal login.
+- **Dependencies**: None (Phase 1 delivers standalone value; each subsequent phase builds on the previous)
 
 ### [F-0003] Batch Image Processing
 - **Status**: Proposed
@@ -203,57 +203,3 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
   - **Touch targets**: Audit all `<Button size="icon">` and small clickables; add `min-h-11 min-w-11` on mobile breakpoints.
 - **Dependencies**: None
 
-### [F-0009] Global Toast Notification System
-- **Status**: Done
-- **Priority**: P1 (High)
-- **Scope**: Frontend
-- **Description**: Implement a unified toast notification system to replace the scattered, inconsistent feedback mechanisms currently used across the app. Today, user feedback is delivered via inline save messages in the protocol editor sidebar, `window.alert()` in settings, inline error divs on login/register, and silent `console.log` calls elsewhere. A global toast system provides consistent, non-blocking, auto-dismissing notifications for success, error, warning, and info events across all pages.
-- **Acceptance Criteria**:
-  - [x] Toast container component renders in the app shell (`+layout.svelte`) so toasts appear on every page
-  - [x] Toast store/module (`lib/toast.ts`) exposes `toast.success(msg)`, `toast.error(msg)`, `toast.warning(msg)`, `toast.info(msg)` functions callable from any component or module
-  - [x] Toasts auto-dismiss after a configurable duration (default: 4s for success/info, 6s for error/warning)
-  - [x] Toasts can be manually dismissed by clicking an X button or swiping (touch-friendly for tablet use)
-  - [x] Multiple toasts stack vertically without overlapping (max 5 visible, oldest dismissed first)
-  - [x] Each toast variant (success, error, warning, info) has distinct styling (color, icon) consistent with the app's design system
-  - [x] Toasts appear in a fixed position (bottom-right on desktop, bottom-center on mobile/tablet)
-  - [x] Protocol editor save messages replaced with `toast.success("Draft saved (vX)")` / `toast.error("Failed: ...")`
-  - [x] Settings page `window.alert()` calls replaced with `toast.error()`
-  - [x] API error handler in `lib/api.ts` optionally surfaces errors as toasts
-  - [x] Toasts are accessible: proper ARIA `role="alert"` / `aria-live="polite"`, keyboard-dismissable
-  - [x] Entrance/exit animations (slide-in, fade-out) that respect `prefers-reduced-motion`
-- **Resolution**: Installed `svelte-sonner` and created a shadcn-svelte `Sonner` wrapper component (`ui/sonner/`) that uses the app's design tokens (card bg, foreground text, border, destructive/primary/accent colors, border-radius, font-sans). Added `<Toaster />` to `+layout.svelte`. Created `lib/toast.ts` with typed success/error/warning/info helpers. Migrated protocol editor (removed `saveMessage` state + `.save-msg` CSS, replaced 25+ occurrences with toast calls), PdfPreviewDrawer (same pattern), and settings page (replaced 2 `alert()` calls). AC10 satisfied via `lib/toast.ts` being importable from `api.ts` — callers handle their own toast display. svelte-sonner provides AC4 (swipe dismiss), AC11 (ARIA), AC12 (animations + reduced-motion) natively. Verified with `npm run check` — no new errors.
-- **Implementation Notes**:
-  - **Option A — svelte-sonner**: Install `svelte-sonner` (Svelte port of Sonner). Add `<Toaster />` to `frontend/src/routes/+layout.svelte`. Import `toast` from `svelte-sonner` wherever needed. Minimal code, excellent UX out of the box, supports Svelte 5.
-  - **Option B — Custom**: Create `frontend/src/lib/stores/toast.ts` using Svelte 5 runes (`$state` array of toast objects). Create `frontend/src/lib/components/ToastContainer.svelte` to render the stack. More control but more code.
-  - **Recommended**: Option A (`svelte-sonner`) — it's lightweight (~3KB), well-maintained, and avoids reinventing the wheel.
-  - **Migration targets** (replace existing ad-hoc feedback):
-    - `frontend/src/routes/protocols/[id]/+page.svelte` — replace `.save-msg` paragraph with toast calls
-    - `frontend/src/routes/settings/+page.svelte` — replace `window.alert()` with `toast.error()`
-    - `frontend/src/routes/login/+page.svelte` — optionally keep inline error but add toast for network errors
-    - `frontend/src/lib/api.ts` — add optional `showToast` flag or global error interceptor
-  - **Styling**: Use the shadcn-svelte color tokens (e.g., `--destructive` for errors, `--primary` for success) to match the existing design system.
-- **Dependencies**: None
-
-### [F-0010] Dashboard Run Completion Trend Chart
-- **Status**: Done
-- **Priority**: P2 (Medium)
-- **Scope**: Full Stack
-- **Description**: Add a configurable 7/14-day run completion trend chart to the dashboard, placed between the counters row and the "My Work" section. The current dashboard is entirely list-based (counters + card lists + activity feed), making it visually monotonous. A small bar chart showing runs completed per day gives users an at-a-glance trend ("are we speeding up or slowing down?") and breaks up the visual rhythm with a different content type.
-- **Acceptance Criteria**:
-  - [x] New backend field `completion_trend` added to the dashboard response — an array of `{date: string, count: number}` for the last 7 days (including days with 0 completions)
-  - [x] Backend query groups completed/edited runs by `updated_at` date, scoped to the user's visible projects
-  - [x] Frontend renders a bar chart (or area chart) between the counters grid and the "My Work" section
-  - [x] Chart uses a lightweight, dependency-light approach (hand-rolled SVG bars or a small library like `chart.js` / `layercake`)
-  - [x] Chart is responsive — collapses gracefully on mobile (full-width, reduced height)
-  - [x] Bars/area use the existing design tokens (e.g., `primary` color for bars, `muted` for grid lines)
-  - [x] X-axis shows abbreviated day labels (Mon, Tue, etc.) and Y-axis shows integer counts
-  - [x] Hovering a bar shows a tooltip with the exact count and full date
-  - [x] Empty state: if no completions in the last 7 days, show a subtle "No completions this week" message instead of an empty chart
-  - [x] Chart animates in with the same `fadeSlideUp` stagger as the rest of the dashboard
-- **Resolution**: Backend: Added `_compute_completion_trend()` helper and `trend_days` query param (7–14, default 7) to `GET /dashboard`. Frontend: Created `CompletionChart.svelte` — hand-rolled SVG bar chart with hover tooltips, empty state, and a 7d/14d toggle button. No external charting dependencies. 6 unit tests pass, `npm run check` clean on modified files.
-- **Implementation Notes**:
-  - **Backend** (`backend/app/api/endpoints/dashboard.py`): `_compute_completion_trend(runs, days)` iterates last N days, counts COMPLETED/EDITED runs per date. `trend_days` query param (ge=7, le=14) allows frontend to toggle.
-  - **Backend schema** (`backend/app/schemas/dashboard.py`): `CompletionTrendItem(date: str, count: int)` model, `completion_trend: list[CompletionTrendItem]` on `DashboardResponse`.
-  - **Frontend chart** (`frontend/src/lib/components/CompletionChart.svelte`): SVG `<rect>` bars proportional to max count, day labels, hover tooltips, empty state. Toggle button calls `onToggleDays` prop.
-  - **Frontend integration** (`frontend/src/routes/+page.svelte`): `trendDays` state, `toggleTrendDays()` re-fetches dashboard with updated param.
-- **Dependencies**: None

@@ -2,7 +2,9 @@ import os
 import uuid as uuid_mod
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +27,7 @@ from app.schemas.ai import (
     AiSettingsListResponse,
     AiTestConnectionResponse,
     AnalysisResponse,
+    BatchAnalyzeResponse,
     ConfirmRequest,
     ConfirmResponse,
     ConverseRequest,
@@ -33,6 +36,7 @@ from app.schemas.ai import (
     RunImageDetailResponse,
     RunImageListResponse,
     RunImageResponse,
+    TagImageRequest,
 )
 from app.core.deps import get_current_user
 from app.models.iam import User
@@ -306,15 +310,29 @@ async def upload_image(
 )
 async def list_run_images(
     run_id: uuid_mod.UUID,
+    analyzed: Optional[bool] = Query(
+        default=None,
+        description="Filter by analysis status: true=has conversation, false=no conversation",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     await _get_active_run(run_id, db)  # verify run exists
 
-    result = await db.execute(
-        select(RunImage)
-        .where(RunImage.run_id == run_id)
-        .order_by(RunImage.created_at)
-    )
+    query = select(RunImage).where(RunImage.run_id == run_id)
+
+    if analyzed is not None:
+        # Subquery: image IDs that have at least one conversation
+        analyzed_ids = (
+            select(ImageConversation.image_id)
+            .distinct()
+            .scalar_subquery()
+        )
+        if analyzed:
+            query = query.where(RunImage.id.in_(analyzed_ids))
+        else:
+            query = query.where(RunImage.id.notin_(analyzed_ids))
+
+    result = await db.execute(query.order_by(RunImage.created_at))
     rows = result.scalars().all()
     return RunImageListResponse(
         items=[RunImageResponse.model_validate(r) for r in rows]
@@ -647,4 +665,128 @@ async def confirm_image_values(
     return ConfirmResponse(
         conversation=ImageConversationResponse.model_validate(conv),
         execution_data_updated=True,
+    )
+
+
+# ── Tag & Batch Analyze ──────────────────────────────────────────────
+
+
+@router.put(
+    "/runs/{run_id}/images/{image_id}/tag",
+    response_model=RunImageResponse,
+)
+async def tag_image(
+    run_id: uuid_mod.UUID,
+    image_id: uuid_mod.UUID,
+    body: TagImageRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Set parameter tags on an image (which param_schema keys it relates to)."""
+    result = await db.execute(
+        select(RunImage).where(
+            RunImage.id == image_id,
+            RunImage.run_id == run_id,
+        )
+    )
+    image = result.scalar_one_or_none()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found.")
+
+    image.parameter_tags = body.parameter_tags
+    await db.commit()
+    await db.refresh(image)
+    return RunImageResponse.model_validate(image)
+
+
+@router.post(
+    "/runs/{run_id}/analyze-pending",
+    response_model=BatchAnalyzeResponse,
+)
+async def analyze_pending_images(
+    run_id: uuid_mod.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sequentially analyze all unanalyzed images in a run."""
+    run = await _get_active_run(run_id, db)
+
+    if run.status not in (RunStatus.ACTIVE, RunStatus.EDITED):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Run must be ACTIVE to analyze images (current: {run.status}).",
+        )
+
+    # Find images without any conversation
+    analyzed_ids = (
+        select(ImageConversation.image_id)
+        .distinct()
+        .scalar_subquery()
+    )
+    result = await db.execute(
+        select(RunImage)
+        .where(
+            RunImage.run_id == run_id,
+            RunImage.id.notin_(analyzed_ids),
+        )
+        .order_by(RunImage.created_at)
+    )
+    pending_images = result.scalars().all()
+
+    succeeded = 0
+    failed = 0
+
+    for image in pending_images:
+        step_name, param_schema = _get_step_info(run, image.step_id)
+        image_full_path = str(Path(_get_storage_path()) / image.file_path)
+
+        try:
+            ai_result = await analyze_image(
+                image_path=image_full_path,
+                step_name=step_name,
+                param_schema=param_schema,
+                db=db,
+            )
+
+            conv_status = (
+                "needs_clarification"
+                if ai_result.needs_clarification
+                else "analyzed"
+            )
+            extracted_dict = {
+                ev.field_key: {
+                    "value": ev.value,
+                    "unit": ev.unit,
+                    "confidence": ev.confidence,
+                    "label": ev.field_label,
+                }
+                for ev in ai_result.extracted_values
+            }
+            conv = ImageConversation(
+                image_id=image.id,
+                messages=[
+                    {"role": "assistant", "content": ai_result.message}
+                ],
+                extracted_values=extracted_dict,
+                status=conv_status,
+            )
+            db.add(conv)
+            await db.commit()
+            succeeded += 1
+        except Exception:
+            # Record failure but continue with remaining images
+            conv = ImageConversation(
+                image_id=image.id,
+                messages=[
+                    {"role": "system", "content": "Batch analysis failed"}
+                ],
+                extracted_values={},
+                status="failed",
+            )
+            db.add(conv)
+            await db.commit()
+            failed += 1
+
+    return BatchAnalyzeResponse(
+        total=len(pending_images),
+        succeeded=succeeded,
+        failed=failed,
     )

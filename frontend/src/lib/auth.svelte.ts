@@ -55,8 +55,9 @@ export async function refreshUser(): Promise<void> {
     if (!token) return;
     try {
         user = await authFetch<User>('GET', '/auth/me');
+        cacheAuthData();
     } catch {
-        // ignore
+        // ignore — keep existing data (could be offline)
     }
 }
 
@@ -88,6 +89,48 @@ async function authFetch<T>(method: string, endpoint: string, body?: unknown): P
     return response.json();
 }
 
+/** Cache user and org data to localStorage for offline resilience. */
+function cacheAuthData(): void {
+    if (user) localStorage.setItem('cached_user', JSON.stringify(user));
+    if (orgs.length > 0) localStorage.setItem('cached_orgs', JSON.stringify(orgs));
+    if (currentOrg) localStorage.setItem('cached_current_org', JSON.stringify(currentOrg));
+}
+
+/** Load cached auth data from localStorage. Returns true if cache was found. */
+function loadCachedAuthData(): boolean {
+    try {
+        const cachedUser = localStorage.getItem('cached_user');
+        const cachedOrgs = localStorage.getItem('cached_orgs');
+        const cachedCurrentOrg = localStorage.getItem('cached_current_org');
+        if (cachedUser) {
+            user = JSON.parse(cachedUser);
+            orgs = cachedOrgs ? JSON.parse(cachedOrgs) : [];
+            currentOrg = cachedCurrentOrg ? JSON.parse(cachedCurrentOrg) : orgs[0] ?? null;
+            return true;
+        }
+    } catch {
+        // Corrupted cache — ignore
+    }
+    return false;
+}
+
+/** Clear cached auth data on logout. */
+function clearCachedAuthData(): void {
+    localStorage.removeItem('cached_user');
+    localStorage.removeItem('cached_orgs');
+    localStorage.removeItem('cached_current_org');
+}
+
+/** Check if an error is a network failure (not a server response). */
+function isNetworkError(err: unknown): boolean {
+    if (err instanceof TypeError && err.message.includes('fetch')) return true;
+    if (err instanceof TypeError && err.message.includes('network')) return true;
+    if (err instanceof DOMException && err.name === 'AbortError') return true;
+    // Check for generic "Failed to fetch" which happens when offline
+    if (err instanceof TypeError && err.message === 'Failed to fetch') return true;
+    return false;
+}
+
 export async function login(email: string, password: string): Promise<void> {
     const res = await authFetch<{ access_token: string }>('POST', '/auth/login', { email, password });
     token = res.access_token;
@@ -96,6 +139,7 @@ export async function login(email: string, password: string): Promise<void> {
     // Load user profile and orgs
     user = await authFetch<User>('GET', '/auth/me');
     await loadOrgs();
+    cacheAuthData();
 }
 
 export async function register(email: string, password: string, fullName: string): Promise<void> {
@@ -109,6 +153,7 @@ export async function register(email: string, password: string, fullName: string
 
     user = await authFetch<User>('GET', '/auth/me');
     await loadOrgs();
+    cacheAuthData();
 }
 
 export function logout(): void {
@@ -117,11 +162,13 @@ export function logout(): void {
     currentOrg = null;
     orgs = [];
     localStorage.removeItem('auth_token');
+    clearCachedAuthData();
 }
 
 export function switchOrg(org: Org): void {
     currentOrg = org;
     localStorage.setItem('current_org_id', org.id);
+    cacheAuthData();
 }
 
 async function loadOrgs(): Promise<void> {
@@ -148,9 +195,19 @@ export async function initialize(): Promise<void> {
     try {
         user = await authFetch<User>('GET', '/auth/me');
         await loadOrgs();
-    } catch {
-        // Token is invalid — clear it
-        logout();
+        cacheAuthData();
+    } catch (err) {
+        if (isNetworkError(err)) {
+            // Network failure — load cached data instead of logging out
+            const hasCached = loadCachedAuthData();
+            if (!hasCached) {
+                // No cache available, can't recover
+                logout();
+            }
+        } else {
+            // Server responded with error (401, etc.) — token is invalid
+            logout();
+        }
     } finally {
         initialized = true;
     }

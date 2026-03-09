@@ -39,6 +39,12 @@ mypy app
 npm run dev        # Vite dev server on :5173
 npm run build      # production build
 npm run check      # svelte-check + tsc type checking
+
+# Tests
+npm run test               # Vitest unit/component tests (single run)
+npm run test:watch         # Vitest in watch mode
+npm run test:e2e           # Playwright E2E tests (requires dev servers running)
+npm run test:e2e -- --ui   # Playwright with interactive UI
 ```
 
 ## Architecture
@@ -52,6 +58,7 @@ npm run check      # svelte-check + tsc type checking
 - **Mixins** (`models/mixins.py`): `UUIDMixin` (UUID PKs), `TimestampMixin` (created_at/updated_at)
 - **DB session**: async session factory in `db/session.py`, injected via `get_db` dependency
 - **Testing**: pytest-asyncio with `asyncio_mode = "auto"`. Tests use a separate `runbook_test` database. `conftest.py` provides `test_engine`, `db_session`, and `client` fixtures with per-test rollback.
+- **Test coverage target**: >80%
 
 ### Frontend (`frontend/src/`)
 
@@ -63,6 +70,9 @@ npm run check      # svelte-check + tsc type checking
 - **UI components**: shadcn-svelte components live in `lib/components/ui/`
 - **Form validation**: Zod schemas + centralized helpers in `lib/validation.ts`. Use `validate(schema, data)` for all form validation — no form framework, just Zod directly. See `RoleWizard.svelte` for usage pattern.
 - **Path alias**: `$lib` → `src/lib`
+- **Testing (2-tier strategy)**:
+  - **Tier 1 — Vitest + @testing-library/svelte**: Unit and component tests. Use for utilities (`validation.ts`, `api.ts`, `config.ts`), pure logic, and simple components that don't require a real browser. Tests live in `frontend/src/**/*.test.ts`. Runs in jsdom. Do NOT use for `@xyflow/svelte` graph components or anything requiring real layout/rendering.
+  - **Tier 2 — Playwright E2E**: Full workflow tests against a running app. Use for critical user flows (protocol creation, experiment runs, graph editor interactions) and any component that needs a real browser. Tests live in `frontend/e2e/`. Requires backend + frontend dev servers running.
 
 ### Database
 

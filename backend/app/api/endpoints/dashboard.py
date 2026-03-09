@@ -22,6 +22,7 @@ from app.models.science import (
     Run,
     RunRoleAssignment,
 )
+from app.models.ai import ImageConversation, RunImage
 from app.schemas.dashboard import (
     ActivityItem,
     ActivityPage,
@@ -29,6 +30,7 @@ from app.schemas.dashboard import (
     Counters,
     DashboardResponse,
     MyWork,
+    PendingAnalyses,
     RunSummary,
 )
 from app.services.permissions import get_visible_project_ids
@@ -315,11 +317,38 @@ async def get_dashboard(
     # ── Completion trend ──
     completion_trend = _compute_completion_trend(all_runs, days=trend_days)
 
+    # ── Pending image analyses ──
+    pending_analyses = None
+    if run_ids:
+        analyzed_ids = (
+            select(ImageConversation.image_id)
+            .distinct()
+            .scalar_subquery()
+        )
+        pa_result = await db.execute(
+            select(
+                func.count(RunImage.id),
+                func.count(func.distinct(RunImage.run_id)),
+            ).where(
+                RunImage.run_id.in_(run_ids),
+                RunImage.id.notin_(analyzed_ids),
+            )
+        )
+        row = pa_result.one()
+        total_images = row[0] or 0
+        total_runs = row[1] or 0
+        if total_images > 0:
+            pending_analyses = PendingAnalyses(
+                total_images=total_images,
+                total_runs=total_runs,
+            )
+
     return DashboardResponse(
         my_work=my_work,
         activity=activity,
         counters=counters,
         completion_trend=completion_trend,
+        pending_analyses=pending_analyses,
         is_admin=is_admin,
     )
 

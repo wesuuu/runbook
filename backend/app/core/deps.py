@@ -5,7 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, decode_offline_token
 from app.db.session import get_db
 from app.models.iam import User, ObjectType, PermissionLevel
 from app.services.permissions import check_permission
@@ -116,3 +116,56 @@ def require_permission(
         return user
 
     return _check
+
+
+async def get_current_user_or_offline(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[User, dict | None]:
+    """Authenticate with either a normal token or an offline token.
+
+    Returns (user, offline_payload) where offline_payload is None for
+    normal tokens, or the full JWT payload dict for offline tokens.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    token_str = credentials.credentials
+
+    # Try offline token first (has "scope": "offline")
+    offline_payload = decode_offline_token(token_str)
+    if offline_payload is not None:
+        # Check if token is revoked
+        from app.models.offline import RevokedOfflineToken
+        jti = offline_payload.get("jti")
+        revoked = await db.execute(
+            select(RevokedOfflineToken).where(RevokedOfflineToken.jti == jti)
+        )
+        if revoked.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Offline token has been revoked",
+            )
+        user_id = UUID(offline_payload["sub"])
+    else:
+        # Fall back to normal token
+        user_id = decode_access_token(token_str)
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+            )
+
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.is_active == True)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+    return user, offline_payload

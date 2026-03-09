@@ -4,25 +4,36 @@
     import { beforeNavigate } from '$app/navigation';
     import { goto } from '$app/navigation';
     import { initialize, isAuthenticated, isInitialized, getUserPreferences } from '$lib/auth.svelte';
+    import { initConnectivity, destroyConnectivity } from '$lib/pwa.svelte';
+    import { initFieldMode } from '$lib/field-mode.svelte';
+    import { initSyncManager, destroySyncManager } from '$lib/sync-manager';
     import UserMenu from '$lib/components/UserMenu.svelte';
     import ProjectsDropdown from '$lib/components/ProjectsDropdown.svelte';
     import NotificationBell from '$lib/components/NotificationBell.svelte';
+    import ConnectivityBanner from '$lib/components/ConnectivityBanner.svelte';
     import { Toaster } from '$lib/components/ui/sonner';
+    import { onDestroy } from 'svelte';
     import '../app.css';
 
     let { children } = $props();
 
     const publicRoutes = ['/login', '/register'];
+    const fieldModeRoutes = ['/field'];
 
     const isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
-    const showNav = $derived(!isPublicRoute && isAuthenticated());
+    const isFieldMode = $derived(fieldModeRoutes.some((r) => $page.url.pathname.startsWith(r)));
+    const showNav = $derived(!isPublicRoute && !isFieldMode && isAuthenticated());
     const isFullBleed = $derived(
         $page.url.pathname.startsWith('/protocols/') ||
-        $page.url.pathname.startsWith('/export')
+        $page.url.pathname.startsWith('/export') ||
+        isFieldMode
     );
 
     onMount(async () => {
+        initConnectivity();
+        initSyncManager();
         await initialize();
+        await initFieldMode();
 
         // Initial redirect check
         if (!isAuthenticated() && !publicRoutes.includes($page.url.pathname)) {
@@ -30,6 +41,11 @@
         } else if (isAuthenticated() && publicRoutes.includes($page.url.pathname)) {
             goto('/');
         }
+    });
+
+    onDestroy(() => {
+        destroyConnectivity();
+        destroySyncManager();
     });
 
     beforeNavigate(({ to, cancel }) => {
@@ -100,6 +116,7 @@
                     <UserMenu />
                 </div>
             </nav>
+            <ConnectivityBanner />
         {/if}
 
         {#if isFullBleed || isPublicRoute}

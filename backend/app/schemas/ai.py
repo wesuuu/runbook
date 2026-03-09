@@ -59,6 +59,7 @@ class RunImageResponse(BaseModel):
     mime_type: str
     file_size_bytes: int
     uploaded_by_id: Optional[UUID] = None
+    parameter_tags: Optional[list[str]] = None
     created_at: datetime
     updated_at: datetime
 
@@ -118,3 +119,18 @@ class ConfirmRequest(BaseModel):
 class ConfirmResponse(BaseModel):
     conversation: ImageConversationResponse
     execution_data_updated: bool
+
+
+# --- Tag & Batch Analyze ---
+
+
+class TagImageRequest(BaseModel):
+    parameter_tags: list[str] = Field(
+        description="List of param_schema field keys this image relates to"
+    )
+
+
+class BatchAnalyzeResponse(BaseModel):
+    total: int = Field(description="Number of unanalyzed images found")
+    succeeded: int = Field(description="Number successfully analyzed")
+    failed: int = Field(description="Number that failed analysis")

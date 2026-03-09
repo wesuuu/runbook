@@ -4,6 +4,7 @@
     import { getUser } from "$lib/auth.svelte";
     import { goto } from '$app/navigation';
     import RoleWizard from "$lib/components/RoleWizard.svelte";
+    import GoOfflineDialog from "$lib/components/GoOfflineDialog.svelte";
 
     const id = $derived($page.params.id);
 
@@ -52,10 +53,42 @@
                 `/science/projects/${run.project_id}/members`
             );
             projectMembers = membersResp || [];
+
+            // Load unanalyzed image count
+            await loadUnanalyzedCount();
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             loading = false;
+        }
+    }
+
+    async function loadUnanalyzedCount() {
+        try {
+            const resp = await api.get<{ items: any[] }>(
+                `/ai/runs/${id}/images?analyzed=false`
+            );
+            unanalyzedCount = resp.items?.length ?? 0;
+        } catch {
+            unanalyzedCount = 0;
+        }
+    }
+
+    async function analyzeAllImages() {
+        analyzingAll = true;
+        analyzeAllProgress = 'Starting batch analysis...';
+        try {
+            const resp = await api.post<{
+                total: number;
+                succeeded: number;
+                failed: number;
+            }>(`/ai/runs/${id}/analyze-pending`, {});
+            analyzeAllProgress = `Done: ${resp.succeeded} analyzed${resp.failed > 0 ? `, ${resp.failed} failed` : ''}`;
+            await loadUnanalyzedCount();
+        } catch (e: unknown) {
+            analyzeAllProgress = e instanceof Error ? e.message : 'Analysis failed';
+        } finally {
+            analyzingAll = false;
         }
     }
 
@@ -204,6 +237,10 @@
 
     let showCompleteConfirm = $state(false);
     let completingRun = $state(false);
+    let unanalyzedCount = $state(0);
+    let showGoOffline = $state(false);
+    let analyzingAll = $state(false);
+    let analyzeAllProgress = $state('');
 
     // Edit mode state
     let isEditMode = $state(false);
@@ -630,9 +667,21 @@
                                     </p>
                                 {/if}
                             </div>
-                            <span class="inline-block text-xs font-semibold px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full">
-                                Running
-                            </span>
+                            <div class="flex items-center gap-2">
+                                <button
+                                    onclick={() => (showGoOffline = true)}
+                                    class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium border border-amber-300 bg-amber-50 text-amber-700 rounded-full hover:bg-amber-100 transition-colors"
+                                    title="Enter offline field mode for this run"
+                                >
+                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
+                                    </svg>
+                                    Go Offline
+                                </button>
+                                <span class="inline-block text-xs font-semibold px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full">
+                                    Running
+                                </span>
+                            </div>
                         </div>
                         <a
                             href="/projects/{run.project_id}?tab=runs"
@@ -641,6 +690,66 @@
                             ← Back to project
                         </a>
                     </div>
+
+                    <!-- Role Assignments Summary -->
+                    {#if roleAssignments.length > 0}
+                        <div class="mb-6 bg-white rounded-lg border border-border px-5 py-4">
+                            <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Assigned Roles</h3>
+                            {#if getSwimLaneNodes().length > 0}
+                                <div class="flex flex-wrap gap-3">
+                                    {#each getSwimLaneNodes() as lane}
+                                        {@const assignment = getRoleAssignment(lane.id)}
+                                        {@const steps = getStepsForRole(lane.id)}
+                                        {@const completedCount = steps.filter((s) => run.execution_data?.[s.id]?.status === "completed").length}
+                                        {@const isCurrentUser = assignment?.user_id === getUser()?.id}
+                                        {@const member = assignment ? projectMembers.find((m) => m.id === assignment.user_id) : null}
+                                        {@const displayName = member?.full_name || (isCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown'}
+                                        {@const initials = displayName !== 'Unknown' ? displayName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '?'}
+                                        <div class="flex items-center gap-2 px-3 py-2 rounded-lg {isCurrentUser ? 'bg-primary/8 border border-primary/20' : 'bg-muted/50'}">
+                                            <div class="w-6 h-6 rounded-full {isCurrentUser ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground/20 text-muted-foreground'} flex items-center justify-center text-[10px] font-semibold">
+                                                {#if assignment}
+                                                    {initials}
+                                                {:else}
+                                                    ?
+                                                {/if}
+                                            </div>
+                                            <div class="text-sm">
+                                                <span class="font-medium text-foreground">{lane.data.label}</span>
+                                                <span class="text-muted-foreground ml-1">—
+                                                    {#if assignment}
+                                                        {isCurrentUser ? 'You' : displayName}
+                                                    {:else}
+                                                        <span class="text-muted-foreground/60">Unassigned</span>
+                                                    {/if}
+                                                </span>
+                                            </div>
+                                            {#if steps.length > 0}
+                                                <span class="text-xs font-medium ml-1 px-1.5 py-0.5 rounded {completedCount === steps.length ? 'bg-emerald-100 text-emerald-700' : completedCount > 0 ? 'bg-blue-100 text-blue-700' : 'text-muted-foreground'}">
+                                                    {completedCount}/{steps.length}
+                                                </span>
+                                            {/if}
+                                        </div>
+                                    {/each}
+                                </div>
+                            {:else}
+                                <!-- Roleless run: single assignee -->
+                                {@const assignment = roleAssignments[0]}
+                                {@const isCurrentUser = assignment?.user_id === getUser()?.id}
+                                {@const member = assignment ? projectMembers.find((m) => m.id === assignment.user_id) : null}
+                                {@const displayName = member?.full_name || (isCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown'}
+                                {@const initials = displayName !== 'Unknown' ? displayName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '?'}
+                                <div class="flex items-center gap-2">
+                                    <div class="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-semibold">
+                                        {initials}
+                                    </div>
+                                    <span class="text-sm">
+                                        <span class="font-medium text-foreground">Operator</span>
+                                        <span class="text-muted-foreground ml-1">— {isCurrentUser ? 'You' : displayName}</span>
+                                    </span>
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
 
                     <!-- Assigned User View (Wizard) -->
                     {#if getCurrentUserAssignment()}
@@ -658,6 +767,27 @@
                             />
                         </div>
 
+                        <!-- Analyze All Banner -->
+                        {#if unanalyzedCount > 0}
+                            <div class="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
+                                <div>
+                                    <p class="text-sm font-medium text-amber-800">
+                                        {unanalyzedCount} image{unanalyzedCount !== 1 ? 's' : ''} pending analysis
+                                    </p>
+                                    {#if analyzeAllProgress}
+                                        <p class="text-xs text-amber-600 mt-1">{analyzeAllProgress}</p>
+                                    {/if}
+                                </div>
+                                <button
+                                    onclick={analyzeAllImages}
+                                    disabled={analyzingAll}
+                                    class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {analyzingAll ? 'Analyzing...' : 'Analyze All'}
+                                </button>
+                            </div>
+                        {/if}
+
                         <!-- Complete Run Confirmation Modal -->
                         {#if showCompleteConfirm}
                             <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -665,9 +795,19 @@
                                     <h3 class="text-lg font-bold text-foreground mb-4">
                                         Complete Run?
                                     </h3>
-                                    <p class="text-muted-foreground mb-6">
+                                    <p class="text-muted-foreground mb-4">
                                         All steps have been completed. Finalizing will mark this run as complete. You can still edit it later if needed.
                                     </p>
+                                    {#if unanalyzedCount > 0}
+                                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                                            <p class="text-sm font-medium text-amber-800">
+                                                You have {unanalyzedCount} unanalyzed image{unanalyzedCount !== 1 ? 's' : ''}. Complete anyway?
+                                            </p>
+                                            <p class="text-xs text-amber-600 mt-1">
+                                                You'll be notified to review them later.
+                                            </p>
+                                        </div>
+                                    {/if}
                                     <div class="flex justify-end gap-3">
                                         <button
                                             onclick={() => (showCompleteConfirm = false)}
@@ -698,72 +838,67 @@
                                 </p>
 
                                 <!-- Role Status Table -->
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-sm">
-                                        <thead>
-                                            <tr class="border-b border-border">
-                                                <th class="text-left py-3 px-4 font-semibold text-foreground/80">
-                                                    Role
-                                                </th>
-                                                <th class="text-left py-3 px-4 font-semibold text-foreground/80">
-                                                    Assigned To
-                                                </th>
-                                                <th class="text-center py-3 px-4 font-semibold text-foreground/80">
-                                                    Progress
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {#each getSwimLaneNodes() as lane}
-                                                {@const assignment = getRoleAssignment(lane.id)}
-                                                {@const steps = getStepsForRole(lane.id)}
-                                                {@const completedCount = steps.filter(
-                                                    (s) =>
-                                                        run.execution_data?.[s.id]?.status ===
-                                                        "completed"
-                                                ).length}
-                                                <tr class="border-b border-border/60 hover:bg-background">
-                                                    <td class="py-3 px-4 font-medium text-foreground">
-                                                        {lane.data.label}
-                                                    </td>
-                                                    <td class="py-3 px-4 text-muted-foreground">
-                                                        {#if assignment}
-                                                            {#each projectMembers.filter(
-                                                                (m) =>
-                                                                    m.id === assignment.user_id
-                                                            ) as member}
-                                                                {member.full_name ||
-                                                                    member.email}
-                                                            {/each}
-                                                        {:else}
-                                                            <span class="text-muted-foreground/60">
-                                                                Unassigned
-                                                            </span>
-                                                        {/if}
-                                                    </td>
-                                                    <td class="py-3 px-4 text-center">
-                                                        {#if steps.length > 0}
-                                                            <span
-                                                                class="inline-block text-xs font-semibold px-2 py-1 rounded {completedCount ===
-                                                                steps.length
-                                                                    ? 'bg-emerald-100 text-emerald-700'
-                                                                    : completedCount > 0
-                                                                      ? 'bg-blue-100 text-blue-700'
-                                                                      : 'bg-muted text-muted-foreground'}"
-                                                            >
-                                                                {completedCount} / {steps.length}
-                                                            </span>
-                                                        {:else}
-                                                            <span class="text-muted-foreground/60">
-                                                                --
-                                                            </span>
-                                                        {/if}
-                                                    </td>
+                                {#if getSwimLaneNodes().length > 0}
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm">
+                                            <thead>
+                                                <tr class="border-b border-border">
+                                                    <th class="text-left py-3 px-4 font-semibold text-foreground/80">Role</th>
+                                                    <th class="text-left py-3 px-4 font-semibold text-foreground/80">Assigned To</th>
+                                                    <th class="text-center py-3 px-4 font-semibold text-foreground/80">Progress</th>
                                                 </tr>
-                                            {/each}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                            </thead>
+                                            <tbody>
+                                                {#each getSwimLaneNodes() as lane}
+                                                    {@const assignment = getRoleAssignment(lane.id)}
+                                                    {@const steps = getStepsForRole(lane.id)}
+                                                    {@const completedCount = steps.filter((s) => run.execution_data?.[s.id]?.status === "completed").length}
+                                                    {@const member = assignment ? projectMembers.find((m) => m.id === assignment.user_id) : null}
+                                                    {@const isObsCurrentUser = assignment?.user_id === getUser()?.id}
+                                                    {@const obsDisplayName = member?.full_name || (isObsCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown'}
+                                                    <tr class="border-b border-border/60 hover:bg-background">
+                                                        <td class="py-3 px-4 font-medium text-foreground">{lane.data.label}</td>
+                                                        <td class="py-3 px-4 text-muted-foreground">
+                                                            {#if assignment}
+                                                                {obsDisplayName}
+                                                            {:else}
+                                                                <span class="text-muted-foreground/60">Unassigned</span>
+                                                            {/if}
+                                                        </td>
+                                                        <td class="py-3 px-4 text-center">
+                                                            {#if steps.length > 0}
+                                                                <span class="inline-block text-xs font-semibold px-2 py-1 rounded {completedCount === steps.length ? 'bg-emerald-100 text-emerald-700' : completedCount > 0 ? 'bg-blue-100 text-blue-700' : 'bg-muted text-muted-foreground'}">
+                                                                    {completedCount} / {steps.length}
+                                                                </span>
+                                                            {:else}
+                                                                <span class="text-muted-foreground/60">--</span>
+                                                            {/if}
+                                                        </td>
+                                                    </tr>
+                                                {/each}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                {:else}
+                                    <!-- Roleless run: show single assignee and overall progress -->
+                                    {@const assignment = roleAssignments[0]}
+                                    {@const member = assignment ? projectMembers.find((m) => m.id === assignment.user_id) : null}
+                                    {@const isAssignedCurrentUser = assignment?.user_id === getUser()?.id}
+                                    {@const displayName = member?.full_name || (isAssignedCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown'}
+                                    {@const allSteps = getAllUnitOpSteps()}
+                                    {@const completedCount = allSteps.filter((s) => run.execution_data?.[s.id]?.status === "completed").length}
+                                    <div class="flex items-center justify-between py-2">
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-sm font-medium text-foreground">Operator:</span>
+                                            <span class="text-sm text-muted-foreground">{assignment ? displayName : 'Unassigned'}</span>
+                                        </div>
+                                        {#if allSteps.length > 0}
+                                            <span class="inline-block text-xs font-semibold px-2 py-1 rounded {completedCount === allSteps.length ? 'bg-emerald-100 text-emerald-700' : completedCount > 0 ? 'bg-blue-100 text-blue-700' : 'bg-muted text-muted-foreground'}">
+                                                {completedCount} / {allSteps.length} steps
+                                            </span>
+                                        {/if}
+                                    </div>
+                                {/if}
                             </div>
                         </div>
                     {/if}
@@ -805,6 +940,13 @@
                         </div>
                     {/if}
                 </div>
+
+                <!-- Go Offline Dialog -->
+                <GoOfflineDialog
+                    bind:open={showGoOffline}
+                    runId={run.id}
+                    runName={run.name}
+                />
             </div>
 
         <!-- COMPLETED State: Summary & Results -->

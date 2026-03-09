@@ -123,6 +123,45 @@ def step_deviation(ctx: dict, personal: bool = True) -> tuple[str, str]:
     return title, body
 
 
+def pending_image_analysis(ctx: dict, personal: bool = True) -> tuple[str, str]:
+    """ctx: run_name, unanalyzed_count, completed_by"""
+    count = ctx["unanalyzed_count"]
+    title = f"Pending image analysis on {ctx['run_name']}"
+    body = (
+        f"Run {ctx['run_name']} was completed by {ctx['completed_by']} "
+        f"with {count} unanalyzed image{'s' if count != 1 else ''}. "
+        f"Review and analyze them when ready."
+    )
+    return title, body
+
+
+def offline_sync_pending(ctx: dict, personal: bool = True) -> tuple[str, str]:
+    """ctx: run_name, user_name"""
+    title = f"Field session active: {ctx['run_name']}"
+    if personal:
+        body = (
+            f"You have an active field session for run {ctx['run_name']}. "
+            f"Remember to sync your data when you're back online."
+        )
+    else:
+        body = (
+            f"{ctx.get('user_name', 'A user')} has an active field session "
+            f"for run {ctx['run_name']}."
+        )
+    return title, body
+
+
+def offline_value_discrepancy(ctx: dict, personal: bool = True) -> tuple[str, str]:
+    """ctx: run_name, step_name, field_name, manual_value, ai_value"""
+    title = f"Value discrepancy on {ctx['run_name']}"
+    body = (
+        f"Step \"{ctx['step_name']}\" field \"{ctx['field_name']}\" "
+        f"has a discrepancy: manual value {ctx['manual_value']} "
+        f"vs AI value {ctx['ai_value']}. Please review."
+    )
+    return title, body
+
+
 # Registry mapping event types to template functions
 TEMPLATES = {
     "ROLE_ASSIGNED": role_assigned,
@@ -135,4 +174,7 @@ TEMPLATES = {
     "PROTOCOL_APPROVED": protocol_approved,
     "PROTOCOL_REVERTED": protocol_reverted,
     "STEP_DEVIATION": step_deviation,
+    "PENDING_IMAGE_ANALYSIS": pending_image_analysis,
+    "OFFLINE_SYNC_PENDING": offline_sync_pending,
+    "OFFLINE_VALUE_DISCREPANCY": offline_value_discrepancy,
 }

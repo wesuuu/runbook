@@ -52,11 +52,17 @@ class CompletionTrendItem(BaseModel):
     count: int
 
 
+class PendingAnalyses(BaseModel):
+    total_images: int = 0
+    total_runs: int = 0
+
+
 class DashboardResponse(BaseModel):
     my_work: MyWork
     activity: list[ActivityItem] = []
     counters: Counters
     completion_trend: list[CompletionTrendItem] = []
+    pending_analyses: Optional[PendingAnalyses] = None
     is_admin: bool = False
 
 

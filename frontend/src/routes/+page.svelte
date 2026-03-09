@@ -3,6 +3,8 @@
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
     import { getCurrentOrg, getUser } from '$lib/auth.svelte';
+    import { getOrphanedActions, type QueuedAction } from '$lib/offline-db';
+    import { syncNow } from '$lib/sync-manager';
     import CompletionChart from '$lib/components/CompletionChart.svelte';
 
     type RunSummary = {
@@ -40,6 +42,11 @@
 
     type CompletionTrendItem = { date: string; count: number };
 
+    type PendingAnalyses = {
+        total_images: number;
+        total_runs: number;
+    };
+
     type Dashboard = {
         my_work: {
             needs_action: RunSummary[];
@@ -50,6 +57,7 @@
         activity: ActivityItem[];
         counters: Counters;
         completion_trend: CompletionTrendItem[];
+        pending_analyses: PendingAnalyses | null;
         is_admin: boolean;
     };
 
@@ -63,9 +71,44 @@
     let activityTotal = $state(0);
     let activityLoading = $state(false);
 
+    let orphanedRuns = $state<Array<{ runId: string; runName: string; count: number; dateRange: string }>>([]);
+    let syncingOrphans = $state(false);
+
     onMount(() => {
         loadDashboard();
+        loadOrphanedQueue();
     });
+
+    async function loadOrphanedQueue() {
+        try {
+            const grouped = await getOrphanedActions();
+            orphanedRuns = [];
+            for (const [runId, items] of grouped) {
+                const dates = items.map((i) => new Date(i.queued_at).getTime());
+                const oldest = new Date(Math.min(...dates)).toLocaleDateString();
+                const newest = new Date(Math.max(...dates)).toLocaleDateString();
+                const dateRange = oldest === newest ? oldest : `${oldest} – ${newest}`;
+                orphanedRuns.push({
+                    runId,
+                    runName: items[0].run_name,
+                    count: items.length,
+                    dateRange,
+                });
+            }
+        } catch {
+            // Non-critical
+        }
+    }
+
+    async function syncOrphaned() {
+        syncingOrphans = true;
+        try {
+            await syncNow();
+            await loadOrphanedQueue();
+        } finally {
+            syncingOrphans = false;
+        }
+    }
 
     async function loadDashboard() {
         const org = getCurrentOrg();
@@ -268,6 +311,47 @@
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
             <!-- My Work (3/5 width) -->
             <div class="lg:col-span-3 space-y-6">
+                <!-- Orphaned Offline Queue Items -->
+                {#if orphanedRuns.length > 0}
+                    <section style="animation: fadeSlideUp 0.3s ease-out 0.05s both">
+                        <div class="bg-teal-50 border border-teal-200 rounded-xl p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <p class="text-sm font-semibold text-teal-800">
+                                    Pending Offline Uploads
+                                </p>
+                                <button
+                                    onclick={syncOrphaned}
+                                    disabled={syncingOrphans}
+                                    class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
+                                >
+                                    {syncingOrphans ? 'Syncing...' : 'Sync Now'}
+                                </button>
+                            </div>
+                            {#each orphanedRuns as orphan}
+                                <p class="text-xs text-teal-700">
+                                    {orphan.count} item{orphan.count !== 1 ? 's' : ''} from <strong>{orphan.runName}</strong> captured {orphan.dateRange}
+                                </p>
+                            {/each}
+                        </div>
+                    </section>
+                {/if}
+
+                <!-- Pending Image Analyses -->
+                {#if dashboard.pending_analyses}
+                    <section style="animation: fadeSlideUp 0.3s ease-out 0.1s both">
+                        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-amber-800">
+                                    {dashboard.pending_analyses.total_images} image{dashboard.pending_analyses.total_images !== 1 ? 's' : ''} pending analysis across {dashboard.pending_analyses.total_runs} run{dashboard.pending_analyses.total_runs !== 1 ? 's' : ''}
+                                </p>
+                                <p class="text-xs text-amber-600 mt-0.5">
+                                    Captured images that haven't been analyzed by AI yet
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+                {/if}
+
                 <!-- Needs Action -->
                 {#if dashboard.my_work.needs_action.length > 0}
                     <section style="animation: fadeSlideUp 0.4s ease-out 0.2s both">

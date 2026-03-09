@@ -189,6 +189,9 @@
     let members = $state<any[]>([]);
     let membersLoading = $state(false);
     let membersError = $state('');
+    const isOrgAdmin = $derived(
+        members.some((m: any) => m.user_id === getUser()?.id && m.role === 'ADMIN')
+    );
     let inviteEmail = $state('');
     let inviteSearchResults = $state<any[]>([]);
     let inviteSearching = $state(false);
@@ -526,9 +529,11 @@
                         <CardTitle>{getCurrentOrg()?.name || 'No Organization'}</CardTitle>
                         <CardDescription>Members of your organization.</CardDescription>
                     </div>
-                    <Button size="sm" onclick={() => (showInviteDialog = true)}>
-                        Invite Member
-                    </Button>
+                    {#if isOrgAdmin}
+                        <Button size="sm" onclick={() => (showInviteDialog = true)}>
+                            Invite Member
+                        </Button>
+                    {/if}
                 </div>
             </CardHeader>
             <CardContent>
@@ -552,18 +557,22 @@
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <select
-                                        class="px-2 py-1 border border-border rounded text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                                        value={member.role}
-                                        onchange={(e) => updateMemberRole(member.user_id, e.currentTarget.value)}
-                                    >
-                                        {#each ORG_ROLES as r}
-                                            <option value={r.value}>{r.label}</option>
-                                        {/each}
-                                    </select>
-                                    <Button variant="ghost" size="sm" class="text-destructive" onclick={() => removeMember(member.user_id)}>
-                                        Remove
-                                    </Button>
+                                    {#if isOrgAdmin}
+                                        <select
+                                            class="px-2 py-1 border border-border rounded text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                            value={member.role}
+                                            onchange={(e) => updateMemberRole(member.user_id, e.currentTarget.value)}
+                                        >
+                                            {#each ORG_ROLES as r}
+                                                <option value={r.value}>{r.label}</option>
+                                            {/each}
+                                        </select>
+                                        <Button variant="ghost" size="sm" class="text-destructive" onclick={() => removeMember(member.user_id)}>
+                                            Remove
+                                        </Button>
+                                    {:else}
+                                        <span class="text-xs text-muted-foreground">{getOrgRoleLabel(member.role)}</span>
+                                    {/if}
                                 </div>
                             </div>
                         {/each}
@@ -573,7 +582,7 @@
         </Card>
 
         <!-- Invite Dialog -->
-        {#if showInviteDialog}
+        {#if isOrgAdmin && showInviteDialog}
             <Card>
                 <CardHeader>
                     <CardTitle>Invite Member</CardTitle>
@@ -623,15 +632,17 @@
                 </div>
             </CardHeader>
             <CardContent class="space-y-4">
-                <!-- Create team -->
-                <div class="flex gap-2">
-                    <Input
-                        bind:value={newTeamName}
-                        placeholder="New team name..."
-                        onkeydown={(e) => { if (e.key === 'Enter') createTeam(); }}
-                    />
-                    <Button onclick={createTeam} disabled={!newTeamName.trim()}>Create</Button>
-                </div>
+                {#if isOrgAdmin}
+                    <!-- Create team -->
+                    <div class="flex gap-2">
+                        <Input
+                            bind:value={newTeamName}
+                            placeholder="New team name..."
+                            onkeydown={(e) => { if (e.key === 'Enter') createTeam(); }}
+                        />
+                        <Button onclick={createTeam} disabled={!newTeamName.trim()}>Create</Button>
+                    </div>
+                {/if}
 
                 {#if teamsLoading}
                     <p class="text-sm text-muted-foreground py-4 text-center">Loading teams...</p>
@@ -646,9 +657,11 @@
                                         <span class="text-xs text-muted-foreground">{expandedTeamId === team.id ? '▼' : '▶'}</span>
                                         <span class="text-sm font-medium">{team.name}</span>
                                     </div>
-                                    <Button variant="ghost" size="sm" class="text-destructive" onclick={(e) => { e.stopPropagation(); deleteTeam(team.id); }}>
-                                        Delete
-                                    </Button>
+                                    {#if isOrgAdmin}
+                                        <Button variant="ghost" size="sm" class="text-destructive" onclick={(e) => { e.stopPropagation(); deleteTeam(team.id); }}>
+                                            Delete
+                                        </Button>
+                                    {/if}
                                 </div>
                                 {#if expandedTeamId === team.id}
                                     <div class="px-4 pb-3 pl-10">

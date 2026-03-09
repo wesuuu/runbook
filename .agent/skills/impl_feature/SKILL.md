@@ -26,7 +26,10 @@ Implement features from the `FEATURES.md` backlog, verify with tests, check off 
 5. **Write failing tests first (Red phase)** — TDD Red-Green-Refactor:
    - Translate each acceptance criterion into one or more concrete test cases
    - Backend: create test files in `backend/tests/` (unit or integration as appropriate)
-   - Frontend: if the feature adds new logic or components, write tests or at minimum verify `npm run check` passes with any new types/interfaces
+   - Frontend — choose the right tier based on what you're testing:
+     - **Vitest** (`frontend/src/**/*.test.ts`): For utilities, validation logic, API client, pure functions, and simple components that work in jsdom. Do NOT use for `@xyflow/svelte` graph components or anything requiring real layout/rendering. Write these by default for any testable logic.
+     - **Playwright E2E** (`frontend/e2e/`): For user workflow tests, graph editor interactions, and any feature that needs a real browser. Requires dev servers running. **Before writing Playwright tests, ask the user if they want them for this feature.** E2E tests are token-intensive to develop and may not be worth it for every feature. Present which workflows you'd test and let the user decide.
+     - At minimum, verify `npm run check` passes with any new types/interfaces.
    - Run the tests to confirm they **fail** for the right reasons (missing endpoint, missing component, unimplemented logic). This validates the tests are meaningful.
    - If a test passes before implementation, it's not testing the new feature — revisit it.
 6. **Implement the feature (Green phase)** following project conventions (see CLAUDE.md):
@@ -41,7 +44,8 @@ Implement features from the `FEATURES.md` backlog, verify with tests, check off 
    - Keep refactoring minimal and scoped to the new feature code
 8. **Run full test suite** to confirm nothing is broken:
    - Backend: `cd backend && source .venv/bin/activate && pytest tests/ -x -q`
-   - Frontend: `cd frontend && npm run check`
+   - Frontend: `cd frontend && npm run check && npm run test`
+   - Playwright E2E (if you wrote E2E tests): `cd frontend && npm run test:e2e`
    - If tests fail, fix the issue and re-run. Do not skip failing tests.
 9. **Update `FEATURES.md`** — check off completed acceptance criteria and update status:
    - Change `- **Status**: Proposed` to `- **Status**: Done`
@@ -56,7 +60,7 @@ Implement features from the `FEATURES.md` backlog, verify with tests, check off 
 - **One feature at a time.** Focus on a single feature per invocation unless the user asks to batch related features.
 - **Don't break other things.** Run the full relevant test suite, not just new tests. If you changed backend code, run `pytest`. If you changed frontend code, run `npm run check`.
 - **Follow the spec.** Implement what the acceptance criteria describe. If the spec is wrong or incomplete, flag it to the user before diverging.
-- **Minimal scope.** Implement the specified feature without refactoring unrelated code. If you discover tech debt while working, note it but don't fix it in the same pass.
+- **Minimal scope.** Implement the specified feature without refactoring unrelated code. If you discover tangential tech debt while working, don't fix it in the same pass — but don't forget it either. Check `TECH_DEBT.md` to see if the item is already tracked. If it isn't, append a new entry following the existing format so it doesn't get lost.
 - **Update FEATURES.md last.** Only mark Done after tests pass. This is the source of truth for feature status.
 - **Check dependencies first.** If the feature has dependencies on other F-XXXX items, verify those are Done before starting.
 
