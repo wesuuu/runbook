@@ -440,7 +440,7 @@
 
 <div class="flex flex-col h-full">
     <!-- Progress Bar -->
-    <div class="mb-8">
+    <div class="mb-4 sm:mb-8">
         <div class="flex justify-between items-center mb-3">
             <span class="text-base font-semibold text-slate-800">
                 Step {progress.current} of {progress.total}
@@ -479,7 +479,7 @@
     <!-- Step Card -->
     {#if currentStep}
         <div
-            class="flex-1 bg-white rounded-xl border border-slate-200 p-6 sm:p-10 mb-8 flex flex-col shadow-sm"
+            class="flex-1 bg-white rounded-xl border border-slate-200 p-3 sm:p-6 md:p-10 mb-8 flex flex-col shadow-sm"
         >
             <!-- Step Header -->
             <div class="mb-8">
@@ -648,11 +648,11 @@
                         <p class="text-sm text-slate-500 mb-3 font-medium">
                             Capture data
                         </p>
-                        <div class="flex gap-3">
+                        <div class="flex flex-col sm:flex-row gap-3">
                             <button
                                 disabled
                                 title="Voice input coming soon"
-                                class="flex items-center gap-2.5 px-5 py-3 border border-slate-300 rounded-xl text-base text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="flex items-center justify-center gap-2.5 px-5 py-3 border border-slate-300 rounded-xl text-base text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-11"
                             >
                                 <span class="text-xl">🎤</span>
                                 <span>Voice Memo</span>
@@ -660,7 +660,7 @@
                             <button
                                 onclick={triggerCapture}
                                 disabled={uploading}
-                                class="flex items-center gap-2.5 px-5 py-3 border border-teal-300 rounded-xl text-base text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="flex items-center justify-center gap-2.5 px-5 py-3 border border-teal-300 rounded-xl text-base text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-11"
                             >
                                 {#if uploading}
                                     <span class="animate-spin text-xl">...</span>

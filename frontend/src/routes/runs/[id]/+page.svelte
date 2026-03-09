@@ -753,7 +753,7 @@
 
                     <!-- Assigned User View (Wizard) -->
                     {#if getCurrentUserAssignment()}
-                        <div class="bg-white rounded-lg border border-border p-8">
+                        <div class="bg-white rounded-lg border border-border p-2 sm:p-8">
                             <RoleWizard
                                 steps={getWizardSteps()}
                                 runId={run.id}
@@ -1215,7 +1215,7 @@
                     </div>
 
                     <!-- Edit Wizard (draft mode — no API calls until Save) -->
-                    <div class="bg-white rounded-lg border border-border p-8 mb-8">
+                    <div class="bg-white rounded-lg border border-border p-2 sm:p-8 mb-8">
                         <RoleWizard
                             steps={getAllUnitOpSteps()}
                             runId={run.id}
@@ -1529,7 +1529,7 @@
                         </div>
                     </div>
 
-                    <div class="bg-white rounded-lg border border-border p-8 mb-8">
+                    <div class="bg-white rounded-lg border border-border p-2 sm:p-8 mb-8">
                         <RoleWizard
                             steps={getAllUnitOpSteps()}
                             runId={run.id}
