@@ -12,40 +12,22 @@
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| Code Smells | 2 (+2 resolved) | 6 | 7 | 3 | 20 |
+| Code Smells | 0 | 6 | 7 | 3 | 16 |
 | Missing Implementation | 0 | 1 | 4 | 0 | 5 |
 | Type Safety | 2 | 5 | 3 | 0 | 10 |
-| Testing Gaps | 2 | 5 (+1 resolved) | 0 | 0 | 8 |
+| Testing Gaps | 2 | 5 | 0 | 0 | 7 |
 | Security | 0 | 1 | 2 | 0 | 3 |
 | Architecture | 2 | 5 | 8 | 1 | 16 |
 | Dependencies & Tooling | 0 | 0 | 1 | 0 | 1 |
-| **Total** | **10** | **24** | **25** | **4** | **63** |
+| **Total** | **6** | **23** | **25** | **4** | **58** |
 
-*Last updated: 2026-03-08*
+*Last updated: 2026-03-09*
 
 ---
 
 ## Findings
 
 <!-- New findings are appended below this line -->
-
-### [TD-0001] Backend science.py is a 2300+ line monolith
-- **Category**: Code Smells
-- **Severity**: ~~Critical~~ **RESOLVED**
-- **Location**: `backend/app/api/endpoints/science.py`
-- **Description**: Single endpoint file contains 100+ endpoint functions plus large helper functions like `_parse_graph_roles_and_steps` (~135 lines), `_topo_sort_nodes`, and `_find_connected_components`. File is 4.6x over the 500-line recommendation.
-- **Suggested Fix**: Split into separate routers: `protocols.py`, `runs.py`, `unitops.py`. Move helper functions to a service layer (`services/graph_processing.py`).
-- **Effort**: XL
-- **Resolution**: Split 2640-line monolith into 7 focused endpoint modules (`unit_ops.py`, `protocols.py`, `protocol_versions.py`, `protocol_pdfs.py`, `runs.py`, `export_data.py`, `project_members.py`) and extracted graph helpers to `services/graph_processing.py`. All 271 tests pass. Updated `main.py` router mounts and test imports.
-
-### [TD-0002] Backend pdf.py is 1200+ lines with no tests
-- **Category**: Code Smells
-- **Severity**: ~~Critical~~ **RESOLVED**
-- **Location**: `backend/app/services/pdf.py`
-- **Description**: Monolithic PDF generation module with `generate_batch_record_pdf` (473 lines), `generate_sop_pdf` (210 lines), and `_draw_multi_param_row` (172 lines). Zero unit test coverage.
-- **Suggested Fix**: Split into `sop_generator.py`, `batch_record_generator.py`, `pdf_base.py`. Add comprehensive unit tests.
-- **Effort**: XL
-- **Resolution**: Split 1204-line monolith into `pdf_base.py` (shared helpers/constants, ~260 lines), `sop_generator.py` (~220 lines), and `batch_record_generator.py` (~500 lines). Original `pdf.py` is now a thin re-export wrapper. Added `test_pdf_helpers.py` (30 tests for pure helper functions) and `test_sop_pdf.py` (14 tests for SOP PDF generation). All 321 tests pass.
 
 ### [TD-0003] Frontend protocol editor is 2700+ lines
 - **Category**: Code Smells
