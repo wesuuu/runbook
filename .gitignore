@@ -1,5 +1,5 @@
 backend/uploads/images/*
-
+backend/uploads/*
 # Python
 __pycache__/
 *.py[cod]
