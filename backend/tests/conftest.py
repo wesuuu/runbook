@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
 )
+from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 
 from app.main import app
@@ -38,8 +39,19 @@ TEST_DATABASE_URL = (
 async def test_engine():
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        # Add tsvector generated column (not managed by SQLAlchemy ORM)
+        await conn.execute(text("""
+            ALTER TABLE document_chunks
+            ADD COLUMN IF NOT EXISTS search_vector tsvector
+            GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_chunk_search_vector
+            ON document_chunks USING gin (search_vector)
+        """))
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

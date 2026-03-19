@@ -67,3 +67,34 @@ Resolved QA issues moved from `QA_SURVEY.md`. These items are retained for refer
 - **Recommendation**: Conditionally render admin-only actions (Invite Member, Make Admin, Remove Admin, Remove) based on the user's admin status. The `is_admin` flag should be checked from the auth context.
 - **Resolution**: Added `isOrgAdmin` derived state (checks current user's role in members list). Gated behind `{#if isOrgAdmin}`: Invite Member button, role dropdown, Remove button, invite dialog, Create Team form, Delete Team button. Non-admins see member list read-only with role labels. Verified with `npm run check` (0 new errors).
 - **Archived**: 2026-03-08
+
+### [QA-0005] Duplicate API calls on page load — /projects called with and without trailing slash
+- **Severity**: ~~High~~ **FIXED**
+- **Category**: Performance
+- **Page**: / (Dashboard)
+- **User**: admin@bioprocess.com
+- **Steps to Reproduce**:
+  1. Log in as admin
+  2. Navigate to Dashboard
+  3. Monitor network requests
+- **Expected**: Single API call per resource
+- **Actual**: Two project list requests fire on dashboard load: `GET /projects?organization_id=...` (returns 200) and `GET /projects/?organization_id=...` (307 redirect → pending). The trailing-slash variant triggers a redirect, causing an extra round trip.
+- **Network Errors**: `GET /projects/?organization_id=...` → 307 redirect
+- **Recommendation**: Normalize API URLs in `lib/api.ts` to never include trailing slashes, or configure FastAPI `redirect_slashes=False`.
+- **Resolution**: Added `normalizeEndpoint()` utility in `lib/normalizeEndpoint.ts` that strips trailing slashes from the path portion before query params. Applied at all 4 `fetch()` call sites in `api.ts` (`request`, `_fetchAsBlob`, `uploadFile`, `uploadWithFields`). 8 unit tests in `api.test.ts` covering paths with/without trailing slashes, query params, nested paths, and edge cases. Verified with `npm run check` (no new errors).
+- **Archived**: 2026-03-18
+
+### [QA-0009] No mobile responsive design — tables and nav overflow on small screens
+- **Severity**: ~~Medium~~ **FIXED**
+- **Category**: UI/UX
+- **Page**: All pages
+- **User**: All users
+- **Steps to Reproduce**:
+  1. Access the app on a mobile device or resize browser to <768px width
+  2. Navigation bar items overflow or get squished
+  3. Data tables don't adapt to small screens
+- **Expected**: Responsive layout with collapsible nav and mobile-friendly table views
+- **Actual**: Fixed desktop layout with no responsive breakpoints for mobile. Navigation uses fixed `gap-6` spacing. Tables use fixed column widths. Dashboard counter cards stay in 3+ column grid on all widths.
+- **Recommendation**: See feature spec [F-0008] in FEATURES.md for detailed implementation plan. Key changes: hamburger menu for nav, card-based table layouts on mobile, `sm:` breakpoint coverage.
+- **Resolution**: Resolved by F-0008 (Mobile-Friendly Responsive Design). Added MobileNav.svelte with hamburger menu, card-based mobile layouts for all tables, responsive padding/grid, touch targets, and overflow-x-auto for tablet scroll. All 12 acceptance criteria met.
+- **Archived**: 2026-03-18

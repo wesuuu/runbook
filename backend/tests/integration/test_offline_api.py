@@ -63,7 +63,8 @@ async def test_create_offline_session_wrong_password(client, auth_headers, run_w
     assert "Invalid password" in resp.json()["detail"]
 
 
-async def test_create_offline_session_run_not_active(client, auth_headers, test_user, test_project, db_session):
+async def test_create_offline_session_planned_run(client, auth_headers, test_user, test_project, db_session):
+    """PLANNED runs should allow offline session creation (pre-run prep)."""
     run = Run(
         name="Planned Run",
         project_id=test_project.id,
@@ -85,8 +86,37 @@ async def test_create_offline_session_run_not_active(client, auth_headers, test_
         json={"run_id": str(run.id), "password": "testpass"},
         headers=auth_headers,
     )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "offline_token" in data
+    assert data["run_id"] == str(run.id)
+
+
+async def test_create_offline_session_completed_run_rejected(client, auth_headers, test_user, test_project, db_session):
+    """COMPLETED runs should not allow offline session creation."""
+    run = Run(
+        name="Completed Run",
+        project_id=test_project.id,
+        status=RunStatus.COMPLETED,
+        graph={},
+        execution_data={},
+    )
+    db_session.add(run)
+    await db_session.flush()
+    assignment = RunRoleAssignment(
+        run_id=run.id, lane_node_id="__run__",
+        role_name="Operator", user_id=test_user.id,
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+
+    resp = await client.post(
+        "/auth/offline-session",
+        json={"run_id": str(run.id), "password": "testpass"},
+        headers=auth_headers,
+    )
     assert resp.status_code == 400
-    assert "ACTIVE" in resp.json()["detail"]
+    assert "PLANNED or ACTIVE" in resp.json()["detail"]
 
 
 async def test_create_offline_session_no_role(client, auth_headers, test_project, db_session):

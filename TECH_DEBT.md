@@ -12,38 +12,22 @@
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| Code Smells | 0 | 6 | 7 | 3 | 16 |
-| Missing Implementation | 0 | 1 | 4 | 0 | 5 |
-| Type Safety | 2 | 5 | 3 | 0 | 10 |
-| Testing Gaps | 2 | 5 | 0 | 0 | 7 |
-| Security | 0 | 1 | 2 | 0 | 3 |
-| Architecture | 2 | 5 | 8 | 1 | 16 |
+| Code Smells | 0 | 4 | 7 | 0 | 11 |
+| Missing Implementation | 0 | 0 | 1 | 0 | 1 |
+| Type Safety | 0 | 4 | 1 | 0 | 5 |
+| Testing Gaps | 2 | 4 | 0 | 0 | 6 |
+| Security | 0 | 0 | 0 | 0 | 0 |
+| Architecture | 2 | 5 | 7 | 1 | 15 |
 | Dependencies & Tooling | 0 | 0 | 1 | 0 | 1 |
-| **Total** | **6** | **23** | **25** | **4** | **58** |
+| **Total** | **4** | **17** | **17** | **1** | **39** |
 
-*Last updated: 2026-03-09*
+*Last updated: 2026-03-18*
 
 ---
 
 ## Findings
 
 <!-- New findings are appended below this line -->
-
-### [TD-0003] Frontend protocol editor is 2700+ lines
-- **Category**: Code Smells
-- **Severity**: Critical
-- **Location**: `frontend/src/routes/protocols/[id]/+page.svelte`
-- **Description**: Single component with 1,341 lines of script handling graph editing, versioning, approval, equipment conflicts, branch validation, and timeline management. The `onDrop()` handler alone is 150+ lines with 4+ levels of nesting.
-- **Suggested Fix**: Extract into `VersionManager.svelte`, `EquipmentValidator.svelte`, `TimelineManager.svelte`. Break `onDrop()` into `handleDropUnitOp()`, `handleDropProcessStart()`, `handleDropSwimLane()`.
-- **Effort**: XL
-
-### [TD-0004] Frontend project detail is 1700+ lines
-- **Category**: Code Smells
-- **Severity**: Critical
-- **Location**: `frontend/src/routes/projects/[id]/+page.svelte`
-- **Description**: Mixes data loading, tab management, protocol/run CRUD, activity filtering, and settings management in one component (619 script lines).
-- **Suggested Fix**: Extract into `ProtocolsTab.svelte`, `RunsTab.svelte`, `ActivityTab.svelte`, `SettingsTab.svelte`.
-- **Effort**: L
 
 ### [TD-0005] Frontend runs page is 1400+ lines
 - **Category**: Code Smells
@@ -77,14 +61,6 @@
 - **Suggested Fix**: Extract common fetch+blob logic to `_fetchBlob()` helper. Consolidate to 2-3 functions.
 - **Effort**: M
 
-### [TD-0009] Tab state management duplicated across routes
-- **Category**: Code Smells
-- **Severity**: High
-- **Location**: `frontend/src/routes/protocols/[id]/+page.svelte`, `frontend/src/routes/projects/[id]/+page.svelte`
-- **Description**: Both files re-implement tab switching with URL params identically without sharing code.
-- **Suggested Fix**: Extract shared logic to a `createTabState()` utility function.
-- **Effort**: S
-
 ### [TD-0010] Frontend PdfPreviewDrawer.svelte is 900+ lines
 - **Category**: Code Smells
 - **Severity**: Medium
@@ -117,46 +93,6 @@
 - **Suggested Fix**: Replace with a dictionary lookup: `MODEL_MAP = {"name": "ollama_name", ...}`.
 - **Effort**: S
 
-### [TD-0014] Unused imports across backend (12+ instances)
-- **Category**: Code Smells
-- **Severity**: Low
-- **Location**: `backend/app/schemas/auth.py:4`, `schemas/iam.py:3`, `schemas/ai.py:6`, `services/ai_config.py:10`, `services/pdf.py:8`, `api/endpoints/iam.py:1,5`, `api/endpoints/ai.py:11`, `models/execution.py:2`, `models/science.py:4`
-- **Description**: Unused imports of `EmailStr`, `List`, `Optional`, `and_`, `DEFAULT_CONFIGS`, `date`, `desc`, `SUPPORTED_PROVIDERS`, etc.
-- **Suggested Fix**: Run `isort` and remove unused imports.
-- **Effort**: S
-
-### [TD-0015] Redundant onMount + $effect pattern in frontend
-- **Category**: Code Smells
-- **Severity**: Low
-- **Location**: `frontend/src/routes/protocols/[id]/+page.svelte:29-41`, `frontend/src/routes/runs/[id]/+page.svelte:29-41`
-- **Description**: Both `onMount()` and `$effect()` call `loadData()`, causing redundant initial loads.
-- **Suggested Fix**: Remove `onMount()` calls; `$effect()` already handles initial load.
-- **Effort**: S
-
-### [TD-0016] Backend RequirePermission raises NotImplementedError
-- **Category**: Missing Implementation
-- **Severity**: High
-- **Location**: `backend/app/core/deps.py:75-77`
-- **Description**: `RequirePermission.__call__` raises `NotImplementedError`. The class exists but cannot be used directly — only the `require_permission()` factory works. Confusing API surface.
-- **Suggested Fix**: Either remove the class (use factory only) or implement `__call__`. Document the intended pattern.
-- **Effort**: S
-
-### [TD-0017] Silent exception handlers in backend
-- **Category**: Missing Implementation
-- **Severity**: Medium
-- **Location**: `backend/app/api/endpoints/science.py:1084-1087`, `backend/app/services/ai_vision.py:223`, `backend/app/services/ai_vision.py:238-239`
-- **Description**: Multiple bare `except Exception: pass` blocks that silently swallow errors. Header color parsing failures are invisible. AI vision extraction errors are silently skipped with no logging.
-- **Suggested Fix**: Catch specific exception types, add logging, provide user feedback where appropriate.
-- **Effort**: S
-
-### [TD-0018] console.log left in production API client
-- **Category**: Missing Implementation
-- **Severity**: Medium
-- **Location**: `frontend/src/lib/api.ts:36`
-- **Description**: `console.log(API_BASE + endpoint, config)` logs every API call to browser console in production. Leaks endpoint paths and request config.
-- **Suggested Fix**: Remove or gate behind `import.meta.env.DEV` check.
-- **Effort**: S
-
 ### [TD-0019] No error boundary component in frontend
 - **Category**: Missing Implementation
 - **Severity**: Medium
@@ -164,22 +100,6 @@
 - **Description**: No global error boundary exists. Unhandled promise rejections or component errors could crash the app with no recovery UI.
 - **Suggested Fix**: Create `ErrorBoundary.svelte` wrapper and apply to route pages.
 - **Effort**: M
-
-### [TD-0020] Untyped dict parameters on PDF preview endpoints
-- **Category**: Type Safety
-- **Severity**: Critical
-- **Location**: `backend/app/api/endpoints/science.py:1231`, `science.py:1287`
-- **Description**: POST endpoints `preview_protocol_sop_pdf` and `preview_protocol_batch_record_pdf` accept `body: dict` with no Pydantic validation. Expected `graph` key is not enforced. Any JSON payload accepted.
-- **Suggested Fix**: Create `class ProtocolGraphPayload(BaseModel): graph: dict[str, Any]` and use it in the endpoint signatures.
-- **Effort**: S
-
-### [TD-0021] pdf.py _format_value accepts Any
-- **Category**: Type Safety
-- **Severity**: Critical
-- **Location**: `backend/app/services/pdf.py:154`
-- **Description**: `_format_value(val: Any)` lacks type safety. Should accept a union of expected types.
-- **Suggested Fix**: Change to `_format_value(val: str | float | int | dict | list | None) -> str`.
-- **Effort**: S
 
 ### [TD-0022] Pervasive use of `any` for API responses in frontend
 - **Category**: Type Safety
@@ -197,14 +117,6 @@
 - **Suggested Fix**: Add generic typing to API client and Zod validation at response boundaries.
 - **Effort**: L
 
-### [TD-0024] catch (e: any) pattern throughout frontend
-- **Category**: Type Safety
-- **Severity**: High
-- **Location**: `frontend/src/lib/api.ts:46,49,141`, multiple route files
-- **Description**: All error catch blocks use `e: any` instead of `e: unknown` with type guards.
-- **Suggested Fix**: Standardize to `catch (e: unknown)` with `e instanceof Error ? e.message : String(e)`.
-- **Effort**: S
-
 ### [TD-0025] No Zod validation on API response boundaries
 - **Category**: Type Safety
 - **Severity**: High
@@ -220,22 +132,6 @@
 - **Description**: Node and Edge data objects are accessed assuming specific structure with no TypeScript interfaces. `node.data.label`, `node.data.params`, `node.data.paramSchema` are all untyped.
 - **Suggested Fix**: Create `UnitOpNodeData`, `SwimLaneNodeData`, `ProcessStartNodeData` interfaces.
 - **Effort**: M
-
-### [TD-0027] Children prop typed as any in Modal
-- **Category**: Type Safety
-- **Severity**: Medium
-- **Location**: `frontend/src/lib/components/Modal.svelte:13`
-- **Description**: `children: any` instead of proper Svelte 5 snippet typing.
-- **Suggested Fix**: Use `children: Snippet` from Svelte 5 types.
-- **Effort**: S
-
-### [TD-0028] Image data stored as generic any[] in RoleWizard
-- **Category**: Type Safety
-- **Severity**: Medium
-- **Location**: `frontend/src/lib/components/RoleWizard.svelte:75`
-- **Description**: `stepImages = $state<Record<string, any[]>>({})` stores image metadata without typing.
-- **Suggested Fix**: Define `ImageMetadata` interface with url, timestamp, etc.
-- **Effort**: S
 
 ### [TD-0029] No unit tests for pdf.py (1200+ lines)
 - **Category**: Testing Gaps
@@ -268,14 +164,6 @@
 - **Description**: PDF generation and export endpoints have no integration test coverage.
 - **Suggested Fix**: Create integration tests hitting the PDF preview and export endpoints with sample protocol data.
 - **Effort**: M
-
-### [TD-0036] Untyped dict endpoint parameters bypass validation
-- **Category**: Security
-- **Severity**: Medium
-- **Location**: `backend/app/api/endpoints/science.py:1231`, `science.py:1287`
-- **Description**: `body: dict` parameters on PDF preview endpoints bypass Pydantic validation entirely. Could accept unexpected payload structures.
-- **Suggested Fix**: Create Pydantic request schemas for all endpoints (overlaps with TD-0020).
-- **Effort**: S
 
 ### [TD-0037] 50+ direct DB queries in endpoint layer (backend)
 - **Category**: Architecture
@@ -363,30 +251,6 @@
 - **Affected files**: `runs/[id]/+page.svelte` (~1400 lines), `projects/[id]/+page.svelte` (~1700 lines), `protocols/[id]/+page.svelte` (~2700 lines), `+page.svelte` (dashboard), `export/+page.svelte`, `settings/+page.svelte`, all custom `lib/components/*.svelte`
 - **Effort**: XL
 
-### [TD-0047] Mutable default argument in `log_audit()` — shared dict bug risk
-- **Category**: Code Smells
-- **Severity**: High
-- **Location**: `backend/app/services/audit.py:12`
-- **Description**: `changes: Dict[str, Any] = {}` uses a mutable default argument. If any caller accidentally mutates the dict in-place before passing it, the default object is shared across all calls, leading to data leaking between audit entries. Classic Python gotcha.
-- **Suggested Fix**: Change to `changes: Dict[str, Any] | None = None` and initialize inside the function: `changes = changes or {}`.
-- **Effort**: S
-
-### [TD-0049] AI settings endpoint has no authentication
-- **Category**: Security
-- **Severity**: High
-- **Location**: `backend/app/api/endpoints/ai.py:61-62`
-- **Description**: `GET /ai/settings` lists all `AiProviderConfig` rows without any auth dependency. Unauthenticated users can discover AI provider configurations, model names, and capability mappings. Every other endpoint in the file requires `get_current_user`.
-- **Suggested Fix**: Add `current_user: User = Depends(get_current_user)` to the endpoint signature. Consider adding org-admin requirement since these are sensitive configs.
-- **Effort**: S
-
-### [TD-0050] Image upload accepts unsanitized file extensions
-- **Category**: Security
-- **Severity**: Medium
-- **Location**: `backend/app/api/endpoints/ai.py:276`
-- **Description**: `os.path.splitext(file.filename or "image.jpg")[1]` extracts the extension directly from the client-supplied filename with no allowlist validation. Arbitrary extensions like `.exe`, `.sh`, `.html` are stored to disk. While the UUID-based filename mitigates direct exploitation, serving these files later could be dangerous.
-- **Suggested Fix**: Add an allowlist: `ALLOWED_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}`. Reject or default to `.jpg` if the extension is not in the allowlist.
-- **Effort**: S
-
 ### [TD-0051] Backend iam.py is 784 lines with mixed concerns
 - **Category**: Code Smells
 - **Severity**: Medium
@@ -418,22 +282,6 @@
 - **Description**: Equipment picker handles search, filtering, selection, inline creation form, and validation all in one component. Over the 500-line threshold.
 - **Suggested Fix**: Extract the "Create New Equipment" form into a separate `CreateEquipmentForm.svelte` component.
 - **Effort**: M
-
-### [TD-0055] Silent `// silent` catch blocks swallow errors on user actions
-- **Category**: Missing Implementation
-- **Severity**: Medium
-- **Location**: `frontend/src/routes/protocols/[id]/+page.svelte:562,589`, `frontend/src/routes/+page.svelte:94`
-- **Description**: Catch blocks with `// silent` comments swallow errors on user-initiated actions (renaming protocol, updating description, loading activity). Users get no feedback when these operations fail — the UI just doesn't update.
-- **Suggested Fix**: Replace with `toast.error()` calls (once F-0009 toast system is implemented) or at minimum set an error state variable.
-- **Effort**: S
-
-### [TD-0056] Duplicate `timeAgo` utility function
-- **Category**: Code Smells
-- **Severity**: Low
-- **Location**: `frontend/src/routes/+page.svelte:105`, `frontend/src/lib/components/VersionHistoryDrawer.svelte:25`
-- **Description**: The `timeAgo()` relative timestamp formatter is implemented twice in separate files with the same logic.
-- **Suggested Fix**: Extract to `frontend/src/lib/utils.ts` and import from both locations.
-- **Effort**: S
 
 ### [TD-0057] No optimistic updates — full data reload after every mutation
 - **Category**: Architecture
@@ -475,23 +323,6 @@
 - **Suggested Fix**: Add server-side pagination (limit/offset) to the member and subscription list endpoints. Add pagination controls to the settings UI.
 - **Effort**: M
 
-### [TD-0062] Playwright E2E: Login & Authentication Workflow
-- **Category**: Testing Gaps
-- **Severity**: ~~High~~ **RESOLVED**
-- **Location**: `frontend/e2e/auth.spec.ts`
-- **Description**: No E2E tests exist for the authentication flow. This is the entry point for every user session and a regression here blocks the entire app.
-- **Test Cases**:
-  - [x] Successful login with valid credentials → redirects to dashboard, user menu shows name/email
-  - [x] Failed login with wrong password → shows error, stays on login page (skips when auth_enabled=false)
-  - [x] Failed login with non-existent email → shows error (skips when auth_enabled=false)
-  - [x] Route protection: unauthenticated user visiting `/projects` redirects to `/login`
-  - [x] Session persistence: refresh page after login → stays authenticated (token in localStorage)
-  - [x] Logout: click sign out → clears token, redirects to `/login`, protected routes no longer accessible
-  - [x] Token expiry: expired JWT → auto-logout on next API call, redirect to `/login`
-  - [x] Organization switching: select different org in user menu → context updates, data reloads for new org
-- **Effort**: L
-- **Resolution**: Set up Playwright E2E infrastructure (`playwright.config.ts`, `e2e/helpers/auth.ts`) with 8 auth tests in `e2e/auth.spec.ts`. Frontend dev server auto-starts on port 5176 to avoid conflicts. Tests 2-3 auto-skip when backend has `auth_enabled=false`. Added second org ("Acme Biologics") to seed data for org-switching test. Added CORS origin for `:5176`. All 6 active tests pass (2 correctly skipped in dev mode).
-
 ### [TD-0063] Playwright E2E: Organization Roles & Permissions Workflow
 - **Category**: Testing Gaps
 - **Severity**: High
@@ -510,30 +341,6 @@
   - [ ] **Project permissions (open mode)**: When `permissions_enabled=false`, all org members get implicit EDIT access
   - [ ] **Permission denied UX**: Attempting a forbidden action shows a clear error, doesn't silently fail or crash
 - **Suggested Fix**: Create `frontend/e2e/permissions.spec.ts`. Seed multiple test users with different roles (org admin, org member, project viewer, project editor, project approver) in `globalSetup`. Use Playwright's `browser.newContext()` to run parallel sessions as different users.
-- **Effort**: XL
-
-### [TD-0064] Playwright E2E: Protocol Creation & Update Workflow
-- **Category**: Testing Gaps
-- **Severity**: High
-- **Location**: `frontend/e2e/` (to be created)
-- **Description**: No E2E tests cover the protocol lifecycle. The protocol editor is the most complex page in the app (2700+ lines) with graph editing, versioning, and an approval flow — all untested in a real browser.
-- **Test Cases**:
-  - [ ] **Create**: Create new protocol from project page → opens editor with empty canvas
-  - [ ] **Edit graph**: Drag a unit op from sidebar onto canvas → node appears at drop position
-  - [ ] **Connect nodes**: Drag edge from one node's handle to another → edge created
-  - [ ] **Edit node params**: Click node → inspector opens → change parameters → apply → node data updates
-  - [ ] **Save (publish)**: Click save → version number increments, graph persists across page reload
-  - [ ] **Save as draft**: Save as draft → main protocol graph unchanged, draft version visible in version history
-  - [ ] **Publish draft**: Open version history → publish a draft version → becomes the current version
-  - [ ] **Revert version**: Open version history → revert to earlier version → new version created with old graph
-  - [ ] **Add roles/swimlanes**: Create protocol roles → swimlane nodes appear in graph
-  - [ ] **Submit for approval**: Click submit → status changes to PENDING_APPROVAL, edit controls disabled
-  - [ ] **Approve** (as approver): Log in as user with APPROVE permission → approve protocol → status becomes APPROVED, author receives notification
-  - [ ] **Reject** (as approver): Reject protocol with comment → status reverts to DRAFT, author can edit again
-  - [ ] **Edit approved protocol**: Edit an APPROVED protocol → reverts to DRAFT with warning, org admins notified
-  - [ ] **Delete empty draft**: Delete a DRAFT protocol with no graph → hard deleted, removed from project list
-  - [ ] **Archive non-empty**: Delete a protocol with runs → archived instead, can be unarchived by admin
-- **Suggested Fix**: Create `frontend/e2e/protocols.spec.ts`. Seed a project with unit op definitions. For approval tests, use two browser contexts (author + approver). Graph interaction tests will need precise coordinate-based clicks for the XYFlow canvas.
 - **Effort**: XL
 
 ### [TD-0065] Playwright E2E: Run Creation & Execution Workflow
@@ -562,5 +369,19 @@
 - **Location**: `backend/app/api/endpoints/runs.py:720-800`
 - **Description**: When a user is initially assigned to a run role via `ROLE_ASSIGNED` notification and then the role is reassigned to a different user, the original user's `ROLE_ASSIGNED` notification remains in their notification list. The reassignment creates a new `ROLE_REASSIGNED` notification for both users, but the old `ROLE_ASSIGNED` notification is never removed or invalidated. This means the original user sees both "You were assigned to role X" and "Role X was reassigned" — the first message is misleading since they are no longer assigned.
 - **Suggested Fix**: When a role reassignment occurs in `create_run_role_assignment`, delete or mark as read/dismissed any existing `ROLE_ASSIGNED` notifications for the old user on that run+role. This requires either: (a) querying and deleting matching notifications by `entity_id` + `event_type` + `recipient`, or (b) adding a `dismiss_notifications` helper to the notifications service that invalidates stale assignment notifications when the assignment changes.
+- **Effort**: M
+
+### [TD-0068] Stale Tailwind v3 config causes arbitrary value classes to fail
+- **Category**: Dependencies & Tooling
+- **Severity**: High
+- **Location**: `frontend/tailwind.config.js`, `frontend/src/app.css`, `frontend/postcss.config.js`
+- **Description**: The frontend uses Tailwind CSS v4 (`@import "tailwindcss"` with `@theme` in `app.css`) but still has a Tailwind v3-style `tailwind.config.js` with `content`, `theme.extend`, `darkMode`, etc. Tailwind v4 uses automatic content detection and CSS-based configuration — the v3 config file is ignored or partially applied, causing subtle bugs. Arbitrary value classes like `w-[15px]` silently fail to generate, producing unsized elements (e.g., a 15px search icon SVG rendering at full viewport size). The `@theme` block in `app.css` and the `theme.extend` in `tailwind.config.js` define overlapping/conflicting design tokens.
+- **Suggested Fix**:
+  1. Migrate all v3 `tailwind.config.js` settings into the v4 CSS-based config (`@theme` block in `app.css`)
+  2. Move `content` paths to v4's `@source` directive if automatic detection isn't sufficient
+  3. Move `darkMode: ["class"]` to v4's `@variant dark (&:where(.dark, .dark *))` syntax
+  4. Move shadcn-svelte color tokens from `theme.extend.colors` to `@theme` CSS variables (some are already there — deduplicate)
+  5. Delete `tailwind.config.js`
+  6. Audit all arbitrary value classes (`w-[Xpx]`, `h-[Xpx]`, `text-[Xpx]`, etc.) across the codebase — replace with standard Tailwind classes where possible
 - **Effort**: M
 

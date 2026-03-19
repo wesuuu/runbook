@@ -6,6 +6,8 @@
     import { getOrphanedActions, type QueuedAction } from '$lib/offline-db';
     import { syncNow } from '$lib/sync-manager';
     import CompletionChart from '$lib/components/CompletionChart.svelte';
+    import { toast } from '$lib/toast';
+    import { timeAgo } from '$lib/utils';
 
     type RunSummary = {
         id: string;
@@ -96,7 +98,7 @@
                 });
             }
         } catch {
-            // Non-critical
+            toast.warning('Failed to check offline queue');
         }
     }
 
@@ -144,7 +146,7 @@
             activityItems = [...activityItems, ...resp.items];
             activityTotal = resp.total;
         } catch {
-            // silent
+            toast.warning('Failed to load more activity');
         } finally {
             activityLoading = false;
         }
@@ -153,20 +155,6 @@
     function progressPercent(run: RunSummary): number {
         if (run.total_steps === 0) return 0;
         return Math.round((run.completed_steps / run.total_steps) * 100);
-    }
-
-    function timeAgo(dateStr: string): string {
-        const now = Date.now();
-        const then = new Date(dateStr).getTime();
-        const diff = now - then;
-        const mins = Math.floor(diff / 60000);
-        if (mins < 1) return 'just now';
-        if (mins < 60) return `${mins}m ago`;
-        const hours = Math.floor(mins / 60);
-        if (hours < 24) return `${hours}h ago`;
-        const days = Math.floor(hours / 24);
-        if (days < 7) return `${days}d ago`;
-        return new Date(dateStr).toLocaleDateString();
     }
 
     function formatDate(dateStr: string): string {

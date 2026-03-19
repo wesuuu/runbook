@@ -11,7 +11,7 @@ from app.models.mixins import UUIDMixin, TimestampMixin
 
 SUPPORTED_PROVIDERS = ("ollama", "anthropic", "google", "openai")
 
-SUPPORTED_CAPABILITIES = ("vision", "audio", "text")
+SUPPORTED_CAPABILITIES = ("vision", "audio", "text", "embedding")
 
 DEFAULT_CONFIGS = {
     "vision": {
@@ -25,6 +25,10 @@ DEFAULT_CONFIGS = {
     "text": {
         "provider": "ollama",
         "model_name": "llama3.2",
+    },
+    "embedding": {
+        "provider": "ollama",
+        "model_name": "nomic-embed-text",
     },
 }
 

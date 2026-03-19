@@ -35,6 +35,93 @@ Completed features moved from `FEATURES.md`. These items are retained for refere
 - **Dependencies**: None
 - **Archived**: 2026-03-08
 
+### [F-0002] Offline Mode & Async Image Analysis
+- **Status**: Done
+- **Priority**: P1 (High)
+- **Scope**: Full Stack
+- **Description**: A four-phase feature that (1) decouples image capture from AI analysis so scientists aren't blocked during runs, (2) makes the app an installable PWA with offline detection, (3) adds an encrypted "Field Mode" for offline run execution with scoped auth tokens, and (4) builds the full offline capture, sync, and recovery UI. Phase 1 (Async Image Analysis) is a prerequisite that delivers value on its own — faster run execution even while online.
+- **Acceptance Criteria**:
+  - **Phase 1 — Async Image Analysis (online, no PWA)**
+    - [x] After image capture in RoleWizard, user is shown a parameter tag selector (derived from step's `param_schema`) instead of the blocking AI analysis dialog
+    - [x] `parameter_tags` JSONB field added to `RunImage` model storing which param keys the image relates to (e.g., `["pH", "temperature"]`)
+    - [x] `PUT /ai/runs/{id}/images/{id}/tag` endpoint to set parameter tags on an image
+    - [x] Image gallery in RoleWizard shows status badges per image: `Captured` (no conversation), `Analyzed` (conversation exists, not confirmed), `Confirmed` (conversation confirmed)
+    - [x] Each image in the gallery has an "Analyze" button that opens the existing `ImageAnalysisDialog` for on-demand analysis
+    - [x] `POST /ai/runs/{id}/analyze-pending` batch endpoint triggers sequential analysis on all unanalyzed images in a run
+    - [x] "Analyze All" button on the run detail page triggers batch analysis with progress feedback
+    - [x] Run completion allows unanalyzed images — shows warning "You have N unanalyzed images. Complete anyway?" and creates a notification on confirm
+    - [x] `PENDING_IMAGE_ANALYSIS` notification type created when a run is completed with unanalyzed images; links to the run's image review
+    - [x] Dashboard card shown when the user has runs with pending image analyses: "N images pending analysis across M runs"
+    - [x] `GET /ai/runs/{id}/images` supports `?analyzed=false` filter to list unanalyzed images
+  - **Phase 2 — PWA Shell**
+    - [x] `manifest.webmanifest` configured with app name ("Trellis Runbook"), icons, theme color (`hsl(220 60% 28%)`), background color (`hsl(40 25% 97%)`), and `display: standalone`
+    - [x] Service worker registered via `@vite-pwa/sveltekit` with cache-first for static assets, network-first (3s timeout) for API calls, network-only for `/auth/*`, stale-while-revalidate for Google Fonts
+    - [x] App is installable (Add to Home Screen) on tablets and mobile devices
+    - [x] Offline fallback page (`offline.html`) shown when navigating to uncached routes while disconnected
+    - [x] Visual connectivity indicator in the app shell — amber banner below nav when offline
+    - [x] `auth.svelte.ts` caches user profile and org data in localStorage; `initialize()` distinguishes network failure from 401 and loads cached data when offline instead of logging out
+  - **Phase 3 — Field Mode Backend**
+    - [x] `POST /auth/offline-session` endpoint: validates user password, verifies active role assignment on the run, issues a 7-day scoped JWT (`{ sub, run_id, scope: "offline" }`), logs to audit
+    - [x] Run data prefetch endpoint returns everything needed for offline execution: run, protocol graph, role assignments, param schemas, equipment
+    - [x] `POST /sync/offline-queue` batch endpoint accepts queued actions (image uploads + parameter tags + optional manual values) authenticated with offline token OR normal token
+    - [x] AI-vs-manual value comparison on sync: auto-confirm if within configurable tolerance, flag `OFFLINE_VALUE_DISCREPANCY` notification if mismatch
+    - [x] `OFFLINE_SYNC_PENDING` notification type scheduled as push reminder for active field sessions
+    - [x] Server can revoke/blacklist offline tokens for admin override
+  - **Phase 4 — Field Mode Frontend**
+    - [x] "Go Offline" button on active runs → password confirmation → Web Crypto AES-256-GCM encryption of session (PBKDF2 key derivation, 100k iterations) → prefetch and encrypt run data in IndexedDB
+    - [x] Offline login screen: stripped-down UI showing run name, email (pre-filled), password field, session expiry countdown
+    - [x] Field mode UI: locked to single run execution, minimal nav header, persistent queue counter
+    - [x] Image capture writes to IndexedDB `action-queue` store (unencrypted blob + metadata); parameter tagging uses same Phase 1 UI
+    - [x] Optional manual value entry for step parameters (fields from param_schema) — AI verifies on sync
+    - [x] Inactivity auto-lock after 1 hour: wipes derived key from memory, shows lock screen, queue and encrypted session persist
+    - [x] Explicit "End Field Mode" action: syncs if online, wipes session and queue, requires password confirmation
+    - [x] Sync manager: drains queue on reconnect, Background Sync API registration for Android/Chrome, `visibilitychange` + `online` fallback for Safari/iPad
+    - [x] Expiry warnings at 48h, 24h, 6h, 1h remaining — escalating from amber banner to red to full-screen modal at 1h
+    - [x] Action queue persists independently of session expiry — orphaned queue items recoverable on next normal login
+    - [x] Dashboard card for pending uploads: "N items from [run name] captured [date range] haven't been uploaded" with Sync Now button
+    - [x] Push notification reminders for iPad/Safari where Background Sync is unavailable
+    - [x] "End Field Mode" with unsynced items while offline shows: "N unsynced items. Connect to internet first." with option to stay or lose data
+- **Resolution**: Implemented all 4 phases across backend and frontend. Phase 1: async image analysis with parameter tagging and batch processing. Phase 2: PWA shell with service worker, offline fallback, and connectivity detection. Phase 3: offline auth tokens, prefetch endpoint, sync batch processor, AI-vs-manual comparison, token revocation. Phase 4: Web Crypto encrypted IndexedDB sessions, field mode UI with lock screen/expiry warnings, sync manager with Background Sync + fallback, orphan recovery dashboard card. 354 backend tests passing, no new frontend type errors.
+- **Implementation Notes**:
+  - **Phase 1 backend**: Add `parameter_tags` JSONB column to `run_images` (migration). New endpoints in `ai.py`: `PUT /images/{id}/tag`, `POST /runs/{id}/analyze-pending`. Add filtering to `GET /runs/{id}/images`. New notification type in notifications service.
+  - **Phase 1 frontend**: Modify `RoleWizard.svelte` — after upload, show tag selector instead of opening `ImageAnalysisDialog`. Add status badges to `ImageGallery.svelte`. Add "Analyze" per-image button and "Analyze All" on run detail. Dashboard pending analysis card. Run completion warning for unanalyzed images.
+  - **Phase 2**: Install `@vite-pwa/sveltekit`. Configure in `vite.config.ts`. Create `public/offline.html`. Modify `auth.svelte.ts` for offline-safe initialization. Add connectivity banner to `+layout.svelte`.
+  - **Phase 3**: New `POST /auth/offline-session` endpoint with scoped JWT. `POST /sync/offline-queue` batch processor. Tolerance-based AI-vs-manual comparison. Push notification scheduling.
+  - **Phase 4**: Web Crypto API (PBKDF2 + AES-GCM) for session encryption. IndexedDB stores: `field-sessions` (encrypted) and `action-queue` (unencrypted, persists beyond session). Sync manager with Background Sync registration. Inactivity detection via interaction tracking + `setInterval`. Orphaned queue recovery on normal login.
+- **Dependencies**: None (Phase 1 delivers standalone value; each subsequent phase builds on the previous)
+- **Archived**: 2026-03-18
+
+### [F-0008] Mobile-Friendly Responsive Design
+- **Status**: Done
+- **Priority**: P1 (High)
+- **Scope**: Frontend
+- **Description**: The app's tables, navigation, and data views don't scroll or fit well on mobile devices. Tables overflow without usable scroll indicators, the nav bar overflows on small screens, and most pages skip the `sm:` (640px) breakpoint entirely. Since this is a tablet-first app used in labs, mobile/tablet usability is critical. This feature brings full responsive support across all views.
+- **Acceptance Criteria**:
+  - [x] Navigation bar collapses to a hamburger menu on screens <768px with a slide-out or dropdown menu
+  - [x] All data tables (Projects list, Protocols tab, Runs tab, Export page) switch to a card-based layout on screens <640px — each row becomes a stacked card showing key fields
+  - [x] On tablet widths (640px–1024px), tables use horizontal scroll with a visible scroll indicator (gradient fade or scrollbar hint)
+  - [x] Low-priority table columns (Description, Organization) are hidden on screens <768px; remaining columns resize fluidly
+  - [x] Fixed-width table columns (`w-[40px]`, `w-[80px]`, `w-[150px]` in project detail) are replaced with responsive min/max widths
+  - [x] All interactive elements (buttons, checkboxes, dropdown triggers) have a minimum touch target of 44×44px on mobile
+  - [x] Hover-only interactions (table row highlights, tooltip triggers) have touch-friendly alternatives (tap-to-select, long-press)
+  - [x] Settings page tab bar wraps or becomes a dropdown/select on screens <480px
+  - [x] Dashboard counter cards use `grid-cols-2` on mobile instead of `grid-cols-3`
+  - [x] Global padding reduces from `px-6` to `px-4` on screens <640px
+  - [x] Export page pagination controls stack vertically on mobile
+  - [x] No horizontal page-level overflow on any screen width ≥320px
+- **Resolution**: Added MobileNav.svelte with hamburger menu and slide-out drawer (md: breakpoint). All project detail tables (runs, protocols) get card-based mobile layout below sm: and overflow-x-auto for tablet scroll. Fixed-width columns replaced with responsive hidden/shown via Tailwind md:/lg: prefixes. Projects list table gets mobile cards with hidden Description/Organization columns. Export page header/toolbar/pagination stack vertically on mobile. Settings tabs scrollable. Dashboard counter grid uses grid-cols-2 on mobile. Global padding reduced via px-4 sm:px-6. Touch targets enforced with min-h-11 min-w-11. All responsive behavior via pure Tailwind utility classes — zero custom CSS added.
+- **Implementation Notes**:
+  - **Navigation** (`frontend/src/routes/+layout.svelte`): Add a hamburger button visible at `md:hidden`, hide the inline nav links at `hidden md:flex`. Use a sheet/drawer component from shadcn-svelte for the mobile menu.
+  - **Responsive table component**: Create `frontend/src/lib/components/ResponsiveTable.svelte` — a wrapper that renders a `<Table>` on desktop and a card list on mobile using a `sm:` media query or container query. Pass column definitions with a `priority` field to control which columns show at each breakpoint.
+  - **Project detail** (`frontend/src/routes/projects/[id]/+page.svelte`): Replace fixed `w-[...]` column widths with `min-w-0` and `truncate`. Hide Description column below `md:`. Wrap protocol/run tables with ResponsiveTable.
+  - **Export page** (`frontend/src/routes/export/+page.svelte`): Add `overflow-x-auto` with scroll shadow gradient. Stack pagination controls with `flex-wrap`.
+  - **Dashboard** (`frontend/src/routes/+page.svelte`): Change counter grid from `grid-cols-3` to `grid-cols-2 sm:grid-cols-3`.
+  - **Global styles** (`frontend/src/app.css`): Add a utility class for scroll shadows on overflow containers. Add `@media (max-width: 640px)` rules for reduced padding.
+  - **Settings tabs** (`frontend/src/routes/settings/+page.svelte`): Use `overflow-x-auto` on the tab bar or switch to a `<Select>` on mobile.
+  - **Touch targets**: Audit all `<Button size="icon">` and small clickables; add `min-h-11 min-w-11` on mobile breakpoints.
+- **Dependencies**: None
+- **Archived**: 2026-03-18
+
 ### [F-0009] Global Toast Notification System
 - **Status**: Done
 - **Priority**: P1 (High)
@@ -67,6 +154,31 @@ Completed features moved from `FEATURES.md`. These items are retained for refere
 - **Dependencies**: None
 - **Archived**: 2026-03-08
 
+### [F-0009] Undo/Redo in Protocol Editor
+- **Status**: Done
+- **Priority**: P1 (High)
+- **Scope**: Frontend
+- **Source**: GAP-001
+- **Description**: The protocol editor has no undo/redo capability. Accidental node deletions, edge removals, or parameter changes require reloading the last saved version, losing all unsaved work. Every design/editing tool has undo/redo — this is a basic usability expectation for scientists building complex protocols (20-50+ steps).
+- **Acceptance Criteria**:
+  - [x] Command stack pattern implemented: each mutation pushes a snapshot (or command + inverse) onto an undo stack
+  - [x] Tracked operations: node add/delete/move, edge add/delete, property changes (label, params, duration), swimlane operations
+  - [x] `Ctrl+Z` triggers undo, `Ctrl+Shift+Z` / `Ctrl+Y` triggers redo
+  - [x] Undo/redo buttons added to the canvas toolbar with disabled state when stack is empty
+  - [x] Stack depth limited to 50 actions to manage memory
+  - [x] Redo stack is cleared when a new action is performed after an undo
+  - [x] Undo/redo state does not persist across page loads (resets on save or reload)
+  - [x] Batch operations (e.g., delete multiple selected nodes) are a single undo entry
+- **Implementation Notes**:
+  - **State management**: Create an `undoRedoStore` (or inline in `ProtocolEditor.svelte`) that maintains `undoStack: string[]` and `redoStack: string[]` of serialized snapshots (JSON.stringify of `{nodes, edges}`)
+  - **Snapshot approach** (simpler than command pattern): Before each mutation, push `JSON.stringify({nodes, edges})` to undo stack. On undo, restore from stack and push current state to redo stack
+  - **Debouncing**: For drag/move operations, only snapshot on `dragstart` (not every pixel), using `on:noderagstart` from @xyflow/svelte
+  - **Keyboard shortcuts**: Add `keydown` event listener in `ProtocolEditor.svelte` with `e.ctrlKey && e.key === 'z'` / `e.ctrlKey && e.shiftKey && e.key === 'z'`
+  - **Toolbar buttons**: Add Undo/Redo icons (lucide `Undo2`/`Redo2`) to the existing toolbar row
+- **Dependencies**: None
+- **Resolution**: Created `undoRedo.ts` module with pure snapshot-based undo/redo stack (50 depth limit). Integrated into `+page.svelte` with `pushUndoSnapshot()` before all 13 mutation points: onDrop, deleteNode, inspector apply (unitOp + processStart), role created/deleted, layout toggle, handle orientation change, time toggle, node resize, and SvelteFlow events (onnodedragstart, onconnectstart/onconnect, onbeforedelete). Added Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y keyboard shortcuts. Added undo/redo button group to CanvasToolbar with disabled state. Stacks cleared on save and data load. 16 Vitest unit tests passing. Verified with `npm run check` (no new errors).
+- **Archived**: 2026-03-18
+
 ### [F-0010] Dashboard Run Completion Trend Chart
 - **Status**: Done
 - **Priority**: P2 (Medium)
@@ -91,3 +203,39 @@ Completed features moved from `FEATURES.md`. These items are retained for refere
   - **Frontend integration** (`frontend/src/routes/+page.svelte`): `trendDays` state, `toggleTrendDays()` re-fetches dashboard with updated param.
 - **Dependencies**: None
 - **Archived**: 2026-03-08
+
+### [F-0013] Barcode & QR Code Scanning
+- **Status**: Done
+- **Priority**: P1 (High)
+- **Scope**: Frontend
+- **Source**: GAP-005
+- **Description**: No barcode or QR code scanning. Scientists manually type equipment IDs, reagent lot numbers, and sample identifiers — error-prone and slow with gloves. Labs use barcodes extensively; scanning is 5-10x faster than manual entry and eliminates transcription errors. This is what makes a lab tool feel like it was built for a lab.
+- **Acceptance Criteria**:
+  - [x] Browser-based barcode scanner using `html5-qrcode` or `@AdrianSkar/html5-qrcode` (Web Camera API)
+  - [x] Supported formats: Code 128, Code 39, QR Code, DataMatrix (common lab barcodes)
+  - [x] Scan button (camera icon) on parameter entry fields in run step forms (`RoleWizard.svelte`)
+  - [ ] Scan button on equipment picker/selector fields — deferred (needs backend `GET /equipment?barcode=X` lookup endpoint)
+  - [x] Scanner opens as a modal overlay with live camera preview and scan region indicator
+  - [x] On successful scan, decoded value is inserted into the target input field
+  - [x] Audible beep or haptic feedback on successful scan
+  - [x] Manual fallback: "Type manually" link in scanner modal for when scanning fails
+  - [x] Scanner works in offline/field mode (camera API is client-side only)
+  - [ ] Optional: generate QR codes for internal entities (run ID, equipment ID) for printing labels — deferred
+- **Implementation Notes**:
+  - **Library**: Install `html5-qrcode` (npm). It uses `getUserMedia` API — works on tablets and phones with camera access
+  - **Component**: Create `BarcodeScanner.svelte` — wraps `Html5QrcodeScanner` with a Svelte lifecycle. Exposes `on:scan` event with decoded text
+  - **Integration**: Add scan icon button next to text inputs in `RoleWizard.svelte` parameter forms. On click, open scanner modal. On scan result, set the input value
+  - **QR generation** (optional): Use `qrcode` npm package to generate QR code SVGs for entity IDs. Add "Print QR Label" button on equipment detail page
+  - **Permissions**: Browser will prompt for camera permission on first use. Show helpful message if permission is denied
+- **Dependencies**: None
+- **Resolution**: Implemented browser-based barcode scanning via `html5-qrcode`. Created `BarcodeScanner.svelte` (modal with camera viewfinder, scan region overlay, success animation, beep/haptic feedback, camera error handling, manual fallback) and `barcodeScannerUtils.ts` (scanner lifecycle, audio/haptic utilities). Integrated scan button on every non-enum parameter input field in both `RoleWizard.svelte` and `FieldModeRoleWizard.svelte`. 14 unit tests covering scanner creation, cleanup, scan callbacks, beep/haptic, and edge cases. All 71 Vitest tests pass, `npm run check` clean (no new errors). To test: display any barcode/QR code on a screen and point your camera at it.
+- **Archived**: 2026-03-18
+
+### [F-0017] Document Library with RAG Indexing
+- **Status**: Done
+- **Priority**: P1 (High)
+- **Scope**: Full Stack
+- **Description**: A document library where users can upload PDFs, DOCX, plain text, images (photos of printed protocols/vendor docs), and other files, which are then parsed, chunked, embedded, and indexed for RAG (Retrieval-Augmented Generation) semantic search.
+- **Dependencies**: F-0007
+- **Resolution**: Implemented across three phases. Phase 1: Document CRUD, multi-layer upload security, text extraction pipeline, recursive text chunker, URL import, background processing, server resilience. Phase 2: pgvector + embedding service + semantic search. Phase 3: Full-text keyword search, hybrid scoring, keyword fallback, highlighted snippets, grouped results. 433 backend tests, 78 frontend Vitest tests.
+- **Archived**: 2026-03-18

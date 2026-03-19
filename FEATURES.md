@@ -4,60 +4,196 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
 
 ---
 
-### [F-0002] Offline Mode & Async Image Analysis
-- **Status**: Done
+### [F-0010] Export Pipeline Improvements
+- **Status**: Proposed
 - **Priority**: P1 (High)
 - **Scope**: Full Stack
-- **Description**: A four-phase feature that (1) decouples image capture from AI analysis so scientists aren't blocked during runs, (2) makes the app an installable PWA with offline detection, (3) adds an encrypted "Field Mode" for offline run execution with scoped auth tokens, and (4) builds the full offline capture, sync, and recovery UI. Phase 1 (Async Image Analysis) is a prerequisite that delivers value on its own — faster run execution even while online.
+- **Source**: GAP-002
+- **Description**: Export works (multi-run, multi-format, column selection, preview grid) but it's one-shot: scientists reconfigure every time, can't copy to clipboard, and output formatting may need cleanup before Prism/SAS can use it. Since export-to-analysis-tools is the core value proposition, this pipeline must be frictionless.
 - **Acceptance Criteria**:
-  - **Phase 1 — Async Image Analysis (online, no PWA)**
-    - [x] After image capture in RoleWizard, user is shown a parameter tag selector (derived from step's `param_schema`) instead of the blocking AI analysis dialog
-    - [x] `parameter_tags` JSONB field added to `RunImage` model storing which param keys the image relates to (e.g., `["pH", "temperature"]`)
-    - [x] `PUT /ai/runs/{id}/images/{id}/tag` endpoint to set parameter tags on an image
-    - [x] Image gallery in RoleWizard shows status badges per image: `Captured` (no conversation), `Analyzed` (conversation exists, not confirmed), `Confirmed` (conversation confirmed)
-    - [x] Each image in the gallery has an "Analyze" button that opens the existing `ImageAnalysisDialog` for on-demand analysis
-    - [x] `POST /ai/runs/{id}/analyze-pending` batch endpoint triggers sequential analysis on all unanalyzed images in a run
-    - [x] "Analyze All" button on the run detail page triggers batch analysis with progress feedback
-    - [x] Run completion allows unanalyzed images — shows warning "You have N unanalyzed images. Complete anyway?" and creates a notification on confirm
-    - [x] `PENDING_IMAGE_ANALYSIS` notification type created when a run is completed with unanalyzed images; links to the run's image review
-    - [x] Dashboard card shown when the user has runs with pending image analyses: "N images pending analysis across M runs"
-    - [x] `GET /ai/runs/{id}/images` supports `?analyzed=false` filter to list unanalyzed images
-  - **Phase 2 — PWA Shell**
-    - [x] `manifest.webmanifest` configured with app name ("Trellis Runbook"), icons, theme color (`hsl(220 60% 28%)`), background color (`hsl(40 25% 97%)`), and `display: standalone`
-    - [x] Service worker registered via `@vite-pwa/sveltekit` with cache-first for static assets, network-first (3s timeout) for API calls, network-only for `/auth/*`, stale-while-revalidate for Google Fonts
-    - [x] App is installable (Add to Home Screen) on tablets and mobile devices
-    - [x] Offline fallback page (`offline.html`) shown when navigating to uncached routes while disconnected
-    - [x] Visual connectivity indicator in the app shell — amber banner below nav when offline
-    - [x] `auth.svelte.ts` caches user profile and org data in localStorage; `initialize()` distinguishes network failure from 401 and loads cached data when offline instead of logging out
-  - **Phase 3 — Field Mode Backend**
-    - [x] `POST /auth/offline-session` endpoint: validates user password, verifies active role assignment on the run, issues a 7-day scoped JWT (`{ sub, run_id, scope: "offline" }`), logs to audit
-    - [x] Run data prefetch endpoint returns everything needed for offline execution: run, protocol graph, role assignments, param schemas, equipment
-    - [x] `POST /sync/offline-queue` batch endpoint accepts queued actions (image uploads + parameter tags + optional manual values) authenticated with offline token OR normal token
-    - [x] AI-vs-manual value comparison on sync: auto-confirm if within configurable tolerance, flag `OFFLINE_VALUE_DISCREPANCY` notification if mismatch
-    - [x] `OFFLINE_SYNC_PENDING` notification type scheduled as push reminder for active field sessions
-    - [x] Server can revoke/blacklist offline tokens for admin override
-  - **Phase 4 — Field Mode Frontend**
-    - [x] "Go Offline" button on active runs → password confirmation → Web Crypto AES-256-GCM encryption of session (PBKDF2 key derivation, 100k iterations) → prefetch and encrypt run data in IndexedDB
-    - [x] Offline login screen: stripped-down UI showing run name, email (pre-filled), password field, session expiry countdown
-    - [x] Field mode UI: locked to single run execution, minimal nav header, persistent queue counter
-    - [x] Image capture writes to IndexedDB `action-queue` store (unencrypted blob + metadata); parameter tagging uses same Phase 1 UI
-    - [x] Optional manual value entry for step parameters (fields from param_schema) — AI verifies on sync
-    - [x] Inactivity auto-lock after 1 hour: wipes derived key from memory, shows lock screen, queue and encrypted session persist
-    - [x] Explicit "End Field Mode" action: syncs if online, wipes session and queue, requires password confirmation
-    - [x] Sync manager: drains queue on reconnect, Background Sync API registration for Android/Chrome, `visibilitychange` + `online` fallback for Safari/iPad
-    - [x] Expiry warnings at 48h, 24h, 6h, 1h remaining — escalating from amber banner to red to full-screen modal at 1h
-    - [x] Action queue persists independently of session expiry — orphaned queue items recoverable on next normal login
-    - [x] Dashboard card for pending uploads: "N items from [run name] captured [date range] haven't been uploaded" with Sync Now button
-    - [x] Push notification reminders for iPad/Safari where Background Sync is unavailable
-    - [x] "End Field Mode" with unsynced items while offline shows: "N unsynced items. Connect to internet first." with option to stay or lose data
-- **Resolution**: Implemented all 4 phases across backend and frontend. Phase 1: async image analysis with parameter tagging and batch processing. Phase 2: PWA shell with service worker, offline fallback, and connectivity detection. Phase 3: offline auth tokens, prefetch endpoint, sync batch processor, AI-vs-manual comparison, token revocation. Phase 4: Web Crypto encrypted IndexedDB sessions, field mode UI with lock screen/expiry warnings, sync manager with Background Sync + fallback, orphan recovery dashboard card. 354 backend tests passing, no new frontend type errors.
+  - [ ] **Export presets**: Users can save named export configurations (column selection, format, layout) per project
+  - [ ] Presets stored in project settings JSONB or a new `export_presets` table
+  - [ ] Preset picker dropdown on the export page — select a preset to auto-populate settings
+  - [ ] "Save as Preset" button after configuring export options, with name input
+  - [ ] "Delete Preset" option on saved presets
+  - [ ] **Clipboard copy**: "Copy to Clipboard" button on the export preview — copies tab-separated values for direct paste into Excel/Prism
+  - [ ] Clipboard copy shows a brief toast confirmation ("Copied N rows to clipboard")
+  - [ ] **Last-used memory**: Export page remembers last-used settings per user (stored in localStorage or user preferences)
+  - [ ] **Prism-friendly format**: Optional "Prism Layout" preset that outputs parameter-per-column with run labels as row headers
+  - [ ] **SAS-friendly format**: Optional "SAS Layout" preset that outputs long/normalized format with proper column naming (no spaces, uppercase)
 - **Implementation Notes**:
-  - **Phase 1 backend**: Add `parameter_tags` JSONB column to `run_images` (migration). New endpoints in `ai.py`: `PUT /images/{id}/tag`, `POST /runs/{id}/analyze-pending`. Add filtering to `GET /runs/{id}/images`. New notification type in notifications service.
-  - **Phase 1 frontend**: Modify `RoleWizard.svelte` — after upload, show tag selector instead of opening `ImageAnalysisDialog`. Add status badges to `ImageGallery.svelte`. Add "Analyze" per-image button and "Analyze All" on run detail. Dashboard pending analysis card. Run completion warning for unanalyzed images.
-  - **Phase 2**: Install `@vite-pwa/sveltekit`. Configure in `vite.config.ts`. Create `public/offline.html`. Modify `auth.svelte.ts` for offline-safe initialization. Add connectivity banner to `+layout.svelte`.
-  - **Phase 3**: New `POST /auth/offline-session` endpoint with scoped JWT. `POST /sync/offline-queue` batch processor. Tolerance-based AI-vs-manual comparison. Push notification scheduling.
-  - **Phase 4**: Web Crypto API (PBKDF2 + AES-GCM) for session encryption. IndexedDB stores: `field-sessions` (encrypted) and `action-queue` (unencrypted, persists beyond session). Sync manager with Background Sync registration. Inactivity detection via interaction tracking + `setInterval`. Orphaned queue recovery on normal login.
-- **Dependencies**: None (Phase 1 delivers standalone value; each subsequent phase builds on the previous)
+  - **Backend**: Add `export_presets` JSONB field to Project model (or a separate table). CRUD endpoints: `POST /projects/{id}/export-presets`, `GET /projects/{id}/export-presets`, `DELETE /projects/{id}/export-presets/{preset_id}`
+  - **Frontend export page** (`frontend/src/routes/export/+page.svelte`): Add preset dropdown, save/delete buttons, clipboard copy button. Use `navigator.clipboard.writeText()` for copy
+  - **Tab-separated copy**: Convert preview grid data to TSV string with headers
+  - **localStorage**: Store `lastExportSettings` keyed by user ID
+- **Dependencies**: None
+
+### [F-0011] Full-Text Search Across Entities
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Full Stack
+- **Source**: GAP-003
+- **Description**: Only basic name filtering exists on list pages. No global search across protocols, runs, audit entries, or graph content. Scientists accumulate protocols and runs quickly and need to find things — "which runs used pH above 7.0" or "find all protocols mentioning centrifugation." Critical once users have 20+ protocols.
+- **Acceptance Criteria**:
+  - [ ] PostgreSQL full-text search (tsvector/tsquery) enabled on Protocol.name, Protocol.description, Run.name, Project.name, Project.description
+  - [ ] JSONB graph content indexed: node labels and parameter values extracted into a tsvector column
+  - [ ] `GET /search?q=...` global search endpoint returns results across protocols, runs, and projects
+  - [ ] Results are faceted by entity type (protocols, runs, projects) with counts per facet
+  - [ ] Results include relevance ranking (ts_rank) and highlighted snippets (ts_headline)
+  - [ ] Global search bar in the app header (visible on all pages)
+  - [ ] Search results page with tabs for each entity type and click-through to detail pages
+  - [ ] Search is debounced (300ms) with instant results as user types
+  - [ ] Empty state with helpful text when no results found
+  - [ ] Search respects user permissions — only returns entities the user has VIEW access to
+- **Implementation Notes**:
+  - **Migration**: Add `search_vector` tsvector column to protocols, runs, projects tables. Create GIN index. Add trigger to auto-update on INSERT/UPDATE
+  - **JSONB indexing**: Create a database function that extracts node labels and param values from graph JSONB into text for tsvector
+  - **Backend endpoint** (`backend/app/api/endpoints/search.py`): New router with `GET /search` accepting `q`, `entity_type` (optional filter), `limit`, `offset`. Query each table's search_vector, union results, rank and paginate
+  - **Frontend**: Add search input to nav bar (`+layout.svelte`). New `/search` route with results page. Use debounced fetch on input
+- **Dependencies**: None
+
+### [F-0012] Commenting & Annotation System
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Full Stack
+- **Source**: GAP-004
+- **Description**: No commenting anywhere in the app. Scientists cannot leave notes, ask questions, or flag issues on protocols, runs, or steps. All discussion happens outside the app (email, Slack), losing context. Research is collaborative — PD teams discuss protocols, flag observations during runs, and document decisions. Comments are where institutional knowledge lives.
+- **Acceptance Criteria**:
+  - [ ] `Comment` model: `id`, `entity_type` (protocol/run/step/image), `entity_id`, `parent_id` (for threading), `author_id`, `body` (text), `mentions` (JSONB array of user IDs), `created_at`, `updated_at`
+  - [ ] API endpoints: `POST /comments`, `GET /comments?entity_type=...&entity_id=...`, `PUT /comments/{id}`, `DELETE /comments/{id}`
+  - [ ] Comments are paginated (default 20 per page) with newest-first ordering
+  - [ ] Threaded replies: comments can have a `parent_id` pointing to another comment, displayed as nested threads
+  - [ ] Comment panel/sidebar on protocol editor (comments on the protocol)
+  - [ ] Comment section on run detail page (comments on the run, and per-step comments)
+  - [ ] @mention autocomplete: typing `@` in comment body shows a dropdown of project members to mention
+  - [ ] Mentioned users receive a notification (`COMMENT_MENTION` event type)
+  - [ ] Comment authors can edit and delete their own comments
+  - [ ] Comment count badge shown on entities that have comments
+  - [ ] Markdown support in comment body (bold, italic, code, links)
+- **Implementation Notes**:
+  - **Backend model** (`backend/app/models/comments.py`): New `Comment` model with polymorphic entity reference (`entity_type` + `entity_id`). Self-referential FK for `parent_id`
+  - **Backend endpoints** (`backend/app/api/endpoints/comments.py`): New router. Permission check: user must have VIEW on the parent entity to read comments, EDIT to create/modify
+  - **Notification integration**: Add `COMMENT_ADDED` and `COMMENT_MENTION` to notification event types. Trigger on comment creation
+  - **Frontend component**: Create `CommentPanel.svelte` — reusable comment list + input. Embed in protocol editor sidebar and run detail page
+  - **@mention**: Frontend autocomplete component that queries project members. Backend parses mentions from body text and populates the `mentions` JSONB field
+- **Dependencies**: None
+
+### [F-0014] Instrument Data Import (CSV/Excel)
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Full Stack
+- **Source**: GAP-006
+- **Description**: All parameter data enters via manual entry or AI image analysis. No file import capability. Plate readers, chromatography systems, and spectrophotometers all export CSV/Excel. Scientists must manually transcribe values — tedious and error-prone. CSV import eliminates manual entry errors and saves significant time per run.
+- **Acceptance Criteria**:
+  - [ ] "Import Data" button on run step parameter forms in `RoleWizard.svelte`
+  - [ ] Accepts CSV and Excel (.xlsx) file uploads
+  - [ ] Column mapping UI: after upload, user sees a preview of the file's columns and maps each CSV column to a step parameter
+  - [ ] Auto-mapping suggestion: if CSV column headers match parameter names (case-insensitive), pre-select the mapping
+  - [ ] Preview of mapped values before confirming import
+  - [ ] Backend endpoint: `POST /runs/{id}/steps/{step_id}/import` accepts file + column mapping, returns parsed values
+  - [ ] Imported values populate the parameter form fields (user can review and edit before saving the step)
+  - [ ] Support for multi-row imports: if CSV has multiple rows, user selects which row to import (or imports as a batch for multi-sample steps)
+  - [ ] Error handling: show clear messages for malformed files, missing columns, or type mismatches
+  - [ ] Import history: log which file was imported for audit trail
+- **Implementation Notes**:
+  - **Backend**: Add `POST /runs/{id}/steps/{step_id}/import` endpoint in `science.py`. Use `pandas` or `openpyxl` for parsing. Accept multipart file upload + JSON body with column mapping
+  - **Frontend component**: Create `DataImportDialog.svelte` — file drop zone, column preview table, mapping dropdowns (CSV column → parameter name), value preview, confirm button
+  - **Integration**: Add "Import" button next to parameter fields in `RoleWizard.svelte`. On click, open `DataImportDialog`. On confirm, populate form fields with imported values
+  - **Audit**: Log import action to audit trail with filename, timestamp, and mapped columns
+- **Dependencies**: None
+
+### [F-0015] Site Walkthrough & Guided Onboarding Tour
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Frontend
+- **Source**: GAP-007
+- **Description**: No first-run experience. New users land on the dashboard with no guidance — no tutorial, no tooltips on complex features, no walkthrough for first protocol creation. With a 30-day trial model, first impressions determine conversion. This feature adds a polished, multi-page guided tour using **Driver.js** (MIT license, ~5KB gzipped, 25k GitHub stars, framework-agnostic) that spotlights key UI elements with smooth CSS-animated transitions. The tour should feel native and slick — not like a clunky overlay from 2015.
+- **Acceptance Criteria**:
+  - **First-Run Detection & State:**
+    - [ ] Track `has_completed_onboarding` flag in user preferences (localStorage + backend `user_preferences` JSONB)
+    - [ ] On first login after registration, automatically launch the tour
+    - [ ] Cross-device consistency: onboarding state synced to backend so completing on tablet doesn't re-trigger on desktop
+  - **Main Site Tour (post-registration):**
+    - [ ] Tour sequence: Dashboard overview → Projects list → Create Project → Protocol Editor basics → Run creation → Export page
+    - [ ] Each step uses Driver.js spotlight: animated highlight around the target element with a popover (title, description, step counter, next/prev/skip)
+    - [ ] Smooth animated transitions between steps (Driver.js CSS transitions between highlighted elements)
+    - [ ] Progress indicator showing current step / total steps
+    - [ ] "Skip Tour" button visible at every step — exits gracefully and marks onboarding as complete
+    - [ ] "Back" button to revisit previous steps
+    - [ ] Tour adapts to viewport: mobile/tablet steps may differ from desktop (e.g., skip sidebar steps on mobile, highlight hamburger menu instead)
+  - **Protocol Editor Tour (context-specific):**
+    - [ ] Triggered on first visit to the protocol editor (separate `has_completed_editor_tour` flag)
+    - [ ] Steps: Unit Op sidebar (drag to canvas) → Canvas area (zoom/pan) → Node selection (click to inspect) → Inspector panel (edit parameters) → Swim lanes (role containers) → Handle orientation toggle → Save/Publish buttons → Version history
+    - [ ] Highlights actual DOM elements with working interactions — user can try dragging a unit op during the tour step
+  - **Experiment Runner Tour (context-specific):**
+    - [ ] Triggered on first visit to a run page (separate `has_completed_runner_tour` flag)
+    - [ ] Steps: Role assignment → Start run → Step navigation → Parameter entry → Image capture → Complete step → Run completion
+  - **Replay & Settings:**
+    - [ ] "Restart Tour" button in Settings → Profile tab
+    - [ ] Individual tour resets: "Replay Site Tour", "Replay Editor Tour", "Replay Runner Tour"
+    - [ ] Help icon (?) in the app header that offers tour replay + links to documentation
+  - **Contextual Tooltips (non-tour):**
+    - [ ] Pulsing hint dots on non-obvious features (handle orientation toggle, time axis, swimlane resize handles) that appear until the user interacts with them
+    - [ ] Tooltip dismissed permanently after first interaction (stored in localStorage)
+  - **Sample Content for New Orgs:**
+    - [ ] Pre-loaded "Example Cell Culture Protocol" with 5-6 connected nodes, swim lanes, and filled parameters — lets new users explore a populated editor immediately
+    - [ ] Sample project with the example protocol so the dashboard isn't empty on first login
+  - **Empty State CTAs:**
+    - [ ] Project detail with no protocols: "Create your first protocol" card with illustration and CTA button
+    - [ ] Project with no runs: "Start your first experiment" card
+    - [ ] Dashboard with no activity: welcoming message with quick-start actions
+- **Implementation Notes**:
+  - **Library**: Install `driver.js` via npm. MIT license — no commercial restrictions (unlike Shepherd.js and Intro.js which are AGPL-3.0 and require a commercial license for non-open-source use). ~5KB gzipped, zero dependencies, TypeScript-first. Works with plain DOM selectors — integrates cleanly with Svelte 5 without needing a framework wrapper. See https://driverjs.com
+  - **Tour definition files**: Create `frontend/src/lib/tours/` directory with separate tour configs:
+    - `siteTour.ts` — main walkthrough steps (dashboard, projects, nav)
+    - `editorTour.ts` — protocol editor steps (sidebar, canvas, inspector, swimlanes)
+    - `runnerTour.ts` — experiment runner steps (roles, steps, image capture)
+    - Each exports an array of `DriveStep` objects: `{ element: '#selector', popover: { title, description, side, align } }`
+  - **Tour manager component**: Create `frontend/src/lib/components/TourManager.svelte`:
+    - Initializes `driver()` instance with custom theme/styling on mount
+    - Checks tour completion state via `shouldShowTour(tourName)` utility
+    - Exposes `startTour(tourName)` via Svelte `setContext` so child pages can trigger tours
+    - Handles Driver.js callbacks (`onHighlightStarted`, `onDeselected`, `onDestroyed`) for state tracking
+    - Custom CSS overrides for Driver.js popover to match shadcn-svelte design system
+  - **Driver.js CSS customization**: Override default popover styles to match the app aesthetic:
+    ```css
+    .driver-popover { border-radius: 0.75rem; box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25); }
+    .driver-popover-title { font-size: 1.125rem; font-weight: 600; }
+    .driver-popover-description { font-size: 0.875rem; color: var(--muted-foreground); }
+    ```
+  - **Tour state management**: Store completion flags in localStorage (`tour_site_completed`, `tour_editor_completed`, `tour_runner_completed`) and sync to backend `user_preferences` JSONB on the User model
+  - **Context-specific triggering**: Mount `TourManager.svelte` in `+layout.svelte`. Protocol editor and run pages check completion flags in `onMount` and call `startTour()` via context
+  - **Hint dots component**: Create `HintDot.svelte` — pulsing CSS animation positioned relative to parent, accepts `hintKey` prop, checks localStorage, dismisses on first interaction
+  - **Sample protocol seed**: Create `scripts/seed_sample_protocol.py` to generate a demo project + protocol with pre-built graph (nodes, edges, swim lanes) for new orgs
+  - **Empty states**: Update project detail page (`/projects/[id]/+page.svelte`) protocol/run tabs and dashboard (`/+page.svelte`) with illustrated empty state cards
+  - **Responsive tours**: Use `window.innerWidth` to select step variants — mobile tours highlight `.mobile-nav-trigger` instead of desktop sidebar selectors
+  - **Library alternatives considered**: Shepherd.js (13k stars, feature-rich but AGPL license — requires commercial license), Intro.js (24k stars but also AGPL, slower animations), OnboardJS (headless/new — too immature). Driver.js won on license, bundle size, animation quality, and Svelte compatibility
+- **Dependencies**: None
+
+### [F-0016] Cloud Storage for Images (S3-Compatible)
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Backend
+- **Source**: GAP-010
+- **Description**: Images are stored on local disk. This works for development but won't scale for SaaS deployment — data loss risk, no CDN, complicated backups, and multi-server deployments can't share a filesystem. For production SaaS, images need to live in cloud storage (S3, Cloudflare R2, or similar).
+- **Acceptance Criteria**:
+  - [ ] File storage abstracted behind an interface: `FileStorage` protocol with `upload(key, data) -> url`, `download(key) -> bytes`, `delete(key)`, `get_url(key) -> str`
+  - [ ] Two implementations: `LocalFileStorage` (current behavior, for development) and `S3FileStorage` (production)
+  - [ ] Storage backend selected via environment variable (`FILE_STORAGE_BACKEND=local|s3`)
+  - [ ] S3 configuration via env vars: `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_ENDPOINT_URL` (for R2/MinIO compatibility)
+  - [ ] Presigned URLs for direct browser upload (bypasses backend for large files) and download
+  - [ ] Existing image upload endpoints (`POST /ai/runs/{id}/images`) use the storage abstraction transparently
+  - [ ] Image serving endpoint returns presigned URL redirect for S3 backend, or serves file directly for local backend
+  - [ ] Migration path: management command to migrate existing local files to S3
+  - [ ] Offline mode image uploads: queue locally, upload to S3 on sync (via existing sync endpoint)
+- **Implementation Notes**:
+  - **Storage abstraction**: Create `backend/app/services/file_storage.py` with `FileStorage` Protocol and `LocalFileStorage` / `S3FileStorage` implementations
+  - **S3 client**: Use `boto3` (or `aioboto3` for async). Compatible with AWS S3, Cloudflare R2, MinIO, DigitalOcean Spaces
+  - **Presigned URLs**: Generate upload URLs with `generate_presigned_url('put_object', ...)` and download URLs with `generate_presigned_url('get_object', ...)`
+  - **Config**: Add storage settings to `backend/app/core/config.py`. Default to `local` for development
+  - **Migration script**: `scripts/migrate_images_to_s3.py` — reads all `RunImage` records, uploads files from local disk to S3, updates paths
+  - **Dependency injection**: Register storage service in FastAPI dependency injection, inject into image endpoints
+- **Dependencies**: None
 
 ### [F-0003] Batch Image Processing
 - **Status**: Proposed
@@ -174,33 +310,218 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
   - **Migration**: Enable `pgvector` extension, add vector columns or embeddings table.
 - **Dependencies**: None
 
-### [F-0008] Mobile-Friendly Responsive Design
-- **Status**: Done
+
+### [F-0018] Text-to-Protocol Generation from Library
+- **Status**: Proposed
 - **Priority**: P1 (High)
-- **Scope**: Frontend
-- **Description**: The app's tables, navigation, and data views don't scroll or fit well on mobile devices. Tables overflow without usable scroll indicators, the nav bar overflows on small screens, and most pages skip the `sm:` (640px) breakpoint entirely. Since this is a tablet-first app used in labs, mobile/tablet usability is critical. This feature brings full responsive support across all views.
+- **Scope**: Full Stack
+- **Description**: Generate protocol graphs (nodes + edges) from natural language descriptions and/or uploaded library documents. Scientists can paste a text protocol from a paper, reference an SOP from the document library, or describe a workflow in plain English, and the system generates a draft protocol in the graph editor with appropriate unit operations, parameters, connections, and swim lanes. This bridges the gap between written procedures and the structured protocol editor — scientists shouldn't have to manually recreate protocols that already exist as text.
 - **Acceptance Criteria**:
-  - [x] Navigation bar collapses to a hamburger menu on screens <768px with a slide-out or dropdown menu
-  - [x] All data tables (Projects list, Protocols tab, Runs tab, Export page) switch to a card-based layout on screens <640px — each row becomes a stacked card showing key fields
-  - [x] On tablet widths (640px–1024px), tables use horizontal scroll with a visible scroll indicator (gradient fade or scrollbar hint)
-  - [x] Low-priority table columns (Description, Organization) are hidden on screens <768px; remaining columns resize fluidly
-  - [x] Fixed-width table columns (`w-[40px]`, `w-[80px]`, `w-[150px]` in project detail) are replaced with responsive min/max widths
-  - [x] All interactive elements (buttons, checkboxes, dropdown triggers) have a minimum touch target of 44×44px on mobile
-  - [x] Hover-only interactions (table row highlights, tooltip triggers) have touch-friendly alternatives (tap-to-select, long-press)
-  - [x] Settings page tab bar wraps or becomes a dropdown/select on screens <480px
-  - [x] Dashboard counter cards use `grid-cols-2` on mobile instead of `grid-cols-3`
-  - [x] Global padding reduces from `px-6` to `px-4` on screens <640px
-  - [x] Export page pagination controls stack vertically on mobile
-  - [x] No horizontal page-level overflow on any screen width ≥320px
-- **Resolution**: Added MobileNav.svelte with hamburger menu and slide-out drawer (md: breakpoint). All project detail tables (runs, protocols) get card-based mobile layout below sm: and overflow-x-auto for tablet scroll. Fixed-width columns replaced with responsive hidden/shown via Tailwind md:/lg: prefixes. Projects list table gets mobile cards with hidden Description/Organization columns. Export page header/toolbar/pagination stack vertically on mobile. Settings tabs scrollable. Dashboard counter grid uses grid-cols-2 on mobile. Global padding reduced via px-4 sm:px-6. Touch targets enforced with min-h-11 min-w-11. All responsive behavior via pure Tailwind utility classes — zero custom CSS added.
+  - **Protocol Generation Engine:**
+    - [ ] `POST /ai/generate-protocol` endpoint accepts: `description` (free text), optional `document_ids` (array of library document IDs to use as source), optional `project_id` (to create the protocol in)
+    - [ ] System prompt includes the full `UnitOpDefinition` catalog (names, categories, param_schemas) so the LLM maps text steps to available unit ops
+    - [ ] When `document_ids` are provided, relevant chunks are retrieved via RAG and included as context alongside the description
+    - [ ] LLM returns structured output matching the protocol graph schema: `{nodes: [{id, type, position, data: {label, unitOpId, category, params, duration_min}}], edges: [{id, source, target}], layout, swimlanes: [{id, label, roleId}]}`
+    - [ ] Generated protocol is saved as a new Protocol with `status: DRAFT` and `source: "ai_generated"` metadata
+    - [ ] Auto-layout: generated nodes are positioned using a basic DAG layout algorithm (topological sort → layered positioning) so the graph is readable without manual rearrangement
+    - [ ] Parameter pre-fill: where the source text specifies values (e.g., "incubate at 37°C for 2 hours"), those values are mapped to the unit op's param_schema fields
+    - [ ] Generation includes a confidence/notes field per node explaining why that unit op was chosen
+  - **Iterative Refinement:**
+    - [ ] `POST /ai/refine-protocol` endpoint accepts a protocol ID + natural language feedback (e.g., "add a wash step between steps 3 and 4", "change the incubation time to 4 hours")
+    - [ ] Refinement modifies the existing graph rather than regenerating from scratch
+    - [ ] Conversation history maintained per generation session so the LLM has context of prior refinements
+  - **Frontend UI:**
+    - [ ] "Generate with AI" button on the new protocol creation page (alongside manual creation)
+    - [ ] Generation wizard: Step 1 — input source (paste text / select library documents / type description). Step 2 — review generated protocol in a read-only graph preview. Step 3 — "Open in Editor" to begin manual refinement, or "Refine" to give feedback
+    - [ ] Library document picker: searchable list of indexed documents from F-0017, multi-select with previews
+    - [ ] Loading state with progress indication during generation (streaming status updates)
+    - [ ] Generated protocol opens in the standard protocol editor with a banner: "AI-Generated Draft — Review and edit before use"
+    - [ ] Refinement chat panel: sidebar in the protocol editor for ongoing AI conversation about the generated protocol
+  - **Quality & Safety:**
+    - [ ] Generated protocols are clearly marked as AI-generated in the UI and metadata
+    - [ ] Audit log entry for each generation event (who triggered, what source, which document IDs)
+    - [ ] Unit op matching validation: if the LLM references a unit op not in the catalog, it falls back to a generic "Custom Step" node with a warning
+    - [ ] Parameter validation: generated param values are checked against param_schema constraints (type, min/max range)
 - **Implementation Notes**:
-  - **Navigation** (`frontend/src/routes/+layout.svelte`): Add a hamburger button visible at `md:hidden`, hide the inline nav links at `hidden md:flex`. Use a sheet/drawer component from shadcn-svelte for the mobile menu.
-  - **Responsive table component**: Create `frontend/src/lib/components/ResponsiveTable.svelte` — a wrapper that renders a `<Table>` on desktop and a card list on mobile using a `sm:` media query or container query. Pass column definitions with a `priority` field to control which columns show at each breakpoint.
-  - **Project detail** (`frontend/src/routes/projects/[id]/+page.svelte`): Replace fixed `w-[...]` column widths with `min-w-0` and `truncate`. Hide Description column below `md:`. Wrap protocol/run tables with ResponsiveTable.
-  - **Export page** (`frontend/src/routes/export/+page.svelte`): Add `overflow-x-auto` with scroll shadow gradient. Stack pagination controls with `flex-wrap`.
-  - **Dashboard** (`frontend/src/routes/+page.svelte`): Change counter grid from `grid-cols-3` to `grid-cols-2 sm:grid-cols-3`.
-  - **Global styles** (`frontend/src/app.css`): Add a utility class for scroll shadows on overflow containers. Add `@media (max-width: 640px)` rules for reduced padding.
-  - **Settings tabs** (`frontend/src/routes/settings/+page.svelte`): Use `overflow-x-auto` on the tab bar or switch to a `<Select>` on mobile.
-  - **Touch targets**: Audit all `<Button size="icon">` and small clickables; add `min-h-11 min-w-11` on mobile breakpoints.
+  - **Generation service** (`backend/app/services/protocol_generator.py`): Core generation logic using `pydantic-ai` with structured output. System prompt includes: (1) unit op catalog as JSON, (2) protocol graph schema definition, (3) RAG context from library documents if provided. Uses the `text` or `coding` capability from AI config
+  - **Graph layout** (`backend/app/services/graph_layout.py`): Simple layered DAG layout — topological sort nodes, assign layers, space evenly. Positions in the same format as @xyflow/svelte expects (`{x, y}`)
+  - **Structured output schema**: Define a Pydantic model matching the protocol graph format. `pydantic-ai` will enforce the schema during generation. Include `confidence: float` and `reasoning: str` fields per node
+  - **RAG integration**: When `document_ids` are provided, use the search service from F-0017 to retrieve relevant chunks. Concatenate into a context block with source citations. Limit context to ~8K tokens to leave room for the unit op catalog and generation instructions
+  - **Refinement**: Store generation conversation in a new `ProtocolGenerationSession` model (or reuse the `ImageConversation` pattern). Each refinement appends to the conversation and returns an updated graph diff
+  - **Frontend wizard** (`frontend/src/lib/components/ProtocolGenerationWizard.svelte`): Multi-step dialog. Step 1 uses a textarea + document picker (from F-0017's library UI). Step 2 renders a read-only `SvelteFlow` instance with the generated graph. Step 3 navigates to the protocol editor
+  - **Protocol editor integration**: Add "Refine with AI" button to the protocol editor toolbar (only shown for AI-generated protocols). Opens a chat sidebar component similar to `ImageAnalysisDialog` conversation pattern
+  - **API router**: Add `generate-protocol` and `refine-protocol` endpoints to `backend/app/api/endpoints/ai.py` (or a new `protocol_gen.py` router)
+  - **Unit op catalog fetch**: `GET /science/unit-op-definitions` already exists — the generation service queries this internally to build the system prompt
+- **Dependencies**: F-0017 (Document Library — required for the library document picker and RAG context retrieval. Can be built without F-0017 using paste/type input only, but library integration is the key differentiator)
+
+### [F-0019] Payment Gateway & Billing System (Stripe)
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Full Stack
+- **Description**: Add a subscription billing system using Stripe so organizations can subscribe to paid plans after a free trial. Stripe's **test mode** (with test API keys and test card numbers like `4242 4242 4242 4242`) enables full local development and testing without real payments or credit card entry. The implementation covers: plan management, Stripe Checkout for payment collection, subscription lifecycle (create/upgrade/downgrade/cancel), invoice history, and usage-based quota enforcement. The existing `OrgRole.BILLING` enum (already defined but unused) gates who can manage billing within an organization.
+- **Acceptance Criteria**:
+  - **Phase 1 — Backend Billing Infrastructure**
+    - [ ] `RUNBOOK_STRIPE_SECRET_KEY` and `RUNBOOK_STRIPE_WEBHOOK_SECRET` added to `config.py` Settings; app boots without them (billing features disabled gracefully)
+    - [ ] `Plan` enum or table defined with tiers: `FREE` (3 active runs, 1 project, 5 protocols), `STARTER` ($49/mo — 10 runs, 5 projects, unlimited protocols), `TEAM` ($149/mo — unlimited runs, unlimited projects, AI analysis), `ENTERPRISE` (custom)
+    - [ ] `stripe_customer_id`, `subscription_plan`, `subscription_status` (active/trialing/past_due/canceled), `trial_ends_at`, and `plan_limits` JSONB fields added to `Organization` model via Alembic migration
+    - [ ] `POST /billing/checkout-session` creates a Stripe Checkout Session and returns the session URL — user is redirected to Stripe's hosted payment page (no credit card form in our app)
+    - [ ] `POST /billing/webhook` endpoint receives Stripe webhook events: `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`
+    - [ ] Webhook handler updates `Organization.subscription_plan` and `subscription_status` based on Stripe events
+    - [ ] `GET /billing/subscription` returns current plan, status, usage counts, and next billing date for the org
+    - [ ] `GET /billing/invoices` returns paginated invoice history from Stripe API
+    - [ ] `POST /billing/portal-session` creates a Stripe Customer Portal session URL for self-service plan changes, payment method updates, and cancellation
+    - [ ] Quota enforcement middleware: check org plan limits before creating runs, projects, or protocols — return 402 with clear message when limit reached
+    - [ ] All billing endpoints require `OrgRole.ADMIN` or `OrgRole.BILLING` role
+    - [ ] Billing events logged to `audit_logs` (plan changes, payment received, subscription canceled)
+  - **Phase 2 — Frontend Billing UI**
+    - [ ] New "Billing" tab added to Settings page (visible only to ADMIN and BILLING role users)
+    - [ ] Billing tab shows: current plan name, status badge (Active/Trialing/Past Due), usage meters (runs used / limit, projects / limit), trial countdown if applicable
+    - [ ] "Upgrade Plan" button opens a plan comparison card layout showing all tiers with feature lists and pricing
+    - [ ] Selecting a plan triggers `POST /billing/checkout-session` and redirects to Stripe Checkout (hosted page — no card form in our app)
+    - [ ] "Manage Subscription" button opens Stripe Customer Portal (hosted by Stripe — handles card updates, cancellation, plan changes)
+    - [ ] Invoice history table with date, amount, status, and "Download PDF" link (from Stripe's hosted invoice URL)
+    - [ ] Quota warning banners: amber at 80% usage ("You've used 8 of 10 active runs"), red at 100% ("Run limit reached — upgrade to create more")
+    - [ ] Quota banners appear on dashboard and on the relevant creation pages (new run, new project, new protocol)
+    - [ ] Trial expiry banner: "Your trial ends in N days — upgrade to keep your data" with CTA
+  - **Phase 3 — Local Test Mode**
+    - [ ] When `RUNBOOK_STRIPE_SECRET_KEY` starts with `sk_test_`, app operates in Stripe test mode automatically (Stripe handles this natively)
+    - [ ] Seed script creates a test Stripe customer and attaches a test subscription so local dev starts with an active plan
+    - [ ] Documentation in README: test card numbers (`4242 4242 4242 4242` for success, `4000 0000 0000 0002` for decline), Stripe CLI for webhook forwarding (`stripe listen --forward-to localhost:8000/billing/webhook`)
+    - [ ] `RUNBOOK_BILLING_ENABLED=false` env var completely disables billing checks and hides the Billing tab — default for local dev so billing is opt-in
+    - [ ] When billing is disabled, all quota checks return unlimited — no features are gated
+- **Implementation Notes**:
+  - **Stripe library**: Add `stripe` Python package to `backend/pyproject.toml`. Use `stripe.checkout.Session.create()` for Checkout, `stripe.billing_portal.Session.create()` for Customer Portal, `stripe.Webhook.construct_event()` for webhook verification
+  - **Why Stripe Checkout + Customer Portal (not embedded card forms)**: Stripe handles PCI compliance, 3D Secure, payment method storage, and localization. We never touch card numbers. This is the simplest, most secure approach and eliminates PCI scope entirely. Users are redirected to Stripe's hosted pages for payment and subscription management
+  - **Backend model** (`backend/app/models/billing.py`): Add billing fields to `Organization`. Optionally create a local `Invoice` cache table for offline access, but primary source of truth is Stripe
+  - **Backend router** (`backend/app/api/endpoints/billing.py`): New router mounted at `/billing`. Endpoints: `checkout-session`, `webhook`, `subscription`, `invoices`, `portal-session`
+  - **Webhook security**: Verify Stripe signature using `RUNBOOK_STRIPE_WEBHOOK_SECRET`. Return 400 for invalid signatures. Idempotent handling (check if event already processed via Stripe event ID)
+  - **Quota enforcement** (`backend/app/core/deps.py` or `backend/app/services/billing.py`): Create `check_quota(org_id, resource_type)` dependency that queries org plan limits vs current counts. Inject into run/project/protocol creation endpoints
+  - **Frontend billing tab** (`frontend/src/routes/settings/+page.svelte`): Add `'billing'` to the `activeTab` union type. New section renders plan card, usage meters, invoice table. Gate visibility on `isOrgAdmin || isBillingRole`
+  - **Plan comparison component** (`frontend/src/lib/components/PlanComparison.svelte`): Card grid showing tier features, pricing, and "Select Plan" buttons
+  - **Stripe test mode**: Stripe's API keys come in `sk_test_*` / `pk_test_*` pairs. Test mode uses fake card numbers, no real charges, instant webhook delivery. Stripe CLI (`stripe listen`) forwards webhooks to localhost during development
+  - **Config** (`backend/app/core/config.py`): Add `stripe_secret_key: str = ""`, `stripe_webhook_secret: str = ""`, `billing_enabled: bool = False`. When `billing_enabled` is False, skip all quota checks and hide billing UI
+- **Dependencies**: None
+
+### [F-0020] Terms of Service & Legal Acceptance Flow
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Full Stack
+- **Description**: Add a Terms of Service (ToS) page, Privacy Policy page, and a clickwrap acceptance flow that gates app usage. The ToS must include a **Research Use Only (RUO) designation** and explicitly **prohibit users from entering Protected Health Information (PHI)** as defined by HIPAA. Users must accept the ToS before accessing the app (enforced on first login and when ToS is materially updated). The ToS content is tailored to a biotech SaaS lab notebook and aligns with existing `BUSINESS_STRATEGY.md` commitments on data ownership, retention, and privacy.
+
+  **Why this matters**: Trellis targets gene & cell therapy PD teams where some workflows (e.g., human platelet lysate preparation, autologous CAR-T) may involve donor-linked data. The system has 14+ free-text vectors where PHI could accidentally enter (step notes, custom params, run names, image conversations, AI-extracted values). A clear ToS with PHI prohibition (a) sets user expectations, (b) shifts liability for misuse, (c) reinforces the RUO posture required by FDA guidance, and (d) is a prerequisite for enterprise sales. This is cheaper and more appropriate than full HIPAA compliance for the research-use Phase 1.
+
+- **Acceptance Criteria**:
+
+  **Backend — User Model & API**
+  - [ ] Add `tos_accepted_at` (nullable DateTime) and `tos_version` (nullable String) fields to the `User` model via Alembic migration
+  - [ ] Add `POST /auth/accept-tos` endpoint that sets `tos_accepted_at = utcnow()` and `tos_version = <current_version>` for the authenticated user. Returns updated user object
+  - [ ] Add `GET /legal/tos` endpoint that returns the current ToS content (markdown or HTML) and version string. Public (no auth required)
+  - [ ] Add `GET /legal/privacy` endpoint that returns the current Privacy Policy content and version. Public (no auth required)
+  - [ ] `tos_accepted_at` and `tos_version` included in `UserResponse` schema so the frontend can check acceptance status
+  - [ ] Audit log entry created when a user accepts the ToS (action: `TOS_ACCEPTED`, changes include version)
+
+  **Frontend — Acceptance Gate**
+  - [ ] After login/register, if `user.tos_accepted_at` is null OR `user.tos_version` !== current ToS version, redirect to `/terms/accept` before allowing access to any protected route
+  - [ ] `/terms/accept` page displays the full ToS in a scrollable container with an unchecked checkbox: "I have read and agree to the Terms of Service and Privacy Policy" (with hyperlinks to each)
+  - [ ] "Accept" button is disabled until checkbox is checked
+  - [ ] On accept, calls `POST /auth/accept-tos`, updates local user state, and redirects to the originally requested route (or dashboard)
+  - [ ] Route guard in `+layout.svelte` enforces the gate — no protected route is accessible without ToS acceptance
+
+  **Frontend — Static Legal Pages**
+  - [ ] `/terms` page renders the full Terms of Service (publicly accessible, no auth required)
+  - [ ] `/privacy` page renders the full Privacy Policy (publicly accessible, no auth required)
+  - [ ] Footer links to Terms of Service and Privacy Policy on all pages (including login/register)
+  - [ ] Registration page includes text: "By creating an account, you agree to our Terms of Service and Privacy Policy" with hyperlinks (informational — formal acceptance is the clickwrap gate)
+
+  **ToS Content — Required Sections**
+  - [ ] **Definitions**: Service, Customer, User, Customer Data, Usage Data, AI Features, AI Input/Output, Offline Sessions
+  - [ ] **Service Description & RUO Disclaimer**: "The Service is provided for Research Use Only. It is not validated for Good Manufacturing Practice (GMP) use, clinical use, diagnostic procedures, or therapeutic applications. The Service has not been reviewed, cleared, or approved by the FDA or any other regulatory body."
+  - [ ] **Account Registration & Eligibility**: 18+ age requirement, accurate information, no shared credentials, admin responsibilities
+  - [ ] **License Grant & Restrictions**: Non-exclusive, non-transferable license for internal research purposes. No reverse engineering, competing products, or circumventing security
+  - [ ] **Acceptable Use Policy**: Prohibited uses include GMP/clinical/diagnostic use, storing/transmitting PHI, exceeding usage limits, accessing other customers' data
+  - [ ] **PHI Prohibition** (dedicated section): "The Service is not designed to process, store, or transmit Protected Health Information (PHI) as defined by HIPAA. Trellis does not enter into Business Associate Agreements (BAAs). Customer agrees not to upload, enter, or transmit any PHI through the Service. Use coded identifiers for donor/sample tracking." Customer indemnifies Trellis for PHI uploaded in violation
+  - [ ] **Data Ownership & IP**: Customer retains all rights to Customer Data. Trellis will not sell, share, or use Customer Data for AI training. Customer may export all data at any time (CSV, JSON, Excel). Trellis retains IP in the Service itself. Usage Data (anonymized, aggregated) may be used for product improvement
+  - [ ] **AI Features Terms**: Multi-provider architecture disclosure (Anthropic, OpenAI, Google). Third-party providers contractually prohibited from training on Customer data. Customer owns AI input/output. Accuracy disclaimer: AI outputs are provided as-is, customer must validate. BYOK option disclosed
+  - [ ] **Offline Mode Terms**: Data encrypted locally (AES-256). Customer responsible for device physical security. Trellis not responsible for data loss from device failure/theft while offline
+  - [ ] **Subscription & Billing**: Tier descriptions (or reference to pricing page), auto-renewal, cancellation at end of billing period, AI overage charges, price change notice (30 days). Online cancellation available
+  - [ ] **Free Trial Terms**: Free until 3 completed runs (no time limit), full feature access, no credit card required, data preserved after trial limit
+  - [ ] **Data Retention & Deletion**: Data preserved 90 days after cancellation in read-only/export mode, then permanently deleted. Customer may request immediate deletion. If Trellis ceases operations: 90-day notice with full data export
+  - [ ] **Security & Confidentiality**: Encryption at rest and in transit, multi-tenant logical isolation, role-based access controls, 72-hour breach notification, list of subprocessors
+  - [ ] **Warranty Disclaimer**: AS-IS/AS-AVAILABLE, no warranty for regulatory/clinical/GMP suitability, no warranty on AI accuracy. ALL CAPS per UCC 2-316
+  - [ ] **Limitation of Liability**: Exclude indirect/consequential damages. Cap at 12 months of fees paid. Carve-outs for security breach and confidentiality obligations
+  - [ ] **Indemnification**: Mutual. Trellis indemnifies for IP infringement. Customer indemnifies for data (including PHI violations), ToS violations, and illegal use
+  - [ ] **Term & Termination**: Auto-renewal, termination for convenience with notice, immediate termination for AUP violations, survival clause for key sections
+  - [ ] **Dispute Resolution**: Governing law (state of incorporation), 30-day informal resolution, binding arbitration (JAMS/AAA), class action waiver with 30-day opt-out, small claims exception
+  - [ ] **Modifications**: 30 days notice for material changes via email/in-app. Continued use = acceptance. Archive of prior versions
+  - [ ] **General Provisions**: Severability, entire agreement, waiver, assignment, notices, independent contractors, no third-party beneficiaries, export compliance
+  - [ ] **Contact Information**: Legal notices, support, privacy inquiries, last modified date
+
+  **Privacy Policy Content — Required Sections**
+  - [ ] Personal information collected (name, email, org affiliation, usage data)
+  - [ ] How it is used (account management, support, product improvement)
+  - [ ] What is NOT collected (PHI, financial data beyond payment processing)
+  - [ ] Third-party processors (payment processor, AI providers, infrastructure providers)
+  - [ ] Cookie policy (if applicable)
+  - [ ] CCPA/CPRA rights for California residents (right to know, delete, opt-out of sale)
+  - [ ] Data retention for personal information
+  - [ ] Contact information for privacy inquiries
+
+  **Consent Record Keeping**
+  - [ ] Store ToS acceptance as a durable record: user ID, timestamp, ToS version, IP address (if available), user agent
+  - [ ] When ToS version changes, existing users must re-accept on next login before proceeding
+
+- **Implementation Notes**:
+  - **Backend model change** (`backend/app/models/iam.py`): Add `tos_accepted_at: Mapped[Optional[datetime]]` and `tos_version: Mapped[Optional[str]]` to `User`. Generate Alembic migration
+  - **Backend schema** (`backend/app/schemas/auth.py`): Add `tos_accepted_at` and `tos_version` to `UserResponse`
+  - **Backend endpoint** (`backend/app/api/endpoints/auth.py`): Add `POST /auth/accept-tos` that validates auth, sets fields, logs audit entry. Add `GET /legal/tos` and `GET /legal/privacy` public endpoints that return content from static files or a `legal/` directory
+  - **Legal content storage**: Store ToS and Privacy Policy as markdown files in `backend/app/legal/tos_v1.md` and `backend/app/legal/privacy_v1.md`. Version in filename. Endpoints serve the current version. This keeps legal text version-controlled and diffable
+  - **Frontend route guard** (`frontend/src/routes/+layout.svelte`): Extend the existing auth guard — after confirming auth, check `user.tos_accepted_at` and `user.tos_version`. If missing or outdated, redirect to `/terms/accept`. Add `/terms`, `/privacy`, and `/terms/accept` to the public routes list
+  - **Frontend pages**: Create `frontend/src/routes/terms/+page.svelte` (public ToS display), `frontend/src/routes/privacy/+page.svelte` (public Privacy Policy display), `frontend/src/routes/terms/accept/+page.svelte` (acceptance gate with scrollable ToS, checkbox, and accept button)
+  - **Frontend auth** (`frontend/src/lib/auth.svelte.ts`): Add `tos_accepted_at` and `tos_version` to User interface. Add `acceptTos()` function that calls the endpoint and updates local state
+  - **Footer component**: Add ToS and Privacy Policy links to the app shell footer (visible on all pages)
+  - **Registration page** (`frontend/src/routes/register/+page.svelte`): Add informational text with links (not a binding gate — the clickwrap on `/terms/accept` is the binding mechanism, per enforceability best practices)
+  - **ToS versioning**: Use semantic versioning (e.g., `1.0.0`). Store current version in backend config. On material update, bump version, all users see acceptance gate on next login
+  - **Important legal note**: The ToS content in this spec is a framework, not legal advice. Have an attorney review before launch, particularly the RUO disclaimer (FDA implications), PHI prohibition (HIPAA liability), limitation of liability, and arbitration clause
+- **Dependencies**: None
+
+---
+
+### [F-0019] Platform Knowledge Library
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Full Stack
+- **Description**: A Trellis-curated, originally-authored knowledge base of standard Process Development methods covering cell culture, purification, and analytics. This is distinct from user-uploaded documents (F-0017 Document Library) — F-0019 is platform content authored or licensed by Trellis, providing a baseline reference for PD scientists. Content strategy TBD: original authoring, CC-licensed sources, or licensed content from established publishers.
+- **Acceptance Criteria**:
+  - [ ] Curated library of standard PD methods accessible to all users
+  - [ ] Content covers core PD domains: cell culture, purification, analytics
+  - [ ] Content is clearly distinguished from user-uploaded documents
+  - [ ] Search and browse by topic/category
+  - [ ] Content versioning and update tracking
+- **Implementation Notes**: Content strategy and sourcing must be determined before implementation. Separate data model from user documents to allow different access controls and update workflows.
+- **Dependencies**: F-0017 (Document Library — shared reader view infrastructure)
+
+---
+
+### [F-0020] Per-Organization AI Provider Configuration
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Backend
+- **Description**: AI provider configuration (models, API keys, base URLs) is currently global — one config per capability shared across all organizations. This doesn't work for multi-tenant deployments where each org may have their own OpenAI/Anthropic API keys, preferred models, or private Ollama instances. Embedding model selection is the immediate pain point (some orgs want OpenAI `text-embedding-3-small`, others want local Ollama `nomic-embed-text`), but the same problem applies to vision, audio, and text capabilities.
+- **Acceptance Criteria**:
+  - [ ] `AiProviderConfig` scoped to organization via `org_id` foreign key (nullable — null = platform default)
+  - [ ] Resolution chain: org-specific config → platform default config → env var fallback → hardcoded default
+  - [ ] Org admins can configure their org's AI providers via Settings page (existing UI pattern, scoped to org)
+  - [ ] Platform admins can set platform-wide defaults (null org_id rows)
+  - [ ] API key isolation: org A's API key is never visible to or used by org B
+  - [ ] Embedding provider is org-configurable (immediate use case for Document Library search)
+  - [ ] Unique constraint updated: `(org_id, capability)` instead of just `(capability)`
+  - [ ] Cache invalidation updated to be org-aware
+- **Implementation Notes**:
+  - **Migration**: Add nullable `org_id` FK to `ai_provider_configs`, drop `uq_ai_capability`, add `uq_ai_org_capability` on `(org_id, capability)`. Existing rows become platform defaults (org_id=NULL)
+  - **ai_config.py**: Update `get_model()`, `get_full_config()`, `get_api_key()` to accept `org_id` parameter. Resolution: query with org_id first, fall back to org_id=NULL, then env vars, then defaults
+  - **Cache key**: Change from `capability` to `(org_id, capability)` tuple
+  - **Endpoints**: Update `PUT /ai/settings/{capability}` to accept optional `organization_id` body field. Org admins can only configure their own org. Add `GET /ai/settings?organization_id=X` to list org-specific configs
+  - **Frontend Settings page**: Add org-scoped AI settings section under org admin settings
+  - **Embedding service**: Pass `org_id` through from document upload context so each org's documents are embedded with their configured provider
 - **Dependencies**: None
 

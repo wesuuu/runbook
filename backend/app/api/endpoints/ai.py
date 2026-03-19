@@ -1,8 +1,11 @@
+import logging
 import os
 import uuid as uuid_mod
 from pathlib import Path
 
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
@@ -63,7 +66,10 @@ def _row_to_response(row: AiProviderConfig) -> AiProviderConfigResponse:
 
 
 @router.get("/settings", response_model=AiSettingsListResponse)
-async def list_ai_settings(db: AsyncSession = Depends(get_db)):
+async def list_ai_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     result = await db.execute(
         select(AiProviderConfig).order_by(AiProviderConfig.capability)
     )
@@ -81,6 +87,7 @@ async def upsert_ai_setting(
     capability: str,
     body: AiProviderConfigUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     if capability not in SUPPORTED_CAPABILITIES:
         raise HTTPException(
@@ -277,7 +284,10 @@ async def upload_image(
         )
 
     # Build storage path
-    ext = os.path.splitext(file.filename or "image.jpg")[1] or ".jpg"
+    ALLOWED_IMAGE_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    ext = os.path.splitext(file.filename or "image.jpg")[1].lower() or ".jpg"
+    if ext not in ALLOWED_IMAGE_EXT:
+        ext = ".jpg"
     image_uuid = uuid_mod.uuid4()
     relative_path = f"{run_id}/{step_id}/{image_uuid}{ext}"
     storage_root = _get_storage_path()
@@ -772,6 +782,7 @@ async def analyze_pending_images(
             await db.commit()
             succeeded += 1
         except Exception:
+            logger.warning("Batch analysis failed for image %s", image.id, exc_info=True)
             # Record failure but continue with remaining images
             conv = ImageConversation(
                 image_id=image.id,

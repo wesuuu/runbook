@@ -128,6 +128,12 @@
                     >
                         Dashboard
                     </a>
+                    <a
+                        href="/library"
+                        class="hidden md:block relative py-1 transition-colors {$page.url.pathname.startsWith('/library') ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
+                    >
+                        Library
+                    </a>
                     <div class="hidden md:block">
                         <ProjectsDropdown />
                     </div>

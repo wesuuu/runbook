@@ -16,6 +16,28 @@ async def clear_ai_cache():
     invalidate_cache()
 
 
+# --- Auth required ---
+
+
+@pytest.mark.asyncio
+async def test_list_settings_requires_auth(client: AsyncClient):
+    resp = await client.get("/ai/settings")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_upsert_setting_requires_auth(client: AsyncClient):
+    resp = await client.put(
+        "/ai/settings/vision",
+        json={
+            "provider": "ollama",
+            "model_name": "llama3.2-vision",
+            "is_enabled": True,
+        },
+    )
+    assert resp.status_code == 401
+
+
 # --- GET /ai/settings ---
 
 

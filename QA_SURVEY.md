@@ -8,11 +8,11 @@
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| UI/UX | 0 | 0 | 3 | 2 | 5 |
-| Performance | 0 | 1 | 0 | 0 | 1 |
+| UI/UX | 0 | 0 | 2 | 2 | 4 |
+| Performance | 0 | 0 | 0 | 0 | 0 |
 | Data | 0 | 0 | 2 | 0 | 2 |
 | Accessibility | 0 | 0 | 0 | 1 | 1 |
-| **Total** | **0** | **1** | **5** | **3** | **9** |
+| **Total** | **0** | **0** | **4** | **3** | **7** |
 
 *Last surveyed: 2026-03-07*
 *Users tested: admin@bioprocess.com, scientist1@bioprocess.com, viewer@bioprocess.com*
@@ -20,20 +20,6 @@
 ---
 
 ## Issues
-
-### [QA-0005] Duplicate API calls on page load — /projects called with and without trailing slash
-- **Severity**: High
-- **Category**: Performance
-- **Page**: / (Dashboard)
-- **User**: admin@bioprocess.com
-- **Steps to Reproduce**:
-  1. Log in as admin
-  2. Navigate to Dashboard
-  3. Monitor network requests
-- **Expected**: Single API call per resource
-- **Actual**: Two project list requests fire on dashboard load: `GET /projects?organization_id=...` (returns 200) and `GET /projects/?organization_id=...` (307 redirect → pending). The trailing-slash variant triggers a redirect, causing an extra round trip.
-- **Network Errors**: `GET /projects/?organization_id=...` → 307 redirect
-- **Recommendation**: Normalize API URLs in `lib/api.ts` to never include trailing slashes, or configure FastAPI `redirect_slashes=False`.
 
 ### [QA-0006] Projects page has redundant subtitle text
 - **Severity**: Medium
@@ -70,19 +56,6 @@
 - **Expected**: All rows should have consistent checkbox presence
 - **Actual**: The first run row is missing its selection checkbox while other rows display them
 - **Recommendation**: Investigate why some runs don't render the checkbox. May be conditional based on run status or a rendering bug.
-
-### [QA-0009] No mobile responsive design — tables and nav overflow on small screens
-- **Severity**: Medium
-- **Category**: UI/UX
-- **Page**: All pages
-- **User**: All users
-- **Steps to Reproduce**:
-  1. Access the app on a mobile device or resize browser to <768px width
-  2. Navigation bar items overflow or get squished
-  3. Data tables don't adapt to small screens
-- **Expected**: Responsive layout with collapsible nav and mobile-friendly table views
-- **Actual**: Fixed desktop layout with no responsive breakpoints for mobile. Navigation uses fixed `gap-6` spacing. Tables use fixed column widths. Dashboard counter cards stay in 3+ column grid on all widths.
-- **Recommendation**: See feature spec [F-0008] in FEATURES.md for detailed implementation plan. Key changes: hamburger menu for nav, card-based table layouts on mobile, `sm:` breakpoint coverage.
 
 ### [QA-0010] Error message "Failed to fetch" is not user-friendly
 - **Severity**: Medium

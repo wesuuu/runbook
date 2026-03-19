@@ -5,6 +5,7 @@
         firstError,
         type FieldErrors,
     } from "$lib/validation";
+    import BarcodeScanner from "./BarcodeScanner.svelte";
     import ImageAnalysisDialog from "./ImageAnalysisDialog.svelte";
     import ImageGallery from "./ImageGallery.svelte";
 
@@ -76,10 +77,31 @@
     let selectedTags = $state<string[]>([]);
     const selectedTagSet = $derived(new Set(selectedTags));
     let savingTags = $state(false);
-    let stepImages = $state<Record<string, any[]>>({});
+    interface StepImage {
+        id: string;
+        run_id: string;
+        step_id: string;
+        file_path: string;
+        original_filename: string;
+        mime_type: string;
+        created_at: string;
+        parameter_tags?: string[];
+        conversation?: { status: string };
+    }
+    let stepImages = $state<Record<string, StepImage[]>>({});
     let confirmedImageIds = $state<Set<string>>(new Set());
     let imageStatuses = $state<Record<string, string>>({});
     let aiFilledFields = $state<Set<string>>(new Set());
+
+    // Barcode scanning state
+    let scanningField: { key: string; type?: string } | null = $state(null);
+
+    function handleBarcodeScan(value: string) {
+        if (!scanningField) return;
+        updateResultField(scanningField.key, value, scanningField.type);
+        saveStepData();
+        scanningField = null;
+    }
 
     $effect(() => {
         const newStepData: Record<string, StepResult> = {};
@@ -572,21 +594,36 @@
                                     {/each}
                                 </select>
                             {:else}
-                                <input
-                                    id="result-{key}"
-                                    type={prop.type === "number" || prop.type === "integer" ? "number" : "text"}
-                                    step={prop.type === "integer" ? "1" : "any"}
-                                    value={getResultFieldValue(key)}
-                                    onchange={(e) =>
-                                        updateResultField(
-                                            key,
-                                            e.currentTarget.value,
-                                            prop.type,
-                                        )}
-                                    onblur={saveStepData}
-                                    placeholder={expected !== undefined ? `Expected: ${expected}` : `Enter ${(prop.title || key).toLowerCase()}`}
-                                    class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
-                                />
+                                <div class="flex items-center gap-2">
+                                    <input
+                                        id="result-{key}"
+                                        type={prop.type === "number" || prop.type === "integer" ? "number" : "text"}
+                                        step={prop.type === "integer" ? "1" : "any"}
+                                        value={getResultFieldValue(key)}
+                                        onchange={(e) =>
+                                            updateResultField(
+                                                key,
+                                                e.currentTarget.value,
+                                                prop.type,
+                                            )}
+                                        onblur={saveStepData}
+                                        placeholder={expected !== undefined ? `Expected: ${expected}` : `Enter ${(prop.title || key).toLowerCase()}`}
+                                        class="flex-1 px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
+                                    />
+                                    {#if !readonly}
+                                        <button
+                                            type="button"
+                                            title="Scan barcode"
+                                            onclick={() => (scanningField = { key, type: prop.type })}
+                                            class="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-xl border border-slate-300 text-slate-500 hover:text-teal-700 hover:border-teal-400 hover:bg-teal-50 transition-colors"
+                                        >
+                                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75H16.5v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75H16.5v-.75z" />
+                                            </svg>
+                                        </button>
+                                    {/if}
+                                </div>
                             {/if}
                             {#if firstError(fieldErrors, key)}
                                 <p class="mt-1.5 text-sm text-red-600">
@@ -835,4 +872,11 @@
             onConfirm={handleConfirmValues}
         />
     {/if}
+
+    <!-- Barcode Scanner -->
+    <BarcodeScanner
+        open={scanningField !== null}
+        onScan={handleBarcodeScan}
+        onClose={() => (scanningField = null)}
+    />
 </div>

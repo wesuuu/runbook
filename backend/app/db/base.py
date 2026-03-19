@@ -18,3 +18,4 @@ from app.models.notifications import (
     Notification, NotificationDelivery,
 )
 from app.models.offline import RevokedOfflineToken
+from app.models.library import Document, DocumentChunk

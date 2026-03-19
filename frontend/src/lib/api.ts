@@ -44,6 +44,9 @@ async function _handleErrorResponse(response: Response, fallbackMessage: string)
     throw new ApiError(response.status, errorMessage, errorData);
 }
 
+import { normalizeEndpoint } from '$lib/normalizeEndpoint';
+
+
 async function _fetchAsBlob(endpoint: string, method = 'GET', body?: unknown): Promise<Blob> {
     const headers = _authHeaders(body ? 'application/json' : undefined);
     const config: RequestInit = { method, headers };
@@ -51,7 +54,7 @@ async function _fetchAsBlob(endpoint: string, method = 'GET', body?: unknown): P
         config.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    const response = await fetch(`${API_BASE}${normalizeEndpoint(endpoint)}`, config);
     if (!response.ok) {
         await _handleErrorResponse(response, 'Request failed');
     }
@@ -76,7 +79,7 @@ async function request<T>(method: string, endpoint: string, body?: unknown): Pro
         config.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    const response = await fetch(`${API_BASE}${normalizeEndpoint(endpoint)}`, config);
     if (!response.ok) {
         await _handleErrorResponse(response, 'An error occurred');
     }
@@ -112,7 +115,32 @@ async function uploadFile<T>(endpoint: string, file: File, fieldName = 'file'): 
     form.append(fieldName, file);
     const headers = _authHeaders();
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
+    const response = await fetch(`${API_BASE}${normalizeEndpoint(endpoint)}`, {
+        method: 'POST',
+        headers,
+        body: form,
+    });
+
+    if (!response.ok) {
+        await _handleErrorResponse(response, 'Upload failed');
+    }
+    return response.json();
+}
+
+async function uploadWithFields<T>(
+    endpoint: string,
+    file: File,
+    fields: Record<string, string>,
+    fieldName = 'file',
+): Promise<T> {
+    const form = new FormData();
+    form.append(fieldName, file);
+    for (const [key, value] of Object.entries(fields)) {
+        form.append(key, value);
+    }
+    const headers = _authHeaders(); // no Content-Type (browser sets multipart boundary)
+
+    const response = await fetch(`${API_BASE}${normalizeEndpoint(endpoint)}`, {
         method: 'POST',
         headers,
         body: form,
@@ -130,6 +158,7 @@ export const api = {
     put: <T>(endpoint: string, body: unknown) => request<T>('PUT', endpoint, body),
     delete: <T>(endpoint: string) => request<T>('DELETE', endpoint),
     uploadFile,
+    uploadWithFields,
     downloadBlob,
     fetchBlobUrl,
     postBlobUrl,

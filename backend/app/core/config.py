@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Image storage
     image_storage_path: str = "./uploads/images"
 
+    # Document storage
+    document_storage_path: str = "./uploads/documents"
+
     # AI env var fallbacks (used only before DB is configured)
     ai_vision_provider: str = ""
     ai_vision_model: str = ""
@@ -46,6 +49,10 @@ class Settings(BaseSettings):
     ai_text_model: str = ""
     ai_text_api_key: str = ""
     ai_text_base_url: str = ""
+    ai_embedding_provider: str = ""
+    ai_embedding_model: str = ""
+    ai_embedding_api_key: str = ""
+    ai_embedding_base_url: str = ""
 
     # Debug mode — enables dev-only endpoints (webhook echo, etc.)
     debug: bool = False

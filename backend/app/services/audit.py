@@ -9,17 +9,19 @@ async def log_audit(
     action: str,     # CREATE, UPDATE, DELETE, ARCHIVE
     entity_type: str,
     entity_id: UUID,
-    changes: Dict[str, Any] = {}
+    changes: Dict[str, Any] | None = None
 ):
     """
     Logs an audit event to the database.
     """
+    changes = changes or {}
+
     # Ensure dictionary values are JSON serializable (e.g. UUIDs to str)
     def json_serializable(v):
         if isinstance(v, UUID):
             return str(v)
         return v
-    
+
     serialized_changes = {k: json_serializable(v) for k, v in changes.items()}
 
     audit_entry = AuditLog(

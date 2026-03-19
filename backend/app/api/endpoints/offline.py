@@ -49,10 +49,10 @@ async def create_offline_session(
             detail="Run not found",
         )
     run_status = run.status.value if hasattr(run.status, "value") else str(run.status)
-    if run_status != "ACTIVE":
+    if run_status not in ("PLANNED", "ACTIVE"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Run must be ACTIVE to create offline session (current: {run_status})",
+            detail=f"Run must be PLANNED or ACTIVE to create offline session (current: {run_status})",
         )
 
     # Verify user has a role assignment on this run

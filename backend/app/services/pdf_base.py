@@ -70,7 +70,7 @@ def _get_param_title(key: str, param_schema: dict[str, Any] | None) -> str:
     return key.replace("_", " ").replace("  ", " ").strip().title()
 
 
-def _format_value(val: Any) -> str:
+def _format_value(val: str | int | float | bool | list | dict | None) -> str:
     """Format a parameter value for human-readable display."""
     if isinstance(val, bool):
         return "Yes" if val else "No"

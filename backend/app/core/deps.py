@@ -40,43 +40,6 @@ async def get_current_user(
     return user
 
 
-class RequirePermission:
-    """Dependency that checks object-level permissions via path params.
-
-    Usage:
-        @router.get("/{project_id}")
-        async def get_project(
-            project_id: UUID,
-            _perm=Depends(RequirePermission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.VIEW
-            )),
-            ...
-        )
-    """
-
-    def __init__(
-        self,
-        object_type: ObjectType,
-        id_param: str,
-        min_level: PermissionLevel,
-    ):
-        self.object_type = object_type
-        self.id_param = id_param
-        self.min_level = min_level
-
-    async def __call__(
-        self,
-        user: User = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db),
-        **kwargs,
-    ) -> User:
-        # FastAPI doesn't inject path params via **kwargs for callables.
-        # We use a wrapper approach instead — see require_permission().
-        raise NotImplementedError(
-            "Use require_permission() factory instead"
-        )
-
-
 def require_permission(
     object_type: ObjectType,
     id_param: str,
