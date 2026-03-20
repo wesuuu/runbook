@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.deps import get_or_404
 from app.db.session import get_db
 from app.models.ai import (
     AiProviderConfig,
@@ -237,11 +238,7 @@ def _get_storage_path() -> str:
 
 
 async def _get_active_run(run_id: uuid_mod.UUID, db: AsyncSession) -> Run:
-    result = await db.execute(select(Run).where(Run.id == run_id))
-    run = result.scalar_one_or_none()
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found.")
-    return run
+    return await get_or_404(db, Run, run_id)
 
 
 @router.post(

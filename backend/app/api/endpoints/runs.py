@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user, require_permission
+from app.core.deps import get_current_user, get_or_404, require_permission
 from app.db.session import get_db
 from app.models.iam import User, ObjectType, PermissionLevel
 from app.models.science import (
@@ -118,13 +118,7 @@ async def get_run(
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Run).where(Run.id == run_id)
-    )
-    run_obj = result.scalar_one_or_none()
-    if not run_obj:
-        raise HTTPException(status_code=404, detail="Run not found")
-    return run_obj
+    return await get_or_404(db, Run, run_id)
 
 
 @router.get(
@@ -165,12 +159,7 @@ async def update_run(
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Run).where(Run.id == run_id)
-    )
-    run_obj = result.scalar_one_or_none()
-    if not run_obj:
-        raise HTTPException(status_code=404, detail="Run not found")
+    run_obj = await get_or_404(db, Run, run_id)
 
     # Validate status transitions
     new_status = update_data.status.value if update_data.status else None
@@ -468,12 +457,7 @@ async def get_run_sop_pdf(
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Run).where(Run.id == run_id)
-    )
-    run_obj = result.scalar_one_or_none()
-    if not run_obj:
-        raise HTTPException(status_code=404, detail="Run not found")
+    run_obj = await get_or_404(db, Run, run_id)
 
     # Get protocol name, description, and project settings
     protocol_name = "Unknown Protocol"
@@ -541,12 +525,7 @@ async def get_run_batch_record_pdf(
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Run).where(Run.id == run_id)
-    )
-    run_obj = result.scalar_one_or_none()
-    if not run_obj:
-        raise HTTPException(status_code=404, detail="Run not found")
+    run_obj = await get_or_404(db, Run, run_id)
 
     # Get protocol name and project settings
     protocol_name = "Unknown Protocol"
@@ -688,19 +667,10 @@ async def create_run_role_assignment(
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Run).where(Run.id == run_id)
-    )
-    run_obj = result.scalar_one_or_none()
-    if not run_obj:
-        raise HTTPException(status_code=404, detail="Run not found")
+    run_obj = await get_or_404(db, Run, run_id)
 
     # Verify user exists
-    result = await db.execute(
-        select(User).where(User.id == assignment.user_id)
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="User not found")
+    await get_or_404(db, User, assignment.user_id)
 
     # Check if assignment already exists for this lane
     result = await db.execute(

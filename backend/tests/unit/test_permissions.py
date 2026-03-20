@@ -321,3 +321,154 @@ async def test_non_org_member_denied(db_session: AsyncSession):
         ObjectType.PROJECT, project.id,
         PermissionLevel.VIEW,
     ) is False
+
+
+# --- Document permission tests (F-0021) ---
+
+async def _create_document(db, org, user, project=None):
+    """Create a document for permission testing."""
+    from app.models.library import Document
+
+    doc = Document(
+        org_id=org.id,
+        project_id=project.id if project else None,
+        uploaded_by_id=user.id,
+        title="Test Document",
+        original_filename="test.pdf",
+        mime_type="application/pdf",
+        file_size_bytes=1024,
+        file_path="/tmp/test.pdf",
+    )
+    db.add(doc)
+    await db.flush()
+    return doc
+
+
+@pytest.mark.asyncio
+async def test_document_org_admin_can_delete(db_session: AsyncSession):
+    """Org admin can always delete any document."""
+    org, admin = await _setup_org_and_user(db_session, role="ADMIN")
+    # Create a doc uploaded by someone else
+    other = User(
+        email=f"other-{uuid.uuid4().hex[:8]}@test.com",
+        hashed_password=hash_password("test"),
+        full_name="Other",
+    )
+    db_session.add(other)
+    await db_session.flush()
+    doc = await _create_document(db_session, org, other)
+
+    assert await check_permission(
+        db_session, admin.id,
+        ObjectType.DOCUMENT, doc.id,
+        PermissionLevel.EDIT,
+    ) is True
+
+
+@pytest.mark.asyncio
+async def test_document_member_no_perm_denied(db_session: AsyncSession):
+    """Org member without any permission is denied."""
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
+    other = User(
+        email=f"other-{uuid.uuid4().hex[:8]}@test.com",
+        hashed_password=hash_password("test"),
+        full_name="Other",
+    )
+    db_session.add(other)
+    await db_session.flush()
+    doc = await _create_document(db_session, org, other)
+
+    assert await check_permission(
+        db_session, user.id,
+        ObjectType.DOCUMENT, doc.id,
+        PermissionLevel.EDIT,
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_document_with_edit_perm_can_delete(db_session: AsyncSession):
+    """User with EDIT permission on document can delete."""
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
+    doc = await _create_document(db_session, org, user)
+
+    db_session.add(ObjectPermission(
+        principal_type=PrincipalType.USER,
+        principal_id=user.id,
+        object_type=ObjectType.DOCUMENT.value,
+        object_id=doc.id,
+        permission_level=PermissionLevel.EDIT.value,
+    ))
+    await db_session.flush()
+
+    assert await check_permission(
+        db_session, user.id,
+        ObjectType.DOCUMENT, doc.id,
+        PermissionLevel.EDIT,
+    ) is True
+
+
+@pytest.mark.asyncio
+async def test_document_with_view_perm_cannot_delete(
+    db_session: AsyncSession,
+):
+    """User with VIEW permission cannot delete (requires EDIT)."""
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
+    doc = await _create_document(db_session, org, user)
+
+    db_session.add(ObjectPermission(
+        principal_type=PrincipalType.USER,
+        principal_id=user.id,
+        object_type=ObjectType.DOCUMENT.value,
+        object_id=doc.id,
+        permission_level=PermissionLevel.VIEW.value,
+    ))
+    await db_session.flush()
+
+    assert await check_permission(
+        db_session, user.id,
+        ObjectType.DOCUMENT, doc.id,
+        PermissionLevel.EDIT,
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_document_inherits_project_permission(
+    db_session: AsyncSession,
+):
+    """Document with project_id inherits permission from the project."""
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
+    project = await _create_project(db_session, org)
+    doc = await _create_document(db_session, org, user, project=project)
+
+    # Grant EDIT on the project
+    db_session.add(ObjectPermission(
+        principal_type=PrincipalType.USER,
+        principal_id=user.id,
+        object_type=ObjectType.PROJECT.value,
+        object_id=project.id,
+        permission_level=PermissionLevel.EDIT.value,
+    ))
+    await db_session.flush()
+
+    # Document should inherit EDIT from project
+    assert await check_permission(
+        db_session, user.id,
+        ObjectType.DOCUMENT, doc.id,
+        PermissionLevel.EDIT,
+    ) is True
+
+
+@pytest.mark.asyncio
+async def test_document_no_project_no_inheritance(
+    db_session: AsyncSession,
+):
+    """Document without project_id does not inherit — requires direct perm."""
+    org, user = await _setup_org_and_user(db_session, role="MEMBER")
+    doc = await _create_document(db_session, org, user)  # No project
+
+    # No direct permission — should be denied
+    assert await check_permission(
+        db_session, user.id,
+        ObjectType.DOCUMENT, doc.id,
+        PermissionLevel.VIEW,
+    ) is False

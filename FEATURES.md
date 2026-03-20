@@ -525,3 +525,29 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
   - **Embedding service**: Pass `org_id` through from document upload context so each org's documents are embedded with their configured provider
 - **Dependencies**: None
 
+### [F-0021] Role-Based Document Deletion in Library
+- **Status**: Done
+- **Priority**: P2 (Medium)
+- **Scope**: Full Stack
+- **Description**: The document library has a working `DELETE /library/documents/{id}` endpoint, but it only checks org membership — any org member can delete any document. This needs role-based access control so that only users with sufficient permissions (EDIT or above) can delete documents, with full audit logging. The frontend already has a confirmation dialog; this feature gates the action behind permissions and hides/disables the delete button for users without access.
+- **Acceptance Criteria**:
+  - [x] `DOCUMENT` added to `ObjectType` enum in `backend/app/models/iam.py`
+  - [x] Delete endpoint requires `EDIT` permission level on the document (or ADMIN on the parent project if the document is project-scoped, or org admin)
+  - [x] Permission resolution for documents: org admin → project-level permission (if `project_id` set) → direct document permission → deny
+  - [x] `ObjectPermission` rows can be created for documents (assign VIEW/EDIT/ADMIN per user or team)
+  - [x] Document uploader automatically gets ADMIN permission on their uploaded document
+  - [x] Audit log entry created on delete: `entity_type="Document"`, action `DELETE`, changes include `{title, original_filename, uploaded_by_id}`
+  - [x] Frontend hides or disables the delete button when the current user lacks EDIT permission
+  - [x] Frontend shows a 403 toast if the API rejects the delete (defensive — button should already be hidden)
+  - [x] Org admins can always delete any document in their org (existing org admin bypass in permission system)
+  - [x] List page: bulk delete option only visible to users with EDIT on the selected documents
+- **Resolution**: Added `DOCUMENT` to `ObjectType` enum. Extended permission service (`_get_org_id_for_object`, `_get_parent_project_id`, inheritance chain) to handle documents. Delete endpoint now requires EDIT permission with audit logging. Upload auto-grants ADMIN to uploader. Added `can_delete` field to document responses. Frontend conditionally renders delete button. 7 new unit tests for document permission resolution. All 462 backend tests pass.
+- **Implementation Notes**:
+  - **ObjectType enum** (`backend/app/models/iam.py`): Add `DOCUMENT = "DOCUMENT"` to the `ObjectType` enum. Generate Alembic migration to update the DB enum type
+  - **Permission resolution** (`backend/app/services/permissions.py`): Add `DOCUMENT` handling to `_get_org_id_for_object()` (query `Document.org_id`). Add project-inheritance path: if `Document.project_id` is set, fall back to project permissions. Add `_get_parent_project_id()` case for DOCUMENT type
+  - **Delete endpoint** (`backend/app/api/endpoints/library.py`): Add `check_permission(db, user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.EDIT)` before the delete. Add `log_audit()` call with document metadata. Can use the new `get_or_404` utility for the document fetch
+  - **Upload endpoint** (`backend/app/api/endpoints/library.py`): After creating a document, create an `ObjectPermission` granting the uploader ADMIN on the document
+  - **Frontend detail page** (`frontend/src/routes/library/[id]/+page.svelte`): Check user permissions (call a permissions endpoint or include permission level in the document detail response). Conditionally render the delete button
+  - **Frontend list page** (`frontend/src/routes/library/+page.svelte`): Same permission-gating for any delete actions in the list view
+- **Dependencies**: None
+

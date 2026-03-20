@@ -7,7 +7,7 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import get_current_user, require_permission
+from app.core.deps import get_current_user, get_or_404, require_permission
 from app.db.session import get_db
 from app.models.execution import AuditLog
 from app.models.iam import (
@@ -130,13 +130,7 @@ async def get_project(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    return await get_or_404(db, Project, project_id)
 
 
 @router.put(
@@ -156,12 +150,7 @@ async def update_project(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await get_or_404(db, Project, project_id)
 
     changes = update_data.model_dump(exclude_unset=True)
     if not changes:
@@ -211,12 +200,7 @@ async def delete_project(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await get_or_404(db, Project, project_id)
 
     await log_audit(
         db,
@@ -263,11 +247,7 @@ async def get_project_activity(
     db: AsyncSession = Depends(get_db),
 ):
     # Verify project exists
-    result = await db.execute(
-        select(Project).where(Project.id == project_id)
-    )
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    await get_or_404(db, Project, project_id)
 
     # Collect child entity IDs
     proto_result = await db.execute(

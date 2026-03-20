@@ -30,6 +30,7 @@ class ObjectType(str, Enum):
     PROJECT = "PROJECT"
     PROTOCOL = "PROTOCOL"
     RUN = "RUN"
+    DOCUMENT = "DOCUMENT"
 
 
 class PermissionLevel(str, Enum):

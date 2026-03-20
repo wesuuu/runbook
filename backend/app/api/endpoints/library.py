@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     Form,
     HTTPException,
@@ -19,12 +18,19 @@ from fastapi import (
 )
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.iam import OrganizationMember, User
+from app.models.iam import (
+    ObjectPermission,
+    OrganizationMember,
+    PrincipalType,
+    ObjectType,
+    PermissionLevel,
+    User,
+)
 from app.models.library import (
     ALLOWED_DOCUMENT_TYPES,
     MAX_DOCUMENT_SIZE_BYTES,
@@ -44,10 +50,22 @@ from app.schemas.library import (
     SearchResultGroup,
     SearchResultItem,
 )
+from app.services.audit import log_audit
 from app.services.document_processor import process_document
+from app.services.permissions import check_permission
+from app.services.task_runner import get_task_runner
 from app.services.url_importer import import_from_url
 
 router = APIRouter()
+
+
+async def _can_delete_document(
+    db: AsyncSession, user_id: uuid.UUID, document_id: uuid.UUID
+) -> bool:
+    """Check if user has EDIT permission on a document (required for delete)."""
+    return await check_permission(
+        db, user_id, ObjectType.DOCUMENT, document_id, PermissionLevel.EDIT,
+    )
 
 
 async def _get_user_org_id(
@@ -100,7 +118,6 @@ async def upload_document(
     title: str = Form(...),
     project_id: Optional[uuid.UUID] = Form(None),
     tags: Optional[str] = Form(None),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -175,15 +192,27 @@ async def upload_document(
         tags=parsed_tags,
     )
     db.add(doc)
+    await db.flush()
+
+    # Auto-grant uploader ADMIN permission on the document
+    db.add(ObjectPermission(
+        principal_type=PrincipalType.USER.value,
+        principal_id=current_user.id,
+        object_type=ObjectType.DOCUMENT.value,
+        object_id=doc.id,
+        permission_level=PermissionLevel.ADMIN.value,
+    ))
     await db.commit()
     await db.refresh(doc)
 
-    # Trigger background processing
-    background_tasks.add_task(
-        process_document, doc.id, settings.database_url
+    # Trigger background processing via task runner
+    get_task_runner().submit(
+        process_document(doc.id, settings.database_url)
     )
 
-    return doc
+    resp = DocumentResponse.model_validate(doc)
+    resp.can_delete = True  # Uploader always has ADMIN
+    return resp
 
 
 @router.get("/documents", response_model=DocumentListResponse)
@@ -217,7 +246,16 @@ async def list_documents(
     result = await db.execute(query)
     documents = list(result.scalars().all())
 
-    return DocumentListResponse(items=documents, total=total)
+    # Compute can_delete for each document
+    items = []
+    for doc in documents:
+        resp = DocumentResponse.model_validate(doc)
+        resp.can_delete = await _can_delete_document(
+            db, current_user.id, doc.id
+        )
+        items.append(resp)
+
+    return DocumentListResponse(items=items, total=total)
 
 
 @router.get(
@@ -231,16 +269,38 @@ async def get_document(
 ):
     org_id = await _get_user_org_id(current_user, db)
 
+    # Load document without eagerly loading all chunks
     result = await db.execute(
-        select(Document)
-        .options(selectinload(Document.chunks))
-        .where(Document.id == document_id, Document.org_id == org_id)
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
     )
     doc = result.scalar_one_or_none()
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    chunks = sorted(doc.chunks, key=lambda c: c.chunk_index)
+    # Efficient count instead of loading all chunks into memory
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(DocumentChunk)
+        .where(DocumentChunk.document_id == document_id)
+    )
+    chunk_count = count_result.scalar() or 0
+
+    # Only load the first 5 chunks for preview (exclude embeddings)
+    preview_result = await db.execute(
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document_id)
+        .order_by(DocumentChunk.chunk_index)
+        .limit(5)
+        .options(defer(DocumentChunk.embedding))
+    )
+    chunks_preview = list(preview_result.scalars().all())
+
+    can_delete = await _can_delete_document(
+        db, current_user.id, document_id,
+    )
+
     return DocumentDetailResponse(
         id=doc.id,
         org_id=doc.org_id,
@@ -259,8 +319,9 @@ async def get_document(
         source_url=doc.source_url,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
-        chunk_count=len(chunks),
-        chunks_preview=chunks[:5],
+        chunk_count=chunk_count,
+        chunks_preview=chunks_preview,
+        can_delete=can_delete,
     )
 
 
@@ -292,6 +353,7 @@ async def get_document_chunks(
         .order_by(DocumentChunk.chunk_index)
         .offset(offset)
         .limit(limit)
+        .options(defer(DocumentChunk.embedding))
     )
     return list(result.scalars().all())
 
@@ -313,6 +375,31 @@ async def delete_document(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    # Permission check: require EDIT on the document
+    allowed = await check_permission(
+        db, current_user.id,
+        ObjectType.DOCUMENT, document_id,
+        PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=403, detail="Insufficient permissions"
+        )
+
+    # Audit log before deletion
+    await log_audit(
+        db,
+        actor_id=current_user.id,
+        action="DELETE",
+        entity_type="Document",
+        entity_id=document_id,
+        changes={
+            "title": doc.title,
+            "original_filename": doc.original_filename,
+            "uploaded_by_id": doc.uploaded_by_id,
+        },
+    )
+
     # Remove file from disk
     try:
         file_path = Path(doc.file_path)
@@ -331,7 +418,6 @@ async def delete_document(
 )
 async def retry_processing(
     document_id: uuid.UUID,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -359,9 +445,9 @@ async def retry_processing(
     await db.commit()
     await db.refresh(doc)
 
-    # Re-trigger processing
-    background_tasks.add_task(
-        process_document, doc.id, settings.database_url
+    # Re-trigger processing via task runner
+    get_task_runner().submit(
+        process_document(doc.id, settings.database_url)
     )
 
     return doc
@@ -629,7 +715,6 @@ async def backfill_embeddings(
 )
 async def import_document_from_url(
     body: ImportUrlRequest,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -654,9 +739,9 @@ async def import_document_from_url(
     await db.commit()
     await db.refresh(doc)
 
-    # Trigger background processing
-    background_tasks.add_task(
-        process_document, doc.id, settings.database_url
+    # Trigger background processing via task runner
+    get_task_runner().submit(
+        process_document(doc.id, settings.database_url)
     )
 
     return doc

@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     ai_embedding_api_key: str = ""
     ai_embedding_base_url: str = ""
 
+    # Task runner backend: "thread" (default) — future: "kubernetes", "celery"
+    task_runner_backend: str = "thread"
+    task_runner_pool_size: int = 4
+
     # Debug mode — enables dev-only endpoints (webhook echo, etc.)
     debug: bool = False
 

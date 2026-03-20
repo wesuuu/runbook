@@ -24,6 +24,7 @@ class DocumentResponse(BaseModel):
     processing_started_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    can_delete: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -40,6 +41,7 @@ class DocumentChunkResponse(BaseModel):
     content: str
     token_count: int
     page_number: Optional[int] = None
+    chunk_metadata: dict[str, Any] = {}
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

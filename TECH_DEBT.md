@@ -12,14 +12,14 @@
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| Code Smells | 0 | 4 | 7 | 0 | 11 |
+| Code Smells | 0 | 4 | 6 | 0 | 10 |
 | Missing Implementation | 0 | 0 | 1 | 0 | 1 |
 | Type Safety | 0 | 4 | 1 | 0 | 5 |
 | Testing Gaps | 2 | 4 | 0 | 0 | 6 |
 | Security | 0 | 0 | 0 | 0 | 0 |
-| Architecture | 2 | 5 | 7 | 1 | 15 |
+| Architecture | 2 | 5 | 6 | 1 | 14 |
 | Dependencies & Tooling | 0 | 0 | 1 | 0 | 1 |
-| **Total** | **4** | **17** | **17** | **1** | **39** |
+| **Total** | **4** | **17** | **15** | **1** | **37** |
 
 *Last updated: 2026-03-18*
 
@@ -31,11 +31,12 @@
 
 ### [TD-0005] Frontend runs page is 1400+ lines
 - **Category**: Code Smells
-- **Severity**: High
+- **Severity**: ~~High~~ **RESOLVED**
 - **Location**: `frontend/src/routes/runs/[id]/+page.svelte`
 - **Description**: Mixed concerns: run state, role assignments, execution tracking, role wizard UI, PDF exports. Both `onMount()` and `$effect()` trigger `loadData()` redundantly.
 - **Suggested Fix**: Extract role assignment logic and execution tracking into separate components. Remove redundant `onMount()`.
 - **Effort**: L
+- **Resolution**: Extracted 5 components into `lib/components/run/`: `RunDocuments.svelte` (document downloads, was duplicated 4x), `RoleAssignmentPanel.svelte` (PLANNED state role assignment form), `RunResultsSummary.svelte` (step results for COMPLETED/EDITED with edit annotation support), `RunEditMode.svelte` (edit mode sub-view, was duplicated 2x), `RunObserverView.svelte` (non-assigned user status view). Main page reduced from 1641 to 952 lines (42%). Redundant `onMount()` was already removed. Verified with `npm run check`.
 
 ### [TD-0006] Frontend Inspector.svelte is 1000+ lines
 - **Category**: Code Smells
@@ -87,11 +88,12 @@
 
 ### [TD-0013] Backend _get_ollama_model_name uses long if/elif chain
 - **Category**: Code Smells
-- **Severity**: Medium
+- **Severity**: ~~Medium~~ **WONTFIX**
 - **Location**: `backend/app/services/ai_vision.py:169`
 - **Description**: 159-line function with many if/elif branches for Ollama model name resolution. Could be a mapping dict.
 - **Suggested Fix**: Replace with a dictionary lookup: `MODEL_MAP = {"name": "ollama_name", ...}`.
 - **Effort**: S
+- **Reason**: The function `_get_ollama_model_name` is already a clean 7-line implementation (extracts model name from provider or string). No if/elif chain exists — the item description does not match the current code.
 
 ### [TD-0019] No error boundary component in frontend
 - **Category**: Missing Implementation
@@ -231,11 +233,12 @@
 
 ### [TD-0045] Repeated select-by-id + 404 pattern across all endpoints
 - **Category**: Architecture
-- **Severity**: Medium
+- **Severity**: ~~Medium~~ **RESOLVED**
 - **Location**: `backend/app/api/endpoints/science.py`, `ai.py`, `iam.py`, `projects.py`
 - **Description**: `select(...).where(Model.id == id)` + `scalar_one_or_none()` + 404 check is repeated 100+ times with no shared utility.
 - **Suggested Fix**: Create a `get_or_404(db, Model, id)` utility function in a shared module.
 - **Effort**: S
+- **Resolution**: Created `get_or_404(db, model, id, *, detail, options)` in `app/core/deps.py`. Replaced 18 occurrences across `projects.py` (4), `iam.py` (3), `protocols.py` (5), `runs.py` (6), and `ai.py` (1). Supports `selectinload` via `options` param. Unit tests in `tests/unit/test_deps.py`. All 456 tests pass.
 
 ### [TD-0046] Dark mode blocked by hardcoded Tailwind colors — normalize to CSS variables
 - **Category**: Architecture
@@ -371,9 +374,28 @@
 - **Suggested Fix**: When a role reassignment occurs in `create_run_role_assignment`, delete or mark as read/dismissed any existing `ROLE_ASSIGNED` notifications for the old user on that run+role. This requires either: (a) querying and deleting matching notifications by `entity_id` + `event_type` + `recipient`, or (b) adding a `dismiss_notifications` helper to the notifications service that invalidates stale assignment notifications when the assignment changes.
 - **Effort**: M
 
+### [TD-0069] Playwright E2E: Document Library — search, URL import, retry, and processing flows
+- **Category**: Testing Gaps
+- **Severity**: High
+- **Location**: `frontend/e2e/library.spec.ts` (extend existing file)
+- **Description**: The library has 6 basic E2E tests covering navigation, empty state, file upload, detail view, delete, and invalid file rejection. But the core value-proposition workflows are untested: search/discovery, URL import, retry of failed processing, processing status polling, and org-scoped access control. These are the flows scientists will use most — finding information in uploaded documents and importing references from the web.
+- **Test Cases**:
+  - [ ] **Search — keyword match**: Upload a document with known content → search for a term → results appear with highlighted matches and correct document title
+  - [ ] **Search — no results**: Search for a nonsensical term → empty state message displayed
+  - [ ] **Search — click through**: Search → click a result → navigates to document detail page at the right section
+  - [ ] **URL import**: Import a document from a public URL (e.g., a raw text file on GitHub) → document appears in list with source URL displayed
+  - [ ] **URL import — invalid URL**: Try to import from a private IP or non-http URL → error message displayed
+  - [ ] **Retry failed processing**: Upload a document → simulate failure (or use a corrupt file) → verify "Failed" status badge → click retry → status resets to processing
+  - [ ] **Processing status polling**: Upload a document → verify status transitions from "Processing" to "Ready" (or poll until indexed)
+  - [ ] **Document reader — chunk navigation**: Open a multi-page document → verify chunks render with page numbers → use in-document search to find text
+  - [ ] **Org scoping**: Upload as user in Org A → log in as user in Org B → verify document is NOT visible in Org B's library
+  - [ ] **File size validation**: Attempt upload of oversized file → error message before request is sent
+- **Suggested Fix**: Extend `frontend/e2e/library.spec.ts` with new test suites. For search tests, upload via API helper first and wait for INDEXED status (poll `GET /library/documents/{id}` until `status === "INDEXED"`). For URL import, use a stable public text file. For org scoping, use the existing second user/org fixtures from the auth E2E helpers. Add a `waitForDocumentIndexed(page, id)` helper to `frontend/e2e/helpers/library.ts`.
+- **Effort**: L
+
 ### [TD-0068] Stale Tailwind v3 config causes arbitrary value classes to fail
 - **Category**: Dependencies & Tooling
-- **Severity**: High
+- **Severity**: ~~High~~ **RESOLVED**
 - **Location**: `frontend/tailwind.config.js`, `frontend/src/app.css`, `frontend/postcss.config.js`
 - **Description**: The frontend uses Tailwind CSS v4 (`@import "tailwindcss"` with `@theme` in `app.css`) but still has a Tailwind v3-style `tailwind.config.js` with `content`, `theme.extend`, `darkMode`, etc. Tailwind v4 uses automatic content detection and CSS-based configuration — the v3 config file is ignored or partially applied, causing subtle bugs. Arbitrary value classes like `w-[15px]` silently fail to generate, producing unsized elements (e.g., a 15px search icon SVG rendering at full viewport size). The `@theme` block in `app.css` and the `theme.extend` in `tailwind.config.js` define overlapping/conflicting design tokens.
 - **Suggested Fix**:
@@ -383,5 +405,8 @@
   4. Move shadcn-svelte color tokens from `theme.extend.colors` to `@theme` CSS variables (some are already there — deduplicate)
   5. Delete `tailwind.config.js`
   6. Audit all arbitrary value classes (`w-[Xpx]`, `h-[Xpx]`, `text-[Xpx]`, etc.) across the codebase — replace with standard Tailwind classes where possible
+  7. Remove inline style workarounds added to bypass broken arbitrary classes (e.g., `dialog-content.svelte` uses `style="top: 50%; left: 50%; transform: translate(-50%, -50%)"` because the Tailwind classes failed) — replace with pure Tailwind once v4 config is unified
+  8. Browser-test every component that had inline style workarounds or custom CSS overrides after migration to confirm no visual regressions — dialogs, popovers, dropdowns, and any positioned overlays are especially fragile
 - **Effort**: M
+- **Resolution**: Deleted stale `tailwind.config.js` (was completely ignored by v4 — no `@config` directive). Migrated border-radius overrides (`--radius-lg/md/sm`) into v4 `@theme` block in `app.css`. Replaced inline style centering workaround in `dialog-content.svelte` with Tailwind classes (`top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2`). Replaced custom CSS in protocol editor page (`.editor-wrapper`, `.canvas-wrapper`, `.canvas-loading`, `.spinner`) with inline Tailwind utilities. Removed redundant `:global(body)` reset from runs page. Audited arbitrary value classes — all working correctly under v4. Dark mode config and content paths were dead code (dark mode unused, v4 auto-detects content). Browser-verified login, project, and protocol editor pages — no visual regressions.
 

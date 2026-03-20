@@ -16,6 +16,8 @@ from app.models.library import (
     DocumentChunk,
     DocumentStatus,
 )
+from app.services.markdown_chunker import chunk_markdown
+from app.services.task_runner import get_task_runner
 from app.services.text_chunker import chunk_text
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,10 @@ async def process_document(document_id: UUID, db_url: str) -> None:
             )
             await session.commit()
 
-            # Extract text based on mime type
+            # Extract text based on mime type.
+            # Extraction and chunking are CPU-bound — offload to
+            # the task runner's thread pool so the event loop stays free.
+            runner = get_task_runner()
             file_path = Path(doc.file_path)
             text = ""
             page_count = None
@@ -75,21 +80,23 @@ async def process_document(document_id: UUID, db_url: str) -> None:
 
             try:
                 if doc.mime_type == "application/pdf":
-                    text, page_count, page_boundaries = extract_pdf(
-                        file_path
+                    text, page_count, page_boundaries = (
+                        await runner.run_sync(extract_pdf, file_path)
                     )
                 elif doc.mime_type == (
                     "application/vnd.openxmlformats-officedocument"
                     ".wordprocessingml.document"
                 ):
-                    text = extract_docx(file_path)
+                    text = await runner.run_sync(extract_docx, file_path)
                 elif doc.mime_type in (
                     "text/plain",
                     "text/markdown",
                     "application/rtf",
                     "text/html",
                 ):
-                    text = extract_text_file(file_path)
+                    text = await runner.run_sync(
+                        extract_text_file, file_path
+                    )
                 elif doc.mime_type.startswith("image/"):
                     # Images: store with 0 chunks, Phase 3 adds OCR
                     doc.status = DocumentStatus.INDEXED.value
@@ -122,13 +129,31 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                 await session.commit()
                 return
 
-            # Chunk the extracted text
-            chunks = chunk_text(
-                text,
-                chunk_size=1000,
-                overlap=200,
-                page_boundaries=page_boundaries,
+            # Determine content format based on MIME type
+            MARKDOWN_MIMES = {"application/pdf"}
+            content_format = (
+                "markdown"
+                if doc.mime_type in MARKDOWN_MIMES
+                else "plaintext"
             )
+
+            # Chunk the extracted text (CPU-bound — offload to thread)
+            if content_format == "markdown":
+                chunks = await runner.run_sync(
+                    chunk_markdown,
+                    text,
+                    1000,
+                    200,
+                    page_boundaries,
+                )
+            else:
+                chunks = await runner.run_sync(
+                    chunk_text,
+                    text,
+                    1000,
+                    200,
+                    page_boundaries,
+                )
 
             # Generate embeddings (best-effort — skip on failure)
             embeddings: list[list[float]] = []
@@ -146,6 +171,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                 )
 
             # Bulk insert chunks (with embeddings if available)
+            chunk_meta = {"content_format": content_format}
             for i, chunk in enumerate(chunks):
                 emb = None
                 if i < len(embeddings):
@@ -156,6 +182,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                     content=chunk.content,
                     token_count=chunk.token_count,
                     page_number=chunk.page_number,
+                    chunk_metadata=chunk_meta,
                     embedding=emb,
                 )
                 session.add(db_chunk)
@@ -189,29 +216,72 @@ async def process_document(document_id: UUID, db_url: str) -> None:
 
 
 def extract_pdf(path: Path) -> tuple[str, int, list[int]]:
-    """Extract text from a PDF file using pymupdf.
+    """Extract text from a PDF as Markdown using pymupdf4llm.
+
+    Uses pymupdf4llm.to_markdown() to preserve headings, bold/italic,
+    tables, and lists. Falls back to plain pymupdf text extraction
+    if pymupdf4llm fails.
+
+    Page boundaries are computed from pymupdf's fast get_text() and
+    then scaled proportionally to the markdown text length. This avoids
+    calling to_markdown() per-page (which is O(N) and very slow for
+    large PDFs).
 
     Returns:
-        Tuple of (full_text, page_count, page_boundaries) where
+        Tuple of (markdown_text, page_count, page_boundaries) where
         page_boundaries is a list of character offsets.
     """
     import pymupdf
 
     doc = pymupdf.open(str(path))
     try:
+        page_count = len(doc)
+
+        # Always compute fast plain-text page lengths for boundaries
+        plain_page_lengths = [len(page.get_text()) for page in doc]
+        plain_total = sum(plain_page_lengths)
+
+        # Try pymupdf4llm for Markdown extraction
+        try:
+            import pymupdf4llm
+
+            md_text = pymupdf4llm.to_markdown(doc)
+            md_total = len(md_text)
+
+            # Scale plain-text page boundaries proportionally to
+            # markdown length. This is approximate but avoids calling
+            # to_markdown() per-page which is extremely slow.
+            page_boundaries: list[int] = []
+            if plain_total > 0 and page_count > 1:
+                offset = 0
+                for i in range(page_count - 1):
+                    offset += int(
+                        plain_page_lengths[i] / plain_total * md_total
+                    )
+                    page_boundaries.append(offset)
+
+            return md_text, page_count, page_boundaries
+        except Exception:
+            logger.warning(
+                "pymupdf4llm extraction failed for %s, "
+                "falling back to plain text",
+                path,
+            )
+
+        # Fallback: plain pymupdf text extraction
         texts: list[str] = []
-        page_boundaries: list[int] = []
+        page_boundaries_fallback: list[int] = []
         offset = 0
 
-        for page in doc:
+        for i, page in enumerate(doc):
             page_text = page.get_text()
-            if page_boundaries:
-                page_boundaries.append(offset)
+            if i > 0:
+                page_boundaries_fallback.append(offset)
             texts.append(page_text)
             offset += len(page_text)
 
         full_text = "".join(texts)
-        return full_text, len(doc), page_boundaries
+        return full_text, page_count, page_boundaries_fallback
     finally:
         doc.close()
 

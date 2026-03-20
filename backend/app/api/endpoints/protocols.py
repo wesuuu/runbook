@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import get_current_user, require_permission
+from app.core.deps import get_current_user, get_or_404, require_permission
 from app.db.session import get_db
 from app.models.iam import (
     User,
@@ -104,15 +104,10 @@ async def get_protocol(
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Protocol)
-        .options(selectinload(Protocol.roles))
-        .where(Protocol.id == protocol_id)
+    return await get_or_404(
+        db, Protocol, protocol_id,
+        options=[selectinload(Protocol.roles)],
     )
-    protocol = result.scalar_one_or_none()
-    if not protocol:
-        raise HTTPException(status_code=404, detail="Protocol not found")
-    return protocol
 
 
 @router.get(
@@ -161,14 +156,10 @@ async def delete_or_archive_protocol(
     if not allowed:
         raise HTTPException(status_code=403, detail="EDIT permission required")
 
-    result = await db.execute(
-        select(Protocol)
-        .options(selectinload(Protocol.roles))
-        .where(Protocol.id == protocol_id)
+    protocol = await get_or_404(
+        db, Protocol, protocol_id,
+        options=[selectinload(Protocol.roles)],
     )
-    protocol = result.scalar_one_or_none()
-    if not protocol:
-        raise HTTPException(status_code=404, detail="Protocol not found")
 
     if protocol.status == "PENDING_APPROVAL":
         raise HTTPException(
@@ -227,14 +218,10 @@ async def unarchive_protocol(
     db: AsyncSession = Depends(get_db),
 ):
     """Unarchive a protocol back to DRAFT. Requires ADMIN on project."""
-    result = await db.execute(
-        select(Protocol)
-        .options(selectinload(Protocol.roles))
-        .where(Protocol.id == protocol_id)
+    protocol = await get_or_404(
+        db, Protocol, protocol_id,
+        options=[selectinload(Protocol.roles)],
     )
-    protocol = result.scalar_one_or_none()
-    if not protocol:
-        raise HTTPException(status_code=404, detail="Protocol not found")
 
     if protocol.status != "ARCHIVED":
         raise HTTPException(
@@ -279,14 +266,10 @@ async def update_protocol(
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Protocol)
-        .options(selectinload(Protocol.roles))
-        .where(Protocol.id == protocol_id)
+    protocol = await get_or_404(
+        db, Protocol, protocol_id,
+        options=[selectinload(Protocol.roles)],
     )
-    protocol = result.scalar_one_or_none()
-    if not protocol:
-        raise HTTPException(status_code=404, detail="Protocol not found")
 
     changes = update_data.model_dump(exclude_unset=True)
 
@@ -450,11 +433,7 @@ async def create_protocol_role(
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Protocol).where(Protocol.id == protocol_id)
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Protocol not found")
+    await get_or_404(db, Protocol, protocol_id)
 
     new_role = ProtocolRole(
         protocol_id=protocol_id,

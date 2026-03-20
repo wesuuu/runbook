@@ -1,3 +1,4 @@
+from typing import Any, Sequence, TypeVar
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -11,6 +12,31 @@ from app.models.iam import User, ObjectType, PermissionLevel
 from app.services.permissions import check_permission
 
 _bearer = HTTPBearer(auto_error=False)
+
+T = TypeVar("T")
+
+
+async def get_or_404(
+    db: AsyncSession,
+    model: type[T],
+    id: Any,
+    *,
+    detail: str | None = None,
+    options: Sequence[Any] | None = None,
+) -> T:
+    """Fetch a single record by primary key or raise 404."""
+    stmt = select(model).where(model.id == id)
+    if options:
+        for opt in options:
+            stmt = stmt.options(opt)
+    result = await db.execute(stmt)
+    record = result.scalar_one_or_none()
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail=detail or f"{model.__name__} not found",
+        )
+    return record
 
 
 async def get_current_user(

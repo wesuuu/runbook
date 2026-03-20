@@ -14,6 +14,7 @@ from app.models.iam import (
 )
 from app.core.config import settings
 from app.models.science import Project, Protocol, Run
+from app.models.library import Document
 
 
 def _meets_level(
@@ -54,6 +55,12 @@ async def _get_org_id_for_object(
         )
         return result.scalar_one_or_none()
 
+    if object_type == ObjectType.DOCUMENT:
+        result = await db.execute(
+            select(Document.org_id).where(Document.id == object_id)
+        )
+        return result.scalar_one_or_none()
+
     return None
 
 
@@ -75,6 +82,14 @@ async def _get_parent_project_id(
         result = await db.execute(
             select(Run.project_id).where(
                 Run.id == object_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    if object_type == ObjectType.DOCUMENT:
+        result = await db.execute(
+            select(Document.project_id).where(
+                Document.id == object_id
             )
         )
         return result.scalar_one_or_none()
@@ -137,7 +152,9 @@ async def check_permission(
         project_id_to_check: UUID | None = None
         if object_type == ObjectType.PROJECT:
             project_id_to_check = object_id
-        elif object_type in (ObjectType.PROTOCOL, ObjectType.RUN):
+        elif object_type in (
+            ObjectType.PROTOCOL, ObjectType.RUN, ObjectType.DOCUMENT,
+        ):
             project_id_to_check = await _get_parent_project_id(
                 db, object_type, object_id
             )
@@ -184,8 +201,8 @@ async def check_permission(
             )
             return highest >= PERMISSION_RANK[required_level]
 
-    # 5. Inherit from parent project for protocols/runs
-    if object_type in (ObjectType.PROTOCOL, ObjectType.RUN):
+    # 5. Inherit from parent project for protocols/runs/documents
+    if object_type in (ObjectType.PROTOCOL, ObjectType.RUN, ObjectType.DOCUMENT):
         project_id = await _get_parent_project_id(
             db, object_type, object_id
         )

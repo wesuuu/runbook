@@ -814,7 +814,7 @@
     });
 </script>
 
-<div class="editor-wrapper">
+<div class="flex h-[calc(100vh-57px)] font-sans">
     <!-- ============= SIDEBAR ============= -->
     <ProtocolSidebar
         {protocol}
@@ -840,7 +840,7 @@
 
     <!-- ============= CANVAS ============= -->
     <div
-        class="canvas-wrapper"
+        class="relative flex-1 bg-[hsl(240,4.8%,95.9%)]"
         ondrop={onDrop}
         ondragover={onDragOver}
         bind:this={flowContainer}
@@ -902,8 +902,8 @@
         {/if}
 
         {#if loading}
-            <div class="canvas-loading">
-                <div class="spinner"></div>
+            <div class="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
+                <div class="w-7 h-7 border-3 border-slate-200 border-t-[hsl(173,58%,39%)] rounded-full animate-spin"></div>
                 <p>Loading protocol...</p>
             </div>
         {:else}
@@ -1007,43 +1007,3 @@
     {/if}
 </div>
 
-<style>
-    /* ── Layout ── */
-    .editor-wrapper {
-        height: calc(100vh - 57px);
-        display: flex;
-        font-family: "Inter", system-ui, sans-serif;
-    }
-
-    /* ── Canvas ── */
-    .canvas-wrapper {
-        flex: 1;
-        position: relative;
-        background: hsl(240, 4.8%, 95.9%);
-    }
-
-    .canvas-loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        gap: 12px;
-        color: #94a3b8;
-    }
-
-    .spinner {
-        width: 28px;
-        height: 28px;
-        border: 3px solid #e2e8f0;
-        border-top-color: hsl(173, 58%, 39%);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-</style>

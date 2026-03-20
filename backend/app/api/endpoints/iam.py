@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_or_404
 from app.db.session import get_db
 from app.models.iam import (
     Organization,
@@ -143,12 +143,7 @@ async def get_organization(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
-    org = result.scalar_one_or_none()
-    if org is None:
-        raise HTTPException(status_code=404, detail="Organization not found")
+    org = await get_or_404(db, Organization, org_id)
     return org
 
 
@@ -715,12 +710,7 @@ async def update_equipment(
     db: AsyncSession = Depends(get_db),
 ):
     """Update equipment. Any org member can update."""
-    result = await db.execute(
-        select(Equipment).where(Equipment.id == equipment_id)
-    )
-    equipment = result.scalar_one_or_none()
-    if equipment is None:
-        raise HTTPException(status_code=404, detail="Equipment not found")
+    equipment = await get_or_404(db, Equipment, equipment_id)
 
     await _require_org_member(db, user.id, equipment.organization_id)
 
@@ -761,12 +751,7 @@ async def delete_equipment(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete equipment. Any org member can delete."""
-    result = await db.execute(
-        select(Equipment).where(Equipment.id == equipment_id)
-    )
-    equipment = result.scalar_one_or_none()
-    if equipment is None:
-        raise HTTPException(status_code=404, detail="Equipment not found")
+    equipment = await get_or_404(db, Equipment, equipment_id)
 
     await _require_org_member(db, user.id, equipment.organization_id)
 

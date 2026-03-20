@@ -88,3 +88,59 @@ export async function deleteDocumentViaApi(
 ): Promise<void> {
     await apiRequest(page, 'DELETE', `/library/documents/${id}`);
 }
+
+/**
+ * Upload a binary file (PDF, DOCX, image) via the API for testing.
+ */
+export async function uploadBinaryDocumentViaApi(
+    page: Page,
+    title: string,
+    filePath: string,
+    fileName: string,
+    mimeType: string,
+): Promise<{ id: string; title: string; status: string }> {
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const fs = await import('fs');
+    const fileBuffer = fs.readFileSync(filePath);
+
+    const response = await page.request.fetch(`${API_BASE}/library/documents`, {
+        method: 'POST',
+        multipart: {
+            file: {
+                name: fileName,
+                mimeType: mimeType,
+                buffer: fileBuffer,
+            },
+            title: title,
+        },
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    if (!response.ok()) {
+        throw new Error(`Upload failed: ${response.status()}`);
+    }
+    return response.json();
+}
+
+/**
+ * Wait for a document to reach INDEXED status by polling.
+ */
+export async function waitForIndexed(
+    page: Page,
+    docId: string,
+    timeoutMs = 30000,
+): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        const doc = (await getDocumentViaApi(page, docId)) as {
+            status: string;
+        };
+        if (doc.status === 'INDEXED') return;
+        if (doc.status === 'FAILED')
+            throw new Error('Document processing failed');
+        await page.waitForTimeout(1000);
+    }
+    throw new Error(`Document did not reach INDEXED within ${timeoutMs}ms`);
+}

@@ -22,6 +22,7 @@
     import { API_BASE } from '$lib/config';
     import { Input } from '$lib/components/ui/input';
     import { ArrowLeft, RotateCcw, Trash2, ExternalLink, Search, X } from 'lucide-svelte';
+    import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 
     interface DocumentChunk {
         id: string;
@@ -30,6 +31,7 @@
         content: string;
         token_count: number;
         page_number: number | null;
+        chunk_metadata: Record<string, unknown>;
         created_at: string;
     }
 
@@ -49,17 +51,20 @@
         chunks_preview: DocumentChunk[];
         created_at: string;
         updated_at: string;
+        can_delete: boolean;
     }
 
     let document = $state<DocumentDetail | null>(null);
     let allChunks = $state<DocumentChunk[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
-    let showAllChunks = $state(false);
+    let loadingMoreChunks = $state(false);
+    let allChunksLoaded = $state(false);
     let deleteDialogOpen = $state(false);
     let deleting = $state(false);
     let retrying = $state(false);
     let pollTimer: ReturnType<typeof setInterval> | null = null;
+    const CHUNKS_PER_PAGE = 50;
 
     // In-document search
     let docSearchQuery = $state('');
@@ -86,16 +91,22 @@
         }
     }
 
-    async function loadAllChunks() {
-        if (!document) return;
+    async function loadMoreChunks() {
+        if (!document || loadingMoreChunks) return;
+        loadingMoreChunks = true;
         try {
+            const offset = allChunks.length;
             const chunks = await api.get<DocumentChunk[]>(
-                `/library/documents/${documentId}/chunks?limit=200`
+                `/library/documents/${documentId}/chunks?limit=${CHUNKS_PER_PAGE}&offset=${offset}`
             );
-            allChunks = chunks;
-            showAllChunks = true;
+            allChunks = [...allChunks, ...chunks];
+            if (chunks.length < CHUNKS_PER_PAGE || allChunks.length >= document.chunk_count) {
+                allChunksLoaded = true;
+            }
         } catch (e: unknown) {
-            toast.error('Failed to load full content');
+            toast.error('Failed to load more content');
+        } finally {
+            loadingMoreChunks = false;
         }
     }
 
@@ -119,7 +130,12 @@
             toast.success('Document deleted');
             goto('/library');
         } catch (e: unknown) {
-            toast.error(e instanceof Error ? e.message : 'Delete failed');
+            const msg = e instanceof Error ? e.message : 'Delete failed';
+            if (msg.includes('403') || msg.includes('permission')) {
+                toast.error('You do not have permission to delete this document');
+            } else {
+                toast.error(msg);
+            }
         } finally {
             deleting = false;
             deleteDialogOpen = false;
@@ -222,14 +238,16 @@
                     {retrying ? 'Retrying...' : 'Retry Processing'}
                 </Button>
             {/if}
-            <Button
-                variant="destructive"
-                size="sm"
-                onclick={() => (deleteDialogOpen = true)}
-            >
-                <Trash2 class="mr-2 h-4 w-4" />
-                Delete
-            </Button>
+            {#if document.can_delete}
+                <Button
+                    variant="destructive"
+                    size="sm"
+                    onclick={() => (deleteDialogOpen = true)}
+                >
+                    <Trash2 class="mr-2 h-4 w-4" />
+                    Delete
+                </Button>
+            {/if}
         </div>
 
         <!-- Error banner -->
@@ -306,7 +324,7 @@
                         {/if}
                     </p>
                 {:else}
-                    <div class="prose prose-sm max-w-none">
+                    <div class="max-w-none">
                         {#each allChunks as chunk, i}
                             {#if i > 0 && chunk.page_number && allChunks[i - 1]?.page_number !== chunk.page_number}
                                 <div class="flex items-center gap-3 my-6">
@@ -319,17 +337,20 @@
                             {/if}
                             <div
                                 id="chunk-{i}"
-                                class="whitespace-pre-wrap leading-relaxed text-sm transition-colors {matchingChunkIndices.has(i) ? 'bg-yellow-100 rounded px-2 py-1 -mx-2' : ''}"
+                                class="transition-colors {matchingChunkIndices.has(i) ? 'bg-yellow-100 rounded px-2 py-1 -mx-2' : ''}"
                             >
-                                {chunk.content}
+                                <MarkdownRenderer
+                                    content={chunk.content}
+                                    format={(chunk.chunk_metadata?.content_format as string) ?? 'plaintext'}
+                                />
                             </div>
                         {/each}
                     </div>
 
-                    {#if !showAllChunks && document.chunk_count > 5}
+                    {#if !allChunksLoaded && document.chunk_count > allChunks.length}
                         <div class="text-center mt-6">
-                            <Button variant="outline" onclick={loadAllChunks}>
-                                Show all ({document.chunk_count} chunks)
+                            <Button variant="outline" onclick={loadMoreChunks} disabled={loadingMoreChunks}>
+                                {loadingMoreChunks ? 'Loading...' : `Load more (${allChunks.length} of ${document.chunk_count})`}
                             </Button>
                         </div>
                     {/if}
