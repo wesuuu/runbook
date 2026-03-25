@@ -282,33 +282,53 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
   - **If removing**: Generate Alembic migration to drop the column, remove from model/schemas/endpoints.
 - **Dependencies**: None
 
-### [F-0007] AI Capability Expansion — Embeddings & Code Generation
-- **Status**: Proposed
+### [F-0007] AI Chat Assistant
+- **Status**: In Progress
 - **Priority**: P2 (Medium)
 - **Scope**: Full Stack
-- **Description**: Expand the AI integration beyond vision to include: (1) embedding models for semantic search across protocols, experiments, and audit logs, and (2) coding/reasoning models for automated protocol generation from natural language descriptions. Leverages the existing AI provider config system (`backend/app/services/ai_config.py`) which already supports multiple providers and capabilities.
+- **Description**: A conversational AI assistant for biotech PD scientists. Users can chat with the AI to ask domain questions (cell biology, genetics, purification), discuss documents from the library (RAG), and generate protocols from conversations or library documents. Built in three phases: (1) Chat engine + UI, (2) RAG integration with document library, (3) Protocol generation from chat.
 - **Acceptance Criteria**:
-  - **Semantic Search:**
-    - [ ] New `embedding` capability added to `SUPPORTED_CAPABILITIES` in `backend/app/models/ai.py`
-    - [ ] Embedding vectors stored for protocols (name + description + unit op labels) and experiments
-    - [ ] New `pgvector` extension enabled in PostgreSQL; vector column added to relevant tables (or separate `embeddings` table)
-    - [ ] `POST /ai/embed` endpoint to generate and store embeddings for an entity
-    - [ ] `GET /ai/search?q=...` endpoint returns semantically similar protocols/experiments ranked by cosine similarity
-    - [ ] Frontend search bar enhanced with semantic search option (toggle between text and semantic)
-    - [ ] Embeddings auto-regenerated when protocol/experiment content changes
-  - **Protocol Generation:**
-    - [ ] New `coding` capability added to `SUPPORTED_CAPABILITIES`
-    - [ ] `POST /ai/generate-protocol` endpoint accepts natural language description and returns a protocol graph (nodes + edges JSON)
-    - [ ] Generated protocol is created as a DRAFT that users can review and edit in the protocol editor
-    - [ ] System prompt includes the unit op library (`UnitOpDefinition` catalog) so the model knows available building blocks
-    - [ ] Frontend UI: "Generate with AI" button on the new protocol page, text area for description input
+  - **Phase 1 — Chat Engine + UI:**
+    - [x] New `chat` capability added to `SUPPORTED_CAPABILITIES` in `backend/app/models/ai.py`
+    - [x] `ChatSession` and `ChatMessage` models with CRUD persistence
+    - [x] `POST /chat/sessions` creates a new chat session
+    - [x] `GET /chat/sessions` lists user's chat sessions (paginated)
+    - [x] `GET /chat/sessions/{id}` returns session with full message history
+    - [x] `PATCH /chat/sessions/{id}` renames a session
+    - [x] `DELETE /chat/sessions/{id}` deletes a session
+    - [x] `POST /chat/sessions/{id}/messages` sends a user message and returns AI response
+    - [x] Auto-title: session title updates to first message content
+    - [x] Multi-turn conversation: message history passed as context to LLM
+    - [x] Context window management: truncate to last 50 messages
+    - [x] Frontend `/chat` page with session sidebar + message area
+    - [x] Optimistic UI: user message appears instantly while AI responds
+    - [x] Markdown rendering in AI responses
+    - [x] Nav link in desktop and mobile navigation
+    - [x] System prompt tailored for biotech PD domain expertise
+  - **Phase 2 — RAG Integration with Document Library:**
+    - [x] Every user message triggers hybrid search (semantic + keyword) across all org documents
+    - [x] Top-K relevant chunks (up to 8, max ~12K chars) injected into system prompt as numbered context
+    - [x] Minimum relevance threshold (0.3) filters out irrelevant chunks
+    - [x] System prompt instructs LLM to cite sources with inline footnotes [1], [2], etc.
+    - [x] Sources returned in API response (`ChatCompletionResponse.sources`)
+    - [x] Sources persisted in assistant message `metadata_` for history replay
+    - [x] Frontend sources panel (right sidebar) shows document title, page, snippet, relevance score
+    - [x] Source links navigate to `/library/{doc_id}?chunk={chunk_index}` for deep-linking
+    - [x] Library detail page supports `?chunk=N` query param — auto-scrolls to chunk on load
+    - [x] When org has no documents, system prompt explicitly tells AI there are none
+    - [x] Clickable "N sources" button on assistant messages to show sources for any past message
+    - [x] Graceful fallback: keyword-only search if embedding service unavailable
+  - **Phase 3 — Protocol Generation from Chat:**
+    - [ ] `POST /ai/chat/sessions/{id}/generate-protocol` generates protocol graph from conversation context
+    - [ ] Unit op catalog included in system prompt for accurate mapping
+    - [ ] Generated protocol saved as DRAFT with "AI-Generated" metadata
+    - [ ] Frontend button in chat to trigger protocol generation
+    - [ ] Refinement endpoint for iterative protocol editing via chat
 - **Implementation Notes**:
-  - **AI config** (`backend/app/services/ai_config.py`): Already supports capability-based config resolution. Add `"embedding"` and `"coding"` to `SUPPORTED_CAPABILITIES` and `DEFAULT_CONFIGS`.
-  - **Embeddings**: Add `pgvector` to requirements, enable extension in migration. Create `backend/app/services/embeddings.py` for embed + search. Default model: `ollama:nomic-embed-text` or `openai:text-embedding-3-small`.
-  - **Protocol generation**: Create `backend/app/services/ai_codegen.py`. Use pydantic-ai with structured output matching the protocol graph schema (`{nodes: [...], edges: [...]}`). Feed unit op definitions as context.
-  - **Frontend search**: Enhance search in `frontend/src/routes/projects/[id]/+page.svelte` with semantic toggle. Add generate UI to protocol creation flow.
-  - **Migration**: Enable `pgvector` extension, add vector columns or embeddings table.
-- **Dependencies**: None
+  - **Phase 1 (Done)**: Backend: `models/chat.py`, `schemas/chat.py`, `services/chat_service.py`, `api/endpoints/chat.py`. Migration `4b2e86d86981`. Frontend: `/chat` route with session list + message UI. 29 backend tests (11 unit + 18 integration)
+  - **Phase 2 (Done)**: RAG via `retrieve_relevant_chunks()` in `chat_service.py`. Reuses existing hybrid search (pgvector + tsvector). Sources panel in frontend. Deep-link support in library detail page. 7 new tests (5 unit + 2 integration). Total: 535 backend tests passing
+  - **Phase 3**: Create `protocol_generator.py` service. Use pydantic-ai structured output. Frontend: generation wizard + refinement chat panel
+- **Dependencies**: None (Phase 2 depends on Document Library which is already built)
 
 
 ### [F-0018] Text-to-Protocol Generation from Library
@@ -550,4 +570,52 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
   - **Frontend detail page** (`frontend/src/routes/library/[id]/+page.svelte`): Check user permissions (call a permissions endpoint or include permission level in the document detail response). Conditionally render the delete button
   - **Frontend list page** (`frontend/src/routes/library/+page.svelte`): Same permission-gating for any delete actions in the list view
 - **Dependencies**: None
+
+### [F-0022] LLM Management Console — Admin Model Configuration, SaaS Tier & API Key Encryption
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Full Stack
+- **Description**: The platform uses LLM technology across 5 capabilities (vision, embedding, document structure, chat, and audio). Currently, model configuration is managed via env vars or raw API calls to `/ai/settings` — there is no admin UI, no SaaS-managed model tier, and API keys are stored as plaintext in the database. This feature creates a full admin settings experience for LLM configuration, adds a SaaS tier where Trellis provides pre-configured LLM access (so self-hosted customers bring their own keys while SaaS customers use Trellis-managed models), and encrypts all API keys at rest.
+- **LLM Features Inventory** (current state):
+  | Capability | Service File | What It Does | Default Model |
+  |---|---|---|---|
+  | **Vision** | `services/ai_vision.py` | Extracts measurement values from lab instrument photos; multi-turn conversation for clarification | `ollama/llama3.2-vision` |
+  | **Embedding** | `services/embedding.py` | Generates vector embeddings for document chunks; powers hybrid vector+keyword search in Library | `ollama/nomic-embed-text` (768 dim) |
+  | **Document Structure** | `services/document_structure.py` | Analyzes uploaded documents to identify headings, TOC, front matter, page roles; enriches chunked content | `ollama/llama3.2-vision` |
+  | **Chat** | `services/chat_service.py` | "Trellis AI" assistant for biotech PD questions — cell biology, protocols, scientific concepts | `ollama/llama3.2` (resolves via `text` capability) |
+  | **Audio** | (placeholder) | Speech-to-text for voice notes during runs | `ollama/whisper` |
+  All capabilities route through `services/ai_config.py` which resolves provider/model/key via: DB (`ai_provider_configs` table) → env var fallback (`RUNBOOK_ai_{cap}_{field}`) → hardcoded Ollama defaults. Supported providers: `ollama`, `openai`, `anthropic`, `google`.
+- **Acceptance Criteria**:
+  - [ ] **Admin UI — AI Settings Page**: Org admins see an "AI Models" section in Settings with a card for each capability (Vision, Embedding, Document Structure, Chat, Audio)
+  - [ ] Each capability card shows: current provider, model name, status (connected/error/not configured), and a "Configure" button
+  - [ ] Configure form per capability: provider dropdown (Ollama / OpenAI / Anthropic / Google / Trellis Managed), model name input, API key input (masked), base URL input (for Ollama/custom endpoints)
+  - [ ] "Test Connection" button per capability — calls `POST /ai/settings/{capability}/test` and shows success/error result inline
+  - [ ] "Reset to Default" option that clears the org-specific config and falls back to platform defaults
+  - [ ] Changes saved via `PUT /ai/settings/{capability}` with org context
+  - [ ] **SaaS Tier — Trellis-Managed Models**: Platform-level config flag `SAAS_MODE=true` (env var or platform settings table)
+  - [ ] When SaaS mode is active, a "Trellis Managed" provider option is available in the admin UI for each capability
+  - [ ] Trellis-managed models use platform-level API keys (never exposed to tenants) and pre-selected models (e.g., `gpt-4o-mini` for vision, `text-embedding-3-small` for embedding)
+  - [ ] SaaS usage is metered: each LLM call logs `org_id`, `capability`, `model`, `input_tokens`, `output_tokens`, `timestamp` to a `llm_usage_log` table for future billing
+  - [ ] When not in SaaS mode (self-hosted), "Trellis Managed" option is hidden — orgs must provide their own provider/key or use Ollama defaults
+  - [ ] **API Key Encryption at Rest**: All API keys in `ai_provider_configs.api_key` column are encrypted using AES-256-GCM before storage
+  - [ ] Encryption key derived from a `RUNBOOK_ENCRYPTION_KEY` env var (required for production; generates warning on startup if missing)
+  - [ ] Key rotation support: store a `key_version` alongside the encrypted value so old keys can be decrypted during rotation
+  - [ ] `GET /ai/settings` responses continue to show only a masked hint (first 4 + last 4 chars), never the full key
+  - [ ] Existing plaintext keys are migrated to encrypted format via a one-time Alembic data migration
+  - [ ] **Per-Org Scoping** (subsumes F-0020): `ai_provider_configs` scoped by `org_id` FK (nullable — null = platform default)
+  - [ ] Resolution chain: org config → platform default → env var → hardcoded default
+  - [ ] Org A's config is invisible to Org B
+  - [ ] Cache key updated to `(org_id, capability)` tuple
+  - [ ] **Observability**: Admin UI shows last test result timestamp and any connection errors per capability
+  - [ ] Platform admin (superuser) can view and edit platform-default configs
+- **Implementation Notes**:
+  - **Encryption module** (`backend/app/core/encryption.py`): Create `encrypt_value(plaintext, key) -> str` and `decrypt_value(ciphertext, key) -> str` using `cryptography` library's Fernet or AES-256-GCM. Store as `v1:<base64-ciphertext>` to support versioned key rotation. Add `cryptography` to `pyproject.toml`
+  - **Migration**: Add `org_id` FK (nullable) to `ai_provider_configs`. Add `key_version` column (default 1). Data migration to encrypt existing plaintext API keys. Update unique constraint to `(org_id, capability)`
+  - **ai_config.py**: Update all resolution functions to accept `org_id`. Encrypt on write, decrypt on read. Update cache key to `(org_id, capability)`. Add SaaS-mode logic: if provider is `trellis`, resolve to platform-level keys
+  - **LLM usage logging**: Create `llm_usage_log` table (id, org_id, user_id, capability, provider, model, input_tokens, output_tokens, latency_ms, created_at). Add `log_llm_usage()` calls in ai_vision.py, embedding.py, document_structure.py, chat_service.py after each LLM call
+  - **AI settings endpoints** (`api/endpoints/ai.py`): Scope existing `GET/PUT /ai/settings` by org. Add `GET /ai/settings/usage-summary` for admin dashboard
+  - **Frontend Settings page** (`frontend/src/routes/settings/+page.svelte`): Add "AI Models" tab/section for org admins. Create `AiSettingsTab.svelte` component with capability cards, configure forms, test buttons. Follow existing settings tab pattern (Members, Teams, etc.)
+  - **SaaS config**: `SAAS_MODE` env var (bool). Platform-level `ai_provider_configs` rows (org_id=NULL) with Trellis API keys. When provider=`trellis`, the service resolves to the platform row and never exposes the key
+  - **Key files affected**: `models/ai.py`, `services/ai_config.py`, `services/ai_vision.py`, `services/embedding.py`, `services/document_structure.py`, `services/chat_service.py`, `api/endpoints/ai.py`, `core/config.py`, `schemas/ai.py`, `frontend/src/routes/settings/+page.svelte` (or new tab component)
+- **Dependencies**: F-0020 (subsumed — per-org scoping is included in this feature's acceptance criteria)
 

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -8,6 +8,16 @@ class TextChunk:
     chunk_index: int
     token_count: int
     page_number: Optional[int] = None
+
+
+@dataclass
+class PageData:
+    """One page of extracted content from a PDF."""
+
+    page_number: int  # 1-indexed
+    text: str  # markdown (or plain) text for this page
+    has_images: bool = False  # whether the page contains embedded images
+    image_bytes: Optional[bytes] = None  # rendered page as PNG (transient, for LLM)
 
 
 def chunk_text(

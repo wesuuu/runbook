@@ -22,6 +22,7 @@ class DocumentResponse(BaseModel):
     error_message: Optional[str] = None
     source_url: Optional[str] = None
     processing_started_at: Optional[datetime] = None
+    structure_metadata: Optional[dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
     can_delete: bool = False
@@ -47,9 +48,27 @@ class DocumentChunkResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProcessingProgress(BaseModel):
+    stage: str = ""  # extracting, chunking, embedding, enriching, classifying
+    stage_label: str = ""  # human-readable label
+    current: int = 0
+    total: int = 0
+    percent: int = 0
+
+
+class TOCEntry(BaseModel):
+    level: int
+    text: str
+    page_number: Optional[int] = None
+    chunk_index: Optional[int] = None
+
+
 class DocumentDetailResponse(DocumentResponse):
     chunk_count: int = 0
     chunks_preview: List[DocumentChunkResponse] = []
+    processing_progress: Optional[ProcessingProgress] = None
+    table_of_contents: List[TOCEntry] = []
+    has_page_images: bool = False
 
 
 class ImportUrlRequest(BaseModel):

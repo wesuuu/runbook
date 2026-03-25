@@ -807,7 +807,7 @@
 
     <!-- Parameter Tag Selector (shown after image capture) -->
     {#if showTagSelector && currentStep}
-        <div class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div class="bg-white rounded-xl shadow-2xl w-[95%] max-w-md max-h-[90vh] flex flex-col overflow-hidden">
                 <!-- Header -->
                 <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">

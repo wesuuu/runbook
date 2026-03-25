@@ -19,3 +19,5 @@ from app.models.notifications import (
 )
 from app.models.offline import RevokedOfflineToken
 from app.models.library import Document, DocumentChunk
+from app.models.jobs import BackgroundJob
+from app.models.chat import ChatSession, ChatMessage

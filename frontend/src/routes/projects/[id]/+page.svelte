@@ -3,7 +3,7 @@
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
     import { getCurrentOrg } from "$lib/auth.svelte";
-    import Modal from "$lib/components/Modal.svelte";
+    import * as Dialog from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
@@ -379,46 +379,51 @@
 {/if}
 
 <!-- RUN MODAL -->
-<Modal bind:open={showRunModal} title="New Run">
-    <p class="text-sm text-gray-500 mb-4">Start a new run from a protocol.</p>
-    <div class="space-y-3">
-        <div>
-            <label
-                for="exp-name"
-                class="block text-sm font-medium text-gray-700 mb-1">Name</label
-            >
-            <input
-                id="exp-name"
-                type="text"
-                bind:value={newRunName}
-                placeholder="e.g. CHO-DG44 Run 1"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-            />
+<Dialog.Root bind:open={showRunModal}>
+    <Dialog.Content class="sm:max-w-md">
+        <Dialog.Header>
+            <Dialog.Title>New Run</Dialog.Title>
+            <Dialog.Description>Start a new run from a protocol.</Dialog.Description>
+        </Dialog.Header>
+        <div class="space-y-3">
+            <div>
+                <label
+                    for="exp-name"
+                    class="block text-sm font-medium text-gray-700 mb-1">Name</label
+                >
+                <input
+                    id="exp-name"
+                    type="text"
+                    bind:value={newRunName}
+                    placeholder="e.g. CHO-DG44 Run 1"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                />
+            </div>
+            <div>
+                <label
+                    for="protocol-select"
+                    class="block text-sm font-medium text-gray-700 mb-1"
+                    >Protocol</label
+                >
+                <select
+                    id="protocol-select"
+                    bind:value={selectedProtocolId}
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+                >
+                    <option value="">Select a protocol</option>
+                    {#each protocols.filter((p: any) => p.status?.toUpperCase() !== 'ARCHIVED') as proto}
+                        <option value={proto.id}>{proto.name}</option>
+                    {/each}
+                </select>
+            </div>
         </div>
-        <div>
-            <label
-                for="protocol-select"
-                class="block text-sm font-medium text-gray-700 mb-1"
-                >Protocol</label
-            >
-            <select
-                id="protocol-select"
-                bind:value={selectedProtocolId}
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
-            >
-                <option value="">Select a protocol</option>
-                {#each protocols.filter((p: any) => p.status?.toUpperCase() !== 'ARCHIVED') as proto}
-                    <option value={proto.id}>{proto.name}</option>
-                {/each}
-            </select>
-        </div>
-        <div class="flex justify-end gap-2 pt-2">
+        <Dialog.Footer>
             <button
                 onclick={() => {
                     showRunModal = false;
                     selectedProtocolId = null;
                 }}
-                class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                class="px-4 py-2 text-sm font-medium text-foreground/80 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
             >
                 Cancel
             </button>
@@ -429,6 +434,6 @@
             >
                 Create
             </button>
-        </div>
-    </div>
-</Modal>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>

@@ -59,9 +59,20 @@ MAGIC_BYTES = {
 
 class DocumentStatus(str, enum.Enum):
     UPLOADED = "UPLOADED"
+    QUEUED = "QUEUED"
     PROCESSING = "PROCESSING"
-    INDEXED = "INDEXED"
+    INDEXED = "INDEXED"      # Legacy — treated as READY
+    ENRICHED = "ENRICHED"    # Legacy — treated as READY
+    READY = "READY"
     FAILED = "FAILED"
+
+
+# Statuses that indicate a document is viewable (has content)
+VIEWABLE_STATUSES = {
+    DocumentStatus.INDEXED.value,
+    DocumentStatus.ENRICHED.value,
+    DocumentStatus.READY.value,
+}
 
 
 def validate_file_content(content: bytes, claimed_mime: str) -> bool:
@@ -125,6 +136,9 @@ class Document(Base, UUIDMixin, TimestampMixin):
     )
     processing_started_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    structure_metadata: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=True
     )
 
     # Relationships

@@ -213,7 +213,7 @@
 
 <!-- End Field Mode Confirmation (unsynced while offline) -->
 {#if showEndConfirm}
-    <div class="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center">
+    <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
         <div class="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-[95%]">
             <h3 class="text-lg font-bold text-slate-900 mb-2">Unsynced Data</h3>
             <p class="text-sm text-slate-600 mb-4">

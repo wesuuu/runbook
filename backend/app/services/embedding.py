@@ -21,9 +21,16 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 50
 
 
+from typing import Awaitable, Callable
+
+# Type for progress callbacks: async fn(current, total)
+ProgressCallback = Callable[[int, int], Awaitable[None]]
+
+
 async def embed_texts(
     texts: list[str],
     db: AsyncSession,
+    on_progress: ProgressCallback | None = None,
 ) -> list[list[float]]:
     """Generate embeddings for a list of texts.
 
@@ -33,6 +40,8 @@ async def embed_texts(
     Args:
         texts: List of text strings to embed.
         db: Database session for config resolution.
+        on_progress: Optional async callback(current, total) called
+            after each batch completes.
 
     Returns:
         List of embedding vectors (list of floats), same length as texts.
@@ -51,8 +60,9 @@ async def embed_texts(
     base_url = config.get("base_url")
 
     all_embeddings: list[list[float]] = []
+    total = len(texts)
 
-    for i in range(0, len(texts), BATCH_SIZE):
+    for i in range(0, total, BATCH_SIZE):
         batch = texts[i : i + BATCH_SIZE]
 
         if provider == "ollama":
@@ -69,6 +79,9 @@ async def embed_texts(
             )
 
         all_embeddings.extend(embeddings)
+
+        if on_progress:
+            await on_progress(min(i + BATCH_SIZE, total), total)
 
     return all_embeddings
 

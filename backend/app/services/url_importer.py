@@ -7,7 +7,9 @@ from typing import Optional
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
+import html2text
 import httpx
+import trafilatura
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -145,10 +147,10 @@ async def import_from_url(
                 f"(max {MAX_URL_RESPONSE_BYTES})"
             )
 
-    # Extract text using trafilatura
-    extracted_text = _extract_text_from_html(resp.text)
+    # Extract content as markdown (preserves headings, lists, etc.)
+    extracted_md = _extract_markdown_from_html(resp.text)
 
-    if not extracted_text or not extracted_text.strip():
+    if not extracted_md or not extracted_md.strip():
         raise ValueError("Could not extract text content from URL")
 
     # Determine title
@@ -157,16 +159,15 @@ async def import_from_url(
             "/"
         )[-1] or "Imported document"
 
-    # Store extracted text as a .txt file
+    # Store as .md file so the chunker treats it as markdown
     file_id = str(uuid.uuid4())
     storage_dir = Path(settings.document_storage_path)
     storage_dir.mkdir(parents=True, exist_ok=True)
-    file_path = storage_dir / f"{file_id}.txt"
-    file_path.write_text(extracted_text, encoding="utf-8")
+    file_path = storage_dir / f"{file_id}.md"
+    file_path.write_text(extracted_md, encoding="utf-8")
 
     # Sanitize filename from URL
     url_filename = parsed.path.split("/")[-1] or "imported.html"
-    # Strip any dangerous characters
     url_filename = re.sub(r"[^\w.\-]", "_", url_filename)
 
     doc = Document(
@@ -175,8 +176,8 @@ async def import_from_url(
         uploaded_by_id=user_id,
         title=title,
         original_filename=url_filename,
-        mime_type="text/html",
-        file_size_bytes=len(extracted_text.encode("utf-8")),
+        mime_type="text/markdown",
+        file_size_bytes=len(extracted_md.encode("utf-8")),
         file_path=str(file_path),
         status=DocumentStatus.UPLOADED.value,
         source_url=str(url),
@@ -186,23 +187,46 @@ async def import_from_url(
     return doc
 
 
-def _extract_text_from_html(html: str) -> str:
-    """Extract clean text from HTML using trafilatura with fallback."""
+def _extract_markdown_from_html(html: str) -> str:
+    """Extract main content from HTML and convert to markdown.
+
+    Uses trafilatura to isolate the main article content (stripping
+    nav, sidebars, ads), then html2text to convert to markdown with
+    headings, lists, and formatting preserved.
+
+    Falls back to html2text on the full HTML if trafilatura fails.
+    """
+    h = html2text.HTML2Text()
+    h.ignore_links = False
+    h.ignore_images = True
+    h.body_width = 0
+    h.unicode_snob = True
+    h.skip_internal_links = True
+
     try:
-        import trafilatura
-
-        result = trafilatura.extract(html)
-        if result:
-            return result
+        tree = trafilatura.utils.load_html(html)
+        if tree is not None:
+            cleaned = trafilatura.extract(
+                html,
+                include_formatting=True,
+                include_links=True,
+                include_tables=True,
+                output_format="txt",
+            )
+            if cleaned and len(cleaned.strip()) > 100:
+                return cleaned
     except Exception:
-        logger.warning("trafilatura extraction failed, using fallback")
+        logger.warning("trafilatura extraction failed, using html2text")
 
-    # Fallback: basic HTML tag stripping
-    clean = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL)
-    clean = re.sub(r"<style[^>]*>.*?</style>", "", clean, flags=re.DOTALL)
-    clean = re.sub(r"<[^>]+>", " ", clean)
-    clean = re.sub(r"\s+", " ", clean).strip()
-    return clean
+    # Fallback: strip boilerplate then use html2text
+    clean = re.sub(
+        r"<(script|style|nav|footer|header)[^>]*>.*?</\1>",
+        "",
+        html,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    result = h.handle(clean)
+    return result.strip() if result else ""
 
 
 def _extract_title_from_html(html: str) -> Optional[str]:

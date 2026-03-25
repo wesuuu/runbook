@@ -10,6 +10,7 @@
     import RunResultsSummary from "$lib/components/run/RunResultsSummary.svelte";
     import RunEditMode from "$lib/components/run/RunEditMode.svelte";
     import RunObserverView from "$lib/components/run/RunObserverView.svelte";
+    import { ConfirmDialog } from "$lib/components/ui/dialog";
 
     const id = $derived($page.params.id);
 
@@ -464,34 +465,15 @@
                     </button>
                 </div>
 
-                <!-- Start Confirmation Modal -->
-                {#if showStartConfirm}
-                    <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm">
-                            <h3 class="text-lg font-bold text-foreground mb-4">
-                                Start Run?
-                            </h3>
-                            <p class="text-muted-foreground mb-6">
-                                Once started, users can begin logging results for their assigned roles.
-                            </p>
-                            <div class="flex justify-end gap-3">
-                                <button
-                                    onclick={() => (showStartConfirm = false)}
-                                    class="px-4 py-2 bg-muted text-foreground/80 rounded-lg font-medium hover:bg-muted transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onclick={startRun}
-                                    disabled={savingStatus}
-                                    class="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
-                                >
-                                    {savingStatus ? "Starting..." : "Start"}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                {/if}
+                <ConfirmDialog
+                    bind:open={showStartConfirm}
+                    title="Start Run?"
+                    message="Once started, users can begin logging results for their assigned roles."
+                    confirmLabel={savingStatus ? "Starting..." : "Start"}
+                    loading={savingStatus}
+                    onConfirm={startRun}
+                    onCancel={() => (showStartConfirm = false)}
+                />
             </div>
 
         <!-- ACTIVE State: Multi-page Wizard or Observer View -->
@@ -632,44 +614,29 @@
                             </div>
                         {/if}
 
-                        <!-- Complete Run Confirmation Modal -->
-                        {#if showCompleteConfirm}
-                            <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                                <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm">
-                                    <h3 class="text-lg font-bold text-foreground mb-4">
-                                        Complete Run?
-                                    </h3>
-                                    <p class="text-muted-foreground mb-4">
-                                        All steps have been completed. Finalizing will mark this run as complete. You can still edit it later if needed.
-                                    </p>
-                                    {#if unanalyzedCount > 0}
-                                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-                                            <p class="text-sm font-medium text-amber-800">
-                                                You have {unanalyzedCount} unanalyzed image{unanalyzedCount !== 1 ? 's' : ''}. Complete anyway?
-                                            </p>
-                                            <p class="text-xs text-amber-600 mt-1">
-                                                You'll be notified to review them later.
-                                            </p>
-                                        </div>
-                                    {/if}
-                                    <div class="flex justify-end gap-3">
-                                        <button
-                                            onclick={() => (showCompleteConfirm = false)}
-                                            class="px-4 py-2 bg-muted text-foreground/80 rounded-lg font-medium hover:bg-muted transition-colors"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onclick={completeRun}
-                                            disabled={completingRun}
-                                            class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
-                                        >
-                                            {completingRun ? 'Completing...' : 'Complete Run'}
-                                        </button>
+                        <ConfirmDialog
+                            bind:open={showCompleteConfirm}
+                            title="Complete Run?"
+                            message="All steps have been completed. Finalizing will mark this run as complete. You can still edit it later if needed."
+                            confirmLabel={completingRun ? "Completing..." : "Complete Run"}
+                            confirmVariant="success"
+                            loading={completingRun}
+                            onConfirm={completeRun}
+                            onCancel={() => (showCompleteConfirm = false)}
+                        >
+                            {#snippet warning()}
+                                {#if unanalyzedCount > 0}
+                                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                        <p class="text-sm font-medium text-amber-800">
+                                            You have {unanalyzedCount} unanalyzed image{unanalyzedCount !== 1 ? 's' : ''}. Complete anyway?
+                                        </p>
+                                        <p class="text-xs text-amber-600 mt-1">
+                                            You'll be notified to review them later.
+                                        </p>
                                     </div>
-                                </div>
-                            </div>
-                        {/if}
+                                {/if}
+                            {/snippet}
+                        </ConfirmDialog>
                     {:else}
                         <RunObserverView
                             swimLaneNodes={getSwimLaneNodes()}

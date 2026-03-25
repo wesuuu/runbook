@@ -16,6 +16,7 @@ from fastapi import (
     Query,
     UploadFile,
 )
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
@@ -35,23 +36,27 @@ from app.models.library import (
     ALLOWED_DOCUMENT_TYPES,
     MAX_DOCUMENT_SIZE_BYTES,
     MIME_EXTENSION_MAP,
+    VIEWABLE_STATUSES,
     Document,
     DocumentChunk,
     DocumentStatus,
     validate_file_content,
 )
+from app.models.jobs import BackgroundJob, JobStatus
 from app.schemas.library import (
     DocumentChunkResponse,
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentResponse,
     ImportUrlRequest,
+    ProcessingProgress,
     SearchResponse,
     SearchResultGroup,
     SearchResultItem,
+    TOCEntry,
 )
 from app.services.audit import log_audit
-from app.services.document_processor import process_document
+from app.services.document_processor import build_book, process_document
 from app.services.permissions import check_permission
 from app.services.task_runner import get_task_runner
 from app.services.url_importer import import_from_url
@@ -207,7 +212,7 @@ async def upload_document(
 
     # Trigger background processing via task runner
     get_task_runner().submit(
-        process_document(doc.id, settings.database_url)
+        build_book(doc.id, settings.database_url)
     )
 
     resp = DocumentResponse.model_validate(doc)
@@ -301,6 +306,56 @@ async def get_document(
         db, current_user.id, document_id,
     )
 
+    # Fetch latest running job's progress (if any)
+    progress = None
+    if doc.status in (
+        DocumentStatus.PROCESSING.value,
+        DocumentStatus.INDEXED.value,
+    ):
+        job_result = await db.execute(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.entity_type == "document",
+                BackgroundJob.entity_id == document_id,
+                BackgroundJob.status == JobStatus.RUNNING.value,
+            )
+            .order_by(BackgroundJob.created_at.desc())
+            .limit(1)
+        )
+        job = job_result.scalar_one_or_none()
+        if job and job.output_data:
+            od = job.output_data
+            progress = ProcessingProgress(
+                stage=od.get("stage", ""),
+                stage_label=od.get("stage_label", ""),
+                current=od.get("current", 0),
+                total=od.get("total", 0),
+                percent=od.get("percent", 0),
+            )
+
+    # Build TOC from structure_metadata if available
+    toc_entries: list[TOCEntry] = []
+    if doc.structure_metadata and "toc" in doc.structure_metadata:
+        for entry in doc.structure_metadata["toc"]:
+            toc_entries.append(TOCEntry(**entry))
+
+    # Check if pre-rendered page images exist on disk
+    page_images_dir = (
+        Path(settings.document_storage_path) / str(doc.id) / "pages"
+    )
+    has_page_images = (
+        page_images_dir.is_dir()
+        and any(page_images_dir.iterdir())
+    ) if page_images_dir.exists() else False
+
+    # For PDFs without pre-rendered images, we can still render on-demand
+    if (
+        not has_page_images
+        and doc.mime_type == "application/pdf"
+        and doc.status in VIEWABLE_STATUSES
+    ):
+        has_page_images = True  # on-demand rendering available
+
     return DocumentDetailResponse(
         id=doc.id,
         org_id=doc.org_id,
@@ -317,11 +372,15 @@ async def get_document(
         doc_metadata=doc.doc_metadata,
         error_message=doc.error_message,
         source_url=doc.source_url,
+        structure_metadata=doc.structure_metadata,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         chunk_count=chunk_count,
         chunks_preview=chunks_preview,
         can_delete=can_delete,
+        processing_progress=progress,
+        table_of_contents=toc_entries,
+        has_page_images=has_page_images,
     )
 
 
@@ -356,6 +415,86 @@ async def get_document_chunks(
         .options(defer(DocumentChunk.embedding))
     )
     return list(result.scalars().all())
+
+
+@router.get("/documents/{document_id}/pages/{page_number}/image")
+async def get_page_image(
+    document_id: uuid.UUID,
+    page_number: int,
+    dpi: int = Query(150, ge=72, le=300),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve a rendered PDF page as a PNG image.
+
+    Checks for pre-rendered images on disk first, then falls
+    back to on-demand rendering from the original PDF.
+    """
+    org_id = await _get_user_org_id(current_user, db)
+
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.mime_type != "application/pdf":
+        raise HTTPException(
+            status_code=400, detail="Page images only available for PDFs"
+        )
+
+    if page_number < 1 or (
+        doc.page_count and page_number > doc.page_count
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Page number must be between 1 and {doc.page_count}",
+        )
+
+    # Try pre-rendered image on disk first
+    pre_rendered = (
+        Path(settings.document_storage_path)
+        / str(doc.id)
+        / "pages"
+        / f"page_{page_number:04d}.png"
+    )
+    if pre_rendered.exists():
+        png_bytes = pre_rendered.read_bytes()
+    else:
+        # On-demand rendering from the original PDF
+        file_path = Path(doc.file_path)
+        if not file_path.exists():
+            raise HTTPException(
+                status_code=404, detail="Source PDF file not found"
+            )
+        runner = get_task_runner()
+        png_bytes = await runner.run_sync(
+            _render_pdf_page, str(file_path), page_number, dpi
+        )
+
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+def _render_pdf_page(
+    file_path: str, page_number: int, dpi: int
+) -> bytes:
+    """Render a single PDF page as PNG. page_number is 1-indexed."""
+    import pymupdf
+
+    doc = pymupdf.open(file_path)
+    try:
+        page = doc[page_number - 1]
+        pix = page.get_pixmap(dpi=dpi)
+        return pix.tobytes("png")
+    finally:
+        doc.close()
 
 
 @router.delete("/documents/{document_id}", status_code=204)
@@ -400,11 +539,18 @@ async def delete_document(
         },
     )
 
-    # Remove file from disk
+    # Remove file and page images from disk
     try:
         file_path = Path(doc.file_path)
         if file_path.exists():
             file_path.unlink()
+        # Remove rendered page images directory
+        import shutil
+        pages_dir = (
+            Path(settings.document_storage_path) / str(doc.id)
+        )
+        if pages_dir.is_dir():
+            shutil.rmtree(pages_dir, ignore_errors=True)
     except OSError:
         pass  # Best effort cleanup
 
@@ -432,10 +578,12 @@ async def retry_processing(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if doc.status != DocumentStatus.FAILED.value:
+    if doc.status in (
+        DocumentStatus.PROCESSING.value,
+    ):
         raise HTTPException(
             status_code=409,
-            detail="Only failed documents can be retried",
+            detail="Document is currently processing",
         )
 
     # Reset status
@@ -447,7 +595,55 @@ async def retry_processing(
 
     # Re-trigger processing via task runner
     get_task_runner().submit(
-        process_document(doc.id, settings.database_url)
+        build_book(doc.id, settings.database_url)
+    )
+
+    return doc
+
+
+@router.post(
+    "/documents/{document_id}/enrich",
+    response_model=DocumentResponse,
+)
+async def enrich_document_endpoint(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Manually trigger LLM structure enrichment for a document.
+
+    Only works for PDF documents that are INDEXED or ENRICHED.
+    """
+    from app.services.document_processor import enrich_document
+
+    org_id = await _get_user_org_id(current_user, db)
+
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.mime_type != "application/pdf":
+        raise HTTPException(
+            status_code=400,
+            detail="Enrichment is only supported for PDF documents",
+        )
+
+    if doc.status not in (
+        DocumentStatus.INDEXED.value,
+        DocumentStatus.ENRICHED.value,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Document must be indexed before enrichment",
+        )
+
+    get_task_runner().submit(
+        enrich_document(doc.id, settings.database_url)
     )
 
     return doc
@@ -741,7 +937,7 @@ async def import_document_from_url(
 
     # Trigger background processing via task runner
     get_task_runner().submit(
-        process_document(doc.id, settings.database_url)
+        build_book(doc.id, settings.database_url)
     )
 
     return doc

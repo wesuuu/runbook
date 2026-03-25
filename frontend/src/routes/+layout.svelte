@@ -29,6 +29,7 @@
     const isFullBleed = $derived(
         $page.url.pathname.startsWith('/protocols/') ||
         $page.url.pathname.startsWith('/export') ||
+        $page.url.pathname.startsWith('/chat') ||
         isFieldMode
     );
 
@@ -67,10 +68,9 @@
         const prefs = getUserPreferences();
         const html = document.documentElement;
 
-        // Font size
-        html.classList.remove('text-sm', 'text-base', 'text-lg');
-        const fontMap: Record<string, string> = { small: 'text-sm', medium: 'text-base', large: 'text-lg' };
-        html.classList.add(fontMap[prefs.font_size] || 'text-base');
+        // Font size — sets root font-size so all rem-based dimensions scale proportionally
+        const fontSizeMap: Record<string, string> = { small: '18px', medium: '20px', large: '23px' };
+        html.style.fontSize = fontSizeMap[prefs.font_size] || '16px';
 
         // Density
         html.classList.remove('density-compact', 'density-comfortable');
@@ -133,6 +133,12 @@
                         class="hidden md:block relative py-1 transition-colors {$page.url.pathname.startsWith('/library') ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
                     >
                         Library
+                    </a>
+                    <a
+                        href="/chat"
+                        class="hidden md:block relative py-1 transition-colors {$page.url.pathname.startsWith('/chat') ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
+                    >
+                        AI Chat
                     </a>
                     <div class="hidden md:block">
                         <ProjectsDropdown />

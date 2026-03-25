@@ -1,4 +1,4 @@
-"""Tests for PDF extraction using pymupdf4llm."""
+"""Tests for per-page PDF extraction via extract_pdf_pages()."""
 
 import tempfile
 from pathlib import Path
@@ -7,8 +7,10 @@ import pymupdf
 import pytest
 
 
-class TestExtractPdf:
-    def _create_test_pdf(self, pages: list[list[tuple[str, float, float, float]]]) -> Path:
+class TestExtractPdfPages:
+    def _create_test_pdf(
+        self, pages: list[list[tuple[str, float, float, float]]]
+    ) -> Path:
         """Create a test PDF with text on specified pages.
 
         Args:
@@ -31,22 +33,23 @@ class TestExtractPdf:
         doc.close()
         return Path(tmp.name)
 
-    def test_extract_pdf_returns_text(self):
-        from app.services.document_processor import extract_pdf
+    def test_returns_page_data_list(self):
+        from app.services.document_processor import extract_pdf_pages
 
         path = self._create_test_pdf([
             [("Hello World", 72, 72, 12)],
         ])
         try:
-            text, page_count, boundaries = extract_pdf(path)
-            assert "Hello" in text
-            assert "World" in text
-            assert page_count == 1
+            pages = extract_pdf_pages(path)
+            assert len(pages) == 1
+            assert pages[0].page_number == 1
+            assert "Hello" in pages[0].text
+            assert "World" in pages[0].text
         finally:
             path.unlink()
 
-    def test_extract_pdf_multi_page(self):
-        from app.services.document_processor import extract_pdf
+    def test_multi_page_extraction(self):
+        from app.services.document_processor import extract_pdf_pages
 
         path = self._create_test_pdf([
             [("Page One Content", 72, 72, 12)],
@@ -54,19 +57,102 @@ class TestExtractPdf:
             [("Page Three Content", 72, 72, 12)],
         ])
         try:
-            text, page_count, boundaries = extract_pdf(path)
-            assert page_count == 3
-            assert "Page One" in text
-            assert "Page Two" in text
-            assert "Page Three" in text
-            # Boundaries should have entries for pages 2+
-            assert len(boundaries) == 2
+            pages = extract_pdf_pages(path)
+            assert len(pages) == 3
+            assert pages[0].page_number == 1
+            assert pages[1].page_number == 2
+            assert pages[2].page_number == 3
+            assert "Page One" in pages[0].text
+            assert "Page Two" in pages[1].text
+            assert "Page Three" in pages[2].text
         finally:
             path.unlink()
 
-    def test_extract_pdf_returns_markdown_format(self):
-        """Verify pymupdf4llm produces markdown-like output."""
-        from app.services.document_processor import extract_pdf
+    def test_page_text_is_independent(self):
+        """Each page's text should only contain that page's content."""
+        from app.services.document_processor import extract_pdf_pages
+
+        path = self._create_test_pdf([
+            [("ALPHA content", 72, 72, 12)],
+            [("BETA content", 72, 72, 12)],
+        ])
+        try:
+            pages = extract_pdf_pages(path)
+            # Page 1 should NOT contain page 2's text
+            assert "BETA" not in pages[0].text
+            assert "ALPHA" not in pages[1].text
+        finally:
+            path.unlink()
+
+    def test_empty_pdf_returns_empty_page(self):
+        from app.services.document_processor import extract_pdf_pages
+
+        doc = pymupdf.open()
+        doc.new_page()
+        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        doc.save(tmp.name)
+        doc.close()
+        path = Path(tmp.name)
+
+        try:
+            pages = extract_pdf_pages(path)
+            assert len(pages) == 1
+            assert pages[0].page_number == 1
+            assert pages[0].text.strip() == ""
+        finally:
+            path.unlink()
+
+    def test_has_images_flag(self):
+        """Pages with images should have has_images=True."""
+        from app.services.document_processor import extract_pdf_pages
+
+        doc = pymupdf.open()
+        # Page 1: text only
+        page1 = doc.new_page()
+        page1.insert_text(pymupdf.Point(72, 72), "Text only", fontsize=12)
+
+        # Page 2: with an image
+        page2 = doc.new_page()
+        page2.insert_text(pymupdf.Point(72, 72), "With image", fontsize=12)
+        # Insert a tiny 2x2 red PNG
+        import struct
+        import zlib
+
+        def _make_tiny_png() -> bytes:
+            # 2x2 red PNG
+            raw_data = b"\x00\xff\x00\x00\xff\x00\x00" * 2
+            compressed = zlib.compress(raw_data)
+
+            def _chunk(ctype, data):
+                c = ctype + data
+                return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+
+            return (
+                b"\x89PNG\r\n\x1a\n"
+                + _chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
+                + _chunk(b"IDAT", compressed)
+                + _chunk(b"IEND", b"")
+            )
+
+        png_bytes = _make_tiny_png()
+        page2.insert_image(pymupdf.Rect(100, 100, 200, 200), stream=png_bytes)
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        doc.save(tmp.name)
+        doc.close()
+        path = Path(tmp.name)
+
+        try:
+            pages = extract_pdf_pages(path)
+            assert len(pages) == 2
+            assert pages[0].has_images is False
+            assert pages[1].has_images is True
+        finally:
+            path.unlink()
+
+    def test_plain_text_extraction_preserves_content(self):
+        """Plain pymupdf extraction preserves all text content."""
+        from app.services.document_processor import extract_pdf_pages
 
         path = self._create_test_pdf([
             [
@@ -75,48 +161,9 @@ class TestExtractPdf:
             ],
         ])
         try:
-            text, page_count, boundaries = extract_pdf(path)
-            assert page_count == 1
-            # Text should be present regardless of markdown formatting
-            assert "Title" in text
-            assert "Body paragraph" in text
-        finally:
-            path.unlink()
-
-    def test_extract_pdf_empty_pdf(self):
-        """An empty PDF should return empty text."""
-        from app.services.document_processor import extract_pdf
-
-        doc = pymupdf.open()
-        doc.new_page()  # One blank page
-        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-        doc.save(tmp.name)
-        doc.close()
-        path = Path(tmp.name)
-
-        try:
-            text, page_count, boundaries = extract_pdf(path)
-            assert page_count == 1
-            # Text may be empty or whitespace-only
-            assert text.strip() == "" or len(text.strip()) < 10
-        finally:
-            path.unlink()
-
-    def test_page_boundaries_are_character_offsets(self):
-        """Page boundaries should be valid character offsets into the text."""
-        from app.services.document_processor import extract_pdf
-
-        path = self._create_test_pdf([
-            [("First page text here", 72, 72, 12)],
-            [("Second page text here", 72, 72, 12)],
-        ])
-        try:
-            text, page_count, boundaries = extract_pdf(path)
-            assert page_count == 2
-            # Each boundary should be a non-negative integer
-            for b in boundaries:
-                assert isinstance(b, int)
-                assert b >= 0
-                assert b <= len(text)
+            pages = extract_pdf_pages(path)
+            assert len(pages) == 1
+            assert "Title" in pages[0].text
+            assert "Body paragraph" in pages[0].text
         finally:
             path.unlink()

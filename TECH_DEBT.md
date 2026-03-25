@@ -17,11 +17,11 @@
 | Type Safety | 0 | 4 | 1 | 0 | 5 |
 | Testing Gaps | 2 | 4 | 0 | 0 | 6 |
 | Security | 0 | 0 | 0 | 0 | 0 |
-| Architecture | 2 | 5 | 6 | 1 | 14 |
+| Architecture | 2 | 5 | 6 | 0 | 13 |
 | Dependencies & Tooling | 0 | 0 | 1 | 0 | 1 |
-| **Total** | **4** | **17** | **15** | **1** | **37** |
+| **Total** | **4** | **17** | **15** | **0** | **36** |
 
-*Last updated: 2026-03-18*
+*Last updated: 2026-03-20*
 
 ---
 
@@ -312,11 +312,12 @@
 
 ### [TD-0060] Modal component lacks focus trap and keyboard navigation
 - **Category**: Architecture
-- **Severity**: Low
+- **Severity**: ~~Low~~ **RESOLVED**
 - **Location**: `frontend/src/lib/components/Modal.svelte`
 - **Description**: Custom `Modal.svelte` does not trap focus inside the modal when open. Users can Tab out of the modal into background content. No Escape key handler to close. Does not meet WCAG 2.1 dialog accessibility requirements.
 - **Suggested Fix**: Use `bits-ui` Dialog primitive (already a dependency) which includes focus trapping, Escape handling, and ARIA attributes. Or add a focus-trap library.
 - **Effort**: M
+- **Resolution**: Subsumed by TD-0070. `Modal.svelte` was deleted entirely. All former users migrated to shadcn Dialog (bits-ui) which includes focus trapping, Escape handling, and full ARIA compliance.
 
 ### [TD-0061] No pagination on settings member and subscription lists
 - **Category**: Architecture
@@ -409,4 +410,45 @@
   8. Browser-test every component that had inline style workarounds or custom CSS overrides after migration to confirm no visual regressions — dialogs, popovers, dropdowns, and any positioned overlays are especially fragile
 - **Effort**: M
 - **Resolution**: Deleted stale `tailwind.config.js` (was completely ignored by v4 — no `@config` directive). Migrated border-radius overrides (`--radius-lg/md/sm`) into v4 `@theme` block in `app.css`. Replaced inline style centering workaround in `dialog-content.svelte` with Tailwind classes (`top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2`). Replaced custom CSS in protocol editor page (`.editor-wrapper`, `.canvas-wrapper`, `.canvas-loading`, `.spinner`) with inline Tailwind utilities. Removed redundant `:global(body)` reset from runs page. Audited arbitrary value classes — all working correctly under v4. Dark mode config and content paths were dead code (dark mode unused, v4 auto-detects content). Browser-verified login, project, and protocol editor pages — no visual regressions.
+
+### [TD-0070] 4+ competing modal implementations with inconsistent behavior
+- **Category**: Architecture
+- **Severity**: ~~High~~ **RESOLVED**
+- **Location**: `frontend/src/lib/components/Modal.svelte`, `frontend/src/lib/components/ui/dialog/`, `frontend/src/lib/components/GoOfflineDialog.svelte`, `frontend/src/lib/components/ImageAnalysisDialog.svelte`, `frontend/src/routes/runs/[id]/+page.svelte`, `frontend/src/lib/components/BarcodeScanner.svelte`, `frontend/src/lib/components/RoleWizard.svelte`, `frontend/src/lib/components/FieldModeRoleWizard.svelte`
+- **Description**: The frontend has 4+ distinct modal/dialog implementations that each behave differently:
+  1. **Custom `Modal.svelte`** — CSS keyframe animations, z-9999, click-to-close backdrop, Escape key, no focus trap. Used by EquipmentPickerModal and CreateUnitOpModal.
+  2. **shadcn-svelte `Dialog`** (bits-ui) — Tailwind data-driven animations, z-50, portal rendering, focus trap, full a11y. Used only by DocumentUploadDialog.
+  3. **Inline `fixed inset-0` divs** — No animation, no Escape key, no backdrop click-to-close, no a11y attributes. Used in runs page confirmation modals (Start Run, Complete Run).
+  4. **Custom inline modal chrome** — Each component (GoOfflineDialog, ImageAnalysisDialog, BarcodeScanner, RoleWizard tag selector) builds its own backdrop + panel from scratch with different subsets of features.
+  This fragmentation means users get different experiences depending on which modal they trigger: some close on Escape, some don't; some close on backdrop click, some don't; some animate, some don't; z-index layering conflicts between z-50 and z-9999.
+- **Suggested Fix**: (see below)
+- **Effort**: L
+- **Resolution**: Standardized all modals on shadcn-svelte Dialog (bits-ui). Created `ConfirmDialog.svelte` convenience wrapper. Migrated 7 components to shadcn Dialog: GoOfflineDialog, ImageAnalysisDialog, CreateUnitOpModal, EquipmentPickerModal, BarcodeScanner, runs page confirmations (Start/Complete), projects page New Run modal. Deleted `Modal.svelte`. Standardized all z-index values to z-50. All modals now have focus trapping, Escape key, backdrop click-to-close, animations, and ARIA compliance. Also resolves TD-0060 (Modal.svelte focus trap). Verified with `npm run check`.
+
+### [TD-0071] Runs page confirmation modals are raw inline divs with no a11y or UX features
+- **Category**: Architecture
+- **Severity**: ~~Medium~~ **RESOLVED**
+- **Location**: `frontend/src/routes/runs/[id]/+page.svelte:468-494,636-672`
+- **Description**: The "Start Run?" and "Complete Run?" confirmation modals are bare `{#if showFlag}<div class="fixed inset-0 bg-black/50 ...">` blocks with none of the expected modal behaviors: no Escape key handler, no backdrop click-to-close, no focus trapping, no `role="dialog"`, no animations, no close (X) button. Users must click one of the two buttons — there's no other way to dismiss. These are the most frequently-used modals in the app (every run goes through them) and they feel noticeably cheaper than the rest of the UI.
+- **Suggested Fix**: Replace with a shared `ConfirmDialog.svelte` component (or direct shadcn Dialog usage) that provides consistent behavior. Props: `open`, `title`, `message`, `confirmLabel`, `confirmVariant` (primary/danger/warning), `onConfirm`, `onCancel`, `loading`.
+- **Effort**: S
+- **Resolution**: Replaced both inline modals with the new `ConfirmDialog` component. Start Run uses default (primary) variant; Complete Run uses `success` variant with a warning snippet for unanalyzed images. Both now have Escape, backdrop click, focus trap, and animations.
+
+### [TD-0072] GoOfflineDialog and ImageAnalysisDialog build custom modal chrome instead of using shared component
+- **Category**: Code Smells
+- **Severity**: ~~Medium~~ **RESOLVED**
+- **Location**: `frontend/src/lib/components/GoOfflineDialog.svelte`, `frontend/src/lib/components/ImageAnalysisDialog.svelte`
+- **Description**: Both components build their own modal infrastructure from scratch (backdrop div, positioning, keyboard handling) instead of wrapping their content in either `Modal.svelte` or the shadcn `Dialog`. GoOfflineDialog has no backdrop click-to-close and no animation. ImageAnalysisDialog has its own custom `slideUp` animation that partially duplicates `Modal.svelte`'s animation. Each handles Escape key differently. This adds ~60 lines of boilerplate per component that a shared modal component would eliminate.
+- **Suggested Fix**: Wrap each component's content in the shadcn `Dialog` component. GoOfflineDialog content goes inside `Dialog.Content` with `sm:max-w-md`. ImageAnalysisDialog content goes inside `Dialog.Content` with `sm:max-w-2xl`. Remove custom backdrop, positioning, and keyboard handling code from both.
+- **Effort**: M
+- **Resolution**: Wrapped GoOfflineDialog in `Dialog.Root`/`Dialog.Content` (`sm:max-w-md`). Wrapped ImageAnalysisDialog in `Dialog.Root`/`Dialog.Content` (`sm:max-w-2xl`). Removed custom backdrop divs, keyboard handlers (`handleBackdropClick`, `handleEscape`), custom CSS animations. Both now inherit focus trapping, Escape, backdrop click, and animations from bits-ui.
+
+### [TD-0073] Inconsistent z-index layering across modal and overlay components
+- **Category**: Architecture
+- **Severity**: ~~Medium~~ **RESOLVED**
+- **Location**: `frontend/src/lib/components/Modal.svelte` (z-9999), `frontend/src/lib/components/ui/dialog/dialog-content.svelte` (z-50), `frontend/src/routes/runs/[id]/+page.svelte` (z-50), `frontend/src/lib/components/GoOfflineDialog.svelte` (z-9999), `frontend/src/lib/components/ImageAnalysisDialog.svelte` (z-9999), `frontend/src/lib/components/RoleWizard.svelte` (z-9998), `frontend/src/lib/components/FieldModeLockScreen.svelte` (z-9999), `frontend/src/lib/components/ExpiryWarningBanner.svelte` (z-9998), `frontend/src/lib/components/MobileNav.svelte` (z-50)
+- **Description**: Modal z-index values are split between two camps: z-50 (shadcn Dialog, runs page, MobileNav) and z-[9999] (custom Modal, GoOffline, ImageAnalysis, FieldModeLockScreen). FieldModeRoleWizard and ExpiryWarningBanner use z-[9998]. If a z-50 modal opens while a z-9999 component is active, layering breaks. Conversely, the shadcn Dialog's built-in overlay at z-50 would be hidden behind any z-9999 element.
+- **Suggested Fix**: Define a z-index scale in CSS variables (e.g., `--z-dropdown: 40`, `--z-modal: 50`, `--z-lock-screen: 60`) and apply consistently. All standard modals should use the same z-index. Only truly top-level overlays (lock screen, critical warnings) should use a higher tier.
+- **Effort**: S
+- **Resolution**: Replaced all z-[9999] and z-[9998] values with z-50 across FieldModeLockScreen, ExpiryWarningBanner, FieldModeRoleWizard, RoleWizard, and field page. Modal.svelte (z-9999) deleted. All remaining overlay components now use z-50 consistently.
 

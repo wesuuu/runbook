@@ -50,6 +50,10 @@
         @apply border-border;
     }
 
+    a[href] {
+        cursor: pointer;
+    }
+
     body {
         @apply bg-background text-foreground font-sans antialiased;
         font-feature-settings: "cv11", "ss01";
