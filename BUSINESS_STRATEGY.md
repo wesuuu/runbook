@@ -117,42 +117,54 @@ No permanent free tier. No per-user pricing. Team-based flat pricing removes the
 Lab experiments run on weekly/biweekly cycles. A time-boxed trial may expire before a team completes a full workflow loop. Instead:
 
 - **Free until 3 runs are completed** — guarantees they've experienced the full capture-to-export value loop
-- Full feature access including AI analysis during trial
+- Full Pro-tier feature access during trial including Trellis-managed AI — let them experience the full value before choosing a tier
 - No credit card required
 - Data preserved after trial limit — users can export or reactivate anytime
 - 3 completed runs is typically 2-4 weeks of real use — enough to evaluate, not enough to freeload
 
 ### Paid Tiers
 
-| Tier | Price | Includes | Target |
-|------|-------|----------|--------|
-| **Starter** | $99/month | 1 project, up to 5 users, 50 AI analyses/month | Single small team evaluating |
-| **Team** | $299/month | Unlimited projects, up to 15 users, 200 AI analyses/month | Core PD team |
-| **Department** | $599/month | Unlimited everything, 500 AI analyses, priority support | Multi-team or large PD group |
-| **Academic** | $49/month | Same as Starter, .edu email required | University research labs |
+No free tier. Three paid tiers differentiated primarily by AI access and deployment model:
 
-**Annual billing discount**: 2 months free (pay for 10, get 12). Locks in revenue and reduces churn. Team annual = $2,990/year instead of $3,588.
+| Tier | Price | What's Included | AI Access | Target |
+|------|-------|-----------------|-----------|--------|
+| **Essentials** | $99/month | All platform features, unlimited projects, up to 10 users | BYOK — org brings their own AI API keys (OpenAI, Anthropic, Google, Ollama). All AI features work, Trellis just doesn't pay for the LLM calls | Small teams comfortable managing their own API keys, cost-conscious orgs |
+| **Pro** | $299/month | Everything in Essentials + Trellis-managed AI included + white-labeling | Trellis-managed — AI works out of the box with no setup. Org can still override with their own keys per capability if preferred. Token budget included | Core PD teams who want AI to "just work" without managing API keys |
+| **Enterprise** | Custom pricing | Everything in Pro + on-premise deployment + stronger SLA + platform customization + dedicated support | Trellis-managed or self-hosted LLM infrastructure, custom model selection, higher/custom rate limits | Large orgs, regulated environments, companies requiring on-prem or compliance |
+| **Academic** | $49/month | Same as Essentials, .edu email required | BYOK (same as Essentials) | University research labs |
 
-**AI overage**: $0.10/analysis beyond tier limit. Or BYOK (bring your own API key) for unlimited — customer pays their own provider directly.
+**Key tier differentiators**:
+- **Essentials → Pro upgrade driver**: AI convenience. Essentials users get all features but must configure their own OpenAI/Anthropic/Google API keys. Pro users get Trellis-managed AI that works immediately — zero setup, no API key management, no usage monitoring on their end
+- **Pro → Enterprise upgrade driver**: Deployment control and SLA. Enterprise adds on-premise installation, stronger uptime SLA, platform customization (custom branding, custom unit op libraries), and dedicated support. Required for regulated environments or companies with strict data residency requirements
+- **White-labeling** (Pro & Enterprise): Org can customize the platform branding — logo, colors, custom domain. Essentials uses default Trellis branding
+
+**Annual billing discount**: 2 months free (pay for 10, get 12). Locks in revenue and reduces churn. Pro annual = $2,990/year instead of $3,588.
+
+**BYOK model (Essentials)**: Customer pays their AI provider directly. Trellis provides the integration layer and admin UI for configuring API keys. No AI overage billing from Trellis — the customer's own API key usage/costs are between them and their provider.
+
+**Trellis-managed AI model (Pro)**: Trellis pays the AI provider costs and includes a monthly token budget in the subscription price. If an org exceeds their budget, they receive warnings at 80% and are prompted to either upgrade or add their own API keys at 100%.
 
 **Why these prices work**:
-- **$299/month for a 10-person team** = $3,588/year. That's 6x cheaper than LabArchives corporate ($5,750/year for 10 users) and 4x cheaper than Benchling minimum ($15k/year)
+- **$299/month for Pro with AI included** = $3,588/year. That's 6x cheaper than LabArchives corporate ($5,750/year for 10 users) and 4x cheaper than Benchling minimum ($15k/year)
+- **$99/month Essentials** is an easy entry point — under $1,200/year, no procurement needed. Upgrade to Pro when the team tires of managing API keys
 - **Under $5k/year** — falls below competitive bid threshold at most companies. A PD director can approve it
-- **No per-user anxiety** — the team lead doesn't justify adding a new hire to the tool
-- GCT PD teams spending $250k/year per FTE salary will not blink at $299/month for the whole team
+- **No per-user anxiety** — team-based pricing, not per-seat
+- GCT PD teams spending $250k/year per FTE salary will not blink at $99-299/month for the whole team
 
-### Enterprise / Self-Hosted Tier (Future)
+### Enterprise Tier (Details)
 
-For companies requiring on-premises deployment:
+For companies requiring on-premises deployment, custom SLA, or platform customization:
 
 | Component | Price | Notes |
 |-----------|-------|-------|
-| Installation fee | $2-5k one-time | Deployment, configuration, validation on their infra |
-| Annual license | $5-15k/year | Updates, priority support, SLA |
-| AI module | $200-500/month | BYOK or proxied at markup |
-| GMP compliance module | TBD | Phase 2, likely $20-50k/year |
+| Base platform license | $5-15k/year | On-prem deployment, updates, SLA |
+| Installation & setup | $2-5k one-time | Deployment, configuration, validation on their infrastructure |
+| AI (included or BYOK) | Included in license | Org can use Trellis-managed or run their own LLM infrastructure on-prem |
+| Platform customization | Scoped per engagement | Custom branding, custom unit op libraries, workflow modifications |
+| GMP compliance module | TBD | Phase 2, likely $20-50k/year additional |
+| Dedicated support | Included | Named account manager, priority response SLA |
 
-**Do not build until a customer is ready to pay.** The stack (FastAPI + PostgreSQL + Svelte) is Docker-friendly and can be packaged when demand materializes.
+**Do not build on-prem packaging until a customer is ready to pay.** The stack (FastAPI + PostgreSQL + Svelte) is Docker-friendly and can be packaged when demand materializes.
 
 ### Pricing Benchmarks
 
@@ -169,17 +181,21 @@ Trellis undercuts all paid competitors significantly while offering GCT-specific
 
 ## Revenue Math
 
-**Operating costs**: ~$1k/month (infrastructure, AI API, domain, services)
+**Operating costs**: ~$1k/month (infrastructure, AI API for Pro tier, domain, services)
 **Sustainability target**: $12.5-16.7k/month ($150-200k/year)
 
-| Milestone | Paying Teams | MRR (at $299 avg) | Timeline |
-|-----------|-------------|-------------------|----------|
-| Covers infrastructure | 4 | $1,200 | Month 6-9 |
-| Part-time sustainability | 17 | $5,100 | Month 12 |
-| Full sustainability | 50 | $15,000 | Month 18-24 |
-| Hire help / Phase 2 | 67+ | $20,000+ | Month 24+ |
+Blended ARPU assumption: ~60% Essentials ($99) + ~35% Pro ($299) + ~5% Enterprise ($500+ avg) = ~$185/month average
 
-**50 paying GCT PD teams = full sustainability.** There are 2,000+ gene/cell therapy clinical programs. Each has a PD team. 50 teams is 2.5% penetration. Realistic with focused effort.
+| Milestone | Paying Teams | MRR (at ~$185 avg) | Timeline |
+|-----------|-------------|-------------------|----------|
+| Covers infrastructure | 6 | $1,100 | Month 6-9 |
+| Part-time sustainability | 28 | $5,200 | Month 12 |
+| Full sustainability | 82 | $15,200 | Month 18-24 |
+| Hire help / Phase 2 | 110+ | $20,000+ | Month 24+ |
+
+**Note**: As the mix shifts toward Pro (teams upgrade for AI convenience), ARPU increases and the team count needed drops. At 50/50 Essentials/Pro split, ARPU is ~$199 and sustainability requires ~75 teams.
+
+**82 paying GCT PD teams = full sustainability at launch mix.** There are 2,000+ gene/cell therapy clinical programs. Each has a PD team. 82 teams is ~4% penetration. Realistic with focused effort, and the number drops as teams upgrade to Pro.
 
 ---
 
@@ -245,7 +261,7 @@ What we have that competitors don't (or do poorly):
 
 1. **GCT-specific unit op library** — Pre-loaded with viral vector production, cell expansion, transfection, harvest, formulation, fill/finish. New users get a template that's 80% of their actual workflow on day one. No generic ELN does this
 2. **Visual graph-based protocol design** — Unique among ELNs. Protocols as flowcharts with swimlanes for role-based parallel paths. Scientists think in process flows, not documents
-3. **AI-powered image analysis** — Take a photo of an instrument reading, AI extracts the value. No competitor offers this natively. Paid tier feature gate
+3. **AI-powered image analysis** — Take a photo of an instrument reading, AI extracts the value. No competitor offers this natively. Available on all tiers (Essentials with BYOK, Pro/Enterprise with Trellis-managed AI included)
 4. **Full offline field mode** — Encrypted offline sessions with background sync. Critical for labs with unreliable connectivity or cleanroom environments. Most competitors require constant internet
 5. **Copy-on-write run execution** — Protocols are templates; runs are snapshots with deviation tracking. Clean separation of design vs execution
 6. **Tablet-first design** — Purpose-built for lab use on tablets with gloves. Not a desktop app crammed onto a small screen
@@ -442,7 +458,7 @@ One deeply engaged GCT team is worth more than 20 casual users.
 | Can't find GCT design partner | High | Cast wide: incubators, conferences, LinkedIn. Offer extraordinary terms. This is the single most important milestone |
 | No one converts after trial | High | Usage-based trial (3 runs) ensures they've experienced full value. Monitor where users drop off. Iterate on onboarding |
 | SBIR not awarded | Medium | Angels as backup. Can resubmit next cycle (3x/year). Reduce personal burn rate if needed |
-| AI costs exceed revenue per team | Medium | Tier-based limits (50/200/500 analyses). BYOK option. Monitor per-team AI spend weekly |
+| AI costs exceed revenue per Pro team | Medium | Pro tier includes token budget — monitor per-org AI spend. Essentials tier has zero AI cost to Trellis (BYOK). Adjust Pro token budget or pricing if margins compress |
 | GCT funding downturn | Medium | GCT is cyclically funded. Maintain generic architecture so expansion to adjacent verticals (mAb, vaccine) is just a template change, not a rebuild |
 | Competitor ships similar features | Low | Move fast on GCT specificity. Deep niche beats broad features. First-mover advantage in a tight community |
 | Solo dev burnout | High | Prioritize ruthlessly. One feature at a time. Don't build Phase 2 during Phase 1. Take weekends off. The SBIR runway gives permission to be patient |

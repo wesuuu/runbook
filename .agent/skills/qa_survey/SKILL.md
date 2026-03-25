@@ -1,11 +1,11 @@
 ---
 name: qa_survey
-description: Use Chrome browser automation to survey the running app, test features as different users/roles, and produce a QA recommendations document. Use when the user asks to "survey the app", "QA the app", "test the app in the browser", "do a walkthrough", or runs /qa_survey. Requires Chrome browser tools and a running local dev environment.
+description: Use Chrome browser automation to survey the running app, test features as different users/roles, and create QA issues in the ClickUp QA list. Use when the user asks to "survey the app", "QA the app", "test the app in the browser", "do a walkthrough", or runs /qa_survey. Requires Chrome browser tools and a running local dev environment.
 ---
 
 # QA Survey Skill
 
-Perform an interactive browser-based survey of the Runbook app, testing features across multiple user roles, and produce a structured QA report with recommendations.
+Perform an interactive browser-based survey of the Runbook app, testing features across multiple user roles, and create QA issues as tasks in the **ClickUp QA list** (list ID: `901712290772`).
 
 ## Prerequisites Check (MUST DO FIRST)
 
@@ -122,38 +122,45 @@ After visiting each major page:
 
 ## Output
 
-Write all findings to `QA_SURVEY.md` in the project root. Use this format:
+### 1. Check for duplicates first
+
+Before creating any tasks, fetch existing tasks from the ClickUp QA list (`901712290772`) to avoid duplicates.
+
+### 2. Create tasks in ClickUp
+
+For each issue found, create a task in ClickUp (list ID: `901712290772`) with:
+
+- **Name**: `[QA-XXXX] Short description`
+- **Priority**: Map severity — Critical → urgent, High → high, Medium → normal, Low → low
+- **Description** (markdown):
 
 ```markdown
-# QA Survey Report
+**Severity**: Critical | High | Medium | Low
+**Category**: UI/UX | Functionality | Performance | Accessibility | Security | Data
+**Page**: /path/to/page
+**User**: email@example.com (role)
 
-> Automated browser survey of the Runbook app
-> Date: YYYY-MM-DD
-> Users tested: (list emails)
+**Steps to Reproduce**:
+1. Step one
+2. Step two
 
-## Summary
-- Total issues found: X
-- Critical: X | High: X | Medium: X | Low: X
+**Expected**: What should happen
 
-## Issues
+**Actual**: What actually happened
 
-### [QA-XXXX] Short description
-- **Severity**: Critical | High | Medium | Low
-- **Category**: UI/UX | Functionality | Performance | Accessibility | Security | Data
-- **Page**: /path/to/page
-- **User**: email@example.com (role)
-- **Steps to Reproduce**:
-  1. Step one
-  2. Step two
-- **Expected**: What should happen
-- **Actual**: What actually happened
-- **Screenshot/GIF**: (filename if captured)
-- **Console Errors**: (any relevant errors)
-- **Recommendation**: How to fix it
+**Console Errors**: (any relevant errors)
 
-## Recommendations
-(Prioritized list of improvements)
+**Screenshot/GIF**: (filename if captured)
+
+**Recommendation**: How to fix it
 ```
+
+### 3. Print a summary
+
+After creating all tasks, print a summary:
+- Total issues found: X
+- Breakdown by severity (Urgent / High / Normal / Low)
+- ClickUp task URLs for each issue
 
 ## Severity Guidelines
 

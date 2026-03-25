@@ -1,11 +1,11 @@
 ---
-name: tech_debt
-description: Analyze the codebase for technical debt and append findings to TECH_DEBT.md. Use when the user asks to "find tech debt", "audit code quality", "log technical debt", "what needs refactoring", or runs /tech_debt. Scans backend and frontend code for common debt patterns and documents them for future development.
+name: td_analyze
+description: Analyze the codebase for technical debt and create findings as tasks in the ClickUp TECH_DEBT list. Use when the user asks to "find tech debt", "audit code quality", "scan for tech debt", "what needs refactoring", or runs /td_analyze. Scans backend and frontend code for common debt patterns and documents them for future development.
 ---
 
 # Technical Debt Analysis
 
-Perform a structured technical debt analysis of the trellisbio codebase and append findings to `TECH_DEBT.md` in the project root.
+Perform a structured technical debt analysis of the trellisbio codebase and create findings as tasks in the **ClickUp TECH_DEBT list** (list ID: `901712289455`).
 
 ## Analysis Categories
 
@@ -53,18 +53,24 @@ Scan for the following categories of technical debt:
 - No CI/CD pipeline defined
 - Missing pre-commit hooks
 
-## Output Format
+## Task Format
 
-For each finding, append an entry to `TECH_DEBT.md` using this format:
+For each finding, create a task in ClickUp (list ID: `901712289455`) with:
+
+- **Name**: `[TD-XXXX] Short description`
+- **Priority**: Map severity — Critical → urgent, High → high, Medium → normal, Low → low
+- **Description** (markdown):
 
 ```markdown
-### [TD-XXXX] Short description
-- **Category**: (one of the categories above)
-- **Severity**: Critical | High | Medium | Low
-- **Location**: `file/path.py:line` or `file/path.ts:line`
-- **Description**: What the issue is and why it matters
-- **Suggested Fix**: Brief description of how to resolve it
-- **Effort**: S (< 1hr) | M (1-4hr) | L (4-8hr) | XL (> 1 day)
+**Category**: (one of the categories above)
+**Severity**: Critical | High | Medium | Low
+**Location**: `file/path.py:line` or `file/path.ts:line`
+
+**Description**: What the issue is and why it matters
+
+**Suggested Fix**: Brief description of how to resolve it
+
+**Effort**: S (< 1hr) | M (1-4hr) | L (4-8hr) | XL (> 1 day)
 ```
 
 ## Severity Guidelines
@@ -76,10 +82,10 @@ For each finding, append an entry to `TECH_DEBT.md` using this format:
 
 ## Process
 
-1. Read the existing `TECH_DEBT.md` to understand what's already documented and determine the next TD number
+1. **Fetch existing tasks from ClickUp** using `clickup_filter_tasks` on list `901712289455` to understand what's already documented and determine the next TD number
 2. Use Explore agents to scan `backend/app/` and `frontend/src/` in parallel
 3. Cross-reference with `plan.md` for known incomplete features
 4. Grep for TODO/FIXME/HACK/XXX comments across the codebase
-5. Deduplicate against existing entries — do NOT add duplicates
-6. Append only NEW findings to `TECH_DEBT.md`, preserving existing entries
-7. Print a summary: count of new items by category and severity
+5. Deduplicate against existing ClickUp tasks — do NOT create duplicates
+6. Create only NEW findings as tasks in ClickUp
+7. Print a summary: count of new items by category and severity, with ClickUp task URLs

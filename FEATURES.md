@@ -545,37 +545,17 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
   - **Embedding service**: Pass `org_id` through from document upload context so each org's documents are embedded with their configured provider
 - **Dependencies**: None
 
-### [F-0021] Role-Based Document Deletion in Library
-- **Status**: Done
-- **Priority**: P2 (Medium)
-- **Scope**: Full Stack
-- **Description**: The document library has a working `DELETE /library/documents/{id}` endpoint, but it only checks org membership — any org member can delete any document. This needs role-based access control so that only users with sufficient permissions (EDIT or above) can delete documents, with full audit logging. The frontend already has a confirmation dialog; this feature gates the action behind permissions and hides/disables the delete button for users without access.
-- **Acceptance Criteria**:
-  - [x] `DOCUMENT` added to `ObjectType` enum in `backend/app/models/iam.py`
-  - [x] Delete endpoint requires `EDIT` permission level on the document (or ADMIN on the parent project if the document is project-scoped, or org admin)
-  - [x] Permission resolution for documents: org admin → project-level permission (if `project_id` set) → direct document permission → deny
-  - [x] `ObjectPermission` rows can be created for documents (assign VIEW/EDIT/ADMIN per user or team)
-  - [x] Document uploader automatically gets ADMIN permission on their uploaded document
-  - [x] Audit log entry created on delete: `entity_type="Document"`, action `DELETE`, changes include `{title, original_filename, uploaded_by_id}`
-  - [x] Frontend hides or disables the delete button when the current user lacks EDIT permission
-  - [x] Frontend shows a 403 toast if the API rejects the delete (defensive — button should already be hidden)
-  - [x] Org admins can always delete any document in their org (existing org admin bypass in permission system)
-  - [x] List page: bulk delete option only visible to users with EDIT on the selected documents
-- **Resolution**: Added `DOCUMENT` to `ObjectType` enum. Extended permission service (`_get_org_id_for_object`, `_get_parent_project_id`, inheritance chain) to handle documents. Delete endpoint now requires EDIT permission with audit logging. Upload auto-grants ADMIN to uploader. Added `can_delete` field to document responses. Frontend conditionally renders delete button. 7 new unit tests for document permission resolution. All 462 backend tests pass.
-- **Implementation Notes**:
-  - **ObjectType enum** (`backend/app/models/iam.py`): Add `DOCUMENT = "DOCUMENT"` to the `ObjectType` enum. Generate Alembic migration to update the DB enum type
-  - **Permission resolution** (`backend/app/services/permissions.py`): Add `DOCUMENT` handling to `_get_org_id_for_object()` (query `Document.org_id`). Add project-inheritance path: if `Document.project_id` is set, fall back to project permissions. Add `_get_parent_project_id()` case for DOCUMENT type
-  - **Delete endpoint** (`backend/app/api/endpoints/library.py`): Add `check_permission(db, user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.EDIT)` before the delete. Add `log_audit()` call with document metadata. Can use the new `get_or_404` utility for the document fetch
-  - **Upload endpoint** (`backend/app/api/endpoints/library.py`): After creating a document, create an `ObjectPermission` granting the uploader ADMIN on the document
-  - **Frontend detail page** (`frontend/src/routes/library/[id]/+page.svelte`): Check user permissions (call a permissions endpoint or include permission level in the document detail response). Conditionally render the delete button
-  - **Frontend list page** (`frontend/src/routes/library/+page.svelte`): Same permission-gating for any delete actions in the list view
-- **Dependencies**: None
-
-### [F-0022] LLM Management Console — Admin Model Configuration, SaaS Tier & API Key Encryption
+### [F-0022] LLM Management Console — Admin Model Configuration, Tiered Feature Gating & API Key Encryption
 - **Status**: Proposed
 - **Priority**: P1 (High)
 - **Scope**: Full Stack
-- **Description**: The platform uses LLM technology across 5 capabilities (vision, embedding, document structure, chat, and audio). Currently, model configuration is managed via env vars or raw API calls to `/ai/settings` — there is no admin UI, no SaaS-managed model tier, and API keys are stored as plaintext in the database. This feature creates a full admin settings experience for LLM configuration, adds a SaaS tier where Trellis provides pre-configured LLM access (so self-hosted customers bring their own keys while SaaS customers use Trellis-managed models), and encrypts all API keys at rest.
+- **Description**: The platform uses LLM technology across 5 capabilities (vision, embedding, document structure, chat, and audio). Currently, model configuration is managed via env vars or raw API calls to `/ai/settings` — there is no admin UI, no tiered access control, and API keys are stored as plaintext in the database. This feature creates a full admin settings experience for LLM configuration, introduces **tier-based feature gating** aligned with the platform's subscription tiers (Essentials / Pro / Enterprise), and encrypts all API keys at rest.
+- **AI Tier Model** (mirrors platform subscription tiers):
+  | Tier | AI Access | What the Org Gets | Config Experience |
+  |---|---|---|---|
+  | **Essentials** | BYOK only | All platform features available. All AI features work (chat, vision, document analysis, embeddings, audio), but org must supply their own API keys (OpenAI, Anthropic, Google, or self-hosted Ollama). No Trellis-managed AI included. | Admin configures each capability with their own provider + key |
+  | **Pro** | Trellis-managed AI included + BYOK override | Trellis provides pre-configured, high-quality models out of the box — AI works immediately with no setup. Org can still override with their own keys per capability. Usage metered for billing. Also includes white-labeling. | "Trellis Managed" is the default; admin can override per capability |
+  | **Enterprise** | Trellis-managed AI included + BYOK override + on-prem | Same AI as Pro. Also supports on-premise deployment (org runs their own LLM infrastructure), stronger SLA guarantees, custom model selection, dedicated support, and platform customization. | Same as Pro, plus on-prem LLM endpoint configuration and custom rate limits |
 - **LLM Features Inventory** (current state):
   | Capability | Service File | What It Does | Default Model |
   |---|---|---|---|
@@ -586,36 +566,278 @@ Planned features for the Runbook AI Co-Pilot. Each entry is a specification that
   | **Audio** | (placeholder) | Speech-to-text for voice notes during runs | `ollama/whisper` |
   All capabilities route through `services/ai_config.py` which resolves provider/model/key via: DB (`ai_provider_configs` table) → env var fallback (`RUNBOOK_ai_{cap}_{field}`) → hardcoded Ollama defaults. Supported providers: `ollama`, `openai`, `anthropic`, `google`.
 - **Acceptance Criteria**:
-  - [ ] **Admin UI — AI Settings Page**: Org admins see an "AI Models" section in Settings with a card for each capability (Vision, Embedding, Document Structure, Chat, Audio)
-  - [ ] Each capability card shows: current provider, model name, status (connected/error/not configured), and a "Configure" button
-  - [ ] Configure form per capability: provider dropdown (Ollama / OpenAI / Anthropic / Google / Trellis Managed), model name input, API key input (masked), base URL input (for Ollama/custom endpoints)
-  - [ ] "Test Connection" button per capability — calls `POST /ai/settings/{capability}/test` and shows success/error result inline
-  - [ ] "Reset to Default" option that clears the org-specific config and falls back to platform defaults
-  - [ ] Changes saved via `PUT /ai/settings/{capability}` with org context
-  - [ ] **SaaS Tier — Trellis-Managed Models**: Platform-level config flag `SAAS_MODE=true` (env var or platform settings table)
-  - [ ] When SaaS mode is active, a "Trellis Managed" provider option is available in the admin UI for each capability
-  - [ ] Trellis-managed models use platform-level API keys (never exposed to tenants) and pre-selected models (e.g., `gpt-4o-mini` for vision, `text-embedding-3-small` for embedding)
-  - [ ] SaaS usage is metered: each LLM call logs `org_id`, `capability`, `model`, `input_tokens`, `output_tokens`, `timestamp` to a `llm_usage_log` table for future billing
-  - [ ] When not in SaaS mode (self-hosted), "Trellis Managed" option is hidden — orgs must provide their own provider/key or use Ollama defaults
-  - [ ] **API Key Encryption at Rest**: All API keys in `ai_provider_configs.api_key` column are encrypted using AES-256-GCM before storage
-  - [ ] Encryption key derived from a `RUNBOOK_ENCRYPTION_KEY` env var (required for production; generates warning on startup if missing)
-  - [ ] Key rotation support: store a `key_version` alongside the encrypted value so old keys can be decrypted during rotation
-  - [ ] `GET /ai/settings` responses continue to show only a masked hint (first 4 + last 4 chars), never the full key
-  - [ ] Existing plaintext keys are migrated to encrypted format via a one-time Alembic data migration
-  - [ ] **Per-Org Scoping** (subsumes F-0020): `ai_provider_configs` scoped by `org_id` FK (nullable — null = platform default)
-  - [ ] Resolution chain: org config → platform default → env var → hardcoded default
-  - [ ] Org A's config is invisible to Org B
-  - [ ] Cache key updated to `(org_id, capability)` tuple
-  - [ ] **Observability**: Admin UI shows last test result timestamp and any connection errors per capability
-  - [ ] Platform admin (superuser) can view and edit platform-default configs
+  - **Tier-Based Feature Gating:**
+    - [ ] New `subscription_tier` field on the Organization model — enum values: `essentials`, `pro`, `enterprise` (default: `essentials`)
+    - [ ] `subscription_tier` is set via billing/subscription flow (F-0019) or manually by platform admin
+    - [ ] `GET /orgs/{id}` response includes `subscription_tier` so the frontend can gate UI accordingly
+    - [ ] **Essentials tier**: "Trellis Managed" provider option is hidden in the admin UI. Org must configure their own provider + API key for each capability they want to use. AI features that have no configured provider show a "Configure AI" prompt instead of silently failing
+    - [ ] **Pro tier**: "Trellis Managed" is available and pre-selected as default for all capabilities. Org can override any capability with their own provider/key. Trellis-managed calls are metered for billing. White-label options available in org settings
+    - [ ] **Enterprise tier**: Same AI as Pro, plus configurable rate limits per capability, on-premise LLM endpoint configuration, custom model selection, and priority queue flag on LLM requests
+    - [ ] Backend enforcement: `ai_config.py` resolution chain checks `org.subscription_tier` before allowing `trellis` provider — returns 403 if Essentials-tier org attempts to use Trellis-managed models
+    - [ ] Frontend enforcement: AI settings UI adapts based on tier — Essentials orgs see BYOK-only UI with an upsell banner ("Upgrade to Pro for Trellis-managed AI"); Pro/Enterprise orgs see full provider selection including "Trellis Managed"
+    - [ ] Graceful degradation: If an Essentials org has not configured any provider for a capability, AI-dependent features (chat, vision, document analysis) show a clear "AI not configured" state rather than errors — with a link to Settings > AI Models
+  - **Admin UI — AI Settings Page:**
+    - [ ] Org admins see an "AI Models" section in Settings with a card for each capability (Vision, Embedding, Document Structure, Chat, Audio)
+    - [ ] Each capability card shows: current provider, model name, status (connected/error/not configured), and a "Configure" button
+    - [ ] Configure form per capability: provider dropdown (filtered by tier — see gating above), model name input, API key input (masked), base URL input (for Ollama/custom endpoints)
+    - [ ] "Test Connection" button per capability — calls `POST /ai/settings/{capability}/test` and shows success/error result inline
+    - [ ] "Reset to Default" option: on Essentials tier, clears config (capability becomes unconfigured); on Pro/Enterprise, reverts to Trellis Managed
+    - [ ] Changes saved via `PUT /ai/settings/{capability}` with org context
+    - [ ] **Tier-aware status summary** at top of AI settings page: shows current tier badge (Essentials/Pro/Enterprise), number of configured capabilities, and for Pro/Enterprise shows current billing-period usage (tokens consumed)
+  - **Trellis-Managed Models (Pro & Enterprise only):**
+    - [ ] Platform-level `ai_provider_configs` rows (org_id=NULL) store Trellis API keys — never exposed to tenants
+    - [ ] Pre-selected models per capability (e.g., `gpt-4o-mini` for vision, `text-embedding-3-small` for embedding, `claude-sonnet` for chat)
+    - [ ] Trellis-managed usage is metered: each LLM call logs `org_id`, `capability`, `model`, `input_tokens`, `output_tokens`, `timestamp` to a `llm_usage_log` table
+    - [ ] Usage limits per tier: Pro gets a monthly token budget (configurable in platform settings); Enterprise gets higher/custom limits
+    - [ ] When an org approaches their token budget (80%), show a warning banner in the AI settings page. At 100%, Trellis-managed calls are rejected with a clear error and suggestion to add own API keys or upgrade
+  - **API Key Encryption at Rest:**
+    - [ ] All API keys in `ai_provider_configs.api_key` column are encrypted using AES-256-GCM before storage
+    - [ ] Encryption key derived from a `RUNBOOK_ENCRYPTION_KEY` env var (required for production; generates warning on startup if missing)
+    - [ ] Key rotation support: store a `key_version` alongside the encrypted value so old keys can be decrypted during rotation
+    - [ ] `GET /ai/settings` responses continue to show only a masked hint (first 4 + last 4 chars), never the full key
+    - [ ] Existing plaintext keys are migrated to encrypted format via a one-time Alembic data migration
+  - **Per-Org Scoping** (subsumes F-0020):
+    - [ ] `ai_provider_configs` scoped by `org_id` FK (nullable — null = platform default)
+    - [ ] Resolution chain: org BYOK config → Trellis-managed (if tier allows) → env var fallback → hardcoded Ollama default
+    - [ ] Org A's config is invisible to Org B
+    - [ ] Cache key updated to `(org_id, capability)` tuple
+  - **Observability:**
+    - [ ] Admin UI shows last test result timestamp and any connection errors per capability
+    - [ ] Platform admin (superuser) can view and edit platform-default configs and override any org's tier
+    - [ ] Platform admin dashboard: aggregate usage across orgs, top consumers, error rates per provider
 - **Implementation Notes**:
+  - **Tier infrastructure**: Add `subscription_tier` enum column to `organizations` table (Alembic migration). Create `SubscriptionTier` enum in `models/iam.py` with values `essentials`, `pro`, `enterprise`. Default to `essentials`. Expose in `OrganizationResponse` schema. Platform admin endpoint `PATCH /admin/orgs/{id}/subscription-tier` to manually set tier (for bootstrapping before billing integration)
+  - **Tier gating middleware**: Create `backend/app/core/ai_gating.py` with `check_subscription_tier(org, capability, provider)` — raises 403 if Essentials-tier org requests `trellis` provider. Called from `ai_config.py` resolution and from `PUT /ai/settings` validation
   - **Encryption module** (`backend/app/core/encryption.py`): Create `encrypt_value(plaintext, key) -> str` and `decrypt_value(ciphertext, key) -> str` using `cryptography` library's Fernet or AES-256-GCM. Store as `v1:<base64-ciphertext>` to support versioned key rotation. Add `cryptography` to `pyproject.toml`
-  - **Migration**: Add `org_id` FK (nullable) to `ai_provider_configs`. Add `key_version` column (default 1). Data migration to encrypt existing plaintext API keys. Update unique constraint to `(org_id, capability)`
-  - **ai_config.py**: Update all resolution functions to accept `org_id`. Encrypt on write, decrypt on read. Update cache key to `(org_id, capability)`. Add SaaS-mode logic: if provider is `trellis`, resolve to platform-level keys
+  - **Migration**: Add `org_id` FK (nullable) to `ai_provider_configs`. Add `key_version` column (default 1). Add `subscription_tier` to `organizations`. Data migration to encrypt existing plaintext API keys. Update unique constraint to `(org_id, capability)`
+  - **ai_config.py**: Update resolution to: (1) check org BYOK config, (2) if none and tier is `pro` or `enterprise`, use Trellis-managed, (3) env var fallback, (4) Ollama default. Encrypt on write, decrypt on read. Cache key `(org_id, capability)`
+  - **Usage budgets**: Add `ai_token_budget` (nullable int) and `ai_tokens_used` (int, default 0) fields to organizations, or a separate `ai_usage_periods` table keyed by `(org_id, period_start)`. Reset monthly via cron or on first request of new period. Check budget before Trellis-managed calls
   - **LLM usage logging**: Create `llm_usage_log` table (id, org_id, user_id, capability, provider, model, input_tokens, output_tokens, latency_ms, created_at). Add `log_llm_usage()` calls in ai_vision.py, embedding.py, document_structure.py, chat_service.py after each LLM call
-  - **AI settings endpoints** (`api/endpoints/ai.py`): Scope existing `GET/PUT /ai/settings` by org. Add `GET /ai/settings/usage-summary` for admin dashboard
-  - **Frontend Settings page** (`frontend/src/routes/settings/+page.svelte`): Add "AI Models" tab/section for org admins. Create `AiSettingsTab.svelte` component with capability cards, configure forms, test buttons. Follow existing settings tab pattern (Members, Teams, etc.)
-  - **SaaS config**: `SAAS_MODE` env var (bool). Platform-level `ai_provider_configs` rows (org_id=NULL) with Trellis API keys. When provider=`trellis`, the service resolves to the platform row and never exposes the key
-  - **Key files affected**: `models/ai.py`, `services/ai_config.py`, `services/ai_vision.py`, `services/embedding.py`, `services/document_structure.py`, `services/chat_service.py`, `api/endpoints/ai.py`, `core/config.py`, `schemas/ai.py`, `frontend/src/routes/settings/+page.svelte` (or new tab component)
-- **Dependencies**: F-0020 (subsumed — per-org scoping is included in this feature's acceptance criteria)
+  - **AI settings endpoints** (`api/endpoints/ai.py`): Scope existing `GET/PUT /ai/settings` by org. Include tier in response. Add `GET /ai/settings/usage-summary` for admin dashboard. Validate provider selection against tier on PUT
+  - **Frontend Settings page** (`frontend/src/routes/settings/+page.svelte`): Add "AI Models" tab/section for org admins. Create `AiSettingsTab.svelte` component with capability cards, configure forms, test buttons. Conditionally render "Trellis Managed" option based on `org.subscription_tier`. Show upsell banner for Essentials orgs. Show usage meters for Pro/Enterprise
+  - **Frontend gating**: Create `frontend/src/lib/tierGating.ts` utility — `canUseTrellis(org): boolean`, `getAvailableProviders(org): Provider[]`, `isAiConfigured(org, capability): boolean`, `canWhiteLabel(org): boolean`. Use throughout UI to show/hide tier-gated features and prompt configuration/upgrade
+  - **Key files affected**: `models/iam.py` (subscription_tier), `models/ai.py`, `services/ai_config.py`, `core/ai_gating.py` (new), `core/encryption.py` (new), `services/ai_vision.py`, `services/embedding.py`, `services/document_structure.py`, `services/chat_service.py`, `api/endpoints/ai.py`, `core/config.py`, `schemas/ai.py`, `schemas/iam.py`, `frontend/src/routes/settings/+page.svelte`, `frontend/src/lib/tierGating.ts` (new)
+- **Dependencies**: F-0019 (Billing — needed for automated tier assignment via subscription, but tiers can be manually set by platform admin before billing is built). F-0020 (subsumed — per-org scoping is included in this feature's acceptance criteria)
+
+### [F-0023] Global AI Chat Panel — Persistent Floating Assistant Across All Views
+- **Status**: Proposed
+- **Priority**: P1 (High)
+- **Scope**: Frontend
+- **Description**: The AI Chat assistant (F-0007) currently lives on a dedicated `/chat` route, requiring users to navigate away from their work. This feature refactors the chat into a persistent floating panel anchored to the lower-left corner of the viewport, accessible from every authenticated view (protocols, runs, projects, library, settings, export). Users can open/collapse the panel, start new conversations, and resume previous sessions — all without leaving their current context. This transforms the AI from a destination into an always-available co-pilot.
+- **Acceptance Criteria**:
+  - **Panel Shell & Positioning:**
+    - [ ] Floating chat panel anchored to the lower-left corner of the viewport, rendered at the layout level (`+layout.svelte`) so it persists across all authenticated routes
+    - [ ] Panel has three visual states: **collapsed** (only the toggle button visible), **open** (chat panel expanded, ~350px wide × ~500px tall), and **maximized** (larger panel, ~500px wide × 70vh tall)
+    - [ ] Toggle button shows an AI/chat icon with an unread indicator badge when the assistant has responded while the panel is collapsed
+    - [ ] Panel opens/closes with a smooth CSS transition (slide-up or scale animation, ~200ms)
+    - [ ] Panel is draggable to reposition within the viewport (optional stretch goal)
+    - [ ] Panel does not overlap or interfere with the main navigation header or critical page controls
+    - [ ] Panel respects responsive breakpoints: on tablet (≤1024px), panel opens as a bottom sheet; on mobile (≤640px), panel opens full-screen overlay
+  - **Chat Functionality (reuse from F-0007):**
+    - [ ] All existing chat features work within the panel: send messages, receive AI responses, markdown rendering, source references, optimistic UI
+    - [ ] "New Chat" button creates a fresh session within the panel
+    - [ ] Session list/picker allows switching between previous chat sessions (dropdown or collapsible sidebar within the panel)
+    - [ ] Current session title displayed in the panel header, editable inline
+    - [ ] Delete session option available from the session picker
+    - [ ] Message history loads when resuming a previous session, scrolled to the most recent message
+    - [ ] Auto-scroll to bottom on new messages, with a "scroll to bottom" button if user has scrolled up
+  - **State Persistence:**
+    - [ ] Panel open/collapsed state persists across page navigations (stored in Svelte context or a lightweight store)
+    - [ ] Active session ID persists across navigations so the user returns to the same conversation
+    - [ ] Panel state (open/collapsed, active session) survives full page reloads (localStorage)
+  - **Keyboard & Accessibility:**
+    - [ ] Keyboard shortcut to toggle panel open/closed (e.g., `Ctrl+Shift+L` or configurable)
+    - [ ] Focus trapped within panel when open (tab cycles through panel controls)
+    - [ ] Escape key collapses the panel
+    - [ ] ARIA attributes: `role="dialog"`, `aria-label="AI Chat Assistant"`, proper focus management
+  - **Integration with Current Context:**
+    - [ ] Panel is aware of the current route/page (e.g., if on a protocol editor, the panel header could show "Chat — Protocol: [name]")
+    - [ ] Future-ready hook: `setContext("chatPanelActions", ...)` so pages can programmatically open the panel or inject context (e.g., "Ask AI about this unit op")
+  - **Migration from /chat route:**
+    - [ ] The dedicated `/chat` route continues to work as a full-screen fallback (no breaking change)
+    - [ ] "Open in full screen" link in the panel header navigates to `/chat` with the current session pre-selected
+    - [ ] Nav link updated: clicking "AI Chat" in the header toggles the floating panel instead of navigating to `/chat`
+- **Implementation Notes**:
+  - **New component**: Create `frontend/src/lib/components/ChatPanel.svelte` — the floating panel shell (positioning, open/close state, resize, header bar with session picker and controls)
+  - **Extract chat logic**: Refactor the chat message list, input box, and source references from `frontend/src/routes/chat/+page.svelte` into a reusable `ChatConversation.svelte` component that both the panel and the full `/chat` page can render
+  - **Layout integration**: Mount `<ChatPanel />` inside `frontend/src/routes/+layout.svelte` within the authenticated section (after the `{#if !isPublicRoute}` guard), positioned with `fixed` CSS
+  - **State store**: Create `frontend/src/lib/stores/chatPanel.ts` using Svelte 5 runes (`$state`) or a simple writable store — tracks `isOpen`, `activeSessionId`, `unreadCount`. Sync to `localStorage` for persistence across reloads
+  - **Session picker**: Compact dropdown in the panel header that calls `GET /chat/sessions` (already exists). Show session title + created date. Truncate long titles
+  - **Unread badge**: When panel is collapsed and a new assistant message arrives, increment `unreadCount` in the store. Clear on panel open
+  - **CSS**: Use `z-index: 50` (above page content, below modals at z-60+). Tailwind classes for positioning: `fixed bottom-4 left-4`. Transition with `transition-all duration-200`
+  - **Keyboard shortcut**: Register in `+layout.svelte` via `window.addEventListener('keydown', ...)`. Check for `Ctrl+Shift+L` (avoid conflicts with browser shortcuts)
+  - **Key files affected**: `frontend/src/routes/+layout.svelte`, new `frontend/src/lib/components/ChatPanel.svelte`, new `frontend/src/lib/components/ChatConversation.svelte`, `frontend/src/routes/chat/+page.svelte` (refactor to use ChatConversation), new `frontend/src/lib/stores/chatPanel.ts`
+- **Dependencies**: F-0007 (AI Chat Assistant — Phase 1 and Phase 2 must be complete, which they are)
+
+### [F-0024] Frontend Error Boundary Component
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Frontend
+- **Source**: TD-0019
+- **Description**: No global error boundary exists. Unhandled promise rejections or component errors could crash the app with no recovery UI.
+- **Acceptance Criteria**:
+  - [ ] `ErrorBoundary.svelte` component created that catches rendering errors in child components
+  - [ ] Error boundary wraps all route pages in `+layout.svelte`
+  - [ ] Recovery UI shows a friendly error message with a "Reload" button
+  - [ ] Error details logged to console in development mode
+- **Implementation Notes**:
+  - Create `ErrorBoundary.svelte` wrapper and apply to route pages
+- **Dependencies**: None
+
+### [F-0025] Dark Mode Support — CSS Variable Normalization
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Frontend
+- **Source**: TD-0046
+- **Description**: Every page uses hardcoded Tailwind color utilities (`bg-white`, `text-slate-900`, `bg-slate-50`, `border-slate-200`, etc.) instead of semantic CSS variables. The shadcn-svelte components already use `--background`, `--foreground`, etc. and would swap cleanly, but all custom page markup bypasses these variables. This makes dark mode impractical without a full audit of every file.
+- **Acceptance Criteria**:
+  - [ ] Semantic color variables defined in `app.css` (e.g., `--color-surface`, `--color-surface-raised`, `--color-text-primary`, `--color-text-secondary`, `--color-border`)
+  - [ ] Matching Tailwind utility classes created or theme extended
+  - [ ] All hardcoded color classes across every `.svelte` file replaced with semantic equivalents
+  - [ ] `.dark` variant on `<html>` that swaps CSS variable values
+  - [ ] User preference toggle to switch between light and dark mode
+- **Affected files**: `runs/[id]/+page.svelte`, `projects/[id]/+page.svelte`, `protocols/[id]/+page.svelte`, `+page.svelte` (dashboard), `export/+page.svelte`, `settings/+page.svelte`, all custom `lib/components/*.svelte`
+- **Implementation Notes**:
+  - Replace all hardcoded Tailwind color classes with semantic CSS variable equivalents
+  - Add `.dark` variant, wire user preference toggle
+- **Dependencies**: None
+
+### [F-0026] Structured Request/Response Logging
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Backend
+- **Source**: TD-0052
+- **Description**: Only ~8 `logger` statements exist across the entire backend. No middleware for request/response logging, no correlation IDs, no structured log format. Makes production debugging and incident investigation extremely difficult.
+- **Acceptance Criteria**:
+  - [ ] FastAPI middleware logs every request: method, path, status code, duration
+  - [ ] Structured JSON log format (via `structlog` or stdlib logging)
+  - [ ] Correlation IDs added via middleware, propagated through request lifecycle
+  - [ ] Sensitive data (passwords, tokens) excluded from logs
+- **Implementation Notes**:
+  - Add FastAPI middleware for structured request logging. Use `structlog` or Python's stdlib logging with JSON format. Add correlation IDs via middleware.
+- **Dependencies**: None
+
+### [F-0027] Optimistic UI Updates for Mutations
+- **Status**: Proposed
+- **Priority**: P3 (Low)
+- **Scope**: Frontend
+- **Source**: TD-0057
+- **Description**: After every mutation (toggle channel, delete subscription, update member role), the entire list is re-fetched from the API. This causes unnecessary network requests, loading flickers, and poor perceived performance. Pattern repeats across settings and project pages.
+- **Acceptance Criteria**:
+  - [ ] Settings page mutations (toggle channel, delete subscription, update role) update local state immediately
+  - [ ] Project page mutations follow the same pattern
+  - [ ] On API error, local state reverts to pre-mutation value with a toast notification
+  - [ ] Full reload only triggered when data shape may have changed from another user
+- **Implementation Notes**:
+  - Implement optimistic UI updates: update local state immediately, revert on API error
+- **Dependencies**: None
+
+### [F-0028] Frontend Linting & Formatting Setup (ESLint + Prettier)
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Frontend
+- **Source**: TD-0058
+- **Description**: No ESLint config or Prettier config exists in the frontend. TypeScript strict mode is enabled but no additional linting rules enforce code quality, unused variable detection, or consistent formatting. Backend has `black` + `isort` but frontend has no equivalent.
+- **Acceptance Criteria**:
+  - [ ] `eslint` with `eslint-plugin-svelte` configured
+  - [ ] `prettier` with `prettier-plugin-svelte` configured
+  - [ ] Initial `--fix` pass run across the codebase
+  - [ ] Lint and format checks added to CI pipeline
+- **Implementation Notes**:
+  - Add configs, run initial fix pass, add to CI checks
+- **Dependencies**: None
+
+### [F-0029] Pagination for Settings Member & Subscription Lists
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Full Stack
+- **Source**: TD-0061
+- **Description**: Organization members and channel subscriptions are loaded as complete lists with no pagination or virtual scrolling. In orgs with hundreds of members, this will cause slow initial loads and high memory usage.
+- **Acceptance Criteria**:
+  - [ ] Server-side pagination (limit/offset) on member list endpoint
+  - [ ] Server-side pagination on subscription list endpoint
+  - [ ] Pagination controls in settings UI for both lists
+  - [ ] Default page size of 20 with configurable limit
+- **Implementation Notes**:
+  - Add server-side pagination to endpoints and pagination controls to the settings UI
+- **Dependencies**: None
+
+### [F-0030] Playwright E2E: Organization Roles & Permissions Workflow
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Frontend
+- **Source**: TD-0063
+- **Description**: No E2E tests verify that role-based access control works end-to-end. Permission bugs can silently grant unauthorized access or block legitimate users.
+- **Acceptance Criteria**:
+  - [ ] **Org admin capabilities**: Admin can add a new member to the org via settings page
+  - [ ] **Org admin capabilities**: Admin can change a member's role (MEMBER → ADMIN, ADMIN → MEMBER)
+  - [ ] **Org admin capabilities**: Admin can create and delete teams
+  - [ ] **Org admin capabilities**: Admin can create projects
+  - [ ] **Org member restrictions**: Non-admin member cannot see "Add Member" controls on settings page
+  - [ ] **Org member restrictions**: Non-admin cannot change other members' roles
+  - [ ] **Project permissions (strict mode)**: User with VIEW permission can see project but cannot create protocols or runs
+  - [ ] **Project permissions (strict mode)**: User with EDIT permission can create protocols and runs
+  - [ ] **Project permissions (strict mode)**: User with APPROVE permission can approve/reject protocols
+  - [ ] **Project permissions (open mode)**: When `permissions_enabled=false`, all org members get implicit EDIT access
+  - [ ] **Permission denied UX**: Attempting a forbidden action shows a clear error, doesn't silently fail or crash
+- **Implementation Notes**:
+  - Create `frontend/e2e/permissions.spec.ts`. Seed multiple test users with different roles in `globalSetup`. Use Playwright's `browser.newContext()` for parallel sessions.
+- **Dependencies**: None
+
+### [F-0031] Playwright E2E: Run Creation & Execution Workflow
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Frontend
+- **Source**: TD-0065
+- **Description**: No E2E tests cover run execution, which is the core user-facing workflow (scientists recording lab results). Includes role assignments, multi-user execution, step completion, and GMP edit mode — all untested.
+- **Acceptance Criteria**:
+  - [ ] **Create run from protocol**: Create run from an existing protocol → run page shows protocol graph with execution controls
+  - [ ] **Role assignment**: Assign users to swimlane roles in the run setup phase
+  - [ ] **Start validation — missing assignments**: Try to start run with unassigned swimlanes → blocked with validation error
+  - [ ] **Start run**: Assign all roles → start run → status transitions to ACTIVE, assigned users receive RUN_STARTED notification
+  - [ ] **Record step data**: As assigned user, fill in step parameters and mark step as completed
+  - [ ] **Role-locked execution**: User can only complete steps in their assigned swimlane (not others')
+  - [ ] **Complete run**: Complete all steps → mark run as COMPLETED, assigned users receive RUN_COMPLETED notification
+  - [ ] **GMP edit mode**: After completion, transition to EDITED status → modify a recorded value → original value preserved in audit trail
+  - [ ] **Reassign role mid-run**: Change a role assignment on an active run → old user notified of removal, new user notified of assignment
+  - [ ] **Multi-user execution**: Two browser contexts logged in as different assigned users → each can only act on their own lanes
+  - [ ] **Run from ad-hoc (no protocol)**: Create a run without a protocol → empty graph, manual step creation
+- **Implementation Notes**:
+  - Create `frontend/e2e/runs.spec.ts`. Seed a project with an approved protocol containing multiple swimlanes and unit ops. Use multiple browser contexts for multi-user scenarios.
+- **Dependencies**: None
+
+### [F-0032] Fix Stale Notifications After Role Reassignment
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Backend
+- **Source**: TD-0066
+- **Description**: When a user is initially assigned to a run role via `ROLE_ASSIGNED` notification and then the role is reassigned to a different user, the original user's `ROLE_ASSIGNED` notification remains in their notification list. The reassignment creates a new `ROLE_REASSIGNED` notification for both users, but the old `ROLE_ASSIGNED` notification is never removed or invalidated. This means the original user sees both "You were assigned to role X" and "Role X was reassigned" — the first message is misleading since they are no longer assigned.
+- **Acceptance Criteria**:
+  - [ ] When a role reassignment occurs, existing `ROLE_ASSIGNED` notifications for the old user on that run+role are dismissed or deleted
+  - [ ] The old user only sees the `ROLE_REASSIGNED` notification after reassignment
+  - [ ] New user's `ROLE_ASSIGNED` notification is unaffected
+- **Implementation Notes**:
+  - In `create_run_role_assignment` (`backend/app/api/endpoints/runs.py`), query and delete/dismiss matching notifications by `entity_id` + `event_type` + `recipient`. Or add a `dismiss_notifications` helper to the notifications service.
+- **Dependencies**: None
+
+### [F-0033] Playwright E2E: Document Library — Search, URL Import, Retry & Processing Flows
+- **Status**: Proposed
+- **Priority**: P2 (Medium)
+- **Scope**: Frontend
+- **Source**: TD-0069
+- **Description**: The library has 6 basic E2E tests covering navigation, empty state, file upload, detail view, delete, and invalid file rejection. But the core value-proposition workflows are untested: search/discovery, URL import, retry of failed processing, processing status polling, and org-scoped access control.
+- **Acceptance Criteria**:
+  - [ ] **Search — keyword match**: Upload a document with known content → search for a term → results appear with highlighted matches and correct document title
+  - [ ] **Search — no results**: Search for a nonsensical term → empty state message displayed
+  - [ ] **Search — click through**: Search → click a result → navigates to document detail page at the right section
+  - [ ] **URL import**: Import a document from a public URL → document appears in list with source URL displayed
+  - [ ] **URL import — invalid URL**: Try to import from a private IP or non-http URL → error message displayed
+  - [ ] **Retry failed processing**: Upload a document → simulate failure → verify "Failed" status badge → click retry → status resets to processing
+  - [ ] **Processing status polling**: Upload a document → verify status transitions from "Processing" to "Ready"
+  - [ ] **Document reader — chunk navigation**: Open a multi-page document → verify chunks render with page numbers
+  - [ ] **Org scoping**: Upload as user in Org A → log in as user in Org B → verify document is NOT visible
+  - [ ] **File size validation**: Attempt upload of oversized file → error message before request is sent
+- **Implementation Notes**:
+  - Extend `frontend/e2e/library.spec.ts` with new test suites. Add `waitForDocumentIndexed(page, id)` helper.
+- **Dependencies**: None
 
