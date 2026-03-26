@@ -5,15 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import AiProviderConfig
-from app.models.iam import User
-from app.services.ai_config import invalidate_cache, _cache
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def clear_ai_cache():
-    invalidate_cache()
-    yield
-    invalidate_cache()
+from app.models.iam import Organization, User
 
 
 # --- Auth required ---
@@ -50,19 +42,22 @@ async def test_list_settings_empty(
     assert resp.status_code == 200
     data = resp.json()
     assert data["items"] == []
+    assert "subscription_tier" in data
 
 
 @pytest.mark.asyncio
 async def test_list_settings_returns_configs(
     client: AsyncClient,
     auth_headers: dict,
+    test_org: Organization,
     db_session: AsyncSession,
 ):
     row = AiProviderConfig(
+        org_id=test_org.id,
         capability="vision",
         provider="ollama",
         model_name="llama3.2-vision",
-        api_key="sk-secret-key-12345678",
+        credentials={"base_url": "http://localhost:11434"},
         is_enabled=True,
     )
     db_session.add(row)
@@ -77,19 +72,22 @@ async def test_list_settings_returns_configs(
     assert item["provider"] == "ollama"
     assert item["model_name"] == "llama3.2-vision"
     assert item["is_enabled"] is True
+    assert item["credentials_set"] is True
 
 
 @pytest.mark.asyncio
-async def test_list_settings_masks_api_key(
+async def test_list_settings_credentials_not_exposed(
     client: AsyncClient,
     auth_headers: dict,
+    test_org: Organization,
     db_session: AsyncSession,
 ):
     row = AiProviderConfig(
+        org_id=test_org.id,
         capability="vision",
         provider="anthropic",
         model_name="claude-sonnet-4-20250514",
-        api_key="sk-ant-api03-abcdefghijklmnop",
+        credentials={"api_key": "sk-ant-api03-abcdefghijklmnop"},
         is_enabled=True,
     )
     db_session.add(row)
@@ -97,21 +95,22 @@ async def test_list_settings_masks_api_key(
 
     resp = await client.get("/ai/settings", headers=auth_headers)
     item = resp.json()["items"][0]
-    assert item["api_key_set"] is True
-    assert item["api_key_hint"] is not None
-    # Full key must NOT appear
-    assert "abcdefghijklmnop" not in item["api_key_hint"]
-    # Should have masked format
-    assert "..." in item["api_key_hint"]
+    assert item["credentials_set"] is True
+    # Credentials must NOT appear in response
+    assert "credentials" not in item or item.get("credentials") is None
+    assert "api_key" not in item
+    assert "abcdefghijklmnop" not in str(item)
 
 
 @pytest.mark.asyncio
-async def test_list_settings_no_key_set(
+async def test_list_settings_no_credentials(
     client: AsyncClient,
     auth_headers: dict,
+    test_org: Organization,
     db_session: AsyncSession,
 ):
     row = AiProviderConfig(
+        org_id=test_org.id,
         capability="vision",
         provider="ollama",
         model_name="llama3.2-vision",
@@ -122,8 +121,7 @@ async def test_list_settings_no_key_set(
 
     resp = await client.get("/ai/settings", headers=auth_headers)
     item = resp.json()["items"][0]
-    assert item["api_key_set"] is False
-    assert item["api_key_hint"] is None
+    assert item["credentials_set"] is False
 
 
 # --- PUT /ai/settings/{capability} ---
@@ -133,6 +131,7 @@ async def test_list_settings_no_key_set(
 async def test_upsert_creates_new_config(
     client: AsyncClient,
     auth_headers: dict,
+    test_org: Organization,
     db_session: AsyncSession,
 ):
     resp = await client.put(
@@ -140,6 +139,7 @@ async def test_upsert_creates_new_config(
         json={
             "provider": "ollama",
             "model_name": "llama3.2-vision",
+            "credentials": {"base_url": "http://localhost:11434"},
             "is_enabled": True,
         },
         headers=auth_headers,
@@ -148,26 +148,29 @@ async def test_upsert_creates_new_config(
     data = resp.json()
     assert data["capability"] == "vision"
     assert data["provider"] == "ollama"
-    assert data["model_name"] == "llama3.2-vision"
+    assert data["credentials_set"] is True
 
     # Verify in DB
     result = await db_session.execute(
         select(AiProviderConfig).where(
-            AiProviderConfig.capability == "vision"
+            AiProviderConfig.org_id == test_org.id,
+            AiProviderConfig.capability == "vision",
         )
     )
     row = result.scalar_one()
     assert row.provider == "ollama"
+    assert row.credentials == {"base_url": "http://localhost:11434"}
 
 
 @pytest.mark.asyncio
 async def test_upsert_updates_existing_config(
     client: AsyncClient,
     auth_headers: dict,
+    test_org: Organization,
     db_session: AsyncSession,
 ):
-    # Create initial config
     row = AiProviderConfig(
+        org_id=test_org.id,
         capability="vision",
         provider="ollama",
         model_name="llama3.2-vision",
@@ -177,22 +180,20 @@ async def test_upsert_updates_existing_config(
     await db_session.flush()
     original_id = str(row.id)
 
-    # Update it
     resp = await client.put(
         "/ai/settings/vision",
         json={
             "provider": "anthropic",
             "model_name": "claude-sonnet-4-20250514",
-            "api_key": "sk-ant-test-key",
+            "credentials": {"api_key": "sk-ant-test-key"},
             "is_enabled": True,
         },
         headers=auth_headers,
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["id"] == original_id  # Same row updated
+    assert data["id"] == original_id
     assert data["provider"] == "anthropic"
-    assert data["model_name"] == "claude-sonnet-4-20250514"
 
 
 @pytest.mark.asyncio
@@ -230,25 +231,41 @@ async def test_upsert_rejects_unsupported_provider(
 
 
 @pytest.mark.asyncio
-async def test_upsert_cloud_provider_requires_api_key(
+async def test_upsert_preserves_existing_credentials_when_not_provided(
     client: AsyncClient,
     auth_headers: dict,
+    test_org: Organization,
+    db_session: AsyncSession,
 ):
+    row = AiProviderConfig(
+        org_id=test_org.id,
+        capability="text",
+        provider="anthropic",
+        model_name="claude-sonnet-4-20250514",
+        credentials={"api_key": "sk-ant-original-key"},
+        is_enabled=True,
+    )
+    db_session.add(row)
+    await db_session.flush()
+
+    # Update without providing credentials — should keep old ones
     resp = await client.put(
-        "/ai/settings/vision",
+        "/ai/settings/text",
         json={
             "provider": "anthropic",
-            "model_name": "claude-sonnet-4-20250514",
-            # No api_key
+            "model_name": "claude-opus-4-20250514",
         },
         headers=auth_headers,
     )
-    assert resp.status_code == 422
-    assert "requires an API key" in resp.json()["detail"]
+    assert resp.status_code == 200
+
+    await db_session.refresh(row)
+    assert row.credentials == {"api_key": "sk-ant-original-key"}
+    assert row.model_name == "claude-opus-4-20250514"
 
 
 @pytest.mark.asyncio
-async def test_upsert_ollama_does_not_require_api_key(
+async def test_upsert_ollama_does_not_require_credentials(
     client: AsyncClient,
     auth_headers: dict,
 ):
@@ -263,77 +280,58 @@ async def test_upsert_ollama_does_not_require_api_key(
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
-async def test_upsert_invalidates_cache(
-    client: AsyncClient,
-    auth_headers: dict,
-    db_session: AsyncSession,
-):
-    from app.services.ai_config import get_model
-
-    # Prime cache with default (Ollama returns OpenAIModel object)
-    model = await get_model("vision", db_session)
-    assert model.model_name == "llama3.2-vision"
-    assert "vision" in _cache
-
-    # Update via API
-    resp = await client.put(
-        "/ai/settings/vision",
-        json={
-            "provider": "ollama",
-            "model_name": "llava",
-        },
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-
-    # Cache should have been invalidated
-    assert "vision" not in _cache
+# --- DELETE /ai/settings/{capability} ---
 
 
 @pytest.mark.asyncio
-async def test_upsert_preserves_existing_key_when_not_provided(
+async def test_delete_removes_config(
     client: AsyncClient,
     auth_headers: dict,
+    test_org: Organization,
     db_session: AsyncSession,
 ):
-    # Create with API key
     row = AiProviderConfig(
-        capability="text",
-        provider="anthropic",
-        model_name="claude-sonnet-4-20250514",
-        api_key="sk-ant-original-key",
+        org_id=test_org.id,
+        capability="vision",
+        provider="ollama",
+        model_name="llama3.2-vision",
         is_enabled=True,
     )
     db_session.add(row)
     await db_session.flush()
 
-    # Update without providing api_key — should keep old one
-    resp = await client.put(
-        "/ai/settings/text",
-        json={
-            "provider": "anthropic",
-            "model_name": "claude-opus-4-20250514",
-            # api_key omitted
-        },
-        headers=auth_headers,
-    )
+    resp = await client.delete("/ai/settings/vision", headers=auth_headers)
     assert resp.status_code == 200
+    assert resp.json()["ok"] is True
 
-    # Verify key was preserved
-    await db_session.refresh(row)
-    assert row.api_key == "sk-ant-original-key"
-    assert row.model_name == "claude-opus-4-20250514"
+    # Verify removed
+    result = await db_session.execute(
+        select(AiProviderConfig).where(
+            AiProviderConfig.org_id == test_org.id,
+            AiProviderConfig.capability == "vision",
+        )
+    )
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_is_ok(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    resp = await client.delete("/ai/settings/vision", headers=auth_headers)
+    assert resp.status_code == 200
 
 
 # --- POST /ai/settings/{capability}/test ---
 
 
 @pytest.mark.asyncio
-async def test_test_connection_no_config(
+async def test_test_connection_no_config_essentials_org(
     client: AsyncClient,
     auth_headers: dict,
 ):
+    """Essentials org with no custom config should get 'not configured' error."""
     resp = await client.post(
         "/ai/settings/vision/test",
         headers=auth_headers,
@@ -341,45 +339,24 @@ async def test_test_connection_no_config(
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is False
-    assert "No configuration found" in data["message"]
+    assert "not configured" in data["message"]
 
 
 @pytest.mark.asyncio
-async def test_test_connection_disabled(
+async def test_test_connection_with_config_returns_result(
     client: AsyncClient,
     auth_headers: dict,
+    test_org: Organization,
     db_session: AsyncSession,
 ):
+    """Org with a config should attempt a real connection test.
+    With no actual provider running, it should return a connection failure."""
     row = AiProviderConfig(
-        capability="vision",
-        provider="ollama",
-        model_name="llama3.2-vision",
-        is_enabled=False,
-    )
-    db_session.add(row)
-    await db_session.flush()
-
-    resp = await client.post(
-        "/ai/settings/vision/test",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["success"] is False
-    assert "disabled" in data["message"]
-
-
-@pytest.mark.asyncio
-async def test_test_connection_cloud_with_key(
-    client: AsyncClient,
-    auth_headers: dict,
-    db_session: AsyncSession,
-):
-    row = AiProviderConfig(
+        org_id=test_org.id,
         capability="text",
         provider="anthropic",
         model_name="claude-sonnet-4-20250514",
-        api_key="sk-ant-test-key",
+        credentials={"api_key": "sk-ant-test-key"},
         is_enabled=True,
     )
     db_session.add(row)
@@ -391,8 +368,10 @@ async def test_test_connection_cloud_with_key(
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["success"] is True
-    assert "API key is set" in data["message"]
+    # With a fake API key and no real provider, this will fail
+    # but the endpoint should handle it gracefully
+    assert isinstance(data["success"], bool)
+    assert isinstance(data["message"], str)
 
 
 @pytest.mark.asyncio

@@ -14,7 +14,7 @@
     } from "@xyflow/svelte";
     import "@xyflow/svelte/dist/style.css";
 
-    import { api } from "$lib/api";
+    import { api, ApiError } from "$lib/api";
     import { toast } from "$lib/toast";
     import { getCurrentOrg } from "$lib/auth.svelte";
     import ProtocolSidebar from "$lib/components/protocol/ProtocolSidebar.svelte";
@@ -281,7 +281,7 @@
     // --- Data Loading ---
     async function loadData() {
         try {
-            unitOps = await api.get("/science/unit-ops");
+            // Unit ops are loaded after protocol (below) to include project-scoped ops
 
             // Load organization equipment
             const org = getCurrentOrg();
@@ -294,6 +294,10 @@
                 roles = protocol.roles || [];
                 protocolStatus = protocol.status || "DRAFT";
                 versionNumber = protocol.version_number || 0;
+
+                // Load unit ops scoped to this protocol's project
+                const projectParam = protocol.project_id ? `?project_id=${protocol.project_id}` : '';
+                unitOps = await api.get(`/science/unit-ops${projectParam}`);
 
                 // Fetch project settings for approval requirement and PDF format
                 try {
@@ -308,6 +312,9 @@
                     applyGraphState(protocol.graph);
                     detectEquipmentConflicts();
                 }
+            } else {
+                // New protocol — load global + org ops only
+                unitOps = await api.get("/science/unit-ops");
             }
             // Apply timeline sizing if loaded with timeline enabled
             if (timeEnabled) {
@@ -752,6 +759,9 @@
             unitOps = [...unitOps, created];
             showCreateModal = false;
         } catch (e: unknown) {
+            if (e instanceof ApiError && e.status === 403) {
+                alert("You need to be an organization admin to create org-wide unit operations.");
+            }
             console.error("Failed to create unit op:", e instanceof Error ? e.message : e);
         }
     }
@@ -762,13 +772,21 @@
         paramSchema: Record<string, any>,
         category: string,
     ): Promise<void> {
-        const created = await api.post('/science/unit-ops', {
-            name,
-            category: category || 'General',
-            description: '',
-            param_schema: paramSchema,
-        });
-        unitOps = [...unitOps, created];
+        try {
+            const created = await api.post('/science/unit-ops', {
+                name,
+                category: category || 'General',
+                description: '',
+                param_schema: paramSchema,
+                ...(protocol?.project_id ? { project_id: protocol.project_id } : {}),
+            });
+            unitOps = [...unitOps, created];
+        } catch (e: unknown) {
+            if (e instanceof ApiError && e.status === 403) {
+                alert("You need to be an organization admin to create org-wide unit operations.");
+            }
+            console.error("Failed to save unit op:", e instanceof Error ? e.message : e);
+        }
     }
 
     function openCreateModal(category: string) {
@@ -964,6 +982,7 @@
     <CreateUnitOpModal
         open={showCreateModal}
         defaultCategory={createModalCategory}
+        projectId={protocol?.project_id}
         onClose={() => (showCreateModal = false)}
         onCreate={handleCreateUnitOp}
     />

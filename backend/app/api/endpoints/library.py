@@ -128,6 +128,13 @@ async def upload_document(
 ):
     org_id = await _get_user_org_id(current_user, db)
 
+    # Title length check
+    if len(title) > 150:
+        raise HTTPException(
+            status_code=422,
+            detail="Title must be 150 characters or fewer.",
+        )
+
     # Read file content into memory for validation
     content = await file.read()
 

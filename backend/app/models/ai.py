@@ -9,38 +9,39 @@ from app.models.base import Base
 from app.models.mixins import UUIDMixin, TimestampMixin
 
 
-SUPPORTED_PROVIDERS = ("ollama", "anthropic", "google", "openai")
+SUPPORTED_PROVIDERS = (
+    "ollama", "anthropic", "openai", "google", "groq", "mistral",
+    "cohere", "openrouter", "xai", "cerebras", "deepseek",
+    "together", "fireworks", "bedrock",
+)
 
-SUPPORTED_CAPABILITIES = ("vision", "audio", "text", "embedding", "doc_structure", "chat", "protocol_generation")
+SUPPORTED_CAPABILITIES = ("vision", "text", "embedding", "doc_structure", "chat", "protocol_generation")
+# "audio" excluded — feature not yet implemented
 
 DEFAULT_CONFIGS = {
     "vision": {
         "provider": "ollama",
-        "model_name": "llama3.2-vision",
-    },
-    "audio": {
-        "provider": "ollama",
-        "model_name": "whisper",
+        "model_name": "llama3.2-vision:11b",
     },
     "text": {
         "provider": "ollama",
-        "model_name": "llama3.2",
+        "model_name": "gemma3:latest",
     },
     "embedding": {
         "provider": "ollama",
-        "model_name": "nomic-embed-text",
+        "model_name": "nomic-embed-text:latest",
     },
     "doc_structure": {
         "provider": "ollama",
-        "model_name": "llama3.2-vision",
+        "model_name": "llama3.2-vision:11b",
     },
     "chat": {
         "provider": "ollama",
-        "model_name": "llama3.2",
+        "model_name": "qwen3:latest",
     },
     "protocol_generation": {
         "provider": "ollama",
-        "model_name": "llama3.2",
+        "model_name": "gemma3:latest",
     },
 }
 
@@ -48,9 +49,12 @@ DEFAULT_CONFIGS = {
 class AiProviderConfig(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "ai_provider_configs"
     __table_args__ = (
-        UniqueConstraint("capability", name="uq_ai_capability"),
+        UniqueConstraint("org_id", "capability", name="uq_ai_org_capability"),
     )
 
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
     capability: Mapped[str] = mapped_column(
         String, nullable=False
     )
@@ -60,14 +64,16 @@ class AiProviderConfig(Base, UUIDMixin, TimestampMixin):
     model_name: Mapped[str] = mapped_column(
         String, nullable=False
     )
-    api_key: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
-    base_url: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
+    credentials: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
     )
     is_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
+    )
+
+    # Relationships
+    organization: Mapped["Organization"] = relationship(
+        "app.models.iam.Organization"
     )
 
 

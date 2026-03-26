@@ -21,48 +21,52 @@
         sanitizeHighlight,
     } from '$lib/utils/document-utils';
     import { Plus, Search, X } from 'lucide-svelte';
+    import { z } from 'zod';
 
-    interface DocumentItem {
-        id: string;
-        title: string;
-        original_filename: string;
-        mime_type: string;
-        file_size_bytes: number;
-        status: string;
-        source_url?: string;
-        created_at: string;
-    }
+    // --- Schemas ---
+    const DocumentItemSchema = z.object({
+        id: z.string(),
+        title: z.string(),
+        original_filename: z.string(),
+        mime_type: z.string(),
+        file_size_bytes: z.number(),
+        status: z.string(),
+        source_url: z.string().nullable(),
+        created_at: z.string(),
+    }).passthrough();
+    type DocumentItem = z.infer<typeof DocumentItemSchema>;
 
-    interface DocumentListResponse {
-        items: DocumentItem[];
-        total: number;
-    }
+    const DocumentListResponseSchema = z.object({
+        items: z.array(DocumentItemSchema),
+        total: z.number(),
+    }).passthrough();
 
-    interface SearchResultItem {
-        document_id: string;
-        document_title: string;
-        chunk_id: string;
-        chunk_index: number;
-        content: string;
-        highlighted_content: string | null;
-        page_number: number | null;
-        score: number;
-    }
+    const SearchResultItemSchema = z.object({
+        document_id: z.string(),
+        document_title: z.string(),
+        chunk_id: z.string(),
+        chunk_index: z.number(),
+        content: z.string(),
+        highlighted_content: z.string().nullable(),
+        page_number: z.number().nullable(),
+        score: z.number(),
+    }).passthrough();
 
-    interface SearchResultGroup {
-        document_id: string;
-        document_title: string;
-        match_count: number;
-        best_score: number;
-        best_chunk: SearchResultItem;
-    }
+    const SearchResultGroupSchema = z.object({
+        document_id: z.string(),
+        document_title: z.string(),
+        match_count: z.number(),
+        best_score: z.number(),
+        best_chunk: SearchResultItemSchema,
+    }).passthrough();
+    type SearchResultGroup = z.infer<typeof SearchResultGroupSchema>;
 
-    interface SearchResponse {
-        query: string;
-        items: SearchResultGroup[];
-        total: number;
-        search_mode: string;
-    }
+    const SearchResponseSchema = z.object({
+        query: z.string(),
+        items: z.array(SearchResultGroupSchema),
+        total: z.number(),
+        search_mode: z.string(),
+    }).passthrough();
 
     let documents = $state<DocumentItem[]>([]);
     let loading = $state(true);
@@ -83,7 +87,7 @@
 
     async function loadDocuments() {
         try {
-            const res = await api.get<DocumentListResponse>('/library/documents?limit=50');
+            const res = await api.get('/library/documents?limit=50', { schema: DocumentListResponseSchema });
             documents = res.items;
 
             const hasProcessing = documents.some((d) => d.status === 'PROCESSING');
@@ -110,8 +114,9 @@
         searching = true;
         searchError = null;
         try {
-            const res = await api.get<SearchResponse>(
+            const res = await api.get(
                 `/library/search?q=${encodeURIComponent(query.trim())}&limit=20`,
+                { schema: SearchResponseSchema },
             );
             searchResults = res.items;
             searchMode = res.search_mode;
@@ -312,7 +317,7 @@
                             <Table.Body>
                                 {#each documents as doc}
                                     <Table.Row>
-                                        <Table.Cell class="font-medium">
+                                        <Table.Cell class="font-medium max-w-[300px] whitespace-normal break-words">
                                             <a
                                                 href="/library/{doc.id}"
                                                 class="font-semibold text-primary hover:underline"

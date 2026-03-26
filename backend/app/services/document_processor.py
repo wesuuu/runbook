@@ -270,7 +270,8 @@ async def process_document(document_id: UUID, db_url: str) -> None:
 
                 chunk_texts = [c.content for c in chunks]
                 embeddings = await embed_texts(
-                    chunk_texts, session, on_progress=_emb_progress
+                    chunk_texts, session, on_progress=_emb_progress,
+                    org_id=doc.org_id,
                 )
             except Exception as emb_err:
                 logger.warning(
@@ -331,7 +332,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                 try:
                     from app.services.ai_config import get_full_config
 
-                    cfg = await get_full_config("doc_structure", session)
+                    cfg = await get_full_config("doc_structure", session, org_id=doc.org_id)
                     if cfg.get("is_enabled", True):
                         get_task_runner().submit(
                             enrich_document(document_id, db_url)
@@ -739,6 +740,7 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
             structure = await analyze_document_structure(
                 page_images, session,
                 on_progress=_analyze_progress,
+                org_id=doc.org_id,
             )
 
             # Store structure metadata on document
@@ -1109,9 +1111,9 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                     )
 
                     try:
-                        model = await get_model("doc_structure", session)
+                        model = await get_model("doc_structure", session, org_id=doc.org_id)
                         config = await get_full_config(
-                            "doc_structure", session
+                            "doc_structure", session, org_id=doc.org_id
                         )
                         llm_ok = await _check_llm_available(model, config)
                     except Exception:
@@ -1181,6 +1183,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                                 structure.outline,
                                 structure,
                                 session,
+                                org_id=doc.org_id,
                             )
                         except Exception as toc_exc:
                             logger.warning(
@@ -1320,7 +1323,8 @@ async def build_book(document_id: UUID, db_url: str) -> None:
 
                 chunk_texts = [c.content for c in chunks_for_embed]
                 embeddings = await embed_texts(
-                    chunk_texts, session, on_progress=_emb_progress
+                    chunk_texts, session, on_progress=_emb_progress,
+                    org_id=doc.org_id,
                 )
             except Exception as emb_err:
                 logger.warning(

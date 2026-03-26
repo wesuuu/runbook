@@ -329,6 +329,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Auth middleware — decodes JWT and stashes on request.state
+from app.core.middleware import AuthMiddleware
+app.add_middleware(AuthMiddleware)
+
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,

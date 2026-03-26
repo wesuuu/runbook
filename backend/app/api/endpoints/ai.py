@@ -7,7 +7,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,12 +43,21 @@ from app.schemas.ai import (
     TagImageRequest,
 )
 from app.core.deps import get_current_user
-from app.models.iam import User
-from app.services.ai_config import invalidate_cache, mask_api_key
+from app.core.security import TokenPayload
+from app.models.iam import Organization, User, OrganizationMember
+from app.services.ai_provider_validation import validate_provider_credentials
 from app.services.ai_vision import analyze_image, continue_conversation
 from app.services.audit import log_audit
 
 router = APIRouter()
+
+
+def _get_org_id_from_request(request) -> Optional[uuid_mod.UUID]:
+    """Extract org_id from the token payload stashed by AuthMiddleware."""
+    payload: Optional[TokenPayload] = getattr(request.state, "token_payload", None)
+    if payload and payload.org_id:
+        return payload.org_id
+    return None
 
 
 def _row_to_response(row: AiProviderConfig) -> AiProviderConfigResponse:
@@ -57,9 +66,7 @@ def _row_to_response(row: AiProviderConfig) -> AiProviderConfigResponse:
         capability=row.capability,
         provider=row.provider,
         model_name=row.model_name,
-        api_key_set=row.api_key is not None and len(row.api_key) > 0,
-        api_key_hint=mask_api_key(row.api_key),
-        base_url=row.base_url,
+        credentials_set=bool(row.credentials),
         is_enabled=row.is_enabled,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -68,15 +75,28 @@ def _row_to_response(row: AiProviderConfig) -> AiProviderConfigResponse:
 
 @router.get("/settings", response_model=AiSettingsListResponse)
 async def list_ai_settings(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    org_id = _get_org_id_from_request(request)
+    if org_id is None:
+        return AiSettingsListResponse(items=[], subscription_tier="essentials")
     result = await db.execute(
-        select(AiProviderConfig).order_by(AiProviderConfig.capability)
+        select(AiProviderConfig)
+        .where(AiProviderConfig.org_id == org_id)
+        .order_by(AiProviderConfig.capability)
     )
     rows = result.scalars().all()
+
+    org_result = await db.execute(
+        select(Organization).where(Organization.id == org_id)
+    )
+    org = org_result.scalar_one_or_none()
+
     return AiSettingsListResponse(
-        items=[_row_to_response(r) for r in rows]
+        items=[_row_to_response(r) for r in rows],
+        subscription_tier=org.subscription_tier if org else "essentials",
     )
 
 
@@ -87,9 +107,14 @@ async def list_ai_settings(
 async def upsert_ai_setting(
     capability: str,
     body: AiProviderConfigUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    org_id = _get_org_id_from_request(request)
+    if org_id is None:
+        raise HTTPException(status_code=400, detail="No organization context")
+
     if capability not in SUPPORTED_CAPABILITIES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -104,23 +129,14 @@ async def upsert_ai_setting(
             f"Must be one of: {', '.join(SUPPORTED_PROVIDERS)}",
         )
 
-    # Cloud providers require an API key (unless one is already saved)
-    if body.provider != "ollama" and not body.api_key:
-        result = await db.execute(
-            select(AiProviderConfig).where(
-                AiProviderConfig.capability == capability
-            )
-        )
-        existing = result.scalar_one_or_none()
-        if not existing or not existing.api_key:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Provider '{body.provider}' requires an API key.",
-            )
+    # Validate credentials via provider instantiation
+    if body.credentials:
+        validate_provider_credentials(body.provider, body.credentials)
 
     result = await db.execute(
         select(AiProviderConfig).where(
-            AiProviderConfig.capability == capability
+            AiProviderConfig.org_id == org_id,
+            AiProviderConfig.capability == capability,
         )
     )
     row = result.scalar_one_or_none()
@@ -128,26 +144,22 @@ async def upsert_ai_setting(
     if row:
         row.provider = body.provider
         row.model_name = body.model_name
-        row.base_url = body.base_url
         row.is_enabled = body.is_enabled
-        # Only update api_key if a new one was provided
-        if body.api_key is not None:
-            row.api_key = body.api_key
+        if body.credentials is not None:
+            row.credentials = body.credentials
     else:
         row = AiProviderConfig(
+            org_id=org_id,
             capability=capability,
             provider=body.provider,
             model_name=body.model_name,
-            api_key=body.api_key,
-            base_url=body.base_url,
+            credentials=body.credentials,
             is_enabled=body.is_enabled,
         )
         db.add(row)
 
     await db.commit()
     await db.refresh(row)
-
-    invalidate_cache(capability)
 
     return _row_to_response(row)
 
@@ -158,76 +170,83 @@ async def upsert_ai_setting(
 )
 async def test_ai_connection(
     capability: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    org_id = _get_org_id_from_request(request)
+    if org_id is None:
+        raise HTTPException(status_code=400, detail="No organization context")
+
     if capability not in SUPPORTED_CAPABILITIES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unsupported capability: {capability}.",
         )
 
-    result = await db.execute(
-        select(AiProviderConfig).where(
-            AiProviderConfig.capability == capability,
-        )
-    )
-    row = result.scalar_one_or_none()
-    if not row:
-        return AiTestConnectionResponse(
-            success=False,
-            message=f"No configuration found for capability '{capability}'. "
-            "Save a configuration first.",
-        )
-
-    if not row.is_enabled:
-        return AiTestConnectionResponse(
-            success=False,
-            message=f"Capability '{capability}' is disabled.",
-        )
-
-    # Attempt a lightweight probe of the provider
     try:
-        if row.provider == "ollama":
-            import httpx
-
-            base = row.base_url or "http://localhost:11434"
-            async with httpx.AsyncClient(timeout=5.0) as http:
-                resp = await http.get(f"{base}/api/tags")
-                if resp.status_code == 200:
-                    models = [
-                        m["name"] for m in resp.json().get("models", [])
-                    ]
-                    if any(row.model_name in m for m in models):
-                        return AiTestConnectionResponse(
-                            success=True,
-                            message=f"Connected to Ollama. Model '{row.model_name}' is available.",
-                        )
-                    return AiTestConnectionResponse(
-                        success=False,
-                        message=f"Connected to Ollama but model '{row.model_name}' "
-                        f"not found. Available: {', '.join(models[:5])}",
-                    )
+        if capability == "embedding":
+            from app.services.embedding import embed_texts
+            result = await embed_texts(["hello"], db, org_id=org_id)
+            if result and len(result) > 0:
                 return AiTestConnectionResponse(
-                    success=False,
-                    message=f"Ollama returned status {resp.status_code}.",
-                )
-        else:
-            # For cloud providers, verify the API key format is plausible
-            if not row.api_key:
-                return AiTestConnectionResponse(
-                    success=False,
-                    message=f"No API key set for provider '{row.provider}'.",
+                    success=True,
+                    message="Connected successfully.",
                 )
             return AiTestConnectionResponse(
-                success=True,
-                message=f"Configuration saved for {row.provider}:{row.model_name}. "
-                "API key is set. Full validation occurs on first use.",
+                success=False,
+                message="Embedding returned empty result.",
             )
+        else:
+            from pydantic_ai import Agent
+            from app.services.ai_config import get_model
+
+            model = await get_model(capability, db, org_id=org_id)
+            agent = Agent(model)
+            await agent.run(
+                "Say hello in one word.",
+                model_settings={"timeout": 10},
+            )
+            return AiTestConnectionResponse(
+                success=True,
+                message="Connected successfully.",
+            )
+    except ValueError as e:
+        return AiTestConnectionResponse(
+            success=False,
+            message=str(e),
+        )
     except Exception as exc:
+        logger.warning("AI connection test failed for %s: %s", capability, exc)
         return AiTestConnectionResponse(
             success=False,
             message=f"Connection failed: {str(exc)}",
         )
+
+
+@router.delete("/settings/{capability}")
+async def delete_ai_setting(
+    capability: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete org-specific AI config, reverting to platform default (if Pro+)."""
+    org_id = _get_org_id_from_request(request)
+    if org_id is None:
+        raise HTTPException(status_code=400, detail="No organization context")
+
+    result = await db.execute(
+        select(AiProviderConfig).where(
+            AiProviderConfig.org_id == org_id,
+            AiProviderConfig.capability == capability,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row:
+        await db.delete(row)
+        await db.commit()
+    return {"ok": True}
 
 
 # ── Image Upload & Retrieval ─────────────────────────────────────────
@@ -423,8 +442,11 @@ async def _get_image_with_run(
 async def analyze_run_image(
     run_id: uuid_mod.UUID,
     image_id: uuid_mod.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    org_id = _get_org_id_from_request(request)
     run, image = await _get_image_with_run(run_id, image_id, db)
 
     if run.status not in (RunStatus.ACTIVE, RunStatus.EDITED):
@@ -442,6 +464,7 @@ async def analyze_run_image(
             step_name=step_name,
             param_schema=param_schema,
             db=db,
+            org_id=org_id,
         )
     except Exception as exc:
         # Create a failed conversation record
@@ -511,7 +534,9 @@ async def converse_about_image(
     run_id: uuid_mod.UUID,
     image_id: uuid_mod.UUID,
     body: ConverseRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     run, image = await _get_image_with_run(run_id, image_id, db)
 
@@ -536,6 +561,7 @@ async def converse_about_image(
     conv.messages = [*conv.messages, {"role": "user", "content": body.message}]
 
     try:
+        org_id = _get_org_id_from_request(request)
         ai_result = await continue_conversation(
             image_path=image_full_path,
             step_name=step_name,
@@ -543,6 +569,7 @@ async def converse_about_image(
             messages=conv.messages,
             user_reply=body.message,
             db=db,
+            org_id=org_id,
         )
     except Exception as exc:
         conv.status = "failed"
@@ -711,7 +738,9 @@ async def tag_image(
 )
 async def analyze_pending_images(
     run_id: uuid_mod.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Sequentially analyze all unanalyzed images in a run."""
     run = await _get_active_run(run_id, db)
@@ -738,6 +767,7 @@ async def analyze_pending_images(
     )
     pending_images = result.scalars().all()
 
+    org_id = _get_org_id_from_request(request)
     succeeded = 0
     failed = 0
 
@@ -751,6 +781,7 @@ async def analyze_pending_images(
                 step_name=step_name,
                 param_schema=param_schema,
                 db=db,
+                org_id=org_id,
             )
 
             conv_status = (

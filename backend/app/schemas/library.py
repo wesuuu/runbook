@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class DocumentResponse(BaseModel):
@@ -73,7 +73,7 @@ class DocumentDetailResponse(DocumentResponse):
 
 class ImportUrlRequest(BaseModel):
     url: HttpUrl
-    title: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=150)
     project_id: Optional[UUID] = None
 
 

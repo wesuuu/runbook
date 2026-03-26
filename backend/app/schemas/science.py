@@ -1,8 +1,8 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Literal, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 # UnitOpDefinition Schemas
 class UnitOpDefinitionBase(BaseModel):
@@ -13,7 +13,7 @@ class UnitOpDefinitionBase(BaseModel):
     result_schema: Dict[str, Any] = Field(default_factory=dict)
 
 class UnitOpDefinitionCreate(UnitOpDefinitionBase):
-    pass
+    project_id: Optional[UUID] = None
 
 class UnitOpDefinitionUpdate(BaseModel):
     name: Optional[str] = None
@@ -24,8 +24,19 @@ class UnitOpDefinitionUpdate(BaseModel):
 
 class UnitOpDefinitionResponse(UnitOpDefinitionBase):
     id: UUID
+    organization_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def scope(self) -> Literal["global", "organization", "project"]:
+        if self.project_id is not None:
+            return "project"
+        elif self.organization_id is not None:
+            return "organization"
+        return "global"
 
     class Config:
         from_attributes = True

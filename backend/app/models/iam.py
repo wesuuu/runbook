@@ -10,6 +10,19 @@ from app.models.base import Base
 from app.models.mixins import UUIDMixin, TimestampMixin
 
 
+class SubscriptionTier(str, Enum):
+    ESSENTIALS = "essentials"
+    PRO = "pro"
+    ENTERPRISE = "enterprise"
+
+
+TIER_RANK = {
+    SubscriptionTier.ESSENTIALS: 0,
+    SubscriptionTier.PRO: 1,
+    SubscriptionTier.ENTERPRISE: 2,
+}
+
+
 class OrgRole(str, Enum):
     ADMIN = "ADMIN"
     BILLING = "BILLING"
@@ -53,6 +66,9 @@ class Organization(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "organizations"
 
     name: Mapped[str] = mapped_column(String, nullable=False)
+    subscription_tier: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=SubscriptionTier.ESSENTIALS.value
+    )
 
     # Relationships
     teams: Mapped[List["Team"]] = relationship(
@@ -97,6 +113,9 @@ class User(Base, UUIDMixin, TimestampMixin):
         JSONB, default=dict, server_default="{}", nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    selected_org_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
 
     # Relationships
     team_memberships: Mapped[List["TeamMember"]] = relationship(
@@ -104,6 +123,9 @@ class User(Base, UUIDMixin, TimestampMixin):
     )
     org_memberships: Mapped[List["OrganizationMember"]] = relationship(
         back_populates="user"
+    )
+    selected_organization: Mapped[Optional["Organization"]] = relationship(
+        foreign_keys=[selected_org_id]
     )
 
 

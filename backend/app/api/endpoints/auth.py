@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.deps import get_current_user
 from app.core.security import hash_password, verify_password, create_access_token
 from app.db.session import get_db
-from app.models.iam import User
+from app.models.iam import Organization, OrganizationMember, User
 from app.schemas.auth import (
     LoginRequest,
     PasswordChange,
@@ -57,16 +57,34 @@ async def register(
             detail="Email already registered",
         )
 
+    org_name = f"{body.full_name}'s Organization" if body.full_name else "My Organization"
+    org = Organization(name=org_name)
+    db.add(org)
+    await db.flush()
+
     user = User(
         email=body.email,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
+        selected_org_id=org.id,
     )
     db.add(user)
+    await db.flush()
+
+    db.add(OrganizationMember(
+        user_id=user.id,
+        organization_id=org.id,
+        role="ADMIN",
+    ))
     await db.commit()
     await db.refresh(user)
+    await db.refresh(org)
 
-    token = create_access_token(user.id)
+    token = create_access_token(
+        user.id,
+        org_id=org.id,
+        subscription_tier=org.subscription_tier,
+    )
     return TokenResponse(access_token=token)
 
 
@@ -95,7 +113,22 @@ async def login(
             detail="Invalid email or password",
         )
 
-    token = create_access_token(user.id)
+    # Resolve org context for the token
+    org_id = user.selected_org_id
+    subscription_tier = "essentials"
+    if org_id is not None:
+        org_result = await db.execute(
+            select(Organization).where(Organization.id == org_id)
+        )
+        org = org_result.scalar_one_or_none()
+        if org is not None:
+            subscription_tier = org.subscription_tier
+
+    token = create_access_token(
+        user.id,
+        org_id=org_id,
+        subscription_tier=subscription_tier,
+    )
     return TokenResponse(access_token=token)
 
 

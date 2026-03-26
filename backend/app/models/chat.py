@@ -38,6 +38,9 @@ class ChatSession(Base, UUIDMixin, TimestampMixin):
     context_document_ids: Mapped[Optional[list[Any]]] = mapped_column(
         JSONB, nullable=True, default=None
     )
+    ai_message_history: Mapped[Optional[list[Any]]] = mapped_column(
+        JSONB, nullable=True, default=None
+    )
 
     # Relationships
     messages: Mapped[list["ChatMessage"]] = relationship(

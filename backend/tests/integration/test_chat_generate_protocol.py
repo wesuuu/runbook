@@ -53,18 +53,11 @@ async def _create_session_with_messages(
     session_id = resp.json()["id"]
 
     # Send a message (mocked LLM)
+    # _call_llm returns (content, sources, tool_calls, message_history)
     with patch(
         "app.services.chat_service._call_llm",
         new_callable=AsyncMock,
-        return_value="Sure, let's discuss the protocol.",
-    ), patch(
-        "app.services.chat_service.retrieve_relevant_chunks",
-        new_callable=AsyncMock,
-        return_value=[],
-    ), patch(
-        "app.services.chat_service._org_has_documents",
-        new_callable=AsyncMock,
-        return_value=False,
+        return_value=("Sure, let's discuss the protocol.", [], [], []),
     ):
         resp = await client.post(
             f"/chat/sessions/{session_id}/messages",

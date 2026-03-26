@@ -1,17 +1,20 @@
 from typing import Any, Sequence, TypeVar
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decode_access_token, decode_offline_token
+from app.core.security import TokenPayload
 from app.db.session import get_db
-from app.models.iam import User, ObjectType, PermissionLevel
+from app.models.iam import (
+    User,
+    ObjectType,
+    PermissionLevel,
+    SubscriptionTier,
+    TIER_RANK,
+)
 from app.services.permissions import check_permission
-
-_bearer = HTTPBearer(auto_error=False)
 
 T = TypeVar("T")
 
@@ -40,22 +43,19 @@ async def get_or_404(
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    if credentials is None:
+    payload: TokenPayload | None = getattr(
+        request.state, "token_payload", None
+    )
+    if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
-    user_id = decode_access_token(credentials.credentials)
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
     result = await db.execute(
-        select(User).where(User.id == user_id, User.is_active == True)
+        select(User).where(User.id == payload.user_id, User.is_active == True)
     )
     user = result.scalar_one_or_none()
     if user is None:
@@ -76,7 +76,6 @@ def require_permission(
     The returned function is a proper FastAPI dependency that reads the
     path parameter by name via the Request object.
     """
-    from fastapi import Request
 
     async def _check(
         request: Request,
@@ -107,8 +106,37 @@ def require_permission(
     return _check
 
 
+def require_tier(min_tier: SubscriptionTier):
+    """Factory that returns a dependency enforcing a minimum subscription tier.
+
+    Reads the tier from the token payload stashed by AuthMiddleware.
+    """
+
+    async def _check(
+        request: Request,
+        user: User = Depends(get_current_user),
+    ) -> User:
+        payload: TokenPayload | None = getattr(
+            request.state, "token_payload", None
+        )
+        if payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Subscription tier information unavailable",
+            )
+        current_tier = SubscriptionTier(payload.subscription_tier)
+        if TIER_RANK[current_tier] < TIER_RANK[min_tier]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires {min_tier.value} tier or above",
+            )
+        return user
+
+    return _check
+
+
 async def get_current_user_or_offline(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> tuple[User, dict | None]:
     """Authenticate with either a normal token or an offline token.
@@ -116,16 +144,13 @@ async def get_current_user_or_offline(
     Returns (user, offline_payload) where offline_payload is None for
     normal tokens, or the full JWT payload dict for offline tokens.
     """
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
+    offline_payload: dict | None = getattr(
+        request.state, "offline_payload", None
+    )
+    token_payload: TokenPayload | None = getattr(
+        request.state, "token_payload", None
+    )
 
-    token_str = credentials.credentials
-
-    # Try offline token first (has "scope": "offline")
-    offline_payload = decode_offline_token(token_str)
     if offline_payload is not None:
         # Check if token is revoked
         from app.models.offline import RevokedOfflineToken
@@ -139,14 +164,13 @@ async def get_current_user_or_offline(
                 detail="Offline token has been revoked",
             )
         user_id = UUID(offline_payload["sub"])
+    elif token_payload is not None:
+        user_id = token_payload.user_id
     else:
-        # Fall back to normal token
-        user_id = decode_access_token(token_str)
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
 
     result = await db.execute(
         select(User).where(User.id == user_id, User.is_active == True)

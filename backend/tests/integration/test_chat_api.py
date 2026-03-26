@@ -8,21 +8,14 @@ from app.models.chat import ChatMessage, ChatMessageRole, ChatSession
 from app.models.iam import Organization
 
 
-# Mock LLM and RAG calls for all tests in this module
+# Mock LLM call for all tests in this module
+# _call_llm now returns (content, sources, tool_calls, message_history)
 @pytest.fixture(autouse=True)
 def mock_llm_and_rag():
     with patch(
         "app.services.chat_service._call_llm",
         new_callable=AsyncMock,
-        return_value="I'm Trellis AI, happy to help!",
-    ), patch(
-        "app.services.chat_service.retrieve_relevant_chunks",
-        new_callable=AsyncMock,
-        return_value=[],
-    ), patch(
-        "app.services.chat_service._org_has_documents",
-        new_callable=AsyncMock,
-        return_value=False,
+        return_value=("I'm Trellis AI, happy to help!", [], [], []),
     ):
         yield
 
@@ -339,18 +332,16 @@ class TestSendChatMessageWithRAG:
                 score=0.85,
             ),
         ]
+        fake_tool_calls = [{"tool": "search_documents", "query": "buffer prep", "results": 1}]
         with patch(
             "app.services.chat_service._call_llm",
             new_callable=AsyncMock,
-            return_value="Based on the Buffer Prep SOP [1], you should mix Tris-HCl.",
-        ), patch(
-            "app.services.chat_service.retrieve_relevant_chunks",
-            new_callable=AsyncMock,
-            return_value=fake_sources,
-        ), patch(
-            "app.services.chat_service._org_has_documents",
-            new_callable=AsyncMock,
-            return_value=True,
+            return_value=(
+                "Based on the Buffer Prep SOP [1], you should mix Tris-HCl.",
+                fake_sources,
+                fake_tool_calls,
+                [],
+            ),
         ):
             yield
 

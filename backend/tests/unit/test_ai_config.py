@@ -1,4 +1,3 @@
-import time
 import uuid
 
 import pytest
@@ -7,13 +6,12 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import AiProviderConfig
+from app.models.iam import Organization, OrganizationMember, User
+from app.core.security import hash_password
 from app.services.ai_config import (
     _build_model_string,
     get_model,
-    invalidate_cache,
-    mask_api_key,
-    _cache,
-    _CACHE_TTL_SECONDS,
+    get_full_config,
 )
 
 
@@ -24,7 +22,7 @@ class TestBuildModelString:
         assert result.model_name == "llama3.2-vision"
 
     def test_ollama_with_base_url(self):
-        result = _build_model_string("ollama", "llama3.2-vision", base_url="http://myhost:11434")
+        result = _build_model_string("ollama", "llama3.2-vision", credentials={"base_url": "http://myhost:11434"})
         assert isinstance(result, OpenAIChatModel)
 
     def test_anthropic(self):
@@ -37,132 +35,134 @@ class TestBuildModelString:
         assert _build_model_string("openai", "gpt-4o") == "openai:gpt-4o"
 
 
-class TestMaskApiKey:
-    def test_none(self):
-        assert mask_api_key(None) is None
+class TestGetModelOrgScoped:
+    """get_model() should resolve org-specific configs and tier-gate platform defaults."""
 
-    def test_empty(self):
-        assert mask_api_key("") is None
+    @pytest_asyncio.fixture
+    async def pro_org(self, db_session: AsyncSession) -> Organization:
+        org = Organization(name="Pro Org", subscription_tier="pro")
+        db_session.add(org)
+        await db_session.flush()
+        return org
 
-    def test_short_key(self):
-        assert mask_api_key("abc123") == "ab...23"
-
-    def test_long_key(self):
-        result = mask_api_key("sk-ant-api03-abcdefghijklmnop")
-        assert result == "sk-a...mnop"
-        assert "abcdefgh" not in result
-
-    def test_exactly_8_chars(self):
-        result = mask_api_key("12345678")
-        assert result == "12...78"
-
-
-class TestGetModel:
-    @pytest_asyncio.fixture(autouse=True)
-    async def clear_cache(self):
-        invalidate_cache()
-        yield
-        invalidate_cache()
+    @pytest_asyncio.fixture
+    async def essentials_org(self, db_session: AsyncSession) -> Organization:
+        org = Organization(name="Essentials Org", subscription_tier="essentials")
+        db_session.add(org)
+        await db_session.flush()
+        return org
 
     @pytest.mark.asyncio
-    async def test_returns_hardcoded_default_when_no_db_or_env(
-        self, db_session: AsyncSession
+    async def test_pro_org_gets_platform_default(
+        self, db_session: AsyncSession, pro_org: Organization
     ):
-        model = await get_model("vision", db_session)
+        """Pro org with no custom config should get platform default."""
+        model = await get_model("vision", db_session, org_id=pro_org.id)
         assert isinstance(model, OpenAIChatModel)
         assert model.model_name == "llama3.2-vision"
 
     @pytest.mark.asyncio
-    async def test_db_row_takes_priority(self, db_session: AsyncSession):
+    async def test_essentials_org_raises_without_custom_config(
+        self, db_session: AsyncSession, essentials_org: Organization
+    ):
+        """Essentials org with no custom config should raise ValueError."""
+        with pytest.raises(ValueError, match="not configured"):
+            await get_model("vision", db_session, org_id=essentials_org.id)
+
+    @pytest.mark.asyncio
+    async def test_org_specific_config_takes_priority(
+        self, db_session: AsyncSession, essentials_org: Organization
+    ):
+        """Org-specific config should work for any tier."""
         row = AiProviderConfig(
+            org_id=essentials_org.id,
             capability="vision",
             provider="anthropic",
             model_name="claude-sonnet-4-20250514",
-            api_key="sk-test",
+            credentials={"api_key": "sk-test"},
             is_enabled=True,
         )
         db_session.add(row)
         await db_session.flush()
 
-        model = await get_model("vision", db_session)
+        model = await get_model("vision", db_session, org_id=essentials_org.id)
         assert model == "anthropic:claude-sonnet-4-20250514"
 
     @pytest.mark.asyncio
-    async def test_disabled_row_falls_through_to_default(
-        self, db_session: AsyncSession
+    async def test_disabled_org_config_falls_through(
+        self, db_session: AsyncSession, pro_org: Organization
     ):
+        """Disabled org config should fall through to platform default for Pro."""
         row = AiProviderConfig(
+            org_id=pro_org.id,
             capability="vision",
             provider="anthropic",
             model_name="claude-sonnet-4-20250514",
-            api_key="sk-test",
+            credentials={"api_key": "sk-test"},
             is_enabled=False,
         )
         db_session.add(row)
         await db_session.flush()
 
-        model = await get_model("vision", db_session)
+        model = await get_model("vision", db_session, org_id=pro_org.id)
+        # Falls through to platform default since org config is disabled
         assert isinstance(model, OpenAIChatModel)
-        assert model.model_name == "llama3.2-vision"
 
     @pytest.mark.asyncio
-    async def test_cache_returns_cached_value(self, db_session: AsyncSession):
-        # Prime cache
-        await get_model("vision", db_session)
-        assert "vision" in _cache
+    async def test_no_org_id_raises(self, db_session: AsyncSession):
+        """No org_id should raise ValueError (no config to fall back to)."""
+        with pytest.raises(ValueError, match="not configured"):
+            await get_model("vision", db_session, org_id=None)
 
-        # Insert a DB row — should NOT affect cached result
-        row = AiProviderConfig(
-            capability="vision",
-            provider="openai",
-            model_name="gpt-4o",
-            api_key="sk-test",
-            is_enabled=True,
-        )
-        db_session.add(row)
+
+class TestGetFullConfigOrgScoped:
+    """get_full_config() should return org-specific or platform config."""
+
+    @pytest_asyncio.fixture
+    async def pro_org(self, db_session: AsyncSession) -> Organization:
+        org = Organization(name="Pro Org", subscription_tier="pro")
+        db_session.add(org)
         await db_session.flush()
+        return org
 
-        # Still returns cached default (Ollama model object)
-        model = await get_model("vision", db_session)
-        assert isinstance(model, OpenAIChatModel)
-        assert model.model_name == "llama3.2-vision"
-
-    @pytest.mark.asyncio
-    async def test_cache_invalidation(self, db_session: AsyncSession):
-        # Prime cache with default
-        await get_model("vision", db_session)
-
-        # Insert a DB row
-        row = AiProviderConfig(
-            capability="vision",
-            provider="openai",
-            model_name="gpt-4o",
-            api_key="sk-test",
-            is_enabled=True,
-        )
-        db_session.add(row)
+    @pytest_asyncio.fixture
+    async def essentials_org(self, db_session: AsyncSession) -> Organization:
+        org = Organization(name="Essentials Org", subscription_tier="essentials")
+        db_session.add(org)
         await db_session.flush()
-
-        # Invalidate and re-fetch
-        invalidate_cache("vision")
-        model = await get_model("vision", db_session)
-        assert model == "openai:gpt-4o"
+        return org
 
     @pytest.mark.asyncio
-    async def test_invalidate_all(self, db_session: AsyncSession):
-        await get_model("vision", db_session)
-        await get_model("text", db_session)
-        assert "vision" in _cache
-        assert "text" in _cache
-
-        invalidate_cache()
-        assert len(_cache) == 0
-
-    @pytest.mark.asyncio
-    async def test_unknown_capability_falls_back_to_text_default(
-        self, db_session: AsyncSession
+    async def test_pro_gets_platform_config(
+        self, db_session: AsyncSession, pro_org: Organization
     ):
-        model = await get_model("unknown_capability", db_session)
-        # Falls back to text defaults (Ollama model object)
-        assert isinstance(model, OpenAIChatModel)
-        assert model.model_name == "llama3.2"
+        config = await get_full_config("vision", db_session, org_id=pro_org.id)
+        assert config["provider"] == "ollama"
+        assert config["is_enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_essentials_gets_not_configured(
+        self, db_session: AsyncSession, essentials_org: Organization
+    ):
+        config = await get_full_config("vision", db_session, org_id=essentials_org.id)
+        assert config["provider"] is None
+        assert config["is_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_org_config_returned(
+        self, db_session: AsyncSession, essentials_org: Organization
+    ):
+        row = AiProviderConfig(
+            org_id=essentials_org.id,
+            capability="vision",
+            provider="openai",
+            model_name="gpt-4o",
+            credentials={"api_key": "sk-test"},
+            is_enabled=True,
+        )
+        db_session.add(row)
+        await db_session.flush()
+
+        config = await get_full_config("vision", db_session, org_id=essentials_org.id)
+        assert config["provider"] == "openai"
+        assert config["model_name"] == "gpt-4o"

@@ -8,6 +8,7 @@ from app.core.security import (
     verify_password,
     create_access_token,
     decode_access_token,
+    TokenPayload,
 )
 
 
@@ -25,7 +26,21 @@ def test_create_decode_token_roundtrip():
     uid = uuid.uuid4()
     token = create_access_token(uid)
     decoded = decode_access_token(token)
-    assert decoded == uid
+    assert decoded is not None
+    assert decoded.user_id == uid
+    assert decoded.org_id is None
+    assert decoded.subscription_tier == "essentials"
+
+
+def test_create_decode_token_with_org_context():
+    uid = uuid.uuid4()
+    org_id = uuid.uuid4()
+    token = create_access_token(uid, org_id=org_id, subscription_tier="pro")
+    decoded = decode_access_token(token)
+    assert decoded is not None
+    assert decoded.user_id == uid
+    assert decoded.org_id == org_id
+    assert decoded.subscription_tier == "pro"
 
 
 def test_decode_expired_token():
@@ -35,10 +50,6 @@ def test_decode_expired_token():
     try:
         uid = uuid.uuid4()
         token = create_access_token(uid)
-        # Token with 0-minute expiry is already expired
-        result = decode_access_token(token)
-        # With 0 minutes the exp is exactly now, which may or may not
-        # have passed. Use a negative approach to be safe.
     finally:
         config.settings.access_token_expire_minutes = original
 

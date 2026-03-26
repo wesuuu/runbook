@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID, uuid4
@@ -6,6 +7,13 @@ import bcrypt
 from jose import JWTError, jwt
 
 from app.core.config import settings
+
+
+@dataclass
+class TokenPayload:
+    user_id: UUID
+    org_id: Optional[UUID] = None
+    subscription_tier: str = "essentials"
 
 
 def hash_password(plain: str) -> str:
@@ -20,11 +28,18 @@ def verify_password(plain: str, hashed: str) -> bool:
     )
 
 
-def create_access_token(user_id: UUID) -> str:
+def create_access_token(
+    user_id: UUID,
+    org_id: Optional[UUID] = None,
+    subscription_tier: str = "essentials",
+) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.access_token_expire_minutes
     )
-    payload = {"sub": str(user_id), "exp": expire}
+    payload: dict = {"sub": str(user_id), "exp": expire}
+    if org_id is not None:
+        payload["org_id"] = str(org_id)
+    payload["tier"] = subscription_tier
     return jwt.encode(
         payload, settings.secret_key, algorithm=settings.jwt_algorithm
     )
@@ -50,7 +65,7 @@ def create_offline_token(user_id: UUID, run_id: UUID, days: int = 7) -> tuple[st
     return token, jti, expire
 
 
-def decode_access_token(token: str) -> UUID | None:
+def decode_access_token(token: str) -> TokenPayload | None:
     try:
         payload = jwt.decode(
             token, settings.secret_key,
@@ -59,7 +74,12 @@ def decode_access_token(token: str) -> UUID | None:
         sub = payload.get("sub")
         if sub is None:
             return None
-        return UUID(sub)
+        org_id_str = payload.get("org_id")
+        return TokenPayload(
+            user_id=UUID(sub),
+            org_id=UUID(org_id_str) if org_id_str else None,
+            subscription_tier=payload.get("tier", "essentials"),
+        )
     except (JWTError, ValueError):
         return None
 

@@ -66,7 +66,8 @@ npm run test:e2e -- --ui   # Playwright with interactive UI
 - **Routing**: Hash-based client-side routing via custom `Router.svelte`/`Route.svelte` components
 - **Key pages**: `ProtocolEditor.svelte` (XYFlow graph editor), `ExperimentRunner.svelte`, `Projects.svelte`, `ProjectDetail.svelte`
 - **Graph editor**: `@xyflow/svelte` with custom node types — `UnitOpNode.svelte` (operations) and `SwimLaneNode.svelte` (roles/phases). Inspector panel for node properties, time axis, horizontal/vertical layout switching.
-- **API client**: `lib/api.ts` — wrapper around fetch with error handling. API host configured via `VITE_API_HOST` env var (defaults to `localhost`), set in `lib/config.ts`.
+- **API client**: `lib/api.ts` — wrapper around fetch with error handling and optional Zod response validation. API host configured via `VITE_API_HOST` env var (defaults to `localhost`), set in `lib/config.ts`.
+- **API response schemas**: Every API call must have a Zod schema validating the response. Pass via `{ schema }` option: `api.get('/path', { schema: MySchema })`, `api.post('/path', body, { schema: MySchema })`. Validation throws in dev mode, warns in prod. Schemas live in `lib/schemas/` (split by domain, barrel re-exported from `index.ts`) for shared types, or inline in the `.svelte` file for local-only types. Use `z.infer<typeof Schema>` to derive TypeScript types — never maintain separate interfaces. All schemas must use `.passthrough()` to allow unknown fields.
 - **UI components**: shadcn-svelte components live in `lib/components/ui/`
 - **Form validation**: Zod schemas + centralized helpers in `lib/validation.ts`. Use `validate(schema, data)` for all form validation — no form framework, just Zod directly. See `RoleWizard.svelte` for usage pattern.
 - **Path alias**: `$lib` → `src/lib`

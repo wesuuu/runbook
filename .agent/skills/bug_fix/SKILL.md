@@ -36,24 +36,40 @@ Fix bugs from the **ClickUp BUGS list** (list ID: `901712289456`), verify with t
      - Backend: `cd backend && source .venv/bin/activate && pytest tests/ -x -q`
      - Frontend: `cd frontend && npm run check && npm run test`
    - If tests fail, fix the issue and re-run. Do not skip failing tests.
-8. **Document the fix in ClickUp** — this is critical for traceability:
-   - Use `clickup_create_task_comment` to add a detailed fix summary comment:
-     ```
-     ## Fix Summary
+8. **Browser verification (if frontend was changed)** — if any frontend component was added or modified, open the app in a Chrome browser using the `mcp__claude-in-chrome__*` tools and visually verify the fix behaves as expected:
+   - Navigate to the relevant page(s) affected by the fix
+   - Reproduce the original bug scenario — it should no longer occur
+   - Interact with the fixed UI elements to confirm correct behavior
+   - Check for visual regressions (misaligned elements, missing styles, broken responsiveness)
+   - If anything looks wrong, fix it and re-run tests before proceeding
+   - **"Leave site?" dialog workaround**: If navigation is blocked by a "Leave site?" dialog (e.g., unsaved changes on a page), open a **new tab** instead and navigate to the login screen from there.
+   - **Authentication for testing**: To log in during browser verification, check the PostgreSQL dev database for user emails and roles (see `/local_dev` skill for credentials: `localhost:5432`, user `postgres`, password `postgres`, database `runbook`). Any password will work in the dev environment. Test with different user roles as needed to verify the fix across permission levels.
+   - **Clean up test data**: If you created or modified any resources during browser verification (e.g., created sessions, projects, documents, or changed settings), you MUST revert them afterward. Delete created records or restore modified ones to their previous state using `psql` (`psql -h localhost -U postgres -d runbook`) or whatever method is easiest. Do not leave test artifacts in the database.
+9. **Present results and request user verification** — print a summary of what was fixed, what the root cause was, and what tests were added. Then **ask the user to verify the fix** and confirm they are satisfied.
+   - **Do NOT mark the ClickUp task as complete or document the fix until the user explicitly confirms.**
+   - If the user requests changes:
+     1. Discuss and plan the requested changes (present a revised plan, wait for approval)
+     2. Implement the changes
+     3. Re-run tests and browser verification as needed
+     4. Present the updated results and ask the user to verify again
+   - **Repeat this loop until the user explicitly says the fix is complete / they are satisfied.**
+10. **Document the fix in ClickUp** — only after user confirmation. This is critical for traceability:
+    - Use `clickup_create_task_comment` to add a detailed fix summary comment:
+      ```
+      ## Fix Summary
 
-     **Root Cause**: [What was actually causing the bug]
+      **Root Cause**: [What was actually causing the bug]
 
-     **Changes Made**:
-     - `file/path.ts:line` — [what was changed and why]
-     - `file/path.py:line` — [what was changed and why]
+      **Changes Made**:
+      - `file/path.ts:line` — [what was changed and why]
+      - `file/path.py:line` — [what was changed and why]
 
-     **Tests Added/Updated**:
-     - `tests/unit/test_xxx.py::test_name` — [what the test verifies]
+      **Tests Added/Updated**:
+      - `tests/unit/test_xxx.py::test_name` — [what the test verifies]
 
-     **Verification**: All tests passing. [any additional verification notes]
-     ```
-   - Use `clickup_update_task` to set the task status to `complete`
-9. **Print a summary** of what was fixed, what the root cause was, and what tests were added.
+      **Verification**: All tests passing. [any additional verification notes]
+      ```
+    - Use `clickup_update_task` to set the task status to `complete`
 
 ## Rules
 
@@ -64,7 +80,8 @@ Fix bugs from the **ClickUp BUGS list** (list ID: `901712289456`), verify with t
 - **Don't break other things.** Run the full relevant test suite, not just new tests.
 - **Minimal scope.** Fix the described bug without refactoring unrelated code. If you discover tech debt or other bugs while working, log them to the appropriate ClickUp list (TECH_DEBT: `901712289455`, BUGS: `901712289456`) instead of fixing in the same pass.
 - **Document in ClickUp.** The fix comment is mandatory — it creates an audit trail for what was changed and why. Future developers should be able to read the comment and understand the fix without reading the code diff.
-- **Update ClickUp last.** Only mark complete and add the fix comment after tests pass.
+- **User confirms completion.** Never mark a task as complete in ClickUp without explicit user confirmation. After implementing the fix, present results and ask the user to verify. If they request changes, iterate until they are satisfied. Only then document and close in ClickUp.
+- **Update ClickUp last.** Only mark complete and add the fix comment after tests pass AND the user has explicitly confirmed.
 
 ## Bug Selection Display
 

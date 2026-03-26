@@ -12,6 +12,7 @@ class OrganizationCreate(BaseModel):
 class OrganizationResponse(BaseModel):
     id: UUID
     name: str
+    subscription_tier: str = "essentials"
     created_at: datetime
     updated_at: datetime
 

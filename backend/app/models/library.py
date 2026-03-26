@@ -112,7 +112,7 @@ class Document(Base, UUIDMixin, TimestampMixin):
     uploaded_by_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False
     )
-    title: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String(150), nullable=False)
     original_filename: Mapped[str] = mapped_column(String, nullable=False)
     mime_type: Mapped[str] = mapped_column(String, nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)

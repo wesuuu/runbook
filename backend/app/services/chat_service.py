@@ -1,8 +1,10 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 from uuid import UUID
 
+from pydantic import BaseModel
+from pydantic_ai import RunContext
 from sqlalchemy import func, select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -12,42 +14,53 @@ from app.services.ai_config import get_model
 
 logger = logging.getLogger(__name__)
 
+# ─── System Prompt ───
+
 SYSTEM_PROMPT = """You are Trellis AI, an expert assistant for biotech Process Development scientists.
 
 You help with:
-- Answering questions about cell biology, genetics, protein purification, and other biotech domains
+- Answering questions about cell biology, genetics, protein purification, and biotech domains
 - Discussing protocols and experimental procedures
 - Explaining scientific concepts and best practices
 - Providing guidance on process development workflows
 
-Be concise, accurate, and scientifically rigorous. When you're uncertain, say so.
-Format responses in markdown when helpful (lists, code blocks, tables).
+Be concise, accurate, and scientifically rigorous. Format responses in markdown when helpful.
 
-When document context is provided below, ground your answers in that context and cite sources
-using inline footnote numbers like [1], [2], etc. that correspond to the numbered sources.
-If the context doesn't contain relevant information, say so and answer from general knowledge.
-If no document context is provided, answer from your general scientific knowledge."""
+TOOLS:
+1. list_documents() — List all documents in the organization's library.
+   Use when the user asks what's in the library, what documents are available, or wants an inventory.
+2. search_documents(query, max_results) — Search the document library by topic/keyword.
+   Use when the user asks a question that could be answered by organizational documents.
+3. read_document_section(document_id, chunk_index, window) — Read surrounding chunks
+   of a document for deeper context after an initial search.
 
-SYSTEM_PROMPT_NO_DOCS = """You are Trellis AI, an expert assistant for biotech Process Development scientists.
+PRIORITY ORDER — follow this strictly:
+1. When the user asks what documents or materials are available, use list_documents().
+2. When the user asks a question that could be answered by organizational documents
+   (SOPs, protocols, procedures, reference materials, experimental data), use
+   search_documents() to find relevant content.
+3. If a search result is incomplete, use read_document_section() to get more context.
+4. If the library search returns relevant results, ground your answer in those documents
+   and cite sources using [1], [2], etc.
+5. If the library search returns NO relevant results, OR if the question is clearly
+   about general scientific knowledge (not org-specific), you may answer from your
+   internal knowledge — but you MUST prepend a disclaimer:
 
-You help with:
-- Answering questions about cell biology, genetics, protein purification, and other biotech domains
-- Discussing protocols and experimental procedures
-- Explaining scientific concepts and best practices
-- Providing guidance on process development workflows
+   > ⚠️ **Note:** This answer is based on general AI knowledge, not your organization's
+   > documents. It may be outdated or inaccurate. Verify with authoritative sources.
 
-Be concise, accurate, and scientifically rigorous. When you're uncertain, say so.
-Format responses in markdown when helpful (lists, code blocks, tables).
-
-Note: This organization has no documents in their library yet. Answer from your
-general scientific knowledge. If the user asks about specific documents, let them
-know they can upload documents to the Library for document-grounded answers."""
+6. NEVER fabricate document titles, ISBNs, library contents, or pretend information
+   came from the organization's library when it did not.
+7. If you are unsure whether the answer should come from documents or general knowledge,
+   search first — it is always safer to check."""
 
 MAX_CONTEXT_MESSAGES = 50
 RAG_TOP_K = 8
 RAG_MAX_CONTEXT_CHARS = 12000
 RAG_MIN_SCORE = 0.3
 
+
+# ─── Data Classes ───
 
 @dataclass
 class RetrievedChunk:
@@ -59,6 +72,208 @@ class RetrievedChunk:
     content: str
     score: float
 
+
+@dataclass
+class ChatDeps:
+    """Dependencies injected into pydantic-ai tools via RunContext."""
+    db: AsyncSession
+    org_id: UUID
+    sources: list[RetrievedChunk] = field(default_factory=list)
+    tool_calls: list[dict] = field(default_factory=list)
+
+
+# ─── Tool Return Models ───
+
+class DocumentChunkResult(BaseModel):
+    document_id: str
+    document_title: str
+    chunk_index: int
+    page_number: int | None
+    relevance: float
+    content: str
+
+
+class SearchDocumentsResult(BaseModel):
+    results: list[DocumentChunkResult]
+    total: int
+    message: str
+
+
+class SectionChunk(BaseModel):
+    chunk_index: int
+    page_number: int | None
+    content: str
+    is_target: bool
+
+
+class DocumentSectionResult(BaseModel):
+    document_id: str
+    document_title: str
+    chunks: list[SectionChunk]
+
+
+class DocumentListItem(BaseModel):
+    document_id: str
+    title: str
+    status: str
+    page_count: int | None
+
+
+class ListDocumentsResult(BaseModel):
+    documents: list[DocumentListItem]
+    total: int
+    message: str
+
+
+# ─── Tool Functions ───
+
+async def search_documents_tool(
+    ctx: RunContext[ChatDeps], query: str, max_results: int = 5
+) -> SearchDocumentsResult:
+    """Search the organization's document library for relevant content."""
+    chunks = await retrieve_relevant_chunks(
+        ctx.deps.db, query=query, org_id=ctx.deps.org_id, top_k=max_results,
+    )
+    ctx.deps.sources.extend(chunks)
+    ctx.deps.tool_calls.append({
+        "tool": "search_documents",
+        "query": query,
+        "results": len(chunks),
+    })
+
+    return SearchDocumentsResult(
+        results=[
+            DocumentChunkResult(
+                document_id=str(c.document_id),
+                document_title=c.document_title,
+                chunk_index=c.chunk_index,
+                page_number=c.page_number,
+                relevance=c.score,
+                content=c.content,
+            )
+            for c in chunks
+        ],
+        total=len(chunks),
+        message=f"Found {len(chunks)} results" if chunks
+        else "No matching documents found in the library",
+    )
+
+
+async def read_document_section_tool(
+    ctx: RunContext[ChatDeps],
+    document_id: str,
+    chunk_index: int,
+    window: int = 2,
+) -> DocumentSectionResult:
+    """Read a section of a document by fetching chunks around a given index.
+
+    Use this after search_documents finds a relevant but incomplete chunk
+    and you need more surrounding context.
+    """
+    result = await ctx.deps.db.execute(
+        sa_text("""
+            SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index,
+                   dc.content, dc.page_number, d.title AS document_title
+            FROM document_chunks dc
+            JOIN documents d ON d.id = dc.document_id
+            WHERE dc.document_id = :doc_id
+              AND d.org_id = :org_id
+              AND dc.chunk_index BETWEEN :start AND :end
+            ORDER BY dc.chunk_index
+        """),
+        {
+            "doc_id": document_id,
+            "org_id": str(ctx.deps.org_id),
+            "start": max(0, chunk_index - window),
+            "end": chunk_index + window,
+        },
+    )
+    rows = result.fetchall()
+
+    if not rows:
+        return DocumentSectionResult(
+            document_id=document_id,
+            document_title="Unknown",
+            chunks=[],
+        )
+
+    # Accumulate as sources
+    for row in rows:
+        ctx.deps.sources.append(RetrievedChunk(
+            document_id=row.document_id,
+            document_title=row.document_title,
+            chunk_id=row.chunk_id,
+            chunk_index=row.chunk_index,
+            page_number=row.page_number,
+            content=row.content,
+            score=1.0,
+        ))
+
+    ctx.deps.tool_calls.append({
+        "tool": "read_document_section",
+        "document_id": document_id,
+        "chunk_index": chunk_index,
+        "window": window,
+        "results": len(rows),
+    })
+
+    return DocumentSectionResult(
+        document_id=document_id,
+        document_title=rows[0].document_title,
+        chunks=[
+            SectionChunk(
+                chunk_index=row.chunk_index,
+                page_number=row.page_number,
+                content=row.content,
+                is_target=row.chunk_index == chunk_index,
+            )
+            for row in rows
+        ],
+    )
+
+
+async def list_documents_tool(
+    ctx: RunContext[ChatDeps],
+) -> ListDocumentsResult:
+    """List all documents in the organization's library.
+
+    Use this when the user asks what documents are available, what's in
+    the library, or wants an inventory of uploaded materials.
+    """
+    result = await ctx.deps.db.execute(
+        sa_text("""
+            SELECT id, title, status, page_count
+            FROM documents
+            WHERE org_id = :org_id
+            ORDER BY created_at DESC
+            LIMIT 50
+        """),
+        {"org_id": str(ctx.deps.org_id)},
+    )
+    rows = result.fetchall()
+
+    ctx.deps.tool_calls.append({
+        "tool": "list_documents",
+        "results": len(rows),
+    })
+
+    return ListDocumentsResult(
+        documents=[
+            DocumentListItem(
+                document_id=str(row.id),
+                title=row.title,
+                status=row.status,
+                page_count=row.page_count,
+            )
+            for row in rows
+        ],
+        total=len(rows),
+        message=f"{len(rows)} documents in the library" if rows
+        else "No documents have been uploaded to the library yet",
+    )
+
+
+# ─── Session CRUD ───
 
 async def create_session(
     db: AsyncSession,
@@ -123,12 +338,14 @@ async def delete_session(db: AsyncSession, session: ChatSession) -> None:
     await db.flush()
 
 
+# ─── Send Message (main entry point) ───
+
 async def send_message(
     db: AsyncSession,
     session: ChatSession,
     user_content: str,
 ) -> tuple[ChatMessage, ChatMessage, list[RetrievedChunk]]:
-    """Send a user message and get an AI response with RAG.
+    """Send a user message and get an AI response with tool-based RAG.
 
     Returns (user_message, assistant_message, sources).
     """
@@ -146,51 +363,52 @@ async def send_message(
         session.title = user_content[:100].strip()
         await db.flush()
 
-    # RAG: retrieve relevant document chunks
-    sources = await retrieve_relevant_chunks(
+    # Call LLM — agent decides when to search via tools
+    assistant_content, sources, tool_calls, new_history = await _call_llm(
         db,
-        query=user_content,
+        user_content=user_content,
         org_id=session.org_id,
+        ai_message_history=session.ai_message_history,
     )
 
-    # Check if org has any documents at all
-    has_documents = await _org_has_documents(db, session.org_id)
+    # Persist pydantic-ai message history on session
+    session.ai_message_history = new_history
+    await db.flush()
 
-    # Build conversation history for LLM
-    history = await _get_message_history(db, session.id)
-
-    # Call LLM with RAG context
-    assistant_content = await _call_llm(db, history, sources, has_documents)
-
-    # Save assistant message with source metadata
-    source_metadata = None
+    # Build metadata
+    metadata: dict | None = None
+    meta: dict[str, Any] = {}
     if sources:
-        source_metadata = {
-            "sources": [
-                {
-                    "document_id": str(s.document_id),
-                    "document_title": s.document_title,
-                    "chunk_id": str(s.chunk_id),
-                    "chunk_index": s.chunk_index,
-                    "page_number": s.page_number,
-                    "score": s.score,
-                    "snippet": s.content[:200],
-                }
-                for s in sources
-            ]
-        }
+        meta["sources"] = [
+            {
+                "document_id": str(s.document_id),
+                "document_title": s.document_title,
+                "chunk_id": str(s.chunk_id),
+                "chunk_index": s.chunk_index,
+                "page_number": s.page_number,
+                "score": s.score,
+                "snippet": s.content[:200],
+            }
+            for s in sources
+        ]
+    if tool_calls:
+        meta["tool_calls"] = tool_calls
+    if meta:
+        metadata = meta
 
     assistant_msg = ChatMessage(
         session_id=session.id,
         role=ChatMessageRole.ASSISTANT,
         content=assistant_content,
-        metadata_=source_metadata,
+        metadata_=metadata,
     )
     db.add(assistant_msg)
     await db.flush()
 
     return user_msg, assistant_msg, sources
 
+
+# ─── RAG Search (used by tool) ───
 
 async def retrieve_relevant_chunks(
     db: AsyncSession,
@@ -368,37 +586,7 @@ async def _keyword_search_chunks(
     )
 
 
-async def _org_has_documents(db: AsyncSession, org_id: UUID) -> bool:
-    result = await db.execute(
-        sa_text("""
-            SELECT 1 FROM documents
-            WHERE org_id = :org_id
-            LIMIT 1
-        """),
-        {"org_id": str(org_id)},
-    )
-    return result.fetchone() is not None
-
-
-def _format_rag_context(sources: list[RetrievedChunk]) -> str:
-    """Format retrieved chunks as numbered context for the system prompt."""
-    if not sources:
-        return ""
-
-    parts = ["\n--- DOCUMENT CONTEXT ---"]
-    parts.append(
-        "The following excerpts from the user's document library are relevant. "
-        "Cite sources using [1], [2], etc."
-    )
-    for i, chunk in enumerate(sources, 1):
-        page_info = f", page {chunk.page_number}" if chunk.page_number else ""
-        parts.append(
-            f"\n[{i}] \"{chunk.document_title}\"{page_info}:\n"
-            f"{chunk.content}"
-        )
-    parts.append("--- END CONTEXT ---")
-    return "\n".join(parts)
-
+# ─── Message History ───
 
 async def _get_message_history(
     db: AsyncSession, session_id: UUID
@@ -416,37 +604,57 @@ async def _get_message_history(
     return [{"role": m.role, "content": m.content} for m in recent]
 
 
+# ─── LLM Call ───
+
 async def _call_llm(
     db: AsyncSession,
-    history: list[dict[str, str]],
-    sources: list[RetrievedChunk] | None = None,
-    has_documents: bool = True,
-) -> str:
-    """Call the LLM with conversation history and optional RAG context."""
+    user_content: str,
+    org_id: UUID,
+    ai_message_history: list | None = None,
+) -> tuple[str, list[RetrievedChunk], list[dict], list]:
+    """Call the LLM with tool access and native message history.
+
+    Returns (assistant_content, sources, tool_calls, new_message_history).
+    """
     from pydantic_ai import Agent
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
 
-    # Choose system prompt based on context
-    if sources:
-        system = SYSTEM_PROMPT + _format_rag_context(sources)
-    elif not has_documents:
-        system = SYSTEM_PROMPT_NO_DOCS
-    else:
-        system = SYSTEM_PROMPT
+    model = await get_model("chat", db, org_id=org_id)
+    deps = ChatDeps(db=db, org_id=org_id)
 
-    model = await get_model("chat", db)
-    agent = Agent(model, system_prompt=system)
+    agent = Agent(
+        model,
+        system_prompt=SYSTEM_PROMPT,
+        tools=[list_documents_tool, search_documents_tool, read_document_section_tool],
+        deps_type=ChatDeps,
+    )
 
-    # Build the conversation as a single user message with history context
-    # pydantic-ai doesn't have native multi-turn, so we format history
-    if len(history) <= 1:
-        prompt = history[-1]["content"] if history else ""
-    else:
-        parts = []
-        for msg in history[:-1]:
-            role_label = "User" if msg["role"] == "user" else "Assistant"
-            parts.append(f"{role_label}: {msg['content']}")
-        parts.append(f"User: {history[-1]['content']}")
-        prompt = "\n\n".join(parts)
+    # Deserialize stored message history if available
+    message_history = None
+    if ai_message_history:
+        try:
+            message_history = ModelMessagesTypeAdapter.validate_python(
+                ai_message_history
+            )
+        except Exception:
+            logger.warning("Failed to deserialize ai_message_history, starting fresh")
+            message_history = None
 
-    result = await agent.run(prompt)
-    return result.output
+    result = await agent.run(
+        user_content, deps=deps, message_history=message_history,
+    )
+
+    # Deduplicate sources by chunk_id
+    seen_ids: set[UUID] = set()
+    unique_sources: list[RetrievedChunk] = []
+    for s in deps.sources:
+        if s.chunk_id not in seen_ids:
+            seen_ids.add(s.chunk_id)
+            unique_sources.append(s)
+
+    # Serialize full message history for cross-turn persistence
+    new_history = ModelMessagesTypeAdapter.dump_python(
+        result.all_messages(), mode="json"
+    )
+
+    return result.output, unique_sources, deps.tool_calls, new_history

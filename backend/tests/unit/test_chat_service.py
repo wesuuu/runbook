@@ -17,9 +17,10 @@ from app.services.chat_service import (
     get_session,
     list_sessions,
     _get_message_history,
-    _format_rag_context,
-    _org_has_documents,
+    ChatDeps,
     RetrievedChunk,
+    SearchDocumentsResult,
+    search_documents_tool,
     MAX_CONTEXT_MESSAGES,
 )
 
@@ -208,62 +209,64 @@ class TestGetMessageHistory:
         assert len(history) == MAX_CONTEXT_MESSAGES
 
 
-class TestFormatRagContext:
-    def test_empty_sources_returns_empty(self):
-        assert _format_rag_context([]) == ""
+class TestSearchDocumentsToolResult:
+    def test_search_result_model_structure(self):
+        result = SearchDocumentsResult(
+            results=[],
+            total=0,
+            message="No matching documents found in the library",
+        )
+        assert result.total == 0
+        assert result.message == "No matching documents found in the library"
+        assert result.results == []
 
-    def test_formats_single_source_with_page(self):
+    def test_chat_deps_accumulates_sources(self):
+        from unittest.mock import MagicMock
+        deps = ChatDeps(db=MagicMock(), org_id=uuid.uuid4())
+        assert deps.sources == []
+        assert deps.tool_calls == []
+
         chunk = RetrievedChunk(
             document_id=uuid.uuid4(),
-            document_title="Buffer SOP",
+            document_title="Test Doc",
             chunk_id=uuid.uuid4(),
             chunk_index=0,
-            page_number=3,
-            content="Mix Tris-HCl at pH 7.4",
+            page_number=1,
+            content="Test content",
             score=0.9,
         )
-        result = _format_rag_context([chunk])
-        assert "DOCUMENT CONTEXT" in result
-        assert '[1] "Buffer SOP", page 3' in result
-        assert "Mix Tris-HCl" in result
+        deps.sources.append(chunk)
+        deps.tool_calls.append({"tool": "search_documents", "query": "test", "results": 1})
+        assert len(deps.sources) == 1
+        assert len(deps.tool_calls) == 1
 
-    def test_formats_source_without_page(self):
-        chunk = RetrievedChunk(
-            document_id=uuid.uuid4(),
-            document_title="Notes",
-            chunk_id=uuid.uuid4(),
-            chunk_index=0,
-            page_number=None,
-            content="Some content",
-            score=0.8,
-        )
-        result = _format_rag_context([chunk])
-        assert '[1] "Notes":' in result
-        assert "page" not in result.split("[1]")[1].split(":")[0]
-
-    def test_formats_multiple_sources(self):
+    def test_source_deduplication(self):
+        chunk_id = uuid.uuid4()
+        doc_id = uuid.uuid4()
         chunks = [
             RetrievedChunk(
-                document_id=uuid.uuid4(),
-                document_title=f"Doc {i}",
-                chunk_id=uuid.uuid4(),
-                chunk_index=i,
-                page_number=i + 1,
-                content=f"Content {i}",
-                score=0.9 - i * 0.1,
-            )
-            for i in range(3)
+                document_id=doc_id,
+                document_title="Doc",
+                chunk_id=chunk_id,
+                chunk_index=0,
+                page_number=1,
+                content="Content",
+                score=0.9,
+            ),
+            RetrievedChunk(
+                document_id=doc_id,
+                document_title="Doc",
+                chunk_id=chunk_id,
+                chunk_index=0,
+                page_number=1,
+                content="Content",
+                score=0.85,
+            ),
         ]
-        result = _format_rag_context(chunks)
-        assert "[1]" in result
-        assert "[2]" in result
-        assert "[3]" in result
-
-
-class TestOrgHasDocuments:
-    @pytest.mark.asyncio
-    async def test_returns_false_for_empty_org(
-        self, db_session: AsyncSession, org_id: uuid.UUID
-    ):
-        result = await _org_has_documents(db_session, org_id)
-        assert result is False
+        seen_ids = set()
+        unique = []
+        for s in chunks:
+            if s.chunk_id not in seen_ids:
+                seen_ids.add(s.chunk_id)
+                unique.append(s)
+        assert len(unique) == 1

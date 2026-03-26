@@ -1,7 +1,10 @@
+import logging
 from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -336,10 +339,42 @@ async def search_users(
     if not email or len(email) < 3:
         return []
 
-    result = await db.execute(
-        select(User).where(User.email.ilike(f"%{email}%")).limit(10)
+    # Get orgs the caller belongs to
+    caller_org_ids = select(OrganizationMember.organization_id).where(
+        OrganizationMember.user_id == user.id
     )
-    return result.scalars().all()
+
+    # Only return users who share at least one org with the caller
+    result = await db.execute(
+        select(User)
+        .join(OrganizationMember, OrganizationMember.user_id == User.id)
+        .where(
+            User.email.ilike(f"%{email}%"),
+            OrganizationMember.organization_id.in_(caller_org_ids),
+        )
+        .distinct()
+        .limit(10)
+    )
+    scoped_users = result.scalars().all()
+
+    # Check if unscoped query would have returned more results
+    unscoped_result = await db.execute(
+        select(func.count())
+        .select_from(User)
+        .where(
+            User.email.ilike(f"%{email}%"),
+            User.id.notin_([u.id for u in scoped_users]),
+        )
+    )
+    excluded_count = unscoped_result.scalar() or 0
+    if excluded_count > 0:
+        logger.warning(
+            "Cross-org user search detected: user_id=%s email=%s "
+            "search_term=%r excluded_count=%d",
+            user.id, user.email, email, excluded_count,
+        )
+
+    return scoped_users
 
 
 # --- Teams ---

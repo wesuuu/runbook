@@ -13,6 +13,8 @@
     import ConnectivityBanner from '$lib/components/ConnectivityBanner.svelte';
     import MobileNav from '$lib/components/MobileNav.svelte';
     import { Toaster } from '$lib/components/ui/sonner';
+    import ChatPanel from '$lib/components/ChatPanel.svelte';
+    import { initChat } from '$lib/chat-store.svelte';
     import { onDestroy } from 'svelte';
     import '../app.css';
 
@@ -44,6 +46,11 @@
             goto('/login');
         } else if (isAuthenticated() && publicRoutes.includes($page.url.pathname)) {
             goto('/');
+        }
+
+        // Initialize chat store (fire-and-forget, idempotent)
+        if (isAuthenticated()) {
+            initChat();
         }
     });
 
@@ -160,9 +167,12 @@
         {/if}
     </div>
     <Toaster
-        position="bottom-right"
+        position="top-right"
         visibleToasts={5}
         closeButton={true}
         richColors={false}
     />
+    {#if showNav}
+        <ChatPanel currentPath={$page.url.pathname} />
+    {/if}
 {/if}

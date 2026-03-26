@@ -8,12 +8,13 @@ Supports Ollama (/api/embed) and OpenAI-compatible (/v1/embeddings) APIs.
 
 import logging
 from typing import Optional
+from uuid import UUID
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import DEFAULT_CONFIGS
-from app.services.ai_config import get_api_key, get_full_config
+from app.services.ai_config import get_credentials, get_full_config
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ async def embed_texts(
     texts: list[str],
     db: AsyncSession,
     on_progress: ProgressCallback | None = None,
+    org_id: "UUID | None" = None,
 ) -> list[list[float]]:
     """Generate embeddings for a list of texts.
 
@@ -53,11 +55,12 @@ async def embed_texts(
     if not texts:
         return []
 
-    config = await get_full_config("embedding", db)
+    config = await get_full_config("embedding", db, org_id=org_id)
     provider = config["provider"]
     model_name = config["model_name"]
-    api_key = config.get("api_key")
-    base_url = config.get("base_url")
+    creds = config.get("credentials") or {}
+    api_key = creds.get("api_key")
+    base_url = creds.get("base_url")
 
     all_embeddings: list[list[float]] = []
     total = len(texts)

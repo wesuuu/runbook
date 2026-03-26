@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Optional
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -258,17 +259,19 @@ async def analyze_image(
     param_schema: dict[str, Any],
     db: AsyncSession,
     model_override: "ModelType | str | None" = None,
+    org_id: "UUID | None" = None,
 ) -> ImageAnalysisResult:
     """Analyze a lab instrument image and extract measurement values."""
-    model = model_override or await get_model("vision", db)
+    model = model_override or await get_model("vision", db, org_id=org_id)
     system_prompt = build_system_prompt(step_name, param_schema)
 
     image_bytes = Path(image_path).read_bytes()
 
     # Use Ollama native API for Ollama models (no tool-use requirement)
     if _is_ollama_model(model):
-        config = await get_full_config("vision", db)
-        base_url = config.get("base_url") or "http://localhost:11434"
+        config = await get_full_config("vision", db, org_id=org_id)
+        creds = config.get("credentials") or {}
+        base_url = creds.get("base_url") or "http://localhost:11434"
         model_name = _get_ollama_model_name(model)
         return await _ollama_chat(
             base_url=base_url,
@@ -297,9 +300,10 @@ async def continue_conversation(
     user_reply: str,
     db: AsyncSession,
     model_override: "ModelType | str | None" = None,
+    org_id: "UUID | None" = None,
 ) -> ImageAnalysisResult:
     """Continue a multi-turn conversation about an image."""
-    model = model_override or await get_model("vision", db)
+    model = model_override or await get_model("vision", db, org_id=org_id)
     system_prompt = build_conversation_prompt(step_name, param_schema)
 
     image_bytes = Path(image_path).read_bytes()
@@ -307,8 +311,9 @@ async def continue_conversation(
 
     # Use Ollama native API for Ollama models
     if _is_ollama_model(model):
-        config = await get_full_config("vision", db)
-        base_url = config.get("base_url") or "http://localhost:11434"
+        config = await get_full_config("vision", db, org_id=org_id)
+        creds = config.get("credentials") or {}
+        base_url = creds.get("base_url") or "http://localhost:11434"
         model_name = _get_ollama_model_name(model)
         return await _ollama_chat(
             base_url=base_url,

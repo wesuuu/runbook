@@ -27,55 +27,60 @@
     import { Input } from '$lib/components/ui/input';
     import { ArrowLeft, RotateCcw, Trash2, ExternalLink, Search, X, ChevronDown, ChevronRight, List } from 'lucide-svelte';
     import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+    import { z } from 'zod';
 
-    interface DocumentChunk {
-        id: string;
-        document_id: string;
-        chunk_index: number;
-        content: string;
-        token_count: number;
-        page_number: number | null;
-        chunk_metadata: Record<string, unknown>;
-        created_at: string;
-    }
+    // --- Schemas ---
+    const DocumentChunkSchema = z.object({
+        id: z.string(),
+        document_id: z.string(),
+        chunk_index: z.number(),
+        content: z.string(),
+        token_count: z.number(),
+        page_number: z.number().nullable(),
+        chunk_metadata: z.record(z.string(), z.unknown()),
+        created_at: z.string(),
+    }).passthrough();
+    type DocumentChunk = z.infer<typeof DocumentChunkSchema>;
 
-    interface ProcessingProgress {
-        stage: string;
-        stage_label: string;
-        current: number;
-        total: number;
-        percent: number;
-    }
+    const ProcessingProgressSchema = z.object({
+        stage: z.string(),
+        stage_label: z.string(),
+        current: z.number(),
+        total: z.number(),
+        percent: z.number(),
+    }).passthrough();
 
-    interface TOCEntry {
-        level: number;
-        text: string;
-        page_number: number | null;
-        chunk_index: number | null;
-    }
+    const TOCEntrySchema = z.object({
+        level: z.number(),
+        text: z.string(),
+        page_number: z.number().nullable(),
+        chunk_index: z.number().nullable(),
+    }).passthrough();
+    type TOCEntry = z.infer<typeof TOCEntrySchema>;
 
-    interface DocumentDetail {
-        id: string;
-        title: string;
-        original_filename: string;
-        mime_type: string;
-        file_size_bytes: number;
-        file_path: string;
-        status: string;
-        page_count: number | null;
-        source_url: string | null;
-        error_message: string | null;
-        tags: string[];
-        chunk_count: number;
-        chunks_preview: DocumentChunk[];
-        structure_metadata: Record<string, unknown> | null;
-        processing_progress: ProcessingProgress | null;
-        table_of_contents: TOCEntry[];
-        has_page_images: boolean;
-        created_at: string;
-        updated_at: string;
-        can_delete: boolean;
-    }
+    const DocumentDetailSchema = z.object({
+        id: z.string(),
+        title: z.string(),
+        original_filename: z.string(),
+        mime_type: z.string(),
+        file_size_bytes: z.number(),
+        file_path: z.string(),
+        status: z.string(),
+        page_count: z.number().nullable(),
+        source_url: z.string().nullable(),
+        error_message: z.string().nullable(),
+        tags: z.array(z.string()),
+        chunk_count: z.number(),
+        chunks_preview: z.array(DocumentChunkSchema),
+        structure_metadata: z.record(z.string(), z.unknown()).nullable(),
+        processing_progress: ProcessingProgressSchema.nullable(),
+        table_of_contents: z.array(TOCEntrySchema),
+        has_page_images: z.boolean(),
+        created_at: z.string(),
+        updated_at: z.string(),
+        can_delete: z.boolean(),
+    }).passthrough();
+    type DocumentDetail = z.infer<typeof DocumentDetailSchema>;
 
     let document = $state<DocumentDetail | null>(null);
     let allChunks = $state<DocumentChunk[]>([]);
@@ -147,7 +152,7 @@
 
     async function loadDocument() {
         try {
-            const doc = await api.get<DocumentDetail>(`/library/documents/${documentId}`);
+            const doc = await api.get(`/library/documents/${documentId}`, { schema: DocumentDetailSchema });
             document = doc;
             allChunks = doc.chunks_preview;
 
@@ -171,8 +176,9 @@
         loadingMoreChunks = true;
         try {
             const offset = allChunks.length;
-            const chunks = await api.get<DocumentChunk[]>(
-                `/library/documents/${documentId}/chunks?limit=${CHUNKS_PER_PAGE}&offset=${offset}`
+            const chunks = await api.get(
+                `/library/documents/${documentId}/chunks?limit=${CHUNKS_PER_PAGE}&offset=${offset}`,
+                { schema: z.array(DocumentChunkSchema) },
             );
             allChunks = [...allChunks, ...chunks];
             if (chunks.length < CHUNKS_PER_PAGE || allChunks.length >= document.chunk_count) {

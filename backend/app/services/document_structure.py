@@ -15,6 +15,8 @@ from typing import Any, Awaitable, Callable, Literal, Optional
 
 import httpx
 from pydantic import BaseModel, Field
+from uuid import UUID
+
 from pydantic_ai import Agent
 from pydantic_ai.messages import BinaryContent
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -189,6 +191,7 @@ async def analyze_document_structure(
     page_images: dict[int, bytes],
     db: AsyncSession,
     on_progress: ProgressCallback | None = None,
+    org_id: "UUID | None" = None,
 ) -> DocumentStructure:
     """Two-step analysis: build outline, then classify pages in batches.
 
@@ -205,8 +208,8 @@ async def analyze_document_structure(
     if not page_images:
         return DocumentStructure()
 
-    model = await get_model(CAPABILITY, db)
-    config = await get_full_config(CAPABILITY, db)
+    model = await get_model(CAPABILITY, db, org_id=org_id)
+    config = await get_full_config(CAPABILITY, db, org_id=org_id)
 
     if not await _check_llm_available(model, config):
         raise RuntimeError(
@@ -742,6 +745,7 @@ async def extract_toc(
     outline: DocumentOutline,
     structure: "DocumentStructure",
     db: AsyncSession,
+    org_id: "UUID | None" = None,
 ) -> list[dict]:
     """Extract TOC entries from identified TOC pages.
 
@@ -752,8 +756,8 @@ async def extract_toc(
 
     Returns a list of dicts with keys: level, text, page_number.
     """
-    model = await get_model(CAPABILITY, db)
-    config = await get_full_config(CAPABILITY, db)
+    model = await get_model(CAPABILITY, db, org_id=org_id)
+    config = await get_full_config(CAPABILITY, db, org_id=org_id)
 
     # Determine which pages to send
     toc_page_nums: list[int] = []

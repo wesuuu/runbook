@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional, Any
 
-from sqlalchemy import String, Integer, ForeignKey, Enum, Index, desc
+from sqlalchemy import String, Integer, ForeignKey, Enum, Index, desc, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -144,6 +144,12 @@ class RunRoleAssignment(Base, UUIDMixin, TimestampMixin):
 
 class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "unit_op_definitions"
+    __table_args__ = (
+        CheckConstraint(
+            "project_id IS NULL OR organization_id IS NOT NULL",
+            name="ck_unit_op_scope_valid",
+        ),
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     category: Mapped[str] = mapped_column(
@@ -159,6 +165,22 @@ class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
     # Result schema (JSONSchema) — what the scientist records during execution
     result_schema: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default="{}", nullable=False
+    )
+
+    # Scoping: NULL/NULL = global, org set = org-scoped, both set = project-scoped
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("projects.id"), nullable=True
+    )
+
+    # Relationships
+    organization: Mapped[Optional["app.models.iam.Organization"]] = relationship(
+        "app.models.iam.Organization", foreign_keys=[organization_id]
+    )
+    project: Mapped[Optional["Project"]] = relationship(
+        foreign_keys=[project_id]
     )
 
 

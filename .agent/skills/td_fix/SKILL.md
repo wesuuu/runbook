@@ -35,10 +35,26 @@ Resolve technical debt items from the **ClickUp TECH_DEBT list** (list ID: `9017
    - Backend: `cd backend && source .venv/bin/activate && pytest tests/ -x -q` (or a targeted test file)
    - Frontend: `cd frontend && npm run check`
    - If tests fail, fix the issue and re-run. Do not skip failing tests.
-8. **Update ClickUp task** — mark the item as complete:
-   - Use `clickup_update_task` to set the task status to `complete`
-   - Add a comment via `clickup_create_task_comment` summarizing what was changed and which tests were added/updated
-9. **Print a summary** of what was resolved and what tests were run.
+8. **Browser verification (if frontend was changed)** — if any frontend component was added or modified, open the app in a Chrome browser using the `mcp__claude-in-chrome__*` tools and visually verify the changes behave as expected:
+   - Navigate to the relevant page(s) affected by the change
+   - Interact with the new/updated UI elements (click buttons, fill forms, check layout)
+   - Verify the change works correctly from a user's perspective
+   - Check for visual regressions (misaligned elements, missing styles, broken responsiveness)
+   - If anything looks wrong, fix it and re-run tests before proceeding
+   - **"Leave site?" dialog workaround**: If navigation is blocked by a "Leave site?" dialog (e.g., unsaved changes on a page), open a **new tab** instead and navigate to the login screen from there.
+   - **Authentication for testing**: To log in during browser verification, check the PostgreSQL dev database for user emails and roles (see `/local_dev` skill for credentials: `localhost:5432`, user `postgres`, password `postgres`, database `runbook`). Any password will work in the dev environment. Test with different user roles as needed to verify the change across permission levels.
+   - **Clean up test data**: If you created or modified any resources during browser verification (e.g., created sessions, projects, documents, or changed settings), you MUST revert them afterward. Delete created records or restore modified ones to their previous state using `psql` (`psql -h localhost -U postgres -d runbook`) or whatever method is easiest. Do not leave test artifacts in the database.
+9. **Present results and request user verification** — print a summary of what was resolved and what tests were run. Then **ask the user to verify the fix** and confirm they are satisfied.
+   - **Do NOT mark the ClickUp task as complete until the user explicitly confirms.**
+   - If the user requests changes:
+     1. Discuss and plan the requested changes (present a revised plan, wait for approval)
+     2. Implement the changes
+     3. Re-run tests and browser verification as needed
+     4. Present the updated results and ask the user to verify again
+   - **Repeat this loop until the user explicitly says the task is complete / they are satisfied.**
+10. **Update ClickUp task** — only after user confirmation:
+    - Use `clickup_update_task` to set the task status to `complete`
+    - Add a comment via `clickup_create_task_comment` summarizing what was changed and which tests were added/updated
 
 ## Rules
 
@@ -47,7 +63,8 @@ Resolve technical debt items from the **ClickUp TECH_DEBT list** (list ID: `9017
 - **Don't break other things.** Run the full relevant test suite, not just new tests. If you changed backend code, run `pytest`. If you changed frontend code, run `npm run check`.
 - **Behavior preservation.** For refactors and code smell fixes, the app must behave identically before and after. No sneaking in feature changes.
 - **Minimal scope.** Fix the described debt without refactoring unrelated code. If you discover new debt while working, note it but don't fix it in the same pass.
-- **Update ClickUp last.** Only mark complete after tests pass. ClickUp is the source of truth.
+- **User confirms completion.** Never mark a task as complete in ClickUp without explicit user confirmation. After implementation, present results and ask the user to verify. If they request changes, iterate until they are satisfied. Only then update ClickUp.
+- **Update ClickUp last.** Only mark complete after tests pass AND the user has explicitly confirmed. ClickUp is the source of truth.
 
 ## Item Selection Display
 

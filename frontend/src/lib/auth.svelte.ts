@@ -163,6 +163,8 @@ export function logout(): void {
     orgs = [];
     localStorage.removeItem('auth_token');
     clearCachedAuthData();
+    // Lazy import to avoid circular dependency at module load time
+    import('$lib/chat-store.svelte').then(({ resetChat }) => resetChat());
 }
 
 export function switchOrg(org: Org): void {

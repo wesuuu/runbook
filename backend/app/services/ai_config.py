@@ -1,5 +1,5 @@
-import time
 from typing import Optional, Union
+from uuid import UUID
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
@@ -12,31 +12,23 @@ from app.models.ai import (
     DEFAULT_CONFIGS,
     SUPPORTED_PROVIDERS,
 )
+from app.models.iam import Organization, SubscriptionTier, TIER_RANK
 
 ModelType = Union[str, OpenAIChatModel]
 
-# In-memory cache: capability -> (model, fetched_at)
-_cache: dict[str, tuple[ModelType, float]] = {}
-_CACHE_TTL_SECONDS = 30.0
 
-
-def invalidate_cache(capability: Optional[str] = None):
-    if capability:
-        _cache.pop(capability, None)
-    else:
-        _cache.clear()
-
-
-def _build_model_string(provider: str, model_name: str, base_url: Optional[str] = None) -> ModelType:
+def _build_model_string(
+    provider: str, model_name: str, credentials: dict | None = None
+) -> ModelType:
     """Build a pydantic-ai model identifier from provider + model.
 
     For Ollama, returns an OpenAIModel with an OllamaProvider so
-    the base_url is passed through (pydantic-ai requires
-    OLLAMA_BASE_URL env var otherwise).
+    the base_url is passed through.
     For other providers, returns a string like 'anthropic:model_name'.
     """
     if provider == "ollama":
-        ollama_base = base_url or "http://localhost:11434"
+        creds = credentials or {}
+        ollama_base = creds.get("base_url") or "http://localhost:11434"
         if not ollama_base.rstrip("/").endswith("/v1"):
             ollama_base = ollama_base.rstrip("/") + "/v1"
         return OpenAIChatModel(
@@ -47,15 +39,25 @@ def _build_model_string(provider: str, model_name: str, base_url: Optional[str] 
         "anthropic": "anthropic",
         "google": "google-gla",
         "openai": "openai",
+        "groq": "groq",
+        "mistral": "mistral",
+        "cohere": "cohere",
+        "openrouter": "openrouter",
+        "xai": "xai",
+        "cerebras": "cerebras",
+        "deepseek": "deepseek",
+        "together": "together",
+        "fireworks": "fireworks",
+        "bedrock": "bedrock",
     }
     prefix = prefix_map.get(provider, provider)
     return f"{prefix}:{model_name}"
 
 
-def _get_env_fallback(capability: str) -> Optional[tuple[str, str, Optional[str], Optional[str]]]:
+def _get_env_fallback(capability: str) -> dict | None:
     """Check env vars for a capability config.
 
-    Returns (provider, model_name, api_key, base_url) or None.
+    Returns a config dict or None.
     """
     prefix = f"ai_{capability}_"
     provider = getattr(settings, f"{prefix}provider", None)
@@ -63,116 +65,151 @@ def _get_env_fallback(capability: str) -> Optional[tuple[str, str, Optional[str]
     if provider and model_name:
         api_key = getattr(settings, f"{prefix}api_key", None)
         base_url = getattr(settings, f"{prefix}base_url", None)
-        return (provider, model_name, api_key, base_url)
+        creds = {}
+        if api_key:
+            creds["api_key"] = api_key
+        if base_url:
+            creds["base_url"] = base_url
+        return {
+            "provider": provider,
+            "model_name": model_name,
+            "credentials": creds or None,
+        }
     return None
 
 
-def mask_api_key(key: Optional[str]) -> Optional[str]:
-    if not key:
-        return None
-    if len(key) <= 8:
-        return key[:2] + "..." + key[-2:]
-    return key[:4] + "..." + key[-4:]
+async def _is_org_pro_or_above(org_id: Optional[UUID], db: AsyncSession) -> bool:
+    """Check if an org has Pro tier or above."""
+    if org_id is None:
+        return False
+    result = await db.execute(
+        select(Organization.subscription_tier).where(Organization.id == org_id)
+    )
+    tier_str = result.scalar_one_or_none()
+    if tier_str is None:
+        return False
+    try:
+        tier = SubscriptionTier(tier_str)
+    except ValueError:
+        return False
+    return TIER_RANK[tier] >= TIER_RANK[SubscriptionTier.PRO]
 
 
-async def get_model(capability: str, db: AsyncSession) -> ModelType:
+async def get_model(
+    capability: str, db: AsyncSession, org_id: Optional[UUID] = None
+) -> ModelType:
     """Resolve the pydantic-ai model for a capability.
 
     Resolution order:
-    1. In-memory cache (if fresh)
-    2. DB row for capability
-    3. Env var fallback
-    4. Hardcoded default
+    1. Org-specific DB row (any tier)
+    2. Platform config from env vars (Pro+ only)
+    3. Hardcoded default (Pro+ only)
+
+    Raises ValueError if the org has no config and is not Pro+.
     """
-    now = time.monotonic()
-    cached = _cache.get(capability)
-    if cached:
-        model, fetched_at = cached
-        if now - fetched_at < _CACHE_TTL_SECONDS:
-            return model
-
-    # 1. Try DB
-    result = await db.execute(
-        select(AiProviderConfig).where(
-            AiProviderConfig.capability == capability,
-            AiProviderConfig.is_enabled == True,
+    # 1. Try org-specific DB row
+    if org_id is not None:
+        result = await db.execute(
+            select(AiProviderConfig).where(
+                AiProviderConfig.org_id == org_id,
+                AiProviderConfig.capability == capability,
+                AiProviderConfig.is_enabled == True,
+            )
         )
+        row = result.scalar_one_or_none()
+        if row:
+            return _build_model_string(row.provider, row.model_name, row.credentials)
+
+    # 2. Tier gate: only Pro+ can use platform config
+    is_pro = await _is_org_pro_or_above(org_id, db)
+
+    if is_pro:
+        env = _get_env_fallback(capability)
+        if env:
+            return _build_model_string(
+                env["provider"], env["model_name"], env["credentials"]
+            )
+
+        defaults = DEFAULT_CONFIGS.get(capability, DEFAULT_CONFIGS["text"])
+        return _build_model_string(defaults["provider"], defaults["model_name"])
+
+    raise ValueError(
+        f"AI capability '{capability}' is not configured. "
+        "Add your own AI provider in Settings, or upgrade to Pro."
     )
-    row = result.scalar_one_or_none()
-
-    if row:
-        model = _build_model_string(row.provider, row.model_name, row.base_url)
-        _cache[capability] = (model, now)
-        return model
-
-    # 2. Try env var fallback
-    env = _get_env_fallback(capability)
-    if env:
-        provider, model_name, _, base_url = env
-        model = _build_model_string(provider, model_name, base_url)
-        _cache[capability] = (model, now)
-        return model
-
-    # 3. Hardcoded default
-    defaults = DEFAULT_CONFIGS.get(capability, DEFAULT_CONFIGS["text"])
-    model = _build_model_string(defaults["provider"], defaults["model_name"])
-    _cache[capability] = (model, now)
-    return model
 
 
-async def get_api_key(capability: str, db: AsyncSession) -> Optional[str]:
-    """Get the API key for a capability (needed for cloud providers)."""
-    result = await db.execute(
-        select(AiProviderConfig).where(
-            AiProviderConfig.capability == capability,
+async def get_credentials(
+    capability: str, db: AsyncSession, org_id: Optional[UUID] = None
+) -> dict | None:
+    """Get the credentials dict for a capability."""
+    # 1. Try org-specific row
+    if org_id is not None:
+        result = await db.execute(
+            select(AiProviderConfig).where(
+                AiProviderConfig.org_id == org_id,
+                AiProviderConfig.capability == capability,
+            )
         )
-    )
-    row = result.scalar_one_or_none()
-    if row and row.api_key:
-        return row.api_key
+        row = result.scalar_one_or_none()
+        if row and row.credentials:
+            return row.credentials
 
-    env = _get_env_fallback(capability)
-    if env:
-        return env[2]  # api_key
+    # 2. Env var fallback (Pro+ only)
+    is_pro = await _is_org_pro_or_above(org_id, db)
+    if is_pro:
+        env = _get_env_fallback(capability)
+        if env:
+            return env["credentials"]
 
     return None
 
 
 async def get_full_config(
-    capability: str, db: AsyncSession
+    capability: str, db: AsyncSession, org_id: Optional[UUID] = None
 ) -> dict:
     """Get the full resolved config dict for a capability."""
-    result = await db.execute(
-        select(AiProviderConfig).where(
-            AiProviderConfig.capability == capability,
+    # 1. Try org-specific row
+    if org_id is not None:
+        result = await db.execute(
+            select(AiProviderConfig).where(
+                AiProviderConfig.org_id == org_id,
+                AiProviderConfig.capability == capability,
+            )
         )
-    )
-    row = result.scalar_one_or_none()
-    if row:
-        return {
-            "provider": row.provider,
-            "model_name": row.model_name,
-            "api_key": row.api_key,
-            "base_url": row.base_url,
-            "is_enabled": row.is_enabled,
-        }
+        row = result.scalar_one_or_none()
+        if row:
+            return {
+                "provider": row.provider,
+                "model_name": row.model_name,
+                "credentials": row.credentials,
+                "is_enabled": row.is_enabled,
+            }
 
-    env = _get_env_fallback(capability)
-    if env:
-        provider, model_name, api_key, base_url = env
+    # 2. Env var fallback (Pro+ only)
+    is_pro = await _is_org_pro_or_above(org_id, db)
+    if is_pro:
+        env = _get_env_fallback(capability)
+        if env:
+            return {
+                "provider": env["provider"],
+                "model_name": env["model_name"],
+                "credentials": env["credentials"],
+                "is_enabled": True,
+            }
+
+        defaults = DEFAULT_CONFIGS.get(capability, DEFAULT_CONFIGS["text"])
         return {
-            "provider": provider,
-            "model_name": model_name,
-            "api_key": api_key,
-            "base_url": base_url,
+            "provider": defaults["provider"],
+            "model_name": defaults["model_name"],
+            "credentials": None,
             "is_enabled": True,
         }
 
-    defaults = DEFAULT_CONFIGS.get(capability, DEFAULT_CONFIGS["text"])
+    # Not configured
     return {
-        "provider": defaults["provider"],
-        "model_name": defaults["model_name"],
-        "api_key": None,
-        "base_url": None,
-        "is_enabled": True,
+        "provider": None,
+        "model_name": None,
+        "credentials": None,
+        "is_enabled": False,
     }

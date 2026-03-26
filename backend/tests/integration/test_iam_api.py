@@ -98,6 +98,7 @@ async def test_list_org_members_as_non_admin(
     client: AsyncClient,
     second_auth_headers: dict,
     test_org: Organization,
+    test_user: User,
     second_user: User,
     db_session: AsyncSession,
 ):
@@ -401,3 +402,77 @@ async def test_list_permissions_unauthenticated(client: AsyncClient):
         },
     )
     assert resp.status_code == 401  # auto_error=False → get_current_user raises 401
+
+
+# --- User Search (Cross-Org Isolation) ---
+
+@pytest.mark.asyncio
+async def test_search_users_returns_same_org_only(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_user: User,
+    second_user: User,
+):
+    """User search must only return users who share an org with the caller."""
+    # test_user is in Test Org; second_user is in Second Org (no overlap)
+    # Search for second_user's email — should NOT appear
+    resp = await client.get(
+        "/iam/users",
+        params={"email": "second@example"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    emails = [u["email"] for u in data]
+    assert "second@example.com" not in emails
+
+
+@pytest.mark.asyncio
+async def test_search_users_returns_shared_org_member(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_user: User,
+    second_user: User,
+    test_org: Organization,
+    db_session: AsyncSession,
+):
+    """User search returns users who share an org with the caller."""
+    # Add second_user to test_org so they share an org
+    db_session.add(OrganizationMember(
+        user_id=second_user.id,
+        organization_id=test_org.id,
+        role="MEMBER",
+    ))
+    await db_session.flush()
+
+    resp = await client.get(
+        "/iam/users",
+        params={"email": "second@example"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    emails = [u["email"] for u in data]
+    assert "second@example.com" in emails
+
+
+@pytest.mark.asyncio
+async def test_search_users_logs_cross_org_attempt(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_user: User,
+    second_user: User,
+    caplog,
+):
+    """A cross-org search attempt should log a warning to stdout."""
+    import logging
+    with caplog.at_level(logging.WARNING, logger="app.api.endpoints.iam"):
+        resp = await client.get(
+            "/iam/users",
+            params={"email": "second@example"},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 200
+    assert len(resp.json()) == 0  # second_user excluded
+    assert "Cross-org user search detected" in caplog.text
+    assert str(test_user.id) in caplog.text

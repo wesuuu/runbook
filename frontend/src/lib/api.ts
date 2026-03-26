@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import { getToken, logout } from '$lib/auth.svelte';
 import { API_BASE } from '$lib/config';
+import { _validateResponse, type RequestOptions } from '$lib/apiValidation';
 
 export class ApiError extends Error {
     status: number;
@@ -12,6 +13,7 @@ export class ApiError extends Error {
         this.data = data;
     }
 }
+
 
 function _authHeaders(contentType?: string): HeadersInit {
     const headers: HeadersInit = {};
@@ -72,7 +74,7 @@ function _triggerDownload(blob: Blob, filename: string): void {
     URL.revokeObjectURL(url);
 }
 
-async function request<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, endpoint: string, body?: unknown, options?: RequestOptions<T>): Promise<T> {
     const headers = _authHeaders('application/json');
     const config: RequestInit = { method, headers };
     if (body) {
@@ -87,7 +89,11 @@ async function request<T>(method: string, endpoint: string, body?: unknown): Pro
     if (response.status === 204) {
         return {} as T;
     }
-    return response.json();
+    const data = await response.json();
+    if (options?.schema) {
+        return _validateResponse(data, options.schema, endpoint) as T;
+    }
+    return data;
 }
 
 async function downloadBlob(endpoint: string, filename: string): Promise<void> {
@@ -153,11 +159,11 @@ async function uploadWithFields<T>(
 }
 
 export const api = {
-    get: <T>(endpoint: string) => request<T>('GET', endpoint),
-    post: <T>(endpoint: string, body: unknown) => request<T>('POST', endpoint, body),
-    put: <T>(endpoint: string, body: unknown) => request<T>('PUT', endpoint, body),
-    patch: <T>(endpoint: string, body: unknown) => request<T>('PATCH', endpoint, body),
-    delete: <T>(endpoint: string) => request<T>('DELETE', endpoint),
+    get: <T>(endpoint: string, options?: RequestOptions<T>) => request<T>('GET', endpoint, undefined, options),
+    post: <T>(endpoint: string, body: unknown, options?: RequestOptions<T>) => request<T>('POST', endpoint, body, options),
+    put: <T>(endpoint: string, body: unknown, options?: RequestOptions<T>) => request<T>('PUT', endpoint, body, options),
+    patch: <T>(endpoint: string, body: unknown, options?: RequestOptions<T>) => request<T>('PATCH', endpoint, body, options),
+    delete: <T>(endpoint: string, options?: RequestOptions<T>) => request<T>('DELETE', endpoint, undefined, options),
     uploadFile,
     uploadWithFields,
     downloadBlob,

@@ -103,54 +103,81 @@ async def client(db_session):
 # --- Auth fixtures ---
 
 @pytest_asyncio.fixture
-async def test_user(db_session) -> User:
-    user = User(
-        email="testuser@example.com",
-        hashed_password=hash_password("testpass"),
-        full_name="Test User",
-    )
-    db_session.add(user)
-    await db_session.flush()
-    return user
-
-
-@pytest_asyncio.fixture
-async def auth_headers(test_user) -> dict:
-    token = create_access_token(test_user.id)
-    return {"Authorization": f"Bearer {token}"}
-
-
-@pytest_asyncio.fixture
-async def test_org(db_session, test_user) -> Organization:
+async def test_org(db_session) -> Organization:
     org = Organization(name="Test Org")
     db_session.add(org)
-    await db_session.flush()
-    db_session.add(
-        OrganizationMember(
-            user_id=test_user.id,
-            organization_id=org.id,
-            role="ADMIN",
-        )
-    )
     await db_session.flush()
     return org
 
 
 @pytest_asyncio.fixture
-async def second_user(db_session) -> User:
+async def test_user(db_session, test_org) -> User:
     user = User(
-        email="second@example.com",
+        email="testuser@example.com",
         hashed_password=hash_password("testpass"),
-        full_name="Second User",
+        full_name="Test User",
+        selected_org_id=test_org.id,
     )
     db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=test_org.id,
+            role="ADMIN",
+        )
+    )
     await db_session.flush()
     return user
 
 
 @pytest_asyncio.fixture
-async def second_auth_headers(second_user) -> dict:
-    token = create_access_token(second_user.id)
+async def auth_headers(test_user, test_org) -> dict:
+    token = create_access_token(
+        test_user.id,
+        org_id=test_org.id,
+        subscription_tier=test_org.subscription_tier,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def second_org(db_session) -> Organization:
+    """A separate org for the second user so they don't collide with test_org."""
+    org = Organization(name="Second Org")
+    db_session.add(org)
+    await db_session.flush()
+    return org
+
+
+@pytest_asyncio.fixture
+async def second_user(db_session, second_org) -> User:
+    user = User(
+        email="second@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Second User",
+        selected_org_id=second_org.id,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=second_org.id,
+            role="ADMIN",
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def second_auth_headers(second_user, second_org) -> dict:
+    token = create_access_token(
+        second_user.id,
+        org_id=second_org.id,
+        subscription_tier=second_org.subscription_tier,
+    )
     return {"Authorization": f"Bearer {token}"}
 
 

@@ -12,8 +12,7 @@ from app.models.ai import SUPPORTED_PROVIDERS, SUPPORTED_CAPABILITIES
 class AiProviderConfigUpdate(BaseModel):
     provider: str
     model_name: str
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
+    credentials: Optional[dict] = None
     is_enabled: bool = True
 
 
@@ -22,14 +21,9 @@ class AiProviderConfigResponse(BaseModel):
     capability: str
     provider: str
     model_name: str
-    api_key_set: bool = Field(
-        description="Whether an API key is configured (never returns the actual key)"
+    credentials_set: bool = Field(
+        description="Whether credentials are configured (never returns actual values)"
     )
-    api_key_hint: Optional[str] = Field(
-        default=None,
-        description="Masked API key hint, e.g. 'sk-ant-...a1b2'",
-    )
-    base_url: Optional[str] = None
     is_enabled: bool
     created_at: datetime
     updated_at: datetime
@@ -40,6 +34,7 @@ class AiProviderConfigResponse(BaseModel):
 
 class AiSettingsListResponse(BaseModel):
     items: list[AiProviderConfigResponse]
+    subscription_tier: str
 
 
 class AiTestConnectionResponse(BaseModel):

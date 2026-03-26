@@ -82,7 +82,7 @@ async def generate_protocol_from_chat(
     unit_ops = list(result.scalars().all())
 
     # 3. Build prompt and call LLM
-    generated = await _call_generation_llm(db, history, unit_ops)
+    generated = await _call_generation_llm(db, history, unit_ops, org_id=session.org_id)
 
     # Override name if provided
     if protocol_name:
@@ -126,6 +126,7 @@ async def _call_generation_llm(
     db: AsyncSession,
     history: list[dict[str, str]],
     unit_ops: list[UnitOpDefinition],
+    org_id: UUID | None = None,
 ) -> GeneratedProtocol:
     """Call the LLM with structured output to generate a protocol."""
     from pydantic_ai import Agent
@@ -171,7 +172,7 @@ RULES:
         f"{conversation}"
     )
 
-    model = await get_model("protocol_generation", db)
+    model = await get_model("protocol_generation", db, org_id=org_id)
     agent = Agent(model, system_prompt=system_prompt, output_type=GeneratedProtocol)
     result = await agent.run(prompt)
     return result.output

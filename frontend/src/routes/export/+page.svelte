@@ -2,10 +2,14 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
-
-    type ColumnDef = { key: string; label: string; group: string };
-    type ExportLayout = 'long' | 'wide';
-    type ExportFormat = 'csv' | 'xlsx' | 'json';
+    import {
+        buildTsv,
+        saveExportSettings,
+        loadExportSettings,
+        applyRestoredColumns,
+        PRESETS,
+    } from '$lib/export-utils';
+    import type { ColumnDef, ExportLayout, ExportFormat, ExportPreset } from '$lib/export-utils';
 
     // Parse run IDs from URL
     const runIds = $derived(
@@ -21,6 +25,22 @@
     let downloading = $state(false);
     let error = $state<string | null>(null);
     let runCount = $state(0);
+
+    // Clipboard
+    let copyFeedback = $state(false);
+
+    // Quick Setup preset dropdown
+    let presetOpen = $state(false);
+
+    // Pending preset column groups (applied after preview reloads)
+    let pendingPresetGroups = $state<string[] | null>(null);
+
+    // Restore last-used settings on init (before first preview)
+    const restored = loadExportSettings();
+    if (restored) {
+        format = restored.format;
+        layout = restored.layout;
+    }
 
     // Preview pagination
     const PAGE_SIZE = 50;
@@ -71,7 +91,23 @@
             columns = resp.columns;
             rows = resp.rows;
             runCount = resp.run_count;
-            selectedColumns = new Set(columns.map((c: ColumnDef) => c.key));
+
+            // Apply pending preset column groups if a preset was just selected
+            if (pendingPresetGroups) {
+                const groupSet = new Set(pendingPresetGroups);
+                selectedColumns = new Set(
+                    columns.filter((c: ColumnDef) => groupSet.has(c.group)).map((c: ColumnDef) => c.key)
+                );
+                pendingPresetGroups = null;
+            } else if (restored && restored.columnKeys.length > 0) {
+                // Try to restore saved column selection
+                const restoredCols = applyRestoredColumns(restored.columnKeys, columns);
+                selectedColumns = restoredCols ?? new Set(columns.map((c: ColumnDef) => c.key));
+                // Clear restored so subsequent layout changes don't re-apply
+                restored.columnKeys = [];
+            } else {
+                selectedColumns = new Set(columns.map((c: ColumnDef) => c.key));
+            }
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'Failed to load preview';
             columns = [];
@@ -136,11 +172,29 @@
                 },
                 filename,
             );
+            saveExportSettings(format, layout, selectedKeys);
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'Download failed';
         } finally {
             downloading = false;
         }
+    }
+
+    async function copyToClipboard() {
+        if (rows.length === 0 || selectedColumns.size === 0) return;
+
+        const tsv = buildTsv(columns, rows, selectedColumns);
+        await navigator.clipboard.writeText(tsv);
+        saveExportSettings(format, layout, [...selectedColumns]);
+        copyFeedback = true;
+        setTimeout(() => { copyFeedback = false; }, 2000);
+    }
+
+    function applyPreset(preset: ExportPreset) {
+        format = preset.format;
+        layout = preset.layout;
+        pendingPresetGroups = preset.columnGroups;
+        presetOpen = false;
     }
 
     function selectAll() {
@@ -202,6 +256,26 @@
                 </div>
             </div>
 
+            <!-- Copy to Clipboard -->
+            <button
+                class="px-4 py-2 bg-white text-slate-700 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
+                disabled={selectedColumns.size === 0 || rows.length === 0}
+                onclick={copyToClipboard}
+            >
+                {#if copyFeedback}
+                    <svg class="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                    Copied!
+                {:else}
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    Copy
+                {/if}
+            </button>
+
+            <!-- Download -->
             <button
                 class="px-5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
                 disabled={selectedColumns.size === 0 || rows.length === 0 || downloading}
@@ -223,6 +297,40 @@
 
     <!-- Toolbar -->
     <div class="bg-white border-b border-slate-100 px-4 sm:px-6 py-2.5 flex flex-wrap items-center gap-3 sm:gap-6 shrink-0">
+        <!-- Quick Setup presets -->
+        <div class="relative">
+            <button
+                class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition-colors"
+                onclick={() => { presetOpen = !presetOpen; }}
+            >
+                Quick Setup
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m6 9 6 6 6-6" />
+                </svg>
+            </button>
+            {#if presetOpen}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                    class="fixed inset-0 z-10"
+                    onclick={() => { presetOpen = false; }}
+                    onkeydown={(e) => { if (e.key === 'Escape') presetOpen = false; }}
+                ></div>
+                <div class="absolute top-full left-0 mt-1 w-56 bg-white rounded-lg border border-slate-200 shadow-lg z-20 py-1">
+                    {#each PRESETS as preset}
+                        <button
+                            class="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors"
+                            onclick={() => applyPreset(preset)}
+                        >
+                            <div class="text-xs font-medium text-slate-700">{preset.label}</div>
+                            <div class="text-[11px] text-slate-400">{preset.description}</div>
+                        </button>
+                    {/each}
+                </div>
+            {/if}
+        </div>
+
+        <div class="h-5 w-px bg-slate-200"></div>
+
         <!-- Layout toggle -->
         <div class="flex items-center gap-2">
             <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Layout</span>

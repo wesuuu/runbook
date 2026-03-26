@@ -11,6 +11,7 @@
     import RunEditMode from "$lib/components/run/RunEditMode.svelte";
     import RunObserverView from "$lib/components/run/RunObserverView.svelte";
     import { ConfirmDialog } from "$lib/components/ui/dialog";
+    import { PendingImagesSchema, AnalyzePendingResultSchema } from '$lib/schemas';
 
     const id = $derived($page.params.id);
 
@@ -74,8 +75,9 @@
 
     async function loadUnanalyzedCount() {
         try {
-            const resp = await api.get<{ items: any[] }>(
-                `/ai/runs/${id}/images?analyzed=false`
+            const resp = await api.get(
+                `/ai/runs/${id}/images?analyzed=false`,
+                { schema: PendingImagesSchema },
             );
             unanalyzedCount = resp.items?.length ?? 0;
         } catch {
@@ -87,11 +89,7 @@
         analyzingAll = true;
         analyzeAllProgress = 'Starting batch analysis...';
         try {
-            const resp = await api.post<{
-                total: number;
-                succeeded: number;
-                failed: number;
-            }>(`/ai/runs/${id}/analyze-pending`, {});
+            const resp = await api.post(`/ai/runs/${id}/analyze-pending`, {}, { schema: AnalyzePendingResultSchema });
             analyzeAllProgress = `Done: ${resp.succeeded} analyzed${resp.failed > 0 ? `, ${resp.failed} failed` : ''}`;
             await loadUnanalyzedCount();
         } catch (e: unknown) {

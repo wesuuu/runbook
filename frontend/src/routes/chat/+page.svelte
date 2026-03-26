@@ -1,190 +1,42 @@
 <script lang="ts">
-    import { onMount, onDestroy, tick } from 'svelte';
+    import { onMount, tick } from 'svelte';
     import { goto } from '$app/navigation';
-    import { api } from '$lib/api';
     import { toast } from 'svelte-sonner';
     import { marked } from 'marked';
     import DOMPurify from 'dompurify';
     import { Button } from '$lib/components/ui/button';
     import GenerateProtocolDialog from '$lib/components/GenerateProtocolDialog.svelte';
+    import {
+        getChatSessions, getActiveSession, getMessageInput, isSending,
+        isLoading, isCreatingSession, isSidebarCollapsed, isSourcePanelOpen,
+        getActiveSources, getMessageSources,
+        initChat, createSession, selectSession, deleteSession,
+        sendMessage, setMessageInput, setSidebarCollapsed, setSourcePanelOpen,
+        showSourcesForMessage, registerScrollFn,
+    } from '$lib/chat-store.svelte';
+    import type { ChatMessage } from '$lib/schemas/chat';
 
-    // --- Types ---
-    interface ChatMessage {
-        id: string;
-        session_id: string;
-        role: 'user' | 'assistant' | 'system';
-        content: string;
-        metadata_: Record<string, unknown> | null;
-        created_at: string;
-    }
-
-    interface ChatSession {
-        id: string;
-        user_id: string;
-        org_id: string;
-        title: string;
-        status: string;
-        context_document_ids: string[] | null;
-        created_at: string;
-        updated_at: string;
-    }
-
-    interface ChatSessionDetail extends ChatSession {
-        messages: ChatMessage[];
-    }
-
-    interface ChatSessionListResponse {
-        items: ChatSession[];
-        total: number;
-    }
-
-    interface ChatSourceReference {
-        document_id: string;
-        document_title: string;
-        chunk_id: string;
-        chunk_index: number;
-        page_number: number | null;
-        score: number;
-        snippet: string;
-    }
-
-    interface ChatCompletionResponse {
-        user_message: ChatMessage;
-        assistant_message: ChatMessage;
-        sources: ChatSourceReference[];
-    }
-
-    // --- State ---
-    let sessions = $state<ChatSession[]>([]);
-    let activeSession = $state<ChatSessionDetail | null>(null);
-    let messageInput = $state('');
-    let loading = $state(true);
-    let sending = $state(false);
-    let creatingSession = $state(false);
-    let sidebarCollapsed = $state(false);
-    let sourcePanelOpen = $state(false);
-    let activeSources = $state<ChatSourceReference[]>([]);
+    // Derived state from shared store
+    const sessions = $derived(getChatSessions());
+    const activeSession = $derived(getActiveSession());
+    const messageInput = $derived(getMessageInput());
+    const sending = $derived(isSending());
+    const loading = $derived(isLoading());
+    const creatingSession = $derived(isCreatingSession());
+    const sidebarCollapsed = $derived(isSidebarCollapsed());
+    const sourcePanelOpen = $derived(isSourcePanelOpen());
+    const activeSources = $derived(getActiveSources());
 
     let showGenerateDialog = $state(false);
-
     let messagesEndEl = $state<HTMLDivElement>(undefined!);
     let inputEl = $state<HTMLTextAreaElement>(undefined!);
 
-    // --- Lifecycle ---
     onMount(async () => {
-        await loadSessions();
-        loading = false;
+        await initChat();
+        registerScrollFn(() => {
+            messagesEndEl?.scrollIntoView({ behavior: 'smooth' });
+        });
     });
-
-    // --- API calls ---
-    async function loadSessions() {
-        try {
-            const res = await api.get<ChatSessionListResponse>('/chat/sessions?limit=100');
-            sessions = res.items;
-        } catch (err) {
-            toast.error('Failed to load chat sessions');
-        }
-    }
-
-    async function createSession() {
-        creatingSession = true;
-        try {
-            const session = await api.post<ChatSession>('/chat/sessions', {});
-            sessions = [session, ...sessions];
-            await selectSession(session.id);
-        } catch (err) {
-            toast.error('Failed to create chat session');
-        } finally {
-            creatingSession = false;
-        }
-    }
-
-    async function selectSession(sessionId: string) {
-        try {
-            const detail = await api.get<ChatSessionDetail>(`/chat/sessions/${sessionId}`);
-            activeSession = detail;
-            await tick();
-            scrollToBottom();
-            inputEl?.focus();
-        } catch (err) {
-            toast.error('Failed to load chat session');
-        }
-    }
-
-    async function deleteSession(sessionId: string) {
-        try {
-            await api.delete(`/chat/sessions/${sessionId}`);
-            sessions = sessions.filter(s => s.id !== sessionId);
-            if (activeSession?.id === sessionId) {
-                activeSession = null;
-            }
-            toast.success('Chat deleted');
-        } catch (err) {
-            toast.error('Failed to delete chat');
-        }
-    }
-
-    async function sendMessage() {
-        if (!activeSession || !messageInput.trim() || sending) return;
-
-        const content = messageInput.trim();
-        messageInput = '';
-        sending = true;
-
-        // Optimistic: add user message immediately
-        const tempUserMsg: ChatMessage = {
-            id: 'temp-user-' + Date.now(),
-            session_id: activeSession.id,
-            role: 'user',
-            content,
-            metadata_: null,
-            created_at: new Date().toISOString(),
-        };
-        activeSession.messages = [...activeSession.messages, tempUserMsg];
-        await tick();
-        scrollToBottom();
-
-        try {
-            const res = await api.post<ChatCompletionResponse>(
-                `/chat/sessions/${activeSession.id}/messages`,
-                { content }
-            );
-
-            // Replace temp message with real one and add assistant response
-            activeSession.messages = [
-                ...activeSession.messages.filter(m => m.id !== tempUserMsg.id),
-                res.user_message,
-                res.assistant_message,
-            ];
-
-            // Show sources if any
-            if (res.sources && res.sources.length > 0) {
-                activeSources = res.sources;
-                sourcePanelOpen = true;
-            }
-
-            // Update session title in sidebar
-            const idx = sessions.findIndex(s => s.id === activeSession!.id);
-            if (idx !== -1 && sessions[idx].title === 'New Chat') {
-                sessions[idx] = { ...sessions[idx], title: content.slice(0, 100) };
-                sessions = [...sessions];
-            }
-
-            await tick();
-            scrollToBottom();
-        } catch (err) {
-            // Remove optimistic message on failure
-            activeSession.messages = activeSession.messages.filter(m => m.id !== tempUserMsg.id);
-            toast.error('Failed to send message');
-        } finally {
-            sending = false;
-            inputEl?.focus();
-        }
-    }
-
-    function scrollToBottom() {
-        messagesEndEl?.scrollIntoView({ behavior: 'smooth' });
-    }
 
     function handleKeydown(e: KeyboardEvent) {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -201,19 +53,6 @@
 
     function formatTime(iso: string): string {
         return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-
-    function getMessageSources(msg: ChatMessage): ChatSourceReference[] {
-        if (!msg.metadata_ || !('sources' in msg.metadata_)) return [];
-        return msg.metadata_.sources as ChatSourceReference[];
-    }
-
-    function showSourcesForMessage(msg: ChatMessage) {
-        const sources = getMessageSources(msg);
-        if (sources.length > 0) {
-            activeSources = sources;
-            sourcePanelOpen = true;
-        }
     }
 
     function formatDate(iso: string): string {
@@ -241,7 +80,7 @@
             <h2 class="text-sm font-semibold text-foreground">Chats</h2>
             <button
                 class="text-xs px-2.5 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50"
-                onclick={createSession}
+                onclick={() => createSession()}
                 disabled={creatingSession}
             >
                 {creatingSession ? '...' : '+ New'}
@@ -301,7 +140,7 @@
                     </p>
                     <button
                         class="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-medium disabled:opacity-50"
-                        onclick={createSession}
+                        onclick={() => createSession()}
                         disabled={creatingSession}
                     >
                         Start a conversation
@@ -313,7 +152,7 @@
             <div class="px-4 py-3 border-b border-border/40 flex items-center gap-3 bg-card/30">
                 <button
                     class="md:hidden p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground"
-                    onclick={() => (sidebarCollapsed = !sidebarCollapsed)}
+                    onclick={() => setSidebarCollapsed(!sidebarCollapsed)}
                     aria-label="Toggle sidebar"
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -337,7 +176,7 @@
             </div>
 
             <!-- Messages -->
-            <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-4xl mx-auto w-full">
                 {#if activeSession.messages.length === 0}
                     <div class="text-center py-12">
                         <p class="text-sm text-muted-foreground">Send a message to start the conversation.</p>
@@ -353,6 +192,25 @@
                                     : 'bg-muted/70 text-foreground'}"
                         >
                             {#if msg.role === 'assistant'}
+                                {#if Array.isArray(msg.metadata_?.tool_calls)}
+                                    <div class="flex flex-col gap-1 mb-2 pb-2 border-b border-border/30">
+                                        {#each msg.metadata_.tool_calls as tc_raw}
+                                            {@const tc = tc_raw as Record<string, unknown>}
+                                            <span class="text-[11px] text-muted-foreground/70 flex items-center gap-1.5 italic">
+                                                <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                    <path d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                                                </svg>
+                                                {#if tc.tool === 'search_documents'}
+                                                    Searched documents for "{tc.query}" ({tc.results} result{tc.results !== 1 ? 's' : ''})
+                                                {:else if tc.tool === 'read_document_section'}
+                                                    Read document section (chunk {tc.chunk_index})
+                                                {:else}
+                                                    {tc.tool}
+                                                {/if}
+                                            </span>
+                                        {/each}
+                                    </div>
+                                {/if}
                                 <div class="prose prose-sm max-w-none dark:prose-invert chat-prose">
                                     {@html renderMarkdown(msg.content)}
                                 </div>
@@ -392,10 +250,11 @@
 
             <!-- Input area -->
             <div class="border-t border-border/40 p-4 bg-card/30">
-                <div class="flex items-end gap-3 max-w-3xl mx-auto">
+                <div class="flex items-end gap-3 max-w-4xl mx-auto">
                     <textarea
                         bind:this={inputEl}
-                        bind:value={messageInput}
+                        value={messageInput}
+                        oninput={(e) => setMessageInput(e.currentTarget.value)}
                         onkeydown={handleKeydown}
                         placeholder="Ask about cell biology, protocols, experiments..."
                         class="flex-1 resize-none rounded-xl border border-border/60 bg-background px-4 py-3 text-sm
@@ -430,7 +289,7 @@
                 <h3 class="text-sm font-semibold text-foreground">Sources</h3>
                 <button
                     class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-                    onclick={() => (sourcePanelOpen = false)}
+                    onclick={() => setSourcePanelOpen(false)}
                     aria-label="Close sources panel"
                 >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

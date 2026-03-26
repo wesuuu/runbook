@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { api } from '$lib/api';
+    import { z } from 'zod';
     import { toast } from '$lib/toast';
     import { getUser, getCurrentOrg, getOrgs, refreshUser, getUserPreferences } from '$lib/auth.svelte';
     import { API_BASE } from '$lib/config';
@@ -14,8 +15,9 @@
         CardTitle,
         CardDescription,
     } from '$lib/components/ui/card';
+    import AiSettingsTab from '$lib/components/AiSettingsTab.svelte';
 
-    let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications'>('organization');
+    let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications' | 'ai'>('organization');
 
     // Notifications
     let channels = $state<any[]>([]);
@@ -123,7 +125,9 @@
         channelTestResults = new Map(channelTestResults);
         channelTestResults.set(channelId, { status: 'TESTING', detail: 'Sending...' });
         try {
-            const result = await api.post<{ status: string; detail: string }>(`/notifications/channels/${channelId}/test`);
+            const result = await api.post(`/notifications/channels/${channelId}/test`, undefined, {
+                schema: z.object({ status: z.string(), detail: z.string() }).passthrough(),
+            });
             channelTestResults = new Map(channelTestResults);
             channelTestResults.set(channelId, result);
             setTimeout(() => {
@@ -138,7 +142,9 @@
 
     async function loadSubscriptions(channelId: string) {
         try {
-            const subs = await api.get<any[]>(`/notifications/channels/${channelId}/subscriptions`);
+            const subs = await api.get(`/notifications/channels/${channelId}/subscriptions`, {
+                schema: z.array(z.record(z.string(), z.unknown())),
+            });
             channelSubscriptions = new Map(channelSubscriptions);
             channelSubscriptions.set(channelId, subs);
         } catch {
@@ -363,7 +369,9 @@
     // Load team members
     async function loadTeamMembers(teamId: string) {
         try {
-            const result = await api.get<any[]>(`/iam/teams/${teamId}/members`);
+            const result = await api.get(`/iam/teams/${teamId}/members`, {
+                schema: z.array(z.record(z.string(), z.unknown())),
+            });
             teamMembers = new Map(teamMembers);
             teamMembers.set(teamId, result);
         } catch {
@@ -517,6 +525,12 @@
             onclick={() => { activeTab = 'notifications'; if (channels.length === 0 && !channelsLoading) loadChannels(); }}
         >
             Notifications
+        </button>
+        <button
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'ai' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            onclick={() => (activeTab = 'ai')}
+        >
+            AI Models
         </button>
     </div>
 
@@ -979,5 +993,16 @@
                 </CardContent>
             </Card>
         {/if}
+
+    {:else if activeTab === 'ai'}
+        <Card>
+            <CardHeader>
+                <CardTitle>AI Models</CardTitle>
+                <CardDescription>Configure AI providers for each capability</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <AiSettingsTab isAdmin={isOrgAdmin} />
+            </CardContent>
+        </Card>
     {/if}
 </div>

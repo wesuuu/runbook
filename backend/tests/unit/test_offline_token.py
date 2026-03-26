@@ -43,9 +43,10 @@ class TestOfflineToken:
         user_id = uuid4()
         run_id = uuid4()
         token, _, _ = create_offline_token(user_id, run_id)
-        # decode_access_token should still return the user_id
+        # decode_access_token should still return a TokenPayload with the user_id
         result = decode_access_token(token)
-        assert result == user_id
+        assert result is not None
+        assert result.user_id == user_id
 
     def test_decode_offline_token_rejects_garbage(self):
         assert decode_offline_token("not-a-token") is None

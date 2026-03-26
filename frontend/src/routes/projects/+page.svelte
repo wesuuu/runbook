@@ -12,13 +12,7 @@
         CardDescription,
     } from '$lib/components/ui/card';
     import { Plus } from 'lucide-svelte';
-
-    interface Project {
-        id: string;
-        name: string;
-        description?: string;
-        organization?: { name: string };
-    }
+    import { ProjectListSchema, type Project } from '$lib/schemas';
 
     let projects = $state<Project[]>([]);
     let loading = $state(true);
@@ -29,8 +23,8 @@
         try {
             const org = getCurrentOrg();
             const query = org ? `?organization_id=${org.id}` : '';
-            const res = await api.get<any>(`/projects${query}`);
-            projects = Array.isArray(res) ? res : res.projects || [];
+            const res = await api.get(`/projects${query}`, { schema: ProjectListSchema });
+            projects = Array.isArray(res) ? res : [];
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
         } finally {

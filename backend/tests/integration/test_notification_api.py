@@ -93,14 +93,39 @@ class TestOrgChannels:
 
     @pytest.mark.asyncio
     async def test_non_admin_cannot_create_org_channel(
-        self, client, second_auth_headers, test_org
+        self, client, test_org, db_session
     ):
+        """A MEMBER (not ADMIN) of an org should not be able to create
+        org-level notification channels."""
+        from app.core.security import hash_password, create_access_token
+        from app.models.iam import User, OrganizationMember
+
+        member = User(
+            email="member_only@example.com",
+            hashed_password=hash_password("testpass"),
+            full_name="Member Only",
+            selected_org_id=test_org.id,
+        )
+        db_session.add(member)
+        await db_session.flush()
+        db_session.add(OrganizationMember(
+            user_id=member.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        ))
+        await db_session.flush()
+
+        token = create_access_token(
+            member.id, org_id=test_org.id,
+            subscription_tier=test_org.subscription_tier,
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+
         resp = await client.post(
             "/notifications/channels",
             json={"name": "Nope", "channel_type": "CONSOLE", "config": {}},
-            headers=second_auth_headers,
+            headers=headers,
         )
-        # second_user is not in the org, so should fail
         assert resp.status_code in (400, 403)
 
 
