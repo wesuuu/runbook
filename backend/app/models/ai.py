@@ -37,7 +37,7 @@ DEFAULT_CONFIGS = {
     },
     "chat": {
         "provider": "ollama",
-        "model_name": "qwen3:latest",
+        "model_name": "qwen3.5:27b",
     },
     "protocol_generation": {
         "provider": "ollama",
@@ -69,6 +69,9 @@ class AiProviderConfig(Base, UUIDMixin, TimestampMixin):
     )
     is_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
+    )
+    context_window: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, default=None
     )
 
     # Relationships

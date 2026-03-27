@@ -72,10 +72,14 @@ async def generate_protocol_from_chat(
     Returns:
         The created Protocol record (DRAFT status).
     """
-    from app.services.chat_service import _get_message_history
-
     # 1. Fetch conversation history
-    history = await _get_message_history(db, session.id)
+    result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session.id)
+        .order_by(ChatMessage.created_at)
+    )
+    messages = result.scalars().all()
+    history = [{"role": m.role, "content": m.content} for m in messages]
 
     # 2. Fetch unit op catalog
     result = await db.execute(select(UnitOpDefinition))
@@ -89,7 +93,7 @@ async def generate_protocol_from_chat(
         generated.name = protocol_name
 
     # 4. Build graph JSONB
-    graph = _build_graph(generated, unit_ops, session.id, user_id)
+    graph = build_graph(generated, unit_ops, session.id, user_id)
 
     # 5. Create Protocol record
     protocol = Protocol(
@@ -178,7 +182,7 @@ RULES:
     return result.output
 
 
-def _build_graph(
+def build_graph(
     generated: GeneratedProtocol,
     unit_ops: list[UnitOpDefinition],
     session_id: UUID,
@@ -197,14 +201,14 @@ def _build_graph(
 
     for i, step in enumerate(generated.steps):
         node_id = f"node-{uuid4()}"
-        matched_op = _match_unit_op(step.unit_op_name, unit_ops)
+        matched_op = match_unit_op(step.unit_op_name, unit_ops)
 
         # Build param schema and merged params
         param_schema = {}
         params = dict(step.params)
         if matched_op:
             param_schema = matched_op.param_schema or {}
-            params = _extract_params(step.params, param_schema)
+            params = extract_params(step.params, param_schema)
             category = matched_op.category
             unit_op_id = str(matched_op.id)
         else:
@@ -253,7 +257,7 @@ def _build_graph(
     }
 
 
-def _match_unit_op(
+def match_unit_op(
     name: str, unit_ops: list[UnitOpDefinition]
 ) -> Optional[UnitOpDefinition]:
     """Match a step name to a UnitOpDefinition.
@@ -274,7 +278,7 @@ def _match_unit_op(
     return None
 
 
-def _extract_params(
+def extract_params(
     step_params: dict[str, Any],
     param_schema: dict[str, Any],
 ) -> dict[str, Any]:

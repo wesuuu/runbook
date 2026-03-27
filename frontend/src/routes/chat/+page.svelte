@@ -1,18 +1,15 @@
 <script lang="ts">
     import { onMount, tick } from 'svelte';
-    import { goto } from '$app/navigation';
-    import { toast } from 'svelte-sonner';
     import { marked } from 'marked';
     import DOMPurify from 'dompurify';
-    import { Button } from '$lib/components/ui/button';
-    import GenerateProtocolDialog from '$lib/components/GenerateProtocolDialog.svelte';
+    import ChatSkillButtons from '$lib/components/ChatSkillButtons.svelte';
     import {
         getChatSessions, getActiveSession, getMessageInput, isSending,
         isLoading, isCreatingSession, isSidebarCollapsed, isSourcePanelOpen,
-        getActiveSources, getMessageSources,
+        getActiveSources, getMessageSources, getSkills, getMessageError,
         initChat, createSession, selectSession, deleteSession,
         sendMessage, setMessageInput, setSidebarCollapsed, setSourcePanelOpen,
-        showSourcesForMessage, registerScrollFn,
+        showSourcesForMessage, registerScrollFn, activateSkill,
     } from '$lib/chat-store.svelte';
     import type { ChatMessage } from '$lib/schemas/chat';
 
@@ -26,8 +23,13 @@
     const sidebarCollapsed = $derived(isSidebarCollapsed());
     const sourcePanelOpen = $derived(isSourcePanelOpen());
     const activeSources = $derived(getActiveSources());
+    const skills = $derived(getSkills());
+    const messageError = $derived(getMessageError());
 
-    let showGenerateDialog = $state(false);
+    const hasMessages = $derived(
+        activeSession !== null && activeSession.messages.length > 0
+    );
+
     let messagesEndEl = $state<HTMLDivElement>(undefined!);
     let inputEl = $state<HTMLTextAreaElement>(undefined!);
 
@@ -138,6 +140,11 @@
                         Ask questions about cell biology, genetics, or process development.
                         Discuss protocols, get advice on experimental procedures, or explore scientific concepts.
                     </p>
+                    {#if skills.length > 0}
+                        <div class="mb-4 flex justify-center">
+                            <ChatSkillButtons {skills} mode="chips" onactivate={activateSkill} />
+                        </div>
+                    {/if}
                     <button
                         class="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-medium disabled:opacity-50"
                         onclick={() => createSession()}
@@ -162,17 +169,6 @@
                 <div class="min-w-0 flex-1">
                     <h2 class="text-sm font-semibold text-foreground truncate">{activeSession.title}</h2>
                 </div>
-                {#if activeSession.messages.length > 0}
-                    <button
-                        class="flex-shrink-0 text-xs px-3 py-1.5 rounded-md border border-border/60 text-foreground hover:bg-muted/70 transition-colors font-medium flex items-center gap-1.5"
-                        onclick={() => (showGenerateDialog = true)}
-                    >
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-                        </svg>
-                        Generate Protocol
-                    </button>
-                {/if}
             </div>
 
             <!-- Messages -->
@@ -184,6 +180,16 @@
                 {/if}
 
                 {#each activeSession.messages as msg (msg.id)}
+                    {#if msg.role === 'summary'}
+                        <!-- Compaction separator -->
+                        <div class="flex items-center gap-3 py-2 px-4">
+                            <div class="flex-1 h-px bg-border/40"></div>
+                            <span class="text-xs text-muted-foreground whitespace-nowrap">
+                                Earlier messages summarized for AI
+                            </span>
+                            <div class="flex-1 h-px bg-border/40"></div>
+                        </div>
+                    {:else}
                     <div class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start'}">
                         <div
                             class="max-w-[80%] rounded-xl px-4 py-3
@@ -204,6 +210,12 @@
                                                     Searched documents for "{tc.query}" ({tc.results} result{tc.results !== 1 ? 's' : ''})
                                                 {:else if tc.tool === 'read_document_section'}
                                                     Read document section (chunk {tc.chunk_index})
+                                                {:else if tc.tool === 'list_unit_ops'}
+                                                    Listed unit operations ({tc.results} available)
+                                                {:else if tc.tool === 'create_unit_op'}
+                                                    Created unit operation "{tc.name}"
+                                                {:else if tc.tool === 'create_protocol'}
+                                                    Created protocol draft
                                                 {:else}
                                                     {tc.tool}
                                                 {/if}
@@ -225,12 +237,18 @@
                                         {getMessageSources(msg).length} source{getMessageSources(msg).length > 1 ? 's' : ''}
                                     </button>
                                 {/if}
+                                {#if msg.metadata_?.context_warning}
+                                    <div class="mt-2 px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/30 text-xs text-amber-600 dark:text-amber-400">
+                                        <span class="font-medium">Note:</span> {msg.metadata_.context_warning}
+                                    </div>
+                                {/if}
                             {:else}
                                 <p class="text-sm whitespace-pre-wrap">{msg.content}</p>
                             {/if}
                             <p class="text-[10px] mt-1.5 opacity-60">{formatTime(msg.created_at)}</p>
                         </div>
                     </div>
+                    {/if}
                 {/each}
 
                 {#if sending}
@@ -251,23 +269,29 @@
             <!-- Input area -->
             <div class="border-t border-border/40 p-4 bg-card/30">
                 <div class="flex items-end gap-3 max-w-4xl mx-auto">
+                    {#if hasMessages && skills.length > 0}
+                        <ChatSkillButtons {skills} mode="dropdown" onactivate={activateSkill} />
+                    {/if}
                     <textarea
                         bind:this={inputEl}
                         value={messageInput}
                         oninput={(e) => setMessageInput(e.currentTarget.value)}
                         onkeydown={handleKeydown}
                         placeholder="Ask about cell biology, protocols, experiments..."
-                        class="flex-1 resize-none rounded-xl border border-border/60 bg-background px-4 py-3 text-sm
-                            placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50
-                            min-h-[44px] max-h-[200px]"
+                        class="flex-1 resize-none rounded-xl border bg-background px-4 py-3 text-sm
+                            placeholder:text-muted-foreground focus:outline-none focus:ring-2
+                            min-h-[44px] max-h-[200px]
+                            {messageError
+                                ? 'border-red-500 focus:ring-red-500/30 focus:border-red-500'
+                                : 'border-border/60 focus:ring-primary/30 focus:border-primary/50'}"
                         rows="1"
                         disabled={sending}
                     ></textarea>
                     <button
                         class="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90
                             transition-colors flex items-center justify-center disabled:opacity-50"
-                        onclick={sendMessage}
-                        disabled={!messageInput.trim() || sending}
+                        onclick={() => sendMessage()}
+                        disabled={!messageInput.trim() || sending || !!messageError}
                         aria-label="Send message"
                     >
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -275,6 +299,14 @@
                         </svg>
                     </button>
                 </div>
+                {#if messageError}
+                    <p class="text-xs text-red-500 mt-1.5 max-w-4xl mx-auto">{messageError}</p>
+                {/if}
+                {#if !hasMessages && skills.length > 0}
+                    <div class="max-w-4xl mx-auto mt-2">
+                        <ChatSkillButtons {skills} mode="chips" onactivate={activateSkill} />
+                    </div>
+                {/if}
                 <p class="text-[11px] text-muted-foreground text-center mt-2">
                     Trellis AI can make mistakes. Verify important information.
                 </p>
@@ -334,14 +366,6 @@
       {/if}
     </div>
 </div>
-
-{#if activeSession}
-    <GenerateProtocolDialog
-        bind:open={showGenerateDialog}
-        sessionId={activeSession.id}
-        onSuccess={(protocolId) => goto(`/protocols/${protocolId}`)}
-    />
-{/if}
 
 <style>
     .chat-prose :global(pre) {

@@ -9,13 +9,13 @@ from app.models.iam import Organization
 
 
 # Mock LLM call for all tests in this module
-# _call_llm now returns (content, sources, tool_calls, message_history)
+# _call_llm returns (content, sources, tool_calls, message_history, context_warning)
 @pytest.fixture(autouse=True)
 def mock_llm_and_rag():
     with patch(
         "app.services.chat_service._call_llm",
         new_callable=AsyncMock,
-        return_value=("I'm Trellis AI, happy to help!", [], [], []),
+        return_value=("I'm Trellis AI, happy to help!", [], [], [], None),
     ):
         yield
 
@@ -341,6 +341,7 @@ class TestSendChatMessageWithRAG:
                 fake_sources,
                 fake_tool_calls,
                 [],
+                None,
             ),
         ):
             yield

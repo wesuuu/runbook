@@ -15,6 +15,7 @@ class ChatSessionCreate(BaseModel):
 
 class ChatMessageCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=10000)
+    skill_id: Optional[str] = None
 
 
 class ChatSessionUpdate(BaseModel):
@@ -73,12 +74,18 @@ class ChatCompletionResponse(BaseModel):
     sources: list[ChatSourceReference] = []
 
 
-class GenerateProtocolRequest(BaseModel):
-    project_id: UUID
-    protocol_name: Optional[str] = Field(None, max_length=255)
+class ChatSkillResponse(BaseModel):
+    name: str
+    description: str
+    icon: str
 
 
-class GenerateProtocolResponse(BaseModel):
-    protocol_id: UUID
-    protocol_name: str
-    project_id: UUID
+class ChatSkillListResponse(BaseModel):
+    skills: list[ChatSkillResponse]
+
+
+class ChatConfigResponse(BaseModel):
+    max_message_length: int
+    model_name: str
+    context_window: int
+    compaction_threshold: float

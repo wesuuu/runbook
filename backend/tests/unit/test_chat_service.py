@@ -1,4 +1,6 @@
+import json
 import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -16,12 +18,15 @@ from app.services.chat_service import (
     delete_session,
     get_session,
     list_sessions,
-    _get_message_history,
+    estimate_tokens,
+    estimate_messages_tokens,
+    compact_history,
+    _build_conversation_text,
+    _truncate_to_fit,
     ChatDeps,
     RetrievedChunk,
     SearchDocumentsResult,
     search_documents_tool,
-    MAX_CONTEXT_MESSAGES,
 )
 
 
@@ -84,7 +89,6 @@ class TestGetSession:
     async def test_returns_session_with_messages(
         self, db_session: AsyncSession, chat_session: ChatSession
     ):
-        # Add a message
         msg = ChatMessage(
             session_id=chat_session.id,
             role=ChatMessageRole.USER,
@@ -164,51 +168,6 @@ class TestDeleteSession:
         assert result is None
 
 
-class TestGetMessageHistory:
-    @pytest.mark.asyncio
-    async def test_returns_messages_in_order(
-        self, db_session: AsyncSession, chat_session: ChatSession
-    ):
-        db_session.add(
-            ChatMessage(
-                session_id=chat_session.id,
-                role=ChatMessageRole.USER,
-                content="First",
-            )
-        )
-        db_session.add(
-            ChatMessage(
-                session_id=chat_session.id,
-                role=ChatMessageRole.ASSISTANT,
-                content="Reply",
-            )
-        )
-        await db_session.flush()
-
-        history = await _get_message_history(db_session, chat_session.id)
-        assert len(history) == 2
-        assert history[0]["role"] == "user"
-        assert history[0]["content"] == "First"
-        assert history[1]["role"] == "assistant"
-
-    @pytest.mark.asyncio
-    async def test_truncates_to_max_context(
-        self, db_session: AsyncSession, chat_session: ChatSession
-    ):
-        for i in range(MAX_CONTEXT_MESSAGES + 10):
-            db_session.add(
-                ChatMessage(
-                    session_id=chat_session.id,
-                    role=ChatMessageRole.USER,
-                    content=f"Message {i}",
-                )
-            )
-        await db_session.flush()
-
-        history = await _get_message_history(db_session, chat_session.id)
-        assert len(history) == MAX_CONTEXT_MESSAGES
-
-
 class TestSearchDocumentsToolResult:
     def test_search_result_model_structure(self):
         result = SearchDocumentsResult(
@@ -221,8 +180,10 @@ class TestSearchDocumentsToolResult:
         assert result.results == []
 
     def test_chat_deps_accumulates_sources(self):
-        from unittest.mock import MagicMock
-        deps = ChatDeps(db=MagicMock(), org_id=uuid.uuid4())
+        deps = ChatDeps(
+            db=MagicMock(), org_id=uuid.uuid4(),
+            user_id=uuid.uuid4(), is_org_admin=False,
+        )
         assert deps.sources == []
         assert deps.tool_calls == []
 
@@ -270,3 +231,252 @@ class TestSearchDocumentsToolResult:
                 seen_ids.add(s.chunk_id)
                 unique.append(s)
         assert len(unique) == 1
+
+
+# ─── Token Estimation Tests ───
+
+
+class TestEstimateTokens:
+    def test_basic_heuristic(self):
+        # 4 chars per token
+        assert estimate_tokens("abcd") == 1
+        assert estimate_tokens("abcdefgh") == 2
+        assert estimate_tokens("") == 0
+
+    def test_longer_text(self):
+        text = "a" * 400
+        assert estimate_tokens(text) == 100
+
+    def test_short_text_rounds_down(self):
+        assert estimate_tokens("ab") == 0
+        assert estimate_tokens("abc") == 0
+        assert estimate_tokens("abcd") == 1
+
+
+class TestEstimateMessagesTokens:
+    def test_sums_across_messages(self):
+        messages = [
+            {
+                "kind": "request",
+                "parts": [
+                    {"part_kind": "user-prompt", "content": "a" * 100}
+                ],
+            },
+            {
+                "kind": "response",
+                "parts": [
+                    {"part_kind": "text", "content": "b" * 200}
+                ],
+            },
+        ]
+        tokens = estimate_messages_tokens(messages)
+        # Each message serializes to JSON; total should reflect both
+        assert tokens > 0
+
+    def test_strips_system_prompt_parts(self):
+        msg_with_system = {
+            "kind": "request",
+            "parts": [
+                {"part_kind": "system-prompt", "content": "x" * 1000},
+                {"part_kind": "user-prompt", "content": "hello"},
+            ],
+        }
+        msg_without_system = {
+            "kind": "request",
+            "parts": [
+                {"part_kind": "user-prompt", "content": "hello"},
+            ],
+        }
+        # With system prompt stripped, both should produce similar token counts
+        tokens_with = estimate_messages_tokens([msg_with_system])
+        tokens_without = estimate_messages_tokens([msg_without_system])
+        assert tokens_with == tokens_without
+
+    def test_empty_messages(self):
+        assert estimate_messages_tokens([]) == 0
+
+
+# ─── Conversation Text Building ───
+
+
+class TestBuildConversationText:
+    def test_builds_from_dict_messages(self):
+        messages = [
+            {
+                "kind": "request",
+                "parts": [
+                    {"part_kind": "user-prompt", "content": "What is CHO?"},
+                ],
+            },
+            {
+                "kind": "response",
+                "parts": [
+                    {"part_kind": "text", "content": "CHO stands for Chinese Hamster Ovary."},
+                ],
+            },
+        ]
+        text = _build_conversation_text(messages)
+        assert "User: What is CHO?" in text
+        assert "Assistant: CHO stands for Chinese Hamster Ovary." in text
+
+    def test_includes_existing_summary(self):
+        text = _build_conversation_text([], existing_summary="Previous context here")
+        assert "[Previous summary]: Previous context here" in text
+
+    def test_truncates_long_tool_returns(self):
+        messages = [
+            {
+                "kind": "request",
+                "parts": [
+                    {
+                        "part_kind": "tool-return",
+                        "tool_name": "search_documents",
+                        "content": "x" * 500,
+                    },
+                ],
+            },
+        ]
+        text = _build_conversation_text(messages)
+        assert "..." in text
+        # Tool return content should be truncated to 200 chars
+        assert len(text) < 500
+
+
+# ─── Truncate to Fit ───
+
+
+class TestTruncateToFit:
+    def test_removes_oldest_messages_first(self):
+        messages = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "a" * 400}]},
+            {"kind": "response", "parts": [{"part_kind": "text", "content": "b" * 400}]},
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "c" * 100}]},
+        ]
+        # Set a tight budget that can only fit the last message
+        result = _truncate_to_fit(messages, 50)
+        assert len(result) == 1
+        assert result[0]["parts"][0]["content"] == "c" * 100
+
+    def test_preserves_last_message(self):
+        messages = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "a" * 10000}]},
+        ]
+        result = _truncate_to_fit(messages, 10)
+        # Should always keep at least one message
+        assert len(result) == 1
+
+    def test_no_truncation_when_under_budget(self):
+        messages = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "hi"}]},
+        ]
+        result = _truncate_to_fit(messages, 100000)
+        assert len(result) == 1
+
+
+# ─── Compact History ───
+
+
+class TestCompactHistory:
+    @pytest.mark.asyncio
+    async def test_no_compaction_under_budget(
+        self, db_session: AsyncSession, chat_session: ChatSession
+    ):
+        # Small messages, big budget
+        messages = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "hi"}]},
+            {"kind": "response", "parts": [{"part_kind": "text", "content": "hello"}]},
+        ]
+        result, summary = await compact_history(
+            db=db_session,
+            session_id=chat_session.id,
+            messages=messages,
+            token_budget=100000,
+            model=MagicMock(),
+            org_id=chat_session.org_id,
+        )
+        assert result == messages
+        assert summary is None
+
+    @pytest.mark.asyncio
+    async def test_compaction_over_budget(
+        self, db_session: AsyncSession, chat_session: ChatSession
+    ):
+        # Add some DB messages so the count query works
+        for i in range(4):
+            db_session.add(ChatMessage(
+                session_id=chat_session.id,
+                role=ChatMessageRole.USER if i % 2 == 0 else ChatMessageRole.ASSISTANT,
+                content=f"Message {i}",
+            ))
+        await db_session.flush()
+
+        # Create pydantic-ai style messages that exceed the budget
+        messages = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "a" * 2000}]},
+            {"kind": "response", "parts": [{"part_kind": "text", "content": "b" * 2000}]},
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "c" * 2000}]},
+            {"kind": "response", "parts": [{"part_kind": "text", "content": "d" * 100}]},
+        ]
+
+        with patch(
+            "app.services.chat_service._generate_summary",
+            new_callable=AsyncMock,
+            return_value="Summary of the conversation.",
+        ):
+            result, summary = await compact_history(
+                db=db_session,
+                session_id=chat_session.id,
+                messages=messages,
+                token_budget=100,  # Very small budget to force compaction
+                model=MagicMock(),
+                org_id=chat_session.org_id,
+            )
+
+        assert summary == "Summary of the conversation."
+        # Should have compacted: [summary_request] + [latest_message]
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_compaction_inserts_summary_message(
+        self, db_session: AsyncSession, chat_session: ChatSession
+    ):
+        # Add DB messages
+        db_session.add(ChatMessage(
+            session_id=chat_session.id,
+            role=ChatMessageRole.USER,
+            content="Hello",
+        ))
+        await db_session.flush()
+
+        messages = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "a" * 2000}]},
+            {"kind": "response", "parts": [{"part_kind": "text", "content": "b" * 100}]},
+        ]
+
+        with patch(
+            "app.services.chat_service._generate_summary",
+            new_callable=AsyncMock,
+            return_value="Test summary content.",
+        ):
+            await compact_history(
+                db=db_session,
+                session_id=chat_session.id,
+                messages=messages,
+                token_budget=100,
+                model=MagicMock(),
+                org_id=chat_session.org_id,
+            )
+
+        # Verify summary message was inserted
+        from sqlalchemy import select
+        result = await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.session_id == chat_session.id,
+                ChatMessage.role == ChatMessageRole.SUMMARY,
+            )
+        )
+        summary_msg = result.scalar_one_or_none()
+        assert summary_msg is not None
+        assert summary_msg.content == "Test summary content."
+        assert summary_msg.metadata_["type"] == "summary"
+        assert summary_msg.metadata_["summarized_message_count"] == 1

@@ -12,9 +12,9 @@ import pytest
 from app.services.protocol_generator import (
     GeneratedProtocol,
     GeneratedStep,
-    _build_graph,
-    _extract_params,
-    _match_unit_op,
+    build_graph,
+    extract_params,
+    match_unit_op,
 )
 
 
@@ -46,7 +46,7 @@ class TestBuildGraph:
         session_id = uuid.uuid4()
         user_id = uuid.uuid4()
 
-        graph = _build_graph(generated, unit_ops, session_id, user_id)
+        graph = build_graph(generated, unit_ops, session_id, user_id)
 
         assert len(graph["nodes"]) == 1
         assert len(graph["edges"]) == 0
@@ -68,7 +68,7 @@ class TestBuildGraph:
             steps=steps,
         )
 
-        graph = _build_graph(generated, [], uuid.uuid4(), uuid.uuid4())
+        graph = build_graph(generated, [], uuid.uuid4(), uuid.uuid4())
 
         assert len(graph["nodes"]) == 3
         assert len(graph["edges"]) == 2
@@ -86,7 +86,7 @@ class TestBuildGraph:
         ]
         generated = GeneratedProtocol(name="P", description="", steps=steps)
 
-        graph = _build_graph(generated, [], uuid.uuid4(), uuid.uuid4())
+        graph = build_graph(generated, [], uuid.uuid4(), uuid.uuid4())
 
         x0 = graph["nodes"][0]["position"]["x"]
         x1 = graph["nodes"][1]["position"]["x"]
@@ -99,7 +99,7 @@ class TestBuildGraph:
         session_id = uuid.uuid4()
         user_id = uuid.uuid4()
 
-        graph = _build_graph(generated, [], session_id, user_id)
+        graph = build_graph(generated, [], session_id, user_id)
 
         meta = graph["_metadata"]
         assert meta["source"] == "ai_generated"
@@ -111,7 +111,7 @@ class TestBuildGraph:
         steps = [GeneratedStep(name="S", unit_op_name="S", duration_min=10)]
         generated = GeneratedProtocol(name="P", description="", steps=steps)
 
-        graph = _build_graph(generated, [], uuid.uuid4(), uuid.uuid4())
+        graph = build_graph(generated, [], uuid.uuid4(), uuid.uuid4())
 
         assert graph["layout"] == "horizontal"
         assert graph["handleOrientation"] == "horizontal"
@@ -139,7 +139,7 @@ class TestBuildGraph:
             name="P", description="", steps=[step]
         )
 
-        graph = _build_graph(generated, [op], uuid.uuid4(), uuid.uuid4())
+        graph = build_graph(generated, [op], uuid.uuid4(), uuid.uuid4())
 
         node = graph["nodes"][0]
         assert node["data"]["category"] == "Cell Culture"
@@ -153,23 +153,23 @@ class TestBuildGraph:
 class TestMatchUnitOp:
     def test_exact_match(self):
         ops = [_make_unit_op("Buffer Mix"), _make_unit_op("Seeding")]
-        result = _match_unit_op("Buffer Mix", ops)
+        result = match_unit_op("Buffer Mix", ops)
         assert result is not None
         assert result.name == "Buffer Mix"
 
     def test_case_insensitive_match(self):
         ops = [_make_unit_op("Buffer Mix")]
-        result = _match_unit_op("buffer mix", ops)
+        result = match_unit_op("buffer mix", ops)
         assert result is not None
         assert result.name == "Buffer Mix"
 
     def test_no_match_returns_none(self):
         ops = [_make_unit_op("Buffer Mix")]
-        result = _match_unit_op("Centrifugation", ops)
+        result = match_unit_op("Centrifugation", ops)
         assert result is None
 
     def test_empty_catalog(self):
-        result = _match_unit_op("Anything", [])
+        result = match_unit_op("Anything", [])
         assert result is None
 
 
@@ -184,7 +184,7 @@ class TestExtractParams:
         }
         step_params = {"temperature": 42.0}
 
-        result = _extract_params(step_params, schema)
+        result = extract_params(step_params, schema)
 
         assert result["temperature"] == 42.0  # overridden
         assert result["ph"] == 7.4  # default
@@ -199,13 +199,13 @@ class TestExtractParams:
         }
         step_params = {}
 
-        result = _extract_params(step_params, schema)
+        result = extract_params(step_params, schema)
 
         assert "name" not in result  # no default, no value
         assert result["count"] == 1
 
     def test_empty_schema(self):
-        result = _extract_params({"a": 1, "b": 2}, {})
+        result = extract_params({"a": 1, "b": 2}, {})
         assert result == {"a": 1, "b": 2}
 
     def test_extra_params_preserved(self):
@@ -214,6 +214,6 @@ class TestExtractParams:
                 "x": {"type": "number", "default": 0},
             }
         }
-        result = _extract_params({"x": 5, "extra": "value"}, schema)
+        result = extract_params({"x": 5, "extra": "value"}, schema)
         assert result["x"] == 5
         assert result["extra"] == "value"

@@ -213,3 +213,90 @@ async def get_full_config(
         "credentials": None,
         "is_enabled": False,
     }
+
+
+def _resolve_context_window_from_name(model_name: str) -> int | None:
+    """Match a model name against settings.context_window_defaults.
+
+    Tries exact match first, then prefix match (longest prefix wins).
+    """
+    defaults = settings.context_window_defaults
+    if model_name in defaults:
+        return defaults[model_name]
+    # Prefix match — longest key that matches wins
+    best_key = ""
+    for key in defaults:
+        if model_name.startswith(key) and len(key) > len(best_key):
+            best_key = key
+    if best_key:
+        return defaults[best_key]
+    return None
+
+
+async def get_context_window(
+    capability: str, db: AsyncSession, org_id: Optional[UUID] = None
+) -> int:
+    """Resolve the context window size for a capability.
+
+    Resolution order:
+    1. AiProviderConfig.context_window from DB
+    2. settings.context_window_defaults lookup by model name
+    3. 8192 fallback
+    """
+    model_name = None
+
+    # 1. Try org-specific DB row
+    if org_id is not None:
+        result = await db.execute(
+            select(AiProviderConfig).where(
+                AiProviderConfig.org_id == org_id,
+                AiProviderConfig.capability == capability,
+                AiProviderConfig.is_enabled == True,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            if row.context_window:
+                return row.context_window
+            model_name = row.model_name
+
+    # 2. Env var / default model name lookup
+    if model_name is None:
+        env = _get_env_fallback(capability)
+        if env:
+            model_name = env["model_name"]
+        else:
+            defaults = DEFAULT_CONFIGS.get(capability, DEFAULT_CONFIGS["text"])
+            model_name = defaults["model_name"]
+
+    if model_name:
+        from_config = _resolve_context_window_from_name(model_name)
+        if from_config is not None:
+            return from_config
+
+    # 3. Conservative fallback
+    return 8192
+
+
+async def get_model_display_name(
+    capability: str, db: AsyncSession, org_id: Optional[UUID] = None
+) -> str:
+    """Return a human-readable model name for a capability."""
+    if org_id is not None:
+        result = await db.execute(
+            select(AiProviderConfig.model_name).where(
+                AiProviderConfig.org_id == org_id,
+                AiProviderConfig.capability == capability,
+                AiProviderConfig.is_enabled == True,
+            )
+        )
+        name = result.scalar_one_or_none()
+        if name:
+            return name
+
+    env = _get_env_fallback(capability)
+    if env:
+        return env["model_name"]
+
+    defaults = DEFAULT_CONFIGS.get(capability, DEFAULT_CONFIGS["text"])
+    return defaults["model_name"]
