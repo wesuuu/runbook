@@ -30,7 +30,7 @@
         loading = true;
         try {
             await register(email, password, fullName);
-            goto('/');
+            goto('/check-email');
         } catch (err: unknown) {
             error = err instanceof Error ? err.message : 'Registration failed';
         } finally {

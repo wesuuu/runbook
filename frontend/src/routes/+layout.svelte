@@ -3,7 +3,7 @@
     import { page } from '$app/stores';
     import { beforeNavigate } from '$app/navigation';
     import { goto } from '$app/navigation';
-    import { initialize, isAuthenticated, isInitialized, getUserPreferences } from '$lib/auth.svelte';
+    import { initialize, isAuthenticated, isEmailVerified, isInitialized, getUserPreferences, handleVerificationCallback } from '$lib/auth.svelte';
     import { initConnectivity, destroyConnectivity } from '$lib/pwa.svelte';
     import { initFieldMode } from '$lib/field-mode.svelte';
     import { initSyncManager, destroySyncManager } from '$lib/sync-manager';
@@ -22,7 +22,7 @@
 
     let { children } = $props();
 
-    const publicRoutes = ['/login', '/register'];
+    const publicRoutes = ['/login', '/register', '/check-email'];
     const fieldModeRoutes = ['/field'];
 
     const isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
@@ -38,18 +38,30 @@
     onMount(async () => {
         initConnectivity();
         initSyncManager();
+
+        // Handle verification callback (redirect from backend verify-email)
+        const urlParams = new URLSearchParams(window.location.search);
+        const authToken = urlParams.get('auth_token');
+        if (authToken) {
+            // Remove token from URL to avoid leaking it
+            window.history.replaceState({}, '', '/');
+            await handleVerificationCallback(authToken);
+        }
+
         await initialize();
         await initFieldMode();
 
         // Initial redirect check
         if (!isAuthenticated() && !publicRoutes.includes($page.url.pathname)) {
             goto('/login');
-        } else if (isAuthenticated() && publicRoutes.includes($page.url.pathname)) {
+        } else if (isAuthenticated() && !isEmailVerified() && $page.url.pathname !== '/check-email') {
+            goto('/check-email');
+        } else if (isAuthenticated() && isEmailVerified() && publicRoutes.includes($page.url.pathname)) {
             goto('/');
         }
 
         // Initialize chat store (fire-and-forget, idempotent)
-        if (isAuthenticated()) {
+        if (isAuthenticated() && isEmailVerified()) {
             initChat();
         }
     });
@@ -66,6 +78,9 @@
         if (!isAuthenticated() && !publicRoutes.includes(path)) {
             cancel();
             goto('/login');
+        } else if (isAuthenticated() && !isEmailVerified() && path !== '/check-email' && !publicRoutes.includes(path)) {
+            cancel();
+            goto('/check-email');
         }
     });
 

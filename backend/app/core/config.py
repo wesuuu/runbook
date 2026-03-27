@@ -13,6 +13,24 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     auth_enabled: bool = True
 
+    # SMTP / Email
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_from: str = "noreply@runbook.local"
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_tls: bool = False
+
+    # Verification
+    verification_token_ttl_days: int = 7
+    verification_resend_limit: int = 3
+    verification_resend_window_minutes: int = 10
+    verification_temp_token_minutes: int = 60
+
+    # URLs (for verification email links and redirects)
+    frontend_url: str = "http://localhost:5173"
+    backend_url: str = "http://localhost:8000"
+
     @model_validator(mode="after")
     def _warn_insecure_defaults(self) -> "Settings":
         if not self.debug:
