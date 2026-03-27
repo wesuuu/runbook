@@ -8,6 +8,7 @@ interface User {
     avatar_url: string | null;
     preferences: Record<string, string>;
     is_active: boolean;
+    email_verified: boolean;
 }
 
 interface Org {
@@ -49,6 +50,10 @@ export function isInitialized(): boolean {
 
 export function getUserPreferences(): Record<string, string> {
     return user?.preferences ?? {};
+}
+
+export function isEmailVerified(): boolean {
+    return user?.email_verified ?? false;
 }
 
 export async function refreshUser(): Promise<void> {
@@ -143,14 +148,26 @@ export async function login(email: string, password: string): Promise<void> {
 }
 
 export async function register(email: string, password: string, fullName: string): Promise<void> {
-    const res = await authFetch<{ access_token: string }>('POST', '/auth/register', {
+    const res = await authFetch<{ verification_token: string }>('POST', '/auth/register', {
         email,
         password,
         full_name: fullName,
     });
-    token = res.access_token;
+    token = res.verification_token;
     localStorage.setItem('auth_token', token);
 
+    // Fetch user profile (allowed for verification scope)
+    user = await authFetch<User>('GET', '/auth/me');
+    // Don't load orgs or chat — verification scope blocks those endpoints
+}
+
+export async function resendVerification(): Promise<void> {
+    await authFetch<{ message: string }>('POST', '/auth/resend-verification');
+}
+
+export async function handleVerificationCallback(authToken: string): Promise<void> {
+    token = authToken;
+    localStorage.setItem('auth_token', token);
     user = await authFetch<User>('GET', '/auth/me');
     await loadOrgs();
     cacheAuthData();
@@ -196,8 +213,10 @@ export async function initialize(): Promise<void> {
 
     try {
         user = await authFetch<User>('GET', '/auth/me');
-        await loadOrgs();
-        cacheAuthData();
+        if (user.email_verified) {
+            await loadOrgs();
+            cacheAuthData();
+        }
     } catch (err) {
         if (isNetworkError(err)) {
             // Network failure — load cached data instead of logging out

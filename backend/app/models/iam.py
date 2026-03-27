@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime
 from enum import Enum
 from typing import Any, List, Optional
 
-from sqlalchemy import String, ForeignKey, Boolean, UniqueConstraint, Index
+from sqlalchemy import DateTime, String, ForeignKey, Boolean, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -113,6 +114,9 @@ class User(Base, UUIDMixin, TimestampMixin):
         JSONB, default=dict, server_default="{}", nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     selected_org_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("organizations.id"), nullable=True
     )
@@ -193,3 +197,24 @@ class ObjectPermission(Base, UUIDMixin, TimestampMixin):
     object_type: Mapped[str] = mapped_column(String, nullable=False)
     object_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     permission_level: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class VerificationToken(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "verification_tokens"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    token: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    used: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )

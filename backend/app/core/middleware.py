@@ -7,10 +7,16 @@ from app.core.security import decode_access_token, decode_offline_token
 PUBLIC_PATHS = {
     "/auth/login",
     "/auth/register",
+    "/auth/verify-email",
     "/docs",
     "/openapi.json",
     "/redoc",
     "/health",
+}
+
+VERIFICATION_ALLOWED_PATHS = {
+    "/auth/resend-verification",
+    "/auth/me",
 }
 
 
@@ -48,6 +54,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 status_code=401,
                 content={"detail": "Invalid or expired token"},
             )
+
+        # Verification scope gating — temp tokens only allow resend + me
+        if payload.scope == "verification":
+            if request.url.path not in VERIFICATION_ALLOWED_PATHS:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Email not verified"},
+                )
+
+        # Unverified regular token gating
+        if not payload.email_verified and payload.scope is None:
+            if request.url.path not in VERIFICATION_ALLOWED_PATHS:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Email not verified"},
+                )
 
         request.state.token_payload = payload
         request.state.offline_payload = None

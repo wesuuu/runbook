@@ -1,3 +1,4 @@
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -14,6 +15,8 @@ class TokenPayload:
     user_id: UUID
     org_id: Optional[UUID] = None
     subscription_tier: str = "essentials"
+    email_verified: bool = True
+    scope: str | None = None
 
 
 def hash_password(plain: str) -> str:
@@ -32,17 +35,46 @@ def create_access_token(
     user_id: UUID,
     org_id: Optional[UUID] = None,
     subscription_tier: str = "essentials",
+    email_verified: bool = True,
 ) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.access_token_expire_minutes
     )
-    payload: dict = {"sub": str(user_id), "exp": expire}
+    payload: dict = {
+        "sub": str(user_id),
+        "exp": expire,
+        "ev": email_verified,
+    }
     if org_id is not None:
         payload["org_id"] = str(org_id)
     payload["tier"] = subscription_tier
     return jwt.encode(
         payload, settings.secret_key, algorithm=settings.jwt_algorithm
     )
+
+
+def create_verification_jwt(
+    user_id: UUID, org_id: UUID | None = None
+) -> str:
+    """1-hour temp token with scope=verification."""
+    expire = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.verification_temp_token_minutes
+    )
+    payload: dict = {
+        "sub": str(user_id),
+        "scope": "verification",
+        "exp": expire,
+    }
+    if org_id is not None:
+        payload["org_id"] = str(org_id)
+    return jwt.encode(
+        payload, settings.secret_key, algorithm=settings.jwt_algorithm
+    )
+
+
+def generate_verification_token() -> str:
+    """Generate a cryptographically secure URL-safe token."""
+    return secrets.token_urlsafe(32)
 
 
 def create_offline_token(user_id: UUID, run_id: UUID, days: int = 7) -> tuple[str, str, datetime]:
@@ -79,6 +111,8 @@ def decode_access_token(token: str) -> TokenPayload | None:
             user_id=UUID(sub),
             org_id=UUID(org_id_str) if org_id_str else None,
             subscription_tier=payload.get("tier", "essentials"),
+            email_verified=payload.get("ev", True),
+            scope=payload.get("scope"),
         )
     except (JWTError, ValueError):
         return None

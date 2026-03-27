@@ -13,6 +13,24 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     auth_enabled: bool = True
 
+    # SMTP / Email
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_from: str = "noreply@runbook.local"
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_tls: bool = False
+
+    # Verification
+    verification_token_ttl_days: int = 7
+    verification_resend_limit: int = 3
+    verification_resend_window_minutes: int = 10
+    verification_temp_token_minutes: int = 60
+
+    # URLs (for verification email links and redirects)
+    frontend_url: str = "http://localhost:5173"
+    backend_url: str = "http://localhost:8000"
+
     @model_validator(mode="after")
     def _warn_insecure_defaults(self) -> "Settings":
         if not self.debug:
@@ -69,6 +87,44 @@ class Settings(BaseSettings):
     # Task runner backend: "thread" (default) — future: "kubernetes", "celery"
     task_runner_backend: str = "thread"
     task_runner_pool_size: int = 4
+
+    # Chat agent skills directory
+    skills_dir: str = "skills"
+
+    # Chat context window management
+    max_message_length: int = 10000
+    compaction_threshold: float = 0.6
+    context_window_defaults: dict = {
+        # Ollama / small models
+        "llama3": 8192,
+        "llama3.1": 131072,
+        "llama3.2": 131072,
+        "gemma3": 8192,
+        "gemma2": 8192,
+        "phi3": 4096,
+        "phi4": 16384,
+        "qwen3": 32768,
+        "qwen3.5": 32768,
+        "qwen2.5": 32768,
+        "mistral": 32768,
+        "mixtral": 32768,
+        "deepseek-r1": 65536,
+        "command-r": 131072,
+        "command-r-plus": 131072,
+        # Cloud providers
+        "claude-3-5-sonnet": 200000,
+        "claude-3-5-haiku": 200000,
+        "claude-3-opus": 200000,
+        "claude-4": 200000,
+        "gpt-4o": 128000,
+        "gpt-4o-mini": 128000,
+        "gpt-4-turbo": 128000,
+        "gpt-4": 8192,
+        "gpt-3.5-turbo": 16385,
+        "gemini-1.5-pro": 1048576,
+        "gemini-1.5-flash": 1048576,
+        "gemini-2.0-flash": 1048576,
+    }
 
     # Debug mode — enables dev-only endpoints (webhook echo, etc.)
     debug: bool = False

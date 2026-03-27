@@ -117,6 +117,7 @@ async def test_user(db_session, test_org) -> User:
         hashed_password=hash_password("testpass"),
         full_name="Test User",
         selected_org_id=test_org.id,
+        email_verified=True,
     )
     db_session.add(user)
     await db_session.flush()
@@ -137,6 +138,7 @@ async def auth_headers(test_user, test_org) -> dict:
         test_user.id,
         org_id=test_org.id,
         subscription_tier=test_org.subscription_tier,
+        email_verified=True,
     )
     return {"Authorization": f"Bearer {token}"}
 
@@ -157,6 +159,7 @@ async def second_user(db_session, second_org) -> User:
         hashed_password=hash_password("testpass"),
         full_name="Second User",
         selected_org_id=second_org.id,
+        email_verified=True,
     )
     db_session.add(user)
     await db_session.flush()
@@ -177,6 +180,7 @@ async def second_auth_headers(second_user, second_org) -> dict:
         second_user.id,
         org_id=second_org.id,
         subscription_tier=second_org.subscription_tier,
+        email_verified=True,
     )
     return {"Authorization": f"Bearer {token}"}
 

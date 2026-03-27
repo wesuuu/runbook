@@ -28,8 +28,18 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     preferences: dict[str, Any] = {}
     is_active: bool
+    email_verified: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class VerificationTokenResponse(BaseModel):
+    verification_token: str
+    message: str
+
+
+class ResendVerificationResponse(BaseModel):
+    message: str
 
 
 class ProfileUpdate(BaseModel):

@@ -338,6 +338,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "http://localhost:5174",  # Worktree dev
         "http://100.120.2.59:5174",
         "http://localhost:5176",  # Playwright E2E tests
     ],
