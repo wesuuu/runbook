@@ -977,39 +977,31 @@ async def compact_history(
     # Summarize via a lightweight LLM call
     summary_text = await _generate_summary(conversation_text, model)
 
-    # Count how many DB messages exist before the latest
-    result = await db.execute(
-        select(func.count()).select_from(
-            select(ChatMessage.id).where(
-                ChatMessage.session_id == session_id,
-                ChatMessage.role != ChatMessageRole.SUMMARY,
-            ).subquery()
+    # Get message stats in a single query (cast UUID to text for min/max)
+    stats = await db.execute(
+        select(
+            func.count(ChatMessage.id),
+            func.min(ChatMessage.created_at),
+            func.max(ChatMessage.created_at),
+        ).where(
+            ChatMessage.session_id == session_id,
+            ChatMessage.role != ChatMessageRole.SUMMARY,
         )
     )
-    db_message_count = result.scalar_one()
-
-    # Get first and last summarized message IDs
-    first_msg = await db.execute(
+    db_message_count, _first_at, _last_at = stats.one()
+    # Get IDs from timestamps (single extra query, but avoids UUID min/max)
+    boundary_result = await db.execute(
         select(ChatMessage.id)
         .where(
             ChatMessage.session_id == session_id,
             ChatMessage.role != ChatMessageRole.SUMMARY,
+            ChatMessage.created_at.in_([_first_at, _last_at]),
         )
         .order_by(ChatMessage.created_at)
-        .limit(1)
     )
-    first_id = first_msg.scalar_one_or_none()
-
-    last_msg = await db.execute(
-        select(ChatMessage.id)
-        .where(
-            ChatMessage.session_id == session_id,
-            ChatMessage.role != ChatMessageRole.SUMMARY,
-        )
-        .order_by(ChatMessage.created_at.desc())
-        .limit(1)
-    )
-    last_id = last_msg.scalar_one_or_none()
+    boundary_ids = [row[0] for row in boundary_result.all()]
+    first_id = boundary_ids[0] if boundary_ids else None
+    last_id = boundary_ids[-1] if boundary_ids else None
 
     # Insert summary message into DB
     summary_msg = ChatMessage(
@@ -1131,14 +1123,18 @@ async def _generate_summary(conversation_text: str, model) -> str:
 def _truncate_to_fit(messages: list, max_tokens: int) -> list:
     """Hard-truncate message history from the front to fit within token limit.
 
-    Keeps removing the oldest messages until the total is under max_tokens.
+    Pre-calculates per-message token counts to avoid O(N^2) re-estimation.
     Always preserves at least the last message.
     """
-    while len(messages) > 1:
-        if estimate_messages_tokens(messages) <= max_tokens:
-            break
-        messages = messages[1:]
-    return messages
+    if not messages:
+        return messages
+    msg_tokens = [estimate_tokens(json.dumps(m, default=str)) for m in messages]
+    total = sum(msg_tokens)
+    idx = 0
+    while idx < len(messages) - 1 and total > max_tokens:
+        total -= msg_tokens[idx]
+        idx += 1
+    return messages[idx:]
 
 
 # ─── LLM Call ───
@@ -1226,16 +1222,14 @@ async def _call_llm(
         )
 
         # Safety net: if still over the full context window, hard-truncate
-        total_tokens = estimate_messages_tokens(
-            ModelMessagesTypeAdapter.dump_python(message_history, mode="json")
+        serialized = ModelMessagesTypeAdapter.dump_python(
+            message_history, mode="json"
         )
+        total_tokens = estimate_messages_tokens(serialized)
         if total_tokens > context_window:
             logger.warning(
                 "History still %d tokens after compaction (limit %d), truncating",
                 total_tokens, context_window,
-            )
-            serialized = ModelMessagesTypeAdapter.dump_python(
-                message_history, mode="json"
             )
             truncated = _truncate_to_fit(serialized, context_window)
             message_history = ModelMessagesTypeAdapter.validate_python(truncated)

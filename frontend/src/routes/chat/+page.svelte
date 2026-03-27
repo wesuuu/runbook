@@ -181,7 +181,6 @@
 
                 {#each activeSession.messages as msg (msg.id)}
                     {#if msg.role === 'summary'}
-                        <!-- Compaction separator -->
                         <div class="flex items-center gap-3 py-2 px-4">
                             <div class="flex-1 h-px bg-border/40"></div>
                             <span class="text-xs text-muted-foreground whitespace-nowrap">
