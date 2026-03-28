@@ -37,10 +37,10 @@
             <div
                 class="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20 mb-4"
             >
-                <span class="font-mono text-xl font-medium text-primary-foreground leading-none">R</span>
+                <span class="font-mono text-xl font-medium text-primary-foreground leading-none">B</span>
             </div>
-            <h1 class="text-2xl font-bold text-foreground tracking-tight">Runbook</h1>
-            <p class="text-sm text-muted-foreground mt-1.5">Digital Lab Notebook</p>
+            <h1 class="text-2xl font-bold text-foreground tracking-tight">Batchrite</h1>
+            <p class="text-sm text-muted-foreground mt-1.5">Laboratory Execution System</p>
         </div>
 
         <div class="card-warm rounded-xl p-1">
@@ -95,7 +95,7 @@
         </div>
 
         <p class="text-center text-xs text-muted-foreground/60 mt-8 tracking-wide">
-            Trellis Bio &middot; Process Development Platform
+            Batchrite &middot; Laboratory Execution System
         </p>
     </div>
 </div>

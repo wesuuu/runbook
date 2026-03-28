@@ -8,6 +8,8 @@ from typing import Any
 
 from fpdf import FPDF
 
+from app.services.file_storage import IMAGE_MIME_TYPES
+
 from app.services.pdf_base import (
     _resolve_format,
     _fs,
@@ -253,6 +255,9 @@ def generate_batch_record_pdf(
     user_map: dict[str, str] | None = None,
     started_by_id: str | None = None,
     run_status: str | None = None,
+    notes: list[dict[str, Any]] | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+    embed_images: bool = False,
 ) -> bytes:
     """Generate a batch record PDF in tabular format.
 
@@ -412,6 +417,106 @@ def generate_batch_record_pdf(
 
     initials_col = len(col_widths) - 1  # last column is always Initials
 
+    # Pre-assign figure numbers to image attachments
+    active_atts = [a for a in (attachments or []) if not a.get("deleted")]
+    image_atts = [a for a in active_atts if a.get("content_type", "") in IMAGE_MIME_TYPES]
+    non_image_atts = [a for a in active_atts if a.get("content_type", "") not in IMAGE_MIME_TYPES]
+
+    # figure_map: step_id → [figure_number, ...]
+    figure_map: dict[str, list[int]] = {}
+    for fig_idx, att in enumerate(image_atts, start=1):
+        sid = att.get("step_id")
+        if sid:
+            figure_map.setdefault(sid, []).append(fig_idx)
+
+    # Build step name lookup for attachment scope labels
+    step_name_map: dict[str, str] = {}
+    for s in steps:
+        step_name_map[s.get("id", "")] = s.get("name", "")
+
+    def _draw_step_notes_area(
+        step_id: str,
+        row_data: dict[str, Any],
+    ) -> None:
+        """Draw a compact notes sub-area below a step row.
+
+        On blank records: 'Notes:' label with underlines for handwriting.
+        On filled records: shows note text and attachment cross-references.
+        """
+        step_notes_text = row_data.get("notes", "") if filled else ""
+        fig_refs = figure_map.get(step_id, [])
+
+        # Content width: skip # col (and Role col if present)
+        skip_cols = 1 + (1 if has_roles else 0)
+        notes_x = pdf.l_margin + sum(col_widths[:skip_cols])
+        notes_w = sum(col_widths[skip_cols:])
+
+        content_lines: list[str] = []
+        if step_notes_text:
+            content_lines = _wrap_text(pdf, step_notes_text, notes_w - 6)
+
+        fig_line = ""
+        if fig_refs and filled:
+            fig_str = ", ".join(f"Figure {n}" for n in fig_refs)
+            fig_line = f"See {fig_str}"
+
+        lh = table_line_h
+        if content_lines:
+            # Filled: label line + wrapped text
+            area_h = lh + len(content_lines) * lh
+        else:
+            # Blank: generous space for handwriting (~20mm)
+            area_h = 20
+        if fig_line:
+            area_h += lh
+
+        # Page break check
+        if pdf.get_y() + area_h > pdf.h - 25:
+            pdf.add_page()
+
+        y_start = pdf.get_y()
+
+        # "Notes:" label (inline, small)
+        pdf.set_xy(notes_x + 2, y_start + 0.5)
+        pdf.set_font(ff, "I", fs["table"] - 1)
+        pdf.set_text_color(150, 155, 165)
+        label_w = pdf.get_string_width("Notes:") + 2
+        pdf.cell(label_w, lh, "Notes:")
+
+        if content_lines:
+            # Filled: render note text after label
+            pdf.set_font(ff, "", fs["table"])
+            pdf.set_text_color(51, 65, 85)
+            # First line on same row as label
+            pdf.cell(notes_w - label_w - 4, lh, content_lines[0])
+            # Remaining lines below
+            for ln in content_lines[1:]:
+                pdf.set_xy(notes_x + 2, pdf.get_y() + lh)
+                pdf.cell(notes_w - 4, lh, ln)
+            pdf.set_xy(pdf.l_margin, y_start + area_h)
+
+        # Attachment cross-references
+        if fig_line:
+            ref_y = y_start + area_h - lh
+            pdf.set_xy(notes_x + 2, ref_y)
+            pdf.set_font(ff, "I", fs["table"] - 1)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(notes_w - 4, lh, fig_line)
+
+        y_end = y_start + area_h
+        # Border matching table width
+        pdf.set_draw_color(200, 200, 200)
+        pdf.rect(pdf.l_margin, y_start, sum(col_widths), area_h)
+        # Left column dividers for # (and Role)
+        x_acc = pdf.l_margin
+        for ci in range(skip_cols):
+            x_acc += col_widths[ci]
+            pdf.line(x_acc, y_start, x_acc, y_end)
+
+        pdf.set_xy(pdf.l_margin, y_end)
+        pdf.set_text_color(51, 65, 85)
+        pdf.set_font(ff, "", fs["table"])
+
     # Check if we should generate separate tables per process
     multi_process = not is_role_based and len(rws) > 1
 
@@ -533,6 +638,10 @@ def generate_batch_record_pdf(
                         col_widths[initials_col], y_after - y_before,
                     )
                     pdf.set_xy(pdf.l_margin, y_after)
+
+                # Step-level notes sub-area
+                _draw_step_notes_area(step_id, row_data)
+
     else:
         # Single table with optional section headers
         pdf.set_fill_color(*hc)
@@ -684,7 +793,150 @@ def generate_batch_record_pdf(
                 )
                 pdf.set_xy(pdf.l_margin, y_after)
 
+            # Step-level notes sub-area
+            _draw_step_notes_area(step_id, row_data)
+
     pdf.ln(12)
+
+    # Run-level Notes & Observations section (filled records only)
+    if filled and notes:
+        if pdf.get_y() > pdf.h - 60:
+            pdf.add_page()
+
+        pdf.set_font(ff, "B", fs["step_title"])
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 7, "Notes & Observations")
+        pdf.ln(10)
+
+        for note in notes:
+            if pdf.get_y() > pdf.h - 40:
+                pdf.add_page()
+
+            content = note.get("content", "")
+            author = note.get("author_name", "Unknown")
+            created = note.get("created_at", "")
+            flags = note.get("flags", [])
+            note_status = note.get("run_status", "")
+
+            ts_display = created[:19].replace("T", " ") if created else ""
+            flag_prefix = "[ANOMALY] " if "anomaly" in flags else ""
+
+            pdf.set_font(ff, "B", fs["body"] - 1)
+            pdf.set_text_color(100, 116, 139)
+            meta = f"{author}  |  {ts_display}"
+            if note_status:
+                meta += f"  |  {note_status}"
+            pdf.cell(0, 5, meta)
+            pdf.ln(5)
+
+            pdf.set_font(ff, "", fs["body"])
+            pdf.set_text_color(51, 65, 85)
+            for ln in _wrap_text(pdf, f"{flag_prefix}{content}", pdf.epw - 4):
+                pdf.cell(0, 5, ln)
+                pdf.ln(5)
+
+            pdf.ln(4)
+
+        pdf.ln(4)
+
+    # Attachments reference table (non-image files, filled records only)
+    if filled and non_image_atts:
+        if pdf.get_y() > pdf.h - 60:
+            pdf.add_page()
+
+        pdf.set_font(ff, "B", fs["step_title"])
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 7, f"Attachments ({len(non_image_atts)})")
+        pdf.ln(10)
+
+        ref_cols = [w * 0.35, w * 0.15, w * 0.25, w * 0.25]
+        ref_headers = ["Filename", "Type", "Scope", "Uploaded"]
+        pdf.set_fill_color(*hc)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font(ff, "B", fs["table"])
+        _draw_table_row(
+            pdf, ref_cols, ref_headers,
+            line_h=table_line_h, min_h=table_min_h,
+            aligns=["L", "L", "L", "L"], fill=True,
+        )
+
+        pdf.set_text_color(51, 65, 85)
+        pdf.set_font(ff, "", fs["table"])
+        pdf.set_draw_color(200, 200, 200)
+
+        for att in non_image_atts:
+            if pdf.get_y() > pdf.h - 20:
+                pdf.add_page()
+
+            filename = att.get("filename", "Unknown")
+            ctype = att.get("content_type", "").split("/")[-1]
+            sid = att.get("step_id")
+            scope = step_name_map.get(sid, sid) if sid else "Run-level"
+            uploaded_at = att.get("uploaded_at", "")
+            ts = uploaded_at[:16].replace("T", " ") if uploaded_at else ""
+
+            _draw_table_row(
+                pdf, ref_cols, [filename, ctype, scope, ts],
+                line_h=table_line_h, min_h=table_min_h,
+                aligns=["L", "L", "L", "L"],
+            )
+
+        pdf.ln(8)
+
+    # Figures section (embedded images, filled records only)
+    if filled and embed_images and image_atts:
+        from io import BytesIO
+        from pathlib import Path
+
+        from app.services.file_storage import FileStorageService
+
+        pdf.add_page()
+        pdf.set_font(ff, "B", fs["section"])
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 8, "Figures")
+        pdf.ln(10)
+
+        storage = FileStorageService()
+
+        for fig_idx, att in enumerate(image_atts, start=1):
+            if pdf.get_y() > pdf.h - 80:
+                pdf.add_page()
+
+            filename = att.get("filename", "")
+            sid = att.get("step_id")
+            scope = step_name_map.get(sid, sid) if sid else "Run-level"
+            uploaded_at = att.get("uploaded_at", "")
+            ts = uploaded_at[:16].replace("T", " ") if uploaded_at else ""
+
+            file_path = storage.resolve_path(att.get("file_path", ""))
+            if not file_path.exists():
+                # Skip missing files but note it
+                pdf.set_font(ff, "I", fs["body"])
+                pdf.set_text_color(180, 50, 50)
+                pdf.cell(0, 5, f"Figure {fig_idx}: {filename} — file not found")
+                pdf.ln(8)
+                pdf.set_text_color(51, 65, 85)
+                continue
+
+            content_type = att.get("content_type", "")
+            if content_type in ("image/tiff", "image/webp"):
+                from PIL import Image as PILImage
+
+                img = PILImage.open(file_path)
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                buf.seek(0)
+                pdf.image(buf, x=pdf.l_margin, w=pdf.epw)
+            else:
+                pdf.image(str(file_path), x=pdf.l_margin, w=pdf.epw)
+
+            pdf.ln(2)
+            pdf.set_font(ff, "I", fs["body"] - 1)
+            pdf.set_text_color(100, 116, 139)
+            caption = f"Figure {fig_idx}: {filename} \u2014 {scope} \u2014 {ts}"
+            pdf.cell(0, 5, caption, align="C")
+            pdf.ln(10)
+            pdf.set_text_color(51, 65, 85)
 
     # Role sign-off section (only if roles exist)
     if roles:

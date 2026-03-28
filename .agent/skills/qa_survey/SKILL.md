@@ -5,7 +5,7 @@ description: Use Chrome browser automation to survey the running app, test featu
 
 # QA Survey Skill
 
-Perform an interactive browser-based survey of the Runbook app, testing features across multiple user roles, and create QA issues as tasks in the **ClickUp QA list** (list ID: `901712290772`).
+Perform an interactive browser-based survey of the Batchrite app, testing features across multiple user roles, and create QA issues as tasks in the **ClickUp QA list** (list ID: `901712290772`).
 
 ## Prerequisites Check (MUST DO FIRST)
 
@@ -26,7 +26,7 @@ Perform an interactive browser-based survey of the Runbook app, testing features
 Query PostgreSQL directly to get available users and their roles:
 
 ```bash
-PGPASSWORD=postgres psql -h localhost -U postgres -d runbook -c "
+PGPASSWORD=postgres psql -h localhost -U postgres -d batchrite -c "
 SELECT u.email, u.full_name, u.is_active,
        COALESCE(string_agg(DISTINCT t.name, ', '), 'No team') as teams
 FROM users u

@@ -10,8 +10,12 @@
     import RunResultsSummary from "$lib/components/run/RunResultsSummary.svelte";
     import RunEditMode from "$lib/components/run/RunEditMode.svelte";
     import RunObserverView from "$lib/components/run/RunObserverView.svelte";
+    import RunNotes from "$lib/components/run/RunNotes.svelte";
+    import RunAttachmentsTab from "$lib/components/run/RunAttachmentsTab.svelte";
+    import RunHistory from "$lib/components/run/RunHistory.svelte";
     import { ConfirmDialog } from "$lib/components/ui/dialog";
-    import { PendingImagesSchema, AnalyzePendingResultSchema } from '$lib/schemas';
+    import { PendingImagesSchema, AnalyzePendingResultSchema, RunRoleAssignmentListSchema, UserSearchSchema } from '$lib/schemas';
+    import { z } from 'zod';
 
     const id = $derived($page.params.id);
 
@@ -32,6 +36,14 @@
     let showGoOffline = $state(false);
     let analyzingAll = $state(false);
     let analyzeAllProgress = $state('');
+
+    // Tab state
+    let activeTab = $state<'execution' | 'notes' | 'attachments' | 'history'>('execution');
+
+    // Derived counts for tabs and component props
+    let activeAttachmentCount = $derived(
+        run?.attachments?.filter((a: any) => !a.deleted)?.length ?? 0
+    );
 
     // Edit mode state
     let isEditMode = $state(false);
@@ -56,12 +68,14 @@
             }
 
             const assignResp = await api.get(
-                `/science/runs/${id}/role-assignments`
+                `/science/runs/${id}/role-assignments`,
+                { schema: RunRoleAssignmentListSchema },
             );
             roleAssignments = assignResp.items || [];
 
             const membersResp = await api.get(
-                `/science/projects/${run.project_id}/members`
+                `/science/projects/${run.project_id}/members`,
+                { schema: z.array(UserSearchSchema) },
             );
             projectMembers = membersResp || [];
 
@@ -209,12 +223,17 @@
         );
     }
 
-    function downloadBatchRecord(filled: boolean = false) {
+    function downloadBatchRecord(filled: boolean = false, embedImages = false, includeAttachments = false) {
         const name = run.name.replace(/\s+/g, '_');
         const suffix = filled ? 'COMPLETED' : 'BLANK';
+        const params = new URLSearchParams({ filled: String(filled) });
+        if (embedImages) params.set('embed_images', 'true');
+        if (includeAttachments) params.set('include_attachments', 'true');
+
+        const ext = includeAttachments ? 'zip' : 'pdf';
         api.downloadBlob(
-            `/science/runs/${id}/pdf/batch-record?filled=${filled}`,
-            `BatchRecord_${name}_${suffix}.pdf`
+            `/science/runs/${id}/pdf/batch-record?${params}`,
+            `BatchRecord_${name}_${suffix}.${ext}`
         );
     }
 
@@ -312,6 +331,47 @@
             Run not found
         </div>
     {:else}
+        <!-- Tab Bar -->
+        <div class="border-b border-border bg-background sticky top-0 z-10">
+            <nav class="max-w-5xl mx-auto flex gap-6 px-6">
+                {#each (['execution', 'notes', 'attachments', 'history'] as const) as tab}
+                    {@const noteCount = run.notes?.length ?? 0}
+                    {@const attachCount = activeAttachmentCount}
+                    {@const label = tab === 'notes' && noteCount > 0 ? `Notes (${noteCount})`
+                        : tab === 'attachments' && attachCount > 0 ? `Attachments (${attachCount})`
+                        : tab[0].toUpperCase() + tab.slice(1)}
+                    <button
+                        onclick={() => activeTab = tab}
+                        class="py-3 text-sm font-medium border-b-2 transition-colors
+                            {activeTab === tab
+                                ? 'border-primary text-primary'
+                                : 'border-transparent text-muted-foreground hover:text-foreground'}"
+                    >
+                        {label}
+                    </button>
+                {/each}
+            </nav>
+        </div>
+
+        <!-- Tab Content -->
+        {#if activeTab === 'notes'}
+            <div class="max-w-5xl mx-auto px-6">
+                <RunNotes runId={run.id} bind:notes={run.notes} />
+            </div>
+        {:else if activeTab === 'attachments'}
+            <div class="max-w-5xl mx-auto px-6">
+                <RunAttachmentsTab
+                    runId={run.id}
+                    bind:attachments={run.attachments}
+                    steps={getAllUnitOpSteps().map((s: any) => ({ id: s.id, name: s.name }))}
+                />
+            </div>
+        {:else if activeTab === 'history'}
+            <div class="max-w-5xl mx-auto px-6">
+                <RunHistory runId={run.id} />
+            </div>
+        {:else}
+
         <!-- PLANNED State: Setup & Role Assignment -->
         {#if run.status === "PLANNED"}
             <div class="max-w-5xl mx-auto px-6 py-8">
@@ -440,6 +500,7 @@
                             runName={run.name}
                             status={run.status}
                             onDownloadSop={downloadSop}
+                            hasAttachments={activeAttachmentCount > 0}
                             onDownloadBatchRecord={downloadBatchRecord}
                         />
                     </div>
@@ -524,11 +585,11 @@
                                     {#each getSwimLaneNodes() as lane}
                                         {@const assignment = getRoleAssignment(lane.id)}
                                         {@const steps = getStepsForRole(lane.id)}
-                                        {@const completedCount = steps.filter((s) => run.execution_data?.[s.id]?.status === "completed").length}
+                                        {@const completedCount = steps.filter((s: any) => run.execution_data?.[s.id]?.status === "completed").length}
                                         {@const isCurrentUser = assignment?.user_id === getUser()?.id}
-                                        {@const member = assignment ? projectMembers.find((m) => m.id === assignment.user_id) : null}
-                                        {@const displayName = member?.full_name || (isCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown'}
-                                        {@const initials = displayName !== 'Unknown' ? displayName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '?'}
+                                        {@const member = assignment ? projectMembers.find((m: any) => m.id === assignment.user_id) : null}
+                                        {@const displayName = String(member?.full_name || (isCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown')}
+                                        {@const initials = displayName !== 'Unknown' ? displayName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase() : '?'}
                                         <div class="flex items-center gap-2 px-3 py-2 rounded-lg {isCurrentUser ? 'bg-primary/8 border border-primary/20' : 'bg-muted/50'}">
                                             <div class="w-6 h-6 rounded-full {isCurrentUser ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground/20 text-muted-foreground'} flex items-center justify-center text-[10px] font-semibold">
                                                 {#if assignment}
@@ -559,9 +620,9 @@
                                 <!-- Roleless run: single assignee -->
                                 {@const assignment = roleAssignments[0]}
                                 {@const isCurrentUser = assignment?.user_id === getUser()?.id}
-                                {@const member = assignment ? projectMembers.find((m) => m.id === assignment.user_id) : null}
-                                {@const displayName = member?.full_name || (isCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown'}
-                                {@const initials = displayName !== 'Unknown' ? displayName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '?'}
+                                {@const member = assignment ? projectMembers.find((m: any) => m.id === assignment.user_id) : null}
+                                {@const displayName = String(member?.full_name || (isCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown')}
+                                {@const initials = displayName !== 'Unknown' ? displayName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase() : '?'}
                                 <div class="flex items-center gap-2">
                                     <div class="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-semibold">
                                         {initials}
@@ -731,6 +792,7 @@
                             runName={run.name}
                             status={run.status}
                             onDownloadSop={downloadSop}
+                            hasAttachments={activeAttachmentCount > 0}
                             onDownloadBatchRecord={downloadBatchRecord}
                         />
                     </div>
@@ -843,6 +905,7 @@
                             runName={run.name}
                             status={run.status}
                             onDownloadSop={downloadSop}
+                            hasAttachments={activeAttachmentCount > 0}
                             onDownloadBatchRecord={downloadBatchRecord}
                         />
                     </div>
@@ -906,6 +969,8 @@
                 </div>
             </div>
         {/if}
+
+        {/if} <!-- end activeTab branches -->
 
         <!-- Go Offline Dialog (available in PLANNED and ACTIVE states) -->
         <GoOfflineDialog

@@ -21,7 +21,7 @@ from app.models.library import (
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "TrellisBot/1.0"
+USER_AGENT = "BatchriteBot/1.0"
 
 # Private/internal IP ranges to block (SSRF prevention)
 _BLOCKED_NETWORKS = [

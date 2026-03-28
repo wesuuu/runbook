@@ -5,7 +5,7 @@ description: Analyze the app against industry standards and competitor features 
 
 # Gap Analysis Skill
 
-Perform a comprehensive gap analysis of the Runbook AI Co-Pilot app by comparing its current capabilities against (1) what's built in the codebase, (2) industry-standard features for digital lab notebooks / ELN platforms, and (3) common expectations for biotech PD workflow tools. Output a prioritized document of missing features and capability gaps.
+Perform a comprehensive gap analysis of the Batchrite AI Co-Pilot app by comparing its current capabilities against (1) what's built in the codebase, (2) industry-standard features for digital lab notebooks / ELN platforms, and (3) common expectations for biotech PD workflow tools. Output a prioritized document of missing features and capability gaps.
 
 ## Process
 
@@ -130,7 +130,7 @@ Assign each gap a **composite priority**: Critical, High, Medium, Low, or Nice-t
 Write findings to `GAP_ANALYSIS.md` in the project root using this format:
 
 ```markdown
-# Gap Analysis — Runbook AI Co-Pilot
+# Gap Analysis — Batchrite AI Co-Pilot
 
 > Analysis date: YYYY-MM-DD
 > Codebase state: (git commit hash)

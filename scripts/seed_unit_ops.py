@@ -5,7 +5,7 @@ from sqlalchemy import select
 from app.models.science import UnitOpDefinition
 import app.models.iam  # needed for relationship resolution
 
-DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/runbook"
+DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite"
 
 DEFAULT_OPS = [
     # --- Media Prep ---

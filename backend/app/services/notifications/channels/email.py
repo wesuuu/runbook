@@ -20,7 +20,7 @@ class EmailChannel(BaseChannel):
         smtp_user (str): Optional. SMTP username.
         smtp_pass (str): Optional. SMTP password.
         use_tls (bool): Use STARTTLS. Default: False.
-        from_address (str): Sender address. Default: noreply@runbook.local.
+        from_address (str): Sender address. Default: noreply@batchrite.local.
     """
 
     async def send(self, message: FormattedMessage) -> str:
@@ -29,7 +29,7 @@ class EmailChannel(BaseChannel):
         user = self.config.get("smtp_user")
         password = self.config.get("smtp_pass")
         use_tls = self.config.get("use_tls", False)
-        from_addr = self.config.get("from_address", "noreply@runbook.local")
+        from_addr = self.config.get("from_address", "noreply@batchrite.local")
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = message.title
@@ -38,14 +38,14 @@ class EmailChannel(BaseChannel):
 
         text_body = message.body
         if message.url:
-            text_body += f"\n\nView in Runbook: {message.url}"
+            text_body += f"\n\nView in Batchrite: {message.url}"
 
         html_body = f"""<div style="font-family: sans-serif; max-width: 600px;">
   <h2 style="color: #1a1a1a;">{message.title}</h2>
   <p style="color: #333; line-height: 1.6;">{message.body}</p>
-  {"<p><a href='" + message.url + "' style='color: #2563eb;'>View in Runbook</a></p>" if message.url else ""}
+  {"<p><a href='" + message.url + "' style='color: #2563eb;'>View in Batchrite</a></p>" if message.url else ""}
   <hr style="border: none; border-top: 1px solid #e5e7eb; margin-top: 24px;">
-  <p style="color: #9ca3af; font-size: 12px;">Runbook AI Co-Pilot</p>
+  <p style="color: #9ca3af; font-size: 12px;">Batchrite — Laboratory Execution System</p>
 </div>"""
 
         msg.attach(MIMEText(text_body, "plain"))

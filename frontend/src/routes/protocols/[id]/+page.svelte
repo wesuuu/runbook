@@ -17,6 +17,8 @@
     import { api, ApiError } from "$lib/api";
     import { toast } from "$lib/toast";
     import { getCurrentOrg } from "$lib/auth.svelte";
+    import { ProjectSchema } from "$lib/schemas";
+    import type { NodeTypes } from "@xyflow/svelte";
     import ProtocolSidebar from "$lib/components/protocol/ProtocolSidebar.svelte";
     import CanvasToolbar from "$lib/components/protocol/CanvasToolbar.svelte";
     import ValidationBanners from "$lib/components/protocol/ValidationBanners.svelte";
@@ -64,7 +66,7 @@
     const id = $derived($page.params.id);
 
     // --- Node Types ---
-    const nodeTypes = { unitOp: UnitOpNode, swimLane: SwimLaneNode, processStart: ProcessStartNode };
+    const nodeTypes = { unitOp: UnitOpNode, swimLane: SwimLaneNode, processStart: ProcessStartNode } as Record<string, any> as NodeTypes;
 
     // --- State ---
     let protocol = $state<any>(null);
@@ -301,9 +303,9 @@
 
                 // Fetch project settings for approval requirement and PDF format
                 try {
-                    const proj = await api.get(`/projects/${protocol.project_id}`);
-                    approvalRequired = proj.settings?.require_protocol_approval || false;
-                    projectPdfFormat = proj.settings?.pdf_format || {};
+                    const proj = await api.get(`/projects/${protocol.project_id}`, { schema: ProjectSchema });
+                    approvalRequired = (proj.settings?.require_protocol_approval as boolean) || false;
+                    projectPdfFormat = (proj.settings?.pdf_format as Record<string, any>) || {};
                 } catch {
                     // Ignore — approval not required if project fetch fails
                 }
@@ -535,7 +537,7 @@
         if (!protocol) return;
         if (hasUnsavedChanges) {
             if (!confirm("You have unsaved changes. Save first before submitting?")) return;
-            await save();
+            await saveDraft();
         }
         try {
             const updated: any = await api.post(
@@ -936,8 +938,7 @@
                 selectionMode={SelectionMode.Partial}
                 selectionOnDrag={interactionMode === "select"}
                 panOnDrag={interactionMode === "pan"}
-                snapToGrid={timeEnabled}
-                snapGrid={timeEnabled ? [snapGridPx, snapGridPx] : [1, 1]}
+                snapGrid={timeEnabled ? [snapGridPx, snapGridPx] : undefined}
                 onnodedragstart={() => pushUndoSnapshot()}
                 onconnectstart={() => { preConnectSnapshot = buildGraphSnapshot(nodes, edges); }}
                 onconnect={() => {

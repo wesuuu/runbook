@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 # Shared thread pool for CPU-bound work. sized to leave headroom for
-# the event loop; can be tuned via RUNBOOK_TASK_RUNNER_POOL_SIZE.
+# the event loop; can be tuned via BATCHRITE_TASK_RUNNER_POOL_SIZE.
 _pool: ThreadPoolExecutor | None = None
 
 

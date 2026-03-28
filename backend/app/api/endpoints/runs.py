@@ -1,15 +1,27 @@
 import logging
+import uuid as uuid_mod
 from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.deps import get_current_user, get_or_404, require_permission
+from app.core.deps import get_current_user, get_or_404, get_org_id_from_request, require_permission
 from app.db.session import get_db
+from app.models.execution import AuditLog
 from app.models.iam import User, ObjectType, PermissionLevel
 from app.models.science import (
     Protocol,
@@ -25,8 +37,14 @@ from app.schemas.science import (
     RunRoleAssignmentCreate,
     RunRoleAssignmentResponse,
     RunRoleAssignmentListResponse,
+    RunNote,
+    RunNoteCreate,
+    RunNoteListResponse,
+    RunAttachment,
+    RunAttachmentListResponse,
 )
 from app.services.audit import log_audit
+from app.services.file_storage import FileStorageService, IMAGE_MIME_TYPES
 from app.services.graph_processing import _parse_graph_roles_and_steps
 from app.services.notifications import send_notification
 from app.services.pdf import generate_sop_pdf, generate_batch_record_pdf
@@ -40,6 +58,11 @@ from app.api.endpoints.protocol_pdfs import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+def _run_status_str(run_obj: Run) -> str:
+    """Extract run status as a plain string."""
+    s = run_obj.status
+    return s if isinstance(s, str) else s.value
 
 
 # --- Runs ---
@@ -322,24 +345,70 @@ async def update_run(
                         },
                     )
 
-    # Audit log step completions by diffing execution_data
+                # Track step-level notes changes
+                old_notes = old_step.get("notes", "")
+                new_notes = new_step.get("notes", "")
+                if old_notes != new_notes:
+                    await log_audit(
+                        db, user.id, "STEP_EDIT", "Run",
+                        run_obj.id,
+                        {
+                            "step_id": step_id,
+                            "step_name": step_name,
+                            "field": "notes",
+                            "field_label": "Notes",
+                            "old_value": old_notes,
+                            "new_value": new_notes,
+                        },
+                    )
+
+    # Audit log step completions and note changes by diffing execution_data
+    # (note changes for EDITED status are handled in the block above)
     if update_data.execution_data is not None:
         old_exec = run_obj.execution_data or {}
         new_exec = update_data.execution_data
+        target_status = (new_status or current_status)
+
+        # Build step name lookup from graph
+        _graph = run_obj.graph or {}
+        _name_map: dict[str, str] = {}
+        for _n in _graph.get("nodes", []):
+            if _n.get("type") == "unitOp":
+                _name_map[_n["id"]] = _n.get("data", {}).get("label", _n["id"])
+
         for step_id, step_data in new_exec.items():
             old_step = old_exec.get(step_id, {})
+            if not isinstance(step_data, dict):
+                continue
             old_status = old_step.get("status")
-            new_step_status = step_data.get("status") if isinstance(step_data, dict) else None
+            new_step_status = step_data.get("status")
             if new_step_status == "completed" and old_status != "completed":
                 await log_audit(
                     db, user.id, "STEP_COMPLETE", "Run", run_obj.id,
-                    {"step_id": step_id, "results": step_data.get("results", {})}
+                    {"step_id": step_id, "step_name": _name_map.get(step_id, step_id), "results": step_data.get("results", {})}
                 )
             elif old_status == "completed" and new_step_status != "completed":
                 await log_audit(
                     db, user.id, "STEP_UNCOMPLETE", "Run", run_obj.id,
-                    {"step_id": step_id}
+                    {"step_id": step_id, "step_name": _name_map.get(step_id, step_id)}
                 )
+
+            # Track step-level note changes (skip EDITED — handled above)
+            if target_status != "EDITED":
+                old_notes = old_step.get("notes", "") if isinstance(old_step, dict) else ""
+                new_notes = step_data.get("notes", "")
+                if old_notes != new_notes:
+                    await log_audit(
+                        db, user.id, "STEP_EDIT", "Run", run_obj.id,
+                        {
+                            "step_id": step_id,
+                            "step_name": _name_map.get(step_id, step_id),
+                            "field": "notes",
+                            "field_label": "Notes",
+                            "old_value": old_notes,
+                            "new_value": new_notes,
+                        },
+                    )
 
     changes = update_data.model_dump(exclude_unset=True)
     for key, value in changes.items():
@@ -509,6 +578,8 @@ async def get_run_sop_pdf(
 async def get_run_batch_record_pdf(
     run_id: UUID,
     filled: bool = Query(False),
+    embed_images: bool = Query(False),
+    include_attachments: bool = Query(False),
     disposition: Optional[str] = Query(None),
     font_size: Optional[str] = Query(None),
     font_family: Optional[str] = Query(None),
@@ -589,10 +660,7 @@ async def get_run_batch_record_pdf(
             for u in result.scalars().all():
                 user_map[str(u.id)] = u.full_name or u.email
 
-    run_status = (
-        run_obj.status if isinstance(run_obj.status, str)
-        else run_obj.status.value
-    )
+    run_status = _run_status_str(run_obj)
     pdf_bytes = generate_batch_record_pdf(
         protocol_name=protocol_name,
         run_name=run_obj.name,
@@ -608,11 +676,51 @@ async def get_run_batch_record_pdf(
         user_map=user_map if filled else None,
         started_by_id=started_by_id_str,
         run_status=run_status,
+        notes=run_obj.notes if filled else None,
+        attachments=run_obj.attachments if filled else None,
+        embed_images=embed_images,
     )
 
     disp = disposition or "attachment"
     suffix = "COMPLETED" if filled else "BLANK"
-    filename = f"BatchRecord_{run_obj.name}_{suffix}.pdf".replace(" ", "_")
+    safe_name = run_obj.name.replace(" ", "_")
+
+    # ZIP export: PDF + non-embedded attachment files
+    if filled and include_attachments:
+        import zipfile
+        from io import BytesIO
+
+        storage = FileStorageService()
+
+        zip_buf = BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            pdf_name = f"BatchRecord_{safe_name}_{suffix}.pdf"
+            zf.writestr(pdf_name, pdf_bytes)
+
+            for att in (run_obj.attachments or []):
+                if att.get("deleted"):
+                    continue
+                # Skip images already embedded in the PDF
+                if embed_images and att.get("content_type", "") in IMAGE_MIME_TYPES:
+                    continue
+                fpath = storage.resolve_path(att["file_path"])
+                if fpath.exists():
+                    zf.write(
+                        str(fpath),
+                        f"attachments/{att.get('filename', 'file')}",
+                    )
+
+        zip_buf.seek(0)
+        zip_name = f"BatchRecord_{safe_name}.zip"
+        return Response(
+            content=zip_buf.getvalue(),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{zip_name}"',
+            },
+        )
+
+    filename = f"BatchRecord_{safe_name}_{suffix}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -815,3 +923,408 @@ async def delete_run_role_assignment(
         assignment_data,
     )
     return {"ok": True}
+
+
+# --- Helpers for notes & attachments ---
+
+ALLOWED_ATTACHMENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/tiff",
+    "image/webp",
+    "application/pdf",
+    "text/csv",
+    "text/plain",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25 MB
+
+
+# --- Run Notes ---
+
+@router.post(
+    "/runs/{run_id}/notes",
+    response_model=RunNote,
+    status_code=201,
+)
+async def add_run_note(
+    run_id: UUID,
+    body: RunNoteCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add an append-only note to a run."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    run_obj = await get_or_404(db, Run, run_id)
+
+    run_status = _run_status_str(run_obj)
+
+    note = RunNote(
+        id=uuid_mod.uuid4(),
+        content=body.content,
+        author_id=user.id,
+        author_name=user.full_name or user.email,
+        created_at=datetime.now(timezone.utc),
+        run_status=run_status,
+        flags=body.flags,
+    )
+
+    run_obj.notes = [*(run_obj.notes or []), note.model_dump(mode="json")]
+    flag_modified(run_obj, "notes")
+
+    await log_audit(
+        db, user.id, "NOTE_ADDED", "Run", run_obj.id,
+        {
+            "note_id": str(note.id),
+            "content": note.content,
+            "run_status": run_status,
+            "flags": body.flags,
+        },
+    )
+
+    await db.commit()
+    await db.refresh(run_obj)
+    return note
+
+
+@router.get(
+    "/runs/{run_id}/notes",
+    response_model=RunNoteListResponse,
+)
+async def list_run_notes(
+    run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all run-level notes."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    run_obj = await get_or_404(db, Run, run_id)
+    return RunNoteListResponse(
+        items=[RunNote(**n) for n in (run_obj.notes or [])]
+    )
+
+
+# --- Run Attachments ---
+
+@router.post(
+    "/runs/{run_id}/attachments",
+    response_model=RunAttachment,
+    status_code=201,
+)
+async def upload_attachment(
+    run_id: UUID,
+    file: UploadFile,
+    request: Request,
+    step_id: Optional[str] = Form(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a file attachment to a run."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    run_obj = await get_or_404(db, Run, run_id)
+
+    org_id = get_org_id_from_request(request)
+    storage = FileStorageService()
+    stored = await storage.store_file(
+        file,
+        base_dir="attachments",
+        org_id=org_id or run_id,
+        path_segments=[str(run_id)],
+        allowed_types=ALLOWED_ATTACHMENT_TYPES,
+        max_size_bytes=MAX_ATTACHMENT_SIZE,
+    )
+
+    run_status = _run_status_str(run_obj)
+
+    attachment = RunAttachment(
+        id=uuid_mod.uuid4(),
+        file_path=stored.relative_path,
+        filename=stored.original_filename,
+        content_type=stored.mime_type,
+        size_bytes=stored.size_bytes,
+        uploaded_by_id=user.id,
+        uploaded_at=datetime.now(timezone.utc),
+        step_id=step_id,
+        run_status=run_status,
+        deleted=False,
+    )
+
+    run_obj.attachments = [
+        *(run_obj.attachments or []),
+        attachment.model_dump(mode="json"),
+    ]
+    flag_modified(run_obj, "attachments")
+
+    await log_audit(
+        db, user.id, "ATTACHMENT_UPLOADED", "Run", run_obj.id,
+        {
+            "attachment_id": str(attachment.id),
+            "filename": attachment.filename,
+            "content_type": attachment.content_type,
+            "size_bytes": attachment.size_bytes,
+            "step_id": step_id,
+            "run_status": run_status,
+        },
+    )
+
+    await db.commit()
+    await db.refresh(run_obj)
+    return attachment
+
+
+@router.get(
+    "/runs/{run_id}/attachments",
+    response_model=RunAttachmentListResponse,
+)
+async def list_attachments(
+    run_id: UUID,
+    step_id: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List attachments for a run, optionally filtered by step."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    run_obj = await get_or_404(db, Run, run_id)
+    items = [a for a in (run_obj.attachments or []) if not a.get("deleted")]
+    if step_id is not None:
+        items = [a for a in items if a.get("step_id") == step_id]
+    return RunAttachmentListResponse(
+        items=[RunAttachment(**a) for a in items]
+    )
+
+
+@router.delete(
+    "/runs/{run_id}/attachments/{attachment_id}",
+    status_code=204,
+)
+async def soft_delete_attachment(
+    run_id: UUID,
+    attachment_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete an attachment (EDIT permission)."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    run_obj = await get_or_404(db, Run, run_id)
+
+    run_status = _run_status_str(run_obj)
+
+    updated = []
+    found = None
+    for att in (run_obj.attachments or []):
+        if att["id"] == attachment_id:
+            if att.get("deleted"):
+                raise HTTPException(404, "Attachment already deleted")
+            found = att
+            updated.append({**att, "deleted": True})
+        else:
+            updated.append(att)
+
+    if not found:
+        raise HTTPException(404, "Attachment not found")
+
+    run_obj.attachments = updated
+    flag_modified(run_obj, "attachments")
+
+    await log_audit(
+        db, user.id, "ATTACHMENT_DELETED", "Run", run_obj.id,
+        {
+            "attachment_id": attachment_id,
+            "filename": found["filename"],
+            "run_status": run_status,
+        },
+    )
+
+    await db.commit()
+
+
+@router.post(
+    "/runs/{run_id}/attachments/{attachment_id}/restore",
+    response_model=RunAttachment,
+)
+async def restore_attachment(
+    run_id: UUID,
+    attachment_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore a soft-deleted attachment (ADMIN permission)."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.ADMIN,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="ADMIN permission required")
+
+    run_obj = await get_or_404(db, Run, run_id)
+
+    run_status = _run_status_str(run_obj)
+
+    updated = []
+    found = None
+    for att in (run_obj.attachments or []):
+        if att["id"] == attachment_id:
+            if not att.get("deleted"):
+                raise HTTPException(409, "Attachment is not deleted")
+            found = att
+            updated.append({**att, "deleted": False})
+        else:
+            updated.append(att)
+
+    if not found:
+        raise HTTPException(404, "Attachment not found")
+
+    run_obj.attachments = updated
+    flag_modified(run_obj, "attachments")
+
+    await log_audit(
+        db, user.id, "ATTACHMENT_RESTORED", "Run", run_obj.id,
+        {
+            "attachment_id": attachment_id,
+            "filename": found["filename"],
+            "run_status": run_status,
+        },
+    )
+
+    await db.commit()
+    await db.refresh(run_obj)
+    restored = next(a for a in run_obj.attachments if a["id"] == attachment_id)
+    return RunAttachment(**restored)
+
+
+@router.get("/runs/{run_id}/attachments/{attachment_id}/download")
+async def download_attachment(
+    run_id: UUID,
+    attachment_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download an attachment file (authenticated)."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    run_obj = await get_or_404(db, Run, run_id)
+
+    att = next(
+        (a for a in (run_obj.attachments or [])
+         if a["id"] == attachment_id and not a.get("deleted")),
+        None,
+    )
+    if not att:
+        raise HTTPException(404, "Attachment not found")
+
+    storage = FileStorageService()
+    full_path = storage.resolve_path(att["file_path"])
+    if not full_path.exists():
+        raise HTTPException(404, "Attachment file not found on disk")
+
+    return FileResponse(
+        path=str(full_path),
+        filename=att["filename"],
+        media_type=att["content_type"],
+    )
+
+
+# --- Run Audit Log ---
+
+@router.get("/runs/{run_id}/audit-log")
+async def get_run_audit_log(
+    run_id: UUID,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the audit trail for a run with pagination (History tab)."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN,
+        run_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    await get_or_404(db, Run, run_id)
+
+    base_query = select(AuditLog).where(
+        AuditLog.entity_type == "Run",
+        AuditLog.entity_id == run_id,
+    )
+
+    # Total count
+    count_result = await db.execute(
+        select(func.count()).select_from(base_query.subquery())
+    )
+    total = count_result.scalar() or 0
+
+    # Paginated results
+    result = await db.execute(
+        base_query
+        .order_by(AuditLog.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    entries = result.scalars().all()
+
+    # Resolve actor names in bulk
+    actor_ids = {e.actor_id for e in entries}
+    user_map: dict[UUID, str] = {}
+    if actor_ids:
+        user_result = await db.execute(
+            select(User).where(User.id.in_(actor_ids))
+        )
+        for u in user_result.scalars().all():
+            user_map[u.id] = u.full_name or u.email
+
+    return {
+        "items": [
+            {
+                "id": str(e.id),
+                "action": e.action,
+                "actor_id": str(e.actor_id),
+                "actor_name": user_map.get(e.actor_id, "Unknown"),
+                "changes": e.changes,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in entries
+        ],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }

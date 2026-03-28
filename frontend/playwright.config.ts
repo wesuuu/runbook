@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Playwright E2E test configuration.
  *
  * Prerequisites:
- *   - Backend running on :8000 with RUNBOOK_AUTH_ENABLED=true (the default)
+ *   - Backend running on :8000 with BATCHRITE_AUTH_ENABLED=true (the default)
  *   - Database seeded: cd backend && python -m app.db.seed
  *   - Frontend is auto-started by Playwright on port 5176 (avoids :5173/:5174 used by dev)
  */

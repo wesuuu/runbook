@@ -85,7 +85,7 @@ async def _send_verification_email(email: str, token: str) -> None:
     This link expires in {settings.verification_token_ttl_days} days.
   </p>
   <hr style="border: none; border-top: 1px solid #e5e7eb; margin-top: 24px;">
-  <p style="color: #9ca3af; font-size: 12px;">Runbook AI Co-Pilot</p>
+  <p style="color: #9ca3af; font-size: 12px;">Batchrite — Laboratory Execution System</p>
 </div>"""
     text_body = (
         f"Verify your email by visiting: {verify_url}\n\n"
@@ -95,7 +95,7 @@ async def _send_verification_email(email: str, token: str) -> None:
         provider = get_email_provider()
         await provider.send(
             to=email,
-            subject="Verify your email — Runbook",
+            subject="Verify your email — Batchrite",
             html_body=html_body,
             text_body=text_body,
         )

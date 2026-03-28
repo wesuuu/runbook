@@ -138,9 +138,9 @@
                         <div
                             class="w-7 h-7 bg-primary rounded-md flex items-center justify-center shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all"
                         >
-                            <span class="font-mono text-sm font-medium text-primary-foreground leading-none">R</span>
+                            <span class="font-mono text-sm font-medium text-primary-foreground leading-none">B</span>
                         </div>
-                        <span class="text-[15px] font-semibold text-foreground tracking-tight">Runbook</span>
+                        <span class="text-[15px] font-semibold text-foreground tracking-tight">Batchrite</span>
                     </a>
                 </div>
                 <div class="flex items-center gap-6 text-sm font-medium">

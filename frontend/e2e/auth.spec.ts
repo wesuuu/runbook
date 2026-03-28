@@ -29,7 +29,7 @@ test.describe('Authentication', () => {
   });
 
   // --- Test 2: Failed login with wrong password ---
-  // Requires backend with RUNBOOK_AUTH_ENABLED=true (the default).
+  // Requires backend with BATCHRITE_AUTH_ENABLED=true (the default).
   // Skips automatically when auth is disabled (dev mode).
   test('wrong password shows error and stays on login page', async ({ page }) => {
     const authOn = await isAuthEnabled(page);
@@ -49,7 +49,7 @@ test.describe('Authentication', () => {
   });
 
   // --- Test 3: Failed login with non-existent email ---
-  // Requires backend with RUNBOOK_AUTH_ENABLED=true (the default).
+  // Requires backend with BATCHRITE_AUTH_ENABLED=true (the default).
   // Skips automatically when auth is disabled (dev mode).
   test('non-existent email shows error and stays on login page', async ({ page }) => {
     const authOn = await isAuthEnabled(page);

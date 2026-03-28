@@ -42,7 +42,7 @@ class BaseChannel(ABC):
         msg = FormattedMessage(
             event_type="TEST",
             title="Test Notification",
-            body="This is a test notification from Runbook.",
+            body="This is a test notification from Batchrite.",
             recipient="test",
         )
         return await self.send(msg)

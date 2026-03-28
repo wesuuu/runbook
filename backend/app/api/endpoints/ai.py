@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_or_404
+from app.core.deps import get_or_404, get_org_id_from_request
 from app.db.session import get_db
 from app.models.ai import (
     AiProviderConfig,
@@ -43,21 +43,13 @@ from app.schemas.ai import (
     TagImageRequest,
 )
 from app.core.deps import get_current_user
-from app.core.security import TokenPayload
 from app.models.iam import Organization, User, OrganizationMember
 from app.services.ai_provider_validation import validate_provider_credentials
 from app.services.ai_vision import analyze_image, continue_conversation
 from app.services.audit import log_audit
+from app.services.file_storage import FileStorageService
 
 router = APIRouter()
-
-
-def _get_org_id_from_request(request) -> Optional[uuid_mod.UUID]:
-    """Extract org_id from the token payload stashed by AuthMiddleware."""
-    payload: Optional[TokenPayload] = getattr(request.state, "token_payload", None)
-    if payload and payload.org_id:
-        return payload.org_id
-    return None
 
 
 def _row_to_response(row: AiProviderConfig) -> AiProviderConfigResponse:
@@ -79,7 +71,7 @@ async def list_ai_settings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = _get_org_id_from_request(request)
+    org_id = get_org_id_from_request(request)
     if org_id is None:
         return AiSettingsListResponse(items=[], subscription_tier="essentials")
     result = await db.execute(
@@ -111,7 +103,7 @@ async def upsert_ai_setting(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = _get_org_id_from_request(request)
+    org_id = get_org_id_from_request(request)
     if org_id is None:
         raise HTTPException(status_code=400, detail="No organization context")
 
@@ -174,7 +166,7 @@ async def test_ai_connection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = _get_org_id_from_request(request)
+    org_id = get_org_id_from_request(request)
     if org_id is None:
         raise HTTPException(status_code=400, detail="No organization context")
 
@@ -232,7 +224,7 @@ async def delete_ai_setting(
     current_user: User = Depends(get_current_user),
 ):
     """Delete org-specific AI config, reverting to platform default (if Pro+)."""
-    org_id = _get_org_id_from_request(request)
+    org_id = get_org_id_from_request(request)
     if org_id is None:
         raise HTTPException(status_code=400, detail="No organization context")
 
@@ -269,6 +261,7 @@ async def upload_image(
     run_id: uuid_mod.UUID,
     step_id: str,
     file: UploadFile,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -279,48 +272,24 @@ async def upload_image(
             detail=f"Run must be ACTIVE to upload images (current: {run.status}).",
         )
 
-    # Validate mime type
-    content_type = file.content_type or ""
-    if content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Unsupported image type: {content_type}. "
-            f"Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}",
-        )
+    org_id = get_org_id_from_request(request)
+    storage = FileStorageService(_get_storage_path())
+    stored = await storage.store_file(
+        file,
+        base_dir="images",
+        org_id=org_id or run_id,
+        path_segments=[str(run_id), step_id],
+        allowed_types=set(ALLOWED_IMAGE_TYPES),
+        max_size_bytes=MAX_IMAGE_SIZE_BYTES,
+    )
 
-    # Read file content
-    content = await file.read()
-    file_size = len(content)
-
-    if file_size > MAX_IMAGE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Image too large ({file_size} bytes). "
-            f"Maximum: {MAX_IMAGE_SIZE_BYTES} bytes.",
-        )
-
-    # Build storage path
-    ALLOWED_IMAGE_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
-    ext = os.path.splitext(file.filename or "image.jpg")[1].lower() or ".jpg"
-    if ext not in ALLOWED_IMAGE_EXT:
-        ext = ".jpg"
-    image_uuid = uuid_mod.uuid4()
-    relative_path = f"{run_id}/{step_id}/{image_uuid}{ext}"
-    storage_root = _get_storage_path()
-    full_path = Path(storage_root) / relative_path
-
-    # Write file to disk
-    full_path.parent.mkdir(parents=True, exist_ok=True)
-    full_path.write_bytes(content)
-
-    # Create DB record
     image = RunImage(
         run_id=run_id,
         step_id=step_id,
-        file_path=relative_path,
-        original_filename=file.filename or "image.jpg",
-        mime_type=content_type,
-        file_size_bytes=file_size,
+        file_path=stored.relative_path,
+        original_filename=stored.original_filename,
+        mime_type=stored.mime_type,
+        file_size_bytes=stored.size_bytes,
         uploaded_by_id=current_user.id,
     )
     db.add(image)
@@ -446,7 +415,7 @@ async def analyze_run_image(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = _get_org_id_from_request(request)
+    org_id = get_org_id_from_request(request)
     run, image = await _get_image_with_run(run_id, image_id, db)
 
     if run.status not in (RunStatus.ACTIVE, RunStatus.EDITED):
@@ -561,7 +530,7 @@ async def converse_about_image(
     conv.messages = [*conv.messages, {"role": "user", "content": body.message}]
 
     try:
-        org_id = _get_org_id_from_request(request)
+        org_id = get_org_id_from_request(request)
         ai_result = await continue_conversation(
             image_path=image_full_path,
             step_name=step_name,
@@ -767,7 +736,7 @@ async def analyze_pending_images(
     )
     pending_images = result.scalars().all()
 
-    org_id = _get_org_id_from_request(request)
+    org_id = get_org_id_from_request(request)
     succeeded = 0
     failed = 0
 

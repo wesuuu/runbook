@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # ─── System Prompt ───
 
-SYSTEM_PROMPT = """You are Trellis AI, a concise assistant for biotech Process Development scientists.
+SYSTEM_PROMPT = """You are Batchrite AI, a concise assistant for biotech Process Development scientists.
 
 RULES:
 - Never show your reasoning, thought process, or <think> tags. Respond directly.

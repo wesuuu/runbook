@@ -323,8 +323,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Runbook AI Co-Pilot",
-    description="Backend for the AI-Powered Co-Pilot for Process Development",
+    title="Batchrite — Laboratory Execution System",
+    description="Backend for the Batchrite Laboratory Execution System",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -350,7 +350,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "runbook-backend"}
+    return {"status": "ok", "service": "batchrite-backend"}
 
 
 from app.api.endpoints import (

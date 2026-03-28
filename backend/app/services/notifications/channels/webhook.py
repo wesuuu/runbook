@@ -45,7 +45,7 @@ class WebhookChannel(BaseChannel):
             sig = hmac.new(
                 secret.encode(), json.dumps(payload).encode(), hashlib.sha256
             ).hexdigest()
-            headers["X-Runbook-Signature"] = f"sha256={sig}"
+            headers["X-Batchrite-Signature"] = f"sha256={sig}"
 
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:

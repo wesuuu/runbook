@@ -49,7 +49,7 @@ class TeamsChannel(BaseChannel):
                     ],
                     "actions": ([{
                         "type": "Action.OpenUrl",
-                        "title": "View in Runbook",
+                        "title": "View in Batchrite",
                         "url": message.url,
                     }] if message.url else []),
                 },

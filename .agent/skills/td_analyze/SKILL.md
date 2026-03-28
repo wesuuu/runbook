@@ -5,7 +5,7 @@ description: Analyze the codebase for technical debt and create findings as task
 
 # Technical Debt Analysis
 
-Perform a structured technical debt analysis of the trellisbio codebase and create findings as tasks in the **ClickUp TECH_DEBT list** (list ID: `901712289455`).
+Perform a structured technical debt analysis of the Batchrite codebase and create findings as tasks in the **ClickUp TECH_DEBT list** (list ID: `901712289455`).
 
 ## Analysis Categories
 

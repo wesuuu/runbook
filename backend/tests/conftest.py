@@ -1,6 +1,6 @@
 import os
 
-os.environ["RUNBOOK_AUTH_ENABLED"] = "true"
+os.environ["BATCHRITE_AUTH_ENABLED"] = "true"
 
 import pytest
 import pytest_asyncio
@@ -31,7 +31,7 @@ from app.models.iam import (
 from app.models.science import Project
 
 TEST_DATABASE_URL = (
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/runbook_test"
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite_test"
 )
 
 

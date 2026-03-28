@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Runbook AI Co-Pilot — a tablet-first, voice-enabled digital lab notebook for biotech Process Development (PD) scientists. Core architecture uses graph-based, copy-on-write data stored as JSONB in PostgreSQL. Protocols are templates; Experiments snapshot Protocol graphs and track deviations at runtime.
+Batchrite — a Laboratory Execution System (LES) for biotech Process Development (PD) scientists. Tablet-first, voice-enabled digital lab notebook. Core architecture uses graph-based, copy-on-write data stored as JSONB in PostgreSQL. Protocols are templates; Experiments snapshot Protocol graphs and track deviations at runtime.
 
 ## Commands
 
@@ -57,7 +57,7 @@ npm run test:e2e -- --ui   # Playwright with interactive UI
 - **Schemas** in `schemas/`: Pydantic request/response models
 - **Mixins** (`models/mixins.py`): `UUIDMixin` (UUID PKs), `TimestampMixin` (created_at/updated_at)
 - **DB session**: async session factory in `db/session.py`, injected via `get_db` dependency
-- **Testing**: pytest-asyncio with `asyncio_mode = "auto"`. Tests use a separate `runbook_test` database. `conftest.py` provides `test_engine`, `db_session`, and `client` fixtures with per-test rollback.
+- **Testing**: pytest-asyncio with `asyncio_mode = "auto"`. Tests use a separate `batchrite_test` database. `conftest.py` provides `test_engine`, `db_session`, and `client` fixtures with per-test rollback.
 - **Test coverage target**: >80%
 
 ### Frontend (`frontend/src/`)
@@ -77,15 +77,14 @@ npm run test:e2e -- --ui   # Playwright with interactive UI
 
 ### Database
 
-- PostgreSQL on localhost:5432, database `runbook`, user `postgres`/`postgres`
+- PostgreSQL on localhost:5432, database `batchrite`, user `postgres`/`postgres`
 - JSONB columns store graph data (Protocol.graph, Experiment.graph, UnitOpDefinition.param_schema)
 - Seed scripts in `scripts/` — `seed_unit_ops.py` populates the UnitOp library
 
 ## Workflow & Conventions
 
 - **TDD required**: Red-Green-Refactor cycle. Write failing tests before implementation. Target >80% coverage.
-- **plan.md is source of truth**: Tasks tracked there. Mark `[ ]` → `[~]` → `[x]` with commit SHA. Attach git notes to task commits.
-- **Tech stack changes**: Must update `tech-stack.md` before implementing.
+- **ClickUp is source of truth**: Tasks tracked in ClickUp lists (FEATURES, BUGS, QA, TECH_DEBT).
 - **Commit format**: `<type>(<scope>): <description>` — types: feat, fix, docs, style, refactor, test, chore
 - **CI-aware commands**: Use `CI=true` prefix for watch-mode tools to ensure single execution.
 

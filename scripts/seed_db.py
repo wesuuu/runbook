@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from app.models.iam import Organization, User
 from app.db.base import Base
 
-DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/runbook"
+DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite"
 
 async def seed_db():
     engine = create_async_engine(DATABASE_URL)
@@ -46,7 +46,7 @@ async def seed_db():
             print("Creating Mock User (0000...)...")
             mock_user = User(
                 id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
-                email="system@runbook.ai",
+                email="system@batchrite.com",
                 full_name="System Actor",
                 hashed_password="system_locked"
             )

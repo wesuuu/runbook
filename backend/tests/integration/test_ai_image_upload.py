@@ -215,7 +215,7 @@ async def test_upload_rejects_non_image(
         headers=auth_headers,
     )
     assert resp.status_code == 422
-    assert "Unsupported image type" in resp.json()["detail"]
+    assert "Unsupported file type" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio

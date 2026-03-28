@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/runbook"
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite"
     )
     secret_key: str = "dev-secret-key-change-in-production"
     jwt_algorithm: str = "HS256"
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # SMTP / Email
     smtp_host: str = "localhost"
     smtp_port: int = 1025
-    smtp_from: str = "noreply@runbook.local"
+    smtp_from: str = "noreply@batchrite.local"
     smtp_user: str = ""
     smtp_pass: str = ""
     smtp_tls: bool = False
@@ -36,14 +36,14 @@ class Settings(BaseSettings):
         if not self.debug:
             if self.secret_key.startswith("dev-"):
                 warnings.warn(
-                    "RUNBOOK_SECRET_KEY is using the default dev key. "
-                    "Set a secure secret via RUNBOOK_SECRET_KEY env var.",
+                    "BATCHRITE_SECRET_KEY is using the default dev key. "
+                    "Set a secure secret via BATCHRITE_SECRET_KEY env var.",
                     stacklevel=1,
                 )
             if "postgres:postgres@localhost" in self.database_url:
                 warnings.warn(
-                    "RUNBOOK_DATABASE_URL is using default local credentials. "
-                    "Set an explicit database URL via RUNBOOK_DATABASE_URL env var.",
+                    "BATCHRITE_DATABASE_URL is using default local credentials. "
+                    "Set an explicit database URL via BATCHRITE_DATABASE_URL env var.",
                     stacklevel=1,
                 )
         return self
@@ -129,7 +129,7 @@ class Settings(BaseSettings):
     # Debug mode — enables dev-only endpoints (webhook echo, etc.)
     debug: bool = False
 
-    model_config = {"env_prefix": "RUNBOOK_", "env_file": ".env", "extra": "ignore"}
+    model_config = {"env_prefix": "BATCHRITE_", "env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

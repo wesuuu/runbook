@@ -25,11 +25,11 @@ async def test_verification_email_arrives_in_mailpit():
     provider = SMTPProvider(
         host="localhost",
         port=1025,
-        from_addr="noreply@runbook.local",
+        from_addr="noreply@batchrite.local",
     )
     await provider.send(
         to=test_email,
-        subject="Verify your email — Runbook",
+        subject="Verify your email — Batchrite",
         html_body='<p>Click <a href="http://localhost:8000/auth/verify-email?token=test123">here</a></p>',
         text_body="Verify: http://localhost:8000/auth/verify-email?token=test123",
     )

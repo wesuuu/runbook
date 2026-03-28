@@ -100,6 +100,16 @@ class Run(Base, UUIDMixin, TimestampMixin):
         JSONB, default=dict
     )
 
+    # Run-level notes (append-only, authored, timestamped)
+    notes: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list
+    )
+
+    # File attachments (run-level or step-level, soft-deletable)
+    attachments: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list
+    )
+
     # User who started this run (used for locking role-less runs)
     started_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id"), nullable=True

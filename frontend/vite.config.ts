@@ -11,9 +11,9 @@ export default defineConfig(({ mode }) => {
 			SvelteKitPWA({
 				registerType: 'autoUpdate',
 				manifest: {
-					name: 'Trellis Runbook',
-					short_name: 'Runbook',
-					description: 'Digital Lab Notebook for Process Development',
+					name: 'Batchrite',
+					short_name: 'Batchrite',
+					description: 'Laboratory Execution System for Process Development',
 					theme_color: '#2b4678',
 					background_color: '#f7f5f0',
 					display: 'standalone',

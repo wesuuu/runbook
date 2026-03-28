@@ -15,7 +15,7 @@ def mock_llm_and_rag():
     with patch(
         "app.services.chat_service._call_llm",
         new_callable=AsyncMock,
-        return_value=("I'm Trellis AI, happy to help!", [], [], [], None),
+        return_value=("I'm Batchrite AI, happy to help!", [], [], [], None),
     ):
         yield
 

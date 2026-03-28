@@ -54,9 +54,9 @@ class TestTemplates:
 
     def test_invite_sent(self):
         title, body = TEMPLATES["INVITE_SENT"](
-            {"org_name": "Trellis Bio", "invited_by": "Admin"},
+            {"org_name": "Batchrite", "invited_by": "Admin"},
         )
-        assert "Trellis Bio" in title
+        assert "Batchrite" in title
         assert "invited" in body.lower()
 
     def test_protocol_reverted(self):
@@ -184,8 +184,8 @@ class TestWebhookChannel:
 
         call_kwargs = mock_post.call_args
         headers = call_kwargs.kwargs.get("headers", {})
-        assert "X-Runbook-Signature" in headers
-        assert headers["X-Runbook-Signature"].startswith("sha256=")
+        assert "X-Batchrite-Signature" in headers
+        assert headers["X-Batchrite-Signature"].startswith("sha256=")
 
 
 # ── FakeChannel for Integration-Style Tests ──────────────────────────────

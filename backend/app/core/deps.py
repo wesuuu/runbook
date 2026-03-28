@@ -66,6 +66,16 @@ async def get_current_user(
     return user
 
 
+def get_org_id_from_request(request: Request) -> UUID | None:
+    """Extract org_id from the token payload stashed by AuthMiddleware."""
+    payload: TokenPayload | None = getattr(
+        request.state, "token_payload", None
+    )
+    if payload and payload.org_id:
+        return payload.org_id
+    return None
+
+
 def require_permission(
     object_type: ObjectType,
     id_param: str,

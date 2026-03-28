@@ -2,7 +2,7 @@ from typing import List, Literal, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 # UnitOpDefinition Schemas
 class UnitOpDefinitionBase(BaseModel):
@@ -130,6 +130,65 @@ class RunStatus(str, Enum):
     EDITED = "EDITED"
     ARCHIVED = "ARCHIVED"
 
+# --- Run Notes & Attachments ---
+
+ALLOWED_NOTE_FLAGS = {"anomaly"}
+
+
+class RunNote(BaseModel):
+    """A single run-level note (domain object, stored in Run.notes JSONB)."""
+
+    id: UUID
+    content: str
+    author_id: UUID
+    author_name: str = "Unknown"
+    created_at: datetime
+    run_status: str
+    flags: list[str] = Field(default_factory=list)
+
+
+class RunNoteCreate(BaseModel):
+    """Request body for adding a run-level note."""
+
+    content: str = Field(..., min_length=1, max_length=10000)
+    flags: list[str] = Field(default_factory=list)
+
+    @field_validator("flags")
+    @classmethod
+    def validate_flags(cls, v: list[str]) -> list[str]:
+        invalid = set(v) - ALLOWED_NOTE_FLAGS
+        if invalid:
+            raise ValueError(
+                f"Invalid flags: {invalid}. Allowed: {ALLOWED_NOTE_FLAGS}"
+            )
+        return v
+
+
+class RunNoteListResponse(BaseModel):
+    items: list[RunNote] = []
+
+
+class RunAttachment(BaseModel):
+    """A single file attachment (domain object, stored in Run.attachments JSONB)."""
+
+    id: UUID
+    file_path: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    uploaded_by_id: UUID
+    uploaded_at: datetime
+    step_id: Optional[str] = None
+    run_status: str
+    deleted: bool = False
+
+
+class RunAttachmentListResponse(BaseModel):
+    items: list[RunAttachment] = []
+
+
+# --- Run ---
+
 class RunBase(BaseModel):
     name: str
     status: RunStatus = RunStatus.PLANNED
@@ -152,6 +211,8 @@ class RunResponse(RunBase):
     project_id: UUID
     protocol_id: Optional[UUID]
     started_by_id: Optional[UUID] = None
+    notes: list[RunNote] = Field(default_factory=list)
+    attachments: list[RunAttachment] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

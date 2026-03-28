@@ -97,8 +97,8 @@
                     dateRange,
                 });
             }
-        } catch {
-            toast.warning('Failed to check offline queue');
+        } catch (err) {
+            console.warn('Failed to check offline queue:', err);
         }
     }
 

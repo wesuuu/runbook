@@ -1,9 +1,8 @@
 [tool.poetry]
-name = "runbook-backend"
+name = "batchrite-backend"
 version = "0.1.0"
-description = "Backend for Conductor/Runbook: AI-Powered Co-Pilot for Process Development"
-authors = ["Trellis Bio <engineering@trellisbio.com>"]
-readme = "README.md"
+description = "Backend for the Batchrite Laboratory Execution System"
+authors = ["Batchrite <engineering@batchrite.com>"]
 packages = [{include = "app"}]
 
 [tool.poetry.dependencies]

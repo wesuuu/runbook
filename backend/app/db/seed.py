@@ -1,4 +1,4 @@
-"""Centralized seed data for the Runbook application.
+"""Centralized seed data for the Batchrite application.
 
 Run via: python -m app.db.seed (from backend directory)
 

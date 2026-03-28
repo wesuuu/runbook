@@ -57,7 +57,7 @@ class SlackChannel(BaseChannel):
                 "type": "actions",
                 "elements": [{
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "View in Runbook"},
+                    "text": {"type": "plain_text", "text": "View in Batchrite"},
                     "url": message.url,
                 }],
             })
@@ -89,7 +89,7 @@ class SlackChannel(BaseChannel):
                 "type": "actions",
                 "elements": [{
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "View in Runbook"},
+                    "text": {"type": "plain_text", "text": "View in Batchrite"},
                     "url": message.url,
                 }],
             })

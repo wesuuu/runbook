@@ -45,9 +45,9 @@
             <div
                 class="w-12 h-12 bg-primary rounded-xl flex items-center justify-center text-primary-foreground font-bold text-xl shadow-sm mb-3"
             >
-                R
+                B
             </div>
-            <h1 class="text-2xl font-bold tracking-tight">Runbook</h1>
+            <h1 class="text-2xl font-bold tracking-tight">Batchrite</h1>
             <p class="text-sm text-muted-foreground mt-1">Create your account</p>
         </div>
 

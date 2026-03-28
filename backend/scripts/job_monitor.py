@@ -18,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
-DB_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/runbook"
+DB_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite"
 POLL_INTERVAL = 2  # seconds
 
 # ANSI colors

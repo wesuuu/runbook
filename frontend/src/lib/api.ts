@@ -160,7 +160,7 @@ async function uploadWithFields<T>(
 
 export const api = {
     get: <T>(endpoint: string, options?: RequestOptions<T>) => request<T>('GET', endpoint, undefined, options),
-    post: <T>(endpoint: string, body: unknown, options?: RequestOptions<T>) => request<T>('POST', endpoint, body, options),
+    post: <T>(endpoint: string, body?: unknown, options?: RequestOptions<T>) => request<T>('POST', endpoint, body, options),
     put: <T>(endpoint: string, body: unknown, options?: RequestOptions<T>) => request<T>('PUT', endpoint, body, options),
     patch: <T>(endpoint: string, body: unknown, options?: RequestOptions<T>) => request<T>('PATCH', endpoint, body, options),
     delete: <T>(endpoint: string, options?: RequestOptions<T>) => request<T>('DELETE', endpoint, undefined, options),

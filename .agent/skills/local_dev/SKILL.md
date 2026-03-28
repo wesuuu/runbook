@@ -24,7 +24,7 @@ A local PostgreSQL instance is running and available for use. Do not attempt to 
 - **Username**: `postgres`
 - **Password**: `postgres`
 - **Database Names**:
-    - `runbook` (Primary application database - to be created if not exists)
+    - `batchrite` (Primary application database - to be created if not exists)
     - `postgres` (Default maintenance database)
 
 ## Process Management

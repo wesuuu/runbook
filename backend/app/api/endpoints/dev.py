@@ -1,6 +1,6 @@
 """Dev-only endpoints for testing integrations.
 
-Only mounted when RUNBOOK_DEBUG=true.
+Only mounted when BATCHRITE_DEBUG=true.
 """
 
 import json
