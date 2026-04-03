@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentTemplateResponse(BaseModel):
@@ -19,6 +19,7 @@ class DocumentTemplateResponse(BaseModel):
     variables: dict[str, Any] = {}
     is_system: bool = False
     is_default: bool = False
+    is_current_default: bool = False
     status: str = "ACTIVE"
     archived_at: Optional[datetime] = None
     archived_by_id: Optional[UUID] = None
@@ -26,3 +27,10 @@ class DocumentTemplateResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    set_as_default: Optional[bool] = None

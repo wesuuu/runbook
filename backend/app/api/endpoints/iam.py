@@ -102,6 +102,22 @@ async def create_organization(
     db.add(org)
     await db.flush()
 
+    # Stamp system default templates
+    from app.models.templates import DocumentTemplate
+
+    for ttype, col in [
+        ("SOP", "default_sop_template_id"),
+        ("BATCH_RECORD", "default_batch_record_template_id"),
+    ]:
+        result = await db.execute(
+            select(DocumentTemplate.id).where(
+                DocumentTemplate.is_system == True,
+                DocumentTemplate.is_default == True,
+                DocumentTemplate.template_type == ttype,
+            )
+        )
+        setattr(org, col, result.scalar_one_or_none())
+
     # Caller auto-becomes admin
     membership = OrganizationMember(
         user_id=user.id, organization_id=org.id, role="ADMIN",

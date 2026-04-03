@@ -86,12 +86,36 @@ async def create_protocol(
         if result.scalar_one_or_none() is None:
             raise HTTPException(403, "Org admin required for organization protocols")
 
+    # Resolve default template IDs: project > org > system
+    from app.services.template_engine import resolve_default_template_id
+
+    org_id = protocol.organization_id
+    if not org_id and protocol.project_id:
+        proj_result = await db.execute(
+            select(Project).where(Project.id == protocol.project_id)
+        )
+        proj = proj_result.scalar_one_or_none()
+        if proj:
+            org_id = proj.organization_id
+
+    sop_tpl_id = None
+    br_tpl_id = None
+    if org_id:
+        sop_tpl_id = await resolve_default_template_id(
+            db, protocol.project_id or UUID(int=0), org_id, "SOP"
+        )
+        br_tpl_id = await resolve_default_template_id(
+            db, protocol.project_id or UUID(int=0), org_id, "BATCH_RECORD"
+        )
+
     new_protocol = Protocol(
         name=protocol.name,
         description=protocol.description,
         project_id=protocol.project_id,
         organization_id=protocol.organization_id,
         graph=protocol.graph,
+        sop_template_id=sop_tpl_id,
+        batch_record_template_id=br_tpl_id,
     )
     db.add(new_protocol)
     await db.flush()

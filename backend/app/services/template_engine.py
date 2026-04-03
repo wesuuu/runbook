@@ -545,6 +545,67 @@ def render_to_pdf(
     return convert_to_pdf(docx_bytes)
 
 
+# ── Default template resolution ──
+
+
+async def resolve_default_template_id(
+    db,
+    project_id,
+    org_id,
+    template_type: str,
+):
+    """Resolve the default template ID: project > org > system.
+
+    Args:
+        db: AsyncSession
+        project_id: UUID of the project
+        org_id: UUID of the organization
+        template_type: "SOP" or "BATCH_RECORD"
+
+    Returns:
+        UUID of the resolved template, or None if no default found.
+    """
+    from sqlalchemy import select
+
+    from app.models.iam import Organization
+    from app.models.science import Project
+    from app.models.templates import DocumentTemplate
+
+    col_attr = (
+        "default_sop_template_id"
+        if template_type == "SOP"
+        else "default_batch_record_template_id"
+    )
+
+    # 1. Project default
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if project:
+        val = getattr(project, col_attr, None)
+        if val:
+            return val
+
+    # 2. Org default
+    result = await db.execute(
+        select(Organization).where(Organization.id == org_id)
+    )
+    org = result.scalar_one_or_none()
+    if org:
+        val = getattr(org, col_attr, None)
+        if val:
+            return val
+
+    # 3. System default
+    result = await db.execute(
+        select(DocumentTemplate.id).where(
+            DocumentTemplate.is_system == True,
+            DocumentTemplate.is_default == True,
+            DocumentTemplate.template_type == template_type,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 # ── Mock data for template preview ──
 
 def get_mock_context() -> dict[str, Any]:
