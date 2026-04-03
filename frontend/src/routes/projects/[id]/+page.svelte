@@ -20,6 +20,7 @@
     import RunsTab from "$lib/components/project/RunsTab.svelte";
     import ActivityTab from "$lib/components/project/ActivityTab.svelte";
     import SettingsTab from "$lib/components/project/SettingsTab.svelte";
+    import ProtocolImportModal from "$lib/components/ProtocolImportModal.svelte";
 
     const id = $derived($page.params.id ?? "");
 
@@ -43,6 +44,9 @@
         if (tab === activeTab) return;
         goto(`?tab=${tab}`, { replaceState: false, keepFocus: true, noScroll: true });
     }
+
+    // -- Import Modal --
+    let showImportModal = $state(false);
 
     // -- Run Modal --
     let showRunModal = $state(false);
@@ -333,6 +337,12 @@
                     </button>
                 {:else if activeTab === "protocols"}
                     <button
+                        class="px-4.5 py-2 bg-teal-600 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-teal-700"
+                        onclick={() => (showImportModal = true)}
+                    >
+                        Import Protocol
+                    </button>
+                    <button
                         class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
                         onclick={createProtocol}
                     >
@@ -364,6 +374,7 @@
                     {protocols}
                     onReloadProtocols={reloadProtocols}
                     onCreateProtocol={createProtocol}
+                    onImportProtocol={() => (showImportModal = true)}
                 />
             {:else if activeTab === "activity"}
                 <ActivityTab projectId={id} />
@@ -377,6 +388,16 @@
         </div>
     </div>
 {/if}
+
+<!-- IMPORT PROTOCOL MODAL -->
+<ProtocolImportModal
+    bind:open={showImportModal}
+    preselectedProjectId={id !== 'new' ? id : undefined}
+    onSuccess={(protocolId) => {
+        loadData();
+        goto(`/protocols/${protocolId}`);
+    }}
+/>
 
 <!-- RUN MODAL -->
 <Dialog.Root bind:open={showRunModal}>

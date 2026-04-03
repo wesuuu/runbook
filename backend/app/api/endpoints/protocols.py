@@ -1,8 +1,10 @@
 import logging
+import tempfile
+from pathlib import Path
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -29,6 +31,9 @@ from app.schemas.science import (
     ProtocolRoleCreate,
     ProtocolRoleUpdate,
     ProtocolRoleResponse,
+    ProtocolImportProposalResponse,
+    ProtocolRefineRequest,
+    ProtocolImportFinalizeRequest,
 )
 from app.services.audit import log_audit
 from app.services.notifications import send_notification
@@ -49,27 +54,43 @@ async def create_protocol(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Check user has EDIT on the parent project
-    allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        protocol.project_id, PermissionLevel.EDIT,
-    )
-    if not allowed:
-        raise HTTPException(
-            status_code=403,
-            detail="EDIT permission required on project",
-        )
+    # Validate scope: exactly one of project_id or organization_id
+    if protocol.project_id and protocol.organization_id:
+        raise HTTPException(400, "Set project_id or organization_id, not both")
+    if not protocol.project_id and not protocol.organization_id:
+        # Default to project-scoped (backward compat)
+        raise HTTPException(400, "project_id or organization_id required")
 
-    result = await db.execute(
-        select(Project).where(Project.id == protocol.project_id)
-    )
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    if protocol.project_id:
+        allowed = await check_permission(
+            db, user.id, ObjectType.PROJECT,
+            protocol.project_id, PermissionLevel.EDIT,
+        )
+        if not allowed:
+            raise HTTPException(403, "EDIT permission required on project")
+        result = await db.execute(
+            select(Project).where(Project.id == protocol.project_id)
+        )
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(404, "Project not found")
+
+    if protocol.organization_id:
+        # Org-scoped: require org admin
+        result = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.organization_id == protocol.organization_id,
+                OrganizationMember.role == "admin",
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(403, "Org admin required for organization protocols")
 
     new_protocol = Protocol(
         name=protocol.name,
         description=protocol.description,
         project_id=protocol.project_id,
+        organization_id=protocol.organization_id,
         graph=protocol.graph,
     )
     db.add(new_protocol)
@@ -87,6 +108,187 @@ async def create_protocol(
         select(Protocol)
         .options(selectinload(Protocol.roles))
         .where(Protocol.id == new_protocol.id)
+    )
+    return result.scalar_one()
+
+
+# --- Protocol Import ---
+
+
+@router.post(
+    "/protocols/import",
+    response_model=ProtocolImportProposalResponse,
+)
+async def import_protocol(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a protocol document and get an AI-generated import proposal."""
+    from app.services.protocol_importer import (
+        extract_text,
+        parse_protocol_text,
+        build_proposal,
+    )
+    from app.models.science import UnitOpDefinition
+
+    # Validate file type
+    allowed_types = {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "image/jpeg",
+        "image/png",
+        "image/tiff",
+    }
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            422,
+            f"Unsupported file type: {file.content_type}. "
+            f"Accepted: PDF, DOCX, JPEG, PNG, TIFF",
+        )
+
+    org_id = user.selected_org_id
+
+    # Save to temp file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename or "doc").suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Extract text
+        text = await extract_text(tmp_path, file.content_type, db, org_id)
+        if not text or not text.strip():
+            raise HTTPException(422, "Could not extract text from document")
+
+        # Fetch unit op catalog
+        result = await db.execute(select(UnitOpDefinition))
+        unit_ops = list(result.scalars().all())
+
+        # Parse with LLM
+        try:
+            parsed = await parse_protocol_text(text, unit_ops, db, org_id)
+        except Exception as e:
+            logger.exception("LLM analysis failed for protocol import")
+            raise HTTPException(502, f"AI analysis failed: {str(e)}")
+
+        # Build proposal
+        proposal = build_proposal(
+            parsed, unit_ops, file.filename or "uploaded_document",
+            source_text=text,
+        )
+        return proposal
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@router.post("/protocols/refine")
+async def refine_protocol_endpoint(
+    request: ProtocolRefineRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Refine a protocol graph based on a natural language instruction.
+
+    General-purpose: works for imported protocols and existing ones.
+    """
+    from app.services.protocol_importer import refine_protocol
+    from app.models.science import UnitOpDefinition
+
+    org_id = user.selected_org_id
+
+    result = await db.execute(select(UnitOpDefinition))
+    unit_ops = list(result.scalars().all())
+
+    try:
+        updated_graph = await refine_protocol(
+            request.graph, request.instruction, unit_ops, db, org_id,
+        )
+    except Exception as e:
+        logger.exception("Protocol refinement failed")
+        raise HTTPException(502, f"AI refinement failed: {str(e)}")
+
+    return updated_graph
+
+
+@router.post(
+    "/protocols/finalize-import",
+    response_model=ProtocolResponse,
+    status_code=201,
+)
+async def finalize_protocol_import(
+    request: ProtocolImportFinalizeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Finalize a protocol import: create unit ops, roles, and protocol."""
+    from app.services.protocol_importer import StepProposal, finalize_import
+
+    # Validate scope
+    if request.project_id and request.organization_id:
+        raise HTTPException(400, "Set project_id or organization_id, not both")
+    if not request.project_id and not request.organization_id:
+        raise HTTPException(400, "project_id or organization_id required")
+
+    if request.project_id:
+        allowed = await check_permission(
+            db, user.id, ObjectType.PROJECT,
+            request.project_id, PermissionLevel.EDIT,
+        )
+        if not allowed:
+            raise HTTPException(403, "EDIT permission required on project")
+
+    if request.organization_id:
+        result = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.organization_id == request.organization_id,
+                OrganizationMember.role == "admin",
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(403, "Org admin required for organization protocols")
+
+    # Convert schema steps to service StepProposals
+    steps = [
+        StepProposal(
+            name=s.name,
+            description=s.description,
+            category=s.category,
+            duration_min=s.duration_min,
+            params=s.params,
+            param_schema=s.param_schema,
+            role=s.role,
+            matched_unit_op_id=s.matched_unit_op_id,
+            matched_unit_op_name=s.matched_unit_op_name,
+            is_new=s.is_new,
+        )
+        for s in request.steps
+    ]
+
+    protocol = await finalize_import(
+        steps=steps,
+        protocol_name=request.protocol_name,
+        protocol_description=request.protocol_description,
+        project_id=request.project_id,
+        organization_id=request.organization_id,
+        user_id=user.id,
+        source_filename=request.source_filename,
+        db=db,
+    )
+
+    await log_audit(
+        db, user.id, "CREATE", "Protocol",
+        protocol.id,
+        {"name": protocol.name, "source": "protocol_import"},
+    )
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol.id)
     )
     return result.scalar_one()
 

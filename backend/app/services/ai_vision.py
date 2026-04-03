@@ -356,3 +356,67 @@ def _format_history(messages: list[dict[str, Any]]) -> str:
         content = msg.get("content", "")
         lines.append(f"{role.upper()}: {content}")
     return "\n".join(lines)
+
+
+# ── Document text extraction (OCR) ──────────────────────────────────
+
+
+_DOC_OCR_PROMPT = """You are a document OCR assistant. Extract ALL text from this image of a document or protocol.
+
+RULES:
+1. Preserve the document structure: headings, numbered steps, bullet points, tables.
+2. Return the extracted text as plain text, maintaining the original formatting.
+3. If text is unclear or partially obscured, include your best reading with [?] markers.
+4. Do NOT summarize or interpret — extract the raw text faithfully."""
+
+
+async def extract_document_text(
+    image_path: str,
+    db: AsyncSession,
+    org_id: "UUID | None" = None,
+) -> str:
+    """Extract text from a document/protocol image using vision AI.
+
+    Used for photo-based protocol import (camera capture or scanned images).
+    Returns the extracted text as a plain string.
+    """
+    model = await get_model("vision", db, org_id=org_id)
+    image_bytes = Path(image_path).read_bytes()
+
+    if _is_ollama_model(model):
+        config = await get_full_config("vision", db, org_id=org_id)
+        creds = config.get("credentials") or {}
+        base_url = creds.get("base_url") or "http://localhost:11434"
+        model_name = _get_ollama_model_name(model)
+
+        # Use Ollama native API without JSON format (we want plain text)
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{base_url.rstrip('/')}/api/chat",
+                json={
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": _DOC_OCR_PROMPT},
+                        {
+                            "role": "user",
+                            "content": "Extract all text from this document image.",
+                            "images": [base64.b64encode(image_bytes).decode("utf-8")],
+                        },
+                    ],
+                    "stream": False,
+                },
+            )
+            resp.raise_for_status()
+
+        data = resp.json()
+        return data.get("message", {}).get("content", "")
+
+    # Cloud providers: use pydantic-ai with plain string output
+    agent = Agent(model, system_prompt=_DOC_OCR_PROMPT, output_type=str)
+    mime_type = _guess_mime(image_path)
+    user_content = [
+        BinaryContent(data=image_bytes, media_type=mime_type),
+        "Extract all text from this document image.",
+    ]
+    result = await agent.run(user_content)
+    return result.output

@@ -39,17 +39,28 @@ class Project(Base, UUIDMixin, TimestampMixin):
         back_populates="project", cascade="all, delete-orphan"
     )
     protocols: Mapped[List["Protocol"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan"
+        back_populates="project"
     )
 
 
 class Protocol(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "protocols"
 
+    __table_args__ = (
+        CheckConstraint(
+            "(project_id IS NOT NULL AND organization_id IS NULL) OR "
+            "(project_id IS NULL AND organization_id IS NOT NULL)",
+            name="ck_protocol_scope",
+        ),
+    )
+
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String)
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("projects.id"), nullable=False
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("projects.id"), nullable=True
+    )
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
     )
     status: Mapped[str] = mapped_column(
         String, default="DRAFT", server_default="DRAFT", nullable=False
@@ -62,7 +73,10 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Relationships
-    project: Mapped["Project"] = relationship(back_populates="protocols")
+    project: Mapped[Optional["Project"]] = relationship(back_populates="protocols")
+    organization: Mapped[Optional["Organization"]] = relationship(
+        "app.models.iam.Organization", foreign_keys=[organization_id]
+    )
     runs: Mapped[List["Run"]] = relationship(
         back_populates="protocol"
     )

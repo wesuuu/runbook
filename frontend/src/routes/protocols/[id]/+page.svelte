@@ -63,7 +63,17 @@
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
     import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
 
-    const id = $derived($page.params.id);
+    // --- Embedded Mode Props ---
+    // When used inside ProtocolImportModal, these props are set.
+    // When used as a page, they are undefined and the component loads from API.
+    interface Props {
+        initialGraph?: Record<string, unknown>;
+        embedded?: boolean;
+        onGraphChange?: (graph: Record<string, unknown>) => void;
+    }
+    let { initialGraph, embedded = false, onGraphChange }: Props = $props();
+
+    const id = $derived(embedded ? undefined : $page.params.id);
 
     // --- Node Types ---
     const nodeTypes = { unitOp: UnitOpNode, swimLane: SwimLaneNode, processStart: ProcessStartNode } as Record<string, any> as NodeTypes;
@@ -796,8 +806,31 @@
         showCreateModal = true;
     }
 
+    // --- Embedded mode: apply initial graph and emit changes ---
+    $effect(() => {
+        if (embedded && initialGraph && loading) {
+            applyGraphState(initialGraph);
+            loading = false;
+            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            hasUnsavedChanges = false;
+        }
+    });
+
+    // Expose a function to update the graph from outside (e.g., chat refinement)
+    export function updateGraph(graph: Record<string, unknown>) {
+        applyGraphState(graph);
+    }
+
+    // Emit graph changes to parent in embedded mode
+    $effect(() => {
+        if (embedded && onGraphChange && !loading) {
+            const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            onGraphChange(graphData);
+        }
+    });
+
     onMount(() => {
-        loadData();
+        if (!embedded) loadData();
 
         // Warn user if they try to leave with unsaved changes
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -834,8 +867,9 @@
     });
 </script>
 
-<div class="flex h-[calc(100vh-57px)] font-sans">
+<div class="flex {embedded ? 'h-full' : 'h-[calc(100vh-57px)]'} font-sans">
     <!-- ============= SIDEBAR ============= -->
+    {#if !embedded}
     <ProtocolSidebar
         {protocol}
         {roles}
@@ -857,6 +891,7 @@
         onDeleteOrArchive={deleteOrArchiveProtocol}
         onUnarchive={unarchiveProtocol}
     />
+    {/if}
 
     <!-- ============= CANVAS ============= -->
     <div
