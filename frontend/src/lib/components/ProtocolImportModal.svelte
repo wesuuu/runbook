@@ -1,9 +1,8 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
-    import { getCurrentOrg, getCurrentUser } from '$lib/auth.svelte';
+    import { getCurrentOrg, getUser } from '$lib/auth.svelte';
     import { toast } from 'svelte-sonner';
-    import * as Dialog from '$lib/components/ui/dialog';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
@@ -79,11 +78,17 @@
         }
     }
 
-    function checkOrgAdmin() {
-        const user = getCurrentUser();
+    async function checkOrgAdmin() {
+        const user = getUser();
         const org = getCurrentOrg();
         if (user && org) {
-            isOrgAdmin = user.org_role === 'admin';
+            try {
+                const members = await api.get(`/iam/organizations/${org.id}/members`) as any[];
+                const me = members.find((m: any) => m.user_id === user.id);
+                isOrgAdmin = me?.role === 'admin';
+            } catch {
+                isOrgAdmin = false;
+            }
         }
     }
 
@@ -367,37 +372,42 @@
     }
 </script>
 
-<Dialog.Root bind:open onOpenChange={handleOpenChange}>
-    <Dialog.Content class="max-w-[95vw] w-[95vw] h-[90vh] p-0 flex flex-col">
-        <!-- Header with tabs -->
-        <div class="flex items-center justify-between border-b border-border px-6 py-3 shrink-0">
-            <div class="flex items-center gap-6">
-                <Dialog.Title class="text-lg font-semibold">Import Protocol</Dialog.Title>
-                <div class="flex gap-1">
-                    <button
-                        class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'import' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-                        onclick={() => (activeTab = 'import')}
-                    >
-                        Import
-                    </button>
-                    <button
-                        class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'editor' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-                        onclick={() => (activeTab = 'editor')}
-                        disabled={!currentGraph}
-                    >
-                        Protocol Editor
-                    </button>
-                </div>
+{#if open}
+<!-- Full-screen overlay -->
+<div class="fixed inset-0 z-50 flex flex-col bg-background">
+    <!-- Header with tabs -->
+    <div class="flex items-center justify-between border-b border-border px-6 py-3 shrink-0">
+        <div class="flex items-center gap-6">
+            <h2 class="text-lg font-semibold">Import Protocol</h2>
+            <div class="flex gap-1">
+                <button
+                    class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'import' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+                    onclick={() => (activeTab = 'import')}
+                >
+                    Import
+                </button>
+                <button
+                    class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'editor' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+                    onclick={() => (activeTab = 'editor')}
+                    disabled={!currentGraph}
+                >
+                    Protocol Editor
+                </button>
             </div>
-            <Dialog.Close class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-            </Dialog.Close>
         </div>
+        <button
+            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            onclick={() => handleOpenChange(false)}
+            aria-label="Close"
+        >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
 
-        <!-- Tab content -->
-        <div class="flex-1 overflow-hidden">
+    <!-- Tab content -->
+    <div class="flex-1 overflow-hidden">
             {#if activeTab === 'import'}
                 <div class="h-full flex flex-col">
                     {#if step === 'upload'}
@@ -594,5 +604,5 @@
                 {/if}
             {/if}
         </div>
-    </Dialog.Content>
-</Dialog.Root>
+    </div>
+{/if}
