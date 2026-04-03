@@ -216,11 +216,44 @@
         for (const r of roleNames) laneCounters[r] = 0;
         let noRoleCounter = 0;
 
+        // Create processStart nodes for each role chain
+        const lastNodePerChain: Record<string, string> = {};
+        for (const roleName of roleNames) {
+            const psId = `ps-${crypto.randomUUID()}`;
+            const idx = laneCounters[roleName]++;
+            nodes.push({
+                id: psId,
+                type: 'processStart',
+                zIndex: 1,
+                position: { x: 100 + idx * 300, y: 30 },
+                parentId: laneMap[roleName],
+                width: 220,
+                data: { label: roleName, description: '' },
+            });
+            lastNodePerChain[roleName] = psId;
+        }
+        // processStart for ungrouped steps
+        const hasUngrouped = p.steps.some(s => !s.role);
+        if (hasUngrouped) {
+            const psId = `ps-${crypto.randomUUID()}`;
+            nodes.push({
+                id: psId,
+                type: 'processStart',
+                zIndex: 1,
+                position: { x: 100 + noRoleCounter * 300, y: 200 },
+                width: 220,
+                data: { label: 'Process', description: '' },
+            });
+            noRoleCounter++;
+            lastNodePerChain['__ungrouped__'] = psId;
+        }
+
         const opNodes: any[] = [];
         for (const s of p.steps) {
             const nodeId = `node-${crypto.randomUUID()}`;
             let position: { x: number; y: number };
             let parentId: string | undefined;
+            const chainKey = (s.role && laneMap[s.role]) ? s.role : '__ungrouped__';
 
             if (s.role && laneMap[s.role]) {
                 const idx = laneCounters[s.role]++;
@@ -247,16 +280,19 @@
             };
             if (parentId) node.parentId = parentId;
             opNodes.push(node);
+
+            // Edge from last node in this chain
+            if (lastNodePerChain[chainKey]) {
+                edges.push({
+                    id: `edge-${crypto.randomUUID()}`,
+                    source: lastNodePerChain[chainKey],
+                    target: nodeId,
+                });
+            }
+            lastNodePerChain[chainKey] = nodeId;
         }
 
         nodes.push(...opNodes);
-        for (let i = 1; i < opNodes.length; i++) {
-            edges.push({
-                id: `edge-${crypto.randomUUID()}`,
-                source: opNodes[i - 1].id,
-                target: opNodes[i].id,
-            });
-        }
 
         return {
             nodes,

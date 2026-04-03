@@ -328,7 +328,7 @@ def build_import_graph(
             "style": "width: 800px; height: 200px;",
         })
 
-    # Create unit op nodes
+    # Create process start nodes + unit op nodes
     x_start = 100
     x_increment = 300
     y_default = 200  # y position for nodes without a role
@@ -337,19 +337,65 @@ def build_import_graph(
     lane_x_counters: dict[str, int] = {name: 0 for name in role_names}
     no_role_counter = 0
 
+    # Insert a processStart node at the root of each lane chain
+    # and one for the ungrouped chain (if any steps have no role)
+    process_start_nodes: dict[str | None, dict[str, Any]] = {}
+    has_ungrouped = any(not s.role for s in steps)
+
+    for role_name in role_names:
+        ps_id = f"ps-{uuid4()}"
+        lane_id = lane_map[role_name]
+        idx = lane_x_counters[role_name]
+        lane_x_counters[role_name] += 1
+        ps_node: dict[str, Any] = {
+            "id": ps_id,
+            "type": "processStart",
+            "zIndex": 1,
+            "position": {"x": x_start + idx * x_increment, "y": 30},
+            "parentId": lane_id,
+            "width": 220,
+            "data": {
+                "label": role_name,
+                "description": "",
+            },
+        }
+        nodes.append(ps_node)
+        process_start_nodes[role_name] = ps_node
+
+    if has_ungrouped:
+        ps_id = f"ps-{uuid4()}"
+        ps_node = {
+            "id": ps_id,
+            "type": "processStart",
+            "zIndex": 1,
+            "position": {"x": x_start + no_role_counter * x_increment, "y": y_default},
+            "width": 220,
+            "data": {
+                "label": "Process",
+                "description": "",
+            },
+        }
+        no_role_counter += 1
+        nodes.append(ps_node)
+        process_start_nodes[None] = ps_node
+
+    # Track the last node per chain for edge creation
+    last_node_per_chain: dict[str | None, str] = {
+        k: v["id"] for k, v in process_start_nodes.items()
+    }
+
     op_nodes: list[dict[str, Any]] = []
     for step in steps:
         node_id = f"node-{uuid4()}"
+        chain_key: str | None = step.role if (step.role and step.role in lane_map) else None
 
         if step.role and step.role in lane_map:
             lane_id = lane_map[step.role]
             lane_idx = lane_x_counters[step.role]
             lane_x_counters[step.role] += 1
-            # Position relative to parent lane
             position = {"x": x_start + lane_idx * x_increment, "y": 30}
             parent_id = lane_id
         else:
-            # No role — top-level node
             position = {"x": x_start + no_role_counter * x_increment, "y": y_default}
             no_role_counter += 1
             parent_id = None
@@ -373,15 +419,16 @@ def build_import_graph(
 
         op_nodes.append(node)
 
-    nodes.extend(op_nodes)
+        # Create edge from last node in this chain
+        if chain_key in last_node_per_chain:
+            edges.append({
+                "id": f"edge-{uuid4()}",
+                "source": last_node_per_chain[chain_key],
+                "target": node_id,
+            })
+        last_node_per_chain[chain_key] = node_id
 
-    # Create sequential edges between op nodes
-    for i in range(1, len(op_nodes)):
-        edges.append({
-            "id": f"edge-{uuid4()}",
-            "source": op_nodes[i - 1]["id"],
-            "target": op_nodes[i]["id"],
-        })
+    nodes.extend(op_nodes)
 
     return {
         "nodes": nodes,

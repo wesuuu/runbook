@@ -210,8 +210,12 @@ class TestBuildImportGraph:
         assert graph["layout"] == "horizontal"
         assert graph["handleOrientation"] == "horizontal"
         assert graph["timeEnabled"] is False
-        assert len(graph["nodes"]) == 2
-        assert len(graph["edges"]) == 1
+        ps_nodes = [n for n in graph["nodes"] if n["type"] == "processStart"]
+        op_nodes = [n for n in graph["nodes"] if n["type"] == "unitOp"]
+        assert len(ps_nodes) == 1  # one processStart for ungrouped chain
+        assert len(op_nodes) == 2
+        # 2 edges: processStart->A, A->B
+        assert len(graph["edges"]) == 2
 
     def test_metadata_source(self):
         steps = [self._make_step_proposal()]
@@ -229,16 +233,23 @@ class TestBuildImportGraph:
             self._make_step_proposal("C"),
         ]
         graph = build_import_graph(steps, uuid.uuid4(), "test.pdf")
-        assert len(graph["edges"]) == 2
-        assert graph["edges"][0]["source"] == graph["nodes"][0]["id"]
-        assert graph["edges"][0]["target"] == graph["nodes"][1]["id"]
-        assert graph["edges"][1]["source"] == graph["nodes"][1]["id"]
-        assert graph["edges"][1]["target"] == graph["nodes"][2]["id"]
+        op_nodes = [n for n in graph["nodes"] if n["type"] == "unitOp"]
+        ps_nodes = [n for n in graph["nodes"] if n["type"] == "processStart"]
+        # 3 edges: processStart->A, A->B, B->C
+        assert len(graph["edges"]) == 3
+        assert graph["edges"][0]["source"] == ps_nodes[0]["id"]
+        assert graph["edges"][0]["target"] == op_nodes[0]["id"]
 
-    def test_single_step_no_edges(self):
+    def test_single_step_has_process_start_edge(self):
         steps = [self._make_step_proposal()]
         graph = build_import_graph(steps, uuid.uuid4(), "test.pdf")
-        assert len(graph["edges"]) == 0
+        ps_nodes = [n for n in graph["nodes"] if n["type"] == "processStart"]
+        op_nodes = [n for n in graph["nodes"] if n["type"] == "unitOp"]
+        assert len(ps_nodes) == 1
+        # 1 edge: processStart -> step
+        assert len(graph["edges"]) == 1
+        assert graph["edges"][0]["source"] == ps_nodes[0]["id"]
+        assert graph["edges"][0]["target"] == op_nodes[0]["id"]
 
     def test_swim_lanes_created_for_roles(self):
         steps = [
@@ -250,10 +261,12 @@ class TestBuildImportGraph:
 
         lane_nodes = [n for n in graph["nodes"] if n["type"] == "swimLane"]
         op_nodes = [n for n in graph["nodes"] if n["type"] == "unitOp"]
+        ps_nodes = [n for n in graph["nodes"] if n["type"] == "processStart"]
 
-        # 2 unique roles → 2 swim lanes
+        # 2 unique roles → 2 swim lanes + 2 processStart nodes
         assert len(lane_nodes) == 2
         assert len(op_nodes) == 3
+        assert len(ps_nodes) == 2
 
         # Swim lanes have correct data
         lane_names = {n["data"]["label"] for n in lane_nodes}
@@ -278,7 +291,9 @@ class TestBuildImportGraph:
         ]
         graph = build_import_graph(steps, uuid.uuid4(), "test.pdf")
         lane_nodes = [n for n in graph["nodes"] if n["type"] == "swimLane"]
+        ps_nodes = [n for n in graph["nodes"] if n["type"] == "processStart"]
         assert len(lane_nodes) == 0
+        assert len(ps_nodes) == 1  # one processStart for ungrouped chain
 
     def test_mixed_roles_and_no_roles(self):
         steps = [
@@ -289,8 +304,10 @@ class TestBuildImportGraph:
         graph = build_import_graph(steps, uuid.uuid4(), "test.pdf")
         lane_nodes = [n for n in graph["nodes"] if n["type"] == "swimLane"]
         op_nodes = [n for n in graph["nodes"] if n["type"] == "unitOp"]
+        ps_nodes = [n for n in graph["nodes"] if n["type"] == "processStart"]
 
         assert len(lane_nodes) == 1  # only Operator
+        assert len(ps_nodes) == 2  # one for Operator lane, one for ungrouped
         assert op_nodes[0].get("parentId") is not None  # Operator
         assert op_nodes[1].get("parentId") is None  # no role
         assert op_nodes[2].get("parentId") is not None  # Operator
