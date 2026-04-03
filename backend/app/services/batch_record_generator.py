@@ -1,7 +1,9 @@
-"""Batch record PDF generator.
+"""DEPRECATED — Batch record PDF generator (fpdf2-based).
 
-Produces a tabular batch record PDF with step rows, optional role
-columns, multi-param sub-rows, and GMP-compliant edit tracking.
+This module is superseded by the docxtpl template engine
+(app.services.template_engine). Kept for reference during the
+transition to .docx-based templates. Remove once Phase 0 of
+F-0065 (Custom Document Templates) is verified in production.
 """
 
 from typing import Any

@@ -513,6 +513,8 @@ async def update_protocol(
                     description=changes.get("description", protocol.description),
                     created_by_id=user.id,
                     is_draft=True,
+                    sop_template_id=protocol.sop_template_id,
+                    batch_record_template_id=protocol.batch_record_template_id,
                 )
                 db.add(draft)
 
@@ -532,6 +534,8 @@ async def update_protocol(
                 description=changes.get("description", protocol.description),
                 created_by_id=user.id,
                 is_draft=False,
+                sop_template_id=protocol.sop_template_id,
+                batch_record_template_id=protocol.batch_record_template_id,
             )
             db.add(version)
 

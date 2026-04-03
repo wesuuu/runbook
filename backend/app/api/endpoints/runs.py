@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid as uuid_mod
 from datetime import datetime, timezone
@@ -47,13 +48,9 @@ from app.services.audit import log_audit
 from app.services.file_storage import FileStorageService, IMAGE_MIME_TYPES
 from app.services.graph_processing import _parse_graph_roles_and_steps
 from app.services.notifications import send_notification
-from app.services.pdf import generate_sop_pdf, generate_batch_record_pdf
 from app.services.permissions import check_permission
-from app.api.endpoints.protocol_pdfs import (
-    _get_pdf_format,
-    _build_format_overrides,
-    _merge_format,
-)
+from app.services.template_engine import build_context, render_to_pdf
+from app.api.endpoints.protocol_pdfs import _load_template, _resolve_template_path
 
 logger = logging.getLogger(__name__)
 
@@ -511,10 +508,6 @@ async def update_run(
 async def get_run_sop_pdf(
     run_id: UUID,
     disposition: Optional[str] = Query(None),
-    font_size: Optional[str] = Query(None),
-    font_family: Optional[str] = Query(None),
-    header_color: Optional[str] = Query(None),
-    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -528,12 +521,12 @@ async def get_run_sop_pdf(
 
     run_obj = await get_or_404(db, Run, run_id)
 
-    # Get protocol name, description, and project settings
+    # Get protocol metadata and template
     protocol_name = "Unknown Protocol"
     protocol_description = ""
-    pdf_format = None
     proto_version: int | None = None
     proto_modified: str | None = None
+    sop_template_id: UUID | None = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -542,28 +535,30 @@ async def get_run_sop_pdf(
         if proto:
             protocol_name = proto.name
             protocol_description = proto.description or ""
-            pdf_format = await _get_pdf_format(db, proto.project_id)
             proto_version = proto.version_number
+            sop_template_id = proto.sop_template_id
             if proto.updated_at:
                 proto_modified = proto.updated_at.strftime("%B %d, %Y")
 
-    overrides = _build_format_overrides(
-        font_size, font_family, header_color, row_spacing,
-    )
-    pdf_format = _merge_format(pdf_format, overrides)
+    template = await _load_template(db, sop_template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="SOP template not found")
 
+    template_path = _resolve_template_path(template)
     graph = run_obj.graph or {}
-    roles_with_steps, _, _ = _parse_graph_roles_and_steps(graph)
+    roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    pdf_bytes = generate_sop_pdf(
+    context = build_context(
         protocol_name=protocol_name,
         protocol_description=protocol_description,
         run_name=run_obj.name,
-        roles_with_steps=roles_with_steps,
-        format_options=pdf_format,
         version_number=proto_version,
-        last_modified=proto_modified,
+        created_at=proto_modified or "",
+        roles_with_steps=roles_with_steps,
+        flat_steps=flat_steps,
+        is_role_based=is_role_based,
     )
+    pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "attachment"
     filename = f"SOP_{run_obj.name}.pdf".replace(" ", "_")
@@ -581,10 +576,6 @@ async def get_run_batch_record_pdf(
     embed_images: bool = Query(False),
     include_attachments: bool = Query(False),
     disposition: Optional[str] = Query(None),
-    font_size: Optional[str] = Query(None),
-    font_family: Optional[str] = Query(None),
-    header_color: Optional[str] = Query(None),
-    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -598,11 +589,11 @@ async def get_run_batch_record_pdf(
 
     run_obj = await get_or_404(db, Run, run_id)
 
-    # Get protocol name and project settings
+    # Get protocol metadata and template
     protocol_name = "Unknown Protocol"
-    pdf_format = None
     protocol_version = None
     protocol_modified = None
+    br_template_id: UUID | None = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -611,28 +602,21 @@ async def get_run_batch_record_pdf(
         if proto:
             protocol_name = proto.name
             protocol_version = proto.version_number
+            br_template_id = proto.batch_record_template_id
             protocol_modified = (
-                proto.updated_at.strftime("%B %d, %Y") if proto.updated_at else None
+                proto.updated_at.strftime("%B %d, %Y")
+                if proto.updated_at else None
             )
-            pdf_format = await _get_pdf_format(db, proto.project_id)
 
-    overrides = _build_format_overrides(
-        font_size, font_family, header_color, row_spacing,
-    )
-    pdf_format = _merge_format(pdf_format, overrides)
+    template = await _load_template(db, br_template_id)
+    if not template:
+        raise HTTPException(
+            status_code=404, detail="Batch record template not found"
+        )
 
+    template_path = _resolve_template_path(template)
     graph = run_obj.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
-
-    # Build roles list for sign-off (only for swimlane-based protocols)
-    if is_role_based:
-        roles = [
-            {"id": r["role_name"], "name": r["role_name"]}
-            for r in roles_with_steps
-            if r["role_name"]
-        ]
-    else:
-        roles = []
 
     # Build user_map for electronic initials on filled records
     user_map: dict[str, str] = {}
@@ -644,12 +628,9 @@ async def get_run_batch_record_pdf(
                 uid = step_data.get("completed_by_user_id")
                 if uid:
                     user_ids.add(uid)
-                # Also collect editor user IDs for GMP edited records
                 editor_uid = step_data.get("edited_by_user_id")
                 if editor_uid:
                     user_ids.add(editor_uid)
-        # Fallback: include started_by_id for legacy runs without
-        # per-step completed_by_user_id
         if run_obj.started_by_id:
             started_by_id_str = str(run_obj.started_by_id)
             user_ids.add(started_by_id_str)
@@ -661,25 +642,24 @@ async def get_run_batch_record_pdf(
                 user_map[str(u.id)] = u.full_name or u.email
 
     run_status = _run_status_str(run_obj)
-    pdf_bytes = generate_batch_record_pdf(
+
+    context = build_context(
         protocol_name=protocol_name,
         run_name=run_obj.name,
-        roles=roles,
-        steps=flat_steps,
-        filled=filled,
-        execution_data=run_obj.execution_data if filled else None,
-        format_options=pdf_format,
-        roles_with_steps=roles_with_steps,
-        is_role_based=is_role_based,
+        run_status=run_status,
         version_number=protocol_version,
-        last_modified=protocol_modified,
+        created_at=protocol_modified or "",
+        roles_with_steps=roles_with_steps,
+        flat_steps=flat_steps,
+        is_role_based=is_role_based,
+        execution_data=run_obj.execution_data if filled else None,
         user_map=user_map if filled else None,
         started_by_id=started_by_id_str,
-        run_status=run_status,
         notes=run_obj.notes if filled else None,
         attachments=run_obj.attachments if filled else None,
-        embed_images=embed_images,
+        storage=FileStorageService() if filled and embed_images else None,
     )
+    pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "attachment"
     suffix = "COMPLETED" if filled else "BLANK"

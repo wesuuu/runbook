@@ -70,6 +70,14 @@ class Organization(Base, UUIDMixin, TimestampMixin):
     subscription_tier: Mapped[str] = mapped_column(
         String, nullable=False, server_default=SubscriptionTier.ESSENTIALS.value
     )
+    default_sop_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("document_templates.id", use_alter=True, name="fk_org_sop_tpl"),
+        nullable=True,
+    )
+    default_batch_record_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("document_templates.id", use_alter=True, name="fk_org_br_tpl"),
+        nullable=True,
+    )
 
     # Relationships
     teams: Mapped[List["Team"]] = relationship(

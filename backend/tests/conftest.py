@@ -29,6 +29,7 @@ from app.models.iam import (
     PermissionLevel,
 )
 from app.models.science import Project
+from app.models.templates import DocumentTemplate  # noqa: F401
 
 TEST_DATABASE_URL = (
     "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite_test"
@@ -40,7 +41,11 @@ async def test_engine():
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.drop_all)
+        # Drop and recreate public schema to cleanly remove all tables
+        # (avoids FK constraint name mismatches from Alembic vs ORM)
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
         # Add tsvector generated column (not managed by SQLAlchemy ORM)
         await conn.execute(text("""
@@ -54,7 +59,8 @@ async def test_engine():
         """))
     yield engine
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
     await engine.dispose()
 
 

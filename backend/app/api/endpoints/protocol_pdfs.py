@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional
 from uuid import UUID
@@ -11,61 +12,33 @@ from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.iam import User, ObjectType, PermissionLevel
 from app.models.science import Protocol, Project
+from app.models.templates import DocumentTemplate
 from app.schemas.science import GraphPayload
+from app.services.file_storage import FileStorageService
 from app.services.graph_processing import _parse_graph_roles_and_steps
-from app.services.pdf import generate_sop_pdf, generate_batch_record_pdf
 from app.services.permissions import check_permission
+from app.services.template_engine import build_context, render_to_pdf
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+storage = FileStorageService()
 
-# --- PDF format helpers ---
 
-async def _get_pdf_format(db, project_id: UUID) -> dict | None:
-    """Fetch pdf_format from a project's settings JSONB."""
+async def _load_template(db: AsyncSession, template_id: UUID | None) -> DocumentTemplate | None:
+    """Load a DocumentTemplate by ID."""
+    if not template_id:
+        return None
     result = await db.execute(
-        select(Project.settings).where(Project.id == project_id)
+        select(DocumentTemplate).where(DocumentTemplate.id == template_id)
     )
-    settings = result.scalar_one_or_none()
-    if settings and isinstance(settings, dict):
-        return settings.get("pdf_format")
-    return None
+    return result.scalar_one_or_none()
 
 
-def _build_format_overrides(
-    font_size: Optional[str],
-    font_family: Optional[str],
-    header_color: Optional[str],
-    row_spacing: Optional[str],
-) -> dict | None:
-    """Build a format overrides dict from query params.
-
-    Returns None if no overrides were supplied.
-    """
-    overrides: dict = {}
-    if font_size is not None:
-        overrides["font_size"] = font_size
-    if font_family is not None:
-        overrides["font_family"] = font_family
-    if header_color is not None:
-        try:
-            overrides["header_color"] = [int(c) for c in header_color.split(",")]
-        except (ValueError, AttributeError):
-            logger.warning("Invalid header_color value: %s", header_color)
-    if row_spacing is not None:
-        overrides["row_spacing"] = row_spacing
-    return overrides or None
-
-
-def _merge_format(base: dict | None, overrides: dict | None) -> dict | None:
-    """Merge format overrides on top of base project format."""
-    if not overrides:
-        return base
-    if not base:
-        return overrides
-    return {**base, **overrides}
+def _resolve_template_path(template: DocumentTemplate) -> str:
+    """Get the filesystem path for a template."""
+    return str(storage.resolve_path_for_org(template.file_path, template.org_id))
 
 
 # --- Protocol PDF ---
@@ -74,10 +47,6 @@ def _merge_format(base: dict | None, overrides: dict | None) -> dict | None:
 async def get_protocol_sop_pdf(
     protocol_id: UUID,
     disposition: Optional[str] = Query(None),
-    font_size: Optional[str] = Query(None),
-    font_family: Optional[str] = Query(None),
-    header_color: Optional[str] = Query(None),
-    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -96,25 +65,27 @@ async def get_protocol_sop_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    graph = protocol.graph or {}
-    roles_with_steps, _, _ = _parse_graph_roles_and_steps(graph)
-    pdf_format = await _get_pdf_format(db, protocol.project_id)
-    overrides = _build_format_overrides(
-        font_size, font_family, header_color, row_spacing,
-    )
-    pdf_format = _merge_format(pdf_format, overrides)
+    template = await _load_template(db, protocol.sop_template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="SOP template not found")
 
-    pdf_bytes = generate_sop_pdf(
+    template_path = _resolve_template_path(template)
+    graph = protocol.graph or {}
+    roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
+
+    context = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
-        run_name=None,
-        roles_with_steps=roles_with_steps,
-        format_options=pdf_format,
         version_number=protocol.version_number,
-        last_modified=protocol.updated_at.strftime("%B %d, %Y")
-        if protocol.updated_at
-        else None,
+        created_at=(
+            protocol.updated_at.strftime("%B %d, %Y")
+            if protocol.updated_at else ""
+        ),
+        roles_with_steps=roles_with_steps,
+        flat_steps=flat_steps,
+        is_role_based=is_role_based,
     )
+    pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "attachment"
     filename = f"SOP_Preview_{protocol.name}.pdf".replace(" ", "_")
@@ -129,10 +100,6 @@ async def get_protocol_sop_pdf(
 async def get_protocol_batch_record_pdf(
     protocol_id: UUID,
     disposition: Optional[str] = Query(None),
-    font_size: Optional[str] = Query(None),
-    font_family: Optional[str] = Query(None),
-    header_color: Optional[str] = Query(None),
-    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -151,39 +118,30 @@ async def get_protocol_batch_record_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
+    template = await _load_template(db, protocol.batch_record_template_id)
+    if not template:
+        raise HTTPException(
+            status_code=404, detail="Batch record template not found"
+        )
+
+    template_path = _resolve_template_path(template)
     graph = protocol.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
-    pdf_format = await _get_pdf_format(db, protocol.project_id)
-    overrides = _build_format_overrides(
-        font_size, font_family, header_color, row_spacing,
-    )
-    pdf_format = _merge_format(pdf_format, overrides)
 
-    # Only build role list for swimlane-based protocols
-    if is_role_based:
-        roles = [
-            {"id": r["role_name"], "name": r["role_name"]}
-            for r in roles_with_steps
-            if r["role_name"]
-        ]
-    else:
-        roles = []
-
-    pdf_bytes = generate_batch_record_pdf(
+    context = build_context(
         protocol_name=protocol.name,
+        protocol_description=protocol.description or "",
         run_name="Preview",
-        roles=roles,
-        steps=flat_steps,
-        filled=False,
-        execution_data=None,
-        format_options=pdf_format,
-        roles_with_steps=roles_with_steps,
-        is_role_based=is_role_based,
         version_number=protocol.version_number,
-        last_modified=protocol.updated_at.strftime("%B %d, %Y")
-        if protocol.updated_at
-        else None,
+        created_at=(
+            protocol.updated_at.strftime("%B %d, %Y")
+            if protocol.updated_at else ""
+        ),
+        roles_with_steps=roles_with_steps,
+        flat_steps=flat_steps,
+        is_role_based=is_role_based,
     )
+    pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "attachment"
     filename = f"BatchRecord_Preview_{protocol.name}.pdf".replace(" ", "_")
@@ -201,10 +159,6 @@ async def preview_protocol_sop_pdf(
     protocol_id: UUID,
     body: GraphPayload,
     disposition: Optional[str] = Query(None),
-    font_size: Optional[str] = Query(None),
-    font_family: Optional[str] = Query(None),
-    header_color: Optional[str] = Query(None),
-    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -223,25 +177,27 @@ async def preview_protocol_sop_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    graph = body.graph
-    roles_with_steps, _, _ = _parse_graph_roles_and_steps(graph)
-    pdf_format = await _get_pdf_format(db, protocol.project_id)
-    overrides = _build_format_overrides(
-        font_size, font_family, header_color, row_spacing,
-    )
-    pdf_format = _merge_format(pdf_format, overrides)
+    template = await _load_template(db, protocol.sop_template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="SOP template not found")
 
-    pdf_bytes = generate_sop_pdf(
+    template_path = _resolve_template_path(template)
+    graph = body.graph
+    roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
+
+    context = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
-        run_name=None,
-        roles_with_steps=roles_with_steps,
-        format_options=pdf_format,
         version_number=protocol.version_number,
-        last_modified=protocol.updated_at.strftime("%B %d, %Y")
-        if protocol.updated_at
-        else None,
+        created_at=(
+            protocol.updated_at.strftime("%B %d, %Y")
+            if protocol.updated_at else ""
+        ),
+        roles_with_steps=roles_with_steps,
+        flat_steps=flat_steps,
+        is_role_based=is_role_based,
     )
+    pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "inline"
     filename = f"SOP_Preview_{protocol.name}.pdf".replace(" ", "_")
@@ -257,10 +213,6 @@ async def preview_protocol_batch_record_pdf(
     protocol_id: UUID,
     body: GraphPayload,
     disposition: Optional[str] = Query(None),
-    font_size: Optional[str] = Query(None),
-    font_family: Optional[str] = Query(None),
-    header_color: Optional[str] = Query(None),
-    row_spacing: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -279,39 +231,30 @@ async def preview_protocol_batch_record_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
+    template = await _load_template(db, protocol.batch_record_template_id)
+    if not template:
+        raise HTTPException(
+            status_code=404, detail="Batch record template not found"
+        )
+
+    template_path = _resolve_template_path(template)
     graph = body.graph
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
-    pdf_format = await _get_pdf_format(db, protocol.project_id)
-    overrides = _build_format_overrides(
-        font_size, font_family, header_color, row_spacing,
-    )
-    pdf_format = _merge_format(pdf_format, overrides)
 
-    # Only build role list for swimlane-based protocols
-    if is_role_based:
-        roles = [
-            {"id": r["role_name"], "name": r["role_name"]}
-            for r in roles_with_steps
-            if r["role_name"]
-        ]
-    else:
-        roles = []
-
-    pdf_bytes = generate_batch_record_pdf(
+    context = build_context(
         protocol_name=protocol.name,
+        protocol_description=protocol.description or "",
         run_name="Preview",
-        roles=roles,
-        steps=flat_steps,
-        filled=False,
-        execution_data=None,
-        format_options=pdf_format,
-        roles_with_steps=roles_with_steps,
-        is_role_based=is_role_based,
         version_number=protocol.version_number,
-        last_modified=protocol.updated_at.strftime("%B %d, %Y")
-        if protocol.updated_at
-        else None,
+        created_at=(
+            protocol.updated_at.strftime("%B %d, %Y")
+            if protocol.updated_at else ""
+        ),
+        roles_with_steps=roles_with_steps,
+        flat_steps=flat_steps,
+        is_role_based=is_role_based,
     )
+    pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "inline"
     filename = f"BatchRecord_Preview_{protocol.name}.pdf".replace(" ", "_")

@@ -309,6 +309,10 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Document recovery sweep failed on startup")
 
+    # Seed system document templates into file storage
+    from app.services.template_seeder import seed_system_templates
+    seed_system_templates()
+
     # Start the heartbeat background task
     heartbeat_task = asyncio.create_task(_heartbeat_loop())
 

@@ -81,7 +81,42 @@ class FileStorageService:
         )
 
     def resolve_path(self, relative_path: str) -> Path:
-        return self.storage_root / relative_path
+        """Resolve a relative path to an absolute path under storage root.
+
+        Raises ValueError if the resolved path escapes the storage root
+        (path traversal protection).
+        """
+        full = (self.storage_root / relative_path).resolve()
+        root = self.storage_root.resolve()
+        if not str(full).startswith(str(root) + os.sep) and full != root:
+            raise ValueError("Path traversal detected")
+        return full
+
+    def resolve_path_for_org(
+        self, relative_path: str, org_id: UUID | None
+    ) -> Path:
+        """Resolve a file path, enforcing org or system scope.
+
+        - System files (org_id=None): path must start with 'system/'
+        - Org files: first path segment must be the org_id
+
+        Raises PermissionError if the path doesn't match the expected scope.
+        """
+        full = self.resolve_path(relative_path)  # traversal guard included
+        parts = Path(relative_path).parts
+        if not parts:
+            raise PermissionError("Empty file path")
+        if org_id is None:
+            if parts[0] != "system":
+                raise PermissionError(
+                    "System templates must be under system/"
+                )
+        else:
+            if parts[0] != str(org_id):
+                raise PermissionError(
+                    "Access denied to file outside org scope"
+                )
+        return full
 
     def delete_file(self, relative_path: str) -> None:
         path = self.resolve_path(relative_path)

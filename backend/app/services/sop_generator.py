@@ -1,7 +1,9 @@
-"""SOP (Standard Operating Procedure) PDF generator.
+"""DEPRECATED — SOP (Standard Operating Procedure) PDF generator (fpdf2-based).
 
-Produces a numbered instruction-manual style PDF from extracted
-graph data (roles_with_steps).
+This module is superseded by the docxtpl template engine
+(app.services.template_engine). Kept for reference during the
+transition to .docx-based templates. Remove once Phase 0 of
+F-0065 (Custom Document Templates) is verified in production.
 """
 
 from typing import Any

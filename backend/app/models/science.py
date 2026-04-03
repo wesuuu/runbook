@@ -30,6 +30,14 @@ class Project(Base, UUIDMixin, TimestampMixin):
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default="{}", nullable=False
     )
+    default_sop_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("document_templates.id", use_alter=True, name="fk_proj_sop_tpl"),
+        nullable=True,
+    )
+    default_batch_record_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("document_templates.id", use_alter=True, name="fk_proj_br_tpl"),
+        nullable=True,
+    )
 
     # Relationships
     organization: Mapped["Organization"] = relationship(
@@ -71,6 +79,16 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
 
     # The template graph structure
     graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    # Document template bindings
+    sop_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("document_templates.id", use_alter=True, name="fk_proto_sop_tpl"),
+        nullable=True,
+    )
+    batch_record_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("document_templates.id", use_alter=True, name="fk_proto_br_tpl"),
+        nullable=True,
+    )
 
     # Relationships
     project: Mapped[Optional["Project"]] = relationship(back_populates="protocols")
@@ -250,6 +268,16 @@ class ProtocolVersion(Base, UUIDMixin, TimestampMixin):
     change_summary: Mapped[Optional[str]] = mapped_column(String)
     is_draft: Mapped[bool] = mapped_column(
         default=False, server_default="false", nullable=False
+    )
+
+    # Document template bindings (snapshotted from Protocol)
+    sop_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("document_templates.id", use_alter=True, name="fk_pv_sop_tpl"),
+        nullable=True,
+    )
+    batch_record_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("document_templates.id", use_alter=True, name="fk_pv_br_tpl"),
+        nullable=True,
     )
 
     # Relationships

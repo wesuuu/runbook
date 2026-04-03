@@ -168,6 +168,8 @@ async def revert_protocol_version(
         description=protocol.description,
         created_by_id=user.id,
         change_summary=f"Reverted to v{version_number}",
+        sop_template_id=protocol.sop_template_id,
+        batch_record_template_id=protocol.batch_record_template_id,
     )
     db.add(new_version)
 

@@ -67,6 +67,11 @@ Implement features from the **ClickUp FEATURES list** (list ID: `901712289454`),
 11. **Update ClickUp task** — only after user confirmation:
     - Use `clickup_update_task` to set the task status to `complete`
     - Add a comment via `clickup_create_task_comment` summarizing what was implemented and which tests were added
+12. **Update the Feature Inventory document** — after marking the task complete, add the feature to the **Batchrite — Feature Inventory** ClickUp document (document ID: `8cqy78h-357`, page ID: `8cqy78h-177`):
+    1. Read the current page content using `clickup_get_document_pages` (document `8cqy78h-357`, page `8cqy78h-177`, format `text/md`)
+    2. Append a new row to the inventory table with: feature ID (e.g., `F-0008`), feature name, category (`Backend`, `Frontend`, or `Full-Stack`), today's date (`YYYY-MM-DD`), and a brief one-line summary of what was shipped
+    3. Write the full updated content back using `clickup_update_document_page` (WARNING: this replaces the entire page, so always include the existing content)
+    - This document is the living catalog of every shipped feature — keep entries concise and consistent with existing rows
 
 ## Rules
 
