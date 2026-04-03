@@ -71,7 +71,8 @@ class ProtocolBase(BaseModel):
     graph: Dict[str, Any] = Field(default_factory=dict)
 
 class ProtocolCreate(ProtocolBase):
-    project_id: UUID
+    project_id: Optional[UUID] = None
+    organization_id: Optional[UUID] = None
 
     class Config:
         from_attributes = True
@@ -83,7 +84,8 @@ class ProtocolUpdate(BaseModel):
 
 class ProtocolResponse(ProtocolBase):
     id: UUID
-    project_id: UUID
+    project_id: Optional[UUID] = None
+    organization_id: Optional[UUID] = None
     status: str = "DRAFT"
     version_number: int = 0
     roles: List[ProtocolRoleResponse] = []
@@ -267,3 +269,43 @@ class EquipmentResponse(EquipmentBase):
 
     class Config:
         from_attributes = True
+
+
+# ── Protocol Import Schemas ─────────────────────────────────────────
+
+
+class StepProposalSchema(BaseModel):
+    name: str
+    description: str = ""
+    category: str = "General"
+    duration_min: int = 30
+    params: Dict[str, Any] = Field(default_factory=dict)
+    param_schema: Dict[str, Any] = Field(default_factory=dict)
+    role: Optional[str] = None
+    matched_unit_op_id: Optional[str] = None
+    matched_unit_op_name: Optional[str] = None
+    is_new: bool = False
+
+
+class ProtocolImportProposalResponse(BaseModel):
+    protocol_name: str
+    protocol_description: str = ""
+    steps: List[StepProposalSchema]
+    matched_count: int
+    unmatched_count: int
+    source_filename: str
+    source_text_preview: str = ""
+
+
+class ProtocolRefineRequest(BaseModel):
+    graph: Dict[str, Any]
+    instruction: str
+
+
+class ProtocolImportFinalizeRequest(BaseModel):
+    protocol_name: str
+    protocol_description: str = ""
+    steps: List[StepProposalSchema]
+    project_id: Optional[UUID] = None
+    organization_id: Optional[UUID] = None
+    source_filename: str = ""

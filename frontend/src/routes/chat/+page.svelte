@@ -3,6 +3,8 @@
     import { marked } from 'marked';
     import DOMPurify from 'dompurify';
     import ChatSkillButtons from '$lib/components/ChatSkillButtons.svelte';
+    import ProtocolImportModal from '$lib/components/ProtocolImportModal.svelte';
+    import { goto } from '$app/navigation';
     import {
         getChatSessions, getActiveSession, getMessageInput, isSending,
         isLoading, isCreatingSession, isSidebarCollapsed, isSourcePanelOpen,
@@ -32,6 +34,7 @@
 
     let messagesEndEl = $state<HTMLDivElement>(undefined!);
     let inputEl = $state<HTMLTextAreaElement>(undefined!);
+    let showImportModal = $state(false);
 
     onMount(async () => {
         await initChat();
@@ -145,13 +148,24 @@
                             <ChatSkillButtons {skills} mode="chips" onactivate={activateSkill} />
                         </div>
                     {/if}
-                    <button
-                        class="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-medium disabled:opacity-50"
-                        onclick={() => createSession()}
-                        disabled={creatingSession}
-                    >
-                        Start a conversation
-                    </button>
+                    <div class="flex gap-3 justify-center">
+                        <button
+                            class="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-medium disabled:opacity-50"
+                            onclick={() => createSession()}
+                            disabled={creatingSession}
+                        >
+                            Start a conversation
+                        </button>
+                        <button
+                            class="px-4 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors text-sm font-medium flex items-center gap-2"
+                            onclick={() => (showImportModal = true)}
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                            </svg>
+                            Upload Protocol
+                        </button>
+                    </div>
                 </div>
             </div>
         {:else}
@@ -365,6 +379,12 @@
       {/if}
     </div>
 </div>
+
+<!-- IMPORT PROTOCOL MODAL -->
+<ProtocolImportModal
+    bind:open={showImportModal}
+    onSuccess={(protocolId) => goto(`/protocols/${protocolId}`)}
+/>
 
 <style>
     .chat-prose :global(pre) {
