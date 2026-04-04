@@ -1040,7 +1040,6 @@
             protocolId={protocol.id}
             protocolName={protocol.name}
             projectId={protocol.project_id}
-            initialFormat={projectPdfFormat}
             mode="protocol"
             graph={{
                 nodes: nodes.map((n) => ({
@@ -1057,7 +1056,6 @@
                 })),
             }}
             onClose={() => (showPdfDrawer = false)}
-            onFormatSaved={(fmt) => (projectPdfFormat = fmt)}
         />
     {/if}
 </div>

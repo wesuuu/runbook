@@ -47,6 +47,7 @@ def _resolve_template_path(template: DocumentTemplate) -> str:
 async def get_protocol_sop_pdf(
     protocol_id: UUID,
     disposition: Optional[str] = Query(None),
+    template_id: Optional[UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -65,7 +66,7 @@ async def get_protocol_sop_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    template = await _load_template(db, protocol.sop_template_id)
+    template = await _load_template(db, template_id or protocol.sop_template_id)
     if not template:
         raise HTTPException(status_code=404, detail="SOP template not found")
 
@@ -100,6 +101,7 @@ async def get_protocol_sop_pdf(
 async def get_protocol_batch_record_pdf(
     protocol_id: UUID,
     disposition: Optional[str] = Query(None),
+    template_id: Optional[UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -118,7 +120,7 @@ async def get_protocol_batch_record_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    template = await _load_template(db, protocol.batch_record_template_id)
+    template = await _load_template(db, template_id or protocol.batch_record_template_id)
     if not template:
         raise HTTPException(
             status_code=404, detail="Batch record template not found"
@@ -159,6 +161,7 @@ async def preview_protocol_sop_pdf(
     protocol_id: UUID,
     body: GraphPayload,
     disposition: Optional[str] = Query(None),
+    template_id: Optional[UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -177,7 +180,7 @@ async def preview_protocol_sop_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    template = await _load_template(db, protocol.sop_template_id)
+    template = await _load_template(db, template_id or protocol.sop_template_id)
     if not template:
         raise HTTPException(status_code=404, detail="SOP template not found")
 
@@ -213,6 +216,7 @@ async def preview_protocol_batch_record_pdf(
     protocol_id: UUID,
     body: GraphPayload,
     disposition: Optional[str] = Query(None),
+    template_id: Optional[UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -231,7 +235,7 @@ async def preview_protocol_batch_record_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    template = await _load_template(db, protocol.batch_record_template_id)
+    template = await _load_template(db, template_id or protocol.batch_record_template_id)
     if not template:
         raise HTTPException(
             status_code=404, detail="Batch record template not found"

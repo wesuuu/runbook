@@ -16,8 +16,9 @@
         CardDescription,
     } from '$lib/components/ui/card';
     import AiSettingsTab from '$lib/components/AiSettingsTab.svelte';
+    import TemplatesTab from '$lib/components/settings/TemplatesTab.svelte';
 
-    let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications' | 'ai'>('organization');
+    let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates'>('organization');
 
     // Notifications
     let channels = $state<any[]>([]);
@@ -532,6 +533,12 @@
         >
             AI Models
         </button>
+        <button
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'templates' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            onclick={() => (activeTab = 'templates')}
+        >
+            Templates
+        </button>
     </div>
 
     <!-- Organization Tab -->
@@ -1004,5 +1011,8 @@
                 <AiSettingsTab isAdmin={isOrgAdmin} />
             </CardContent>
         </Card>
+
+    {:else if activeTab === 'templates'}
+        <TemplatesTab isAdmin={isOrgAdmin} />
     {/if}
 </div>

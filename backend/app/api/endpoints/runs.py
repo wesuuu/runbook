@@ -508,6 +508,7 @@ async def update_run(
 async def get_run_sop_pdf(
     run_id: UUID,
     disposition: Optional[str] = Query(None),
+    template_id: Optional[UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -540,7 +541,7 @@ async def get_run_sop_pdf(
             if proto.updated_at:
                 proto_modified = proto.updated_at.strftime("%B %d, %Y")
 
-    template = await _load_template(db, sop_template_id)
+    template = await _load_template(db, template_id or sop_template_id)
     if not template:
         raise HTTPException(status_code=404, detail="SOP template not found")
 
@@ -576,6 +577,7 @@ async def get_run_batch_record_pdf(
     embed_images: bool = Query(False),
     include_attachments: bool = Query(False),
     disposition: Optional[str] = Query(None),
+    template_id: Optional[UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -608,7 +610,7 @@ async def get_run_batch_record_pdf(
                 if proto.updated_at else None
             )
 
-    template = await _load_template(db, br_template_id)
+    template = await _load_template(db, template_id or br_template_id)
     if not template:
         raise HTTPException(
             status_code=404, detail="Batch record template not found"
