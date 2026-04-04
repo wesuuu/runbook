@@ -3,7 +3,6 @@ import logging
 import os
 import re
 import uuid
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -14,9 +13,10 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
 )
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
@@ -36,7 +36,6 @@ from app.models.library import (
     ALLOWED_DOCUMENT_TYPES,
     MAX_DOCUMENT_SIZE_BYTES,
     MIME_EXTENSION_MAP,
-    VIEWABLE_STATUSES,
     Document,
     DocumentChunk,
     DocumentStatus,
@@ -56,6 +55,7 @@ from app.schemas.library import (
     TOCEntry,
 )
 from app.services.audit import log_audit
+from app.services.file_storage import FileStorageService
 from app.services.document_processor import build_book, process_document
 from app.services.permissions import check_permission
 from app.services.task_runner import get_task_runner
@@ -183,13 +183,17 @@ async def upload_document(
         except (json.JSONDecodeError, TypeError):
             parsed_tags = []
 
-    # Store file with UUID-based path
-    file_id = str(uuid.uuid4())
-    ext = os.path.splitext(original_filename)[1]
-    storage_dir = Path(settings.document_storage_path)
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    file_path = storage_dir / f"{file_id}{ext}"
-    file_path.write_bytes(content)
+    # Store file via FileStorageService (org-scoped path)
+    await file.seek(0)
+    storage = FileStorageService()
+    stored = await storage.store_file(
+        file,
+        base_dir="documents",
+        org_id=org_id,
+        path_segments=[],
+        allowed_types=ALLOWED_DOCUMENT_TYPES,
+        max_size_bytes=MAX_DOCUMENT_SIZE_BYTES,
+    )
 
     # Create document record
     doc = Document(
@@ -199,8 +203,8 @@ async def upload_document(
         title=title,
         original_filename=original_filename,
         mime_type=mime_type,
-        file_size_bytes=len(content),
-        file_path=str(file_path),
+        file_size_bytes=stored.size_bytes,
+        file_path=stored.relative_path,
         tags=parsed_tags,
     )
     db.add(doc)
@@ -346,23 +350,6 @@ async def get_document(
         for entry in doc.structure_metadata["toc"]:
             toc_entries.append(TOCEntry(**entry))
 
-    # Check if pre-rendered page images exist on disk
-    page_images_dir = (
-        Path(settings.document_storage_path) / str(doc.id) / "pages"
-    )
-    has_page_images = (
-        page_images_dir.is_dir()
-        and any(page_images_dir.iterdir())
-    ) if page_images_dir.exists() else False
-
-    # For PDFs without pre-rendered images, we can still render on-demand
-    if (
-        not has_page_images
-        and doc.mime_type == "application/pdf"
-        and doc.status in VIEWABLE_STATUSES
-    ):
-        has_page_images = True  # on-demand rendering available
-
     return DocumentDetailResponse(
         id=doc.id,
         org_id=doc.org_id,
@@ -387,7 +374,6 @@ async def get_document(
         can_delete=can_delete,
         processing_progress=progress,
         table_of_contents=toc_entries,
-        has_page_images=has_page_images,
     )
 
 
@@ -424,19 +410,41 @@ async def get_document_chunks(
     return list(result.scalars().all())
 
 
-@router.get("/documents/{document_id}/pages/{page_number}/image")
-async def get_page_image(
-    document_id: uuid.UUID,
-    page_number: int,
-    dpi: int = Query(150, ge=72, le=300),
+async def _get_user_for_download(
+    request: Request,
+    token: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Serve a rendered PDF page as a PNG image.
+) -> User:
+    """Resolve user from header auth or query-param token (for iframes)."""
+    from app.core.security import decode_access_token
 
-    Checks for pre-rendered images on disk first, then falls
-    back to on-demand rendering from the original PDF.
-    """
+    # Try standard header-based auth first
+    payload = getattr(request.state, "token_payload", None)
+    if payload is None and token:
+        payload = decode_access_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=401, detail="Not authenticated"
+        )
+    result = await db.execute(
+        select(User).where(User.id == payload.user_id, User.is_active == True)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=401, detail="Not authenticated"
+        )
+    return user
+
+
+@router.get("/documents/{document_id}/download")
+async def download_document(
+    document_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_get_user_for_download),
+):
+    """Serve a document file with authentication and org-scoping."""
     org_id = await _get_user_org_id(current_user, db)
 
     result = await db.execute(
@@ -448,60 +456,28 @@ async def get_page_image(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if doc.mime_type != "application/pdf":
-        raise HTTPException(
-            status_code=400, detail="Page images only available for PDFs"
-        )
-
-    if page_number < 1 or (
-        doc.page_count and page_number > doc.page_count
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Page number must be between 1 and {doc.page_count}",
-        )
-
-    # Try pre-rendered image on disk first
-    pre_rendered = (
-        Path(settings.document_storage_path)
-        / str(doc.id)
-        / "pages"
-        / f"page_{page_number:04d}.png"
-    )
-    if pre_rendered.exists():
-        png_bytes = pre_rendered.read_bytes()
-    else:
-        # On-demand rendering from the original PDF
-        file_path = Path(doc.file_path)
-        if not file_path.exists():
-            raise HTTPException(
-                status_code=404, detail="Source PDF file not found"
-            )
-        runner = get_task_runner()
-        png_bytes = await runner.run_sync(
-            _render_pdf_page, str(file_path), page_number, dpi
-        )
-
-    return Response(
-        content=png_bytes,
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=86400"},
-    )
-
-
-def _render_pdf_page(
-    file_path: str, page_number: int, dpi: int
-) -> bytes:
-    """Render a single PDF page as PNG. page_number is 1-indexed."""
-    import pymupdf
-
-    doc = pymupdf.open(file_path)
+    storage = FileStorageService()
     try:
-        page = doc[page_number - 1]
-        pix = page.get_pixmap(dpi=dpi)
-        return pix.tobytes("png")
-    finally:
-        doc.close()
+        full_path = storage.resolve_path_for_org(doc.file_path, org_id)
+    except (ValueError, PermissionError):
+        raise HTTPException(status_code=404, detail="Document file not found")
+
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Document file not found")
+
+    # Inline for PDFs and images (browser rendering), attachment for others
+    inline_types = {
+        "application/pdf", "image/jpeg", "image/png",
+        "image/webp", "image/tiff",
+    }
+    disposition = "inline" if doc.mime_type in inline_types else "attachment"
+
+    return FileResponse(
+        path=str(full_path),
+        media_type=doc.mime_type,
+        filename=doc.original_filename,
+        content_disposition_type=disposition,
+    )
 
 
 @router.delete("/documents/{document_id}", status_code=204)
@@ -546,19 +522,11 @@ async def delete_document(
         },
     )
 
-    # Remove file and page images from disk
+    # Remove file from disk
     try:
-        file_path = Path(doc.file_path)
-        if file_path.exists():
-            file_path.unlink()
-        # Remove rendered page images directory
-        import shutil
-        pages_dir = (
-            Path(settings.document_storage_path) / str(doc.id)
-        )
-        if pages_dir.is_dir():
-            shutil.rmtree(pages_dir, ignore_errors=True)
-    except OSError:
+        storage = FileStorageService()
+        storage.delete_file(doc.file_path)
+    except (OSError, ValueError):
         pass  # Best effort cleanup
 
     await db.delete(doc)

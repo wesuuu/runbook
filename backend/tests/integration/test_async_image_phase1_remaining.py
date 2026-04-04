@@ -99,10 +99,14 @@ async def active_run_with_completed_step(
 
 @pytest.fixture
 def tmp_image_storage(tmp_path: Path):
-    with patch(
-        "app.api.endpoints.ai._get_storage_path",
-        return_value=str(tmp_path),
-    ):
+    from app.services.file_storage import FileStorageService
+
+    original_init = FileStorageService.__init__
+
+    def patched_init(self, storage_root=None):
+        original_init(self, storage_root=str(tmp_path))
+
+    with patch.object(FileStorageService, "__init__", patched_init):
         yield tmp_path
 
 

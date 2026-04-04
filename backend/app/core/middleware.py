@@ -80,4 +80,5 @@ class AuthMiddleware(BaseHTTPMiddleware):
         auth = request.headers.get("authorization")
         if auth and auth.startswith("Bearer "):
             return auth[7:]
-        return None
+        # Fall back to ?token= query param (for iframe/img src requests)
+        return request.query_params.get("token")

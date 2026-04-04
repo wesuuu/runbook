@@ -48,11 +48,6 @@ class Settings(BaseSettings):
                 )
         return self
 
-    # Image storage
-    image_storage_path: str = "./uploads/images"
-
-    # Document storage
-    document_storage_path: str = "./uploads/documents"
 
     # AI env var fallbacks (used only before DB is configured)
     ai_vision_provider: str = ""

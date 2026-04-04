@@ -14,16 +14,24 @@ Implement features from the **ClickUp FEATURES list** (list ID: `901712289454`),
    - If the user specified a feature ID (e.g., `F-0008`), search for that task in ClickUp.
    - If the user specified a priority (e.g., `P1`, `high`), filter for high-priority tasks with open status.
    - If no argument given, show the user a summary of open features grouped by priority and ask which to implement.
-3. **Research the feature** — read the task description in ClickUp and the source files mentioned. Understand the existing code, affected components, and any dependencies before writing code.
-4. **Create and present a plan** before writing any code:
-   - List every file that will be created or modified
-   - Describe the specific changes for each file
-   - Map each change to the acceptance criteria it satisfies
-   - Note any risks, trade-offs, or open questions
-   - Estimate if this can be done in one session or needs to be broken into phases
-   - **Present the plan to the user and wait for approval.** Do NOT proceed until the user confirms.
+3. **Move task to "in progress"** — once a feature is selected, immediately update the ClickUp task status to `in progress` using `clickup_update_task`. This signals that work has begun.
+4. **Research the feature** — read the task description in ClickUp and the source files mentioned. Understand the existing code, affected components, and any dependencies before writing code.
+5. **Create and present a plan** before writing any code:
+   - **For complex features** (multiple components, architectural decisions, non-obvious implementation path): present **2-3 distinct proposals**, each with a different approach or set of trade-offs. For each proposal include:
+     - A short name (e.g., "Proposal A: Inline approach", "Proposal B: Service extraction")
+     - Files that will be created or modified
+     - Key trade-offs (complexity, performance, extensibility, scope)
+     - Estimated effort (single session vs. multi-phase)
+     - End with a **recommended proposal** and a brief explanation of why it's the best fit given the current codebase and acceptance criteria.
+   - **For straightforward features** (clear implementation path, few files, no real architectural choice): present a single plan — no need to manufacture alternatives.
+   - In all cases, each plan/proposal must:
+     - List every file that will be created or modified
+     - Describe the specific changes for each file
+     - Map each change to the acceptance criteria it satisfies
+     - Note any risks, trade-offs, or open questions
+   - **Present the plan(s) to the user and wait for approval.** Do NOT proceed until the user confirms.
    - If the user requests changes to the plan, revise and re-present.
-5. **Write failing tests first (Red phase)** — TDD Red-Green-Refactor:
+6. **Write failing tests first (Red phase)** — TDD Red-Green-Refactor:
    - Translate each acceptance criterion into one or more concrete test cases
    - Backend: create test files in `backend/tests/` (unit or integration as appropriate)
    - Frontend — choose the right tier based on what you're testing:
@@ -32,22 +40,22 @@ Implement features from the **ClickUp FEATURES list** (list ID: `901712289454`),
      - At minimum, verify `npm run check` passes with any new types/interfaces.
    - Run the tests to confirm they **fail** for the right reasons (missing endpoint, missing component, unimplemented logic). This validates the tests are meaningful.
    - If a test passes before implementation, it's not testing the new feature — revisit it.
-6. **Implement the feature (Green phase)** following project conventions (see CLAUDE.md):
+7. **Implement the feature (Green phase)** following project conventions (see CLAUDE.md):
    - Work through the plan file by file, writing the minimum code to make each failing test pass
    - For backend changes: follow FastAPI async patterns, add Pydantic schemas, create Alembic migrations if needed
    - For frontend changes: use Svelte 5 runes, shadcn-svelte components, TailwindCSS
    - For full-stack changes: implement backend first, then frontend
    - Re-run tests after each major piece of implementation to track progress
-7. **Refactor if needed (Refactor phase)**:
+8. **Refactor if needed (Refactor phase)**:
    - Once all tests pass, review the implementation for duplication, unclear naming, or unnecessary complexity
    - Clean up without changing behavior — tests must still pass after refactoring
    - Keep refactoring minimal and scoped to the new feature code
-8. **Run full test suite** to confirm nothing is broken:
+9. **Run full test suite** to confirm nothing is broken:
    - Backend: `cd backend && source .venv/bin/activate && pytest tests/ -x -q`
    - Frontend: `cd frontend && npm run check && npm run test`
    - Playwright E2E (if you wrote E2E tests): `cd frontend && npm run test:e2e`
    - If tests fail, fix the issue and re-run. Do not skip failing tests.
-9. **Browser verification (if frontend was changed)** — if any frontend component was added or modified, open the app in a Chrome browser using the `mcp__claude-in-chrome__*` tools and visually verify the changes behave as expected:
+10. **Browser verification (if frontend was changed)** — if any frontend component was added or modified, open the app in a Chrome browser using the `mcp__claude-in-chrome__*` tools and visually verify the changes behave as expected:
    - Navigate to the relevant page(s) affected by the change
    - Interact with the new/updated UI elements (click buttons, fill forms, check layout)
    - Verify the feature works end-to-end from a user's perspective
@@ -56,7 +64,7 @@ Implement features from the **ClickUp FEATURES list** (list ID: `901712289454`),
    - **"Leave site?" dialog workaround**: If navigation is blocked by a "Leave site?" dialog (e.g., unsaved changes on a page), open a **new tab** instead and navigate to the login screen from there.
    - **Authentication for testing**: To log in during browser verification, check the PostgreSQL dev database for user emails and roles (see `/local_dev` skill for credentials: `localhost:5432`, user `postgres`, password `postgres`, database `batchrite`). Any password will work in the dev environment. Test with different user roles as needed to verify the feature across permission levels.
    - **Clean up test data**: If you created or modified any resources during browser verification (e.g., created sessions, projects, documents, or changed settings), you MUST revert them afterward. Delete created records or restore modified ones to their previous state using `psql` (`psql -h localhost -U postgres -d batchrite`) or whatever method is easiest. Do not leave test artifacts in the database.
-10. **Present results and request user verification** — print a summary of what was implemented, which acceptance criteria were met, and what tests were run. Then **ask the user to verify the implementation** and confirm they are satisfied.
+11. **Present results and request user verification** — print a summary of what was implemented, which acceptance criteria were met, and what tests were run. Then **ask the user to verify the implementation** and confirm they are satisfied.
     - **Do NOT mark the ClickUp task as complete until the user explicitly confirms.**
     - If the user requests changes:
       1. Discuss and plan the requested changes (present a revised plan, wait for approval)
@@ -64,10 +72,10 @@ Implement features from the **ClickUp FEATURES list** (list ID: `901712289454`),
       3. Re-run tests and browser verification as needed
       4. Present the updated results and ask the user to verify again
     - **Repeat this loop until the user explicitly says the task is complete / they are satisfied.**
-11. **Update ClickUp task** — only after user confirmation:
+12. **Update ClickUp task** — only after user confirmation:
     - Use `clickup_update_task` to set the task status to `complete`
     - Add a comment via `clickup_create_task_comment` summarizing what was implemented and which tests were added
-12. **Update the Feature Inventory document** — after marking the task complete, add the feature to the **Batchrite — Feature Inventory** ClickUp document (document ID: `8cqy78h-357`, page ID: `8cqy78h-177`):
+13. **Update the Feature Inventory document** — after marking the task complete, add the feature to the **Batchrite — Feature Inventory** ClickUp document (document ID: `8cqy78h-357`, page ID: `8cqy78h-177`):
     1. Read the current page content using `clickup_get_document_pages` (document `8cqy78h-357`, page `8cqy78h-177`, format `text/md`)
     2. Append a new row to the inventory table with: feature ID (e.g., `F-0008`), feature name, category (`Backend`, `Frontend`, or `Full-Stack`), today's date (`YYYY-MM-DD`), and a brief one-line summary of what was shipped
     3. Write the full updated content back using `clickup_update_document_page` (WARNING: this replaces the entire page, so always include the existing content)
@@ -109,7 +117,7 @@ When suggesting, prefer features at the **highest priority** that have **no unme
 For features that can't be completed in one session:
 - Break the feature into phases and discuss the plan with the user
 - Complete one phase at a time
-- Update the ClickUp task status to `in progress` and add a comment noting which acceptance criteria are done
+- Add a comment to the ClickUp task noting which acceptance criteria are done (task is already `in progress` from step 3)
 - Only mark `complete` when ALL acceptance criteria are met
 
 ## Handling Blocked Features
@@ -121,6 +129,6 @@ If a feature can't be implemented (e.g., missing dependency, needs product decis
 ## Handling Partial Implementation
 
 If some acceptance criteria are met but others can't be completed:
-- Update the ClickUp task status to `in progress`
+- Task is already `in progress` from step 3
 - Add a comment listing what's done and what remains
 - Inform the user

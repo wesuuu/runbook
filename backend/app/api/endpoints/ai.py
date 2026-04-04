@@ -244,10 +244,6 @@ async def delete_ai_setting(
 # ── Image Upload & Retrieval ─────────────────────────────────────────
 
 
-def _get_storage_path() -> str:
-    return settings.image_storage_path
-
-
 async def _get_active_run(run_id: uuid_mod.UUID, db: AsyncSession) -> Run:
     return await get_or_404(db, Run, run_id)
 
@@ -273,7 +269,7 @@ async def upload_image(
         )
 
     org_id = get_org_id_from_request(request)
-    storage = FileStorageService(_get_storage_path())
+    storage = FileStorageService()
     stored = await storage.store_file(
         file,
         base_dir="images",
@@ -425,7 +421,7 @@ async def analyze_run_image(
         )
 
     step_name, param_schema = _get_step_info(run, image.step_id)
-    image_full_path = str(Path(_get_storage_path()) / image.file_path)
+    image_full_path = str(FileStorageService().resolve_path(image.file_path))
 
     try:
         ai_result = await analyze_image(
@@ -524,7 +520,7 @@ async def converse_about_image(
         )
 
     step_name, param_schema = _get_step_info(run, image.step_id)
-    image_full_path = str(Path(_get_storage_path()) / image.file_path)
+    image_full_path = str(FileStorageService().resolve_path(image.file_path))
 
     # Append user message to history
     conv.messages = [*conv.messages, {"role": "user", "content": body.message}]
@@ -742,7 +738,7 @@ async def analyze_pending_images(
 
     for image in pending_images:
         step_name, param_schema = _get_step_info(run, image.step_id)
-        image_full_path = str(Path(_get_storage_path()) / image.file_path)
+        image_full_path = str(FileStorageService().resolve_path(image.file_path))
 
         try:
             ai_result = await analyze_image(

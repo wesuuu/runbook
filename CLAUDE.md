@@ -87,6 +87,7 @@ npm run test:e2e -- --ui   # Playwright with interactive UI
 - **ClickUp is source of truth**: Tasks tracked in ClickUp lists (FEATURES, BUGS, QA, TECH_DEBT).
 - **Commit format**: `<type>(<scope>): <description>` — types: feat, fix, docs, style, refactor, test, chore
 - **CI-aware commands**: Use `CI=true` prefix for watch-mode tools to ensure single execution.
+- **Code reuse**: Always prefer reusing existing code over writing new code. Before implementing something, check whether the codebase already has a utility, helper, service, or pattern that does the same thing. When you encounter the same pattern repeated 3 or more times, stop and ask the user whether it should be abstracted into a shared module and/or service before proceeding.
 
 ## Code Style
 

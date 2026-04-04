@@ -19,7 +19,7 @@ from app.models.iam import (
     ObjectType,
     PermissionLevel,
 )
-from app.models.science import Project, Protocol, Run
+from app.models.science import Experiment, Project, Protocol, Run
 from app.schemas.project import (
     ProjectCreate,
     ProjectUpdate,
@@ -241,7 +241,7 @@ async def get_project_activity(
     project_id: UUID,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    entity_type: str | None = Query(None, description="Filter by entity type (comma-separated: Project,Protocol,Run)"),
+    entity_type: str | None = Query(None, description="Filter by entity type (comma-separated: Project,Protocol,Run,Experiment)"),
     action: str | None = Query(None, description="Filter by action (comma-separated: CREATE,UPDATE,DELETE,STEP_EDIT,STEP_COMPLETE,STEP_UNCOMPLETE)"),
     search: str | None = Query(None, description="Search entity names and change details"),
     db: AsyncSession = Depends(get_db),
@@ -285,6 +285,18 @@ async def get_project_activity(
             conditions.append(
                 (AuditLog.entity_type == "Run")
                 & (AuditLog.entity_id.in_(run_ids))
+            )
+
+    # Experiment audit entries
+    exp_result = await db.execute(
+        select(Experiment.id).where(Experiment.project_id == project_id)
+    )
+    experiment_ids = list(exp_result.scalars().all())
+    if not entity_types_filter or "Experiment" in entity_types_filter:
+        if experiment_ids:
+            conditions.append(
+                (AuditLog.entity_type == "Experiment")
+                & (AuditLog.entity_id.in_(experiment_ids))
             )
 
     if not conditions:

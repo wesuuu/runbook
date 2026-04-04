@@ -2,7 +2,6 @@ import ipaddress
 import logging
 import re
 import uuid
-from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
@@ -12,7 +11,6 @@ import httpx
 import trafilatura
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.models.library import (
     Document,
     DocumentStatus,
@@ -159,12 +157,28 @@ async def import_from_url(
             "/"
         )[-1] or "Imported document"
 
-    # Store as .md file so the chunker treats it as markdown
-    file_id = str(uuid.uuid4())
-    storage_dir = Path(settings.document_storage_path)
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    file_path = storage_dir / f"{file_id}.md"
-    file_path.write_text(extracted_md, encoding="utf-8")
+    # Store as .md file via FileStorageService (org-scoped path)
+    from io import BytesIO
+
+    from fastapi import UploadFile as _UploadFile
+
+    from app.services.file_storage import FileStorageService
+
+    md_bytes = extracted_md.encode("utf-8")
+    fake_upload = _UploadFile(
+        filename="imported.md",
+        file=BytesIO(md_bytes),
+        headers={"content-type": "text/markdown"},
+    )
+    storage = FileStorageService()
+    stored = await storage.store_file(
+        fake_upload,
+        base_dir="documents",
+        org_id=org_id,
+        path_segments=[],
+        allowed_types={"text/markdown"},
+        max_size_bytes=MAX_URL_RESPONSE_BYTES,
+    )
 
     # Sanitize filename from URL
     url_filename = parsed.path.split("/")[-1] or "imported.html"
@@ -177,8 +191,8 @@ async def import_from_url(
         title=title,
         original_filename=url_filename,
         mime_type="text/markdown",
-        file_size_bytes=len(extracted_md.encode("utf-8")),
-        file_path=str(file_path),
+        file_size_bytes=stored.size_bytes,
+        file_path=stored.relative_path,
         status=DocumentStatus.UPLOADED.value,
         source_url=str(url),
     )

@@ -2,14 +2,11 @@
 
 import base64
 import uuid
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.config import settings
 from app.core.deps import get_current_user_or_offline, get_db
 from app.models.ai import RunImage, ImageConversation
 from app.models.iam import User
@@ -160,21 +157,48 @@ async def _handle_image_upload(
             error="Invalid base64 image data",
         )
 
-    # Save to disk
+    # Resolve org_id from run → project
+    from app.models.science import Project
+
+    proj_result = await db.execute(
+        select(Project.organization_id).where(
+            Project.id == run.project_id
+        )
+    )
+    org_id = proj_result.scalar_one()
+
+    # Store via FileStorageService (org-scoped path)
+    from io import BytesIO
+
+    from fastapi import UploadFile as _UploadFile
+
+    from app.services.file_storage import FileStorageService, IMAGE_MIME_TYPES
+
     filename = action.image_filename or f"offline_{uuid.uuid4().hex[:8]}.jpg"
-    upload_dir = Path(settings.image_storage_path) / str(run.id)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    file_path = upload_dir / filename
-    file_path.write_bytes(image_bytes)
+    mime_type = "image/png" if filename.endswith(".png") else "image/jpeg"
+    fake_upload = _UploadFile(
+        filename=filename,
+        file=BytesIO(image_bytes),
+        headers={"content-type": mime_type},
+    )
+    storage = FileStorageService()
+    stored = await storage.store_file(
+        fake_upload,
+        base_dir="images",
+        org_id=org_id,
+        path_segments=[str(run.id), action.step_id],
+        allowed_types=IMAGE_MIME_TYPES,
+        max_size_bytes=25 * 1024 * 1024,
+    )
 
     # Create RunImage record
     image = RunImage(
         run_id=run.id,
         step_id=action.step_id,
-        file_path=str(file_path.relative_to(Path(settings.image_storage_path))),
-        original_filename=filename,
-        mime_type="image/png" if filename.endswith(".png") else "image/jpeg",
-        file_size_bytes=len(image_bytes),
+        file_path=stored.relative_path,
+        original_filename=stored.original_filename,
+        mime_type=stored.mime_type,
+        file_size_bytes=stored.size_bytes,
         uploaded_by_id=user.id,
         parameter_tags=action.parameter_tags,
     )

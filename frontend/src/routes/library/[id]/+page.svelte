@@ -24,6 +24,7 @@
         type SectionNav,
     } from '$lib/utils/document-utils';
     import { API_BASE } from '$lib/config';
+    import { getToken } from '$lib/auth.svelte';
     import { Input } from '$lib/components/ui/input';
     import { ArrowLeft, RotateCcw, Trash2, ExternalLink, Search, X, ChevronDown, ChevronRight, List } from 'lucide-svelte';
     import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
@@ -75,7 +76,6 @@
         structure_metadata: z.record(z.string(), z.unknown()).nullable(),
         processing_progress: ProcessingProgressSchema.nullable(),
         table_of_contents: z.array(TOCEntrySchema),
-        has_page_images: z.boolean(),
         created_at: z.string(),
         updated_at: z.string(),
         can_delete: z.boolean(),
@@ -267,7 +267,7 @@
     function navigatePdfToPage(pageNumber: number) {
         if (!document || !pdfIframe) return;
         // Browser PDF viewers support #page=N fragment
-        pdfIframe.src = `${API_BASE}/${document.file_path}#page=${pageNumber}`;
+        pdfIframe.src = `${API_BASE}/library/documents/${document.id}/download?token=${getToken()}#page=${pageNumber}`;
     }
 
     function handleSidebarClick(index: number) {
@@ -447,7 +447,7 @@
                             <div class="w-full" style="height: calc(100vh - 12rem);">
                                 <iframe
                                     bind:this={pdfIframe}
-                                    src="{API_BASE}/{document.file_path}"
+                                    src="{API_BASE}/library/documents/{document.id}/download?token={getToken()}"
                                     title="PDF viewer — {document.title}"
                                     class="w-full h-full rounded-md"
                                 ></iframe>
@@ -508,7 +508,7 @@
                                     future update.
                                 </p>
                                 <img
-                                    src="{API_BASE}/{document.file_path}"
+                                    src="{API_BASE}/library/documents/{document.id}/download?token={getToken()}"
                                     alt={document.title}
                                     class="max-w-full mx-auto rounded-lg shadow-sm"
                                 />

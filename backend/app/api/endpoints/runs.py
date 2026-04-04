@@ -109,6 +109,7 @@ async def create_run(
         name=run_in.name,
         project_id=run_in.project_id,
         protocol_id=run_in.protocol_id,
+        experiment_id=run_in.experiment_id,
         graph=initial_graph,
         execution_data={},
     )

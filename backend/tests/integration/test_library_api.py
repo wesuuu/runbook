@@ -99,15 +99,18 @@ async def test_upload_sets_correct_response_fields(
 async def test_upload_writes_file_to_disk(
     client: AsyncClient, auth_headers: dict, test_org: Organization, tmp_path
 ):
-    from app.core.config import settings
-    import os
+    from app.services.file_storage import FileStorageService
 
     resp = await _make_upload(client, auth_headers, content=b"disk check")
     assert resp.status_code == 201
     body = resp.json()
-    # The file_path should exist (it gets written during upload)
+    # The file_path is now a relative path resolved via FileStorageService
     file_path = body["file_path"]
-    assert os.path.exists(file_path)
+    assert str(test_org.id) in file_path  # org-scoped
+    assert "documents" in file_path
+    storage = FileStorageService()
+    full_path = storage.resolve_path(file_path)
+    assert full_path.exists()
 
 
 @pytest.mark.asyncio

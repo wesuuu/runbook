@@ -9,7 +9,7 @@ from app.models.iam import (
 )
 from app.models.science import (
     Project, Run, Protocol, UnitOpDefinition, RunStatus,
-    ProtocolVersion,
+    ProtocolVersion, Experiment, ExperimentStatus,
 )
 from app.models.execution import AuditLog
 from app.models.ai import AiProviderConfig, RunImage, ImageConversation
@@ -21,3 +21,4 @@ from app.models.offline import RevokedOfflineToken
 from app.models.library import Document, DocumentChunk
 from app.models.jobs import BackgroundJob
 from app.models.chat import ChatSession, ChatMessage
+from app.models.templates import DocumentTemplate

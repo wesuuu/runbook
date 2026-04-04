@@ -124,6 +124,63 @@ class ProtocolVersionResponse(ProtocolVersionListItem):
 class ProtocolApprovalAction(BaseModel):
     comment: Optional[str] = None
 
+# Experiment Schemas
+class ExperimentStatus(str, Enum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    ARCHIVED = "ARCHIVED"
+
+
+ALLOWED_EXPERIMENT_NOTE_FLAGS = {"anomaly", "observation"}
+
+
+class ExperimentNote(BaseModel):
+    """A single experiment-level note (stored in Experiment.notes JSONB)."""
+
+    id: UUID
+    content: str
+    author_id: UUID
+    author_name: str = "Unknown"
+    created_at: datetime
+    flags: list[str] = Field(default_factory=list)
+
+
+class ExperimentNoteCreate(BaseModel):
+    """Request body for adding an experiment-level note."""
+
+    content: str = Field(..., min_length=1, max_length=10000)
+    flags: list[str] = Field(default_factory=list)
+
+    @field_validator("flags")
+    @classmethod
+    def validate_flags(cls, v: list[str]) -> list[str]:
+        invalid = set(v) - ALLOWED_EXPERIMENT_NOTE_FLAGS
+        if invalid:
+            raise ValueError(
+                f"Invalid flags: {invalid}. "
+                f"Allowed: {ALLOWED_EXPERIMENT_NOTE_FLAGS}"
+            )
+        return v
+
+
+class ExperimentNoteListResponse(BaseModel):
+    items: list[ExperimentNote] = []
+
+
+class ExperimentCreate(BaseModel):
+    name: str
+    project_id: UUID
+    description: Optional[str] = None
+
+
+class ExperimentUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    content: Optional[Dict[str, Any]] = None
+    status: Optional[ExperimentStatus] = None
+
+
 # Run Schemas
 class RunStatus(str, Enum):
     PLANNED = "PLANNED"
@@ -201,6 +258,7 @@ class RunCreate(BaseModel):
     name: str
     project_id: UUID
     protocol_id: Optional[UUID] = None
+    experiment_id: Optional[UUID] = None
 
 class RunUpdate(BaseModel):
     name: Optional[str] = None
@@ -212,6 +270,7 @@ class RunResponse(RunBase):
     id: UUID
     project_id: UUID
     protocol_id: Optional[UUID]
+    experiment_id: Optional[UUID] = None
     started_by_id: Optional[UUID] = None
     notes: list[RunNote] = Field(default_factory=list)
     attachments: list[RunAttachment] = Field(default_factory=list)
@@ -220,6 +279,23 @@ class RunResponse(RunBase):
 
     class Config:
         from_attributes = True
+
+class ExperimentResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    name: str
+    description: Optional[str] = None
+    content: Dict[str, Any] = Field(default_factory=dict)
+    status: str = ExperimentStatus.DRAFT
+    notes: list[ExperimentNote] = Field(default_factory=list)
+    runs: list[RunResponse] = Field(default_factory=list)
+    run_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 
 # Run Role Assignment Schemas
 class RunRoleAssignmentBase(BaseModel):

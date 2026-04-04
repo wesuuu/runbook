@@ -3,7 +3,7 @@
     import { api } from '$lib/api';
     import { z } from 'zod';
     import { toast } from '$lib/toast';
-    import { getUser, getCurrentOrg, getOrgs, refreshUser, getUserPreferences } from '$lib/auth.svelte';
+    import { getUser, getCurrentOrg, getOrgs, refreshUser, getUserPreferences, getToken } from '$lib/auth.svelte';
     import { API_BASE } from '$lib/config';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
@@ -236,7 +236,7 @@
 
     const avatarUrl = $derived(() => {
         const u = getUser();
-        return u?.avatar_url ? `${API_BASE}${u.avatar_url}` : null;
+        return u?.avatar_url ? `${API_BASE}${u.avatar_url}?token=${getToken()}` : null;
     });
 
     async function saveProfile() {

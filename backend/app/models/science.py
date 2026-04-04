@@ -9,6 +9,13 @@ from app.models.base import Base
 from app.models.mixins import UUIDMixin, TimestampMixin
 
 
+class ExperimentStatus(str, Enum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    ARCHIVED = "ARCHIVED"
+
+
 class RunStatus(str, Enum):
     PLANNED = "PLANNED"
     ACTIVE = "ACTIVE"
@@ -49,6 +56,30 @@ class Project(Base, UUIDMixin, TimestampMixin):
     protocols: Mapped[List["Protocol"]] = relationship(
         back_populates="project"
     )
+    experiments: Mapped[List["Experiment"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+
+
+class Experiment(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "experiments"
+
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String)
+    content: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(
+        String, default=ExperimentStatus.DRAFT, nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id"), nullable=False
+    )
+    notes: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list
+    )
+
+    # Relationships
+    project: Mapped["Project"] = relationship(back_populates="experiments")
+    runs: Mapped[List["Run"]] = relationship(back_populates="experiment")
 
 
 class Protocol(Base, UUIDMixin, TimestampMixin):
@@ -147,9 +178,17 @@ class Run(Base, UUIDMixin, TimestampMixin):
         ForeignKey("users.id"), nullable=True
     )
 
+    # Optional experiment grouping
+    experiment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("experiments.id"), nullable=True
+    )
+
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="runs")
     protocol: Mapped["Protocol"] = relationship(back_populates="runs")
+    experiment: Mapped[Optional["Experiment"]] = relationship(
+        back_populates="runs"
+    )
     started_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[started_by_id]
     )

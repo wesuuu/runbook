@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.models.jobs import BackgroundJob, JobStatus
-from app.core.config import settings
+from app.services.file_storage import FileStorageService
 from app.models.library import (
     EMBEDDING_DIMENSIONS,
     Document,
@@ -123,7 +123,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
             # Extraction and chunking are CPU-bound — offload to
             # the task runner's thread pool so the event loop stays free.
             runner = get_task_runner()
-            file_path = Path(doc.file_path)
+            file_path = FileStorageService().resolve_path(doc.file_path)
             pages: list[PageData] = []
             text = ""
             page_count = None
@@ -674,7 +674,7 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
 
             # Re-extract pages with images (CPU-bound → thread pool)
             runner = get_task_runner()
-            file_path = Path(doc.file_path)
+            file_path = FileStorageService().resolve_path(doc.file_path)
 
             total_pages = doc.page_count or 0
             await _update_progress(
@@ -842,27 +842,6 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
             await engine.dispose()
 
 
-# ── Page image storage ──────────────────────────────────────────────
-
-
-def _save_page_images(
-    pages: list[PageData], doc_id: UUID
-) -> None:
-    """Save rendered page images to disk.
-
-    Images are stored at:
-        {document_storage_path}/{doc_id}/pages/page_NNNN.png
-    """
-    pages_dir = (
-        Path(settings.document_storage_path) / str(doc_id) / "pages"
-    )
-    pages_dir.mkdir(parents=True, exist_ok=True)
-
-    for page in pages:
-        if page.image_bytes:
-            img_path = pages_dir / f"page_{page.page_number:04d}.png"
-            img_path.write_bytes(page.image_bytes)
-
 
 def _build_toc_from_structure(
     structure: "DocumentStructure",
@@ -978,7 +957,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
 
             # ─── Stage 1: Extract text + render page images ─────────
             runner = get_task_runner()
-            file_path = Path(doc.file_path)
+            file_path = FileStorageService().resolve_path(doc.file_path)
             pages: list[PageData] = []
             text = ""
             page_count = None
@@ -1011,11 +990,6 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                             "Extracting text & rendering pages",
                             batch_end, page_count,
                         )
-
-                    # Save page images to disk
-                    await runner.run_sync(
-                        _save_page_images, pages, document_id
-                    )
 
                 elif doc.mime_type == (
                     "application/vnd.openxmlformats-officedocument"

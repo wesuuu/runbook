@@ -1,10 +1,11 @@
 import logging
-import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,7 @@ from app.core.security import (
 )
 from app.db.session import get_db
 from app.models.iam import Organization, OrganizationMember, User, VerificationToken
+from app.services.file_storage import FileStorageService
 from app.schemas.auth import (
     LoginRequest,
     PasswordChange,
@@ -35,7 +37,6 @@ from app.services.email_service import get_email_provider
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-AVATARS_DIR = Path("./uploads/avatars")
 ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
 
@@ -47,7 +48,7 @@ def _user_response(user: User) -> UserResponse:
     """Build UserResponse with computed avatar_url."""
     avatar_url = None
     if user.avatar_path:
-        avatar_url = f"/uploads/avatars/{user.avatar_path}"
+        avatar_url = f"/auth/avatars/{user.id}"
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -393,6 +394,9 @@ async def upload_avatar(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if not user.selected_org_id:
+        raise HTTPException(status_code=400, detail="No organization selected")
+
     if file.content_type not in ALLOWED_AVATAR_TYPES:
         raise HTTPException(
             status_code=400,
@@ -411,18 +415,23 @@ async def upload_avatar(
         ext = "jpg"
     filename = f"{user.id}.{ext}"
 
-    AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+    storage = FileStorageService()
+    org_id = user.selected_org_id
 
-    # Remove old avatar if different extension
-    if user.avatar_path and user.avatar_path != filename:
-        old_path = AVATARS_DIR / user.avatar_path
-        if old_path.exists():
-            old_path.unlink()
+    # Remove old avatar if it exists
+    if user.avatar_path:
+        try:
+            storage.delete_file(user.avatar_path)
+        except (OSError, ValueError):
+            pass
 
-    dest = AVATARS_DIR / filename
-    dest.write_bytes(content)
+    # Store new avatar at {org_id}/avatars/{user_id}.{ext}
+    relative_path = str(Path(str(org_id)) / "avatars" / filename)
+    full_path = storage.storage_root / relative_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    full_path.write_bytes(content)
 
-    user.avatar_path = filename
+    user.avatar_path = relative_path
     await db.commit()
     await db.refresh(user)
     return _user_response(user)
@@ -434,13 +443,85 @@ async def delete_avatar(
     db: AsyncSession = Depends(get_db),
 ):
     if user.avatar_path:
-        old_path = AVATARS_DIR / user.avatar_path
-        if old_path.exists():
-            old_path.unlink()
+        try:
+            storage = FileStorageService()
+            storage.delete_file(user.avatar_path)
+        except (OSError, ValueError):
+            pass
         user.avatar_path = None
         await db.commit()
         await db.refresh(user)
     return _user_response(user)
+
+
+async def _get_user_for_file(
+    request: Request,
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Resolve user from header auth or query-param token (for img/iframe)."""
+    from app.core.security import decode_access_token
+
+    payload = getattr(request.state, "token_payload", None)
+    if payload is None and token:
+        payload = decode_access_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    result = await db.execute(
+        select(User).where(User.id == payload.user_id, User.is_active == True)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+@router.get("/avatars/{user_id}")
+async def get_avatar(
+    user_id: str,
+    request: Request,
+    current_user: User = Depends(_get_user_for_file),
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve a user's avatar. Requires org membership."""
+    if not current_user.selected_org_id:
+        raise HTTPException(status_code=400, detail="No organization selected")
+
+    # Look up the target user
+    result = await db.execute(select(User).where(User.id == user_id))
+    target_user = result.scalar_one_or_none()
+    if target_user is None or not target_user.avatar_path:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    # Verify requester is in the same org as the avatar owner
+    result = await db.execute(
+        select(OrganizationMember.id).where(
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.organization_id == current_user.selected_org_id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    storage = FileStorageService()
+    try:
+        full_path = storage.resolve_path(target_user.avatar_path)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    # Determine media type from extension
+    ext = full_path.suffix.lower()
+    media_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+    media_type = media_types.get(ext, "image/jpeg")
+
+    return FileResponse(
+        path=str(full_path),
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @router.put("/me/preferences", response_model=UserResponse)

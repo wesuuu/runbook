@@ -17,22 +17,25 @@
         CardTitle,
     } from "$lib/components/ui/card";
     import ProtocolsTab from "$lib/components/project/ProtocolsTab.svelte";
+    import ExperimentsTab from "$lib/components/project/ExperimentsTab.svelte";
     import RunsTab from "$lib/components/project/RunsTab.svelte";
     import ActivityTab from "$lib/components/project/ActivityTab.svelte";
     import SettingsTab from "$lib/components/project/SettingsTab.svelte";
     import ProtocolImportModal from "$lib/components/ProtocolImportModal.svelte";
+    import CreateRunModal from "$lib/components/project/CreateRunModal.svelte";
 
     const id = $derived($page.params.id ?? "");
 
     let project = $state<any>(null);
     let protocols = $state<any[]>([]);
     let runs = $state<any[]>([]);
+    let experiments = $state<any[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
 
     // -- Tab State (derived from URL ?tab= param) --
-    type TabName = "protocols" | "runs" | "activity" | "settings";
-    const validTabs: TabName[] = ["protocols", "runs", "activity", "settings"];
+    type TabName = "protocols" | "experiments" | "runs" | "activity" | "settings";
+    const validTabs: TabName[] = ["protocols", "experiments", "runs", "activity", "settings"];
 
     const activeTab: TabName = $derived.by(() => {
         const t = $page.url.searchParams.get("tab");
@@ -50,8 +53,11 @@
 
     // -- Run Modal --
     let showRunModal = $state(false);
-    let newRunName = $state("");
-    let selectedProtocolId = $state<string | null>(null);
+
+    // -- Experiment Modal --
+    let showExperimentModal = $state(false);
+    let newExperimentName = $state("");
+    let newExperimentDescription = $state("");
 
     // -- Form State for "New Project" mode --
     let form = $state({ name: "", description: "", organization_id: "" });
@@ -68,6 +74,7 @@
         project = null;
         protocols = [];
         runs = [];
+        experiments = [];
         error = null;
 
         if (currentId === "new") {
@@ -82,15 +89,17 @@
         try {
             if (id === "new") return;
 
-            const [p, protos, exps] = await Promise.all([
+            const [p, protos, projectRuns, projectExperiments] = await Promise.all([
                 api.get(`/projects/${id}`),
                 api.get(`/science/projects/${id}/protocols`),
                 api.get(`/science/projects/${id}/runs`),
+                api.get(`/science/projects/${id}/experiments`),
             ]);
 
             project = p;
             protocols = protos as any[];
-            runs = exps as any[];
+            runs = projectRuns as any[];
+            experiments = projectExperiments as any[];
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
@@ -133,20 +142,19 @@
         }
     }
 
-    async function createRun() {
-        if (!newRunName || !selectedProtocolId) return;
+    async function createExperiment() {
+        if (!newExperimentName) return;
 
         try {
-            const payload: any = {
-                name: newRunName,
+            const newExp: any = await api.post("/science/experiments", {
+                name: newExperimentName,
                 project_id: project.id,
-                protocol_id: selectedProtocolId,
-            };
-            const newRun: any = await api.post("/science/runs", payload);
-            showRunModal = false;
-            newRunName = "";
-            selectedProtocolId = null;
-            goto(`/runs/${newRun.id}`);
+                description: newExperimentDescription || null,
+            });
+            showExperimentModal = false;
+            newExperimentName = "";
+            newExperimentDescription = "";
+            goto(`/experiments/${newExp.id}`);
         } catch (e: unknown) {
             console.error(e instanceof Error ? e.message : e);
         }
@@ -328,7 +336,14 @@
 
             <!-- Action buttons -->
             <div class="shrink-0 flex gap-2.5 items-start pt-6">
-                {#if activeTab === "runs"}
+                {#if activeTab === "experiments"}
+                    <button
+                        class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
+                        onclick={() => (showExperimentModal = true)}
+                    >
+                        + New Experiment
+                    </button>
+                {:else if activeTab === "runs"}
                     <button
                         class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
                         onclick={() => (showRunModal = true)}
@@ -359,15 +374,17 @@
                     class="px-5 py-3 text-sm font-medium text-slate-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-all -mb-px hover:text-slate-800 {activeTab === tab ? '!text-slate-900 !font-semibold !border-slate-900' : ''}"
                     onclick={() => setTab(tab)}
                 >
-                    {tab === "protocols" ? "Protocols" : tab === "runs" ? "Runs" : tab === "activity" ? "Activity" : "Settings"}
+                    {tab === "protocols" ? "Protocols" : tab === "experiments" ? "Experiments" : tab === "runs" ? "All Runs" : tab === "activity" ? "Activity" : "Settings"}
                 </button>
             {/each}
         </nav>
 
         <!-- Tab Content -->
         <div class="min-h-[300px]">
-            {#if activeTab === "runs"}
-                <RunsTab {runs} {protocols} />
+            {#if activeTab === "experiments"}
+                <ExperimentsTab {experiments} {runs} {protocols} projectId={id} />
+            {:else if activeTab === "runs"}
+                <RunsTab {runs} {protocols} {experiments} onDataChanged={loadData} />
             {:else if activeTab === "protocols"}
                 <ProtocolsTab
                     projectId={id}
@@ -400,57 +417,63 @@
 />
 
 <!-- RUN MODAL -->
-<Dialog.Root bind:open={showRunModal}>
+<CreateRunModal
+    bind:open={showRunModal}
+    projectId={id}
+    {protocols}
+    {experiments}
+/>
+
+<!-- EXPERIMENT MODAL -->
+<Dialog.Root bind:open={showExperimentModal}>
     <Dialog.Content class="sm:max-w-md">
         <Dialog.Header>
-            <Dialog.Title>New Run</Dialog.Title>
-            <Dialog.Description>Start a new run from a protocol.</Dialog.Description>
+            <Dialog.Title>New Experiment</Dialog.Title>
+            <Dialog.Description>Create an experiment to organize related runs.</Dialog.Description>
         </Dialog.Header>
         <div class="space-y-3">
             <div>
                 <label
-                    for="exp-name"
+                    for="experiment-name"
                     class="block text-sm font-medium text-gray-700 mb-1">Name</label
                 >
                 <input
-                    id="exp-name"
+                    id="experiment-name"
                     type="text"
-                    bind:value={newRunName}
-                    placeholder="e.g. CHO-DG44 Run 1"
+                    bind:value={newExperimentName}
+                    placeholder="e.g. Effect of MOI on transduction"
                     class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                 />
             </div>
             <div>
                 <label
-                    for="protocol-select"
+                    for="experiment-desc"
                     class="block text-sm font-medium text-gray-700 mb-1"
-                    >Protocol</label
+                    >Description <span class="text-slate-400 font-normal">(optional)</span></label
                 >
-                <select
-                    id="protocol-select"
-                    bind:value={selectedProtocolId}
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
-                >
-                    <option value="">Select a protocol</option>
-                    {#each protocols.filter((p: any) => p.status?.toUpperCase() !== 'ARCHIVED') as proto}
-                        <option value={proto.id}>{proto.name}</option>
-                    {/each}
-                </select>
+                <textarea
+                    id="experiment-desc"
+                    bind:value={newExperimentDescription}
+                    placeholder="Brief description of what you're investigating..."
+                    rows={3}
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
+                ></textarea>
             </div>
         </div>
         <Dialog.Footer>
             <button
                 onclick={() => {
-                    showRunModal = false;
-                    selectedProtocolId = null;
+                    showExperimentModal = false;
+                    newExperimentName = "";
+                    newExperimentDescription = "";
                 }}
                 class="px-4 py-2 text-sm font-medium text-foreground/80 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
             >
                 Cancel
             </button>
             <button
-                onclick={createRun}
-                disabled={!newRunName || !selectedProtocolId}
+                onclick={createExperiment}
+                disabled={!newExperimentName}
                 class="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
                 Create

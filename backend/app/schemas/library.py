@@ -68,7 +68,6 @@ class DocumentDetailResponse(DocumentResponse):
     chunks_preview: List[DocumentChunkResponse] = []
     processing_progress: Optional[ProcessingProgress] = None
     table_of_contents: List[TOCEntry] = []
-    has_page_images: bool = False
 
 
 class ImportUrlRequest(BaseModel):
