@@ -6,6 +6,7 @@ then maps the extraction to a user-selected protocol's graph structure.
 """
 
 import asyncio
+import base64
 import json
 import logging
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
 
+import httpx
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.messages import BinaryContent
@@ -311,11 +313,23 @@ async def _extract_single_call(
     org_id: UUID | None = None,
 ) -> BatchRecordExtraction:
     """Extract from all pages in a single LLM call."""
+    from app.services.ai_vision import (
+        _is_ollama_model,
+        _get_ollama_model_name,
+    )
+
     if page_images:
         model = await get_model("vision", db, org_id=org_id)
     else:
         model = await get_model("text", db, org_id=org_id)
 
+    # Ollama models don't support tool-calling — use native API
+    if _is_ollama_model(model):
+        return await _ollama_extract(
+            text, page_images, model, db, org_id,
+        )
+
+    # Cloud providers: use pydantic-ai with structured output
     agent = Agent(
         model,
         output_type=BatchRecordExtraction,
@@ -337,6 +351,103 @@ async def _extract_single_call(
 
     result = await agent.run(user_parts)
     return result.output
+
+
+async def _ollama_extract(
+    text: str,
+    page_images: list[tuple[int, bytes]] | None,
+    model: Any,
+    db: AsyncSession,
+    org_id: UUID | None = None,
+) -> BatchRecordExtraction:
+    """Extract batch record data using Ollama's native /api/chat API."""
+    from app.services.ai_vision import _get_ollama_model_name
+
+    config = await get_full_config("vision", db, org_id=org_id)
+    creds = config.get("credentials") or {}
+    base_url = creds.get("base_url") or "http://localhost:11434"
+    model_name = _get_ollama_model_name(model)
+
+    schema_hint = (
+        '\n\nReturn your response as JSON matching this structure:\n'
+        '{"document_title": "", "batch_id": null, "product_name": null, '
+        '"date": null, "steps": [{"step_name": "", "step_number": null, '
+        '"parameters": [{"field_label": "", "value": 0, "unit": null, '
+        '"confidence": 0.9, "source_page": 1}], "timestamps": [], '
+        '"signatures": [], "deviations": [], "notes": "", '
+        '"confidence": 0.9, "source_page": 1}], '
+        '"general_notes": [], "overall_confidence": 0.9}'
+    )
+
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "system",
+            "content": BATCH_RECORD_SYSTEM_PROMPT + schema_hint,
+        },
+    ]
+
+    user_content = ""
+    if text:
+        user_content = f"Document text:\n\n{text}"
+
+    user_msg: dict[str, Any] = {
+        "role": "user",
+        "content": user_content or "Please analyze the attached images.",
+    }
+    if page_images:
+        user_msg["images"] = [
+            base64.b64encode(img_bytes).decode("utf-8")
+            for _, img_bytes in page_images
+        ]
+    messages.append(user_msg)
+
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        resp = await client.post(
+            f"{base_url.rstrip('/')}/api/chat",
+            json={
+                "model": model_name,
+                "messages": messages,
+                "format": "json",
+                "stream": False,
+                "options": {"num_predict": 4096},
+            },
+        )
+        resp.raise_for_status()
+
+    data = resp.json()
+    content = data.get("message", {}).get("content", "")
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse Ollama JSON response: %s", content[:200])
+        return BatchRecordExtraction(overall_confidence=0.0)
+
+    try:
+        return BatchRecordExtraction.model_validate(parsed)
+    except Exception as e:
+        logger.warning(
+            "BatchRecordExtraction validation failed, attempting best-effort: %s", e
+        )
+        # Best-effort: extract what we can
+        steps = []
+        for raw_step in parsed.get("steps", []):
+            if not isinstance(raw_step, dict):
+                continue
+            try:
+                steps.append(ExtractedStep.model_validate(raw_step))
+            except Exception:
+                logger.debug("Skipping invalid step: %s", raw_step)
+
+        return BatchRecordExtraction(
+            document_title=parsed.get("document_title", ""),
+            batch_id=parsed.get("batch_id"),
+            product_name=parsed.get("product_name"),
+            date=parsed.get("date"),
+            steps=steps,
+            general_notes=parsed.get("general_notes", []),
+            overall_confidence=parsed.get("overall_confidence", 0.5),
+        )
 
 
 async def _extract_chunked(
@@ -421,19 +532,68 @@ async def map_steps_to_protocol(
     Sends extracted step names + protocol step names + param schemas
     to the text model and gets back a structured mapping.
     """
+    from app.services.ai_vision import _is_ollama_model, _get_ollama_model_name
+
     _, flat_steps, _ = _parse_graph_roles_and_steps(protocol_graph)
     if not flat_steps or not extraction.steps:
         return []
 
     model = await get_model("text", db, org_id=org_id)
+    prompt = _build_mapping_prompt(extraction, flat_steps)
+    system = (
+        "You are a biotech protocol matching assistant. "
+        "Map extracted batch record data to digital protocol steps."
+    )
+
+    # Ollama: use native API with JSON format
+    if _is_ollama_model(model):
+        config = await get_full_config("text", db, org_id=org_id)
+        creds = config.get("credentials") or {}
+        base_url = creds.get("base_url") or "http://localhost:11434"
+        model_name = _get_ollama_model_name(model)
+
+        schema_hint = (
+            '\n\nReturn JSON: {"mappings": [{"extracted_step_index": 0, '
+            '"extracted_step_name": "", "protocol_step_id": "", '
+            '"protocol_step_name": "", "score": 0.9, '
+            '"param_mappings": [{"extracted_param_index": 0, '
+            '"extracted_label": "", "extracted_value": null, '
+            '"extracted_unit": null, "schema_field_key": "", '
+            '"schema_field_label": "", "confidence": 0.9}]}]}'
+        )
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{base_url.rstrip('/')}/api/chat",
+                json={
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": system + schema_hint},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "format": "json",
+                    "stream": False,
+                    "options": {"num_predict": 4096},
+                },
+            )
+            resp.raise_for_status()
+
+        data = resp.json()
+        content = data.get("message", {}).get("content", "")
+        try:
+            parsed = json.loads(content)
+            result = StepMappingResult.model_validate(parsed)
+            return result.mappings
+        except Exception as e:
+            logger.warning("Ollama mapping parse failed: %s", e)
+            return []
+
+    # Cloud providers: pydantic-ai with structured output
     agent = Agent(
         model,
         output_type=StepMappingResult,
-        instructions="You are a biotech protocol matching assistant. "
-        "Map extracted batch record data to digital protocol steps.",
+        instructions=system,
     )
-
-    prompt = _build_mapping_prompt(extraction, flat_steps)
     result = await agent.run(prompt)
     return result.output.mappings
 
