@@ -14,6 +14,7 @@ import logging
 import re
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -141,6 +142,38 @@ class ConversionState:
 
     def read_json(self, filename: str) -> dict | list:
         return json.loads(self._resolve(filename).read_text(encoding="utf-8"))
+
+    def set_progress(
+        self,
+        status: str,
+        current_step: str,
+        step_number: int,
+        total_steps: int,
+        error: str | None = None,
+    ) -> None:
+        """Write current progress to status.json for polling."""
+        progress = {
+            "status": status,
+            "current_step": current_step,
+            "step_number": step_number,
+            "total_steps": total_steps,
+            "error": error,
+            "updated_at": time.time(),
+        }
+        # Also set started_at on first call
+        status_path = self._resolve("status.json")
+        if status_path.exists():
+            existing = json.loads(status_path.read_text(encoding="utf-8"))
+            progress["started_at"] = existing.get("started_at", time.time())
+        else:
+            progress["started_at"] = time.time()
+        self.write_json("status.json", progress)
+
+    def get_progress(self) -> dict | None:
+        """Read current progress from status.json."""
+        if not self.exists("status.json"):
+            return None
+        return self.read_json("status.json")
 
     @property
     def preview_url(self) -> str:
@@ -408,6 +441,7 @@ async def convert_document(
     file_bytes: bytes,
     filename: str,
     template_type: str,
+    conversion_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Main conversion pipeline: file → PDF → AI → template → verify.
 
@@ -417,6 +451,7 @@ async def convert_document(
         file_bytes: Raw uploaded file content.
         filename: Original filename (used for extension detection).
         template_type: "SOP" or "BATCH_RECORD".
+        conversion_id: Optional pre-assigned conversion ID (for background tasks).
 
     Returns a dict matching ConvertResponse schema.
     """
@@ -424,9 +459,13 @@ async def convert_document(
 
     from app.services.ai_config import get_model
 
-    conversion_id = uuid4()
+    TOTAL_STEPS = 6
+    if conversion_id is None:
+        conversion_id = uuid4()
     state = ConversionState(org_id, conversion_id)
     state.ensure_dir()
+
+    state.set_progress("processing", "Extracting document content...", 1, TOTAL_STEPS)
 
     # Step 1: Store original and extract text content
     state.write("original.docx", file_bytes)
@@ -449,6 +488,7 @@ async def convert_document(
             doc_text = "[Could not extract text from this file format]"
 
     # Step 2: Call AI agent to generate OpenXML
+    state.set_progress("processing", "Generating template with AI...", 2, TOTAL_STEPS)
     model = await get_model("template_convert", db, org_id=org_id)
 
     agent = Agent(model, system_prompt=SYSTEM_PROMPT)
@@ -467,6 +507,8 @@ async def convert_document(
 
     result = await agent.run(full_prompt)
     body_xml = _extract_body_xml(result.output)
+
+    state.set_progress("processing", "Wrapping into DOCX...", 3, TOTAL_STEPS)
     template_docx = _wrap_in_docx(body_xml)
     state.write("template.docx", template_docx)
 
@@ -478,6 +520,11 @@ async def convert_document(
 
     for i in range(MAX_VERIFICATION_ROUNDS):
         rounds = i + 1
+        state.set_progress(
+            "processing",
+            f"Verifying template (round {rounds}/{MAX_VERIFICATION_ROUNDS})...",
+            4, TOTAL_STEPS,
+        )
         render_result = _try_render(template_docx, template_type)
 
         if render_result.render_error:
@@ -523,11 +570,13 @@ async def convert_document(
         break
 
     # Step 4: Render final preview
+    state.set_progress("processing", "Rendering preview...", 5, TOTAL_STEPS)
     final_render = _try_render(template_docx, template_type)
     if final_render.pdf_bytes:
         state.write("preview.pdf", final_render.pdf_bytes)
 
     # Step 5: Check missing known variables
+    state.set_progress("processing", "Checking variable coverage...", 6, TOTAL_STEPS)
     detected_vars = _extract_jinja_variables(body_xml)
     missing = sorted(v for v in KNOWN_VARIABLES if v not in detected_vars)
     for var in missing:
@@ -543,7 +592,7 @@ async def convert_document(
     state.write_json("chat_history.json", chat_history)
     state.write_json("detected_vars.json", sorted(detected_vars))
 
-    return {
+    result_data = {
         "conversion_id": str(conversion_id),
         "preview_url": state.preview_url,
         "template_download_url": state.template_url,
@@ -552,6 +601,12 @@ async def convert_document(
         "verification_rounds": rounds,
         "verification_passed": verification_passed,
     }
+
+    # Write final result and mark complete
+    state.write_json("result.json", result_data)
+    state.set_progress("completed", "Done", TOTAL_STEPS, TOTAL_STEPS)
+
+    return result_data
 
 
 async def refine_template(

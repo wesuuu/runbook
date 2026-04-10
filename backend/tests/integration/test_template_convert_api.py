@@ -99,28 +99,108 @@ class TestConvertEndpoint:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_successful_convert(self, client, auth_headers):
-        """Should return ConvertResponse on successful conversion."""
-        conv_id = str(uuid4())
-        mock_result = _mock_convert_result(conv_id)
+    async def test_successful_convert_starts_async(self, client, auth_headers):
+        """Should return 202 with conversion_id for async processing."""
+        resp = await client.post(
+            "/science/templates/convert",
+            headers=auth_headers,
+            data={"template_type": "SOP"},
+            files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
+        )
+        assert resp.status_code == 202
+        data = resp.json()
+        assert "conversion_id" in data
+        assert data["status"] == "processing"
 
-        with patch(
-            "app.api.endpoints.template_convert.convert_document",
-            new_callable=AsyncMock,
-            return_value=mock_result,
-        ):
-            resp = await client.post(
-                "/science/templates/convert",
-                headers=auth_headers,
-                data={"template_type": "SOP"},
-                files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
-            )
+
+class TestStatusEndpoint:
+    """GET /science/templates/conversions/{id}/status"""
+
+    @pytest.mark.asyncio
+    async def test_returns_404_for_missing_conversion(
+        self, client, auth_headers
+    ):
+        """Should return 404 if no status file exists."""
+        fake_id = uuid4()
+        resp = await client.get(
+            f"/science/templates/conversions/{fake_id}/status",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_returns_progress(self, client, auth_headers, test_org):
+        """Should return current progress when status file exists."""
+        from app.services.template_converter import ConversionState
+
+        conv_id = uuid4()
+        state = ConversionState(test_org.id, conv_id)
+        state.ensure_dir()
+        state.set_progress("processing", "Generating template with AI...", 2, 6)
+
+        resp = await client.get(
+            f"/science/templates/conversions/{conv_id}/status",
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["conversion_id"] == conv_id
+        assert data["status"] == "processing"
+        assert data["current_step"] == "Generating template with AI..."
+        assert data["step_number"] == 2
+        assert data["total_steps"] == 6
+        assert data["elapsed_seconds"] >= 0
+
+    @pytest.mark.asyncio
+    async def test_returns_completed_with_result(
+        self, client, auth_headers, test_org
+    ):
+        """Should include result data when conversion is complete."""
+        from app.services.template_converter import ConversionState
+
+        conv_id = uuid4()
+        state = ConversionState(test_org.id, conv_id)
+        state.ensure_dir()
+        state.set_progress("completed", "Done", 6, 6)
+        state.write_json("result.json", {
+            "conversion_id": str(conv_id),
+            "preview_url": f"/science/templates/conversions/{conv_id}/preview.pdf",
+            "template_download_url": f"/science/templates/conversions/{conv_id}/template.docx",
+            "warnings": [],
+            "variables_detected": ["protocol_name"],
+            "verification_rounds": 1,
+            "verification_passed": True,
+        })
+
+        resp = await client.get(
+            f"/science/templates/conversions/{conv_id}/status",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "completed"
         assert data["verification_passed"] is True
-        assert "preview_url" in data
-        assert "template_download_url" in data
+        assert "protocol_name" in data["variables_detected"]
+
+    @pytest.mark.asyncio
+    async def test_returns_failed_with_error(
+        self, client, auth_headers, test_org
+    ):
+        """Should include error message when conversion failed."""
+        from app.services.template_converter import ConversionState
+
+        conv_id = uuid4()
+        state = ConversionState(test_org.id, conv_id)
+        state.ensure_dir()
+        state.set_progress("failed", "Conversion failed", 2, 6, error="Model timeout")
+
+        resp = await client.get(
+            f"/science/templates/conversions/{conv_id}/status",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "failed"
+        assert data["error"] == "Model timeout"
 
 
 class TestRefineEndpoint:

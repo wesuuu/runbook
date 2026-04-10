@@ -4,18 +4,28 @@ Dedicated endpoints for converting filled SOPs/batch records into
 reusable Jinja2 DOCX templates via an AI agent.
 """
 
+import asyncio
 import logging
+import time
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.iam import User
-from app.schemas.template_convert import ConvertResponse, RefineRequest, SaveRequest
+from app.schemas.template_convert import (
+    ConversionStatusResponse,
+    ConvertResponse,
+    ConvertStartResponse,
+    RefineRequest,
+    SaveRequest,
+)
 from app.schemas.templates import DocumentTemplateResponse
 from app.services.template_converter import (
     ConversionState,
@@ -46,14 +56,48 @@ def _require_org(user: User) -> UUID:
     return user.selected_org_id
 
 
-@router.post("/templates/convert", response_model=ConvertResponse)
+async def _run_conversion_background(
+    org_id: UUID,
+    file_bytes: bytes,
+    filename: str,
+    template_type: str,
+    conversion_id: str,
+) -> None:
+    """Run the conversion in a background task with its own DB session."""
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    state = ConversionState(org_id, UUID(conversion_id))
+
+    try:
+        async with session_factory() as db:
+            await convert_document(
+                db, org_id, file_bytes, filename, template_type,
+                conversion_id=UUID(conversion_id),
+            )
+    except Exception as e:
+        logger.exception("Background template conversion failed")
+        state.set_progress("failed", "Conversion failed", 0, 6, error=str(e))
+    finally:
+        await engine.dispose()
+
+
+@router.post(
+    "/templates/convert",
+    response_model=ConvertStartResponse,
+    status_code=202,
+)
 async def convert_template(
     file: UploadFile,
     template_type: str = Form(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Upload a filled document and convert it to a Jinja2 DOCX template."""
+    """Upload a filled document and start async conversion.
+
+    Returns immediately with a conversion_id. Poll the status endpoint
+    for progress.
+    """
     org_id = _require_org(user)
 
     if template_type not in ("SOP", "BATCH_RECORD"):
@@ -72,21 +116,70 @@ async def convert_template(
     if len(file_bytes) > MAX_INPUT_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 20MB limit")
 
-    try:
-        result = await convert_document(
-            db,
-            org_id,
-            file_bytes,
-            file.filename or "document",
-            template_type,
-        )
-    except Exception:
-        logger.exception("Template conversion failed")
-        raise HTTPException(
-            status_code=500, detail="Template conversion failed"
-        )
+    # Create conversion state and kick off background task
+    from uuid import uuid4
 
-    return result
+    conversion_id = str(uuid4())
+    state = ConversionState(org_id, UUID(conversion_id))
+    state.ensure_dir()
+    state.set_progress("processing", "Starting...", 0, 6)
+
+    # Run conversion in background
+    background_tasks.add_task(
+        _run_conversion_background,
+        org_id,
+        file_bytes,
+        file.filename or "document",
+        template_type,
+        conversion_id,
+    )
+
+    return ConvertStartResponse(
+        conversion_id=conversion_id,
+        status="processing",
+    )
+
+
+@router.get(
+    "/templates/conversions/{conversion_id}/status",
+    response_model=ConversionStatusResponse,
+)
+async def get_conversion_status(
+    conversion_id: UUID,
+    user: User = Depends(get_current_user),
+):
+    """Poll conversion progress. Returns current step and completion status."""
+    org_id = _require_org(user)
+    state = ConversionState(org_id, conversion_id)
+
+    progress = state.get_progress()
+    if progress is None:
+        raise HTTPException(status_code=404, detail="Conversion not found")
+
+    started_at = progress.get("started_at", time.time())
+    elapsed = time.time() - started_at
+
+    resp = ConversionStatusResponse(
+        conversion_id=str(conversion_id),
+        status=progress["status"],
+        current_step=progress["current_step"],
+        step_number=progress["step_number"],
+        total_steps=progress["total_steps"],
+        elapsed_seconds=round(elapsed, 1),
+        error=progress.get("error"),
+    )
+
+    # If completed, include result data
+    if progress["status"] == "completed" and state.exists("result.json"):
+        result = state.read_json("result.json")
+        resp.preview_url = result.get("preview_url")
+        resp.template_download_url = result.get("template_download_url")
+        resp.warnings = result.get("warnings", [])
+        resp.variables_detected = result.get("variables_detected", [])
+        resp.verification_rounds = result.get("verification_rounds")
+        resp.verification_passed = result.get("verification_passed")
+
+    return resp
 
 
 @router.post(

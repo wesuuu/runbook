@@ -40,6 +40,13 @@
     let dragOver = $state(false);
     let error = $state<string | null>(null);
 
+    // Progress tracking
+    let progressStep = $state('Starting...');
+    let progressNumber = $state(0);
+    let progressTotal = $state(6);
+    let progressElapsed = $state(0);
+    let pollTimer = $state<ReturnType<typeof setInterval> | null>(null);
+
     // Conversion result
     let conversionId = $state<string | null>(null);
     let previewBlobUrl = $state<string | null>(null);
@@ -67,12 +74,24 @@
         'image/png',
     ]);
 
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
     function resetState() {
+        stopPolling();
         step = 'upload';
         selectedFile = null;
         templateType = 'SOP';
         dragOver = false;
         error = null;
+        progressStep = 'Starting...';
+        progressNumber = 0;
+        progressTotal = 6;
+        progressElapsed = 0;
         conversionId = null;
         if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
         previewBlobUrl = null;
@@ -132,32 +151,76 @@
         if (!selectedFile) return;
         step = 'processing';
         error = null;
+        progressStep = 'Uploading document...';
+        progressNumber = 0;
+        progressTotal = 6;
+        progressElapsed = 0;
 
         try {
-            const result = await api.uploadWithFields<ConvertResponse>(
+            // Start async conversion — returns immediately with conversion_id
+            const startResult = await api.uploadWithFields<{ conversion_id: string; status: string }>(
                 '/science/templates/convert',
                 selectedFile,
                 { template_type: templateType },
             );
-            conversionId = result.conversion_id;
-
-            templateDownloadUrl = result.template_download_url;
-            warnings = result.warnings;
-            variablesDetected = result.variables_detected;
-            verificationPassed = result.verification_passed;
-
-            chatMessages = [{
-                role: 'assistant',
-                content: `Analyzed "${selectedFile.name}" and generated a template with ${result.variables_detected.length} variables detected. ${result.verification_passed ? 'Verification passed.' : 'Some issues were found — check the warnings below.'}`,
-            }];
-
+            conversionId = startResult.conversion_id;
             saveName = selectedFile.name.replace(/\.[^.]+$/, '') + ' Template';
-            if (result.preview_url) await fetchPreview(result.preview_url);
-            step = 'review';
+
+            // Start polling for progress
+            startPolling(startResult.conversion_id);
         } catch (e: unknown) {
-            error = e instanceof Error ? e.message : 'Conversion failed';
+            error = e instanceof Error ? e.message : 'Failed to start conversion';
             step = 'upload';
         }
+    }
+
+    function startPolling(id: string) {
+        stopPolling();
+        pollTimer = setInterval(async () => {
+            try {
+                const status = await api.get<{
+                    status: string;
+                    current_step: string;
+                    step_number: number;
+                    total_steps: number;
+                    elapsed_seconds: number;
+                    error: string | null;
+                    preview_url: string | null;
+                    template_download_url: string | null;
+                    warnings: ConvertWarning[];
+                    variables_detected: string[];
+                    verification_rounds: number | null;
+                    verification_passed: boolean | null;
+                }>(`/science/templates/conversions/${id}/status`);
+
+                progressStep = status.current_step;
+                progressNumber = status.step_number;
+                progressTotal = status.total_steps;
+                progressElapsed = status.elapsed_seconds;
+
+                if (status.status === 'completed') {
+                    stopPolling();
+                    templateDownloadUrl = status.template_download_url;
+                    warnings = status.warnings;
+                    variablesDetected = status.variables_detected;
+                    verificationPassed = status.verification_passed ?? false;
+
+                    chatMessages = [{
+                        role: 'assistant',
+                        content: `Analyzed "${selectedFile?.name}" and generated a template with ${status.variables_detected.length} variables detected. ${status.verification_passed ? 'Verification passed.' : 'Some issues were found — check the warnings below.'}`,
+                    }];
+
+                    if (status.preview_url) await fetchPreview(status.preview_url);
+                    step = 'review';
+                } else if (status.status === 'failed') {
+                    stopPolling();
+                    error = status.error || 'Conversion failed';
+                    step = 'upload';
+                }
+            } catch {
+                // Polling failure — keep trying unless too many failures
+            }
+        }, 2000);
     }
 
     // --- Chat refinement ---
@@ -409,13 +472,54 @@
             </div>
 
         {:else if step === 'processing'}
-            <!-- Processing spinner -->
+            <!-- Processing with progress bar -->
             <div class="flex-1 flex items-center justify-center">
-                <div class="text-center">
-                    <div class="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
-                    <p class="text-sm font-medium">Converting your document...</p>
-                    <p class="text-xs text-muted-foreground mt-1">Analyzing structure, identifying variables, generating template...</p>
-                    <p class="text-xs text-muted-foreground">This may take 30-60 seconds</p>
+                <div class="w-full max-w-md px-8">
+                    <!-- Current step label -->
+                    <p class="text-sm font-medium text-center mb-4">{progressStep}</p>
+
+                    <!-- Progress bar -->
+                    <div class="w-full bg-muted rounded-full h-2.5 mb-3">
+                        <div
+                            class="bg-primary h-2.5 rounded-full transition-all duration-500 ease-out"
+                            style="width: {progressTotal > 0 ? (progressNumber / progressTotal) * 100 : 0}%"
+                        ></div>
+                    </div>
+
+                    <!-- Step counter + elapsed time -->
+                    <div class="flex justify-between text-xs text-muted-foreground mb-6">
+                        <span>Step {progressNumber} of {progressTotal}</span>
+                        <span>{Math.floor(progressElapsed)}s elapsed</span>
+                    </div>
+
+                    <!-- Step breakdown -->
+                    <div class="space-y-2">
+                        {#each [
+                            'Extracting document content...',
+                            'Generating template with AI...',
+                            'Wrapping into DOCX...',
+                            'Verifying template...',
+                            'Rendering preview...',
+                            'Checking variable coverage...',
+                        ] as label, i}
+                            <div class="flex items-center gap-2 text-xs {i + 1 < progressNumber ? 'text-foreground' : i + 1 === progressNumber ? 'text-primary font-medium' : 'text-muted-foreground/50'}">
+                                {#if i + 1 < progressNumber}
+                                    <svg class="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                                {:else if i + 1 === progressNumber}
+                                    <div class="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                {:else}
+                                    <div class="w-3.5 h-3.5 rounded-full border border-muted-foreground/30 shrink-0"></div>
+                                {/if}
+                                <span>{label}</span>
+                            </div>
+                        {/each}
+                    </div>
+
+                    {#if progressElapsed > 90}
+                        <p class="text-xs text-amber-500 mt-4 text-center">
+                            This is taking longer than usual. The AI model may be slow.
+                        </p>
+                    {/if}
                 </div>
             </div>
 
