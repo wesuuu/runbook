@@ -75,12 +75,16 @@ async def seed_users(db: AsyncSession):
         (USER_VIEWER, "viewer@bioprocess.com", "Viewer User"),
     ]
     for uid, email, name in users:
-        await _upsert(
+        user = await _upsert(
             db, User, uid,
             email=email,
             hashed_password=DEFAULT_PASSWORD,
             full_name=name,
+            selected_org_id=ORG_ID,
         )
+        # Backfill existing seed users that lack selected_org_id
+        if user.selected_org_id is None:
+            user.selected_org_id = ORG_ID
 
 
 async def seed_org(db: AsyncSession):

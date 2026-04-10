@@ -15,6 +15,8 @@
         CardTitle,
         CardDescription,
     } from '$lib/components/ui/card';
+    import ProjectDataTable from '$lib/components/project/ProjectDataTable.svelte';
+    import { formatDate } from '$lib/components/project/projectUtils';
     import AiSettingsTab from '$lib/components/AiSettingsTab.svelte';
     import TemplatesTab from '$lib/components/settings/TemplatesTab.svelte';
 
@@ -200,9 +202,78 @@
         members.some((m: any) => m.user_id === getUser()?.id && m.role === 'ADMIN')
     );
     let inviteEmail = $state('');
-    let inviteSearchResults = $state<any[]>([]);
-    let inviteSearching = $state(false);
     let showInviteDialog = $state(false);
+    let memberStatusFilter = $state<'all' | 'active' | 'pending'>('all');
+
+    type MemberRow = {
+        type: 'member' | 'invitation';
+        id: string;
+        email: string;
+        name: string | null;
+        role: string;
+        status: string;
+        date: string;
+        raw: any;
+    };
+
+    function invitationStatus(inv: any): string {
+        return new Date(inv.expires_at) < new Date() ? 'Expired' : 'Pending';
+    }
+
+    const allRows = $derived.by(() => {
+        const rows: MemberRow[] = [];
+        for (const m of members) {
+            rows.push({
+                type: 'member',
+                id: m.user_id,
+                email: m.email || '',
+                name: m.full_name || null,
+                role: m.role,
+                status: 'Active',
+                date: m.created_at || '',
+                raw: m,
+            });
+        }
+        for (const inv of pendingInvitations) {
+            rows.push({
+                type: 'invitation',
+                id: inv.id,
+                email: inv.invited_email,
+                name: null,
+                role: inv.role,
+                status: invitationStatus(inv),
+                date: inv.created_at || '',
+                raw: inv,
+            });
+        }
+        if (memberStatusFilter === 'active') return rows.filter((r) => r.status === 'Active');
+        if (memberStatusFilter === 'pending') return rows.filter((r) => r.status === 'Pending' || r.status === 'Expired');
+        return rows;
+    });
+
+    const memberColumns = [
+        { key: 'name', label: 'User', sortable: true },
+        { key: 'role', label: 'Role', sortable: true, align: 'center' as const },
+        { key: 'status', label: 'Status', sortable: true, align: 'center' as const },
+        { key: 'date', label: 'Joined / Sent', sortable: true, align: 'center' as const },
+    ];
+
+    // Admin gets an actions column
+    const memberColumnsAdmin = $derived(
+        isOrgAdmin
+            ? [...memberColumns, { key: '_actions', label: 'Actions', align: 'right' as const }]
+            : memberColumns
+    );
+
+    function memberFilterFn(item: MemberRow, query: string): boolean {
+        if (!query) return true;
+        return (
+            (item.name?.toLowerCase().includes(query) ?? false) ||
+            item.email.toLowerCase().includes(query) ||
+            item.role.toLowerCase().includes(query) ||
+            item.status.toLowerCase().includes(query)
+        );
+    }
 
     // Teams
     let teams = $state<any[]>([]);
@@ -392,37 +463,60 @@
         }
     }
 
-    // Search users for invite
-    async function searchUsers() {
-        if (!inviteEmail.trim() || inviteEmail.length < 3) {
-            inviteSearchResults = [];
-            return;
-        }
-        inviteSearching = true;
-        try {
-            inviteSearchResults = await api.get(`/iam/users?email=${encodeURIComponent(inviteEmail)}`);
-        } catch {
-            inviteSearchResults = [];
-        } finally {
-            inviteSearching = false;
-        }
-    }
+    let inviteSending = $state(false);
+    let pendingInvitations = $state<any[]>([]);
 
-    // Add member to org
-    async function inviteMember(userId: string) {
+    // Load pending invitations for this org
+    async function loadInvitations() {
         const org = getCurrentOrg();
         if (!org) return;
         try {
-            await api.post(`/iam/organizations/${org.id}/members`, {
-                user_id: userId,
-                is_admin: false,
+            pendingInvitations = await api.get(`/iam/organizations/${org.id}/invitations`);
+        } catch {
+            pendingInvitations = [];
+        }
+    }
+
+    // Send invitation by email
+    async function sendInvitation() {
+        const org = getCurrentOrg();
+        if (!org || !inviteEmail.trim()) return;
+        inviteSending = true;
+        try {
+            await api.post(`/iam/organizations/${org.id}/invitations`, {
+                email: inviteEmail.trim(),
+                role: 'MEMBER',
             });
-            showInviteDialog = false;
+            toast.success('Invitation sent', `Sent to ${inviteEmail.trim()}`);
             inviteEmail = '';
-            inviteSearchResults = [];
-            await loadMembers();
+            showInviteDialog = false;
+            await loadInvitations();
         } catch (e: unknown) {
-            console.error('Failed to invite member:', e instanceof Error ? e.message : e);
+            toast.error(e instanceof Error ? e.message : 'Failed to send invitation');
+        } finally {
+            inviteSending = false;
+        }
+    }
+
+    // Resend invitation (new token + reset expiry + resend email)
+    async function resendInvitation(invitation: any) {
+        try {
+            await api.post(`/iam/invitations/${invitation.id}/resend`);
+            toast.success('Invitation resent', `Sent to ${invitation.invited_email}`);
+            await loadInvitations();
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : 'Failed to resend invitation');
+        }
+    }
+
+    // Revoke invitation
+    async function revokeInvitation(invitationId: string) {
+        try {
+            await api.delete(`/iam/invitations/${invitationId}`);
+            toast.success('Invitation revoked');
+            await loadInvitations();
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : 'Failed to revoke invitation');
         }
     }
 
@@ -491,6 +585,7 @@
 
     onMount(() => {
         loadMembers();
+        loadInvitations();
         loadTeams();
     });
 </script>
@@ -548,98 +643,167 @@
                 <div class="flex items-center justify-between">
                     <div>
                         <CardTitle>{getCurrentOrg()?.name || 'No Organization'}</CardTitle>
-                        <CardDescription>Members of your organization.</CardDescription>
+                        <CardDescription>Members and invitations for your organization.</CardDescription>
                     </div>
-                    {#if isOrgAdmin}
-                        <Button size="sm" onclick={() => (showInviteDialog = true)}>
-                            Invite Member
-                        </Button>
-                    {/if}
+                    <div class="flex items-center gap-2">
+                        {#if isOrgAdmin && pendingInvitations.length > 0}
+                            <div class="flex gap-1">
+                                {#each [{ value: 'all', label: 'All' }, { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }] as filter}
+                                    <button
+                                        class="px-3 py-1 text-xs font-medium rounded-full transition-colors {memberStatusFilter === filter.value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground'}"
+                                        onclick={() => { memberStatusFilter = filter.value as any; }}
+                                    >
+                                        {filter.label}
+                                    </button>
+                                {/each}
+                            </div>
+                        {/if}
+                        {#if isOrgAdmin}
+                            <Button size="sm" onclick={() => (showInviteDialog = true)}>
+                                Invite Member
+                            </Button>
+                        {/if}
+                    </div>
                 </div>
             </CardHeader>
-            <CardContent>
-                {#if membersLoading}
-                    <p class="text-sm text-muted-foreground py-4 text-center">Loading members...</p>
-                {:else if membersError}
-                    <p class="text-sm text-destructive py-4 text-center">{membersError}</p>
-                {:else if members.length === 0}
-                    <p class="text-sm text-muted-foreground py-4 text-center">No members found.</p>
-                {:else}
-                    <div class="divide-y divide-border">
-                        {#each members as member}
-                            <div class="flex items-center justify-between py-3">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold">
-                                        {getInitials(member.full_name, member.email)}
-                                    </div>
-                                    <div>
-                                        <p class="text-sm font-medium">{member.full_name || member.email}</p>
-                                        <p class="text-xs text-muted-foreground">{member.email}</p>
-                                    </div>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    {#if isOrgAdmin}
-                                        <select
-                                            class="px-2 py-1 border border-border rounded text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                                            value={member.role}
-                                            onchange={(e) => updateMemberRole(member.user_id, e.currentTarget.value)}
-                                        >
-                                            {#each ORG_ROLES as r}
-                                                <option value={r.value}>{r.label}</option>
-                                            {/each}
-                                        </select>
-                                        <Button variant="ghost" size="sm" class="text-destructive" onclick={() => removeMember(member.user_id)}>
-                                            Remove
-                                        </Button>
-                                    {:else}
-                                        <span class="text-xs text-muted-foreground">{getOrgRoleLabel(member.role)}</span>
-                                    {/if}
-                                </div>
-                            </div>
-                        {/each}
-                    </div>
-                {/if}
-            </CardContent>
-        </Card>
-
-        <!-- Invite Dialog -->
-        {#if isOrgAdmin && showInviteDialog}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Invite Member</CardTitle>
-                    <CardDescription>Search by email to add a member to your organization.</CardDescription>
-                </CardHeader>
-                <CardContent class="space-y-4">
-                    <div class="flex gap-2">
+            <CardContent class="space-y-4">
+                <!-- Invite form (inline, collapsible) -->
+                {#if isOrgAdmin && showInviteDialog}
+                    <div class="flex gap-2 p-3 rounded-md border border-dashed">
                         <Input
                             bind:value={inviteEmail}
-                            placeholder="Search by email..."
-                            oninput={searchUsers}
+                            placeholder="colleague@company.com"
+                            type="email"
                         />
-                        <Button variant="outline" onclick={() => { showInviteDialog = false; inviteEmail = ''; inviteSearchResults = []; }}>
+                        <Button onclick={sendInvitation} disabled={inviteSending || !inviteEmail.trim()}>
+                            {inviteSending ? 'Sending...' : 'Send Invite'}
+                        </Button>
+                        <Button variant="outline" onclick={() => { showInviteDialog = false; inviteEmail = ''; }}>
                             Cancel
                         </Button>
                     </div>
-                    {#if inviteSearching}
-                        <p class="text-sm text-muted-foreground">Searching...</p>
-                    {:else if inviteSearchResults.length > 0}
-                        <div class="divide-y divide-border rounded-md border">
-                            {#each inviteSearchResults as user}
-                                <div class="flex items-center justify-between px-3 py-2">
-                                    <div>
-                                        <p class="text-sm font-medium">{user.full_name || user.email}</p>
-                                        <p class="text-xs text-muted-foreground">{user.email}</p>
+                {/if}
+            </CardContent>
+
+            {#if membersLoading}
+                <div class="px-8 py-8 text-center">
+                    <p class="text-sm text-muted-foreground">Loading members...</p>
+                </div>
+            {:else if membersError}
+                <div class="px-8 py-8 text-center">
+                    <p class="text-sm text-destructive">{membersError}</p>
+                </div>
+            {:else}
+                <ProjectDataTable
+                    items={allRows}
+                    columns={memberColumnsAdmin}
+                    filterPlaceholder="Filter members..."
+                    defaultSortKey="name"
+                    defaultSortDir="asc"
+                    filterFn={memberFilterFn}
+                >
+                    {#snippet mobileCard(row)}
+                        <div class="py-3">
+                            <div class="flex items-center justify-between mb-1">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-7 h-7 rounded-full {row.type === 'member' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-semibold">
+                                        {#if row.type === 'member'}
+                                            {getInitials(row.name, row.email)}
+                                        {:else}
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>
+                                        {/if}
                                     </div>
-                                    <Button size="sm" onclick={() => inviteMember(user.id)}>Add</Button>
+                                    <span class="text-sm font-medium">{row.name || row.email}</span>
                                 </div>
-                            {/each}
+                                {#if row.status === 'Active'}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>
+                                {:else if row.status === 'Expired'}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Expired</span>
+                                {:else}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Pending</span>
+                                {/if}
+                            </div>
+                            <div class="flex items-center gap-2 text-xs text-muted-foreground ml-9">
+                                <span>{getOrgRoleLabel(row.role)}</span>
+                                <span>&middot;</span>
+                                <span>{row.date ? formatDate(row.date) : '—'}</span>
+                            </div>
                         </div>
-                    {:else if inviteEmail.length >= 3}
-                        <p class="text-sm text-muted-foreground">No users found.</p>
-                    {/if}
-                </CardContent>
-            </Card>
-        {/if}
+                    {/snippet}
+
+                    {#snippet cells(row)}
+                        <td class="py-3 px-4 pl-6 sm:pl-10">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full {row.type === 'member' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-semibold">
+                                    {#if row.type === 'member'}
+                                        {getInitials(row.name, row.email)}
+                                    {:else}
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>
+                                    {/if}
+                                </div>
+                                <div>
+                                    <p class="text-sm font-medium text-slate-800">{row.name || row.email}</p>
+                                    {#if row.name}
+                                        <p class="text-xs text-muted-foreground">{row.email}</p>
+                                    {/if}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="py-3 px-4 text-center">
+                            {#if isOrgAdmin && row.type === 'member'}
+                                <select
+                                    class="px-2 py-1 border border-border rounded text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                    value={row.role}
+                                    onchange={(e) => { e.stopPropagation(); updateMemberRole(row.id, e.currentTarget.value); }}
+                                    onclick={(e) => e.stopPropagation()}
+                                >
+                                    {#each ORG_ROLES as r}
+                                        <option value={r.value}>{r.label}</option>
+                                    {/each}
+                                </select>
+                            {:else}
+                                <span class="text-xs text-muted-foreground">{getOrgRoleLabel(row.role)}</span>
+                            {/if}
+                        </td>
+                        <td class="py-3 px-4 text-center">
+                            {#if row.status === 'Active'}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>
+                            {:else if row.status === 'Expired'}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Expired</span>
+                            {:else}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Pending</span>
+                            {/if}
+                        </td>
+                        <td class="py-3 px-4 text-center text-xs text-muted-foreground whitespace-nowrap">
+                            {row.date ? formatDate(row.date) : '—'}
+                        </td>
+                        {#if isOrgAdmin}
+                            <td class="py-3 px-4 pr-6 sm:pr-10 text-right whitespace-nowrap">
+                                {#if row.type === 'member'}
+                                    <Button variant="ghost" size="sm" class="text-destructive" onclick={(e) => { e.stopPropagation(); removeMember(row.id); }}>
+                                        Remove
+                                    </Button>
+                                {:else}
+                                    <div class="flex gap-1 justify-end">
+                                        <Button size="sm" variant="outline" onclick={(e) => { e.stopPropagation(); resendInvitation(row.raw); }}>
+                                            Resend
+                                        </Button>
+                                        <Button size="sm" variant="ghost" class="text-destructive" onclick={(e) => { e.stopPropagation(); revokeInvitation(row.id); }}>
+                                            Revoke
+                                        </Button>
+                                    </div>
+                                {/if}
+                            </td>
+                        {/if}
+                    {/snippet}
+
+                    {#snippet empty()}
+                        <p class="text-[15px] font-semibold text-slate-600">No members yet</p>
+                        <p class="text-[13px] text-slate-400">Invite someone to get started.</p>
+                    {/snippet}
+                </ProjectDataTable>
+            {/if}
+        </Card>
 
     <!-- Teams Tab -->
     {:else if activeTab === 'teams'}

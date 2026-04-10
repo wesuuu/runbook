@@ -184,7 +184,16 @@ export function logout(): void {
     import('$lib/chat-store.svelte').then(({ resetChat }) => resetChat());
 }
 
-export function switchOrg(org: Org): void {
+export async function switchOrg(org: Org): Promise<void> {
+    try {
+        const res = await authFetch<{ access_token: string }>('POST', '/auth/switch-org', {
+            org_id: org.id,
+        });
+        token = res.access_token;
+        localStorage.setItem('auth_token', token);
+    } catch {
+        // Fall back to client-side switch if backend call fails
+    }
     currentOrg = org;
     localStorage.setItem('current_org_id', org.id);
     cacheAuthData();

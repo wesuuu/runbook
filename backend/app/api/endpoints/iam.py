@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -8,9 +9,14 @@ logger = logging.getLogger(__name__)
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.security import generate_verification_token
+
 from app.core.deps import get_current_user, get_or_404
 from app.db.session import get_db
 from app.models.iam import (
+    Invitation,
+    InvitationStatus,
     Organization,
     OrganizationMember,
     Team,
@@ -24,6 +30,8 @@ from app.models.iam import (
 )
 from app.models.science import Equipment
 from app.schemas.iam import (
+    InvitationCreate,
+    InvitationResponse,
     OrganizationCreate,
     OrganizationResponse,
     OrgMemberAdd,
@@ -57,6 +65,7 @@ async def _require_org_admin(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user_id,
             OrganizationMember.organization_id == org_id,
+            OrganizationMember.archived == False,
         )
     )
     membership = result.scalar_one_or_none()
@@ -75,6 +84,7 @@ async def _require_org_member(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user_id,
             OrganizationMember.organization_id == org_id,
+            OrganizationMember.archived == False,
         )
     )
     membership = result.scalar_one_or_none()
@@ -139,7 +149,10 @@ async def list_organizations(
             OrganizationMember,
             OrganizationMember.organization_id == Organization.id,
         )
-        .where(OrganizationMember.user_id == user.id)
+        .where(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.archived == False,
+        )
     )
     return result.scalars().all()
 
@@ -152,11 +165,12 @@ async def get_organization(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Must be a member
+    # Must be an active member
     result = await db.execute(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user.id,
             OrganizationMember.organization_id == org_id,
+            OrganizationMember.archived == False,
         )
     )
     if result.scalar_one_or_none() is None:
@@ -184,41 +198,55 @@ async def add_org_member(
     result = await db.execute(
         select(User).where(User.id == body.user_id)
     )
-    if result.scalar_one_or_none() is None:
+    target_user = result.scalar_one_or_none()
+    if target_user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Check not already a member
+    # Check for existing membership (active or archived)
     result = await db.execute(
         select(OrganizationMember).where(
             OrganizationMember.user_id == body.user_id,
             OrganizationMember.organization_id == org_id,
         )
     )
-    if result.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=409, detail="User is already a member"
-        )
+    existing = result.scalar_one_or_none()
 
-    # Enforce max 3 admins per org
-    if body.role == "ADMIN":
-        admin_count = await db.execute(
-            select(func.count()).where(
-                OrganizationMember.organization_id == org_id,
-                OrganizationMember.role == "ADMIN",
-            )
-        )
-        if (admin_count.scalar() or 0) >= 3:
+    if existing is not None:
+        if not existing.archived:
             raise HTTPException(
-                status_code=400,
-                detail="Maximum of 3 admins per organization",
+                status_code=409, detail="User is already a member"
             )
+        # Reactivate archived membership
+        existing.archived = False
+        existing.role = body.role
+        membership = existing
+    else:
+        # Enforce max 3 admins per org
+        if body.role == "ADMIN":
+            admin_count = await db.execute(
+                select(func.count()).where(
+                    OrganizationMember.organization_id == org_id,
+                    OrganizationMember.role == "ADMIN",
+                    OrganizationMember.archived == False,
+                )
+            )
+            if (admin_count.scalar() or 0) >= 3:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Maximum of 3 admins per organization",
+                )
 
-    membership = OrganizationMember(
-        user_id=body.user_id,
-        organization_id=org_id,
-        role=body.role,
-    )
-    db.add(membership)
+        membership = OrganizationMember(
+            user_id=body.user_id,
+            organization_id=org_id,
+            role=body.role,
+        )
+        db.add(membership)
+
+    # Set selected_org_id if the user doesn't have one
+    if target_user.selected_org_id is None:
+        target_user.selected_org_id = org_id
+
     await db.commit()
     await db.refresh(membership)
     return membership
@@ -237,13 +265,36 @@ async def remove_org_member(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user_id,
             OrganizationMember.organization_id == org_id,
+            OrganizationMember.archived == False,
         )
     )
     membership = result.scalar_one_or_none()
     if membership is None:
         raise HTTPException(status_code=404, detail="Membership not found")
 
-    await db.delete(membership)
+    # Soft-delete: archive instead of deleting
+    membership.archived = True
+    await db.flush()
+
+    # Cascade selected_org_id if this was the user's selected org
+    target_user = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    target = target_user.scalar_one_or_none()
+    if target is not None and target.selected_org_id == org_id:
+        # Find the earliest remaining active membership
+        fallback_result = await db.execute(
+            select(OrganizationMember.organization_id)
+            .where(
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.archived == False,
+            )
+            .order_by(OrganizationMember.created_at.asc())
+            .limit(1)
+        )
+        fallback_org_id = fallback_result.scalar_one_or_none()
+        target.selected_org_id = fallback_org_id  # None if no remaining orgs
+
     await db.commit()
     return {"ok": True}
 
@@ -272,6 +323,7 @@ async def update_org_member_role(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user_id,
             OrganizationMember.organization_id == org_id,
+            OrganizationMember.archived == False,
         )
     )
     membership = result.scalar_one_or_none()
@@ -284,6 +336,7 @@ async def update_org_member_role(
             select(func.count()).where(
                 OrganizationMember.organization_id == org_id,
                 OrganizationMember.role == "ADMIN",
+                OrganizationMember.archived == False,
             )
         )
         if (admin_count.scalar() or 0) >= 3:
@@ -307,19 +360,13 @@ async def list_org_members(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Must be org member to view members
-    result = await db.execute(
-        select(OrganizationMember).where(
-            OrganizationMember.user_id == user.id,
-            OrganizationMember.organization_id == org_id,
-        )
-    )
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=403, detail="Not an org member")
+    # Must be active org member to view members
+    await _require_org_member(db, user.id, org_id)
 
     result = await db.execute(
         select(OrganizationMember).where(
-            OrganizationMember.organization_id == org_id
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.archived == False,
         )
     )
     memberships = result.scalars().all()
@@ -393,6 +440,219 @@ async def search_users(
     return scoped_users
 
 
+# --- Invitations ---
+
+
+@router.post(
+    "/organizations/{org_id}/invitations",
+    response_model=InvitationResponse,
+    status_code=201,
+)
+async def create_invitation(
+    org_id: UUID,
+    body: InvitationCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Invite a user to the organization by email. Admin only."""
+    await _require_org_admin(db, user.id, org_id)
+
+    # Fetch org upfront (needed for email later, validates existence)
+    org = await get_or_404(db, Organization, org_id)
+
+    # Check if email is already an active member
+    user_result = await db.execute(
+        select(User).where(User.email == body.email)
+    )
+    existing_user = user_result.scalar_one_or_none()
+
+    if existing_user is not None:
+        member_result = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == existing_user.id,
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.archived == False,
+            )
+        )
+        if member_result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="User is already a member of this organization",
+            )
+
+    # Check for existing pending invitation
+    pending_result = await db.execute(
+        select(Invitation).where(
+            Invitation.organization_id == org_id,
+            Invitation.invited_email == body.email,
+            Invitation.status == InvitationStatus.PENDING,
+        )
+    )
+    if pending_result.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Active invitation already exists for this email",
+        )
+
+    token_str = generate_verification_token()
+    invitation = Invitation(
+        organization_id=org_id,
+        invited_email=body.email,
+        invited_user_id=existing_user.id if existing_user else None,
+        role=body.role,
+        invited_by=user.id,
+        token=token_str,
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(days=settings.invitation_ttl_days),
+    )
+    db.add(invitation)
+    await db.commit()
+    await db.refresh(invitation)
+
+    # Send invitation email (fire-and-forget)
+    from app.services.email_service import send_invitation_email
+
+    await send_invitation_email(
+        to_email=body.email,
+        org_name=org.name,
+        inviter_name=user.full_name or user.email,
+        token=token_str,
+    )
+
+    return invitation
+
+
+@router.get(
+    "/organizations/{org_id}/invitations",
+    response_model=List[InvitationResponse],
+)
+async def list_org_invitations(
+    org_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List pending invitations for an organization. Admin only."""
+    await _require_org_admin(db, user.id, org_id)
+
+    result = await db.execute(
+        select(Invitation).where(
+            Invitation.organization_id == org_id,
+            Invitation.status == InvitationStatus.PENDING,
+        )
+    )
+    return result.scalars().all()
+
+
+@router.delete("/invitations/{invitation_id}")
+async def revoke_invitation(
+    invitation_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke a pending invitation. Must be admin of the invitation's org."""
+    result = await db.execute(
+        select(Invitation).where(Invitation.id == invitation_id)
+    )
+    invitation = result.scalar_one_or_none()
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    await _require_org_admin(db, user.id, invitation.organization_id)
+
+    invitation.status = InvitationStatus.REVOKED
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/me/invitations", response_model=List[InvitationResponse])
+async def list_my_invitations(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List pending invitations for the current user."""
+    result = await db.execute(
+        select(Invitation).where(
+            Invitation.invited_user_id == user.id,
+            Invitation.status == InvitationStatus.PENDING,
+        )
+    )
+    return result.scalars().all()
+
+
+@router.post("/invitations/{invitation_id}/decline")
+async def decline_invitation(
+    invitation_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Decline a pending invitation."""
+    result = await db.execute(
+        select(Invitation).where(Invitation.id == invitation_id)
+    )
+    invitation = result.scalar_one_or_none()
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    if invitation.status != InvitationStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Invitation is no longer pending")
+
+    # Only the invited user can decline
+    if invitation.invited_user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to decline this invitation",
+        )
+
+    invitation.status = InvitationStatus.DECLINED
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post(
+    "/invitations/{invitation_id}/resend",
+    response_model=InvitationResponse,
+)
+async def resend_invitation(
+    invitation_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resend a pending invitation with a new token and reset expiry."""
+    result = await db.execute(
+        select(Invitation).where(Invitation.id == invitation_id)
+    )
+    invitation = result.scalar_one_or_none()
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    if invitation.status != InvitationStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Invitation is no longer pending")
+
+    await _require_org_admin(db, user.id, invitation.organization_id)
+    org = await get_or_404(db, Organization, invitation.organization_id)
+
+    # Regenerate token and reset expiry
+    invitation.token = generate_verification_token()
+    invitation.expires_at = (
+        datetime.now(timezone.utc)
+        + timedelta(days=settings.invitation_ttl_days)
+    )
+    await db.commit()
+    await db.refresh(invitation)
+
+    # Resend email
+    from app.services.email_service import send_invitation_email
+
+    await send_invitation_email(
+        to_email=invitation.invited_email,
+        org_name=org.name,
+        inviter_name=user.full_name or user.email,
+        token=invitation.token,
+    )
+
+    return invitation
+
+
 # --- Teams ---
 
 @router.post(
@@ -424,15 +684,8 @@ async def list_teams(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Must be org member
-    result = await db.execute(
-        select(OrganizationMember).where(
-            OrganizationMember.user_id == user.id,
-            OrganizationMember.organization_id == org_id,
-        )
-    )
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=403, detail="Not an org member")
+    # Must be active org member
+    await _require_org_member(db, user.id, org_id)
 
     result = await db.execute(
         select(Team).where(Team.organization_id == org_id)

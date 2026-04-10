@@ -81,6 +81,26 @@ class UserSearchResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvitationCreate(BaseModel):
+    email: str
+    role: str = "MEMBER"
+
+
+class InvitationResponse(BaseModel):
+    id: UUID
+    organization_id: UUID
+    invited_email: str
+    invited_user_id: Optional[UUID] = None
+    role: str
+    invited_by: UUID
+    status: str
+    expires_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PermissionGrant(BaseModel):
     principal_type: str  # "USER" or "TEAM"
     principal_id: UUID

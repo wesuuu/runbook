@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     verification_resend_window_minutes: int = 10
     verification_temp_token_minutes: int = 60
 
+    # Invitations
+    invitation_ttl_days: int = 7
+
     # URLs (for verification email links and redirects)
     frontend_url: str = "http://localhost:5173"
     backend_url: str = "http://localhost:8000"

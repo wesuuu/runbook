@@ -55,3 +55,7 @@ class PreferencesUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+
+
+class SwitchOrgRequest(BaseModel):
+    org_id: UUID

@@ -35,6 +35,14 @@ class TeamRole(str, Enum):
     MEMBER = "MEMBER"
 
 
+class InvitationStatus(str, Enum):
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    DECLINED = "DECLINED"
+    EXPIRED = "EXPIRED"
+    REVOKED = "REVOKED"
+
+
 class PrincipalType(str, Enum):
     USER = "USER"
     TEAM = "TEAM"
@@ -176,6 +184,9 @@ class OrganizationMember(Base, UUIDMixin, TimestampMixin):
     role: Mapped[str] = mapped_column(
         String, default=OrgRole.MEMBER, nullable=False
     )
+    archived: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="org_memberships")
@@ -205,6 +216,54 @@ class ObjectPermission(Base, UUIDMixin, TimestampMixin):
     object_type: Mapped[str] = mapped_column(String, nullable=False)
     object_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     permission_level: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class Invitation(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "invitations"
+    __table_args__ = (
+        Index(
+            "ix_pending_invitation",
+            "organization_id", "invited_email",
+            unique=True,
+            postgresql_where="status = 'PENDING'",
+        ),
+        Index("ix_invitation_token", "token", unique=True),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    invited_email: Mapped[str] = mapped_column(String, nullable=False)
+    invited_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    role: Mapped[str] = mapped_column(
+        String, default=OrgRole.MEMBER, nullable=False
+    )
+    invited_by: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default=InvitationStatus.PENDING, server_default="PENDING",
+        nullable=False,
+    )
+    token: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    # Relationships
+    organization: Mapped["Organization"] = relationship(
+        foreign_keys=[organization_id]
+    )
+    invited_user: Mapped[Optional["User"]] = relationship(
+        foreign_keys=[invited_user_id]
+    )
+    inviter: Mapped["User"] = relationship(
+        foreign_keys=[invited_by]
+    )
 
 
 class VerificationToken(Base, UUIDMixin, TimestampMixin):

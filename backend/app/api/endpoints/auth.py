@@ -19,7 +19,14 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import get_db
-from app.models.iam import Organization, OrganizationMember, User, VerificationToken
+from app.models.iam import (
+    Invitation,
+    InvitationStatus,
+    Organization,
+    OrganizationMember,
+    User,
+    VerificationToken,
+)
 from app.services.file_storage import FileStorageService
 from app.schemas.auth import (
     LoginRequest,
@@ -28,6 +35,7 @@ from app.schemas.auth import (
     ProfileUpdate,
     RegisterRequest,
     ResendVerificationResponse,
+    SwitchOrgRequest,
     TokenResponse,
     UserResponse,
     VerificationTokenResponse,
@@ -363,6 +371,147 @@ async def login(
         email_verified=user.email_verified,
     )
     return TokenResponse(access_token=token)
+
+
+# ---------- switch org ----------
+
+
+@router.post("/switch-org", response_model=TokenResponse)
+async def switch_org(
+    body: SwitchOrgRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Switch the user's selected org and return a new JWT."""
+    result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.organization_id == body.org_id,
+            OrganizationMember.archived == False,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a member of this organization",
+        )
+
+    user.selected_org_id = body.org_id
+    await db.flush()
+
+    # Resolve tier for the new org
+    org_result = await db.execute(
+        select(Organization).where(Organization.id == body.org_id)
+    )
+    org = org_result.scalar_one()
+
+    await db.commit()
+
+    token = create_access_token(
+        user.id,
+        org_id=org.id,
+        subscription_tier=org.subscription_tier,
+        email_verified=user.email_verified,
+    )
+    return TokenResponse(access_token=token)
+
+
+# ---------- accept invite ----------
+
+
+INVITE_ERROR_HTML = """<!DOCTYPE html>
+<html><head><title>Invitation Failed</title></head>
+<body style="font-family: sans-serif; display: flex; justify-content: center;
+             align-items: center; min-height: 100vh; background: #f9fafb;">
+  <div style="text-align: center; max-width: 400px;">
+    <h2 style="color: #dc2626;">Invitation Failed</h2>
+    <p style="color: #666;">{message}</p>
+    <a href="{frontend_url}" style="color: #2563eb;">Go to Batchrite</a>
+  </div>
+</body></html>"""
+
+
+@router.get("/accept-invite", response_class=HTMLResponse)
+async def accept_invite(
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept an org invitation via email link."""
+    result = await db.execute(
+        select(Invitation).where(
+            Invitation.token == token,
+            Invitation.status == InvitationStatus.PENDING,
+        )
+    )
+    invitation = result.scalar_one_or_none()
+
+    if invitation is None:
+        return HTMLResponse(
+            INVITE_ERROR_HTML.format(
+                message="This invitation link is invalid or has already been used.",
+                frontend_url=settings.frontend_url,
+            ),
+            status_code=400,
+        )
+
+    # Check expiry
+    if invitation.expires_at < datetime.now(timezone.utc):
+        invitation.status = InvitationStatus.EXPIRED
+        await db.commit()
+        return HTMLResponse(
+            INVITE_ERROR_HTML.format(
+                message="This invitation has expired.",
+                frontend_url=settings.frontend_url,
+            ),
+            status_code=400,
+        )
+
+    # Find the invited user by email
+    user_result = await db.execute(
+        select(User).where(User.email == invitation.invited_email)
+    )
+    invited_user = user_result.scalar_one_or_none()
+
+    if invited_user is None:
+        # No account — redirect to registration with invite token
+        redirect_url = (
+            f"{settings.frontend_url}/#/register"
+            f"?invite={invitation.token}"
+        )
+        return RedirectResponse(url=redirect_url, status_code=302)
+
+    # User exists — create org membership
+    # Check for existing (possibly archived) membership
+    existing_result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == invited_user.id,
+            OrganizationMember.organization_id == invitation.organization_id,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+
+    if existing is not None:
+        if existing.archived:
+            existing.archived = False
+            existing.role = invitation.role
+        # else: already active member — no-op
+    else:
+        db.add(OrganizationMember(
+            user_id=invited_user.id,
+            organization_id=invitation.organization_id,
+            role=invitation.role,
+        ))
+
+    # Set selected_org_id if user doesn't have one (AC #2, #6)
+    if invited_user.selected_org_id is None:
+        invited_user.selected_org_id = invitation.organization_id
+
+    invitation.status = InvitationStatus.ACCEPTED
+    await db.commit()
+
+    # Redirect to frontend
+    redirect_url = f"{settings.frontend_url}/"
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 
 # ---------- me ----------
