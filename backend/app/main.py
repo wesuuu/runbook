@@ -376,6 +376,7 @@ from app.api.endpoints import (
     sync,
     library,
     templates,
+    template_convert,
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -394,6 +395,7 @@ app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(library.router, prefix="/library", tags=["library"])
 app.include_router(templates.router, tags=["templates"])
+app.include_router(template_convert.router, prefix="/science", tags=["template-convert"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(offline.router, tags=["offline"])
 app.include_router(sync.router, tags=["sync"])

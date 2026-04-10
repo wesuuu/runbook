@@ -15,7 +15,7 @@ SUPPORTED_PROVIDERS = (
     "together", "fireworks", "bedrock",
 )
 
-SUPPORTED_CAPABILITIES = ("vision", "text", "embedding", "doc_structure", "chat", "protocol_generation")
+SUPPORTED_CAPABILITIES = ("vision", "text", "embedding", "doc_structure", "chat", "protocol_generation", "template_convert")
 # "audio" excluded — feature not yet implemented
 
 DEFAULT_CONFIGS = {
@@ -42,6 +42,10 @@ DEFAULT_CONFIGS = {
     "protocol_generation": {
         "provider": "ollama",
         "model_name": "qwen3:latest",
+    },
+    "template_convert": {
+        "provider": "ollama",
+        "model_name": "qwen3.5:27b",
     },
 }
 

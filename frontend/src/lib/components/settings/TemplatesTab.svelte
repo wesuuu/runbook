@@ -11,6 +11,7 @@
     } from '$lib/schemas/templates';
     import { Button } from '$lib/components/ui/button';
     import TemplateUploadModal from './TemplateUploadModal.svelte';
+    import TemplateConvertModal from '$lib/components/TemplateConvertModal.svelte';
 
     let { isAdmin = false }: { isAdmin: boolean } = $props();
 
@@ -18,6 +19,7 @@
     let variables = $state<TemplateVariables | null>(null);
     let loading = $state(true);
     let showUpload = $state(false);
+    let showConvert = $state(false);
     let showVariables = $state(false);
     let typeFilter = $state<string>('');
 
@@ -100,7 +102,10 @@
             </p>
         </div>
         {#if isAdmin}
-            <Button onclick={() => (showUpload = true)}>Upload Template</Button>
+            <div class="flex gap-2">
+                <Button variant="outline" onclick={() => (showConvert = true)}>Convert Document</Button>
+                <Button onclick={() => (showUpload = true)}>Upload Template</Button>
+            </div>
         {/if}
     </div>
 
@@ -277,3 +282,9 @@
         }}
     />
 {/if}
+
+<!-- Convert Modal -->
+<TemplateConvertModal
+    bind:open={showConvert}
+    onSuccess={() => loadTemplates()}
+/>
