@@ -21,3 +21,4 @@ from app.models.offline import RevokedOfflineToken
 from app.models.library import Document, DocumentChunk
 from app.models.jobs import BackgroundJob
 from app.models.chat import ChatSession, ChatMessage
+from app.models.batch_record_import import BatchRecordImport

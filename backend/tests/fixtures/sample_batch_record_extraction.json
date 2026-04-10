@@ -1,0 +1,114 @@
+{
+  "document_title": "BATCH RECORD — LOT-2026-042",
+  "batch_id": "LOT-2026-042",
+  "product_name": "mAb-X",
+  "date": "2026-01-15",
+  "steps": [
+    {
+      "step_name": "Buffer Preparation",
+      "step_number": 1,
+      "description": "Prepare buffer solution",
+      "parameters": [
+        {
+          "field_label": "pH",
+          "value": 7.2,
+          "unit": null,
+          "confidence": 0.95,
+          "source_page": 1
+        },
+        {
+          "field_label": "Temperature",
+          "value": 25.0,
+          "unit": "°C",
+          "confidence": 0.93,
+          "source_page": 1
+        },
+        {
+          "field_label": "Volume",
+          "value": 500,
+          "unit": "mL",
+          "confidence": 0.92,
+          "source_page": 1
+        }
+      ],
+      "timestamps": [
+        {
+          "value": "08:30",
+          "label": "Start Time",
+          "confidence": 0.9
+        }
+      ],
+      "signatures": [
+        {
+          "initials_or_name": "JKL",
+          "role": "Operator",
+          "confidence": 0.88
+        }
+      ],
+      "deviations": [],
+      "notes": "Solution was clear, no particulates observed.",
+      "confidence": 0.93,
+      "source_page": 1
+    },
+    {
+      "step_name": "Centrifugation",
+      "step_number": 2,
+      "description": "Centrifuge the sample",
+      "parameters": [
+        {
+          "field_label": "Speed",
+          "value": 3000,
+          "unit": "g",
+          "confidence": 0.94,
+          "source_page": 2
+        },
+        {
+          "field_label": "Duration",
+          "value": 15,
+          "unit": "min",
+          "confidence": 0.92,
+          "source_page": 2
+        },
+        {
+          "field_label": "Temperature",
+          "value": 4.0,
+          "unit": "°C",
+          "confidence": 0.91,
+          "source_page": 2
+        }
+      ],
+      "timestamps": [
+        {
+          "value": "09:15",
+          "label": "Start Time",
+          "confidence": 0.9
+        },
+        {
+          "value": "09:30",
+          "label": "End Time",
+          "confidence": 0.88
+        }
+      ],
+      "signatures": [
+        {
+          "initials_or_name": "JKL",
+          "role": "Operator",
+          "confidence": 0.87
+        }
+      ],
+      "deviations": [
+        {
+          "description": "Slight vibration at 3000g — centrifuge serviced post-run",
+          "severity": "minor",
+          "step_reference": "Centrifugation",
+          "confidence": 0.85
+        }
+      ],
+      "notes": "Pellet was compact, supernatant clear.",
+      "confidence": 0.91,
+      "source_page": 2
+    }
+  ],
+  "general_notes": [],
+  "overall_confidence": 0.92
+}

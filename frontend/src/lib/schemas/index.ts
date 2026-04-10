@@ -6,3 +6,4 @@ export * from './science';
 export * from './ai';
 export * from './chat';
 export * from './templates';
+export * from './batchRecordImport';

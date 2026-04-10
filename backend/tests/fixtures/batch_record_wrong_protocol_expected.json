@@ -1,0 +1,123 @@
+{
+  "document_title": "BATCH RECORD \u2014 LOT-2026-201",
+  "batch_id": "LOT-2026-201",
+  "product_name": "CHO-K1 Expansion",
+  "date": "2026-03-12",
+  "steps": [
+    {
+      "step_name": "Cell Seeding",
+      "step_number": 1,
+      "description": "",
+      "parameters": [
+        {
+          "field_label": "Cell Density",
+          "value": "0.5e6",
+          "unit": "cells/mL",
+          "confidence": 0.92,
+          "source_page": 1
+        },
+        {
+          "field_label": "Media Volume",
+          "value": 50,
+          "unit": "mL",
+          "confidence": 0.93,
+          "source_page": 1
+        },
+        {
+          "field_label": "Passage Number",
+          "value": 12,
+          "unit": null,
+          "confidence": 0.95,
+          "source_page": 1
+        }
+      ],
+      "timestamps": [],
+      "signatures": [
+        {
+          "initials_or_name": "ABC",
+          "role": "Operator",
+          "confidence": 0.88
+        }
+      ],
+      "deviations": [],
+      "notes": "",
+      "confidence": 0.93,
+      "source_page": 1
+    },
+    {
+      "step_name": "Incubation",
+      "step_number": 2,
+      "description": "",
+      "parameters": [
+        {
+          "field_label": "Temperature",
+          "value": 37.0,
+          "unit": "\u00b0C",
+          "confidence": 0.94,
+          "source_page": 2
+        },
+        {
+          "field_label": "CO2",
+          "value": 5,
+          "unit": "%",
+          "confidence": 0.93,
+          "source_page": 2
+        },
+        {
+          "field_label": "Duration",
+          "value": 72,
+          "unit": "hours",
+          "confidence": 0.91,
+          "source_page": 2
+        }
+      ],
+      "timestamps": [],
+      "signatures": [
+        {
+          "initials_or_name": "ABC",
+          "role": "Operator",
+          "confidence": 0.87
+        }
+      ],
+      "deviations": [],
+      "notes": "",
+      "confidence": 0.93,
+      "source_page": 2
+    },
+    {
+      "step_name": "Harvest",
+      "step_number": 3,
+      "description": "",
+      "parameters": [
+        {
+          "field_label": "Viability",
+          "value": 95,
+          "unit": "%",
+          "confidence": 0.92,
+          "source_page": 3
+        },
+        {
+          "field_label": "Cell Count",
+          "value": "2.1e6",
+          "unit": "cells/mL",
+          "confidence": 0.9,
+          "source_page": 3
+        }
+      ],
+      "timestamps": [],
+      "signatures": [
+        {
+          "initials_or_name": "ABC",
+          "role": "Operator",
+          "confidence": 0.87
+        }
+      ],
+      "deviations": [],
+      "notes": "",
+      "confidence": 0.91,
+      "source_page": 3
+    }
+  ],
+  "general_notes": [],
+  "overall_confidence": 0.92
+}

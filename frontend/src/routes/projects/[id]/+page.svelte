@@ -21,6 +21,7 @@
     import ActivityTab from "$lib/components/project/ActivityTab.svelte";
     import SettingsTab from "$lib/components/project/SettingsTab.svelte";
     import ProtocolImportModal from "$lib/components/ProtocolImportModal.svelte";
+    import BatchRecordImportModal from "$lib/components/BatchRecordImportModal.svelte";
 
     const id = $derived($page.params.id ?? "");
 
@@ -47,6 +48,9 @@
 
     // -- Import Modal --
     let showImportModal = $state(false);
+
+    // -- Batch Record Import --
+    let showBatchImportModal = $state(false);
 
     // -- Run Modal --
     let showRunModal = $state(false);
@@ -330,6 +334,12 @@
             <div class="shrink-0 flex gap-2.5 items-start pt-6">
                 {#if activeTab === "runs"}
                     <button
+                        class="px-4.5 py-2 bg-teal-600 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-teal-700"
+                        onclick={() => (showBatchImportModal = true)}
+                    >
+                        Import Batch Record
+                    </button>
+                    <button
                         class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
                         onclick={() => (showRunModal = true)}
                     >
@@ -388,6 +398,17 @@
         </div>
     </div>
 {/if}
+
+<!-- BATCH RECORD IMPORT MODAL -->
+<BatchRecordImportModal
+    bind:open={showBatchImportModal}
+    projectId={id}
+    {protocols}
+    onSuccess={(runId) => {
+        loadData();
+        goto(`/runs/${runId}`);
+    }}
+/>
 
 <!-- IMPORT PROTOCOL MODAL -->
 <ProtocolImportModal
