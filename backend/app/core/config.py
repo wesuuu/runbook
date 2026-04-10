@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     ai_template_convert_api_key: str = ""
     ai_template_convert_base_url: str = ""
 
+    # Template conversion settings
+    template_convert_max_tool_calls: int = 25
+
     # Task runner backend: "thread" (default) — future: "kubernetes", "celery"
     task_runner_backend: str = "thread"
     task_runner_pool_size: int = 4

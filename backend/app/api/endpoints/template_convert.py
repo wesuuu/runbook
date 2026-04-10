@@ -1,34 +1,45 @@
 """Template conversion endpoints — upload → convert → refine → save.
 
 Dedicated endpoints for converting filled SOPs/batch records into
-reusable Jinja2 DOCX templates via an AI agent.
+reusable Jinja2 DOCX templates via an AI agent. Progress is streamed
+to the frontend via Server-Sent Events (SSE).
 """
 
 import asyncio
+import json
 import logging
-import time
-from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
+from starlette.responses import StreamingResponse
 
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.iam import User
 from app.schemas.template_convert import (
-    ConversionStatusResponse,
     ConvertResponse,
     ConvertStartResponse,
     RefineRequest,
     SaveRequest,
 )
-from app.schemas.templates import DocumentTemplateResponse
 from app.services.template_converter import (
     ConversionState,
+    _active_streams,
     convert_document,
     refine_template,
     reupload_template,
@@ -40,8 +51,10 @@ router = APIRouter()
 
 ALLOWED_INPUT_TYPES = {
     "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument"
+    ".wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument"
+    ".spreadsheetml.sheet",
     "image/png",
     "image/jpeg",
     "image/jpg",
@@ -52,20 +65,16 @@ MAX_INPUT_SIZE = 20 * 1024 * 1024  # 20 MB
 def _require_org(user: User) -> UUID:
     """Extract org_id from user, raise 400 if missing."""
     if not user.selected_org_id:
-        raise HTTPException(status_code=400, detail="No organization selected")
+        raise HTTPException(
+            status_code=400, detail="No organization selected"
+        )
     return user.selected_org_id
 
 
-async def _preflight_ai_check(db: AsyncSession, org_id: UUID) -> None:
-    """Validate the template_convert AI capability is configured.
-
-    Calls get_model() which resolves the provider via DB config, env
-    fallback, or defaults. If it raises ValueError (no config found),
-    we convert that to a clear 422 HTTP error.
-
-    Also triggers _build_model_string which injects the api_key from
-    credentials into os.environ — so pydantic-ai can find it later.
-    """
+async def _preflight_ai_check(
+    db: AsyncSession, org_id: UUID
+) -> None:
+    """Validate the template_convert AI capability is configured."""
     from app.services.ai_config import get_model
 
     try:
@@ -82,19 +91,25 @@ async def _run_conversion_background(
     conversion_id: str,
 ) -> None:
     """Run the conversion in a background task with its own DB session."""
-    engine = create_async_engine(settings.database_url, poolclass=NullPool)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    state = ConversionState(org_id, UUID(conversion_id))
+    engine = create_async_engine(
+        settings.database_url, poolclass=NullPool
+    )
+    session_factory = async_sessionmaker(
+        engine, expire_on_commit=False
+    )
 
     try:
         async with session_factory() as db:
             await convert_document(
-                db, org_id, file_bytes, filename, template_type,
+                db,
+                org_id,
+                file_bytes,
+                filename,
+                template_type,
                 conversion_id=UUID(conversion_id),
             )
-    except Exception as e:
+    except Exception:
         logger.exception("Background template conversion failed")
-        state.set_progress("failed", "Conversion failed", 0, 6, error=str(e))
     finally:
         await engine.dispose()
 
@@ -113,14 +128,15 @@ async def convert_template(
 ):
     """Upload a filled document and start async conversion.
 
-    Returns immediately with a conversion_id. Poll the status endpoint
-    for progress.
+    Returns immediately with a conversion_id. Connect to the
+    /events SSE endpoint for real-time progress.
     """
     org_id = _require_org(user)
 
     if template_type not in ("SOP", "BATCH_RECORD"):
         raise HTTPException(
-            status_code=422, detail="template_type must be SOP or BATCH_RECORD"
+            status_code=422,
+            detail="template_type must be SOP or BATCH_RECORD",
         )
 
     content_type = file.content_type or ""
@@ -132,20 +148,14 @@ async def convert_template(
 
     file_bytes = await file.read()
     if len(file_bytes) > MAX_INPUT_SIZE:
-        raise HTTPException(status_code=413, detail="File exceeds 20MB limit")
+        raise HTTPException(
+            status_code=413, detail="File exceeds 20MB limit"
+        )
 
-    # Pre-flight: validate AI provider is accessible before starting
     await _preflight_ai_check(db, org_id)
 
-    # Create conversion state and kick off background task
-    from uuid import uuid4
-
     conversion_id = str(uuid4())
-    state = ConversionState(org_id, UUID(conversion_id))
-    state.ensure_dir()
-    state.set_progress("processing", "Starting...", 0, 6)
 
-    # Run conversion in background
     background_tasks.add_task(
         _run_conversion_background,
         org_id,
@@ -161,46 +171,51 @@ async def convert_template(
     )
 
 
-@router.get(
-    "/templates/conversions/{conversion_id}/status",
-    response_model=ConversionStatusResponse,
-)
-async def get_conversion_status(
+@router.get("/templates/conversions/{conversion_id}/events")
+async def conversion_events(
     conversion_id: UUID,
     user: User = Depends(get_current_user),
 ):
-    """Poll conversion progress. Returns current step and completion status."""
-    org_id = _require_org(user)
-    state = ConversionState(org_id, conversion_id)
+    """SSE stream of conversion progress events.
 
-    progress = state.get_progress()
-    if progress is None:
-        raise HTTPException(status_code=404, detail="Conversion not found")
+    Streams tool_call, tool_result, complete, and error events
+    as the AI agent works through the conversion.
+    """
+    _require_org(user)
 
-    started_at = progress.get("started_at", time.time())
-    elapsed = time.time() - started_at
+    stream_key = str(conversion_id)
 
-    resp = ConversionStatusResponse(
-        conversion_id=str(conversion_id),
-        status=progress["status"],
-        current_step=progress["current_step"],
-        step_number=progress["step_number"],
-        total_steps=progress["total_steps"],
-        elapsed_seconds=round(elapsed, 1),
-        error=progress.get("error"),
+    async def event_generator():
+        # Wait for stream to appear (background task may not have
+        # started yet)
+        for _ in range(50):  # 5 seconds max wait
+            if stream_key in _active_streams:
+                break
+            await asyncio.sleep(0.1)
+
+        stream = _active_streams.get(stream_key)
+        if stream is None:
+            yield (
+                'event: error\n'
+                'data: {"message": "Conversion not found"}\n\n'
+            )
+            return
+
+        async for event_type, data_json in stream.iter_events():
+            yield f"event: {event_type}\ndata: {data_json}\n\n"
+
+        # Cleanup after stream ends
+        _active_streams.pop(stream_key, None)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
-
-    # If completed, include result data
-    if progress["status"] == "completed" and state.exists("result.json"):
-        result = state.read_json("result.json")
-        resp.preview_url = result.get("preview_url")
-        resp.template_download_url = result.get("template_download_url")
-        resp.warnings = result.get("warnings", [])
-        resp.variables_detected = result.get("variables_detected", [])
-        resp.verification_rounds = result.get("verification_rounds")
-        resp.verification_passed = result.get("verification_passed")
-
-    return resp
 
 
 @router.post(
@@ -217,10 +232,14 @@ async def refine_conversion(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(status_code=404, detail="Conversion not found")
+        raise HTTPException(
+            status_code=404, detail="Conversion not found"
+        )
 
     try:
-        result = await refine_template(db, org_id, state, body.instruction)
+        result = await refine_template(
+            db, org_id, state, body.instruction
+        )
     except Exception:
         logger.exception("Template refinement failed")
         raise HTTPException(
@@ -240,16 +259,20 @@ async def reupload_template_file(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Re-upload a manually edited template, re-render and re-validate."""
+    """Re-upload a manually edited template."""
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(status_code=404, detail="Conversion not found")
+        raise HTTPException(
+            status_code=404, detail="Conversion not found"
+        )
 
     file_bytes = await file.read()
 
     try:
-        result = await reupload_template(db, org_id, state, file_bytes)
+        result = await reupload_template(
+            db, org_id, state, file_bytes
+        )
     except Exception:
         logger.exception("Template reupload failed")
         raise HTTPException(
@@ -270,11 +293,14 @@ async def save_conversion(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(status_code=404, detail="Conversion not found")
+        raise HTTPException(
+            status_code=404, detail="Conversion not found"
+        )
 
     if body.template_type not in ("SOP", "BATCH_RECORD"):
         raise HTTPException(
-            status_code=422, detail="template_type must be SOP or BATCH_RECORD"
+            status_code=422,
+            detail="template_type must be SOP or BATCH_RECORD",
         )
 
     try:
@@ -293,7 +319,8 @@ async def save_conversion(
     except Exception:
         logger.exception("Failed to save template to library")
         raise HTTPException(
-            status_code=500, detail="Failed to save template to library"
+            status_code=500,
+            detail="Failed to save template to library",
         )
 
     return result
@@ -308,7 +335,9 @@ async def get_preview(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("preview.pdf"):
-        raise HTTPException(status_code=404, detail="Preview not found")
+        raise HTTPException(
+            status_code=404, detail="Preview not found"
+        )
     return FileResponse(
         state._resolve("preview.pdf"),
         media_type="application/pdf",
@@ -324,7 +353,9 @@ async def get_template_file(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(
+            status_code=404, detail="Template not found"
+        )
     return FileResponse(
         state._resolve("template.docx"),
         media_type=(

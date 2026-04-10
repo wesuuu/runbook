@@ -20,8 +20,13 @@
         template_download_url: string;
         warnings: ConvertWarning[];
         variables_detected: string[];
-        verification_rounds: number;
-        verification_passed: boolean;
+    }
+
+    interface ToolActivity {
+        tool: string;
+        sequence: number;
+        status: 'running' | 'success' | 'error';
+        summary?: string;
     }
 
     interface Props {
@@ -40,12 +45,9 @@
     let dragOver = $state(false);
     let error = $state<string | null>(null);
 
-    // Progress tracking
-    let progressStep = $state('Starting...');
-    let progressNumber = $state(0);
-    let progressTotal = $state(6);
-    let progressElapsed = $state(0);
-    let pollTimer = $state<ReturnType<typeof setInterval> | null>(null);
+    // SSE activity tracking
+    let activities = $state<ToolActivity[]>([]);
+    let sseCleanup = $state<(() => void) | null>(null);
 
     // Conversion result
     let conversionId = $state<string | null>(null);
@@ -53,7 +55,6 @@
     let templateDownloadUrl = $state<string | null>(null);
     let warnings = $state<ConvertWarning[]>([]);
     let variablesDetected = $state<string[]>([]);
-    let verificationPassed = $state(false);
 
     // Chat refinement
     let chatMessages = $state<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
@@ -74,31 +75,34 @@
         'image/png',
     ]);
 
-    function stopPolling() {
-        if (pollTimer) {
-            clearInterval(pollTimer);
-            pollTimer = null;
+    function toolLabel(tool: string): string {
+        switch (tool) {
+            case 'write_template': return 'Writing template';
+            case 'validate': return 'Validating';
+            case 'compare_to_original': return 'Comparing to original';
+            default: return tool;
         }
     }
 
+    function stopSSE() {
+        sseCleanup?.();
+        sseCleanup = null;
+    }
+
     function resetState() {
-        stopPolling();
+        stopSSE();
         step = 'upload';
         selectedFile = null;
         templateType = 'SOP';
         dragOver = false;
         error = null;
-        progressStep = 'Starting...';
-        progressNumber = 0;
-        progressTotal = 6;
-        progressElapsed = 0;
+        activities = [];
         conversionId = null;
         if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
         previewBlobUrl = null;
         templateDownloadUrl = null;
         warnings = [];
         variablesDetected = [];
-        verificationPassed = false;
         chatMessages = [];
         chatInput = '';
         refining = false;
@@ -151,13 +155,9 @@
         if (!selectedFile) return;
         step = 'processing';
         error = null;
-        progressStep = 'Uploading document...';
-        progressNumber = 0;
-        progressTotal = 6;
-        progressElapsed = 0;
+        activities = [];
 
         try {
-            // Start async conversion — returns immediately with conversion_id
             const startResult = await api.uploadWithFields<{ conversion_id: string; status: string }>(
                 '/science/templates/convert',
                 selectedFile,
@@ -166,61 +166,51 @@
             conversionId = startResult.conversion_id;
             saveName = selectedFile.name.replace(/\.[^.]+$/, '') + ' Template';
 
-            // Start polling for progress
-            startPolling(startResult.conversion_id);
+            startSSE(startResult.conversion_id);
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'Failed to start conversion';
             step = 'upload';
         }
     }
 
-    function startPolling(id: string) {
-        stopPolling();
-        pollTimer = setInterval(async () => {
-            try {
-                const status = await api.get<{
-                    status: string;
-                    current_step: string;
-                    step_number: number;
-                    total_steps: number;
-                    elapsed_seconds: number;
-                    error: string | null;
-                    preview_url: string | null;
-                    template_download_url: string | null;
-                    warnings: ConvertWarning[];
-                    variables_detected: string[];
-                    verification_rounds: number | null;
-                    verification_passed: boolean | null;
-                }>(`/science/templates/conversions/${id}/status`);
-
-                progressStep = status.current_step;
-                progressNumber = status.step_number;
-                progressTotal = status.total_steps;
-                progressElapsed = status.elapsed_seconds;
-
-                if (status.status === 'completed') {
-                    stopPolling();
-                    templateDownloadUrl = status.template_download_url;
-                    warnings = status.warnings;
-                    variablesDetected = status.variables_detected;
-                    verificationPassed = status.verification_passed ?? false;
+    function startSSE(id: string) {
+        stopSSE();
+        sseCleanup = api.connectSSE(
+            `/science/templates/conversions/${id}/events`,
+            {
+                onToolCall(data) {
+                    activities = [...activities, {
+                        tool: data.tool,
+                        sequence: data.sequence,
+                        status: 'running',
+                    }];
+                },
+                onToolResult(data) {
+                    activities = activities.map(a =>
+                        a.sequence === data.sequence
+                            ? { ...a, status: data.status as 'success' | 'error', summary: data.summary }
+                            : a
+                    );
+                },
+                async onComplete(data) {
+                    templateDownloadUrl = data.template_url;
+                    warnings = data.warnings as ConvertWarning[];
+                    variablesDetected = data.variables;
 
                     chatMessages = [{
                         role: 'assistant',
-                        content: `Analyzed "${selectedFile?.name}" and generated a template with ${status.variables_detected.length} variables detected. ${status.verification_passed ? 'Verification passed.' : 'Some issues were found — check the warnings below.'}`,
+                        content: `Converted "${selectedFile?.name}" into a template with ${data.variables.length} variables.`,
                     }];
 
-                    if (status.preview_url) await fetchPreview(status.preview_url);
+                    if (data.preview_url) await fetchPreview(data.preview_url);
                     step = 'review';
-                } else if (status.status === 'failed') {
-                    stopPolling();
-                    error = status.error || 'Conversion failed';
+                },
+                onError(data) {
+                    error = data.message || 'Conversion failed';
                     step = 'upload';
-                }
-            } catch {
-                // Polling failure — keep trying unless too many failures
-            }
-        }, 2000);
+                },
+            },
+        );
     }
 
     // --- Chat refinement ---
@@ -238,11 +228,9 @@
                 { instruction },
             );
 
-
             templateDownloadUrl = result.template_download_url;
             warnings = result.warnings;
             variablesDetected = result.variables_detected;
-            verificationPassed = result.verification_passed;
 
             if (result.preview_url) await fetchPreview(result.preview_url);
             chatMessages = [...chatMessages, {
@@ -280,11 +268,9 @@
                 {},
             );
 
-
             templateDownloadUrl = result.template_download_url;
             warnings = result.warnings;
             variablesDetected = result.variables_detected;
-            verificationPassed = result.verification_passed;
 
             if (result.preview_url) await fetchPreview(result.preview_url);
             chatMessages = [...chatMessages, {
@@ -366,9 +352,6 @@
             {#if step === 'review'}
                 <span class="text-sm text-muted-foreground">
                     {variablesDetected.length} variables detected
-                    {#if !verificationPassed}
-                        <span class="text-amber-500 ml-2">Verification issues found</span>
-                    {/if}
                 </span>
             {/if}
         </div>
@@ -472,54 +455,37 @@
             </div>
 
         {:else if step === 'processing'}
-            <!-- Processing with progress bar -->
+            <!-- Processing: dynamic tool-call activity log -->
             <div class="flex-1 flex items-center justify-center">
                 <div class="w-full max-w-md px-8">
-                    <!-- Current step label -->
-                    <p class="text-sm font-medium text-center mb-4">{progressStep}</p>
+                    <p class="text-sm font-medium text-center mb-4">Converting document...</p>
 
-                    <!-- Progress bar -->
-                    <div class="w-full bg-muted rounded-full h-2.5 mb-3">
-                        <div
-                            class="bg-primary h-2.5 rounded-full transition-all duration-500 ease-out"
-                            style="width: {progressTotal > 0 ? (progressNumber / progressTotal) * 100 : 0}%"
-                        ></div>
-                    </div>
-
-                    <!-- Step counter + elapsed time -->
-                    <div class="flex justify-between text-xs text-muted-foreground mb-6">
-                        <span>Step {progressNumber} of {progressTotal}</span>
-                        <span>{Math.floor(progressElapsed)}s elapsed</span>
-                    </div>
-
-                    <!-- Step breakdown -->
                     <div class="space-y-2">
-                        {#each [
-                            'Extracting document content...',
-                            'Generating template with AI...',
-                            'Wrapping into DOCX...',
-                            'Verifying template...',
-                            'Rendering preview...',
-                            'Checking variable coverage...',
-                        ] as label, i}
-                            <div class="flex items-center gap-2 text-xs {i + 1 < progressNumber ? 'text-foreground' : i + 1 === progressNumber ? 'text-primary font-medium' : 'text-muted-foreground/50'}">
-                                {#if i + 1 < progressNumber}
-                                    <svg class="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-                                {:else if i + 1 === progressNumber}
+                        {#each activities as activity}
+                            <div class="flex items-center gap-2 text-xs">
+                                {#if activity.status === 'running'}
                                     <div class="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                {:else if activity.status === 'success'}
+                                    <svg class="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
                                 {:else}
-                                    <div class="w-3.5 h-3.5 rounded-full border border-muted-foreground/30 shrink-0"></div>
+                                    <svg class="w-3.5 h-3.5 text-destructive shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
                                 {/if}
-                                <span>{label}</span>
+                                <span class="{activity.status === 'running' ? 'text-primary font-medium' : ''}">
+                                    {toolLabel(activity.tool)}
+                                    {#if activity.summary}
+                                        <span class="text-muted-foreground ml-1">— {activity.summary}</span>
+                                    {/if}
+                                </span>
                             </div>
                         {/each}
-                    </div>
 
-                    {#if progressElapsed > 90}
-                        <p class="text-xs text-amber-500 mt-4 text-center">
-                            This is taking longer than usual. The AI model may be slow.
-                        </p>
-                    {/if}
+                        {#if activities.length === 0}
+                            <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                                <div class="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                <span>Starting AI agent...</span>
+                            </div>
+                        {/if}
+                    </div>
                 </div>
             </div>
 

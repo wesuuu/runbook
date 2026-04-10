@@ -158,6 +158,40 @@ async function uploadWithFields<T>(
     return response.json();
 }
 
+export interface SSECallbacks {
+    onToolCall?: (data: { tool: string; status: string; sequence: number }) => void;
+    onToolResult?: (data: { tool: string; status: string; sequence: number; summary: string }) => void;
+    onComplete?: (data: { template_url: string; preview_url: string | null; variables: string[]; warnings: unknown[] }) => void;
+    onError?: (data: { message: string }) => void;
+}
+
+function connectSSE(endpoint: string, callbacks: SSECallbacks): () => void {
+    const token = getToken();
+    const url = `${API_BASE}${normalizeEndpoint(endpoint)}${token ? `?token=${token}` : ''}`;
+    const es = new EventSource(url);
+
+    es.addEventListener('tool_call', (e: MessageEvent) => {
+        callbacks.onToolCall?.(JSON.parse(e.data));
+    });
+    es.addEventListener('tool_result', (e: MessageEvent) => {
+        callbacks.onToolResult?.(JSON.parse(e.data));
+    });
+    es.addEventListener('complete', (e: MessageEvent) => {
+        callbacks.onComplete?.(JSON.parse(e.data));
+        es.close();
+    });
+    es.addEventListener('error', (e: Event) => {
+        if (e instanceof MessageEvent) {
+            callbacks.onError?.(JSON.parse(e.data));
+        } else {
+            callbacks.onError?.({ message: 'Connection lost' });
+        }
+        es.close();
+    });
+
+    return () => es.close();
+}
+
 export const api = {
     get: <T>(endpoint: string, options?: RequestOptions<T>) => request<T>('GET', endpoint, undefined, options),
     post: <T>(endpoint: string, body?: unknown, options?: RequestOptions<T>) => request<T>('POST', endpoint, body, options),
@@ -170,4 +204,5 @@ export const api = {
     fetchBlobUrl,
     postBlobUrl,
     postDownloadBlob,
+    connectSSE,
 };
