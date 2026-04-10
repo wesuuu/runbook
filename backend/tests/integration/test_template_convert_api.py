@@ -101,12 +101,16 @@ class TestConvertEndpoint:
     @pytest.mark.asyncio
     async def test_successful_convert_starts_async(self, client, auth_headers):
         """Should return 202 with conversion_id for async processing."""
-        resp = await client.post(
-            "/science/templates/convert",
-            headers=auth_headers,
-            data={"template_type": "SOP"},
-            files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
-        )
+        with patch(
+            "app.api.endpoints.template_convert._preflight_ai_check",
+            new_callable=AsyncMock,
+        ):
+            resp = await client.post(
+                "/science/templates/convert",
+                headers=auth_headers,
+                data={"template_type": "SOP"},
+                files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
+            )
         assert resp.status_code == 202
         data = resp.json()
         assert "conversion_id" in data

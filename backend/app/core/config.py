@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     ai_protocol_generation_model: str = ""
     ai_protocol_generation_api_key: str = ""
     ai_protocol_generation_base_url: str = ""
+    ai_template_convert_provider: str = ""
+    ai_template_convert_model: str = ""
+    ai_template_convert_api_key: str = ""
+    ai_template_convert_base_url: str = ""
 
     # Task runner backend: "thread" (default) — future: "kubernetes", "celery"
     task_runner_backend: str = "thread"

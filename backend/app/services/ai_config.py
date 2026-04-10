@@ -17,6 +17,23 @@ from app.models.iam import Organization, SubscriptionTier, TIER_RANK
 ModelType = Union[str, OpenAIChatModel]
 
 
+# Map provider name → env var that pydantic-ai reads for the API key
+_PROVIDER_ENV_KEYS: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "google": "GOOGLE_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "cohere": "CO_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "xai": "XAI_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "together": "TOGETHER_API_KEY",
+    "fireworks": "FIREWORKS_API_KEY",
+}
+
+
 def _build_model_string(
     provider: str, model_name: str, credentials: dict | None = None
 ) -> ModelType:
@@ -25,7 +42,14 @@ def _build_model_string(
     For Ollama, returns an OpenAIModel with an OllamaProvider so
     the base_url is passed through.
     For other providers, returns a string like 'anthropic:model_name'.
+
+    If credentials include an api_key, it is injected into os.environ
+    under the standard env var name that pydantic-ai expects (e.g.,
+    OPENROUTER_API_KEY). This bridges the gap between Batchrite's
+    config system (BATCHRITE_AI_{CAP}_API_KEY) and pydantic-ai.
     """
+    import os
+
     if provider == "ollama":
         creds = credentials or {}
         ollama_base = creds.get("base_url") or "http://localhost:11434"
@@ -35,6 +59,14 @@ def _build_model_string(
             model_name=model_name,
             provider=OllamaProvider(base_url=ollama_base),
         )
+
+    # Inject API key into os.environ if provided via credentials
+    # (from DB config or BATCHRITE_AI_*_API_KEY env vars)
+    if credentials and credentials.get("api_key"):
+        env_key = _PROVIDER_ENV_KEYS.get(provider)
+        if env_key and not os.environ.get(env_key):
+            os.environ[env_key] = credentials["api_key"]
+
     prefix_map = {
         "anthropic": "anthropic",
         "google": "google-gla",

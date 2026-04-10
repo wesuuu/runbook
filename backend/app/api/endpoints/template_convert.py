@@ -56,6 +56,24 @@ def _require_org(user: User) -> UUID:
     return user.selected_org_id
 
 
+async def _preflight_ai_check(db: AsyncSession, org_id: UUID) -> None:
+    """Validate the template_convert AI capability is configured.
+
+    Calls get_model() which resolves the provider via DB config, env
+    fallback, or defaults. If it raises ValueError (no config found),
+    we convert that to a clear 422 HTTP error.
+
+    Also triggers _build_model_string which injects the api_key from
+    credentials into os.environ — so pydantic-ai can find it later.
+    """
+    from app.services.ai_config import get_model
+
+    try:
+        await get_model("template_convert", db, org_id=org_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 async def _run_conversion_background(
     org_id: UUID,
     file_bytes: bytes,
@@ -115,6 +133,9 @@ async def convert_template(
     file_bytes = await file.read()
     if len(file_bytes) > MAX_INPUT_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 20MB limit")
+
+    # Pre-flight: validate AI provider is accessible before starting
+    await _preflight_ai_check(db, org_id)
 
     # Create conversion state and kick off background task
     from uuid import uuid4
