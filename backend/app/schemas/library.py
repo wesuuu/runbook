@@ -48,12 +48,7 @@ class DocumentChunkResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ProcessingProgress(BaseModel):
-    stage: str = ""  # extracting, chunking, embedding, enriching, classifying
-    stage_label: str = ""  # human-readable label
-    current: int = 0
-    total: int = 0
-    percent: int = 0
+from app.schemas.jobs import ProcessingProgress  # noqa: E402 — re-exported
 
 
 class TOCEntry(BaseModel):

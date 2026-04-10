@@ -342,6 +342,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://localhost:5174",  # Worktree dev
+        "http://localhost:5183",  # Parallel worktree dev
         "http://100.120.2.59:5174",
         "http://localhost:5176",  # Playwright E2E tests
     ],
@@ -358,6 +359,7 @@ async def health_check():
 
 from app.api.endpoints import (
     auth,
+    batch_record_import,
     projects,
     iam,
     unit_ops,
@@ -388,6 +390,7 @@ app.include_router(protocol_versions.router, prefix="/science", tags=["science"]
 app.include_router(protocol_pdfs.router, prefix="/science", tags=["science"])
 app.include_router(runs.router, prefix="/science", tags=["science"])
 app.include_router(experiments.router, prefix="/science", tags=["science"])
+app.include_router(batch_record_import.router, prefix="/science", tags=["science"])
 app.include_router(export_data.router, prefix="/science", tags=["science"])
 app.include_router(project_members.router, prefix="/science", tags=["science"])
 app.include_router(ai.router, prefix="/ai", tags=["ai"])

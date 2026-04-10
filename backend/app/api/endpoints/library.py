@@ -41,14 +41,14 @@ from app.models.library import (
     DocumentStatus,
     validate_file_content,
 )
-from app.models.jobs import BackgroundJob, JobStatus
+from app.schemas.jobs import ProcessingProgress
+from app.services.background_jobs import BackgroundJobService
 from app.schemas.library import (
     DocumentChunkResponse,
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentResponse,
     ImportUrlRequest,
-    ProcessingProgress,
     SearchResponse,
     SearchResultGroup,
     SearchResultItem,
@@ -323,26 +323,9 @@ async def get_document(
         DocumentStatus.PROCESSING.value,
         DocumentStatus.INDEXED.value,
     ):
-        job_result = await db.execute(
-            select(BackgroundJob)
-            .where(
-                BackgroundJob.entity_type == "document",
-                BackgroundJob.entity_id == document_id,
-                BackgroundJob.status == JobStatus.RUNNING.value,
-            )
-            .order_by(BackgroundJob.created_at.desc())
-            .limit(1)
+        progress = await BackgroundJobService.get_progress(
+            db, "document", document_id,
         )
-        job = job_result.scalar_one_or_none()
-        if job and job.output_data:
-            od = job.output_data
-            progress = ProcessingProgress(
-                stage=od.get("stage", ""),
-                stage_label=od.get("stage_label", ""),
-                current=od.get("current", 0),
-                total=od.get("total", 0),
-                percent=od.get("percent", 0),
-            )
 
     # Build TOC from structure_metadata if available
     toc_entries: list[TOCEntry] = []

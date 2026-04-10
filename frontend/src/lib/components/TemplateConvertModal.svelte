@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { onDestroy } from 'svelte';
     import { api } from '$lib/api';
     import { toast } from '$lib/toast';
     import { Button } from '$lib/components/ui/button';
@@ -80,6 +81,8 @@
             pollTimer = null;
         }
     }
+
+    onDestroy(() => stopPolling());
 
     function resetState() {
         stopPolling();
@@ -176,7 +179,20 @@
 
     function startPolling(id: string) {
         stopPolling();
+        let pollFailures = 0;
+        const MAX_POLL_FAILURES = 5;
+        const MAX_POLL_DURATION_MS = 300_000; // 5 minutes
+        const pollStart = Date.now();
+
         pollTimer = setInterval(async () => {
+            // Safety timeout — stop polling if it's been too long
+            if (Date.now() - pollStart > MAX_POLL_DURATION_MS) {
+                stopPolling();
+                error = 'Conversion timed out. Please try again.';
+                step = 'upload';
+                return;
+            }
+
             try {
                 const status = await api.get<{
                     status: string;
@@ -193,6 +209,7 @@
                     verification_passed: boolean | null;
                 }>(`/science/templates/conversions/${id}/status`);
 
+                pollFailures = 0; // Reset on success
                 progressStep = status.current_step;
                 progressNumber = status.step_number;
                 progressTotal = status.total_steps;
@@ -218,7 +235,12 @@
                     step = 'upload';
                 }
             } catch {
-                // Polling failure — keep trying unless too many failures
+                pollFailures++;
+                if (pollFailures >= MAX_POLL_FAILURES) {
+                    stopPolling();
+                    error = 'Lost connection to the server. Please try again.';
+                    step = 'upload';
+                }
             }
         }, 2000);
     }

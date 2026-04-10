@@ -1,0 +1,146 @@
+{
+  "document_title": "BATCH RECORD \u2014 LOT-2026-100",
+  "batch_id": "LOT-2026-100",
+  "product_name": "mAb-X",
+  "date": "2026-03-10",
+  "steps": [
+    {
+      "step_name": "Buffer Preparation",
+      "step_number": 1,
+      "description": "",
+      "parameters": [
+        {
+          "field_label": "pH",
+          "value": 7.2,
+          "unit": null,
+          "confidence": 0.95,
+          "source_page": 1
+        },
+        {
+          "field_label": "Temperature",
+          "value": 25.0,
+          "unit": "\u00b0C",
+          "confidence": 0.93,
+          "source_page": 1
+        },
+        {
+          "field_label": "Volume",
+          "value": 500,
+          "unit": "mL",
+          "confidence": 0.92,
+          "source_page": 1
+        }
+      ],
+      "timestamps": [
+        {
+          "value": "08:30",
+          "label": "Start Time",
+          "confidence": 0.9
+        }
+      ],
+      "signatures": [
+        {
+          "initials_or_name": "JKL",
+          "role": "Operator",
+          "confidence": 0.88
+        }
+      ],
+      "deviations": [],
+      "notes": "Solution was clear.",
+      "confidence": 0.93,
+      "source_page": 1
+    },
+    {
+      "step_name": "Centrifugation",
+      "step_number": 2,
+      "description": "",
+      "parameters": [
+        {
+          "field_label": "Speed",
+          "value": 3000,
+          "unit": "g",
+          "confidence": 0.94,
+          "source_page": 2
+        },
+        {
+          "field_label": "Duration",
+          "value": 15,
+          "unit": "min",
+          "confidence": 0.92,
+          "source_page": 2
+        },
+        {
+          "field_label": "Temperature",
+          "value": 4.0,
+          "unit": "\u00b0C",
+          "confidence": 0.91,
+          "source_page": 2
+        }
+      ],
+      "timestamps": [
+        {
+          "value": "09:15",
+          "label": "Start Time",
+          "confidence": 0.9
+        },
+        {
+          "value": "09:30",
+          "label": "End Time",
+          "confidence": 0.88
+        }
+      ],
+      "signatures": [
+        {
+          "initials_or_name": "JKL",
+          "role": "Operator",
+          "confidence": 0.87
+        }
+      ],
+      "deviations": [],
+      "notes": "Pellet compact, supernatant clear.",
+      "confidence": 0.92,
+      "source_page": 2
+    },
+    {
+      "step_name": "Filtration",
+      "step_number": 3,
+      "description": "",
+      "parameters": [
+        {
+          "field_label": "Filter Size",
+          "value": 0.22,
+          "unit": "\u03bcm",
+          "confidence": 0.94,
+          "source_page": 3
+        },
+        {
+          "field_label": "Pressure",
+          "value": 5,
+          "unit": "PSI",
+          "confidence": 0.92,
+          "source_page": 3
+        }
+      ],
+      "timestamps": [
+        {
+          "value": "09:45",
+          "label": "Start Time",
+          "confidence": 0.88
+        }
+      ],
+      "signatures": [
+        {
+          "initials_or_name": "JKL",
+          "role": "Operator",
+          "confidence": 0.87
+        }
+      ],
+      "deviations": [],
+      "notes": "Filtration completed without issues.",
+      "confidence": 0.93,
+      "source_page": 3
+    }
+  ],
+  "general_notes": [],
+  "overall_confidence": 0.93
+}

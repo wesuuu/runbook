@@ -7,6 +7,7 @@
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
     import { Textarea } from '$lib/components/ui/textarea';
+    import FullScreenModal from '$lib/components/ui/FullScreenModal.svelte';
     import {
         isAllowedFileType,
         isFileSizeValid,
@@ -408,42 +409,24 @@
     }
 </script>
 
-{#if open}
-<!-- Full-screen overlay -->
-<div class="fixed inset-0 z-50 flex flex-col bg-background">
-    <!-- Header with tabs -->
-    <div class="flex items-center justify-between border-b border-border px-6 py-3 shrink-0">
-        <div class="flex items-center gap-6">
-            <h2 class="text-lg font-semibold">Import Protocol</h2>
-            <div class="flex gap-1">
-                <button
-                    class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'import' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-                    onclick={() => (activeTab = 'import')}
-                >
-                    Import
-                </button>
-                <button
-                    class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'editor' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-                    onclick={() => (activeTab = 'editor')}
-                    disabled={!currentGraph}
-                >
-                    Protocol Editor
-                </button>
-            </div>
+<FullScreenModal bind:open title="Import Protocol" onClose={() => handleOpenChange(false)}>
+    {#snippet headerActions()}
+        <div class="flex gap-1">
+            <button
+                class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'import' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+                onclick={() => (activeTab = 'import')}
+            >
+                Import
+            </button>
+            <button
+                class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'editor' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+                onclick={() => (activeTab = 'editor')}
+                disabled={!currentGraph}
+            >
+                Protocol Editor
+            </button>
         </div>
-        <button
-            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            onclick={() => handleOpenChange(false)}
-            aria-label="Close"
-        >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
-    </div>
-
-    <!-- Tab content -->
-    <div class="flex-1 overflow-hidden">
+    {/snippet}
             {#if activeTab === 'import'}
                 <div class="h-full flex flex-col">
                     {#if step === 'upload'}
@@ -639,6 +622,4 @@
                     </div>
                 {/if}
             {/if}
-        </div>
-    </div>
-{/if}
+</FullScreenModal>

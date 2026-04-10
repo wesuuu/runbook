@@ -1,95 +1,49 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
-Batchrite — a Laboratory Execution System (LES) for biotech Process Development (PD) scientists. Tablet-first, voice-enabled digital lab notebook. Core architecture uses graph-based, copy-on-write data stored as JSONB in PostgreSQL. Protocols are templates; Experiments snapshot Protocol graphs and track deviations at runtime.
+Batchrite — a Laboratory Execution System (LES) for biotech Process Development (PD) scientists. Tablet-first, voice-enabled digital lab notebook. Graph-based, copy-on-write data stored as JSONB in PostgreSQL. Protocols are templates; Experiments snapshot Protocol graphs and track deviations at runtime.
 
 ## Commands
 
-### Backend (from `backend/` directory, with venv activated)
+### Backend (from `backend/`, venv activated: `source .venv/bin/activate`)
 
 ```bash
-source .venv/bin/activate
-
-# Run dev server
-uvicorn app.main:app --reload          # serves on :8000
-
-# Database migrations
-alembic upgrade head                    # apply all migrations
-alembic revision --autogenerate -m "description"  # generate migration
-
-# Tests
-pytest                                  # all tests
-pytest tests/unit/                      # unit tests only
-pytest tests/integration/               # integration tests only
-pytest tests/unit/test_audit.py         # single test file
-pytest --cov=app --cov-report=html      # with coverage
-
-# Linting
-black app tests
-isort app tests
-mypy app
+uvicorn app.main:app --reload                       # dev server :8000
+alembic upgrade head                                 # apply migrations
+alembic revision --autogenerate -m "description"     # generate migration
+pytest                                               # all tests
+pytest tests/unit/ | tests/integration/              # by suite
+pytest --cov=app --cov-report=html                   # with coverage
+black app tests && isort app tests && mypy app       # lint
 ```
 
-### Frontend (from `frontend/` directory)
+### Frontend (from `frontend/`)
 
 ```bash
-npm run dev        # Vite dev server on :5173
-npm run build      # production build
-npm run check      # svelte-check + tsc type checking
-
-# Tests
-npm run test               # Vitest unit/component tests (single run)
-npm run test:watch         # Vitest in watch mode
-npm run test:e2e           # Playwright E2E tests (requires dev servers running)
-npm run test:e2e -- --ui   # Playwright with interactive UI
+npm run dev                # Vite dev server :5173
+npm run build              # production build
+npm run check              # svelte-check + tsc
+npm run test               # Vitest (single run)
+npm run test:e2e           # Playwright (requires dev servers)
 ```
 
-## Architecture
+## Architecture (high-level)
 
-### Backend (`backend/app/`)
+Detailed patterns are in `.claude/rules/` and load automatically when you touch relevant files.
 
-- **Framework**: FastAPI (async), SQLAlchemy 2.0 (async with asyncpg), Alembic migrations
-- **API routers** in `api/endpoints/`: `projects.py`, `science.py` (protocols, experiments, unit ops), `iam.py`
-- **Models** in `models/`: `iam.py` (Org/Team/User), `science.py` (Project/Protocol/Experiment/UnitOpDefinition/ProtocolRole), `execution.py` (AuditLog)
-- **Schemas** in `schemas/`: Pydantic request/response models
-- **Mixins** (`models/mixins.py`): `UUIDMixin` (UUID PKs), `TimestampMixin` (created_at/updated_at)
-- **DB session**: async session factory in `db/session.py`, injected via `get_db` dependency
-- **Testing**: pytest-asyncio with `asyncio_mode = "auto"`. Tests use a separate `batchrite_test` database. `conftest.py` provides `test_engine`, `db_session`, and `client` fixtures with per-test rollback.
-- **Test coverage target**: >80%
+- **Backend**: FastAPI (async), SQLAlchemy 2.0 (async/asyncpg), Alembic. Routers in `api/endpoints/`, models in `models/`, schemas in `schemas/`, services in `services/`.
+- **Frontend**: Svelte 5 (Runes), Vite, TailwindCSS 4, shadcn-svelte. API client in `lib/api.ts`, Zod schemas in `lib/schemas/`, state in `.svelte.ts` files, UI components in `lib/components/ui/`.
+- **Database**: PostgreSQL localhost:5432, database `batchrite`, user `postgres`/`postgres`. JSONB for graph data and param schemas. Seed scripts in `scripts/`.
 
-### Frontend (`frontend/src/`)
+## Workflow
 
-- **Framework**: Svelte 5 (Runes syntax), Vite, TailwindCSS 4, shadcn-svelte
-- **Routing**: Hash-based client-side routing via custom `Router.svelte`/`Route.svelte` components
-- **Key pages**: `ProtocolEditor.svelte` (XYFlow graph editor), `ExperimentRunner.svelte`, `Projects.svelte`, `ProjectDetail.svelte`
-- **Graph editor**: `@xyflow/svelte` with custom node types — `UnitOpNode.svelte` (operations) and `SwimLaneNode.svelte` (roles/phases). Inspector panel for node properties, time axis, horizontal/vertical layout switching.
-- **API client**: `lib/api.ts` — wrapper around fetch with error handling and optional Zod response validation. API host configured via `VITE_API_HOST` env var (defaults to `localhost`), set in `lib/config.ts`.
-- **API response schemas**: Every API call must have a Zod schema validating the response. Pass via `{ schema }` option: `api.get('/path', { schema: MySchema })`, `api.post('/path', body, { schema: MySchema })`. Validation throws in dev mode, warns in prod. Schemas live in `lib/schemas/` (split by domain, barrel re-exported from `index.ts`) for shared types, or inline in the `.svelte` file for local-only types. Use `z.infer<typeof Schema>` to derive TypeScript types — never maintain separate interfaces. All schemas must use `.passthrough()` to allow unknown fields.
-- **UI components**: shadcn-svelte components live in `lib/components/ui/`
-- **Form validation**: Zod schemas + centralized helpers in `lib/validation.ts`. Use `validate(schema, data)` for all form validation — no form framework, just Zod directly. See `RoleWizard.svelte` for usage pattern.
-- **Path alias**: `$lib` → `src/lib`
-- **Testing (2-tier strategy)**:
-  - **Tier 1 — Vitest + @testing-library/svelte**: Unit and component tests. Use for utilities (`validation.ts`, `api.ts`, `config.ts`), pure logic, and simple components that don't require a real browser. Tests live in `frontend/src/**/*.test.ts`. Runs in jsdom. Do NOT use for `@xyflow/svelte` graph components or anything requiring real layout/rendering.
-  - **Tier 2 — Playwright E2E**: Full workflow tests against a running app. Use for critical user flows (protocol creation, experiment runs, graph editor interactions) and any component that needs a real browser. Tests live in `frontend/e2e/`. Requires backend + frontend dev servers running.
-
-### Database
-
-- PostgreSQL on localhost:5432, database `batchrite`, user `postgres`/`postgres`
-- JSONB columns store graph data (Protocol.graph, Experiment.graph, UnitOpDefinition.param_schema)
-- Seed scripts in `scripts/` — `seed_unit_ops.py` populates the UnitOp library
-
-## Workflow & Conventions
-
-- **TDD required**: Red-Green-Refactor cycle. Write failing tests before implementation. Target >80% coverage.
-- **ClickUp is source of truth**: Tasks tracked in ClickUp lists (FEATURES, BUGS, QA, TECH_DEBT).
+- **TDD required**: Red-Green-Refactor. Write failing tests before implementation. Target >80% coverage.
+- **ClickUp is source of truth**: Tasks in FEATURES, BUGS, QA, TECH_DEBT lists.
 - **Commit format**: `<type>(<scope>): <description>` — types: feat, fix, docs, style, refactor, test, chore
-- **CI-aware commands**: Use `CI=true` prefix for watch-mode tools to ensure single execution.
-- **Code reuse**: Always prefer reusing existing code over writing new code. Before implementing something, check whether the codebase already has a utility, helper, service, or pattern that does the same thing. When you encounter the same pattern repeated 3 or more times, stop and ask the user whether it should be abstracted into a shared module and/or service before proceeding.
+- **CI-aware**: Use `CI=true` prefix for watch-mode tools.
 
 ## Code Style
 
-- **Python**: Google style — `snake_case`, 80-char lines, type annotations on public APIs, `"""triple-quote"""` docstrings with Args/Returns/Raises. Formatted with `black` + `isort`.
-- **TypeScript**: Google style — `const`/`let` only (no `var`), named exports (no default exports), `lowerCamelCase` for variables/functions, `UpperCamelCase` for types/classes, avoid `any` (prefer `unknown`), explicit semicolons, single quotes, triple-equals.
+- **Python**: Google style — `snake_case`, 80-char lines, type annotations on public APIs. Formatted with `black` + `isort`.
+- **TypeScript**: Google style — `const`/`let` only, named exports, `lowerCamelCase` for variables/functions, `UpperCamelCase` for types/classes, avoid `any`, explicit semicolons, single quotes, triple-equals.

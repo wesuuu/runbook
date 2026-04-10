@@ -9,6 +9,7 @@ Pipeline:
 6. Return rendered preview + template download + warnings
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -27,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.file_storage import FileStorageService
 from app.services.template_engine import KNOWN_VARIABLES, get_mock_context
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_VERIFICATION_ROUNDS = 3
@@ -36,8 +38,8 @@ SYSTEM_PROMPT = """\
 You are a document template engineer specializing in converting filled SOPs \
 and batch records into reusable Jinja2 DOCX templates.
 
-You will receive a PDF or image of a completed document. Your job:
-1. Analyze the document structure (headings, paragraphs, tables, headers, footers)
+You will receive the text content of a completed document. Your job:
+1. Analyze the document structure (headings, paragraphs, tables)
 2. Identify variable fields (dates, names, lot numbers, measurements, equipment IDs)
 3. Output valid OpenXML (<w:body> content) with Jinja2 placeholders
 
@@ -46,40 +48,43 @@ VARIABLE NAMING:
 - Use these KNOWN variables when applicable (they auto-fill from the system):
   {known_vars}
 
-FOR TABLE LOOPS:
-- Repeating rows (e.g., batch record steps) use {{%tr for step in steps %}} / \
-{{%tr endfor %}} (docxtpl row-loop syntax)
-- Place Jinja tags inside <w:t> elements
+JINJA2 SYNTAX RULES:
+- Variables: {{{{ variable_name }}}} inside <w:t> elements
+- Loops: {{% for item in collection %}} ... {{% endfor %}} inside <w:t> elements
+- Do NOT use {{%tr}} tags — they are not supported
+- For repeating table rows, put {{% for %}} in the FIRST cell of the data row \
+and {{% endfor %}} in the FIRST cell of the next row
 
 OPENXML RULES:
-- Output ONLY the <w:body>...</w:body> content — no XML declaration, \
-no document wrapper, no namespace declarations
-- Use <w:p> for paragraphs, <w:tbl> for tables, <w:r><w:t> for text runs
+- Output ONLY the content that goes inside <w:body> — no <w:body> tags, \
+no XML declaration, no namespace declarations
+- Use <w:p> for paragraphs
+- Use <w:tbl> for tables with <w:tr> rows and <w:tc> cells
+- Use <w:r><w:t> for text runs
 - Use <w:pPr><w:pStyle w:val="Heading1"/></w:pPr> for headings
-- Jinja2 syntax goes inside <w:t> elements as literal text
-- Ensure all XML tags are properly closed and well-formed
+- ALL Jinja2 syntax goes inside <w:t> elements as literal text
+- Ensure ALL XML tags are properly closed and well-formed
+- Every <w:t> element MUST have xml:space="preserve" attribute
 
 EXAMPLE — paragraph with a variable:
 <w:p>
-  <w:r><w:t>Prepared by: {{{{ operator_name }}}} on {{{{ completion_date }}}}</w:t></w:r>
+  <w:r><w:t xml:space="preserve">Prepared by: {{{{ operator_name }}}} on {{{{ completion_date }}}}</w:t></w:r>
 </w:p>
 
-EXAMPLE — table with repeating rows:
+EXAMPLE — table with header row and repeating data rows:
 <w:tbl>
   <w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr>
   <w:tr>
-    <w:tc><w:p><w:r><w:t>Step</w:t></w:r></w:p></w:tc>
-    <w:tc><w:p><w:r><w:t>Description</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t xml:space="preserve">Step</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t xml:space="preserve">Description</w:t></w:r></w:p></w:tc>
   </w:tr>
   <w:tr>
-    <w:tc><w:p><w:r><w:t>{{%tr for step in steps %}}</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t xml:space="preserve">{{% for step in steps %}}{{{{ step.name }}}}</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t xml:space="preserve">{{{{ step.description }}}}</w:t></w:r></w:p></w:tc>
   </w:tr>
   <w:tr>
-    <w:tc><w:p><w:r><w:t>{{{{ step.name }}}}</w:t></w:r></w:p></w:tc>
-    <w:tc><w:p><w:r><w:t>{{{{ step.description }}}}</w:t></w:r></w:p></w:tc>
-  </w:tr>
-  <w:tr>
-    <w:tc><w:p><w:r><w:t>{{%tr endfor %}}</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t xml:space="preserve">{{% endfor %}}</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t xml:space="preserve"></w:t></w:r></w:p></w:tc>
   </w:tr>
 </w:tbl>
 """.format(known_vars=", ".join(sorted(KNOWN_VARIABLES)))
@@ -200,7 +205,11 @@ def _extract_body_xml(ai_output: str) -> str:
     # Extract body content if wrapped in <w:body> tags
     match = re.search(r"<w:body>(.*)</w:body>", text, re.DOTALL)
     if match:
-        return match.group(1).strip()
+        text = match.group(1).strip()
+    # Replace {%tr ...%} with standard {% ...%} (docxtpl row-loop
+    # syntax doesn't work when injected via python-docx)
+    text = re.sub(r"\{%\s*tr\s+", "{% ", text)
+    text = re.sub(r"\{%\s*tr\s*%}", "{% endfor %}", text)
     return text.strip()
 
 
@@ -208,7 +217,8 @@ def _wrap_in_docx(body_xml: str) -> bytes:
     """Wrap OpenXML body content into a valid .docx file.
 
     Creates a blank python-docx Document, then injects the AI-generated
-    XML elements into its body. Falls back to plain paragraph on parse error.
+    XML elements into its body. Uses multiple fallback strategies if
+    XML parsing fails.
     """
     from docx import Document
     from lxml import etree
@@ -232,14 +242,72 @@ def _wrap_in_docx(body_xml: str) -> bytes:
 
     wrapped = f"<w:body {ns_decls}>{body_xml}</w:body>"
 
+    parsed = False
     try:
         new_body = etree.fromstring(wrapped.encode("utf-8"))
         for child in list(new_body):
             body.append(child)
+        parsed = True
     except etree.XMLSyntaxError as e:
-        logger.warning("XML parse error in AI output: %s", e)
-        # Fallback: insert raw text as a paragraph
-        doc.add_paragraph(body_xml)
+        logger.warning("XML parse error (attempt 1): %s", e)
+
+    # Fallback: try wrapping with xml:space and fixing common issues
+    if not parsed:
+        try:
+            # Strip any stray namespace declarations the AI may have added
+            cleaned = re.sub(
+                r'\s+xmlns(?::\w+)?="[^"]*"', "", body_xml
+            )
+            wrapped2 = f"<w:body {ns_decls}>{cleaned}</w:body>"
+            new_body = etree.fromstring(wrapped2.encode("utf-8"))
+            for child in list(new_body):
+                body.append(child)
+            parsed = True
+            logger.info("XML parsed successfully after cleaning namespaces")
+        except etree.XMLSyntaxError as e:
+            logger.warning("XML parse error (attempt 2): %s", e)
+
+    # Fallback: parse each top-level element individually
+    if not parsed:
+        # Split on top-level <w:p> and <w:tbl> elements and parse each
+        element_pattern = re.compile(
+            r"(<w:(?:p|tbl)\b.*?</w:(?:p|tbl)>)", re.DOTALL
+        )
+        elements = element_pattern.findall(body_xml)
+        if elements:
+            success_count = 0
+            for elem_xml in elements:
+                try:
+                    wrapped_elem = (
+                        f"<w:body {ns_decls}>{elem_xml}</w:body>"
+                    )
+                    parsed_elem = etree.fromstring(
+                        wrapped_elem.encode("utf-8")
+                    )
+                    for child in list(parsed_elem):
+                        body.append(child)
+                    success_count += 1
+                except etree.XMLSyntaxError:
+                    # Skip malformed elements
+                    pass
+            if success_count > 0:
+                parsed = True
+                logger.info(
+                    "XML parsed %d/%d elements individually",
+                    success_count, len(elements),
+                )
+
+    # Last resort: insert as plain text paragraphs (split by lines)
+    if not parsed:
+        logger.warning(
+            "All XML parse attempts failed — inserting as plain text"
+        )
+        # At least try to extract text content from the XML tags
+        text_content = re.sub(r"<[^>]+>", "", body_xml)
+        for line in text_content.strip().split("\n"):
+            line = line.strip()
+            if line:
+                doc.add_paragraph(line)
 
     buf = BytesIO()
     doc.save(buf)
@@ -474,6 +542,10 @@ async def convert_document(
     is_image = ext in (".png", ".jpg", ".jpeg")
 
     # Extract text content based on file type
+    logger.info(
+        "template_convert: extracting content from %s (%d bytes)",
+        filename, len(file_bytes),
+    )
     if ext in (".docx",):
         doc_text = _extract_text_from_docx(file_bytes)
     elif is_image:
@@ -490,6 +562,10 @@ async def convert_document(
     # Step 2: Call AI agent to generate OpenXML
     state.set_progress("processing", "Generating template with AI...", 2, TOTAL_STEPS)
     model = await get_model("template_convert", db, org_id=org_id)
+    logger.info(
+        "template_convert: resolved model=%s for org=%s",
+        model, org_id,
+    )
 
     agent = Agent(model, system_prompt=SYSTEM_PROMPT)
 
@@ -505,7 +581,58 @@ async def convert_document(
         "Output ONLY the <w:body> OpenXML content."
     )
 
-    result = await agent.run(full_prompt)
+    prompt_chars = len(full_prompt)
+    system_chars = len(SYSTEM_PROMPT)
+    logger.info(
+        "template_convert: calling AI — prompt=%d chars, system=%d chars, "
+        "estimated tokens ~%d",
+        prompt_chars, system_chars, (prompt_chars + system_chars) // 4,
+    )
+
+    AI_TIMEOUT_SECONDS = 180
+    t0 = time.time()
+    try:
+        result = await asyncio.wait_for(
+            agent.run(full_prompt),
+            timeout=AI_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        elapsed = time.time() - t0
+        logger.error(
+            "template_convert: AI call timed out after %.1fs (limit %ds)",
+            elapsed, AI_TIMEOUT_SECONDS,
+        )
+        state.set_progress(
+            "failed",
+            "AI model timed out",
+            2, TOTAL_STEPS,
+            error=(
+                f"The AI model did not respond within {AI_TIMEOUT_SECONDS}s. "
+                "Try a faster model or a smaller document."
+            ),
+        )
+        raise
+    except Exception as e:
+        elapsed = time.time() - t0
+        logger.error(
+            "template_convert: AI call failed after %.1fs — %s: %s",
+            elapsed, type(e).__name__, e,
+        )
+        state.set_progress(
+            "failed",
+            "AI call failed",
+            2, TOTAL_STEPS,
+            error=f"{type(e).__name__}: {e}",
+        )
+        raise
+
+    elapsed = time.time() - t0
+    output_chars = len(result.output)
+    logger.info(
+        "template_convert: AI responded in %.1fs — output=%d chars (~%d tokens)",
+        elapsed, output_chars, output_chars // 4,
+    )
+
     body_xml = _extract_body_xml(result.output)
 
     state.set_progress("processing", "Wrapping into DOCX...", 3, TOTAL_STEPS)
@@ -528,6 +655,10 @@ async def convert_document(
         render_result = _try_render(template_docx, template_type)
 
         if render_result.render_error:
+            logger.info(
+                "template_convert: verification round %d — render error: %s",
+                rounds, render_result.render_error[:200],
+            )
             chat_history.append({
                 "role": "user",
                 "content": (
@@ -536,9 +667,22 @@ async def convert_document(
                     "Output ONLY the corrected <w:body> content."
                 ),
             })
-            fix_result = await agent.run(
-                chat_history[-1]["content"],
-                message_history=result.all_messages(),
+            state.set_progress(
+                "processing",
+                f"Fixing render error (round {rounds}/{MAX_VERIFICATION_ROUNDS})...",
+                4, TOTAL_STEPS,
+            )
+            t_fix = time.time()
+            fix_result = await asyncio.wait_for(
+                agent.run(
+                    chat_history[-1]["content"],
+                    message_history=result.all_messages(),
+                ),
+                timeout=AI_TIMEOUT_SECONDS,
+            )
+            logger.info(
+                "template_convert: fix round %d completed in %.1fs",
+                rounds, time.time() - t_fix,
             )
             body_xml = _extract_body_xml(fix_result.output)
             template_docx = _wrap_in_docx(body_xml)
@@ -547,6 +691,10 @@ async def convert_document(
             continue
 
         if render_result.jinja_remnants:
+            logger.info(
+                "template_convert: verification round %d — jinja remnants: %s",
+                rounds, render_result.jinja_remnants[:5],
+            )
             chat_history.append({
                 "role": "user",
                 "content": (
@@ -556,9 +704,22 @@ async def convert_document(
                     "Output ONLY the corrected <w:body> content."
                 ),
             })
-            fix_result = await agent.run(
-                chat_history[-1]["content"],
-                message_history=result.all_messages(),
+            state.set_progress(
+                "processing",
+                f"Fixing Jinja2 syntax (round {rounds}/{MAX_VERIFICATION_ROUNDS})...",
+                4, TOTAL_STEPS,
+            )
+            t_fix = time.time()
+            fix_result = await asyncio.wait_for(
+                agent.run(
+                    chat_history[-1]["content"],
+                    message_history=result.all_messages(),
+                ),
+                timeout=AI_TIMEOUT_SECONDS,
+            )
+            logger.info(
+                "template_convert: fix round %d completed in %.1fs",
+                rounds, time.time() - t_fix,
             )
             body_xml = _extract_body_xml(fix_result.output)
             template_docx = _wrap_in_docx(body_xml)
@@ -566,14 +727,21 @@ async def convert_document(
             result = fix_result
             continue
 
+        logger.info(
+            "template_convert: verification round %d passed", rounds,
+        )
         verification_passed = True
         break
 
     # Step 4: Render final preview
     state.set_progress("processing", "Rendering preview...", 5, TOTAL_STEPS)
+    logger.info("template_convert: rendering preview PDF via docxtpl + LibreOffice")
     final_render = _try_render(template_docx, template_type)
     if final_render.pdf_bytes:
         state.write("preview.pdf", final_render.pdf_bytes)
+        logger.info("template_convert: preview PDF generated (%d bytes)", len(final_render.pdf_bytes))
+    else:
+        logger.warning("template_convert: preview PDF not generated (render_error=%s)", final_render.render_error)
 
     # Step 5: Check missing known variables
     state.set_progress("processing", "Checking variable coverage...", 6, TOTAL_STEPS)
