@@ -390,14 +390,20 @@ async def _ollama_extract(
     if text:
         user_content = f"Document text:\n\n{text}"
 
+    # Ollama vision models only support one image per message.
+    # Process each page separately and merge results.
+    if page_images and len(page_images) > 1:
+        return await _ollama_extract_per_page(
+            text, page_images, base_url, model_name, schema_hint,
+        )
+
     user_msg: dict[str, Any] = {
         "role": "user",
-        "content": user_content or "Please analyze the attached images.",
+        "content": user_content or "Please analyze the attached image.",
     }
     if page_images:
         user_msg["images"] = [
-            base64.b64encode(img_bytes).decode("utf-8")
-            for _, img_bytes in page_images
+            base64.b64encode(page_images[0][1]).decode("utf-8")
         ]
     messages.append(user_msg)
 
@@ -412,7 +418,17 @@ async def _ollama_extract(
                 "options": {"num_predict": 4096},
             },
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            error_body = resp.text[:200] if resp.text else "No details"
+            logger.error(
+                "Ollama API returned %d for batch record extraction: %s",
+                resp.status_code, error_body,
+            )
+            raise ValueError(
+                f"AI model error (status {resp.status_code}). "
+                "The vision model may be out of memory or unavailable. "
+                "Try with a smaller document or check model status."
+            )
 
     data = resp.json()
     content = data.get("message", {}).get("content", "")
@@ -448,6 +464,115 @@ async def _ollama_extract(
             general_notes=parsed.get("general_notes", []),
             overall_confidence=parsed.get("overall_confidence", 0.5),
         )
+
+
+async def _ollama_extract_per_page(
+    text: str,
+    page_images: list[tuple[int, bytes]],
+    base_url: str,
+    model_name: str,
+    schema_hint: str,
+) -> BatchRecordExtraction:
+    """Extract from each page separately (Ollama only supports 1 image/msg)."""
+    all_steps: list[ExtractedStep] = []
+    all_notes: list[str] = []
+    doc_title = ""
+    batch_id = None
+    product_name = None
+    date = None
+    total_confidence = 0.0
+
+    text_lines = text.split("\n\n") if text else []
+
+    for idx, (page_num, img_bytes) in enumerate(page_images):
+        # Rough text portion for this page
+        chunk_text = ""
+        if text_lines:
+            start = int(idx / len(page_images) * len(text_lines))
+            end = int((idx + 1) / len(page_images) * len(text_lines))
+            chunk_text = "\n\n".join(text_lines[start:end])
+
+        user_content = f"Page {page_num}:\n{chunk_text}" if chunk_text else f"Page {page_num}"
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            resp = await client.post(
+                f"{base_url.rstrip('/')}/api/chat",
+                json={
+                    "model": model_name,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": BATCH_RECORD_SYSTEM_PROMPT + schema_hint,
+                        },
+                        {
+                            "role": "user",
+                            "content": user_content,
+                            "images": [
+                                base64.b64encode(img_bytes).decode("utf-8")
+                            ],
+                        },
+                    ],
+                    "format": "json",
+                    "stream": False,
+                    "options": {"num_predict": 4096},
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.warning(
+                "Ollama returned %d for page %d, skipping",
+                resp.status_code, page_num,
+            )
+            continue
+
+        data = resp.json()
+        content = data.get("message", {}).get("content", "")
+        try:
+            parsed = json.loads(content)
+            page_result = BatchRecordExtraction.model_validate(parsed)
+        except Exception:
+            # Best-effort: try to extract steps
+            try:
+                parsed = json.loads(content)
+                for raw_step in parsed.get("steps", []):
+                    if isinstance(raw_step, dict):
+                        try:
+                            all_steps.append(
+                                ExtractedStep.model_validate(raw_step)
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            continue
+
+        all_steps.extend(page_result.steps)
+        all_notes.extend(page_result.general_notes)
+        total_confidence += page_result.overall_confidence
+
+        if not doc_title and page_result.document_title:
+            doc_title = page_result.document_title
+        if not batch_id and page_result.batch_id:
+            batch_id = page_result.batch_id
+        if not product_name and page_result.product_name:
+            product_name = page_result.product_name
+        if not date and page_result.date:
+            date = page_result.date
+
+    avg_confidence = (
+        total_confidence / len(page_images)
+        if page_images else 0.0
+    )
+
+    return BatchRecordExtraction(
+        document_title=doc_title,
+        batch_id=batch_id,
+        product_name=product_name,
+        date=date,
+        steps=all_steps,
+        general_notes=all_notes,
+        overall_confidence=round(avg_confidence, 3),
+    )
 
 
 async def _extract_chunked(
@@ -576,7 +701,12 @@ async def map_steps_to_protocol(
                     "options": {"num_predict": 4096},
                 },
             )
-            resp.raise_for_status()
+        if resp.status_code != 200:
+            logger.error(
+                "Ollama API returned %d for protocol mapping: %s",
+                resp.status_code, resp.text[:200],
+            )
+            return []
 
         data = resp.json()
         content = data.get("message", {}).get("content", "")
