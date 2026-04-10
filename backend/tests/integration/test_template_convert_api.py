@@ -4,18 +4,12 @@ Tests the HTTP layer: file upload, validation, 404 handling, file serving.
 AI-dependent tests (convert, refine) are mocked to avoid real LLM calls.
 """
 
-import tempfile
 from io import BytesIO
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 from docx import Document
-
-from app.core.security import create_access_token, hash_password
-from app.models.iam import Organization, OrganizationMember, User
 
 DOCX_MIME = (
     "application/vnd.openxmlformats-officedocument"
@@ -41,23 +35,12 @@ def _make_template_docx() -> bytes:
     """Create a minimal Jinja2 template .docx."""
     doc = Document()
     doc.add_heading("{{ protocol_name }}", level=1)
-    doc.add_paragraph("Prepared by: {{ operator_name }} on {{ completion_date }}")
+    doc.add_paragraph(
+        "Prepared by: {{ operator_name }} on {{ completion_date }}"
+    )
     buf = BytesIO()
     doc.save(buf)
     return buf.getvalue()
-
-
-def _mock_convert_result(conversion_id: str) -> dict:
-    """Build a mock ConvertResponse dict."""
-    return {
-        "conversion_id": conversion_id,
-        "preview_url": f"/science/templates/conversions/{conversion_id}/preview.pdf",
-        "template_download_url": f"/science/templates/conversions/{conversion_id}/template.docx",
-        "warnings": [],
-        "variables_detected": ["operator_name", "protocol_name"],
-        "verification_rounds": 1,
-        "verification_passed": True,
-    }
 
 
 # ── Endpoint Tests ──
@@ -72,23 +55,31 @@ class TestConvertEndpoint:
         resp = await client.post(
             "/science/templates/convert",
             data={"template_type": "SOP"},
-            files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
+            files={
+                "file": ("test.docx", _make_filled_docx(), DOCX_MIME)
+            },
         )
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_rejects_invalid_template_type(self, client, auth_headers):
+    async def test_rejects_invalid_template_type(
+        self, client, auth_headers
+    ):
         """Should return 422 for invalid template_type."""
         resp = await client.post(
             "/science/templates/convert",
             headers=auth_headers,
             data={"template_type": "INVALID"},
-            files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
+            files={
+                "file": ("test.docx", _make_filled_docx(), DOCX_MIME)
+            },
         )
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_rejects_unsupported_file_type(self, client, auth_headers):
+    async def test_rejects_unsupported_file_type(
+        self, client, auth_headers
+    ):
         """Should return 422 for unsupported MIME type."""
         resp = await client.post(
             "/science/templates/convert",
@@ -99,7 +90,9 @@ class TestConvertEndpoint:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_successful_convert_starts_async(self, client, auth_headers):
+    async def test_successful_convert_starts_async(
+        self, client, auth_headers
+    ):
         """Should return 202 with conversion_id for async processing."""
         with patch(
             "app.api.endpoints.template_convert._preflight_ai_check",
@@ -109,7 +102,13 @@ class TestConvertEndpoint:
                 "/science/templates/convert",
                 headers=auth_headers,
                 data={"template_type": "SOP"},
-                files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
+                files={
+                    "file": (
+                        "test.docx",
+                        _make_filled_docx(),
+                        DOCX_MIME,
+                    )
+                },
             )
         assert resp.status_code == 202
         data = resp.json()
@@ -117,94 +116,22 @@ class TestConvertEndpoint:
         assert data["status"] == "processing"
 
 
-class TestStatusEndpoint:
-    """GET /science/templates/conversions/{id}/status"""
+class TestEventsEndpoint:
+    """GET /science/templates/conversions/{id}/events"""
 
     @pytest.mark.asyncio
-    async def test_returns_404_for_missing_conversion(
+    async def test_returns_error_for_missing_conversion(
         self, client, auth_headers
     ):
-        """Should return 404 if no status file exists."""
+        """Should return an SSE error event for a nonexistent conversion."""
         fake_id = uuid4()
         resp = await client.get(
-            f"/science/templates/conversions/{fake_id}/status",
-            headers=auth_headers,
-        )
-        assert resp.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_returns_progress(self, client, auth_headers, test_org):
-        """Should return current progress when status file exists."""
-        from app.services.template_converter import ConversionState
-
-        conv_id = uuid4()
-        state = ConversionState(test_org.id, conv_id)
-        state.ensure_dir()
-        state.set_progress("processing", "Generating template with AI...", 2, 6)
-
-        resp = await client.get(
-            f"/science/templates/conversions/{conv_id}/status",
+            f"/science/templates/conversions/{fake_id}/events",
             headers=auth_headers,
         )
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "processing"
-        assert data["current_step"] == "Generating template with AI..."
-        assert data["step_number"] == 2
-        assert data["total_steps"] == 6
-        assert data["elapsed_seconds"] >= 0
-
-    @pytest.mark.asyncio
-    async def test_returns_completed_with_result(
-        self, client, auth_headers, test_org
-    ):
-        """Should include result data when conversion is complete."""
-        from app.services.template_converter import ConversionState
-
-        conv_id = uuid4()
-        state = ConversionState(test_org.id, conv_id)
-        state.ensure_dir()
-        state.set_progress("completed", "Done", 6, 6)
-        state.write_json("result.json", {
-            "conversion_id": str(conv_id),
-            "preview_url": f"/science/templates/conversions/{conv_id}/preview.pdf",
-            "template_download_url": f"/science/templates/conversions/{conv_id}/template.docx",
-            "warnings": [],
-            "variables_detected": ["protocol_name"],
-            "verification_rounds": 1,
-            "verification_passed": True,
-        })
-
-        resp = await client.get(
-            f"/science/templates/conversions/{conv_id}/status",
-            headers=auth_headers,
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "completed"
-        assert data["verification_passed"] is True
-        assert "protocol_name" in data["variables_detected"]
-
-    @pytest.mark.asyncio
-    async def test_returns_failed_with_error(
-        self, client, auth_headers, test_org
-    ):
-        """Should include error message when conversion failed."""
-        from app.services.template_converter import ConversionState
-
-        conv_id = uuid4()
-        state = ConversionState(test_org.id, conv_id)
-        state.ensure_dir()
-        state.set_progress("failed", "Conversion failed", 2, 6, error="Model timeout")
-
-        resp = await client.get(
-            f"/science/templates/conversions/{conv_id}/status",
-            headers=auth_headers,
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "failed"
-        assert data["error"] == "Model timeout"
+        assert "text/event-stream" in resp.headers["content-type"]
+        assert "Conversion not found" in resp.text
 
 
 class TestRefineEndpoint:
@@ -236,7 +163,13 @@ class TestReuploadEndpoint:
         resp = await client.post(
             f"/science/templates/conversions/{fake_id}/reupload",
             headers=auth_headers,
-            files={"file": ("template.docx", _make_template_docx(), DOCX_MIME)},
+            files={
+                "file": (
+                    "template.docx",
+                    _make_template_docx(),
+                    DOCX_MIME,
+                )
+            },
         )
         assert resp.status_code == 404
 
@@ -265,7 +198,6 @@ class TestSaveEndpoint:
         self, client, auth_headers, test_org
     ):
         """Should return 422 for invalid template_type on save."""
-        # Create a real conversion directory so it passes the exists check
         from app.services.template_converter import ConversionState
 
         conv_id = uuid4()

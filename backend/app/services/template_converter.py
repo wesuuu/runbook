@@ -1,12 +1,8 @@
 """Template conversion agent — converts filled documents to Jinja2 DOCX templates.
 
-Pipeline:
-1. Upload any file → convert to PDF via LibreOffice (if needed)
-2. Feed PDF/image to a dedicated AI agent
-3. AI outputs OpenXML <w:body> content with Jinja2 placeholders
-4. Wrap in a valid .docx scaffold
-5. Verification loop: render with mock data, check for issues, iterate
-6. Return rendered preview + template download + warnings
+Uses a tool-use agent loop where the AI model drives the conversion by calling
+tools to write, validate, and compare templates iteratively. Progress is
+streamed to the frontend via Server-Sent Events (SSE).
 """
 
 import asyncio
@@ -15,79 +11,78 @@ import logging
 import re
 import subprocess
 import tempfile
-import time
-from dataclasses import dataclass
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 from docxtpl import DocxTemplate
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.messages import BinaryContent
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.services.file_storage import FileStorageService
 from app.services.template_engine import KNOWN_VARIABLES, get_mock_context
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MAX_VERIFICATION_ROUNDS = 3
 JINJA_PATTERN = re.compile(r"\{\{.*?\}\}|\{%.*?%\}")
 
-SYSTEM_PROMPT = """\
-You are a document template engineer specializing in converting filled SOPs \
-and batch records into reusable Jinja2 DOCX templates.
+TOOL_LIMIT_MSG = (
+    "Tool call limit ({limit}) reached. Conversion cannot continue — "
+    "the document may be too complex for the current model. "
+    "Please simplify the document or configure a more capable AI model."
+)
 
-You will receive the text content of a completed document. Your job:
-1. Analyze the document structure (headings, paragraphs, tables)
-2. Identify variable fields (dates, names, lot numbers, measurements, equipment IDs)
-3. Output valid OpenXML (<w:body> content) with Jinja2 placeholders
 
-VARIABLE NAMING:
-- Use snake_case: operator_name, lot_number, completion_date, incubation_temp_c
-- Use these KNOWN variables when applicable (they auto-fill from the system):
-  {known_vars}
+# ── SSE Event Stream ──
 
-JINJA2 SYNTAX RULES:
-- Variables: {{{{ variable_name }}}} inside <w:t> elements
-- Loops: {{% for item in collection %}} ... {{% endfor %}} inside <w:t> elements
-- Do NOT use {{%tr}} tags — they are not supported
-- For repeating table rows, put {{% for %}} in the FIRST cell of the data row \
-and {{% endfor %}} in the FIRST cell of the next row
 
-OPENXML RULES:
-- Output ONLY the content that goes inside <w:body> — no <w:body> tags, \
-no XML declaration, no namespace declarations
-- Use <w:p> for paragraphs
-- Use <w:tbl> for tables with <w:tr> rows and <w:tc> cells
-- Use <w:r><w:t> for text runs
-- Use <w:pPr><w:pStyle w:val="Heading1"/></w:pPr> for headings
-- ALL Jinja2 syntax goes inside <w:t> elements as literal text
-- Ensure ALL XML tags are properly closed and well-formed
-- Every <w:t> element MUST have xml:space="preserve" attribute
+class EventStream:
+    """Buffered async event stream for SSE.
 
-EXAMPLE — paragraph with a variable:
-<w:p>
-  <w:r><w:t xml:space="preserve">Prepared by: {{{{ operator_name }}}} on {{{{ completion_date }}}}</w:t></w:r>
-</w:p>
+    The background conversion task pushes events via push().
+    The SSE endpoint reads events via the async iterator protocol.
+    Supports late-joining clients by replaying from buffer index 0.
+    """
 
-EXAMPLE — table with header row and repeating data rows:
-<w:tbl>
-  <w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr>
-  <w:tr>
-    <w:tc><w:p><w:r><w:t xml:space="preserve">Step</w:t></w:r></w:p></w:tc>
-    <w:tc><w:p><w:r><w:t xml:space="preserve">Description</w:t></w:r></w:p></w:tc>
-  </w:tr>
-  <w:tr>
-    <w:tc><w:p><w:r><w:t xml:space="preserve">{{% for step in steps %}}{{{{ step.name }}}}</w:t></w:r></w:p></w:tc>
-    <w:tc><w:p><w:r><w:t xml:space="preserve">{{{{ step.description }}}}</w:t></w:r></w:p></w:tc>
-  </w:tr>
-  <w:tr>
-    <w:tc><w:p><w:r><w:t xml:space="preserve">{{% endfor %}}</w:t></w:r></w:p></w:tc>
-    <w:tc><w:p><w:r><w:t xml:space="preserve"></w:t></w:r></w:p></w:tc>
-  </w:tr>
-</w:tbl>
-""".format(known_vars=", ".join(sorted(KNOWN_VARIABLES)))
+    def __init__(self) -> None:
+        self._events: list[tuple[str, str]] = []
+        self._waiters: list[asyncio.Event] = []
+        self._closed = False
+
+    def push(self, event_type: str, data: dict) -> None:
+        """Push an event. Called from the background task."""
+        self._events.append((event_type, json.dumps(data, default=str)))
+        for w in self._waiters:
+            w.set()
+
+    def close(self) -> None:
+        """Signal no more events will come."""
+        self._closed = True
+        for w in self._waiters:
+            w.set()
+
+    async def iter_events(self) -> AsyncIterator[tuple[str, str]]:
+        """Async iterator yielding (event_type, data_json) tuples."""
+        idx = 0
+        while True:
+            while idx < len(self._events):
+                yield self._events[idx]
+                idx += 1
+            if self._closed:
+                return
+            waiter = asyncio.Event()
+            self._waiters.append(waiter)
+            await waiter.wait()
+            self._waiters.remove(waiter)
+
+
+# Module-level registry: conversion_id -> EventStream
+_active_streams: dict[str, EventStream] = {}
 
 
 # ── Data Classes ──
@@ -96,16 +91,34 @@ EXAMPLE — table with header row and repeating data rows:
 @dataclass
 class RenderResult:
     """Result of attempting to render a template with mock data."""
+
     pdf_bytes: bytes
     jinja_remnants: list[str]
     format_issues: list[str]
     render_error: str | None = None
 
 
+@dataclass
+class ConversionDeps:
+    """Dependencies injected into pydantic-ai tools via RunContext."""
+
+    state: "ConversionState"
+    event_stream: EventStream
+    org_id: UUID
+    template_type: str
+    original_pdf_bytes: bytes
+    model: Any
+    tool_call_count: int = field(default=0, init=False)
+    max_tool_calls: int = field(
+        default_factory=lambda: settings.template_convert_max_tool_calls
+    )
+
+
 class ConversionState:
     """Tracks state for an active conversion session on the filesystem.
 
-    Files are stored under: {storage_root}/{org_id}/conversions/{conversion_id}/
+    Files are stored under:
+        {storage_root}/{org_id}/tmp/conversions/{conversion_id}/
     """
 
     def __init__(
@@ -117,7 +130,9 @@ class ConversionState:
         self.org_id = org_id
         self.conversion_id = conversion_id
         self.storage_root = Path(storage_root)
-        self.base_path = Path(str(org_id)) / "conversions" / str(conversion_id)
+        self.base_path = (
+            Path(str(org_id)) / "tmp" / "conversions" / str(conversion_id)
+        )
 
     def _resolve(self, filename: str) -> Path:
         """Resolve a filename to full path under the conversion directory."""
@@ -148,46 +163,18 @@ class ConversionState:
     def read_json(self, filename: str) -> dict | list:
         return json.loads(self._resolve(filename).read_text(encoding="utf-8"))
 
-    def set_progress(
-        self,
-        status: str,
-        current_step: str,
-        step_number: int,
-        total_steps: int,
-        error: str | None = None,
-    ) -> None:
-        """Write current progress to status.json for polling."""
-        progress = {
-            "status": status,
-            "current_step": current_step,
-            "step_number": step_number,
-            "total_steps": total_steps,
-            "error": error,
-            "updated_at": time.time(),
-        }
-        # Also set started_at on first call
-        status_path = self._resolve("status.json")
-        if status_path.exists():
-            existing = json.loads(status_path.read_text(encoding="utf-8"))
-            progress["started_at"] = existing.get("started_at", time.time())
-        else:
-            progress["started_at"] = time.time()
-        self.write_json("status.json", progress)
-
-    def get_progress(self) -> dict | None:
-        """Read current progress from status.json."""
-        if not self.exists("status.json"):
-            return None
-        return self.read_json("status.json")
-
     @property
     def preview_url(self) -> str:
-        return f"/science/templates/conversions/{self.conversion_id}/preview.pdf"
+        return (
+            f"/science/templates/conversions/"
+            f"{self.conversion_id}/preview.pdf"
+        )
 
     @property
     def template_url(self) -> str:
         return (
-            f"/science/templates/conversions/{self.conversion_id}/template.docx"
+            f"/science/templates/conversions/"
+            f"{self.conversion_id}/template.docx"
         )
 
 
@@ -197,117 +184,44 @@ class ConversionState:
 def _extract_body_xml(ai_output: str) -> str:
     """Extract <w:body> content from AI output, stripping code fences."""
     text = ai_output.strip()
-    # Strip markdown code fences if present
     if text.startswith("```"):
         text = re.sub(r"^```\w*\n", "", text)
         text = re.sub(r"\n```$", "", text)
         text = text.strip()
-    # Extract body content if wrapped in <w:body> tags
     match = re.search(r"<w:body>(.*)</w:body>", text, re.DOTALL)
     if match:
-        text = match.group(1).strip()
-    # Replace {%tr ...%} with standard {% ...%} (docxtpl row-loop
-    # syntax doesn't work when injected via python-docx)
-    text = re.sub(r"\{%\s*tr\s+", "{% ", text)
-    text = re.sub(r"\{%\s*tr\s*%}", "{% endfor %}", text)
+        return match.group(1).strip()
     return text.strip()
 
 
 def _wrap_in_docx(body_xml: str) -> bytes:
-    """Wrap OpenXML body content into a valid .docx file.
-
-    Creates a blank python-docx Document, then injects the AI-generated
-    XML elements into its body. Uses multiple fallback strategies if
-    XML parsing fails.
-    """
+    """Wrap OpenXML body content into a valid .docx file."""
     from docx import Document
     from lxml import etree
 
     doc = Document()
-    # Clear default empty paragraph
     for p in doc.paragraphs:
         p._element.getparent().remove(p._element)
 
     body = doc.element.body
     nsmap = doc.element.body.nsmap
 
-    # Build namespace declarations for parsing
     ns_decls = " ".join(
         f'xmlns:{k}="{v}"' for k, v in nsmap.items() if k
     )
-    # Default namespace needs special handling
     default_ns = nsmap.get(None, "")
     if default_ns:
         ns_decls = f'xmlns="{default_ns}" {ns_decls}'
 
     wrapped = f"<w:body {ns_decls}>{body_xml}</w:body>"
 
-    parsed = False
     try:
         new_body = etree.fromstring(wrapped.encode("utf-8"))
         for child in list(new_body):
             body.append(child)
-        parsed = True
     except etree.XMLSyntaxError as e:
-        logger.warning("XML parse error (attempt 1): %s", e)
-
-    # Fallback: try wrapping with xml:space and fixing common issues
-    if not parsed:
-        try:
-            # Strip any stray namespace declarations the AI may have added
-            cleaned = re.sub(
-                r'\s+xmlns(?::\w+)?="[^"]*"', "", body_xml
-            )
-            wrapped2 = f"<w:body {ns_decls}>{cleaned}</w:body>"
-            new_body = etree.fromstring(wrapped2.encode("utf-8"))
-            for child in list(new_body):
-                body.append(child)
-            parsed = True
-            logger.info("XML parsed successfully after cleaning namespaces")
-        except etree.XMLSyntaxError as e:
-            logger.warning("XML parse error (attempt 2): %s", e)
-
-    # Fallback: parse each top-level element individually
-    if not parsed:
-        # Split on top-level <w:p> and <w:tbl> elements and parse each
-        element_pattern = re.compile(
-            r"(<w:(?:p|tbl)\b.*?</w:(?:p|tbl)>)", re.DOTALL
-        )
-        elements = element_pattern.findall(body_xml)
-        if elements:
-            success_count = 0
-            for elem_xml in elements:
-                try:
-                    wrapped_elem = (
-                        f"<w:body {ns_decls}>{elem_xml}</w:body>"
-                    )
-                    parsed_elem = etree.fromstring(
-                        wrapped_elem.encode("utf-8")
-                    )
-                    for child in list(parsed_elem):
-                        body.append(child)
-                    success_count += 1
-                except etree.XMLSyntaxError:
-                    # Skip malformed elements
-                    pass
-            if success_count > 0:
-                parsed = True
-                logger.info(
-                    "XML parsed %d/%d elements individually",
-                    success_count, len(elements),
-                )
-
-    # Last resort: insert as plain text paragraphs (split by lines)
-    if not parsed:
-        logger.warning(
-            "All XML parse attempts failed — inserting as plain text"
-        )
-        # At least try to extract text content from the XML tags
-        text_content = re.sub(r"<[^>]+>", "", body_xml)
-        for line in text_content.strip().split("\n"):
-            line = line.strip()
-            if line:
-                doc.add_paragraph(line)
+        logger.warning("XML parse error in AI output: %s", e)
+        doc.add_paragraph(body_xml)
 
     buf = BytesIO()
     doc.save(buf)
@@ -315,13 +229,11 @@ def _wrap_in_docx(body_xml: str) -> bytes:
 
 
 def _extract_jinja_variables(xml_text: str) -> set[str]:
-    """Extract Jinja2 variable names from OpenXML content.
-
-    Returns top-level variable names (e.g., "step" from "{{ step.name }}")
-    and collection names from {% for %} loops.
-    """
+    """Extract Jinja2 variable names from template text."""
     var_pattern = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
-    loop_pattern = re.compile(r"\{%\s*(?:tr\s+)?for\s+(\w+)\s+in\s+(\w+)\s*%\}")
+    loop_pattern = re.compile(
+        r"\{%\s*(?:tr\s+)?for\s+(\w+)\s+in\s+(\w+)\s*%\}"
+    )
     variables: set[str] = set()
 
     for match in var_pattern.finditer(xml_text):
@@ -330,28 +242,20 @@ def _extract_jinja_variables(xml_text: str) -> set[str]:
         variables.add(top)
 
     for match in loop_pattern.finditer(xml_text):
-        variables.add(match.group(1))  # loop variable
-        variables.add(match.group(2))  # collection name
+        variables.add(match.group(1))
+        variables.add(match.group(2))
 
     return variables
 
 
 def _try_render(template_bytes: bytes, template_type: str) -> RenderResult:
-    """Render a template DOCX with mock data and check for issues.
-
-    Returns a RenderResult with:
-    - pdf_bytes: rendered PDF (empty on failure)
-    - jinja_remnants: any Jinja2 syntax that survived rendering
-    - format_issues: structural differences from expected output
-    - render_error: error message if docxtpl render failed
-    """
+    """Render a template DOCX with mock data and check for issues."""
     mock_ctx = get_mock_context()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tpl_path = Path(tmpdir) / "template.docx"
         tpl_path.write_bytes(template_bytes)
 
-        # Render with docxtpl
         try:
             doc = DocxTemplate(str(tpl_path))
             doc.render(mock_ctx)
@@ -365,7 +269,6 @@ def _try_render(template_bytes: bytes, template_type: str) -> RenderResult:
                 render_error=f"docxtpl render failed: {e}",
             )
 
-        # Check for surviving Jinja2 syntax in rendered output
         from docx import Document
 
         rendered_doc = Document(str(rendered_path))
@@ -380,7 +283,6 @@ def _try_render(template_bytes: bytes, template_type: str) -> RenderResult:
         all_text = "\n".join(all_text_parts)
         remnants = JINJA_PATTERN.findall(all_text)
 
-        # Convert to PDF for preview via LibreOffice
         pdf_bytes = b""
         try:
             subprocess.run(
@@ -410,33 +312,38 @@ def _try_render(template_bytes: bytes, template_type: str) -> RenderResult:
 
 
 def _extract_text_from_docx(file_bytes: bytes) -> str:
-    """Extract readable text content from a DOCX file for the AI prompt.
-
-    Extracts paragraphs and table contents in a structured format.
-    """
+    """Extract readable text content from a DOCX file."""
     from docx import Document as DocxDocument
 
     doc = DocxDocument(BytesIO(file_bytes))
     parts: list[str] = []
 
     for element in doc.element.body:
-        tag = element.tag.split("}")[-1] if "}" in element.tag else element.tag
+        tag = (
+            element.tag.split("}")[-1]
+            if "}" in element.tag
+            else element.tag
+        )
         if tag == "p":
-            # Paragraph
-            text = element.text or ""
-            # Collect text from runs
             runs_text = ""
             for run in element.iter():
-                run_tag = run.tag.split("}")[-1] if "}" in run.tag else run.tag
+                run_tag = (
+                    run.tag.split("}")[-1]
+                    if "}" in run.tag
+                    else run.tag
+                )
                 if run_tag == "t" and run.text:
                     runs_text += run.text
             if runs_text.strip():
                 parts.append(runs_text.strip())
         elif tag == "tbl":
-            # Table
             parts.append("[TABLE]")
             for row in element.iter():
-                row_tag = row.tag.split("}")[-1] if "}" in row.tag else row.tag
+                row_tag = (
+                    row.tag.split("}")[-1]
+                    if "}" in row.tag
+                    else row.tag
+                )
                 if row_tag == "tr":
                     cells: list[str] = []
                     for cell in row.iter():
@@ -464,11 +371,7 @@ def _extract_text_from_docx(file_bytes: bytes) -> str:
 
 
 async def _to_pdf(file_bytes: bytes, filename: str) -> bytes:
-    """Convert any supported file to PDF via LibreOffice.
-
-    PDFs and images are returned as-is (images are fed directly to the
-    model's vision input).
-    """
+    """Convert any supported file to PDF via LibreOffice."""
     ext = Path(filename).suffix.lower()
     if ext == ".pdf":
         return file_bytes
@@ -500,6 +403,342 @@ async def _to_pdf(file_bytes: bytes, filename: str) -> bytes:
         return pdf_path.read_bytes()
 
 
+def _extract_docx_text(template_bytes: bytes) -> str:
+    """Extract all text from a DOCX file (paragraphs + tables)."""
+    from docx import Document as DocxDocument
+
+    doc = DocxDocument(BytesIO(template_bytes))
+    parts: list[str] = []
+    for p in doc.paragraphs:
+        parts.append(p.text)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                parts.append(cell.text)
+    return "\n".join(parts)
+
+
+# ── Tool Functions ──
+
+
+def _check_tool_limit(deps: ConversionDeps, tool_name: str) -> str | None:
+    """Increment counter and return error string if over limit."""
+    deps.tool_call_count += 1
+    if deps.tool_call_count > deps.max_tool_calls:
+        msg = TOOL_LIMIT_MSG.format(limit=deps.max_tool_calls)
+        deps.event_stream.push("error", {"message": msg})
+        return msg
+    return None
+
+
+async def write_template_tool(
+    ctx: RunContext[ConversionDeps], body_xml: str
+) -> str:
+    """Write OpenXML body content as a DOCX template file.
+
+    Takes the <w:body> inner XML content, wraps it into a valid .docx,
+    and stores it. Returns a file_id for use with validate() and
+    compare_to_original().
+    """
+    deps = ctx.deps
+    seq = deps.tool_call_count + 1
+
+    err = _check_tool_limit(deps, "write_template")
+    if err:
+        return err
+
+    deps.event_stream.push(
+        "tool_call",
+        {"tool": "write_template", "status": "running", "sequence": seq},
+    )
+
+    try:
+        cleaned_xml = _extract_body_xml(body_xml)
+        docx_bytes = _wrap_in_docx(cleaned_xml)
+        deps.state.write("template.docx", docx_bytes)
+
+        deps.event_stream.push(
+            "tool_result",
+            {
+                "tool": "write_template",
+                "status": "success",
+                "sequence": seq,
+                "summary": f"Template created ({len(docx_bytes)} bytes)",
+            },
+        )
+        return f"Success. file_id=template.docx"
+    except Exception as e:
+        deps.event_stream.push(
+            "tool_result",
+            {
+                "tool": "write_template",
+                "status": "error",
+                "sequence": seq,
+                "summary": str(e)[:200],
+            },
+        )
+        return f"Error writing template: {e}"
+
+
+async def validate_tool(
+    ctx: RunContext[ConversionDeps], file_id: str
+) -> str:
+    """Validate the template DOCX and check Jinja2 syntax.
+
+    Renders the template with mock data, checks for render errors and
+    surviving Jinja2 syntax, and extracts detected variables.
+    """
+    deps = ctx.deps
+    seq = deps.tool_call_count + 1
+
+    err = _check_tool_limit(deps, "validate")
+    if err:
+        return err
+
+    deps.event_stream.push(
+        "tool_call",
+        {"tool": "validate", "status": "running", "sequence": seq},
+    )
+
+    try:
+        template_bytes = deps.state.read(file_id)
+        render_result = _try_render(template_bytes, deps.template_type)
+
+        all_text = _extract_docx_text(template_bytes)
+        detected_vars = _extract_jinja_variables(all_text)
+
+        issues = []
+        if render_result.render_error:
+            issues.append(f"Render error: {render_result.render_error}")
+        if render_result.jinja_remnants:
+            issues.append(
+                f"Jinja remnants after render: "
+                f"{render_result.jinja_remnants}"
+            )
+
+        status_str = "error" if issues else "success"
+        summary = (
+            "; ".join(issues)
+            if issues
+            else f"Valid. {len(detected_vars)} variables found."
+        )
+
+        deps.event_stream.push(
+            "tool_result",
+            {
+                "tool": "validate",
+                "status": status_str,
+                "sequence": seq,
+                "summary": summary[:200],
+            },
+        )
+
+        result_parts = [f"Variables found: {sorted(detected_vars)}"]
+        if issues:
+            result_parts.append(f"Issues: {'; '.join(issues)}")
+        else:
+            result_parts.append(
+                "No issues found. Template renders cleanly."
+            )
+        return "\n".join(result_parts)
+    except Exception as e:
+        deps.event_stream.push(
+            "tool_result",
+            {
+                "tool": "validate",
+                "status": "error",
+                "sequence": seq,
+                "summary": str(e)[:200],
+            },
+        )
+        return f"Error validating: {e}"
+
+
+async def compare_to_original_tool(
+    ctx: RunContext[ConversionDeps], file_id: str
+) -> str:
+    """Render the template with mock data and compare to the original.
+
+    Renders the template to PDF, then spawns a vision subagent to
+    compare the rendered output against the original document.
+    Returns a text assessment of visual fidelity.
+    """
+    deps = ctx.deps
+    seq = deps.tool_call_count + 1
+
+    err = _check_tool_limit(deps, "compare_to_original")
+    if err:
+        return err
+
+    deps.event_stream.push(
+        "tool_call",
+        {
+            "tool": "compare_to_original",
+            "status": "running",
+            "sequence": seq,
+        },
+    )
+
+    try:
+        template_bytes = deps.state.read(file_id)
+        render_result = _try_render(template_bytes, deps.template_type)
+
+        if not render_result.pdf_bytes:
+            deps.event_stream.push(
+                "tool_result",
+                {
+                    "tool": "compare_to_original",
+                    "status": "error",
+                    "sequence": seq,
+                    "summary": (
+                        "Could not render PDF for comparison"
+                        f" ({render_result.render_error})"
+                    ),
+                },
+            )
+            return (
+                f"Cannot compare: render failed "
+                f"({render_result.render_error})"
+            )
+
+        deps.state.write("preview.pdf", render_result.pdf_bytes)
+
+        comparison_prompt = (
+            "Compare these two documents. The first is the ORIGINAL "
+            "filled document. The second is a RENDERED TEMPLATE with "
+            "mock data filled in.\n\n"
+            "Assess:\n"
+            "1. Structural match — sections, tables, headings in same "
+            "order?\n"
+            "2. Formatting similarity — fonts, spacing, layout\n"
+            "3. Missing or extra content\n\n"
+            "Be specific about differences. If they match well, say so "
+            "briefly."
+        )
+
+        original_bytes = deps.original_pdf_bytes
+        original_mime = "application/pdf"
+        if original_bytes[:4] == b"\x89PNG":
+            original_mime = "image/png"
+        elif original_bytes[:2] == b"\xff\xd8":
+            original_mime = "image/jpeg"
+
+        vision_agent: Agent[None, str] = Agent(
+            deps.model,
+            system_prompt="You are a document comparison assistant.",
+            output_type=str,
+        )
+
+        user_content: list[Any] = [
+            BinaryContent(
+                data=original_bytes, media_type=original_mime
+            ),
+            BinaryContent(
+                data=render_result.pdf_bytes,
+                media_type="application/pdf",
+            ),
+            comparison_prompt,
+        ]
+
+        vision_result = await asyncio.wait_for(
+            vision_agent.run(user_content),
+            timeout=120,
+        )
+
+        assessment = vision_result.output
+        deps.event_stream.push(
+            "tool_result",
+            {
+                "tool": "compare_to_original",
+                "status": "success",
+                "sequence": seq,
+                "summary": assessment[:200],
+            },
+        )
+        return assessment
+    except Exception as e:
+        deps.event_stream.push(
+            "tool_result",
+            {
+                "tool": "compare_to_original",
+                "status": "error",
+                "sequence": seq,
+                "summary": str(e)[:200],
+            },
+        )
+        return f"Comparison failed: {e}"
+
+
+# ── System Prompt ──
+
+
+SYSTEM_PROMPT = """\
+You are a document template engineer specializing in converting filled SOPs \
+and batch records into reusable Jinja2 DOCX templates.
+
+You have 3 tools:
+1. write_template(body_xml) — Write OpenXML <w:body> content as a DOCX file
+2. validate(file_id) — Validate the template renders with mock data
+3. compare_to_original(file_id) — Visually compare rendered output to original
+
+YOUR WORKFLOW:
+1. Analyze the document, identify variable fields, generate OpenXML
+2. Call write_template() with your XML
+3. Call validate("template.docx") to check for errors
+4. If errors: fix the XML, call write_template() again, then validate() again
+5. Once validation passes, call compare_to_original("template.docx")
+6. If the comparison reveals issues, fix and repeat from step 2
+
+You have a limited number of tool calls. If a tool tells you the limit is \
+reached, stop immediately and report what you have so far.
+
+VARIABLE NAMING:
+- Use snake_case: operator_name, lot_number, completion_date, incubation_temp_c
+- Use these KNOWN variables when applicable (they auto-fill from the system):
+  {known_vars}
+
+FOR TABLE LOOPS:
+- Repeating rows use {{%tr for step in steps %}} / {{%tr endfor %}} \
+(docxtpl row-loop syntax)
+- Place Jinja tags inside <w:t> elements
+
+OPENXML RULES:
+- Output ONLY the <w:body>...</w:body> content — no XML declaration, \
+no document wrapper, no namespace declarations
+- Use <w:p> for paragraphs, <w:tbl> for tables, <w:r><w:t> for text runs
+- Use <w:pPr><w:pStyle w:val="Heading1"/></w:pPr> for headings
+- Jinja2 syntax goes inside <w:t> elements as literal text
+- Ensure all XML tags are properly closed and well-formed
+
+EXAMPLE — paragraph with a variable:
+<w:p>
+  <w:r><w:t>Prepared by: {{{{ operator_name }}}} on \
+{{{{ completion_date }}}}</w:t></w:r>
+</w:p>
+
+EXAMPLE — table with repeating rows:
+<w:tbl>
+  <w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr>
+  <w:tr>
+    <w:tc><w:p><w:r><w:t>Step</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>Description</w:t></w:r></w:p></w:tc>
+  </w:tr>
+  <w:tr>
+    <w:tc><w:p><w:r><w:t>{{%tr for step in steps %}}</w:t></w:r>\
+</w:p></w:tc>
+  </w:tr>
+  <w:tr>
+    <w:tc><w:p><w:r><w:t>{{{{ step.name }}}}</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>{{{{ step.description }}}}</w:t></w:r>\
+</w:p></w:tc>
+  </w:tr>
+  <w:tr>
+    <w:tc><w:p><w:r><w:t>{{%tr endfor %}}</w:t></w:r></w:p></w:tc>
+  </w:tr>
+</w:tbl>
+""".format(known_vars=", ".join(sorted(KNOWN_VARIABLES)))
+
+
 # ── Main Conversion Pipeline ──
 
 
@@ -511,270 +750,133 @@ async def convert_document(
     template_type: str,
     conversion_id: UUID | None = None,
 ) -> dict[str, Any]:
-    """Main conversion pipeline: file → PDF → AI → template → verify.
+    """Main conversion: file -> agent loop with tools -> template.
 
-    Args:
-        db: Database session (for model resolution).
-        org_id: Organization ID.
-        file_bytes: Raw uploaded file content.
-        filename: Original filename (used for extension detection).
-        template_type: "SOP" or "BATCH_RECORD".
-        conversion_id: Optional pre-assigned conversion ID (for background tasks).
-
-    Returns a dict matching ConvertResponse schema.
+    The AI model drives the conversion by calling write_template,
+    validate, and compare_to_original tools in whatever order it
+    chooses, up to a configurable max tool calls limit.
     """
-    from pydantic_ai import Agent
-
     from app.services.ai_config import get_model
 
-    TOTAL_STEPS = 6
     if conversion_id is None:
         conversion_id = uuid4()
+
     state = ConversionState(org_id, conversion_id)
     state.ensure_dir()
 
-    state.set_progress("processing", "Extracting document content...", 1, TOTAL_STEPS)
+    event_stream = EventStream()
+    _active_streams[str(conversion_id)] = event_stream
 
-    # Step 1: Store original and extract text content
-    state.write("original.docx", file_bytes)
-
-    ext = Path(filename).suffix.lower()
-    is_image = ext in (".png", ".jpg", ".jpeg")
-
-    # Extract text content based on file type
-    logger.info(
-        "template_convert: extracting content from %s (%d bytes)",
-        filename, len(file_bytes),
-    )
-    if ext in (".docx",):
-        doc_text = _extract_text_from_docx(file_bytes)
-    elif is_image:
-        doc_text = "[Image file — text extraction not available for images with this model]"
-    else:
-        # For PDF/XLSX, convert to PDF first then note limitation
-        try:
-            pdf_bytes = await _to_pdf(file_bytes, filename)
-            state.write("original.pdf", pdf_bytes)
-            doc_text = "[PDF content — extracted text not available, using file metadata only]"
-        except Exception:
-            doc_text = "[Could not extract text from this file format]"
-
-    # Step 2: Call AI agent to generate OpenXML
-    state.set_progress("processing", "Generating template with AI...", 2, TOTAL_STEPS)
-    model = await get_model("template_convert", db, org_id=org_id)
-    logger.info(
-        "template_convert: resolved model=%s for org=%s",
-        model, org_id,
-    )
-
-    agent = Agent(model, system_prompt=SYSTEM_PROMPT)
-
-    full_prompt = (
-        f"Convert this completed {template_type} document into a Jinja2 "
-        "DOCX template. Output ONLY the <w:body> OpenXML content.\n\n"
-        "DOCUMENT CONTENT:\n"
-        f"```\n{doc_text}\n```\n\n"
-        "Analyze the document structure and content above. Identify all "
-        "variable fields (names, dates, lot numbers, measurements, etc.) "
-        "and replace them with appropriate {{ placeholder }} syntax. "
-        "Keep static text (instructions, headers, section labels) as-is. "
-        "Output ONLY the <w:body> OpenXML content."
-    )
-
-    prompt_chars = len(full_prompt)
-    system_chars = len(SYSTEM_PROMPT)
-    logger.info(
-        "template_convert: calling AI — prompt=%d chars, system=%d chars, "
-        "estimated tokens ~%d",
-        prompt_chars, system_chars, (prompt_chars + system_chars) // 4,
-    )
-
-    AI_TIMEOUT_SECONDS = 180
-    t0 = time.time()
     try:
-        result = await asyncio.wait_for(
-            agent.run(full_prompt),
-            timeout=AI_TIMEOUT_SECONDS,
-        )
-    except asyncio.TimeoutError:
-        elapsed = time.time() - t0
-        logger.error(
-            "template_convert: AI call timed out after %.1fs (limit %ds)",
-            elapsed, AI_TIMEOUT_SECONDS,
-        )
-        state.set_progress(
-            "failed",
-            "AI model timed out",
-            2, TOTAL_STEPS,
-            error=(
-                f"The AI model did not respond within {AI_TIMEOUT_SECONDS}s. "
-                "Try a faster model or a smaller document."
-            ),
-        )
-        raise
-    except Exception as e:
-        elapsed = time.time() - t0
-        logger.error(
-            "template_convert: AI call failed after %.1fs — %s: %s",
-            elapsed, type(e).__name__, e,
-        )
-        state.set_progress(
-            "failed",
-            "AI call failed",
-            2, TOTAL_STEPS,
-            error=f"{type(e).__name__}: {e}",
-        )
-        raise
+        # Store original and prepare input
+        state.write("original", file_bytes)
 
-    elapsed = time.time() - t0
-    output_chars = len(result.output)
-    logger.info(
-        "template_convert: AI responded in %.1fs — output=%d chars (~%d tokens)",
-        elapsed, output_chars, output_chars // 4,
-    )
+        ext = Path(filename).suffix.lower()
+        if ext in (".docx",):
+            doc_text = _extract_text_from_docx(file_bytes)
+            original_pdf = await _to_pdf(file_bytes, filename)
+        elif ext in (".png", ".jpg", ".jpeg"):
+            doc_text = "[Image file]"
+            original_pdf = file_bytes
+        else:
+            original_pdf = await _to_pdf(file_bytes, filename)
+            doc_text = "[PDF/other content]"
 
-    body_xml = _extract_body_xml(result.output)
+        state.write("original.pdf", original_pdf)
 
-    state.set_progress("processing", "Wrapping into DOCX...", 3, TOTAL_STEPS)
-    template_docx = _wrap_in_docx(body_xml)
-    state.write("template.docx", template_docx)
+        # Resolve model
+        model = await get_model("template_convert", db, org_id=org_id)
 
-    # Step 3: Verification loop
-    warnings: list[dict[str, str]] = []
-    verification_passed = False
-    rounds = 0
-    chat_history: list[dict[str, str]] = []
-
-    for i in range(MAX_VERIFICATION_ROUNDS):
-        rounds = i + 1
-        state.set_progress(
-            "processing",
-            f"Verifying template (round {rounds}/{MAX_VERIFICATION_ROUNDS})...",
-            4, TOTAL_STEPS,
+        # Build deps and agent
+        deps = ConversionDeps(
+            state=state,
+            event_stream=event_stream,
+            org_id=org_id,
+            template_type=template_type,
+            original_pdf_bytes=original_pdf,
+            model=model,
         )
-        render_result = _try_render(template_docx, template_type)
 
-        if render_result.render_error:
-            logger.info(
-                "template_convert: verification round %d — render error: %s",
-                rounds, render_result.render_error[:200],
-            )
-            chat_history.append({
-                "role": "user",
-                "content": (
-                    f"The template failed to render: {render_result.render_error}. "
-                    "Fix the OpenXML so it produces a valid template. "
-                    "Output ONLY the corrected <w:body> content."
+        agent: Agent[ConversionDeps, str] = Agent(
+            model,
+            system_prompt=SYSTEM_PROMPT,
+            tools=[
+                write_template_tool,
+                validate_tool,
+                compare_to_original_tool,
+            ],
+            deps_type=ConversionDeps,
+        )
+
+        user_prompt = (
+            f"Convert this completed {template_type} document into a "
+            "Jinja2 DOCX template.\n\n"
+            "DOCUMENT CONTENT:\n"
+            f"```\n{doc_text}\n```\n\n"
+            "Analyze the document structure and content above. Identify "
+            "all variable fields (names, dates, lot numbers, "
+            "measurements, etc.) and replace them with appropriate "
+            "{{ placeholder }} syntax. Keep static text (instructions, "
+            "headers, section labels) as-is.\n\n"
+            "Use your tools to write the template, validate it, and "
+            "compare the rendered output to the original document."
+        )
+
+        await asyncio.wait_for(
+            agent.run(user_prompt, deps=deps),
+            timeout=600,
+        )
+
+        # Build final result from state
+        detected_vars: set[str] = set()
+        if state.exists("template.docx"):
+            template_bytes = state.read("template.docx")
+            all_text = _extract_docx_text(template_bytes)
+            detected_vars = _extract_jinja_variables(all_text)
+
+        warnings: list[dict[str, str]] = []
+        missing = sorted(
+            v for v in KNOWN_VARIABLES if v not in detected_vars
+        )
+        for var in missing:
+            warnings.append({
+                "type": "missing_variable",
+                "variable": var,
+                "description": (
+                    f"Template does not use '{var}' — this data "
+                    "won't appear in the rendered output"
                 ),
             })
-            state.set_progress(
-                "processing",
-                f"Fixing render error (round {rounds}/{MAX_VERIFICATION_ROUNDS})...",
-                4, TOTAL_STEPS,
-            )
-            t_fix = time.time()
-            fix_result = await asyncio.wait_for(
-                agent.run(
-                    chat_history[-1]["content"],
-                    message_history=result.all_messages(),
-                ),
-                timeout=AI_TIMEOUT_SECONDS,
-            )
-            logger.info(
-                "template_convert: fix round %d completed in %.1fs",
-                rounds, time.time() - t_fix,
-            )
-            body_xml = _extract_body_xml(fix_result.output)
-            template_docx = _wrap_in_docx(body_xml)
-            state.write("template.docx", template_docx)
-            result = fix_result
-            continue
 
-        if render_result.jinja_remnants:
-            logger.info(
-                "template_convert: verification round %d — jinja remnants: %s",
-                rounds, render_result.jinja_remnants[:5],
-            )
-            chat_history.append({
-                "role": "user",
-                "content": (
-                    "The rendered output still contains raw Jinja2 syntax: "
-                    f"{render_result.jinja_remnants}. Fix the template XML "
-                    "so all placeholders render correctly with docxtpl. "
-                    "Output ONLY the corrected <w:body> content."
-                ),
-            })
-            state.set_progress(
-                "processing",
-                f"Fixing Jinja2 syntax (round {rounds}/{MAX_VERIFICATION_ROUNDS})...",
-                4, TOTAL_STEPS,
-            )
-            t_fix = time.time()
-            fix_result = await asyncio.wait_for(
-                agent.run(
-                    chat_history[-1]["content"],
-                    message_history=result.all_messages(),
-                ),
-                timeout=AI_TIMEOUT_SECONDS,
-            )
-            logger.info(
-                "template_convert: fix round %d completed in %.1fs",
-                rounds, time.time() - t_fix,
-            )
-            body_xml = _extract_body_xml(fix_result.output)
-            template_docx = _wrap_in_docx(body_xml)
-            state.write("template.docx", template_docx)
-            result = fix_result
-            continue
+        result_data = {
+            "conversion_id": str(conversion_id),
+            "preview_url": state.preview_url,
+            "template_download_url": state.template_url,
+            "warnings": warnings,
+            "variables_detected": sorted(detected_vars),
+        }
 
-        logger.info(
-            "template_convert: verification round %d passed", rounds,
-        )
-        verification_passed = True
-        break
+        state.write_json("result.json", result_data)
 
-    # Step 4: Render final preview
-    state.set_progress("processing", "Rendering preview...", 5, TOTAL_STEPS)
-    logger.info("template_convert: rendering preview PDF via docxtpl + LibreOffice")
-    final_render = _try_render(template_docx, template_type)
-    if final_render.pdf_bytes:
-        state.write("preview.pdf", final_render.pdf_bytes)
-        logger.info("template_convert: preview PDF generated (%d bytes)", len(final_render.pdf_bytes))
-    else:
-        logger.warning("template_convert: preview PDF not generated (render_error=%s)", final_render.render_error)
-
-    # Step 5: Check missing known variables
-    state.set_progress("processing", "Checking variable coverage...", 6, TOTAL_STEPS)
-    detected_vars = _extract_jinja_variables(body_xml)
-    missing = sorted(v for v in KNOWN_VARIABLES if v not in detected_vars)
-    for var in missing:
-        warnings.append({
-            "type": "missing_variable",
-            "variable": var,
-            "description": (
-                f"Template does not use '{var}' — this data won't appear "
-                "in the rendered output"
+        event_stream.push("complete", {
+            "template_url": state.template_url,
+            "preview_url": (
+                state.preview_url
+                if state.exists("preview.pdf")
+                else None
             ),
+            "variables": sorted(detected_vars),
+            "warnings": warnings,
         })
 
-    state.write_json("chat_history.json", chat_history)
-    state.write_json("detected_vars.json", sorted(detected_vars))
+        return result_data
 
-    result_data = {
-        "conversion_id": str(conversion_id),
-        "preview_url": state.preview_url,
-        "template_download_url": state.template_url,
-        "warnings": warnings,
-        "variables_detected": sorted(detected_vars),
-        "verification_rounds": rounds,
-        "verification_passed": verification_passed,
-    }
-
-    # Write final result and mark complete
-    state.write_json("result.json", result_data)
-    state.set_progress("completed", "Done", TOTAL_STEPS, TOTAL_STEPS)
-
-    return result_data
+    except Exception as e:
+        logger.exception("Template conversion failed")
+        event_stream.push("error", {"message": str(e)})
+        raise
+    finally:
+        event_stream.close()
 
 
 async def refine_template(
@@ -785,86 +887,110 @@ async def refine_template(
 ) -> dict[str, Any]:
     """Refine an existing conversion via natural language instruction.
 
-    Loads the current template and chat history, sends the instruction
-    to the AI agent, and re-runs the verification loop.
+    Uses the same tool-based agent loop as convert_document.
     """
-    from pydantic_ai import Agent
-
     from app.services.ai_config import get_model
 
-    model = await get_model("template_convert", db, org_id=org_id)
-    agent = Agent(model, system_prompt=SYSTEM_PROMPT)
+    cid = str(state.conversion_id)
+    event_stream = EventStream()
+    _active_streams[cid] = event_stream
 
-    chat_history = state.read_json("chat_history.json") if state.exists(
-        "chat_history.json"
-    ) else []
+    try:
+        model = await get_model("template_convert", db, org_id=org_id)
 
-    prompt = (
-        f"The user wants to modify the template: {instruction}\n\n"
-        "Output ONLY the updated <w:body> OpenXML content."
-    )
+        original_pdf = (
+            state.read("original.pdf")
+            if state.exists("original.pdf")
+            else b""
+        )
 
-    result = await agent.run(prompt)
-    body_xml = _extract_body_xml(result.output)
-    template_docx = _wrap_in_docx(body_xml)
-    state.write("template.docx", template_docx)
+        deps = ConversionDeps(
+            state=state,
+            event_stream=event_stream,
+            org_id=org_id,
+            template_type="SOP",
+            original_pdf_bytes=original_pdf,
+            model=model,
+        )
 
-    chat_history.append({"role": "user", "content": instruction})
-    chat_history.append({"role": "assistant", "content": "Template updated."})
+        agent: Agent[ConversionDeps, str] = Agent(
+            model,
+            system_prompt=SYSTEM_PROMPT,
+            tools=[
+                write_template_tool,
+                validate_tool,
+                compare_to_original_tool,
+            ],
+            deps_type=ConversionDeps,
+        )
 
-    # Re-run verification
-    verification_passed = False
-    rounds = 0
-    for i in range(MAX_VERIFICATION_ROUNDS):
-        rounds = i + 1
-        render_result = _try_render(template_docx, "SOP")
-
-        if render_result.render_error or render_result.jinja_remnants:
-            issue = render_result.render_error or str(
-                render_result.jinja_remnants
+        # Load current template text for context
+        current_text = ""
+        if state.exists("template.docx"):
+            current_text = _extract_docx_text(
+                state.read("template.docx")
             )
-            fix_result = await agent.run(
-                f"Fix this issue: {issue}. Output ONLY corrected <w:body>.",
-                message_history=result.all_messages(),
-            )
-            body_xml = _extract_body_xml(fix_result.output)
-            template_docx = _wrap_in_docx(body_xml)
-            state.write("template.docx", template_docx)
-            result = fix_result
-            continue
 
-        verification_passed = True
-        break
+        prompt = (
+            f"The user wants to modify the existing template.\n"
+            f"Current template content:\n{current_text[:3000]}\n\n"
+            f"User instruction: {instruction}\n\n"
+            "Apply the changes, write the updated template, validate "
+            "it, and compare to the original document."
+        )
 
-    final_render = _try_render(template_docx, "SOP")
-    if final_render.pdf_bytes:
-        state.write("preview.pdf", final_render.pdf_bytes)
+        await asyncio.wait_for(
+            agent.run(prompt, deps=deps),
+            timeout=300,
+        )
 
-    detected_vars = _extract_jinja_variables(body_xml)
-    warnings: list[dict[str, str]] = []
-    missing = sorted(v for v in KNOWN_VARIABLES if v not in detected_vars)
-    for var in missing:
-        warnings.append({
-            "type": "missing_variable",
-            "variable": var,
-            "description": (
-                f"Template does not use '{var}' — this data won't appear "
-                "in the rendered output"
+        # Build result
+        detected_vars: set[str] = set()
+        if state.exists("template.docx"):
+            all_text = _extract_docx_text(state.read("template.docx"))
+            detected_vars = _extract_jinja_variables(all_text)
+
+        warnings: list[dict[str, str]] = []
+        missing = sorted(
+            v for v in KNOWN_VARIABLES if v not in detected_vars
+        )
+        for var in missing:
+            warnings.append({
+                "type": "missing_variable",
+                "variable": var,
+                "description": (
+                    f"Template does not use '{var}' — this data "
+                    "won't appear in the rendered output"
+                ),
+            })
+
+        result_data = {
+            "conversion_id": str(state.conversion_id),
+            "preview_url": state.preview_url,
+            "template_download_url": state.template_url,
+            "warnings": warnings,
+            "variables_detected": sorted(detected_vars),
+        }
+
+        event_stream.push("complete", {
+            "template_url": state.template_url,
+            "preview_url": (
+                state.preview_url
+                if state.exists("preview.pdf")
+                else None
             ),
+            "variables": sorted(detected_vars),
+            "warnings": warnings,
         })
 
-    state.write_json("chat_history.json", chat_history)
-    state.write_json("detected_vars.json", sorted(detected_vars))
+        return result_data
 
-    return {
-        "conversion_id": str(state.conversion_id),
-        "preview_url": state.preview_url,
-        "template_download_url": state.template_url,
-        "warnings": warnings,
-        "variables_detected": sorted(detected_vars),
-        "verification_rounds": rounds,
-        "verification_passed": verification_passed,
-    }
+    except Exception as e:
+        logger.exception("Template refinement failed")
+        event_stream.push("error", {"message": str(e)})
+        raise
+    finally:
+        event_stream.close()
 
 
 async def reupload_template(
@@ -881,19 +1007,7 @@ async def reupload_template(
     if render_result.pdf_bytes:
         state.write("preview.pdf", render_result.pdf_bytes)
 
-    # Extract variables from the uploaded template
-    from docx import Document as DocxDocument
-
-    doc = DocxDocument(BytesIO(file_bytes))
-    all_text_parts: list[str] = []
-    for p in doc.paragraphs:
-        all_text_parts.append(p.text)
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                all_text_parts.append(cell.text)
-    all_text = "\n".join(all_text_parts)
-
+    all_text = _extract_docx_text(file_bytes)
     detected_vars = _extract_jinja_variables(all_text)
 
     warnings: list[dict[str, str]] = []
@@ -926,18 +1040,12 @@ async def reupload_template(
 
     state.write_json("detected_vars.json", sorted(detected_vars))
 
-    verification_passed = (
-        not render_result.render_error and not render_result.jinja_remnants
-    )
-
     return {
         "conversion_id": str(state.conversion_id),
         "preview_url": state.preview_url,
         "template_download_url": state.template_url,
         "warnings": warnings,
         "variables_detected": sorted(detected_vars),
-        "verification_rounds": 1,
-        "verification_passed": verification_passed,
     }
 
 
@@ -952,17 +1060,12 @@ async def save_to_library(
     project_id: UUID | None,
     set_as_default: bool,
 ) -> dict[str, Any]:
-    """Save the converted template to the DocumentTemplate library.
-
-    Copies the template file to the templates storage path and creates
-    a DocumentTemplate DB record.
-    """
+    """Save the converted template to the DocumentTemplate library."""
     from app.models.templates import DocumentTemplate
     from app.services.template_engine import parse_template
 
     template_bytes = state.read("template.docx")
 
-    # Store in the templates directory
     storage = FileStorageService()
     filename = f"converted_{state.conversion_id}.docx"
     parts = [str(org_id), "document_templates", filename]
@@ -971,7 +1074,6 @@ async def save_to_library(
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_bytes(template_bytes)
 
-    # Parse variables from the template
     recognized, unrecognized = parse_template(full_path)
 
     template = DocumentTemplate(
@@ -988,7 +1090,10 @@ async def save_to_library(
             ".wordprocessingml.document"
         ),
         file_size_bytes=len(template_bytes),
-        variables={"recognized": recognized, "unrecognized": unrecognized},
+        variables={
+            "recognized": recognized,
+            "unrecognized": unrecognized,
+        },
     )
     db.add(template)
     await db.flush()

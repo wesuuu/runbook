@@ -7,8 +7,10 @@ Tests the pure/mechanical functions that don't require an AI model:
 - _try_render: rendering a template with mock data and checking for issues
 - _to_pdf: converting input files to PDF
 - ConversionState: filesystem-based conversion session management
+- EventStream: buffered async event stream for SSE
 """
 
+import asyncio
 import json
 import tempfile
 from pathlib import Path
@@ -18,13 +20,13 @@ import pytest
 
 from app.services.template_converter import (
     ConversionState,
+    EventStream,
     _extract_body_xml,
     _extract_jinja_variables,
     _try_render,
     _wrap_in_docx,
     _to_pdf,
     JINJA_PATTERN,
-    MAX_VERIFICATION_ROUNDS,
 )
 
 
@@ -209,7 +211,10 @@ class TestConversionState:
             conv_id = uuid4()
             state = ConversionState(org_id, conv_id, storage_root=tmpdir)
             state.ensure_dir()
-            expected_dir = Path(tmpdir) / str(org_id) / "conversions" / str(conv_id)
+            expected_dir = (
+                Path(tmpdir) / str(org_id) / "tmp" / "conversions"
+                / str(conv_id)
+            )
             assert expected_dir.is_dir()
 
     def test_write_and_read(self):
@@ -250,14 +255,18 @@ class TestConversionState:
         org_id = uuid4()
         conv_id = uuid4()
         state = ConversionState(org_id, conv_id)
-        assert state.preview_url == f"/science/templates/conversions/{conv_id}/preview.pdf"
+        assert state.preview_url == (
+            f"/science/templates/conversions/{conv_id}/preview.pdf"
+        )
 
     def test_template_url(self):
         """Should return correct template download URL."""
         org_id = uuid4()
         conv_id = uuid4()
         state = ConversionState(org_id, conv_id)
-        assert state.template_url == f"/science/templates/conversions/{conv_id}/template.docx"
+        assert state.template_url == (
+            f"/science/templates/conversions/{conv_id}/template.docx"
+        )
 
 
 # ── _to_pdf tests ──
@@ -285,11 +294,10 @@ class TestToPdf:
 
 class TestTryRender:
     def test_valid_template_renders(self):
-        """A template with known variables should render without jinja remnants."""
+        """A template with known variables should render cleanly."""
         from docx import Document
         from io import BytesIO
 
-        # Create a minimal template with a known variable
         doc = Document()
         doc.add_paragraph("Protocol: {{ protocol_name }}")
         buf = BytesIO()
@@ -300,19 +308,17 @@ class TestTryRender:
         assert result.jinja_remnants == []
 
     def test_invalid_jinja_detected(self):
-        """A template with malformed Jinja2 should report remnants."""
+        """A template with malformed Jinja2 should report issues."""
         from docx import Document
         from io import BytesIO
 
         doc = Document()
-        # Deliberately malformed — unclosed tag
         doc.add_paragraph("Protocol: {{ broken_var ")
         buf = BytesIO()
         doc.save(buf)
         template_bytes = buf.getvalue()
 
         result = _try_render(template_bytes, "SOP")
-        # The render should either fail or leave remnants
         assert result.jinja_remnants or result.render_error
 
     def test_plain_text_template(self):
@@ -331,10 +337,82 @@ class TestTryRender:
         assert not result.render_error
 
 
-# ── MAX_VERIFICATION_ROUNDS constant ──
+# ── EventStream tests ──
 
 
-class TestConstants:
-    def test_max_verification_rounds_is_positive(self):
-        assert MAX_VERIFICATION_ROUNDS > 0
-        assert MAX_VERIFICATION_ROUNDS <= 5  # sanity cap
+class TestEventStream:
+    @pytest.mark.asyncio
+    async def test_push_and_iterate(self):
+        """Events pushed should be yielded in order."""
+        stream = EventStream()
+        stream.push("tool_call", {"tool": "write_template", "seq": 1})
+        stream.push("tool_result", {"tool": "write_template", "seq": 1})
+        stream.close()
+
+        events = []
+        async for event_type, data_json in stream.iter_events():
+            events.append((event_type, json.loads(data_json)))
+
+        assert len(events) == 2
+        assert events[0][0] == "tool_call"
+        assert events[0][1]["tool"] == "write_template"
+        assert events[1][0] == "tool_result"
+
+    @pytest.mark.asyncio
+    async def test_late_join_replay(self):
+        """A client connecting after events should get all prior events."""
+        stream = EventStream()
+        stream.push("tool_call", {"tool": "validate", "seq": 1})
+        stream.push("tool_result", {"tool": "validate", "seq": 1})
+        stream.push("complete", {"template_url": "/t.docx"})
+        stream.close()
+
+        events = []
+        async for event_type, data_json in stream.iter_events():
+            events.append(event_type)
+
+        assert events == ["tool_call", "tool_result", "complete"]
+
+    @pytest.mark.asyncio
+    async def test_close_terminates_iterator(self):
+        """Closing the stream should cause the iterator to stop."""
+        stream = EventStream()
+
+        async def producer():
+            await asyncio.sleep(0.05)
+            stream.push("tool_call", {"tool": "write_template"})
+            await asyncio.sleep(0.05)
+            stream.close()
+
+        events = []
+
+        async def consumer():
+            async for event_type, _ in stream.iter_events():
+                events.append(event_type)
+
+        await asyncio.gather(producer(), consumer())
+        assert events == ["tool_call"]
+
+    @pytest.mark.asyncio
+    async def test_multiple_waiters(self):
+        """Multiple consumers should all receive events."""
+        stream = EventStream()
+
+        results_a: list[str] = []
+        results_b: list[str] = []
+
+        async def consumer(results: list[str]):
+            async for event_type, _ in stream.iter_events():
+                results.append(event_type)
+
+        async def producer():
+            await asyncio.sleep(0.02)
+            stream.push("tool_call", {"tool": "validate"})
+            await asyncio.sleep(0.02)
+            stream.close()
+
+        await asyncio.gather(
+            producer(), consumer(results_a), consumer(results_b)
+        )
+        assert results_a == ["tool_call"]
+        assert results_b == ["tool_call"]
