@@ -6,6 +6,7 @@
         type FieldErrors,
     } from "$lib/validation";
     import BarcodeScanner from "./BarcodeScanner.svelte";
+    import * as Dialog from '$lib/components/ui/dialog';
     import ImageAnalysisDialog from "./ImageAnalysisDialog.svelte";
     import ImageGallery from "./ImageGallery.svelte";
 
@@ -806,14 +807,16 @@
     {/if}
 
     <!-- Parameter Tag Selector (shown after image capture) -->
-    {#if showTagSelector && currentStep}
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div class="bg-white rounded-xl shadow-2xl w-[95%] max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+    {#if currentStep}
+        <Dialog.Root bind:open={showTagSelector}>
+            <Dialog.Content
+                class="w-[95%] max-w-md max-h-[90vh] p-0 flex flex-col overflow-hidden"
+            >
                 <!-- Header -->
                 <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
                     <div>
-                        <h3 class="text-lg font-semibold text-slate-900">Tag Image Parameters</h3>
-                        <p class="text-sm text-slate-500">Select which parameters this image captures</p>
+                        <Dialog.Title class="text-lg font-semibold text-slate-900">Tag Image Parameters</Dialog.Title>
+                        <Dialog.Description class="text-sm text-slate-500">Select which parameters this image captures</Dialog.Description>
                     </div>
                 </div>
                 <!-- Body -->
@@ -857,8 +860,8 @@
                         {savingTags ? 'Saving...' : `Tag ${selectedTagSet.size > 0 ? `(${selectedTagSet.size})` : ''}`}
                     </button>
                 </div>
-            </div>
-        </div>
+            </Dialog.Content>
+        </Dialog.Root>
     {/if}
 
     <!-- AI Analysis Dialog -->
