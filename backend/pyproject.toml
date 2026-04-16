@@ -38,6 +38,7 @@ isort = "^5.13.2"
 mypy = "^1.13.0"
 pdf2image = "^1.17"
 Pillow = "^11.0"
+reportlab = "^4.4.10"
 
 [build-system]
 requires = ["poetry-core"]
@@ -47,3 +48,6 @@ build-backend = "poetry.core.masonry.api"
 asyncio_mode = "auto"
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "benchmark: LLM accuracy and E2E protocol import benchmarks (requires AI provider)",
+]
