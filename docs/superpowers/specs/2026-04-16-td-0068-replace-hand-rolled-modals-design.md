@@ -157,36 +157,30 @@ No new dependencies. `bits-ui` already provides `escapeKeydownBehavior` and
 
 ## Testing
 
-TDD per `CLAUDE.md`. Each migrated component gets a Vitest component test that
-asserts the migration contract:
+The frontend's current Vitest setup is Node-only (no `jsdom`/`happy-dom`, no
+Svelte plugin registered for vitest, no setup file). Existing `.test.ts` files
+only cover pure utility functions and schemas. Standing up Svelte 5 component
+testing for 7 files of refactor work is disproportionate to the behavior risk
+— this task explicitly preserves behavior rather than introducing new logic.
 
-**Common assertions (all 7):**
-- Component renders with expected role/aria (role=`dialog`, correct
-  `aria-labelledby`/`aria-describedby` when a `Dialog.Title`/`Dialog.Description`
-  is used).
+**Strategy:**
+- **Static verification** — `npm run check` (svelte-check + tsc) must pass,
+  catching template-level and type-level regressions across all migrated files.
+- **Build verification** — `npm run build` must succeed.
+- **Browser verification (qa-verify)** — primary correctness signal. The
+  qa-verify agent exercises every migrated modal in the running dev server and
+  must confirm:
+  - Each Category A modal opens when its flag is set, closes on the X button,
+    closes on Escape, and closes on outside-click.
+  - The lock screen does **not** close on Escape or outside-click (security
+    regression guard). Only password unlock dismisses it.
+  - The ExpiryWarningBanner critical branch closes only when the "I Understand"
+    button is clicked, and the amber/red inline branches still render.
+  - Visual parity with current `main` (no layout / styling regressions).
 
-**Category A (5 targets):**
-- Does not render when `open` is false.
-- Renders when `open` is true.
-- Pressing Escape closes it (open becomes false via `onOpenChange`).
-- Clicking outside the content closes it.
-- For files that gained the built-in X close button, clicking it closes the
-  modal.
-
-**Category B (2 targets):**
-- Pressing Escape does **not** close the component (regression guard — this is
-  the security property for the lock screen).
-- Clicking outside the content does **not** close.
-- No visible close button is rendered inside the content (`showCloseButton` is
-  false).
-- ExpiryWarningBanner critical branch closes only when the "I Understand"
-  button is clicked.
-- ExpiryWarningBanner amber/red inline branches are unaffected by the
-  migration (render as before).
-
-**Browser verification (qa-verify):**
-After Vitest passes, qa-verify exercises each modal in the running dev server,
-confirming visual parity with current main.
+If behavior regressions are found and a future task wants to codify them,
+that's the right time to invest in Svelte component test infrastructure —
+out of scope here.
 
 ## Risks
 
