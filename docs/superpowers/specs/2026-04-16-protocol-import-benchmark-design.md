@@ -138,9 +138,27 @@ Weighted average:
 
 **Pass threshold**: 75% overall per fixture.
 
-### Output on Failure
+### Score Report Output
 
-When a fixture fails the threshold, the assertion message includes the full score breakdown as a dict so you can immediately see which dimension needs work:
+Every fixture — pass or fail — prints the full score breakdown to stdout. This lets you spot optimization opportunities even when the overall score passes. Example output for a passing fixture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 01-buffer-prep                                    PASS 88% │
+├─────────────────────┬───────┬───────────────────────────────┤
+│ Dimension           │ Score │ Detail                        │
+├─────────────────────┼───────┼───────────────────────────────┤
+│ Step Detection      │  1.00 │ 4/4 found, 0 extra            │
+│ Catalog Matching    │  0.75 │ 3/4 correct                   │
+│ New Unit Op Detect  │  1.00 │ 0/0 new (none expected)       │
+│ Param Extraction    │  0.67 │ 8/12 params correct           │
+│ Role Extraction     │  1.00 │ {Operator} exact match        │
+├─────────────────────┼───────┼───────────────────────────────┤
+│ Overall (weighted)  │  0.88 │ threshold: 0.75               │
+└─────────────────────┴───────┴───────────────────────────────┘
+```
+
+On failure, the assertion message also includes the full breakdown as a JSON dict for programmatic inspection:
 
 ```
 AssertionError: 01-buffer-prep: 62% < 75%
@@ -174,7 +192,7 @@ The `details` dict includes:
 - **params_missed**: specific param keys/values that were wrong or absent
 - **roles_missed / roles_extra**: role detection differences
 
-This breakdown is always printed to stdout as a table even on pass, so benchmark runs produce a full report.
+At the end of the full run, a summary table aggregates all fixtures so you can see which dimension is weakest across the board.
 
 ## Mock Documents
 
