@@ -31,10 +31,11 @@
 
     interface Props {
         open: boolean;
+        projectId?: string;
         onSuccess?: () => void;
     }
 
-    let { open = $bindable(false), onSuccess }: Props = $props();
+    let { open = $bindable(false), projectId, onSuccess }: Props = $props();
 
     // --- State ---
     let step = $state<'upload' | 'processing' | 'review'>('upload');
@@ -48,8 +49,12 @@
     // SSE activity tracking
     let activities = $state<ToolActivity[]>([]);
     let sseCleanup = $state<(() => void) | null>(null);
+    let sseActive = $state(false);
 
     // Conversion result
+    let previewMode = $state<'rendered' | 'template' | 'original'>('rendered');
+    let templateBlobUrl = $state<string | null>(null);
+    let originalBlobUrl = $state<string | null>(null);
     let conversionId = $state<string | null>(null);
     let previewBlobUrl = $state<string | null>(null);
     let templateDownloadUrl = $state<string | null>(null);
@@ -68,16 +73,16 @@
     let saving = $state(false);
 
     const allowedTypes = new Set([
-        'application/pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'image/jpeg',
-        'image/png',
     ]);
 
     function toolLabel(tool: string): string {
         switch (tool) {
-            case 'write_template': return 'Writing template';
+            case 'apply_substitutions': return 'Applying substitutions';
+            case 'add_table_loop': return 'Adding table loop';
+            case 'modify_table': return 'Modifying table';
+            case 'remove_section': return 'Removing section';
+            case 'add_content': return 'Adding content';
             case 'validate': return 'Validating';
             case 'compare_to_original': return 'Comparing to original';
             default: return tool;
@@ -87,6 +92,7 @@
     function stopSSE() {
         sseCleanup?.();
         sseCleanup = null;
+        sseActive = false;
     }
 
     function resetState() {
@@ -100,6 +106,11 @@
         conversionId = null;
         if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
         previewBlobUrl = null;
+        if (templateBlobUrl) URL.revokeObjectURL(templateBlobUrl);
+        templateBlobUrl = null;
+        if (originalBlobUrl) URL.revokeObjectURL(originalBlobUrl);
+        originalBlobUrl = null;
+        previewMode = 'rendered';
         templateDownloadUrl = null;
         warnings = [];
         variablesDetected = [];
@@ -116,7 +127,7 @@
     function handleFileSelect(file: File) {
         error = null;
         if (!allowedTypes.has(file.type)) {
-            error = 'Unsupported file type. Accepted: PDF, DOCX, XLSX, JPEG, PNG';
+            error = 'Unsupported file type. Only .docx files are accepted.';
             return;
         }
         if (file.size > 20 * 1024 * 1024) {
@@ -140,13 +151,48 @@
 
     async function fetchPreview(url: string) {
         const token = getToken();
-        const resp = await fetch(`${API_BASE}${url}`, {
+        const cacheBust = `_t=${Date.now()}`;
+        const separator = url.includes('?') ? '&' : '?';
+        const resp = await fetch(`${API_BASE}${url}${separator}${cacheBust}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
+            cache: 'no-store',
         });
         if (resp.ok) {
             const blob = await resp.blob();
             if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
             previewBlobUrl = URL.createObjectURL(blob);
+        }
+    }
+
+    async function fetchOriginalPreview() {
+        if (!conversionId || originalBlobUrl) return;
+        const token = getToken();
+        const url = `/science/templates/conversions/${conversionId}/original.pdf`;
+        const resp = await fetch(`${API_BASE}${url}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (resp.ok) {
+            const blob = await resp.blob();
+            originalBlobUrl = URL.createObjectURL(blob);
+        }
+    }
+
+    async function fetchTemplatePreview() {
+        if (!conversionId) return;
+        const token = getToken();
+        const url = `/science/templates/conversions/${conversionId}/template.pdf`;
+        const cacheBust = `_t=${Date.now()}`;
+        const resp = await fetch(
+            `${API_BASE}${url}?${cacheBust}`,
+            {
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                cache: 'no-store',
+            },
+        );
+        if (resp.ok) {
+            const blob = await resp.blob();
+            if (templateBlobUrl) URL.revokeObjectURL(templateBlobUrl);
+            templateBlobUrl = URL.createObjectURL(blob);
         }
     }
 
@@ -175,6 +221,7 @@
 
     function startSSE(id: string) {
         stopSSE();
+        sseActive = true;
         sseCleanup = api.connectSSE(
             `/science/templates/conversions/${id}/events`,
             {
@@ -193,6 +240,7 @@
                     );
                 },
                 async onComplete(data) {
+                    sseActive = false;
                     templateDownloadUrl = data.template_url;
                     warnings = data.warnings as ConvertWarning[];
                     variablesDetected = data.variables;
@@ -206,6 +254,7 @@
                     step = 'review';
                 },
                 onError(data) {
+                    sseActive = false;
                     error = data.message || 'Conversion failed';
                     step = 'upload';
                 },
@@ -222,6 +271,9 @@
         chatMessages = [...chatMessages, { role: 'user', content: instruction }];
         refining = true;
 
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
         try {
             const result = await api.post<ConvertResponse>(
                 `/science/templates/conversions/${conversionId}/refine`,
@@ -233,16 +285,21 @@
             variablesDetected = result.variables_detected;
 
             if (result.preview_url) await fetchPreview(result.preview_url);
+            // Re-fetch template preview if currently viewing it
+            if (templateBlobUrl) URL.revokeObjectURL(templateBlobUrl);
+            templateBlobUrl = null;
+            if (previewMode === 'template') await fetchTemplatePreview();
             chatMessages = [...chatMessages, {
                 role: 'assistant',
-                content: 'Template updated. Check the preview for changes.',
+                content: `Template updated with ${result.variables_detected.length} variables. Check the preview.`,
             }];
         } catch (e: unknown) {
-            chatMessages = [...chatMessages, {
-                role: 'assistant',
-                content: `Failed to refine: ${e instanceof Error ? e.message : 'Unknown error'}. Try rephrasing.`,
-            }];
+            const msg = controller.signal.aborted
+                ? 'Refinement timed out after 5 minutes. Try a simpler instruction.'
+                : `Failed to refine: ${e instanceof Error ? e.message : 'Unknown error'}. Try rephrasing.`;
+            chatMessages = [...chatMessages, { role: 'assistant', content: msg }];
         } finally {
+            clearTimeout(timeout);
             refining = false;
         }
     }
@@ -273,6 +330,9 @@
             variablesDetected = result.variables_detected;
 
             if (result.preview_url) await fetchPreview(result.preview_url);
+            if (templateBlobUrl) URL.revokeObjectURL(templateBlobUrl);
+            templateBlobUrl = null;
+            if (previewMode === 'template') await fetchTemplatePreview();
             chatMessages = [...chatMessages, {
                 role: 'assistant',
                 content: 'Re-uploaded template processed. Check the updated preview.',
@@ -296,6 +356,7 @@
                     name: saveName,
                     template_type: templateType,
                     description: saveDescription,
+                    ...(projectId ? { project_id: projectId } : {}),
                 },
             );
             toast.success('Template saved to library');
@@ -339,8 +400,44 @@
         resetState();
     }
 
+    const criticalWarnings = $derived(warnings.filter(w => w.type === 'critical_missing'));
     const missingVarWarnings = $derived(warnings.filter(w => w.type === 'missing_variable'));
-    const otherWarnings = $derived(warnings.filter(w => w.type !== 'missing_variable'));
+    const otherWarnings = $derived(warnings.filter(w => w.type !== 'missing_variable' && w.type !== 'critical_missing'));
+
+    // Resizable split pane
+    let chatWidth = $state(400);
+    let resizing = $state(false);
+    let resizeStartX = $state(0);
+    let resizeStartWidth = $state(0);
+
+    function handleResizePointerDown(e: PointerEvent) {
+        const target = e.currentTarget as HTMLElement;
+        target.setPointerCapture(e.pointerId);
+        resizing = true;
+        resizeStartX = e.clientX;
+        resizeStartWidth = chatWidth;
+    }
+
+    function handleResizePointerMove(e: PointerEvent) {
+        if (!resizing) return;
+        const delta = resizeStartX - e.clientX;
+        chatWidth = Math.max(280, Math.min(700, resizeStartWidth + delta));
+    }
+
+    function handleResizePointerUp() {
+        resizing = false;
+    }
+
+    // Prevent navigation while conversion is running
+    $effect(() => {
+        if (!sseActive) return;
+        function onBeforeUnload(e: BeforeUnloadEvent) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    });
 </script>
 
 {#if open}
@@ -432,14 +529,14 @@
                                     <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
                                 </svg>
                                 <p class="text-sm text-muted-foreground">Drag and drop a file here, or click to browse</p>
-                                <p class="text-xs text-muted-foreground mt-1">PDF, DOCX, XLSX, JPEG, PNG (max 20 MB)</p>
+                                <p class="text-xs text-muted-foreground mt-1">DOCX files only (max 20 MB)</p>
                             </div>
                         {/if}
                         <input
                             id="convert-file-input"
                             type="file"
                             class="hidden"
-                            accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png"
+                            accept=".docx"
                             onchange={handleInputChange}
                         />
                     </div>
@@ -479,10 +576,15 @@
                             </div>
                         {/each}
 
-                        {#if activities.length === 0}
+                        {#if activities.length === 0 && sseActive}
                             <div class="flex items-center gap-2 text-xs text-muted-foreground">
                                 <div class="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0"></div>
                                 <span>Starting AI agent...</span>
+                            </div>
+                        {:else if sseActive && !activities.some(a => a.status === 'running')}
+                            <div class="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                <div class="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                <span>Thinking...</span>
                             </div>
                         {/if}
                     </div>
@@ -491,32 +593,100 @@
 
         {:else if step === 'review'}
             <!-- Review: split pane -->
-            <div class="flex-1 flex overflow-hidden">
-                <!-- Left: PDF preview -->
-                <div class="flex-1 border-r border-border overflow-hidden flex flex-col">
-                    <div class="px-4 py-2 border-b border-border bg-muted/30 text-sm font-medium">
-                        Rendered Preview
+            <div class="flex-1 flex overflow-hidden" style={resizing ? 'user-select: none' : ''}>
+                <!-- Left: preview with toggle -->
+                <div class="flex-1 overflow-hidden flex flex-col min-w-0">
+                    <div class="px-4 py-2 border-b border-border bg-muted/30 flex items-center justify-between">
+                        <div class="flex gap-1 bg-muted rounded-md p-0.5">
+                            <button
+                                class="px-3 py-1 text-xs font-medium rounded transition-colors {previewMode === 'original'
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'}"
+                                onclick={async () => { previewMode = 'original'; await fetchOriginalPreview(); }}
+                            >
+                                Original
+                            </button>
+                            <button
+                                class="px-3 py-1 text-xs font-medium rounded transition-colors {previewMode === 'rendered'
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'}"
+                                onclick={() => (previewMode = 'rendered')}
+                            >
+                                Rendered
+                            </button>
+                            <button
+                                class="px-3 py-1 text-xs font-medium rounded transition-colors {previewMode === 'template'
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'}"
+                                onclick={async () => { previewMode = 'template'; if (!templateBlobUrl) await fetchTemplatePreview(); }}
+                            >
+                                Template
+                            </button>
+                        </div>
                     </div>
                     <div class="flex-1 overflow-auto bg-muted/10">
-                        {#if previewBlobUrl}
-                            <iframe
-                                src="{previewBlobUrl}"
-                                class="w-full h-full"
-                                title="Template Preview"
-                            ></iframe>
+                        {#if previewMode === 'original'}
+                            {#if originalBlobUrl}
+                                <iframe
+                                    src="{originalBlobUrl}"
+                                    class="w-full h-full"
+                                    title="Original Document"
+                                ></iframe>
+                            {:else}
+                                <div class="flex items-center justify-center h-full text-muted-foreground text-sm">
+                                    Loading original...
+                                </div>
+                            {/if}
+                        {:else if previewMode === 'rendered'}
+                            {#if previewBlobUrl}
+                                <iframe
+                                    src="{previewBlobUrl}"
+                                    class="w-full h-full"
+                                    title="Rendered Preview"
+                                ></iframe>
+                            {:else}
+                                <div class="flex items-center justify-center h-full text-muted-foreground text-sm">
+                                    No preview available
+                                </div>
+                            {/if}
                         {:else}
-                            <div class="flex items-center justify-center h-full text-muted-foreground text-sm">
-                                No preview available
-                            </div>
+                            {#if templateBlobUrl}
+                                <iframe
+                                    src="{templateBlobUrl}"
+                                    class="w-full h-full"
+                                    title="Template Preview"
+                                ></iframe>
+                            {:else}
+                                <div class="flex items-center justify-center h-full text-muted-foreground text-sm">
+                                    Loading template...
+                                </div>
+                            {/if}
                         {/if}
                     </div>
                 </div>
 
+                <!-- Resize handle -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                    class="w-2 shrink-0 cursor-col-resize bg-border hover:bg-primary/30 active:bg-primary/40 transition-colors {resizing ? 'bg-primary/40' : ''}"
+                    onpointerdown={handleResizePointerDown}
+                    onpointermove={handleResizePointerMove}
+                    onpointerup={handleResizePointerUp}
+                    style="touch-action: none"
+                ></div>
+
                 <!-- Right: warnings + chat -->
-                <div class="w-[400px] flex flex-col">
+                <div class="flex flex-col shrink-0" style="width: {chatWidth}px">
                     <!-- Warnings -->
                     {#if warnings.length > 0}
                         <div class="px-4 py-3 border-b border-border space-y-2 max-h-48 overflow-y-auto">
+                            {#if criticalWarnings.length > 0}
+                                {#each criticalWarnings as w}
+                                    <div class="bg-destructive/10 text-destructive text-xs p-2 rounded font-medium">
+                                        {w.description}
+                                    </div>
+                                {/each}
+                            {/if}
                             {#if otherWarnings.length > 0}
                                 {#each otherWarnings as w}
                                     <div class="bg-amber-500/10 text-amber-700 text-xs p-2 rounded">
@@ -554,8 +724,9 @@
                         {/each}
                         {#if refining}
                             <div class="flex justify-start">
-                                <div class="px-3 py-2 rounded-lg text-sm bg-muted text-muted-foreground italic">
-                                    Updating template...
+                                <div class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-muted text-muted-foreground">
+                                    <div class="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                    <span class="italic">Updating template...</span>
                                 </div>
                             </div>
                         {/if}

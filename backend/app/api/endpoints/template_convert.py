@@ -8,7 +8,9 @@ to the frontend via Server-Sent Events (SSE).
 import asyncio
 import json
 import logging
-from uuid import UUID, uuid4
+from uuid import UUID
+
+from ulid import ULID
 
 from fastapi import (
     APIRouter,
@@ -18,7 +20,7 @@ from fastapi import (
     HTTPException,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -50,14 +52,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 ALLOWED_INPUT_TYPES = {
-    "application/pdf",
     "application/vnd.openxmlformats-officedocument"
     ".wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument"
-    ".spreadsheetml.sheet",
-    "image/png",
-    "image/jpeg",
-    "image/jpg",
 }
 MAX_INPUT_SIZE = 20 * 1024 * 1024  # 20 MB
 
@@ -106,7 +102,7 @@ async def _run_conversion_background(
                 file_bytes,
                 filename,
                 template_type,
-                conversion_id=UUID(conversion_id),
+                conversion_id=conversion_id,
             )
     except Exception:
         logger.exception("Background template conversion failed")
@@ -154,7 +150,7 @@ async def convert_template(
 
     await _preflight_ai_check(db, org_id)
 
-    conversion_id = str(uuid4())
+    conversion_id = str(ULID())
 
     background_tasks.add_task(
         _run_conversion_background,
@@ -173,7 +169,7 @@ async def convert_template(
 
 @router.get("/templates/conversions/{conversion_id}/events")
 async def conversion_events(
-    conversion_id: UUID,
+    conversion_id: str,
     user: User = Depends(get_current_user),
 ):
     """SSE stream of conversion progress events.
@@ -223,7 +219,7 @@ async def conversion_events(
     response_model=ConvertResponse,
 )
 async def refine_conversion(
-    conversion_id: UUID,
+    conversion_id: str,
     body: RefineRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -254,7 +250,7 @@ async def refine_conversion(
     response_model=ConvertResponse,
 )
 async def reupload_template_file(
-    conversion_id: UUID,
+    conversion_id: str,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -284,7 +280,7 @@ async def reupload_template_file(
 
 @router.post("/templates/conversions/{conversion_id}/save")
 async def save_conversion(
-    conversion_id: UUID,
+    conversion_id: str,
     body: SaveRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -326,9 +322,27 @@ async def save_conversion(
     return result
 
 
+@router.get("/templates/conversions/{conversion_id}/original.pdf")
+async def get_original_pdf(
+    conversion_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Serve the original uploaded document as PDF."""
+    org_id = _require_org(user)
+    state = ConversionState(org_id, conversion_id)
+    if not state.exists("original.pdf"):
+        raise HTTPException(
+            status_code=404, detail="Original not found"
+        )
+    return FileResponse(
+        state._resolve("original.pdf"),
+        media_type="application/pdf",
+    )
+
+
 @router.get("/templates/conversions/{conversion_id}/preview.pdf")
 async def get_preview(
-    conversion_id: UUID,
+    conversion_id: str,
     user: User = Depends(get_current_user),
 ):
     """Serve the rendered PDF preview."""
@@ -344,9 +358,33 @@ async def get_preview(
     )
 
 
+@router.get("/templates/conversions/{conversion_id}/template.pdf")
+async def get_template_pdf(
+    conversion_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Serve the template as PDF (with Jinja2 syntax visible)."""
+    org_id = _require_org(user)
+    state = ConversionState(org_id, conversion_id)
+    if not state.exists("template.docx"):
+        raise HTTPException(
+            status_code=404, detail="Template not found"
+        )
+
+    from app.services.template_converter import _to_pdf
+
+    docx_bytes = state.read("template.docx")
+    pdf_bytes = await _to_pdf(docx_bytes, "template.docx")
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+    )
+
+
 @router.get("/templates/conversions/{conversion_id}/template.docx")
 async def get_template_file(
-    conversion_id: UUID,
+    conversion_id: str,
     user: User = Depends(get_current_user),
 ):
     """Serve the generated template DOCX for download."""

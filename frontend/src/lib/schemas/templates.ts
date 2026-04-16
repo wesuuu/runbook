@@ -2,10 +2,10 @@ import { z } from 'zod';
 
 export const DocumentTemplateSchema = z
     .object({
-        id: z.string().uuid(),
-        org_id: z.string().uuid().nullable(),
-        project_id: z.string().uuid().nullable(),
-        uploaded_by_id: z.string().uuid().nullable(),
+        id: z.string(),
+        org_id: z.string().nullable(),
+        project_id: z.string().nullable(),
+        uploaded_by_id: z.string().nullable(),
         name: z.string(),
         description: z.string().nullable(),
         template_type: z.string(),
@@ -18,7 +18,7 @@ export const DocumentTemplateSchema = z
         is_current_default: z.boolean(),
         status: z.string(),
         archived_at: z.string().nullable(),
-        archived_by_id: z.string().uuid().nullable(),
+        archived_by_id: z.string().nullable(),
         created_at: z.string(),
         updated_at: z.string(),
     })

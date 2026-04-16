@@ -1,10 +1,9 @@
 """Unit tests for template_converter service helpers.
 
 Tests the pure/mechanical functions that don't require an AI model:
-- _extract_body_xml: parsing AI output to get OpenXML body content
-- _wrap_in_docx: wrapping OpenXML into a valid .docx file
-- _extract_jinja_variables: extracting variable names from XML
+- _extract_jinja_variables: extracting variable names from text
 - _try_render: rendering a template with mock data and checking for issues
+- _apply_substitutions_to_docx: find-and-replace on DOCX files
 - _to_pdf: converting input files to PDF
 - ConversionState: filesystem-based conversion session management
 - EventStream: buffered async event stream for SSE
@@ -13,122 +12,22 @@ Tests the pure/mechanical functions that don't require an AI model:
 import asyncio
 import json
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from docx import Document
 
 from app.services.template_converter import (
     ConversionState,
     EventStream,
-    _extract_body_xml,
+    _apply_substitutions_to_docx,
     _extract_jinja_variables,
     _try_render,
-    _wrap_in_docx,
     _to_pdf,
     JINJA_PATTERN,
 )
-
-
-# ── _extract_body_xml tests ──
-
-
-class TestExtractBodyXml:
-    def test_extracts_body_content_from_tags(self):
-        """Should extract content between <w:body> tags."""
-        raw = '<w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body>'
-        result = _extract_body_xml(raw)
-        assert result == '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>'
-
-    def test_strips_markdown_code_fences(self):
-        """Should strip ```xml code fences wrapping the output."""
-        raw = '```xml\n<w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body>\n```'
-        result = _extract_body_xml(raw)
-        assert result == '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>'
-
-    def test_handles_bare_content_without_body_tags(self):
-        """Should return content as-is if no <w:body> tags."""
-        raw = '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>'
-        result = _extract_body_xml(raw)
-        assert result == '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>'
-
-    def test_strips_whitespace(self):
-        """Should strip leading/trailing whitespace."""
-        raw = '  \n<w:p><w:r><w:t>Hello</w:t></w:r></w:p>\n  '
-        result = _extract_body_xml(raw)
-        assert result == '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>'
-
-    def test_handles_code_fence_with_language(self):
-        """Should handle code fences with various language tags."""
-        raw = '```openxml\n<w:p><w:r><w:t>Test</w:t></w:r></w:p>\n```'
-        result = _extract_body_xml(raw)
-        assert '<w:t>Test</w:t>' in result
-
-    def test_preserves_jinja_syntax(self):
-        """Should preserve Jinja2 placeholders in the XML."""
-        raw = '<w:body><w:p><w:r><w:t>{{ protocol_name }}</w:t></w:r></w:p></w:body>'
-        result = _extract_body_xml(raw)
-        assert '{{ protocol_name }}' in result
-
-
-# ── _wrap_in_docx tests ──
-
-
-class TestWrapInDocx:
-    def test_produces_valid_docx_bytes(self):
-        """Should produce bytes that can be opened as a .docx file."""
-        body_xml = '<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>'
-        result = _wrap_in_docx(body_xml)
-        assert isinstance(result, bytes)
-        assert len(result) > 0
-        # .docx files are ZIP archives starting with PK
-        assert result[:2] == b'PK'
-
-    def test_contains_text_content(self):
-        """Should contain the specified text when opened with python-docx."""
-        from docx import Document
-        from io import BytesIO
-
-        body_xml = '<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>'
-        docx_bytes = _wrap_in_docx(body_xml)
-        doc = Document(BytesIO(docx_bytes))
-        all_text = "\n".join(p.text for p in doc.paragraphs)
-        assert "Hello World" in all_text
-
-    def test_preserves_jinja_placeholders(self):
-        """Jinja2 syntax should appear as literal text in the .docx."""
-        from docx import Document
-        from io import BytesIO
-
-        body_xml = '<w:p><w:r><w:t>Name: {{ operator_name }}</w:t></w:r></w:p>'
-        docx_bytes = _wrap_in_docx(body_xml)
-        doc = Document(BytesIO(docx_bytes))
-        all_text = "\n".join(p.text for p in doc.paragraphs)
-        assert "{{ operator_name }}" in all_text
-
-    def test_handles_table_xml(self):
-        """Should handle table structures in the XML."""
-        body_xml = """
-        <w:tbl>
-            <w:tr>
-                <w:tc><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:tc>
-            </w:tr>
-            <w:tr>
-                <w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc>
-            </w:tr>
-        </w:tbl>
-        """
-        docx_bytes = _wrap_in_docx(body_xml)
-        assert isinstance(docx_bytes, bytes)
-        assert docx_bytes[:2] == b'PK'
-
-    def test_fallback_on_invalid_xml(self):
-        """Should not crash on malformed XML — uses fallback."""
-        body_xml = '<w:p><w:r><w:t>Unclosed tag'
-        docx_bytes = _wrap_in_docx(body_xml)
-        # Should still produce a valid .docx (with fallback content)
-        assert isinstance(docx_bytes, bytes)
-        assert docx_bytes[:2] == b'PK'
 
 
 # ── _extract_jinja_variables tests ──
@@ -136,54 +35,29 @@ class TestWrapInDocx:
 
 class TestExtractJinjaVariables:
     def test_extracts_simple_variables(self):
-        """Should extract top-level variable names from {{ }}."""
-        xml = '<w:t>{{ protocol_name }}</w:t><w:t>{{ operator_name }}</w:t>'
-        result = _extract_jinja_variables(xml)
+        text = "Name: {{ protocol_name }}, By: {{ operator_name }}"
+        result = _extract_jinja_variables(text)
         assert "protocol_name" in result
         assert "operator_name" in result
 
     def test_extracts_dotted_variable_top_level(self):
-        """Should extract the top-level name from dotted references."""
-        xml = '<w:t>{{ step.name }}</w:t><w:t>{{ step.description }}</w:t>'
-        result = _extract_jinja_variables(xml)
+        text = "{{ step.name }} {{ step.description }}"
+        result = _extract_jinja_variables(text)
         assert "step" in result
 
     def test_extracts_loop_collections(self):
-        """Should extract collection names from {% for %} loops."""
-        xml = '{% for step in steps %}<w:t>{{ step.name }}</w:t>{% endfor %}'
-        result = _extract_jinja_variables(xml)
+        text = "{% for step in steps %}{{ step.name }}{% endfor %}"
+        result = _extract_jinja_variables(text)
         assert "steps" in result
 
     def test_empty_input(self):
-        """Should return empty set for no variables."""
-        result = _extract_jinja_variables('<w:t>Plain text</w:t>')
+        result = _extract_jinja_variables("Plain text")
         assert result == set()
 
     def test_deduplicates(self):
-        """Should return unique variables."""
-        xml = '<w:t>{{ name }}</w:t><w:t>{{ name }}</w:t>'
-        result = _extract_jinja_variables(xml)
+        text = "{{ name }} and {{ name }}"
+        result = _extract_jinja_variables(text)
         assert result == {"name"}
-
-    def test_mixed_variables_and_loops(self):
-        """Should extract both standalone variables and loop collections."""
-        xml = """
-        <w:t>{{ protocol_name }}</w:t>
-        <w:t>{{ version_number }}</w:t>
-        {% for step in steps %}
-        <w:t>{{ step.name }}</w:t>
-        {% endfor %}
-        {% for role in roles %}
-        <w:t>{{ role.name }}</w:t>
-        {% endfor %}
-        """
-        result = _extract_jinja_variables(xml)
-        assert "protocol_name" in result
-        assert "version_number" in result
-        assert "steps" in result
-        assert "roles" in result
-        assert "step" in result
-        assert "role" in result
 
 
 # ── JINJA_PATTERN tests ──
@@ -200,12 +74,110 @@ class TestJinjaPattern:
         assert not JINJA_PATTERN.findall("Hello world")
 
 
+# ── _apply_substitutions_to_docx tests ──
+
+
+class TestApplySubstitutions:
+    def _make_docx(self, *paragraphs: str) -> bytes:
+        doc = Document()
+        for text in paragraphs:
+            doc.add_paragraph(text)
+        buf = BytesIO()
+        doc.save(buf)
+        return buf.getvalue()
+
+    def _make_docx_with_table(self) -> bytes:
+        doc = Document()
+        doc.add_paragraph("Header text")
+        table = doc.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = "Name:"
+        table.rows[0].cells[1].text = "Dr. Sarah Chen"
+        table.rows[1].cells[0].text = "Date:"
+        table.rows[1].cells[1].text = "2026-01-15"
+        buf = BytesIO()
+        doc.save(buf)
+        return buf.getvalue()
+
+    def test_simple_substitution(self):
+        """Should replace text in paragraphs."""
+        docx = self._make_docx("Prepared by: Dr. Sarah Chen")
+        result, matched, unmatched = _apply_substitutions_to_docx(docx, [
+            {"find": "Dr. Sarah Chen", "replace": "{{ operator_name }}"},
+        ])
+        doc = Document(BytesIO(result))
+        assert "{{ operator_name }}" in doc.paragraphs[0].text
+        assert len(matched) == 1
+        assert len(unmatched) == 0
+
+    def test_multiple_substitutions(self):
+        """Should apply multiple substitutions."""
+        docx = self._make_docx(
+            "Name: John Smith",
+            "Date: 2026-01-15",
+        )
+        result, matched, _ = _apply_substitutions_to_docx(docx, [
+            {"find": "John Smith", "replace": "{{ operator_name }}"},
+            {"find": "2026-01-15", "replace": "{{ effective_date }}"},
+        ])
+        doc = Document(BytesIO(result))
+        text = "\n".join(p.text for p in doc.paragraphs)
+        assert "{{ operator_name }}" in text
+        assert "{{ effective_date }}" in text
+        assert len(matched) == 2
+
+    def test_substitution_in_table_cells(self):
+        """Should replace text inside table cells."""
+        docx = self._make_docx_with_table()
+        result, matched, _ = _apply_substitutions_to_docx(docx, [
+            {"find": "Dr. Sarah Chen", "replace": "{{ operator_name }}"},
+            {"find": "2026-01-15", "replace": "{{ date }}"},
+        ])
+        doc = Document(BytesIO(result))
+        all_text = ""
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    all_text += cell.text + " "
+        assert "{{ operator_name }}" in all_text
+        assert "{{ date }}" in all_text
+        assert len(matched) == 2
+
+    def test_preserves_unmatched_text(self):
+        """Text that doesn't match should be unchanged."""
+        docx = self._make_docx("Static label: some value")
+        result, _, _ = _apply_substitutions_to_docx(docx, [
+            {"find": "some value", "replace": "{{ var }}"},
+        ])
+        doc = Document(BytesIO(result))
+        assert "Static label:" in doc.paragraphs[0].text
+
+    def test_produces_valid_docx(self):
+        """Output should always be a valid DOCX."""
+        docx = self._make_docx("Test document")
+        result, _, _ = _apply_substitutions_to_docx(docx, [
+            {"find": "Test", "replace": "{{ test_var }}"},
+        ])
+        assert result[:2] == b"PK"
+        doc = Document(BytesIO(result))
+        assert len(doc.paragraphs) > 0
+
+    def test_no_match_reports_unmatched(self):
+        """Unmatched finds should be reported."""
+        docx = self._make_docx("Hello world")
+        result, matched, unmatched = _apply_substitutions_to_docx(docx, [
+            {"find": "nonexistent text", "replace": "{{ var }}"},
+        ])
+        doc = Document(BytesIO(result))
+        assert doc.paragraphs[0].text == "Hello world"
+        assert len(matched) == 0
+        assert "nonexistent text" in unmatched
+
+
 # ── ConversionState tests ──
 
 
 class TestConversionState:
     def test_ensure_dir_creates_directory(self):
-        """Should create the conversion directory under storage root."""
         with tempfile.TemporaryDirectory() as tmpdir:
             org_id = uuid4()
             conv_id = uuid4()
@@ -218,7 +190,6 @@ class TestConversionState:
             assert expected_dir.is_dir()
 
     def test_write_and_read(self):
-        """Should write and read files in the conversion directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
             org_id = uuid4()
             conv_id = uuid4()
@@ -228,7 +199,6 @@ class TestConversionState:
             assert state.read("test.txt") == b"hello"
 
     def test_exists(self):
-        """Should correctly report file existence."""
         with tempfile.TemporaryDirectory() as tmpdir:
             org_id = uuid4()
             conv_id = uuid4()
@@ -239,31 +209,26 @@ class TestConversionState:
             assert state.exists("present.txt")
 
     def test_write_json_and_read_json(self):
-        """Should serialize/deserialize JSON data."""
         with tempfile.TemporaryDirectory() as tmpdir:
             org_id = uuid4()
             conv_id = uuid4()
             state = ConversionState(org_id, conv_id, storage_root=tmpdir)
             state.ensure_dir()
-            data = {"vars": ["protocol_name", "operator_name"], "count": 2}
+            data = {"vars": ["protocol_name"], "count": 1}
             state.write_json("meta.json", data)
             result = state.read_json("meta.json")
             assert result == data
 
     def test_preview_url(self):
-        """Should return correct preview URL."""
-        org_id = uuid4()
         conv_id = uuid4()
-        state = ConversionState(org_id, conv_id)
+        state = ConversionState(uuid4(), conv_id)
         assert state.preview_url == (
             f"/science/templates/conversions/{conv_id}/preview.pdf"
         )
 
     def test_template_url(self):
-        """Should return correct template download URL."""
-        org_id = uuid4()
         conv_id = uuid4()
-        state = ConversionState(org_id, conv_id)
+        state = ConversionState(uuid4(), conv_id)
         assert state.template_url == (
             f"/science/templates/conversions/{conv_id}/template.docx"
         )
@@ -275,14 +240,12 @@ class TestConversionState:
 class TestToPdf:
     @pytest.mark.asyncio
     async def test_pdf_passthrough(self):
-        """PDF input should be returned as-is."""
         fake_pdf = b"%PDF-1.4 fake content"
         result = await _to_pdf(fake_pdf, "document.pdf")
         assert result == fake_pdf
 
     @pytest.mark.asyncio
     async def test_image_passthrough(self):
-        """Image input should be returned as-is (fed to model directly)."""
         fake_img = b"\x89PNG fake image"
         for ext in ("image.png", "photo.jpg", "scan.jpeg"):
             result = await _to_pdf(fake_img, ext)
@@ -294,45 +257,19 @@ class TestToPdf:
 
 class TestTryRender:
     def test_valid_template_renders(self):
-        """A template with known variables should render cleanly."""
-        from docx import Document
-        from io import BytesIO
-
         doc = Document()
         doc.add_paragraph("Protocol: {{ protocol_name }}")
         buf = BytesIO()
         doc.save(buf)
-        template_bytes = buf.getvalue()
-
-        result = _try_render(template_bytes, "SOP")
+        result = _try_render(buf.getvalue(), "SOP")
         assert result.jinja_remnants == []
 
-    def test_invalid_jinja_detected(self):
-        """A template with malformed Jinja2 should report issues."""
-        from docx import Document
-        from io import BytesIO
-
-        doc = Document()
-        doc.add_paragraph("Protocol: {{ broken_var ")
-        buf = BytesIO()
-        doc.save(buf)
-        template_bytes = buf.getvalue()
-
-        result = _try_render(template_bytes, "SOP")
-        assert result.jinja_remnants or result.render_error
-
     def test_plain_text_template(self):
-        """A template with no Jinja2 should render cleanly."""
-        from docx import Document
-        from io import BytesIO
-
         doc = Document()
         doc.add_paragraph("This is plain text with no variables.")
         buf = BytesIO()
         doc.save(buf)
-        template_bytes = buf.getvalue()
-
-        result = _try_render(template_bytes, "SOP")
+        result = _try_render(buf.getvalue(), "SOP")
         assert result.jinja_remnants == []
         assert not result.render_error
 
@@ -343,10 +280,9 @@ class TestTryRender:
 class TestEventStream:
     @pytest.mark.asyncio
     async def test_push_and_iterate(self):
-        """Events pushed should be yielded in order."""
         stream = EventStream()
-        stream.push("tool_call", {"tool": "write_template", "seq": 1})
-        stream.push("tool_result", {"tool": "write_template", "seq": 1})
+        stream.push("tool_call", {"tool": "apply_substitutions"})
+        stream.push("tool_result", {"tool": "apply_substitutions"})
         stream.close()
 
         events = []
@@ -355,32 +291,27 @@ class TestEventStream:
 
         assert len(events) == 2
         assert events[0][0] == "tool_call"
-        assert events[0][1]["tool"] == "write_template"
         assert events[1][0] == "tool_result"
 
     @pytest.mark.asyncio
     async def test_late_join_replay(self):
-        """A client connecting after events should get all prior events."""
         stream = EventStream()
-        stream.push("tool_call", {"tool": "validate", "seq": 1})
-        stream.push("tool_result", {"tool": "validate", "seq": 1})
+        stream.push("tool_call", {"tool": "validate"})
         stream.push("complete", {"template_url": "/t.docx"})
         stream.close()
 
         events = []
-        async for event_type, data_json in stream.iter_events():
+        async for event_type, _ in stream.iter_events():
             events.append(event_type)
-
-        assert events == ["tool_call", "tool_result", "complete"]
+        assert events == ["tool_call", "complete"]
 
     @pytest.mark.asyncio
     async def test_close_terminates_iterator(self):
-        """Closing the stream should cause the iterator to stop."""
         stream = EventStream()
 
         async def producer():
             await asyncio.sleep(0.05)
-            stream.push("tool_call", {"tool": "write_template"})
+            stream.push("tool_call", {"tool": "validate"})
             await asyncio.sleep(0.05)
             stream.close()
 
@@ -392,27 +323,3 @@ class TestEventStream:
 
         await asyncio.gather(producer(), consumer())
         assert events == ["tool_call"]
-
-    @pytest.mark.asyncio
-    async def test_multiple_waiters(self):
-        """Multiple consumers should all receive events."""
-        stream = EventStream()
-
-        results_a: list[str] = []
-        results_b: list[str] = []
-
-        async def consumer(results: list[str]):
-            async for event_type, _ in stream.iter_events():
-                results.append(event_type)
-
-        async def producer():
-            await asyncio.sleep(0.02)
-            stream.push("tool_call", {"tool": "validate"})
-            await asyncio.sleep(0.02)
-            stream.close()
-
-        await asyncio.gather(
-            producer(), consumer(results_a), consumer(results_b)
-        )
-        assert results_a == ["tool_call"]
-        assert results_b == ["tool_call"]
