@@ -6,12 +6,13 @@
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
+    import * as Dialog from '$lib/components/ui/dialog';
 
     let {
-        onClose,
+        open = $bindable(false),
         onSuccess,
     }: {
-        onClose: () => void;
+        open?: boolean;
         onSuccess: () => void;
     } = $props();
 
@@ -133,25 +134,13 @@
     });
 </script>
 
-<!-- Modal overlay -->
-<div class="fixed inset-0 z-50 flex items-center justify-center">
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-        class="absolute inset-0 bg-black/50"
-        onclick={onClose}
-        onkeydown={(e) => e.key === 'Escape' && onClose()}
-    ></div>
-    <div
-        class="relative bg-background rounded-lg shadow-xl w-full max-w-5xl max-h-[85vh] flex flex-col"
-    >
+<Dialog.Root bind:open>
+    <Dialog.Content class="w-full max-w-5xl max-h-[85vh] p-0 flex flex-col">
         <!-- Header -->
         <div class="flex items-center justify-between px-6 py-4 border-b">
-            <h2 class="text-lg font-semibold">
+            <Dialog.Title class="text-lg font-semibold">
                 {step === 1 ? 'Upload Template' : 'Preview Template'}
-            </h2>
-            <button class="text-muted-foreground hover:text-foreground text-lg" onclick={onClose}>
-                &times;
-            </button>
+            </Dialog.Title>
         </div>
 
         <!-- Body -->
@@ -299,7 +288,7 @@
         <!-- Footer -->
         <div class="flex items-center justify-between px-6 py-4 border-t">
             {#if step === 1}
-                <Button variant="outline" onclick={onClose}>Cancel</Button>
+                <Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
                 <Button onclick={preview} disabled={!selectedFile || !name.trim() || previewing}>
                     {previewing ? 'Generating Preview...' : 'Preview'}
                 </Button>
@@ -315,5 +304,5 @@
                 </div>
             {/if}
         </div>
-    </div>
-</div>
+    </Dialog.Content>
+</Dialog.Root>

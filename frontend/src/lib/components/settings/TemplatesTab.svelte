@@ -273,15 +273,13 @@
 </div>
 
 <!-- Upload Modal -->
-{#if showUpload}
-    <TemplateUploadModal
-        onClose={() => (showUpload = false)}
-        onSuccess={() => {
-            showUpload = false;
-            loadTemplates();
-        }}
-    />
-{/if}
+<TemplateUploadModal
+    bind:open={showUpload}
+    onSuccess={() => {
+        showUpload = false;
+        loadTemplates();
+    }}
+/>
 
 <!-- Convert Modal -->
 <TemplateConvertModal
