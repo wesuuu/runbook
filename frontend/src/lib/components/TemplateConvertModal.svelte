@@ -4,6 +4,7 @@
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
+    import * as Dialog from '$lib/components/ui/dialog';
     import { formatFileSize } from '$lib/utils/document-utils';
     import { API_BASE } from '$lib/config';
     import { getToken } from '$lib/auth.svelte';
@@ -781,34 +782,33 @@
                 </div>
             </div>
 
-            <!-- Save dialog (inline) -->
-            {#if showSaveDialog}
-                <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-                    <div class="bg-background rounded-lg border shadow-lg p-6 w-full max-w-md space-y-4">
-                        <h3 class="text-lg font-semibold">Save Template to Library</h3>
-                        <div>
-                            <Label for="save-name">Template Name</Label>
-                            <Input id="save-name" bind:value={saveName} class="mt-1" />
-                        </div>
-                        <div>
-                            <Label for="save-desc">Description (optional)</Label>
-                            <Input id="save-desc" bind:value={saveDescription} class="mt-1" />
-                        </div>
-                        <div>
-                            <Label>Type</Label>
-                            <p class="text-sm text-muted-foreground mt-1">
-                                {templateType === 'SOP' ? 'Protocol' : 'Batch Record'}
-                            </p>
-                        </div>
-                        <div class="flex justify-end gap-2">
-                            <Button variant="outline" onclick={() => (showSaveDialog = false)}>Cancel</Button>
-                            <Button onclick={handleSave} disabled={!saveName.trim() || saving}>
-                                {saving ? 'Saving...' : 'Save'}
-                            </Button>
-                        </div>
+            <Dialog.Root bind:open={showSaveDialog}>
+                <Dialog.Content class="max-w-md space-y-4">
+                    <Dialog.Header>
+                        <Dialog.Title class="text-lg font-semibold">Save Template to Library</Dialog.Title>
+                    </Dialog.Header>
+                    <div>
+                        <Label for="save-name">Template Name</Label>
+                        <Input id="save-name" bind:value={saveName} class="mt-1" />
                     </div>
-                </div>
-            {/if}
+                    <div>
+                        <Label for="save-desc">Description (optional)</Label>
+                        <Input id="save-desc" bind:value={saveDescription} class="mt-1" />
+                    </div>
+                    <div>
+                        <Label>Type</Label>
+                        <p class="text-sm text-muted-foreground mt-1">
+                            {templateType === 'SOP' ? 'Protocol' : 'Batch Record'}
+                        </p>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <Button variant="outline" onclick={() => (showSaveDialog = false)}>Cancel</Button>
+                        <Button onclick={handleSave} disabled={!saveName.trim() || saving}>
+                            {saving ? 'Saving...' : 'Save'}
+                        </Button>
+                    </div>
+                </Dialog.Content>
+            </Dialog.Root>
         {/if}
     </div>
     </div>
