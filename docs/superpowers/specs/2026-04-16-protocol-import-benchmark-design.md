@@ -136,7 +136,45 @@ Weighted average:
 - Parameter Extraction: 15%
 - Role Extraction: 10%
 
-**Pass threshold**: 75% overall per fixture. Printed as a report table.
+**Pass threshold**: 75% overall per fixture.
+
+### Output on Failure
+
+When a fixture fails the threshold, the assertion message includes the full score breakdown as a dict so you can immediately see which dimension needs work:
+
+```
+AssertionError: 01-buffer-prep: 62% < 75%
+  {
+    "fixture": "01-buffer-prep",
+    "overall": 0.62,
+    "step_detection": 0.75,
+    "catalog_matching": 0.50,
+    "new_unit_op_detection": 1.0,
+    "param_extraction": 0.33,
+    "role_extraction": 1.0,
+    "details": {
+      "steps_expected": 4,
+      "steps_found": 3,
+      "steps_missed": ["Collect QC sample"],
+      "catalog_mismatches": [
+        {"step": "Sterile filter", "expected": "Filtration", "actual": null}
+      ],
+      "params_missed": [
+        {"step": "Prepare Tris Buffer", "param": "pH_target", "expected": 7.4, "actual": null}
+      ]
+    }
+  }
+```
+
+The `details` dict includes:
+- **steps_missed**: expected step names not found in output
+- **steps_extra**: output steps not matching any expected step
+- **catalog_mismatches**: steps where `matched_unit_op_name` differs from expected
+- **is_new_mismatches**: steps where `is_new` flag was wrong
+- **params_missed**: specific param keys/values that were wrong or absent
+- **roles_missed / roles_extra**: role detection differences
+
+This breakdown is always printed to stdout as a table even on pass, so benchmark runs produce a full report.
 
 ## Mock Documents
 
@@ -254,11 +292,14 @@ class TestProtocolImportAccuracy:
         # 4. Score against expected.json
         scores = score_proposal(proposal, expected)
 
-        # 5. Print report row
+        # 5. Always print full report row (pass or fail)
         print_score_report(fixture_dir.name, scores)
 
-        # 6. Assert pass threshold
-        assert scores.overall >= 0.75, f"{fixture_dir.name}: {scores.overall:.0%} < 75%"
+        # 6. Assert pass threshold — failure message includes full breakdown dict
+        assert scores.overall >= 0.75, (
+            f"{fixture_dir.name}: {scores.overall:.0%} < 75%\n"
+            f"{json.dumps(scores.to_dict(), indent=2)}"
+        )
 ```
 
 Marked with `@pytest.mark.benchmark` so they don't run in normal `pytest`. Run with:
