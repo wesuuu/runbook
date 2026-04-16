@@ -15,29 +15,29 @@ Create a benchmark suite that validates the protocol import pipeline produces co
 
 ```
 backend/tests/benchmarks/
-├── conftest.py                  # Shared fixtures, scoring utilities, DB setup
-├── fixtures/
-│   ├── generate_fixtures.py     # Script to (re)generate PDFs and PNGs
-│   ├── 01_buffer_prep/
+├── conftest.py                          # Shared fixtures, scoring utilities, DB setup
+├── input-to-protocol/
+│   ├── generate_fixtures.py             # Script to (re)generate PDFs and PNGs
+│   ├── 01-buffer-prep/
 │   │   ├── document.pdf
 │   │   └── expected.json
-│   ├── 02_cell_culture_passage/
+│   ├── 02-cell-culture-passage/
 │   │   ├── document.pdf
 │   │   └── expected.json
-│   ├── 03_protein_a_purification/
+│   ├── 03-protein-a-purification/
 │   │   ├── document.png
 │   │   └── expected.json
-│   ├── 04_transfection/
+│   ├── 04-transfection/
 │   │   ├── document.pdf
 │   │   └── expected.json
-│   ├── 05_fill_finish_qc/
+│   ├── 05-fill-finish-qc/
 │   │   ├── document.pdf
 │   │   └── expected.json
-│   └── 06_messy_scan/
+│   └── 06-messy-scan/
 │       ├── document.png
 │       └── expected.json
-├── test_llm_eval.py             # LLM accuracy tests (pytest, requires AI provider)
-└── test_e2e_import.py           # Full API E2E tests (pytest, requires DB + AI)
+├── test_llm_eval.py                     # LLM accuracy tests (pytest, requires AI provider)
+└── test_e2e_import.py                   # Full API E2E tests (pytest, requires DB + AI)
 ```
 
 ## Fixture Format
@@ -318,7 +318,7 @@ class TestProtocolImportE2E:
 
 ```bash
 # Generate/regenerate fixture documents
-python backend/tests/benchmarks/fixtures/generate_fixtures.py
+python backend/tests/benchmarks/input-to-protocol/generate_fixtures.py
 
 # LLM eval only (no DB needed, needs AI provider)
 pytest backend/tests/benchmarks/test_llm_eval.py -m benchmark -v
@@ -334,7 +334,7 @@ pytest backend/tests/benchmarks/ -m benchmark -v
 
 Adding a new fixture:
 
-1. Create `backend/tests/benchmarks/fixtures/07_my_new_sop/expected.json`
+1. Create `backend/tests/benchmarks/input-to-protocol/07-my-new-sop/expected.json`
 2. Add a generation function in `generate_fixtures.py` (or place a real PDF/PNG as `document.pdf`/`document.png`)
 3. Run `generate_fixtures.py` if auto-generating
 4. Run `pytest backend/tests/benchmarks/ -m benchmark -v`
