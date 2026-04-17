@@ -1,852 +1,367 @@
-# Batch Record Import Benchmark — Implementation Plan
+# Batch Record Import Benchmark — Implementation Plan (revised)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an LLM accuracy benchmark for the F-0057 paper batch-record import pipeline — migrate the four orphaned fixtures into `backend/tests/benchmarks/document-to-run/`, add stage-separated scoring (extraction + mapping), wire a parametrized runner under the existing `-m benchmark` marker.
+**Goal:** Close two gaps: (1) extend the batch-record import pipeline to preserve timestamps, signatures, and deviations in `Run.execution_data`; (2) add a Run-output benchmark with 8 scoring dimensions that runs under `-m benchmark` against hand-authored `expected_run.json` fixtures.
 
-**Architecture:** Centralize shared benchmark utilities first: `matching.py` with `fuzzy_ratio`/`align_by_name`/`f1`, generalized `discover_fixtures(subdir, marker_file)` + `load_json()` in conftest, and migrate F-0058's `scoring.py` to consume these. Then build `batch_record_scoring.py` (two scorers: `score_extraction`, `score_mapping`) on top of the shared helpers. New `TestBatchRecordAccuracy` class in the existing `test_llm_eval.py`. Conftest extended with shared `pro_org` fixture and an updated `pytest_terminal_summary` that prints three tables (protocol-import, batch-record-extraction, batch-record-mapping).
+**Architecture:** Shared benchmark utilities (`matching.py`, generalized `discover_fixtures`) already in place (Tasks 1-4 on the current branch). New work: small backend schema + execution_data changes → frontend pass-through → single `score_run` scorer on top of the existing shared helpers → runner that executes the full pipeline.
 
-**Tech Stack:** pytest + pytest-asyncio, `difflib.SequenceMatcher` for fuzzy string match, `dataclasses` for score containers, `pydantic_ai` pipeline (already in place).
+**Tech Stack:** pytest + pytest-asyncio, `difflib.SequenceMatcher` via `matching.fuzzy_ratio`, `dataclasses`, existing `pydantic_ai` extraction/mapping pipeline, Svelte 5 frontend.
 
 **Spec:** [docs/superpowers/specs/2026-04-17-batch-record-import-benchmark-design.md](../specs/2026-04-17-batch-record-import-benchmark-design.md)
+
+**Branch baseline:** `feat/f-0057-benchmark` at `7b71672` (shared utilities landed; prior two-stage scoring work was reverted).
 
 ---
 
 ## File Structure
 
 **Create:**
-- `backend/tests/benchmarks/matching.py` — shared `fuzzy_ratio`, `align_by_name`, `f1` helpers
-- `backend/tests/unit/test_benchmark_matching.py` — unit tests for shared matching helpers
-- `backend/tests/benchmarks/batch_record_scoring.py` — dataclasses, batch-record-specific helpers (`_numeric_equal`, `_unit_equal`), `score_extraction`, `score_mapping`, `print_extraction_report`, `print_mapping_report`
-- `backend/tests/unit/test_batch_record_scoring.py` — unit tests for the batch-record scorer (no LLM required)
-- `backend/tests/benchmarks/document-to-run/` — new fixture tree
-- `backend/tests/benchmarks/document-to-run/0{1..5}-<name>/document.pdf` — migrated + new scenario docs
-- `backend/tests/benchmarks/document-to-run/0{1..5}-<name>/expected_extraction.json`
+- `backend/tests/benchmarks/batch_record_scoring.py` — dataclasses, `_numeric_equal`, `_unit_equal`, `_fuzzy_match` alias, `score_run`, `print_run_report`, `print_run_summary`, `_build_auto_finalized`
+- `backend/tests/unit/test_batch_record_scoring.py` — unit tests for the scorer (no LLM)
 - `backend/tests/benchmarks/document-to-run/0{1..5}-<name>/protocol.json`
-- `backend/tests/benchmarks/document-to-run/0{1..5}-<name>/expected_mapping.json`
+- `backend/tests/benchmarks/document-to-run/0{1..5}-<name>/expected_run.json`
+- `backend/tests/benchmarks/document-to-run/05-messy-scan/document.pdf` (generated)
 
 **Modify:**
-- `backend/tests/benchmarks/conftest.py` — generalize `discover_fixtures(subdir, marker_file)` + `load_json(fixture_dir, filename)`, promote `pro_org` to module scope, extend `pytest_terminal_summary`
-- `backend/tests/benchmarks/scoring.py` — migrate `_match_steps` internals to use `matching.align_by_name`; replace inline F1 with `matching.f1`. Public API unchanged.
-- `backend/tests/benchmarks/test_llm_eval.py` — update F-0058 class to use generalized `discover_fixtures`; add `TestBatchRecordAccuracy` class
+- `backend/app/schemas/batch_record_import.py` — extend `FinalizedStepMapping`
+- `backend/app/services/batch_record_extractor.py` — extend `map_values_to_execution_data`
+- `backend/tests/integration/test_batch_record_import_api.py` — integration test for the new fields
+- `backend/tests/benchmarks/conftest.py` — add `pro_org` module fixture, run score accumulator, extend summary hook
+- `backend/tests/benchmarks/test_llm_eval.py` — add `TestBatchRecordAccuracy` class
+- `frontend/src/lib/schemas/batchRecordImport.ts` — extend Zod schema
+- `frontend/src/lib/components/BatchRecordImportModal.svelte` (or wherever finalize mutation is built) — pass through timestamps/signatures/deviations
 
 **Delete:**
-- `backend/tests/integration/test_batch_record_import_llm.py` (superseded smoke test)
+- `backend/tests/integration/test_batch_record_import_llm.py`
 - `backend/tests/fixtures/sample_batch_record.pdf`
 - `backend/tests/fixtures/sample_batch_record_extraction.json`
-- `backend/tests/fixtures/batch_record_{perfect_match,wrong_protocol,half_complete,extra_steps}.pdf` and `_expected.json` (moved, not copied)
+- `backend/tests/benchmarks/document-to-run/0{1..4}-<name>/expected_extraction.json` (replaced by expected_run.json)
 
 ---
 
-## Phase 0 — Fixture Migration
+## Phase 1 — Backend product change (TDD)
 
-### Task 1: Create `document-to-run/` tree and migrate PDFs
+### Task 1: Extend `FinalizedStepMapping` schema + `map_values_to_execution_data`
 
 **Files:**
-- Create directory: `backend/tests/benchmarks/document-to-run/`
-- Move: `backend/tests/fixtures/batch_record_*.pdf` → `document-to-run/0X-<name>/document.pdf`
-- Move: `backend/tests/fixtures/batch_record_*_expected.json` → `document-to-run/0X-<name>/expected_extraction.json`
+- Modify: `backend/app/schemas/batch_record_import.py`
+- Modify: `backend/app/services/batch_record_extractor.py`
+- Modify: `backend/tests/integration/test_batch_record_import_api.py` (new test)
 
-- [ ] **Step 1: Create directories**
+- [ ] **Step 1: Write the failing integration test**
 
-```bash
-mkdir -p backend/tests/benchmarks/document-to-run/01-perfect-match
-mkdir -p backend/tests/benchmarks/document-to-run/02-wrong-protocol
-mkdir -p backend/tests/benchmarks/document-to-run/03-half-complete
-mkdir -p backend/tests/benchmarks/document-to-run/04-extra-steps
-mkdir -p backend/tests/benchmarks/document-to-run/05-messy-scan
+Read `backend/tests/integration/test_batch_record_import_api.py` for fixture/helper conventions. Append a test that:
+1. Seeds a project, protocol, and a batch record import in REVIEW status
+2. POSTs to `/science/batch-record-imports/{id}/finalize` with a `step_mappings` payload that includes `timestamps`, `signatures`, `deviations` on at least one step
+3. Fetches the created Run and asserts `run.execution_data[step_id]["timestamps"]`, `["signatures"]`, `["deviations"]` are present and equal what was sent
+
+Example test skeleton (adapt to match existing conventions in the same file):
+
+```python
+async def test_finalize_preserves_timestamps_signatures_deviations(
+    client: AsyncClient, auth_headers: dict, test_org, db_session,
+):
+    # ... create project, protocol (with at least one step "node-a"), batch record import in REVIEW status ...
+
+    finalize_payload = {
+        "protocol_id": str(protocol.id),
+        "run_name": "TEST-RUN-001",
+        "step_mappings": [{
+            "protocol_step_id": "node-a",
+            "values": [{"schema_field_key": "ph", "value": 7.2, "accepted": True}],
+            "notes": "ok",
+            "na": False,
+            "na_reason": "",
+            "timestamps": [{"label": "Start Time", "value": "08:30", "confidence": 0.9}],
+            "signatures": [{"initials_or_name": "JKL", "role": "Operator", "confidence": 0.88}],
+            "deviations": [{"description": "Minor delay", "severity": "minor", "step_reference": "", "confidence": 0.7}],
+        }],
+    }
+    resp = await client.post(
+        f"/science/batch-record-imports/{import_row.id}/finalize",
+        json=finalize_payload,
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201, resp.text
+
+    run_id = resp.json()["run_id"]
+    run_resp = await client.get(f"/science/runs/{run_id}", headers=auth_headers)
+    assert run_resp.status_code == 200
+    step_data = run_resp.json()["execution_data"]["node-a"]
+    assert step_data["timestamps"] == [{"label": "Start Time", "value": "08:30", "confidence": 0.9}]
+    assert step_data["signatures"] == [{"initials_or_name": "JKL", "role": "Operator", "confidence": 0.88}]
+    assert len(step_data["deviations"]) == 1
+    assert step_data["deviations"][0]["description"] == "Minor delay"
 ```
 
-- [ ] **Step 2: Move PDFs and expected JSONs**
+- [ ] **Step 2: Run and verify it fails**
 
 ```bash
-git mv backend/tests/fixtures/batch_record_perfect_match.pdf backend/tests/benchmarks/document-to-run/01-perfect-match/document.pdf
-git mv backend/tests/fixtures/batch_record_perfect_match_expected.json backend/tests/benchmarks/document-to-run/01-perfect-match/expected_extraction.json
-
-git mv backend/tests/fixtures/batch_record_wrong_protocol.pdf backend/tests/benchmarks/document-to-run/02-wrong-protocol/document.pdf
-git mv backend/tests/fixtures/batch_record_wrong_protocol_expected.json backend/tests/benchmarks/document-to-run/02-wrong-protocol/expected_extraction.json
-
-git mv backend/tests/fixtures/batch_record_half_complete.pdf backend/tests/benchmarks/document-to-run/03-half-complete/document.pdf
-git mv backend/tests/fixtures/batch_record_half_complete_expected.json backend/tests/benchmarks/document-to-run/03-half-complete/expected_extraction.json
-
-git mv backend/tests/fixtures/batch_record_extra_steps.pdf backend/tests/benchmarks/document-to-run/04-extra-steps/document.pdf
-git mv backend/tests/fixtures/batch_record_extra_steps_expected.json backend/tests/benchmarks/document-to-run/04-extra-steps/expected_extraction.json
+cd /home/wesuuu/Code/trellisbio/backend && source .venv/bin/activate && pytest tests/integration/test_batch_record_import_api.py::test_finalize_preserves_timestamps_signatures_deviations -v
 ```
 
-- [ ] **Step 3: Verify moves**
+Expected: FAIL — either Pydantic rejects unknown fields (`timestamps`, `signatures`, `deviations`) or accepts them silently and `execution_data[step_id]` lacks them.
 
-Run: `ls backend/tests/benchmarks/document-to-run/*/`
-Expected: each of 01–04 shows `document.pdf` and `expected_extraction.json`. `05-messy-scan` is empty (populated in Task 21).
+- [ ] **Step 3: Extend the schema**
 
-- [ ] **Step 4: Commit**
+In `backend/app/schemas/batch_record_import.py`, find `class FinalizedStepMapping` (around line 116). Add three fields at the end:
+
+```python
+class FinalizedStepMapping(BaseModel):
+    protocol_step_id: str
+    values: List[FinalizedValue] = []
+    notes: str = ""
+    na: bool = False
+    na_reason: str = ""
+    timestamps: List[ExtractedTimestampResponse] = []
+    signatures: List[ExtractedSignatureResponse] = []
+    deviations: List[ExtractedDeviationResponse] = []
+```
+
+Verify `ExtractedTimestampResponse`, `ExtractedSignatureResponse`, `ExtractedDeviationResponse` are already imported/defined in this file (they should be — they're used by `ExtractedStepResponse`). If not, import them.
+
+- [ ] **Step 4: Extend `map_values_to_execution_data`**
+
+In `backend/app/services/batch_record_extractor.py`, find `def map_values_to_execution_data` (around line 734). The completed-step branch builds this dict:
+
+```python
+execution_data[step_id] = {
+    "status": "completed",
+    "results": results,
+    "notes": notes,
+    "completed_by_user_id": str(user_id),
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+}
+```
+
+Add three new keys BEFORE the `completed_by_user_id` key:
+
+```python
+execution_data[step_id] = {
+    "status": "completed",
+    "results": results,
+    "notes": notes,
+    "timestamps": mapping.get("timestamps", []),
+    "signatures": mapping.get("signatures", []),
+    "deviations": mapping.get("deviations", []),
+    "completed_by_user_id": str(user_id),
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+}
+```
+
+N/A branch unchanged — N/A steps don't carry these.
+
+- [ ] **Step 5: Re-run integration test**
 
 ```bash
-git add backend/tests/benchmarks/document-to-run/
-git commit -m "test(benchmark): migrate batch record fixtures to document-to-run/ [F-0057]"
+cd /home/wesuuu/Code/trellisbio/backend && pytest tests/integration/test_batch_record_import_api.py -q
+```
+
+Expected: all integration tests pass (including the new one + the existing suite, which should still pass since the new fields are all optional with default empty lists).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/app/schemas/batch_record_import.py backend/app/services/batch_record_extractor.py backend/tests/integration/test_batch_record_import_api.py
+git commit -m "feat(batch-import): preserve timestamps, signatures, deviations in Run [F-0057]"
 ```
 
 ---
 
-## Phase 0.5 — Centralize shared benchmark utilities
+## Phase 2 — Frontend pass-through
 
-These three tasks extract helpers currently inline in F-0058's scoring + conftest, so the batch-record benchmark and any future benchmark consume them without duplication. F-0058 tests keep the same public API — the migration is internals-only.
-
-### Task 2: Create `matching.py` with fuzzy/alignment/F1 helpers (TDD)
+### Task 2: Frontend finalize payload + Zod schema
 
 **Files:**
-- Create: `backend/tests/benchmarks/matching.py`
-- Create: `backend/tests/unit/test_benchmark_matching.py`
+- Modify: `frontend/src/lib/schemas/batchRecordImport.ts` (or equivalent — locate via grep)
+- Modify: `frontend/src/lib/components/BatchRecordImportModal.svelte` (or wherever finalize is built)
 
-- [ ] **Step 1: Write the failing tests**
-
-Create `backend/tests/unit/test_benchmark_matching.py`:
-
-```python
-"""Unit tests for benchmarks.matching shared helpers."""
-
-from tests.benchmarks.matching import align_by_name, f1, fuzzy_ratio
-
-
-def test_fuzzy_ratio_identical():
-    assert fuzzy_ratio("Buffer Preparation", "Buffer Preparation") == 1.0
-
-
-def test_fuzzy_ratio_case_insensitive():
-    assert fuzzy_ratio("Buffer Prep", "buffer prep") == 1.0
-
-
-def test_fuzzy_ratio_similar():
-    assert fuzzy_ratio("Buffer Prep", "Buffer Preparation") >= 0.7
-
-
-def test_fuzzy_ratio_different():
-    assert fuzzy_ratio("Buffer Prep", "Centrifugation") < 0.5
-
-
-def test_fuzzy_ratio_empty_strings():
-    assert fuzzy_ratio("", "") == 1.0
-    assert fuzzy_ratio("", "foo") == 0.0
-    assert fuzzy_ratio("foo", "") == 0.0
-
-
-def test_align_by_name_perfect():
-    expected = [{"name": "A"}, {"name": "B"}]
-    actual = [{"name": "A"}, {"name": "B"}]
-    aligned = align_by_name(expected, actual, "name")
-    assert len(aligned) == 2
-    assert all(e is not None and a is not None for e, a in aligned)
-
-
-def test_align_by_name_with_step_name_key():
-    expected = [{"step_name": "A"}, {"step_name": "B"}]
-    actual = [{"step_name": "A"}]
-    aligned = align_by_name(expected, actual, "step_name")
-    assert aligned[0][1] is not None
-    assert aligned[1][1] is None
-
-
-def test_align_by_name_fuzzy_above_threshold():
-    expected = [{"name": "Buffer Preparation"}]
-    actual = [{"name": "Buffer Prep"}]
-    aligned = align_by_name(expected, actual, "name", threshold=0.7)
-    assert aligned[0][1] is not None
-
-
-def test_align_by_name_no_match_below_threshold():
-    expected = [{"name": "Filtration"}]
-    actual = [{"name": "Incubation"}]
-    aligned = align_by_name(expected, actual, "name", threshold=0.7)
-    assert aligned[0][1] is None
-
-
-def test_align_by_name_greedy_ambiguous():
-    expected = [{"name": "Buffer Prep"}, {"name": "Buffer Preparation"}]
-    actual = [{"name": "Buffer Prep"}]
-    aligned = align_by_name(expected, actual, "name", threshold=0.7)
-    assert aligned[0][1] is not None  # first wins
-    assert aligned[1][1] is None      # second is missed
-
-
-def test_f1_perfect():
-    assert f1(n_matched=3, n_expected=3, n_actual=3) == 1.0
-
-
-def test_f1_all_missed():
-    assert f1(n_matched=0, n_expected=3, n_actual=0) == 0.0
-
-
-def test_f1_recall_half():
-    # recall 0.5, precision 1.0 -> F1 ≈ 0.667
-    val = f1(n_matched=1, n_expected=2, n_actual=1)
-    assert 0.65 < val < 0.68
-
-
-def test_f1_precision_half():
-    # recall 1.0, precision 0.5 -> F1 ≈ 0.667
-    val = f1(n_matched=1, n_expected=1, n_actual=2)
-    assert 0.65 < val < 0.68
-
-
-def test_f1_both_empty():
-    # Nothing expected, nothing found — trivially perfect
-    assert f1(n_matched=0, n_expected=0, n_actual=0) == 1.0
-```
-
-- [ ] **Step 2: Run to verify fail**
+- [ ] **Step 1: Locate the finalize payload shape**
 
 ```bash
-cd backend && source .venv/bin/activate && pytest tests/unit/test_benchmark_matching.py -v
+cd /home/wesuuu/Code/trellisbio
+grep -rn "step_mappings" frontend/src/lib/schemas/ frontend/src/lib/components/ | head -20
+grep -rn "finalize" frontend/src/lib/components/ frontend/src/routes/ | head -20
 ```
 
-Expected: FAIL with `ModuleNotFoundError: No module named 'tests.benchmarks.matching'`.
+Find the Zod schema for `FinalizedStepMapping` (search terms: `protocol_step_id`, `finalize`, `BatchRecord`).
 
-- [ ] **Step 3: Implement the module**
+- [ ] **Step 2: Extend the Zod schema**
 
-Create `backend/tests/benchmarks/matching.py`:
+Add three optional list fields mirroring the backend shape. Typical pattern — add alongside existing fields:
 
-```python
-"""Shared matching helpers for benchmark scoring.
-
-Used by both the F-0058 protocol-import scorer and the F-0057 batch-record
-scorer. Stays small and stateless by design — domain-specific scoring
-lives in each benchmark's own scoring module.
-"""
-
-from __future__ import annotations
-
-from difflib import SequenceMatcher
-
-
-def fuzzy_ratio(a: str, b: str) -> float:
-    """Case-insensitive fuzzy similarity ratio in [0.0, 1.0].
-
-    Whitespace stripped from both ends. Two empty strings count as a
-    perfect match (1.0); one empty and one non-empty is 0.0.
-    """
-    if not a and not b:
-        return 1.0
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
-
-
-def align_by_name(
-    expected: list[dict],
-    actual: list[dict],
-    name_key: str,
-    threshold: float = 0.7,
-) -> list[tuple[dict, dict | None]]:
-    """Greedy best-match alignment by fuzzy ratio on a named field.
-
-    Returns (expected_item, matched_actual_or_None) pairs in expected order.
-    Each actual item matches at most one expected item. If the best
-    available ratio is below `threshold`, the expected item is marked
-    unmatched.
-    """
-    remaining = list(actual)
-    out: list[tuple[dict, dict | None]] = []
-    for exp in expected:
-        exp_name = exp.get(name_key, "")
-        best = None
-        best_ratio = 0.0
-        for act in remaining:
-            ratio = fuzzy_ratio(exp_name, act.get(name_key, ""))
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best = act
-        if best is not None and best_ratio >= threshold:
-            out.append((exp, best))
-            remaining.remove(best)
-        else:
-            out.append((exp, None))
-    return out
-
-
-def f1(n_matched: int, n_expected: int, n_actual: int) -> float:
-    """F1 score from match counts.
-
-    Empty expected AND empty actual → 1.0 (trivially perfect).
-    Empty expected with non-empty actual → 0.0 (all hallucinations).
-    """
-    if n_expected == 0 and n_actual == 0:
-        return 1.0
-    recall = n_matched / n_expected if n_expected else 0.0
-    precision = n_matched / n_actual if n_actual else 0.0
-    denom = precision + recall
-    return 2 * precision * recall / denom if denom > 0 else 0.0
+```typescript
+export const FinalizedStepMappingSchema = z.object({
+  protocol_step_id: z.string(),
+  values: z.array(FinalizedValueSchema).default([]),
+  notes: z.string().default(''),
+  na: z.boolean().default(false),
+  na_reason: z.string().default(''),
+  timestamps: z.array(ExtractedTimestampSchema).default([]),
+  signatures: z.array(ExtractedSignatureSchema).default([]),
+  deviations: z.array(ExtractedDeviationSchema).default([]),
+});
 ```
 
-- [ ] **Step 4: Run tests**
+Reuse existing `ExtractedTimestamp/Signature/Deviation` Zod schemas if present; otherwise define them to match the backend response shapes.
+
+- [ ] **Step 3: Include the fields when building the finalize payload**
+
+In the finalize-mutation call site (the modal or a hook), where `step_mappings` are assembled from the review UI state, include the three fields from each mapped step's extraction:
+
+```typescript
+step_mappings: mappings.map(m => ({
+  protocol_step_id: m.protocol_step_id,
+  values: m.values,
+  notes: m.notes,
+  na: m.na,
+  na_reason: m.na_reason,
+  timestamps: m.extracted_step?.timestamps ?? [],
+  signatures: m.extracted_step?.signatures ?? [],
+  deviations: m.extracted_step?.deviations ?? [],
+}))
+```
+
+(Exact shape depends on how the modal tracks per-step extraction state. Check the existing payload assembly and add the three fields alongside.)
+
+- [ ] **Step 4: Run frontend checks**
 
 ```bash
-cd backend && pytest tests/unit/test_benchmark_matching.py -v
+cd /home/wesuuu/Code/trellisbio/frontend && npm run check
 ```
 
-Expected: all pass (14 tests).
+Expected: passes. If the Zod inference flags type mismatches at the modal's payload site, fix them.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/tests/benchmarks/matching.py backend/tests/unit/test_benchmark_matching.py
-git commit -m "test(benchmark): extract shared matching helpers [F-0057]"
+git add frontend/src/lib/schemas/batchRecordImport.ts frontend/src/lib/components/BatchRecordImportModal.svelte
+git commit -m "feat(batch-import): pass timestamps/signatures/deviations through finalize [F-0057]"
 ```
 
 ---
 
-### Task 3: Generalize `discover_fixtures` and add `load_json` in conftest
+## Phase 3 — Scorer (TDD)
 
-**Files:**
-- Modify: `backend/tests/benchmarks/conftest.py`
-
-Goal: same public functions, parameterized over subdir + marker filename, so every benchmark uses one helper.
-
-- [ ] **Step 1: Update conftest**
-
-Open `backend/tests/benchmarks/conftest.py`. Replace the `discover_fixtures()` and `load_expected()` block (roughly lines 18-33) with:
-
-```python
-def discover_fixtures(
-    subdir: str = "input-to-protocol",
-    marker_file: str = "expected.json",
-) -> list[Path]:
-    """Find all fixture directories under `subdir` that contain `marker_file`.
-
-    Defaults preserve the F-0058 call site: `discover_fixtures()` with no
-    args returns input-to-protocol dirs with `expected.json`.
-    """
-    root = BENCHMARKS_DIR / subdir
-    if not root.exists():
-        return []
-    return sorted(
-        d for d in root.iterdir()
-        if d.is_dir() and (d / marker_file).exists()
-    )
-
-
-def load_json(fixture_dir: Path, filename: str) -> dict:
-    """Load a JSON file from a fixture directory."""
-    with open(fixture_dir / filename) as f:
-        return json.load(f)
-
-
-def load_expected(fixture_dir: Path) -> dict:
-    """Backwards-compatible wrapper: load expected.json (F-0058 convention)."""
-    return load_json(fixture_dir, "expected.json")
-```
-
-Keep `INPUT_TO_PROTOCOL_DIR` constant as-is (for any external imports).
-
-- [ ] **Step 2: Verify F-0058 benchmark still collects**
-
-```bash
-cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only -q
-```
-
-Expected: `TestProtocolImportAccuracy::test_import_accuracy[*]` items collected for all 6 scenarios without error.
-
-- [ ] **Step 3: Verify `test_benchmark_matching.py` and all unit tests still pass**
-
-```bash
-cd backend && pytest tests/unit/ -q
-```
-
-Expected: all pass.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add backend/tests/benchmarks/conftest.py
-git commit -m "test(benchmark): generalize discover_fixtures and add load_json [F-0057]"
-```
-
----
-
-### Task 4: Migrate F-0058 `scoring.py` to use shared `matching` helpers
-
-**Files:**
-- Modify: `backend/tests/benchmarks/scoring.py`
-
-Goal: replace the inline `SequenceMatcher` usage in `_match_steps` and the inline F1 arithmetic in `score_proposal` with calls to `matching.fuzzy_ratio`, `matching.align_by_name`, `matching.f1`. Public API (`score_proposal`, `BenchmarkScores`, `print_score_report`, `print_summary_table`) unchanged.
-
-- [ ] **Step 1: Add import at top of `scoring.py`**
-
-After the existing `from difflib import SequenceMatcher` line, add:
-
-```python
-from tests.benchmarks.matching import align_by_name, f1, fuzzy_ratio
-```
-
-(Keep the `SequenceMatcher` import for now — remove in Step 3 once nothing uses it.)
-
-- [ ] **Step 2: Replace `_match_steps` body with a thin wrapper around `align_by_name`**
-
-Find the existing function (around line 79):
-
-```python
-def _match_steps(
-    expected_steps: list[dict], actual_steps: list[dict]
-) -> list[tuple[dict, dict | None]]:
-    """Match expected steps to actual steps by fuzzy name similarity.
-
-    Returns list of (expected_step, matched_actual_step_or_None).
-    """
-    remaining_actual = list(actual_steps)
-    matches: list[tuple[dict, dict | None]] = []
-
-    for exp in expected_steps:
-        best_match = None
-        best_ratio = 0.0
-        for act in remaining_actual:
-            act_name = act.get("name", "")
-            ratio = SequenceMatcher(
-                None, exp["name"].lower(), act_name.lower()
-            ).ratio()
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_match = act
-        if best_match and best_ratio >= 0.7:
-            matches.append((exp, best_match))
-            remaining_actual.remove(best_match)
-        else:
-            matches.append((exp, None))
-
-    return matches
-```
-
-Replace with:
-
-```python
-def _match_steps(
-    expected_steps: list[dict], actual_steps: list[dict]
-) -> list[tuple[dict, dict | None]]:
-    """Match expected steps to actual steps by fuzzy name similarity.
-
-    Thin wrapper over `matching.align_by_name` preserving the F-0058 call
-    signature — expected/actual dicts keyed by "name".
-    """
-    return align_by_name(expected_steps, actual_steps, "name", threshold=0.7)
-```
-
-- [ ] **Step 3: Replace inline F1 in `score_proposal` with `f1()`**
-
-Find the block around lines 149-157 inside `score_proposal`:
-
-```python
-    recall = len(matched_expected) / len(expected_steps) if expected_steps else 1.0
-    precision = (
-        len(matched_expected) / len(actual_steps) if actual_steps else (1.0 if not expected_steps else 0.0)
-    )
-    scores.step_detection = (
-        2 * precision * recall / (precision + recall)
-        if (precision + recall) > 0
-        else 0.0
-    )
-```
-
-Replace with:
-
-```python
-    scores.step_detection = f1(
-        n_matched=len(matched_expected),
-        n_expected=len(expected_steps),
-        n_actual=len(actual_steps),
-    )
-```
-
-- [ ] **Step 4: Remove now-unused `SequenceMatcher` import**
-
-Delete the line `from difflib import SequenceMatcher` at the top of `scoring.py` (nothing else in this file uses it after the migration).
-
-- [ ] **Step 5: Verify F-0058 scorer unit tests still pass**
-
-If the repo has any tests that import from `scoring.py`, run them:
-
-```bash
-cd backend && grep -rl "from tests.benchmarks.scoring import\|from tests.benchmarks import scoring" tests/ | head
-cd backend && pytest tests/unit/ -q
-```
-
-Expected: no failures. (The F-0058 scoring module is consumed by the benchmark LLM runner, which isn't run without `-m benchmark`.)
-
-- [ ] **Step 6: Verify F-0058 benchmark still collects cleanly**
-
-```bash
-cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only -q
-```
-
-Expected: 6 `TestProtocolImportAccuracy::test_import_accuracy[*]` items collected without errors.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add backend/tests/benchmarks/scoring.py
-git commit -m "test(benchmark): migrate F-0058 scoring to shared matching helpers [F-0057]"
-```
-
----
-
-## Phase 1 — Batch-Record Scoring Module (TDD)
-
-### Task 5: Create batch-record scoring module skeleton with dataclasses
+### Task 3: `batch_record_scoring.py` — dataclasses + numeric/unit helpers + fuzzy alias
 
 **Files:**
 - Create: `backend/tests/benchmarks/batch_record_scoring.py`
 - Create: `backend/tests/unit/test_batch_record_scoring.py`
 
-- [ ] **Step 1: Write the failing test for dataclass construction**
+- [ ] **Step 1: Write failing tests**
 
 Create `backend/tests/unit/test_batch_record_scoring.py`:
 
 ```python
-"""Unit tests for batch_record_scoring (no LLM required)."""
+"""Unit tests for batch_record_scoring (no LLM)."""
 
 from tests.benchmarks.batch_record_scoring import (
-    ExtractionScoreDetails,
-    ExtractionScores,
-    MappingScoreDetails,
-    MappingScores,
-)
-
-
-def test_extraction_scores_defaults():
-    s = ExtractionScores(fixture_name="01-perfect-match")
-    assert s.overall == 0.0
-    assert not s.passed
-
-
-def test_extraction_scores_perfect():
-    s = ExtractionScores(
-        fixture_name="01-perfect-match",
-        step_detection=1.0,
-        param_extraction=1.0,
-        timestamps=1.0,
-        metadata=1.0,
-        signatures_deviations=1.0,
-        confidence_calibration=1.0,
-    )
-    assert s.overall == 1.0
-    assert s.passed
-
-
-def test_extraction_scores_weighted_sum():
-    s = ExtractionScores(
-        fixture_name="t",
-        step_detection=1.0,
-        param_extraction=1.0,
-        timestamps=0.0,
-        metadata=0.0,
-        signatures_deviations=0.0,
-        confidence_calibration=0.0,
-    )
-    # 0.25 + 0.25 = 0.5
-    assert abs(s.overall - 0.5) < 1e-6
-    assert not s.passed
-
-
-def test_mapping_scores_weighted_sum():
-    s = MappingScores(
-        fixture_name="t",
-        step_matching=1.0,
-        param_field_matching=1.0,
-        na_detection=0.0,
-        extra_step_handling=0.0,
-        mapping_confidence=0.0,
-    )
-    # 0.35 + 0.30 = 0.65
-    assert abs(s.overall - 0.65) < 1e-6
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-```bash
-cd backend && source .venv/bin/activate && pytest tests/unit/test_batch_record_scoring.py -v
-```
-
-Expected: FAIL with `ModuleNotFoundError: No module named 'tests.benchmarks.batch_record_scoring'`.
-
-- [ ] **Step 3: Write minimal scoring module**
-
-Create `backend/tests/benchmarks/batch_record_scoring.py`:
-
-```python
-"""Scoring utilities for batch record import benchmarks.
-
-Compares an actual BatchRecordExtraction and StepMapping list against
-expected fixture JSONs; produces per-dimension scores with detailed
-breakdowns for debugging.
-"""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-
-
-@dataclass
-class ExtractionScoreDetails:
-    steps_expected: int = 0
-    steps_found: int = 0
-    steps_missed: list[str] = field(default_factory=list)
-    steps_extra: list[str] = field(default_factory=list)
-    param_value_mismatches: list[dict] = field(default_factory=list)
-    param_unit_mismatches: list[dict] = field(default_factory=list)
-    metadata_mismatches: list[dict] = field(default_factory=list)
-    timestamps_missed: list[dict] = field(default_factory=list)
-    signatures_missed: list[dict] = field(default_factory=list)
-    deviations_missed: list[dict] = field(default_factory=list)
-    confidence_correlation: float = 0.0
-
-
-@dataclass
-class ExtractionScores:
-    fixture_name: str
-    step_detection: float = 0.0          # 25%
-    param_extraction: float = 0.0        # 25%
-    timestamps: float = 0.0              # 15%
-    metadata: float = 0.0                # 10%
-    signatures_deviations: float = 0.0   # 15%
-    confidence_calibration: float = 0.0  # 10%
-    details: ExtractionScoreDetails = field(default_factory=ExtractionScoreDetails)
-
-    @property
-    def overall(self) -> float:
-        return (
-            self.step_detection * 0.25
-            + self.param_extraction * 0.25
-            + self.timestamps * 0.15
-            + self.metadata * 0.10
-            + self.signatures_deviations * 0.15
-            + self.confidence_calibration * 0.10
-        )
-
-    @property
-    def passed(self) -> bool:
-        return self.overall >= 0.75
-
-    def to_dict(self) -> dict:
-        return {
-            "fixture": self.fixture_name,
-            "overall": round(self.overall, 3),
-            "step_detection": round(self.step_detection, 3),
-            "param_extraction": round(self.param_extraction, 3),
-            "timestamps": round(self.timestamps, 3),
-            "metadata": round(self.metadata, 3),
-            "signatures_deviations": round(self.signatures_deviations, 3),
-            "confidence_calibration": round(self.confidence_calibration, 3),
-            "details": {
-                "steps_expected": self.details.steps_expected,
-                "steps_found": self.details.steps_found,
-                "steps_missed": self.details.steps_missed,
-                "steps_extra": self.details.steps_extra,
-                "param_value_mismatches": self.details.param_value_mismatches,
-                "param_unit_mismatches": self.details.param_unit_mismatches,
-                "metadata_mismatches": self.details.metadata_mismatches,
-                "timestamps_missed": self.details.timestamps_missed,
-                "signatures_missed": self.details.signatures_missed,
-                "deviations_missed": self.details.deviations_missed,
-                "confidence_correlation": round(
-                    self.details.confidence_correlation, 3
-                ),
-            },
-        }
-
-
-@dataclass
-class MappingScoreDetails:
-    step_matching_misses: list[dict] = field(default_factory=list)
-    param_field_matching_misses: list[dict] = field(default_factory=list)
-    na_detection_misses: list[dict] = field(default_factory=list)
-    extra_step_handling_misses: list[dict] = field(default_factory=list)
-
-
-@dataclass
-class MappingScores:
-    fixture_name: str
-    step_matching: float = 0.0           # 35%
-    param_field_matching: float = 0.0    # 30%
-    na_detection: float = 0.0            # 15%
-    extra_step_handling: float = 0.0     # 10%
-    mapping_confidence: float = 0.0      # 10%
-    details: MappingScoreDetails = field(default_factory=MappingScoreDetails)
-
-    @property
-    def overall(self) -> float:
-        return (
-            self.step_matching * 0.35
-            + self.param_field_matching * 0.30
-            + self.na_detection * 0.15
-            + self.extra_step_handling * 0.10
-            + self.mapping_confidence * 0.10
-        )
-
-    @property
-    def passed(self) -> bool:
-        return self.overall >= 0.75
-
-    def to_dict(self) -> dict:
-        return {
-            "fixture": self.fixture_name,
-            "overall": round(self.overall, 3),
-            "step_matching": round(self.step_matching, 3),
-            "param_field_matching": round(self.param_field_matching, 3),
-            "na_detection": round(self.na_detection, 3),
-            "extra_step_handling": round(self.extra_step_handling, 3),
-            "mapping_confidence": round(self.mapping_confidence, 3),
-            "details": {
-                "step_matching_misses": self.details.step_matching_misses,
-                "param_field_matching_misses": self.details.param_field_matching_misses,
-                "na_detection_misses": self.details.na_detection_misses,
-                "extra_step_handling_misses": self.details.extra_step_handling_misses,
-            },
-        }
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
-```
-
-Expected: PASS (4 tests).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): add batch record scoring dataclasses [F-0057]"
-```
-
----
-
-### Task 6: Add numeric/unit helpers and re-export fuzzy match (TDD)
-
-**Files:**
-- Modify: `backend/tests/benchmarks/batch_record_scoring.py` (add helpers)
-- Modify: `backend/tests/unit/test_batch_record_scoring.py`
-
-`fuzzy_ratio` is already implemented and tested in `matching.py` (Task 2). This task adds the batch-record-specific numeric tolerance and unit-synonym helpers, and aliases `_fuzzy_match = fuzzy_ratio` internally so the scorer functions can call `_fuzzy_match(...)` idiomatically.
-
-- [ ] **Step 1: Write failing tests for the new helpers**
-
-Append to `backend/tests/unit/test_batch_record_scoring.py`:
-
-```python
-from tests.benchmarks.batch_record_scoring import (
+    RunScoreDetails,
+    RunScores,
     _fuzzy_match,
     _numeric_equal,
     _unit_equal,
 )
 
 
-def test_fuzzy_match_aliased_to_matching():
-    # Smoke test: the local alias delegates to matching.fuzzy_ratio.
+def test_run_scores_defaults():
+    s = RunScores(fixture_name="t")
+    assert s.overall == 0.0
+    assert not s.passed
+
+
+def test_run_scores_perfect():
+    s = RunScores(
+        fixture_name="t",
+        step_completeness=1.0,
+        param_accuracy=1.0,
+        timestamps=1.0,
+        signatures=1.0,
+        deviations=1.0,
+        na_correctness=1.0,
+        notes_preservation=1.0,
+        run_metadata=1.0,
+    )
+    assert s.overall == 1.0
+    assert s.passed
+
+
+def test_run_scores_weighted_sum():
+    # step_completeness 20% + param_accuracy 25% = 45%
+    s = RunScores(
+        fixture_name="t",
+        step_completeness=1.0,
+        param_accuracy=1.0,
+    )
+    assert abs(s.overall - 0.45) < 1e-6
+
+
+def test_fuzzy_match_aliased():
     assert _fuzzy_match("Buffer Prep", "buffer prep") == 1.0
 
 
-def test_numeric_equal_exact():
-    assert _numeric_equal(100.0, 100.0)
-
-
-def test_numeric_equal_within_relative_tolerance():
-    # 5% tolerance
+def test_numeric_equal():
     assert _numeric_equal(100.0, 104.9)
-    assert _numeric_equal(100.0, 95.1)
-
-
-def test_numeric_equal_outside_relative_tolerance():
     assert not _numeric_equal(100.0, 110.0)
-
-
-def test_numeric_equal_small_values_absolute_tolerance():
-    # pH 7.0 vs 7.01 should match (abs within 0.01)
     assert _numeric_equal(7.00, 7.01)
-    # pH 7.0 vs 7.05 should NOT match (outside both tolerances)
     assert not _numeric_equal(7.00, 7.05)
 
 
-def test_numeric_equal_zero():
-    assert _numeric_equal(0.0, 0.0)
-    assert not _numeric_equal(0.0, 0.5)
-
-
-def test_unit_equal_synonyms():
+def test_unit_equal():
     assert _unit_equal("°C", "C")
     assert _unit_equal("μm", "um")
-    assert _unit_equal("mL", "ml")
-    assert _unit_equal("micron", "um")
-
-
-def test_unit_equal_mismatch():
     assert not _unit_equal("g", "mg")
-    assert not _unit_equal("mL", "L")
-
-
-def test_unit_equal_missing():
-    # Both None/empty: equal
     assert _unit_equal(None, None)
-    assert _unit_equal("", "")
-    assert _unit_equal(None, "")
-    # One side has a unit, the other doesn't: not equal
     assert not _unit_equal("mL", None)
-    assert not _unit_equal(None, "mL")
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Run and verify fails**
 
 ```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
+cd /home/wesuuu/Code/trellisbio/backend && source .venv/bin/activate && pytest tests/unit/test_batch_record_scoring.py -v
 ```
 
-Expected: FAIL with import error for `_fuzzy_match`, `_numeric_equal`, `_unit_equal`.
+Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Implement the helpers**
+- [ ] **Step 3: Create the module**
 
-Append to `backend/tests/benchmarks/batch_record_scoring.py`:
+Create `backend/tests/benchmarks/batch_record_scoring.py`:
 
 ```python
+"""Scoring for batch record import Run-output benchmark.
+
+Compares the `execution_data + run_metadata` produced by the pipeline
+against `expected_run.json` fixtures. One public entry point `score_run`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
 from tests.benchmarks.matching import fuzzy_ratio
 
 
-# Local alias so scorer call sites read `_fuzzy_match(...)` idiomatically
-# while the actual implementation lives in the shared matching module.
 _fuzzy_match = fuzzy_ratio
 
 
 _UNIT_SYNONYMS: dict[str, str] = {
-    "°c": "c",
-    "c": "c",
-    "celsius": "c",
-    "μm": "um",
-    "um": "um",
-    "micron": "um",
-    "microns": "um",
-    "ml": "ml",
-    "milliliter": "ml",
-    "milliliters": "ml",
-    "l": "l",
-    "liter": "l",
-    "liters": "l",
-    "g": "g",
-    "grams": "g",
-    "mg": "mg",
-    "milligrams": "mg",
-    "psi": "psi",
-    "bar": "bar",
-    "rpm": "rpm",
-    "min": "min",
-    "minute": "min",
-    "minutes": "min",
-    "hr": "hr",
-    "hour": "hr",
-    "hours": "hr",
-    "h": "hr",
+    "°c": "c", "c": "c", "celsius": "c",
+    "μm": "um", "um": "um", "micron": "um", "microns": "um",
+    "ml": "ml", "milliliter": "ml", "milliliters": "ml",
+    "l": "l", "liter": "l", "liters": "l",
+    "g": "g", "grams": "g",
+    "mg": "mg", "milligrams": "mg",
+    "psi": "psi", "bar": "bar", "rpm": "rpm",
+    "min": "min", "minute": "min", "minutes": "min",
+    "hr": "hr", "hour": "hr", "hours": "hr", "h": "hr",
 }
 
 
-def _numeric_equal(a: float | int, b: float | int) -> bool:
-    """±5% relative tolerance OR ±0.01 absolute tolerance."""
+def _numeric_equal(a, b) -> bool:
     try:
-        af = float(a)
-        bf = float(b)
+        af, bf = float(a), float(b)
     except (TypeError, ValueError):
         return False
     if af == bf:
@@ -863,97 +378,92 @@ def _numeric_equal(a: float | int, b: float | int) -> bool:
 def _normalize_unit(u: str | None) -> str:
     if u is None:
         return ""
-    key = u.lower().strip()
-    return _UNIT_SYNONYMS.get(key, key)
+    return _UNIT_SYNONYMS.get(u.lower().strip(), u.lower().strip())
 
 
 def _unit_equal(a: str | None, b: str | None) -> bool:
-    na = _normalize_unit(a)
-    nb = _normalize_unit(b)
-    return na == nb
+    return _normalize_unit(a) == _normalize_unit(b)
+
+
+@dataclass
+class RunScoreDetails:
+    steps_expected: int = 0
+    steps_found: int = 0
+    steps_missed: list[str] = field(default_factory=list)
+    steps_extra: list[str] = field(default_factory=list)
+    param_value_mismatches: list[dict] = field(default_factory=list)
+    param_unit_mismatches: list[dict] = field(default_factory=list)
+    timestamps_missed: list[dict] = field(default_factory=list)
+    signatures_missed: list[dict] = field(default_factory=list)
+    deviations_missed: list[dict] = field(default_factory=list)
+    na_mismatches: list[dict] = field(default_factory=list)
+    notes_mismatches: list[dict] = field(default_factory=list)
+    run_metadata_mismatches: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class RunScores:
+    fixture_name: str
+    step_completeness: float = 0.0     # 20%
+    param_accuracy: float = 0.0        # 25%
+    timestamps: float = 0.0            # 15%
+    signatures: float = 0.0            # 10%
+    deviations: float = 0.0            # 10%
+    na_correctness: float = 0.0        # 10%
+    notes_preservation: float = 0.0    # 5%
+    run_metadata: float = 0.0          # 5%
+    details: RunScoreDetails = field(default_factory=RunScoreDetails)
+
+    @property
+    def overall(self) -> float:
+        return (
+            self.step_completeness * 0.20
+            + self.param_accuracy * 0.25
+            + self.timestamps * 0.15
+            + self.signatures * 0.10
+            + self.deviations * 0.10
+            + self.na_correctness * 0.10
+            + self.notes_preservation * 0.05
+            + self.run_metadata * 0.05
+        )
+
+    @property
+    def passed(self) -> bool:
+        return self.overall >= 0.75
+
+    def to_dict(self) -> dict:
+        return {
+            "fixture": self.fixture_name,
+            "overall": round(self.overall, 3),
+            "step_completeness": round(self.step_completeness, 3),
+            "param_accuracy": round(self.param_accuracy, 3),
+            "timestamps": round(self.timestamps, 3),
+            "signatures": round(self.signatures, 3),
+            "deviations": round(self.deviations, 3),
+            "na_correctness": round(self.na_correctness, 3),
+            "notes_preservation": round(self.notes_preservation, 3),
+            "run_metadata": round(self.run_metadata, 3),
+            "details": {
+                "steps_expected": self.details.steps_expected,
+                "steps_found": self.details.steps_found,
+                "steps_missed": self.details.steps_missed,
+                "steps_extra": self.details.steps_extra,
+                "param_value_mismatches": self.details.param_value_mismatches,
+                "param_unit_mismatches": self.details.param_unit_mismatches,
+                "timestamps_missed": self.details.timestamps_missed,
+                "signatures_missed": self.details.signatures_missed,
+                "deviations_missed": self.details.deviations_missed,
+                "na_mismatches": self.details.na_mismatches,
+                "notes_mismatches": self.details.notes_mismatches,
+                "run_metadata_mismatches": self.details.run_metadata_mismatches,
+            },
+        }
 ```
 
 - [ ] **Step 4: Run tests**
 
 ```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
-```
-
-Expected: all PASS (prior dataclass tests + new helper tests).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): add batch record numeric/unit helpers [F-0057]"
-```
-
----
-
-### Task 7: Step alignment wrapper over `align_by_name` (TDD)
-
-`align_by_name` lives in `matching.py` (tested in Task 2). This task adds a tiny wrapper so the scorer uses `_align_steps(expected, actual)` idiomatically (the name_key and threshold for batch records are constant).
-
-**Files:**
-- Modify: `backend/tests/benchmarks/batch_record_scoring.py`
-- Modify: `backend/tests/unit/test_batch_record_scoring.py`
-
-- [ ] **Step 1: Write the wrapper smoke test**
-
-Append:
-
-```python
-from tests.benchmarks.batch_record_scoring import _align_steps
-
-
-def test_align_steps_wrapper_preserves_step_name_key():
-    # Smoke test: wrapper passes "step_name" through to align_by_name.
-    expected = [{"step_name": "A"}, {"step_name": "B"}]
-    actual = [{"step_name": "A"}]
-    aligned = _align_steps(expected, actual)
-    assert aligned[0][1] is not None
-    assert aligned[1][1] is None
-```
-
-(Exhaustive alignment behavior is covered by `test_benchmark_matching.py`.)
-
-- [ ] **Step 2: Run to verify fail**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v -k align_steps
-```
-
-Expected: FAIL with import error for `_align_steps`.
-
-- [ ] **Step 3: Add wrapper**
-
-Append to `batch_record_scoring.py`:
-
-```python
-from tests.benchmarks.matching import align_by_name
-
-
-_STEP_MATCH_THRESHOLD = 0.7
-
-
-def _align_steps(
-    expected: list[dict],
-    actual: list[dict],
-) -> list[tuple[dict, dict | None]]:
-    """Greedy best-match by fuzzy step_name similarity.
-
-    Thin wrapper over `matching.align_by_name` using "step_name" as the
-    key and the batch-record threshold.
-    """
-    return align_by_name(
-        expected, actual, "step_name", threshold=_STEP_MATCH_THRESHOLD,
-    )
-```
-
-- [ ] **Step 4: Run tests**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
+cd /home/wesuuu/Code/trellisbio/backend && pytest tests/unit/test_batch_record_scoring.py -v
 ```
 
 Expected: all pass.
@@ -962,320 +472,201 @@ Expected: all pass.
 
 ```bash
 git add backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): add _align_steps wrapper for batch record [F-0057]"
+git commit -m "test(benchmark): add RunScores dataclass and helpers [F-0057]"
 ```
 
 ---
 
-## Phase 2 — Extraction Scoring (TDD per dimension)
-
-### Task 8: `score_extraction` — step_detection dimension (TDD)
+### Task 4: `score_run` — step_completeness + param_accuracy + na_correctness (TDD)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
 - Modify: `backend/tests/unit/test_batch_record_scoring.py`
 
-- [ ] **Step 1: Write failing tests**
-
-Append to test file:
+- [ ] **Step 1: Append failing tests**
 
 ```python
-from app.services.batch_record_extractor import (
-    BatchRecordExtraction,
-    ExtractedStep,
-)
-from tests.benchmarks.batch_record_scoring import score_extraction
+from tests.benchmarks.batch_record_scoring import score_run
 
 
-def _make_extraction(steps: list[dict]) -> BatchRecordExtraction:
-    return BatchRecordExtraction(
-        steps=[
-            ExtractedStep(step_name=s["step_name"], confidence=s.get("confidence", 0.9))
-            for s in steps
+def _mk_expected(execution_data: dict, run_name: str = "t") -> dict:
+    return {"run_name": run_name, "execution_data": execution_data}
+
+
+def _mk_protocol_graph(step_ids: list[str]) -> dict:
+    return {
+        "nodes": [
+            {"id": sid, "type": "unitOp", "position": {"x": 0, "y": 0},
+             "data": {"label": sid, "paramSchema": {"type": "object", "properties": {}}}}
+            for sid in step_ids
         ],
-        overall_confidence=0.9,
-    )
-
-
-def test_score_extraction_step_detection_perfect():
-    actual = _make_extraction([{"step_name": "A"}, {"step_name": "B"}])
-    expected = {"steps": [{"step_name": "A"}, {"step_name": "B"}]}
-    scores = score_extraction(actual, expected, "t")
-    assert scores.step_detection == 1.0
-    assert scores.details.steps_expected == 2
-    assert scores.details.steps_found == 2
-    assert scores.details.steps_missed == []
-
-
-def test_score_extraction_step_detection_missed():
-    actual = _make_extraction([{"step_name": "A"}])
-    expected = {"steps": [{"step_name": "A"}, {"step_name": "B"}]}
-    scores = score_extraction(actual, expected, "t")
-    # recall 0.5, precision 1.0 -> F1 = 2*1*0.5/(1+0.5) = 0.667
-    assert 0.65 < scores.step_detection < 0.7
-    assert scores.details.steps_missed == ["B"]
-
-
-def test_score_extraction_step_detection_extra():
-    actual = _make_extraction([{"step_name": "A"}, {"step_name": "C"}])
-    expected = {"steps": [{"step_name": "A"}]}
-    scores = score_extraction(actual, expected, "t")
-    # recall 1.0, precision 0.5 -> F1 = 0.667
-    assert 0.65 < scores.step_detection < 0.7
-    assert "C" in scores.details.steps_extra
-```
-
-- [ ] **Step 2: Run to verify fail**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
-```
-
-Expected: FAIL with import error for `score_extraction`.
-
-- [ ] **Step 3: Implement `score_extraction` skeleton with step_detection only**
-
-Append to `batch_record_scoring.py`:
-
-```python
-from app.services.batch_record_extractor import BatchRecordExtraction
-
-
-def score_extraction(
-    actual: BatchRecordExtraction,
-    expected: dict,
-    fixture_name: str = "",
-) -> ExtractionScores:
-    """Score a BatchRecordExtraction against expected_extraction.json."""
-    scores = ExtractionScores(fixture_name=fixture_name)
-    d = scores.details
-
-    expected_steps = expected.get("steps", [])
-    actual_steps_raw = [s.model_dump() for s in actual.steps]
-
-    d.steps_expected = len(expected_steps)
-    d.steps_found = len(actual_steps_raw)
-
-    # ── 1. step_detection (F1 on step_name fuzzy match) ──
-    aligned = _align_steps(expected_steps, actual_steps_raw)
-    matched_expected = [e for e, a in aligned if a is not None]
-    d.steps_missed = [
-        e.get("step_name", "?") for e, a in aligned if a is None
-    ]
-    matched_actual_names = {
-        a.get("step_name", "") for _, a in aligned if a is not None
+        "edges": [],
     }
-    d.steps_extra = [
-        s.get("step_name", "?") for s in actual_steps_raw
-        if s.get("step_name", "") not in matched_actual_names
-    ]
-
-    recall = (
-        len(matched_expected) / len(expected_steps)
-        if expected_steps else 1.0
-    )
-    precision = (
-        len(matched_expected) / len(actual_steps_raw)
-        if actual_steps_raw else (1.0 if not expected_steps else 0.0)
-    )
-    scores.step_detection = (
-        2 * precision * recall / (precision + recall)
-        if (precision + recall) > 0 else 0.0
-    )
-
-    return scores
-```
-
-- [ ] **Step 4: Run tests**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
-```
-
-Expected: all pass (step_detection tests + prior dataclass/helper tests).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add -p backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): score step_detection dimension [F-0057]"
-```
-
----
-
-### Task 9: `score_extraction` — param_extraction (TDD)
-
-**Files:**
-- Modify: `backend/tests/benchmarks/batch_record_scoring.py`
-- Modify: `backend/tests/unit/test_batch_record_scoring.py`
-
-- [ ] **Step 1: Write failing tests**
-
-Append to test file:
-
-```python
-from app.services.batch_record_extractor import ExtractedParameterValue
 
 
-def _make_extraction_with_params(steps_data: list[dict]) -> BatchRecordExtraction:
-    steps = []
-    for s in steps_data:
-        params = [
-            ExtractedParameterValue(
-                field_label=p["field_label"],
-                value=p["value"],
-                unit=p.get("unit"),
-                confidence=p.get("confidence", 0.9),
-            )
-            for p in s.get("parameters", [])
-        ]
-        steps.append(ExtractedStep(
-            step_name=s["step_name"],
-            parameters=params,
-            confidence=s.get("confidence", 0.9),
-        ))
-    return BatchRecordExtraction(steps=steps, overall_confidence=0.9)
+def test_score_run_step_completeness_perfect():
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [], "signatures": [], "deviations": []}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [], "signatures": [], "deviations": []}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.step_completeness == 1.0
+    assert scores.details.steps_expected == 1
+    assert scores.details.steps_found == 1
 
 
-def test_score_extraction_params_perfect():
-    actual = _make_extraction_with_params([{
-        "step_name": "Buffer Prep",
-        "parameters": [
-            {"field_label": "pH", "value": 7.2, "unit": None},
-            {"field_label": "Volume", "value": 500, "unit": "mL"},
-        ],
-    }])
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "parameters": [
-            {"field_label": "pH", "value": 7.2, "unit": None},
-            {"field_label": "Volume", "value": 500, "unit": "mL"},
-        ],
-    }]}
-    scores = score_extraction(actual, expected, "t")
-    assert scores.param_extraction == 1.0
+def test_score_run_step_completeness_missing():
+    # Expected covers 2 steps, actual covers 1
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": ""}}
+    expected = _mk_expected({
+        "node-a": {"status": "completed", "results": {}, "notes": ""},
+        "node-b": {"status": "completed", "results": {}, "notes": ""},
+    })
+    protocol = _mk_protocol_graph(["node-a", "node-b"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    # F1 with recall 0.5, precision 1.0 -> 0.667
+    assert 0.65 < scores.step_completeness < 0.7
+    assert "node-b" in scores.details.steps_missed
 
 
-def test_score_extraction_params_wrong_value():
-    actual = _make_extraction_with_params([{
-        "step_name": "Buffer Prep",
-        "parameters": [{"field_label": "pH", "value": 8.0, "unit": None}],
-    }])
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "parameters": [{"field_label": "pH", "value": 7.2, "unit": None}],
-    }]}
-    scores = score_extraction(actual, expected, "t")
-    # label matches (1/3), value wrong (0/3), unit matches (1/3) -> 2/3
-    assert abs(scores.param_extraction - 2/3) < 1e-6
+def test_score_run_param_accuracy_perfect():
+    actual_ed = {"node-a": {"status": "completed", "results": {"ph": 7.2, "vol_ml": 500}, "notes": ""}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {"ph": 7.2, "vol_ml": 500}, "notes": ""}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.param_accuracy == 1.0
+
+
+def test_score_run_param_accuracy_wrong_value():
+    actual_ed = {"node-a": {"status": "completed", "results": {"ph": 9.0}, "notes": ""}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {"ph": 7.2}, "notes": ""}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.param_accuracy == 0.0
     assert scores.details.param_value_mismatches
 
 
-def test_score_extraction_params_wrong_unit():
-    actual = _make_extraction_with_params([{
-        "step_name": "Buffer Prep",
-        "parameters": [{"field_label": "Volume", "value": 500, "unit": "L"}],
-    }])
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "parameters": [{"field_label": "Volume", "value": 500, "unit": "mL"}],
-    }]}
-    scores = score_extraction(actual, expected, "t")
-    assert abs(scores.param_extraction - 2/3) < 1e-6
-    assert scores.details.param_unit_mismatches
+def test_score_run_na_correctness_perfect():
+    actual_ed = {"node-a": {"status": "na", "na_reason": "not done"}}
+    expected = _mk_expected({"node-a": {"status": "na", "na_reason": "not done"}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.na_correctness == 1.0
 
 
-def test_score_extraction_params_synonym_unit():
-    actual = _make_extraction_with_params([{
-        "step_name": "Buffer Prep",
-        "parameters": [{"field_label": "Temp", "value": 25, "unit": "C"}],
-    }])
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "parameters": [{"field_label": "Temp", "value": 25, "unit": "°C"}],
-    }]}
-    scores = score_extraction(actual, expected, "t")
-    assert scores.param_extraction == 1.0
+def test_score_run_na_correctness_wrong():
+    # Expected N/A, actual completed -> miss
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": ""}}
+    expected = _mk_expected({"node-a": {"status": "na", "na_reason": "not done"}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.na_correctness == 0.0
+    assert scores.details.na_mismatches
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [ ] **Step 2: Run, verify fail**
 
 ```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v -k params
+pytest tests/unit/test_batch_record_scoring.py -v -k score_run
 ```
 
-Expected: param tests FAIL (param_extraction stays 0.0).
+Expected: `ImportError` for `score_run`.
 
-- [ ] **Step 3: Implement param_extraction**
+- [ ] **Step 3: Implement `score_run` with three dimensions**
 
-Replace the `return scores` line at the bottom of `score_extraction` with:
+Append to `batch_record_scoring.py`:
 
 ```python
-    # ── 2. param_extraction (per step: label match + value match + unit match) ──
-    param_total_points = 0.0
-    param_max_points = 0.0
-    for exp, act in aligned:
-        if act is None:
-            # Count expected params as missed
-            for exp_p in exp.get("parameters", []):
-                param_max_points += 3
-                d.param_value_mismatches.append({
-                    "step": exp.get("step_name", "?"),
-                    "param": exp_p.get("field_label", "?"),
-                    "expected": exp_p.get("value"),
-                    "actual": None,
-                })
+from tests.benchmarks.matching import f1
+
+
+def score_run(
+    actual_execution_data: dict,
+    actual_run_metadata: dict,
+    expected_run: dict,
+    protocol_graph: dict,
+    fixture_name: str = "",
+) -> RunScores:
+    """Score the pipeline's Run output against expected_run.json."""
+    scores = RunScores(fixture_name=fixture_name)
+    d = scores.details
+
+    expected_ed = expected_run.get("execution_data", {})
+    actual_ed = actual_execution_data
+
+    d.steps_expected = len(expected_ed)
+    d.steps_found = len(actual_ed)
+
+    # ── 1. step_completeness (F1 over protocol_step_ids keyed in execution_data) ──
+    expected_keys = set(expected_ed.keys())
+    actual_keys = set(actual_ed.keys())
+    matched_keys = expected_keys & actual_keys
+    d.steps_missed = sorted(expected_keys - actual_keys)
+    d.steps_extra = sorted(actual_keys - expected_keys)
+    scores.step_completeness = f1(
+        n_matched=len(matched_keys),
+        n_expected=len(expected_keys),
+        n_actual=len(actual_keys),
+    )
+
+    # ── 2. param_accuracy (3 points per expected param: key present + value + unit) ──
+    # For now units on results aren't stored explicitly in execution_data — unit-equality folds
+    # into value-equality via numeric tolerance (exact fallback for non-numeric).
+    param_total = 0
+    param_correct = 0
+    for step_id in matched_keys:
+        exp_step = expected_ed[step_id]
+        act_step = actual_ed[step_id]
+        if exp_step.get("status") != "completed":
             continue
-        exp_params = exp.get("parameters", [])
-        act_params = list(act.get("parameters", []))
-        for exp_p in exp_params:
-            param_max_points += 3
-            # Find best fuzzy-match on field_label
-            best_act = None
-            best_ratio = 0.0
-            for ap in act_params:
-                ratio = _fuzzy_match(
-                    exp_p.get("field_label", ""),
-                    ap.get("field_label", ""),
-                )
-                if ratio > best_ratio:
-                    best_ratio = ratio
-                    best_act = ap
-            if best_act is None or best_ratio < 0.7:
+        exp_results = exp_step.get("results", {}) or {}
+        act_results = act_step.get("results", {}) or {}
+        for key, exp_val in exp_results.items():
+            param_total += 1
+            if key not in act_results:
                 d.param_value_mismatches.append({
-                    "step": exp.get("step_name", "?"),
-                    "param": exp_p.get("field_label", "?"),
-                    "expected": exp_p.get("value"),
-                    "actual": None,
+                    "step": step_id, "key": key,
+                    "expected": exp_val, "actual": None,
                 })
                 continue
-            # Label matched (1 point)
-            param_total_points += 1
-            act_params.remove(best_act)
-            # Value check (1 point)
-            if _numeric_equal(exp_p.get("value"), best_act.get("value")):
-                param_total_points += 1
+            act_val = act_results[key]
+            if isinstance(exp_val, (int, float)) and isinstance(act_val, (int, float)):
+                if _numeric_equal(exp_val, act_val):
+                    param_correct += 1
+                else:
+                    d.param_value_mismatches.append({
+                        "step": step_id, "key": key,
+                        "expected": exp_val, "actual": act_val,
+                    })
             else:
-                d.param_value_mismatches.append({
-                    "step": exp.get("step_name", "?"),
-                    "param": exp_p.get("field_label", "?"),
-                    "expected": exp_p.get("value"),
-                    "actual": best_act.get("value"),
-                })
-            # Unit check (1 point)
-            if _unit_equal(exp_p.get("unit"), best_act.get("unit")):
-                param_total_points += 1
-            else:
-                d.param_unit_mismatches.append({
-                    "step": exp.get("step_name", "?"),
-                    "param": exp_p.get("field_label", "?"),
-                    "expected_unit": exp_p.get("unit"),
-                    "actual_unit": best_act.get("unit"),
-                })
+                if str(exp_val).lower().strip() == str(act_val).lower().strip():
+                    param_correct += 1
+                else:
+                    d.param_value_mismatches.append({
+                        "step": step_id, "key": key,
+                        "expected": exp_val, "actual": act_val,
+                    })
+    scores.param_accuracy = (
+        param_correct / param_total if param_total > 0 else 1.0
+    )
 
-    scores.param_extraction = (
-        param_total_points / param_max_points
-        if param_max_points > 0 else 1.0
+    # ── 6. na_correctness (per matched step, expected status == actual status) ──
+    na_total = 0
+    na_correct = 0
+    for step_id in matched_keys:
+        exp_status = expected_ed[step_id].get("status")
+        act_status = actual_ed[step_id].get("status")
+        if exp_status in ("completed", "na"):
+            na_total += 1
+            if exp_status == act_status:
+                na_correct += 1
+            else:
+                d.na_mismatches.append({
+                    "step": step_id,
+                    "expected": exp_status,
+                    "actual": act_status,
+                })
+    scores.na_correctness = (
+        na_correct / na_total if na_total > 0 else 1.0
     )
 
     return scores
@@ -1284,7 +675,7 @@ Replace the `return scores` line at the bottom of `score_extraction` with:
 - [ ] **Step 4: Run tests**
 
 ```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
+pytest tests/unit/test_batch_record_scoring.py -q
 ```
 
 Expected: all pass.
@@ -1292,785 +683,207 @@ Expected: all pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -p backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): score param_extraction dimension [F-0057]"
+git add backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
+git commit -m "test(benchmark): score_run step_completeness/param_accuracy/na_correctness [F-0057]"
 ```
 
 ---
 
-### Task 10: `score_extraction` — metadata + timestamps (TDD)
+### Task 5: `score_run` — timestamps + signatures + deviations + notes + run_metadata (TDD)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
 - Modify: `backend/tests/unit/test_batch_record_scoring.py`
 
-- [ ] **Step 1: Write failing tests**
-
-Append:
+- [ ] **Step 1: Append failing tests**
 
 ```python
-from app.services.batch_record_extractor import ExtractedTimestamp
-
-
-def test_score_extraction_metadata_perfect():
-    actual = BatchRecordExtraction(
-        document_title="Batch Record LOT-2026-100",
-        batch_id="LOT-2026-100",
-        product_name="mAb-X",
-        date="2026-03-10",
-        steps=[],
-        overall_confidence=0.9,
-    )
-    expected = {
-        "document_title": "Batch Record LOT-2026-100",
-        "batch_id": "LOT-2026-100",
-        "product_name": "mAb-X",
-        "date": "2026-03-10",
-        "steps": [],
-    }
-    scores = score_extraction(actual, expected, "t")
-    assert scores.metadata == 1.0
-
-
-def test_score_extraction_metadata_partial():
-    actual = BatchRecordExtraction(
-        document_title="",
-        batch_id="LOT-2026-100",
-        product_name="mAb-X",
-        date="",
-        steps=[],
-        overall_confidence=0.9,
-    )
-    expected = {
-        "document_title": "Batch Record LOT-2026-100",
-        "batch_id": "LOT-2026-100",
-        "product_name": "mAb-X",
-        "date": "2026-03-10",
-        "steps": [],
-    }
-    scores = score_extraction(actual, expected, "t")
-    # 2 of 4 metadata fields matched
-    assert scores.metadata == 0.5
-
-
-def test_score_extraction_timestamps_match():
-    actual = BatchRecordExtraction(
-        steps=[ExtractedStep(
-            step_name="Buffer Prep",
-            timestamps=[ExtractedTimestamp(
-                value="08:30", label="Start Time", confidence=0.9,
-            )],
-            confidence=0.9,
-        )],
-        overall_confidence=0.9,
-    )
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "timestamps": [{"value": "08:30", "label": "Start Time"}],
-    }]}
-    scores = score_extraction(actual, expected, "t")
+def test_score_run_timestamps_match():
+    ts = [{"label": "Start Time", "value": "08:30"}]
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": ts, "signatures": [], "deviations": []}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": ts, "signatures": [], "deviations": []}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
     assert scores.timestamps == 1.0
 
 
-def test_score_extraction_timestamps_missing():
-    actual = BatchRecordExtraction(
-        steps=[ExtractedStep(
-            step_name="Buffer Prep", timestamps=[], confidence=0.9,
-        )],
-        overall_confidence=0.9,
-    )
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "timestamps": [{"value": "08:30", "label": "Start Time"}],
-    }]}
-    scores = score_extraction(actual, expected, "t")
+def test_score_run_timestamps_missing():
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [], "signatures": [], "deviations": []}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [{"label": "Start Time", "value": "08:30"}], "signatures": [], "deviations": []}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
     assert scores.timestamps == 0.0
     assert scores.details.timestamps_missed
 
 
-def test_score_extraction_timestamps_absent_expected_scores_full():
-    # No timestamps expected anywhere: dimension is N/A, score 1.0
-    actual = BatchRecordExtraction(
-        steps=[ExtractedStep(
-            step_name="Buffer Prep", timestamps=[], confidence=0.9,
-        )],
-        overall_confidence=0.9,
-    )
-    expected = {"steps": [{"step_name": "Buffer Prep"}]}
-    scores = score_extraction(actual, expected, "t")
-    assert scores.timestamps == 1.0
+def test_score_run_signatures_and_deviations():
+    sigs = [{"initials_or_name": "JKL", "role": "Operator"}]
+    devs = [{"description": "Minor delay"}]
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [], "signatures": sigs, "deviations": devs}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [], "signatures": sigs, "deviations": devs}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.signatures == 1.0
+    assert scores.deviations == 1.0
+
+
+def test_score_run_notes_preservation():
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "Solution clear.", "timestamps": [], "signatures": [], "deviations": []}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "Solution was clear.", "timestamps": [], "signatures": [], "deviations": []}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    # Fuzzy ratio of the two strings is high -> preserved
+    assert scores.notes_preservation >= 0.9
+
+
+def test_score_run_run_metadata_match():
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": ""}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": ""}}, run_name="LOT-2026-100")
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "LOT-2026-100"}, expected, protocol, "t")
+    assert scores.run_metadata == 1.0
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [ ] **Step 2: Run, verify fail**
 
 ```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v -k "metadata or timestamps"
+pytest tests/unit/test_batch_record_scoring.py -v -k "timestamps or signatures or deviations or notes_preservation or run_metadata"
 ```
 
-Expected: FAIL (metadata/timestamps stay 0.0 or 1.0 by default).
+Expected: fails (dims default 0.0).
 
-- [ ] **Step 3: Implement metadata + timestamps scoring**
+- [ ] **Step 3: Implement the five dimensions**
 
-In `score_extraction` before `return scores`, insert:
+In `score_run`, before `return scores`, add:
 
 ```python
-    # ── 3. metadata (4 fields, each 0.25) ──
-    meta_fields = ("document_title", "batch_id", "product_name", "date")
-    meta_total = 0
-    meta_matched = 0
-    for f in meta_fields:
-        exp_val = expected.get(f)
-        act_val = getattr(actual, f, None)
-        if exp_val is None or exp_val == "":
-            continue
-        meta_total += 1
-        if act_val and _fuzzy_match(str(exp_val), str(act_val)) >= 0.8:
-            meta_matched += 1
-        else:
-            d.metadata_mismatches.append({
-                "field": f, "expected": exp_val, "actual": act_val,
-            })
-    scores.metadata = meta_matched / meta_total if meta_total > 0 else 1.0
-
-    # ── 4. timestamps (F1 on (step, label, value) tuples) ──
-    expected_ts: list[tuple[str, str, str]] = []
-    for e in expected_steps:
-        for t in e.get("timestamps", []) or []:
-            expected_ts.append((
-                e.get("step_name", ""),
-                t.get("label", ""),
-                t.get("value", ""),
-            ))
-    actual_ts: list[tuple[str, str, str]] = []
-    for s in actual.steps:
-        for t in s.timestamps:
-            actual_ts.append((s.step_name, t.label, t.value))
-
-    if not expected_ts and not actual_ts:
+    # ── 3. timestamps F1 over (step, label, value) ──
+    exp_ts: list[tuple] = []
+    for step_id, s in expected_ed.items():
+        for t in s.get("timestamps", []) or []:
+            exp_ts.append((step_id, t.get("label", ""), t.get("value", "")))
+    act_ts: list[tuple] = []
+    for step_id, s in actual_ed.items():
+        for t in s.get("timestamps", []) or []:
+            act_ts.append((step_id, t.get("label", ""), t.get("value", "")))
+    if not exp_ts and not act_ts:
         scores.timestamps = 1.0
-    elif not expected_ts:
-        scores.timestamps = 0.0  # unexpected timestamps hallucinated
+    elif not exp_ts:
+        scores.timestamps = 0.0
     else:
         matched = 0
-        remaining_actual = list(actual_ts)
-        for step, label, val in expected_ts:
+        remaining = list(act_ts)
+        for exp in exp_ts:
             best = None
-            best_ratio = 0.0
-            for act in remaining_actual:
+            best_r = 0.0
+            for act in remaining:
                 r = (
-                    _fuzzy_match(step, act[0]) * 0.5
-                    + _fuzzy_match(label, act[1]) * 0.25
-                    + _fuzzy_match(val, act[2]) * 0.25
+                    _fuzzy_match(exp[0], act[0]) * 0.5
+                    + _fuzzy_match(exp[1], act[1]) * 0.25
+                    + _fuzzy_match(exp[2], act[2]) * 0.25
                 )
-                if r > best_ratio:
-                    best_ratio = r
+                if r > best_r:
+                    best_r = r
                     best = act
-            if best is not None and best_ratio >= 0.7:
+            if best is not None and best_r >= 0.7:
                 matched += 1
-                remaining_actual.remove(best)
+                remaining.remove(best)
             else:
                 d.timestamps_missed.append({
-                    "step": step, "label": label, "value": val,
+                    "step": exp[0], "label": exp[1], "value": exp[2],
                 })
-        recall = matched / len(expected_ts)
-        precision = (
-            matched / len(actual_ts) if actual_ts
-            else (1.0 if not expected_ts else 0.0)
+        scores.timestamps = f1(
+            n_matched=matched, n_expected=len(exp_ts), n_actual=len(act_ts),
         )
-        scores.timestamps = (
-            2 * precision * recall / (precision + recall)
-            if (precision + recall) > 0 else 0.0
-        )
-```
 
-- [ ] **Step 4: Run tests**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
-```
-
-Expected: all pass.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add -p backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): score metadata and timestamps dimensions [F-0057]"
-```
-
----
-
-### Task 11: `score_extraction` — signatures_deviations + confidence_calibration (TDD)
-
-**Files:**
-- Modify: `backend/tests/benchmarks/batch_record_scoring.py`
-- Modify: `backend/tests/unit/test_batch_record_scoring.py`
-
-- [ ] **Step 1: Write failing tests**
-
-Append:
-
-```python
-from app.services.batch_record_extractor import (
-    ExtractedDeviation,
-    ExtractedSignature,
-)
-
-
-def test_score_extraction_signatures_match():
-    actual = BatchRecordExtraction(
-        steps=[ExtractedStep(
-            step_name="Buffer Prep",
-            signatures=[ExtractedSignature(
-                initials_or_name="JKL", role="Operator", confidence=0.9,
-            )],
-            confidence=0.9,
-        )],
-        overall_confidence=0.9,
-    )
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "signatures": [{"initials_or_name": "JKL", "role": "Operator"}],
-        "deviations": [],
-    }]}
-    scores = score_extraction(actual, expected, "t")
-    # No deviations expected; dimension = signatures F1 only
-    assert scores.signatures_deviations == 1.0
-
-
-def test_score_extraction_deviations_missed():
-    actual = BatchRecordExtraction(
-        steps=[ExtractedStep(
-            step_name="Buffer Prep", deviations=[], confidence=0.9,
-        )],
-        overall_confidence=0.9,
-    )
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "signatures": [],
-        "deviations": [{"description": "Temperature spike during mix"}],
-    }]}
-    scores = score_extraction(actual, expected, "t")
-    assert scores.signatures_deviations == 0.0
-
-
-def test_score_extraction_confidence_calibration_well_calibrated():
-    # High confidence + correct value = good calibration
-    actual = _make_extraction_with_params([{
-        "step_name": "Buffer Prep",
-        "parameters": [
-            {"field_label": "pH", "value": 7.2, "unit": None, "confidence": 0.95},
-        ],
-    }])
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "parameters": [{"field_label": "pH", "value": 7.2, "unit": None}],
-    }]}
-    scores = score_extraction(actual, expected, "t")
-    assert scores.confidence_calibration >= 0.9
-
-
-def test_score_extraction_confidence_calibration_overconfident():
-    # High confidence + wrong value = poor calibration
-    actual = _make_extraction_with_params([{
-        "step_name": "Buffer Prep",
-        "parameters": [
-            {"field_label": "pH", "value": 9.0, "unit": None, "confidence": 0.95},
-        ],
-    }])
-    expected = {"steps": [{
-        "step_name": "Buffer Prep",
-        "parameters": [{"field_label": "pH", "value": 7.2, "unit": None}],
-    }]}
-    scores = score_extraction(actual, expected, "t")
-    assert scores.confidence_calibration < 0.5
-```
-
-- [ ] **Step 2: Run to verify fail**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v -k "signatures or deviations or calibration"
-```
-
-Expected: FAIL.
-
-- [ ] **Step 3: Implement signatures_deviations + confidence_calibration**
-
-In `score_extraction` before `return scores`, insert:
-
-```python
-    # ── 5. signatures_deviations (average of two F1 sub-scores, N/A if absent) ──
-    def _f1_tuples(
-        expected_list: list[tuple], actual_list: list[tuple],
-        threshold: float = 0.7,
-    ) -> tuple[float, list]:
-        """F1 over tuple-of-strings matched fuzzily. Returns (f1, missed_list)."""
-        if not expected_list and not actual_list:
+    # ── 4. signatures F1 over (step, initials, role) ──
+    def _f1_tuples(exp_list, act_list, threshold=0.7):
+        if not exp_list and not act_list:
             return 1.0, []
-        if not expected_list:
+        if not exp_list:
             return 0.0, []
-        remaining = list(actual_list)
-        matched = 0
-        missed: list = []
-        for exp in expected_list:
-            best = None
-            best_ratio = 0.0
+        matched, missed = 0, []
+        remaining = list(act_list)
+        for exp in exp_list:
+            best, best_r = None, 0.0
             for act in remaining:
                 r = sum(_fuzzy_match(e, a) for e, a in zip(exp, act)) / len(exp)
-                if r > best_ratio:
-                    best_ratio = r
+                if r > best_r:
+                    best_r = r
                     best = act
-            if best is not None and best_ratio >= threshold:
+            if best is not None and best_r >= threshold:
                 matched += 1
                 remaining.remove(best)
             else:
                 missed.append(exp)
-        recall = matched / len(expected_list)
-        precision = (
-            matched / len(actual_list) if actual_list
-            else (1.0 if not expected_list else 0.0)
+        return (
+            f1(n_matched=matched, n_expected=len(exp_list), n_actual=len(act_list)),
+            missed,
         )
-        f1 = (
-            2 * precision * recall / (precision + recall)
-            if (precision + recall) > 0 else 0.0
-        )
-        return f1, missed
 
-    exp_sigs: list[tuple[str, str]] = []
-    exp_devs: list[tuple[str]] = []
-    for e in expected_steps:
-        for s in e.get("signatures", []) or []:
-            exp_sigs.append((
-                s.get("initials_or_name", ""),
-                s.get("role", "") or "",
-            ))
-        for dv in e.get("deviations", []) or []:
-            exp_devs.append((dv.get("description", ""),))
-
-    act_sigs: list[tuple[str, str]] = []
-    act_devs: list[tuple[str]] = []
-    for s in actual.steps:
-        for sig in s.signatures:
-            act_sigs.append((sig.initials_or_name, sig.role or ""))
-        for dv in s.deviations:
-            act_devs.append((dv.description,))
-
-    sub_scores: list[float] = []
-    if exp_sigs or act_sigs:
-        f1, missed = _f1_tuples(exp_sigs, act_sigs)
-        sub_scores.append(f1)
-        d.signatures_missed.extend([
-            {"initials_or_name": m[0], "role": m[1]} for m in missed
-        ])
-    if exp_devs or act_devs:
-        f1, missed = _f1_tuples(exp_devs, act_devs, threshold=0.6)
-        sub_scores.append(f1)
-        d.deviations_missed.extend([{"description": m[0]} for m in missed])
-
-    scores.signatures_deviations = (
-        sum(sub_scores) / len(sub_scores) if sub_scores else 1.0
+    exp_sigs, act_sigs = [], []
+    for step_id, s in expected_ed.items():
+        for sig in s.get("signatures", []) or []:
+            exp_sigs.append((step_id, sig.get("initials_or_name", ""), sig.get("role") or ""))
+    for step_id, s in actual_ed.items():
+        for sig in s.get("signatures", []) or []:
+            act_sigs.append((step_id, sig.get("initials_or_name", ""), sig.get("role") or ""))
+    scores.signatures, sig_missed = _f1_tuples(exp_sigs, act_sigs)
+    d.signatures_missed.extend(
+        {"step": m[0], "initials_or_name": m[1], "role": m[2]} for m in sig_missed
     )
 
-    # ── 6. confidence_calibration (bucket correctness rate) ──
-    # Collect all expected/actual param pairs we've already aligned
-    buckets: dict[str, list[bool]] = {"high": [], "mid": [], "low": []}
-    for exp, act in aligned:
-        if act is None:
+    # ── 5. deviations F1 over (step, description) ──
+    exp_devs, act_devs = [], []
+    for step_id, s in expected_ed.items():
+        for dv in s.get("deviations", []) or []:
+            exp_devs.append((step_id, dv.get("description", "")))
+    for step_id, s in actual_ed.items():
+        for dv in s.get("deviations", []) or []:
+            act_devs.append((step_id, dv.get("description", "")))
+    scores.deviations, dev_missed = _f1_tuples(exp_devs, act_devs, threshold=0.6)
+    d.deviations_missed.extend(
+        {"step": m[0], "description": m[1]} for m in dev_missed
+    )
+
+    # ── 7. notes_preservation (avg fuzzy ratio per matched completed step) ──
+    notes_scores: list[float] = []
+    for step_id in matched_keys:
+        exp_step = expected_ed[step_id]
+        if exp_step.get("status") != "completed":
             continue
-        exp_params = exp.get("parameters", []) or []
-        act_params = list(act.get("parameters", []) or [])
-        for exp_p in exp_params:
-            best = None
-            best_ratio = 0.0
-            for ap in act_params:
-                r = _fuzzy_match(
-                    exp_p.get("field_label", ""),
-                    ap.get("field_label", ""),
-                )
-                if r > best_ratio:
-                    best_ratio = r
-                    best = ap
-            if best is None or best_ratio < 0.7:
-                continue
-            conf = best.get("confidence", 0.0)
-            correct = _numeric_equal(
-                exp_p.get("value"), best.get("value")
-            ) and _unit_equal(exp_p.get("unit"), best.get("unit"))
-            if conf >= 0.9:
-                buckets["high"].append(correct)
-            elif conf >= 0.6:
-                buckets["mid"].append(correct)
-            else:
-                buckets["low"].append(correct)
-
-    # Expectations: high bucket ≥0.9 correct, mid ≥0.6, low unconstrained
-    bucket_results: list[float] = []
-    if buckets["high"]:
-        rate = sum(buckets["high"]) / len(buckets["high"])
-        bucket_results.append(min(1.0, rate / 0.9))
-    if buckets["mid"]:
-        rate = sum(buckets["mid"]) / len(buckets["mid"])
-        bucket_results.append(min(1.0, rate / 0.6))
-    if buckets["low"]:
-        rate = sum(buckets["low"]) / len(buckets["low"])
-        # Should NOT exceed 0.8 correct — overconfident-calling-wrong-cases-as-low
-        bucket_results.append(1.0 if rate <= 0.8 else 0.8 / rate)
-
-    scores.confidence_calibration = (
-        sum(bucket_results) / len(bucket_results)
-        if bucket_results else 1.0
+        exp_notes = exp_step.get("notes", "") or ""
+        act_notes = actual_ed[step_id].get("notes", "") or ""
+        if not exp_notes and not act_notes:
+            continue  # skip steps with no expected notes
+        ratio = _fuzzy_match(exp_notes, act_notes)
+        notes_scores.append(ratio)
+        if ratio < 0.7:
+            d.notes_mismatches.append({
+                "step": step_id, "expected": exp_notes, "actual": act_notes,
+            })
+    scores.notes_preservation = (
+        sum(notes_scores) / len(notes_scores) if notes_scores else 1.0
     )
-    d.confidence_correlation = scores.confidence_calibration
 
-    return scores
+    # ── 8. run_metadata (run_name fuzzy match) ──
+    exp_name = expected_run.get("run_name", "") or ""
+    act_name = actual_run_metadata.get("run_name", "") or ""
+    if not exp_name and not act_name:
+        scores.run_metadata = 1.0
+    elif _fuzzy_match(exp_name, act_name) >= 0.8:
+        scores.run_metadata = 1.0
+    else:
+        scores.run_metadata = 0.0
+        d.run_metadata_mismatches.append({
+            "field": "run_name", "expected": exp_name, "actual": act_name,
+        })
 ```
 
 - [ ] **Step 4: Run tests**
 
 ```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
-```
-
-Expected: all pass. If `test_score_extraction_confidence_calibration_overconfident` fails (overconfident case scoring too high), check that the high-bucket rate (0/1 = 0) divided by 0.9 gives 0 — should drag the score below 0.5.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add -p backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): score signatures_deviations and confidence dimensions [F-0057]"
-```
-
----
-
-## Phase 3 — Mapping Scoring (TDD)
-
-### Task 12: `score_mapping` — step_matching + param_field_matching (TDD)
-
-**Files:**
-- Modify: `backend/tests/benchmarks/batch_record_scoring.py`
-- Modify: `backend/tests/unit/test_batch_record_scoring.py`
-
-- [ ] **Step 1: Write failing tests**
-
-Append:
-
-```python
-from app.services.batch_record_extractor import ParamMapping, StepMapping
-from tests.benchmarks.batch_record_scoring import score_mapping
-
-
-def _mk_mapping(
-    extracted_idx: int, extracted_name: str,
-    protocol_id: str, protocol_name: str,
-    score: float = 0.95,
-    param_pairs: list[tuple[str, str]] | None = None,
-) -> StepMapping:
-    param_mappings = []
-    for i, (label, key) in enumerate(param_pairs or []):
-        param_mappings.append(ParamMapping(
-            extracted_param_index=i,
-            extracted_label=label,
-            extracted_value=None,
-            schema_field_key=key,
-            schema_field_label=key,
-            confidence=0.9,
-        ))
-    return StepMapping(
-        extracted_step_index=extracted_idx,
-        extracted_step_name=extracted_name,
-        protocol_step_id=protocol_id,
-        protocol_step_name=protocol_name,
-        score=score,
-        param_mappings=param_mappings,
-    )
-
-
-def test_score_mapping_perfect_step_match():
-    actual = [_mk_mapping(0, "Buffer Prep", "node-buf", "Buffer Prep")]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [],
-        }],
-        "unmapped_protocol_steps": [],
-        "unmapped_extracted_steps": [],
-    }
-    scores = score_mapping(actual, expected, "t")
-    assert scores.step_matching == 1.0
-
-
-def test_score_mapping_wrong_step_match():
-    actual = [_mk_mapping(0, "Buffer Prep", "node-cent", "Centrifugation")]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [],
-        }],
-        "unmapped_protocol_steps": [],
-        "unmapped_extracted_steps": [],
-    }
-    scores = score_mapping(actual, expected, "t")
-    assert scores.step_matching == 0.0
-    assert scores.details.step_matching_misses
-
-
-def test_score_mapping_perfect_param_fields():
-    actual = [_mk_mapping(
-        0, "Buffer Prep", "node-buf", "Buffer Prep",
-        param_pairs=[("pH", "ph_value"), ("Volume", "volume_ml")],
-    )]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [
-                {"extracted_label": "pH", "schema_field_key": "ph_value"},
-                {"extracted_label": "Volume", "schema_field_key": "volume_ml"},
-            ],
-        }],
-        "unmapped_protocol_steps": [],
-        "unmapped_extracted_steps": [],
-    }
-    scores = score_mapping(actual, expected, "t")
-    assert scores.param_field_matching == 1.0
-
-
-def test_score_mapping_one_wrong_param_field():
-    actual = [_mk_mapping(
-        0, "Buffer Prep", "node-buf", "Buffer Prep",
-        param_pairs=[("pH", "WRONG_KEY"), ("Volume", "volume_ml")],
-    )]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [
-                {"extracted_label": "pH", "schema_field_key": "ph_value"},
-                {"extracted_label": "Volume", "schema_field_key": "volume_ml"},
-            ],
-        }],
-        "unmapped_protocol_steps": [],
-        "unmapped_extracted_steps": [],
-    }
-    scores = score_mapping(actual, expected, "t")
-    assert scores.param_field_matching == 0.5
-```
-
-- [ ] **Step 2: Run to verify fail**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v -k "score_mapping"
-```
-
-Expected: FAIL with import error for `score_mapping`.
-
-- [ ] **Step 3: Implement `score_mapping`**
-
-Append to `batch_record_scoring.py`:
-
-```python
-from app.services.batch_record_extractor import StepMapping
-
-
-def score_mapping(
-    actual: list[StepMapping],
-    expected: dict,
-    fixture_name: str = "",
-) -> MappingScores:
-    """Score list[StepMapping] against expected_mapping.json."""
-    scores = MappingScores(fixture_name=fixture_name)
-    d = scores.details
-
-    expected_mappings: list[dict] = expected.get("step_mappings", [])
-    expected_unmapped_proto: list[str] = expected.get(
-        "unmapped_protocol_steps", []
-    )
-    expected_unmapped_ext: list[str] = expected.get(
-        "unmapped_extracted_steps", []
-    )
-
-    actual_by_name = {m.extracted_step_name: m for m in actual}
-
-    # ── 1. step_matching (of expected mapped, fraction correct) ──
-    step_correct = 0
-    step_total = 0
-    for exp_m in expected_mappings:
-        if not exp_m.get("mapped", True):
-            continue
-        step_total += 1
-        ext_name = exp_m["extracted_step_name"]
-        # Find actual mapping by fuzzy match on extracted_step_name
-        best = None
-        best_r = 0.0
-        for a in actual:
-            r = _fuzzy_match(ext_name, a.extracted_step_name)
-            if r > best_r:
-                best_r = r
-                best = a
-        if best is None or best_r < 0.7:
-            d.step_matching_misses.append({
-                "extracted_step_name": ext_name,
-                "expected_protocol_step": exp_m["protocol_step_name"],
-                "actual_protocol_step": None,
-            })
-            continue
-        if _fuzzy_match(
-            best.protocol_step_name, exp_m["protocol_step_name"]
-        ) >= 0.85:
-            step_correct += 1
-        else:
-            d.step_matching_misses.append({
-                "extracted_step_name": ext_name,
-                "expected_protocol_step": exp_m["protocol_step_name"],
-                "actual_protocol_step": best.protocol_step_name,
-            })
-    scores.step_matching = (
-        step_correct / step_total if step_total > 0 else 1.0
-    )
-
-    # ── 2. param_field_matching (over correctly-mapped steps) ──
-    pf_correct = 0
-    pf_total = 0
-    for exp_m in expected_mappings:
-        if not exp_m.get("mapped", True):
-            continue
-        ext_name = exp_m["extracted_step_name"]
-        act = None
-        for a in actual:
-            if _fuzzy_match(ext_name, a.extracted_step_name) >= 0.7:
-                act = a
-                break
-        if act is None:
-            continue
-        # Only score param fields if the step was correctly matched
-        if _fuzzy_match(
-            act.protocol_step_name, exp_m["protocol_step_name"]
-        ) < 0.85:
-            continue
-        for exp_p in exp_m.get("param_mappings", []):
-            pf_total += 1
-            ext_label = exp_p["extracted_label"]
-            expected_key = exp_p["schema_field_key"]
-            best_pm = None
-            best_r = 0.0
-            for pm in act.param_mappings:
-                r = _fuzzy_match(ext_label, pm.extracted_label)
-                if r > best_r:
-                    best_r = r
-                    best_pm = pm
-            if (
-                best_pm is not None and best_r >= 0.7
-                and best_pm.schema_field_key == expected_key
-            ):
-                pf_correct += 1
-            else:
-                d.param_field_matching_misses.append({
-                    "step": exp_m["protocol_step_name"],
-                    "extracted_label": ext_label,
-                    "expected_key": expected_key,
-                    "actual_key": (
-                        best_pm.schema_field_key if best_pm else None
-                    ),
-                })
-    scores.param_field_matching = (
-        pf_correct / pf_total if pf_total > 0 else 1.0
-    )
-
-    # ── 3. na_detection (expected unmapped protocol steps left unmapped) ──
-    mapped_protocol_names = {a.protocol_step_name for a in actual}
-    if expected_unmapped_proto:
-        correct_na = 0
-        for name in expected_unmapped_proto:
-            if not any(
-                _fuzzy_match(name, mp) >= 0.85
-                for mp in mapped_protocol_names
-            ):
-                correct_na += 1
-            else:
-                d.na_detection_misses.append({
-                    "protocol_step": name,
-                    "should_be": "unmapped",
-                    "actual": "mapped",
-                })
-        scores.na_detection = correct_na / len(expected_unmapped_proto)
-    else:
-        scores.na_detection = 1.0
-
-    # ── 4. extra_step_handling (expected unmapped extracted steps absent) ──
-    actual_mapped_extracted = {a.extracted_step_name for a in actual}
-    if expected_unmapped_ext:
-        correct_extra = 0
-        for name in expected_unmapped_ext:
-            if not any(
-                _fuzzy_match(name, e) >= 0.85
-                for e in actual_mapped_extracted
-            ):
-                correct_extra += 1
-            else:
-                d.extra_step_handling_misses.append({
-                    "extracted_step": name,
-                    "should_be": "unmapped",
-                    "actual": "mapped",
-                })
-        scores.extra_step_handling = (
-            correct_extra / len(expected_unmapped_ext)
-        )
-    else:
-        scores.extra_step_handling = 1.0
-
-    # ── 5. mapping_confidence (score correlation with correctness) ──
-    # For each actual StepMapping, correct if protocol_step_name fuzzy-matches
-    # the expected mapping for that extracted step.
-    expected_by_ext = {
-        m["extracted_step_name"]: m for m in expected_mappings
-    }
-    conf_items: list[tuple[float, bool]] = []
-    for a in actual:
-        exp_m = expected_by_ext.get(a.extracted_step_name)
-        # Also try fuzzy if exact name match fails
-        if exp_m is None:
-            for k, v in expected_by_ext.items():
-                if _fuzzy_match(a.extracted_step_name, k) >= 0.85:
-                    exp_m = v
-                    break
-        if exp_m is None:
-            # Actual step not in expected mappings — if it's in the
-            # unmapped-extracted list, the mapping is wrong regardless of score
-            correct = False
-        else:
-            correct = (
-                _fuzzy_match(
-                    a.protocol_step_name, exp_m["protocol_step_name"]
-                ) >= 0.85
-            )
-        conf_items.append((a.score, correct))
-
-    if conf_items:
-        correlation_points = 0
-        for score_val, correct in conf_items:
-            if correct and score_val >= 0.8:
-                correlation_points += 1
-            elif not correct and score_val <= 0.5:
-                correlation_points += 1
-            elif correct and score_val >= 0.5:
-                correlation_points += 0.5  # partial credit
-        scores.mapping_confidence = correlation_points / len(conf_items)
-    else:
-        scores.mapping_confidence = 1.0
-
-    return scores
-```
-
-- [ ] **Step 4: Run tests**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
+pytest tests/unit/test_batch_record_scoring.py -q
 ```
 
 Expected: all pass.
@@ -2078,306 +891,161 @@ Expected: all pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -p backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): score mapping dimensions [F-0057]"
+git add backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
+git commit -m "test(benchmark): score_run timestamps/signatures/deviations/notes/metadata [F-0057]"
 ```
 
 ---
 
-### Task 13: `score_mapping` — na_detection + extra_step_handling edge cases (TDD)
-
-**Files:**
-- Modify: `backend/tests/unit/test_batch_record_scoring.py`
-
-(Implementation already in place from Task 12; this task just adds the tests.)
-
-- [ ] **Step 1: Write edge case tests**
-
-Append:
-
-```python
-def test_score_mapping_na_detection_correct():
-    # No extracted step maps to "Final QC" — correctly left N/A
-    actual = [_mk_mapping(0, "Buffer Prep", "node-buf", "Buffer Prep")]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [],
-        }],
-        "unmapped_protocol_steps": ["Final QC"],
-        "unmapped_extracted_steps": [],
-    }
-    scores = score_mapping(actual, expected, "t")
-    assert scores.na_detection == 1.0
-
-
-def test_score_mapping_na_detection_wrong():
-    # Actual mapping incorrectly includes Final QC
-    actual = [
-        _mk_mapping(0, "Buffer Prep", "node-buf", "Buffer Prep"),
-        _mk_mapping(1, "Something", "node-qc", "Final QC"),
-    ]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [],
-        }],
-        "unmapped_protocol_steps": ["Final QC"],
-        "unmapped_extracted_steps": [],
-    }
-    scores = score_mapping(actual, expected, "t")
-    assert scores.na_detection == 0.0
-    assert scores.details.na_detection_misses
-
-
-def test_score_mapping_extra_step_handling_correct():
-    # Extra step in document is correctly NOT mapped
-    actual = [_mk_mapping(0, "Buffer Prep", "node-buf", "Buffer Prep")]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [],
-        }],
-        "unmapped_protocol_steps": [],
-        "unmapped_extracted_steps": ["Handwritten Extra Note"],
-    }
-    scores = score_mapping(actual, expected, "t")
-    assert scores.extra_step_handling == 1.0
-
-
-def test_score_mapping_mapping_confidence_high_and_correct():
-    actual = [_mk_mapping(
-        0, "Buffer Prep", "node-buf", "Buffer Prep", score=0.95,
-    )]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [],
-        }],
-        "unmapped_protocol_steps": [],
-        "unmapped_extracted_steps": [],
-    }
-    scores = score_mapping(actual, expected, "t")
-    assert scores.mapping_confidence == 1.0
-
-
-def test_score_mapping_mapping_confidence_high_but_wrong():
-    actual = [_mk_mapping(
-        0, "Buffer Prep", "node-cent", "Centrifugation", score=0.95,
-    )]
-    expected = {
-        "step_mappings": [{
-            "extracted_step_name": "Buffer Prep",
-            "protocol_step_name": "Buffer Prep",
-            "mapped": True,
-            "param_mappings": [],
-        }],
-        "unmapped_protocol_steps": [],
-        "unmapped_extracted_steps": [],
-    }
-    scores = score_mapping(actual, expected, "t")
-    # High-confidence wrong mapping → 0 correlation points
-    assert scores.mapping_confidence == 0.0
-```
-
-- [ ] **Step 2: Run tests**
-
-```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
-```
-
-Expected: all pass.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add -p backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): add edge-case tests for mapping dimensions [F-0057]"
-```
-
----
-
-### Task 14: Print helpers for benchmark reports
+### Task 6: Print helpers + `_build_auto_finalized` utility
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
 
-- [ ] **Step 1: Append print helpers**
+- [ ] **Step 1: Append the three print helpers and auto-finalize utility**
 
 ```python
 import json
 
 
-def print_extraction_report(scores: ExtractionScores) -> None:
+def print_run_report(scores: RunScores) -> None:
     status = "PASS" if scores.passed else "FAIL"
     d = scores.details
     print()
     print(f"{'=' * 65}")
-    print(f"  [EXTRACTION] {scores.fixture_name:<35} {status} {scores.overall:.0%}")
+    print(f"  [RUN] {scores.fixture_name:<42} {status} {scores.overall:.0%}")
     print(f"{'=' * 65}")
-    print(f"  {'Dimension':<26} {'Score':>6}  Detail")
+    print(f"  {'Dimension':<24} {'Score':>6}  Detail")
     print(f"  {'-' * 60}")
-    print(
-        f"  {'Step Detection':<26} {scores.step_detection:>5.2f}  "
-        f"{d.steps_found}/{d.steps_expected} found, "
-        f"{len(d.steps_extra)} extra"
-    )
-    print(
-        f"  {'Param Extraction':<26} {scores.param_extraction:>5.2f}  "
-        f"{len(d.param_value_mismatches)} val miss, "
-        f"{len(d.param_unit_mismatches)} unit miss"
-    )
-    print(
-        f"  {'Timestamps':<26} {scores.timestamps:>5.2f}  "
-        f"{len(d.timestamps_missed)} missed"
-    )
-    print(
-        f"  {'Metadata':<26} {scores.metadata:>5.2f}  "
-        f"{len(d.metadata_mismatches)} mismatches"
-    )
-    print(
-        f"  {'Signatures/Deviations':<26} {scores.signatures_deviations:>5.2f}  "
-        f"sig_miss={len(d.signatures_missed)}, dev_miss={len(d.deviations_missed)}"
-    )
-    print(
-        f"  {'Confidence Calibration':<26} {scores.confidence_calibration:>5.2f}"
-    )
+    print(f"  {'Step Completeness':<24} {scores.step_completeness:>5.2f}  "
+          f"{d.steps_found}/{d.steps_expected} found, {len(d.steps_extra)} extra")
+    print(f"  {'Param Accuracy':<24} {scores.param_accuracy:>5.2f}  "
+          f"{len(d.param_value_mismatches)} mismatches")
+    print(f"  {'Timestamps':<24} {scores.timestamps:>5.2f}  "
+          f"{len(d.timestamps_missed)} missed")
+    print(f"  {'Signatures':<24} {scores.signatures:>5.2f}  "
+          f"{len(d.signatures_missed)} missed")
+    print(f"  {'Deviations':<24} {scores.deviations:>5.2f}  "
+          f"{len(d.deviations_missed)} missed")
+    print(f"  {'N/A Correctness':<24} {scores.na_correctness:>5.2f}  "
+          f"{len(d.na_mismatches)} mismatches")
+    print(f"  {'Notes Preservation':<24} {scores.notes_preservation:>5.2f}")
+    print(f"  {'Run Metadata':<24} {scores.run_metadata:>5.2f}")
     print(f"  {'-' * 60}")
-    print(f"  {'Overall (weighted)':<26} {scores.overall:>5.2f}  threshold: 0.75")
+    print(f"  {'Overall (weighted)':<24} {scores.overall:>5.2f}  threshold: 0.75")
     print(f"{'=' * 65}")
     if d.steps_missed:
         print(f"  Steps missed: {d.steps_missed}")
     if d.param_value_mismatches:
-        print(f"  Param value mismatches:")
-        print(f"    {json.dumps(d.param_value_mismatches[:5], indent=4)}")
+        print(f"  Param mismatches (first 5):")
+        print(f"    {json.dumps(d.param_value_mismatches[:5], indent=4, default=str)}")
     print()
 
 
-def print_mapping_report(scores: MappingScores) -> None:
-    status = "PASS" if scores.passed else "FAIL"
-    d = scores.details
+def print_run_summary(scores_list: list[RunScores]) -> None:
+    if not scores_list:
+        return
     print()
-    print(f"{'=' * 65}")
-    print(f"  [MAPPING] {scores.fixture_name:<38} {status} {scores.overall:.0%}")
-    print(f"{'=' * 65}")
-    print(f"  {'Dimension':<26} {'Score':>6}  Detail")
-    print(f"  {'-' * 60}")
+    print(f"{'=' * 95}")
+    print(f"  BATCH RECORD RUN-OUTPUT SUMMARY")
+    print(f"{'=' * 95}")
     print(
-        f"  {'Step Matching':<26} {scores.step_matching:>5.2f}  "
-        f"{len(d.step_matching_misses)} misses"
+        f"  {'Fixture':<25} {'Overall':>7} {'Step':>6} {'Param':>6} "
+        f"{'Time':>6} {'Sig':>6} {'Dev':>6} {'N/A':>6} {'Note':>6} {'Meta':>6} {'Status':>7}"
     )
-    print(
-        f"  {'Param Field Matching':<26} {scores.param_field_matching:>5.2f}  "
-        f"{len(d.param_field_matching_misses)} misses"
-    )
-    print(
-        f"  {'N/A Detection':<26} {scores.na_detection:>5.2f}  "
-        f"{len(d.na_detection_misses)} misses"
-    )
-    print(
-        f"  {'Extra Step Handling':<26} {scores.extra_step_handling:>5.2f}  "
-        f"{len(d.extra_step_handling_misses)} misses"
-    )
-    print(f"  {'Mapping Confidence':<26} {scores.mapping_confidence:>5.2f}")
-    print(f"  {'-' * 60}")
-    print(f"  {'Overall (weighted)':<26} {scores.overall:>5.2f}  threshold: 0.75")
-    print(f"{'=' * 65}")
-    print()
-
-
-def print_batch_record_summary(
-    extraction_scores: list[ExtractionScores],
-    mapping_scores: list[MappingScores],
-) -> None:
-    """Print aggregate summary for batch record benchmark."""
-    if extraction_scores:
-        print()
-        print(f"{'=' * 85}")
-        print(f"  BATCH RECORD EXTRACTION SUMMARY")
-        print(f"{'=' * 85}")
+    print(f"  {'-' * 90}")
+    for s in scores_list:
+        st = "PASS" if s.passed else "FAIL"
         print(
-            f"  {'Fixture':<30} {'Overall':>7} {'Steps':>7} {'Param':>7} "
-            f"{'Times':>7} {'Meta':>7} {'Sig/Dev':>8} {'Conf':>7} {'Status':>7}"
+            f"  {s.fixture_name:<25} {s.overall:>6.0%} "
+            f"{s.step_completeness:>5.0%} {s.param_accuracy:>5.0%} "
+            f"{s.timestamps:>5.0%} {s.signatures:>5.0%} {s.deviations:>5.0%} "
+            f"{s.na_correctness:>5.0%} {s.notes_preservation:>5.0%} "
+            f"{s.run_metadata:>5.0%} {st:>7}"
         )
-        print(f"  {'-' * 80}")
-        for s in extraction_scores:
-            st = "PASS" if s.passed else "FAIL"
-            print(
-                f"  {s.fixture_name:<30} {s.overall:>6.0%} "
-                f"{s.step_detection:>6.0%} {s.param_extraction:>6.0%} "
-                f"{s.timestamps:>6.0%} {s.metadata:>6.0%} "
-                f"{s.signatures_deviations:>7.0%} "
-                f"{s.confidence_calibration:>6.0%} {st:>7}"
-            )
-        passed = sum(1 for s in extraction_scores if s.passed)
-        print(f"  {'-' * 80}")
-        print(f"  {passed}/{len(extraction_scores)} extraction fixtures passed")
-        print(f"{'=' * 85}\n")
+    passed = sum(1 for s in scores_list if s.passed)
+    print(f"  {'-' * 90}")
+    print(f"  {passed}/{len(scores_list)} run fixtures passed")
+    print(f"{'=' * 95}\n")
 
-    if mapping_scores:
-        print(f"{'=' * 85}")
-        print(f"  BATCH RECORD MAPPING SUMMARY")
-        print(f"{'=' * 85}")
-        print(
-            f"  {'Fixture':<30} {'Overall':>7} {'Step':>7} {'Param':>7} "
-            f"{'N/A':>7} {'Extra':>7} {'Conf':>7} {'Status':>7}"
-        )
-        print(f"  {'-' * 80}")
-        for s in mapping_scores:
-            st = "PASS" if s.passed else "FAIL"
-            print(
-                f"  {s.fixture_name:<30} {s.overall:>6.0%} "
-                f"{s.step_matching:>6.0%} {s.param_field_matching:>6.0%} "
-                f"{s.na_detection:>6.0%} {s.extra_step_handling:>6.0%} "
-                f"{s.mapping_confidence:>6.0%} {st:>7}"
-            )
-        passed = sum(1 for s in mapping_scores if s.passed)
-        print(f"  {'-' * 80}")
-        print(f"  {passed}/{len(mapping_scores)} mapping fixtures passed")
-        print(f"{'=' * 85}\n")
+
+def build_auto_finalized_mappings(
+    extraction, mappings,
+) -> list[dict]:
+    """Simulate the user auto-accepting all extracted values in the review UI.
+
+    Produces the `step_mappings` payload shape that `map_values_to_execution_data`
+    consumes (see `FinalizedStepMapping` schema).
+    """
+    finalized: list[dict] = []
+    for sm in mappings:
+        step = extraction.steps[sm.extracted_step_index]
+        finalized.append({
+            "protocol_step_id": sm.protocol_step_id,
+            "values": [
+                {
+                    "schema_field_key": pm.schema_field_key,
+                    "value": pm.extracted_value,
+                    "accepted": True,
+                    "edited": False,
+                    "original_value": pm.extracted_value,
+                    "original_confidence": pm.confidence,
+                }
+                for pm in sm.param_mappings
+            ],
+            "notes": step.notes or "",
+            "na": False,
+            "na_reason": "",
+            "timestamps": [t.model_dump() for t in step.timestamps],
+            "signatures": [s.model_dump() for s in step.signatures],
+            "deviations": [dv.model_dump() for dv in step.deviations],
+        })
+    return finalized
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Verify imports work**
+
+```bash
+python -c "from tests.benchmarks.batch_record_scoring import print_run_report, print_run_summary, build_auto_finalized_mappings, score_run; print('OK')"
+```
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add backend/tests/benchmarks/batch_record_scoring.py
-git commit -m "test(benchmark): add batch record report printers [F-0057]"
+git commit -m "test(benchmark): add run-output print helpers and auto-finalize util [F-0057]"
 ```
 
 ---
 
-## Phase 4 — Conftest & Runner
+## Phase 4 — Conftest + Runner
 
-### Task 15: Extend `conftest.py` with `pro_org` promotion + summary hook
+### Task 7: Extend conftest (pro_org + accumulator + summary hook)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/conftest.py`
 
-Fixture discovery and JSON loading are already generalized (Task 3). This task adds the module-scope `pro_org` fixture, the two new score accumulators, and extends the summary hook.
+- [ ] **Step 1: Read current conftest**
 
-- [ ] **Step 1: Apply edits**
+```bash
+cat backend/tests/benchmarks/conftest.py | head -50
+```
 
-Add to the top imports section of `conftest.py` (near the existing pytest import):
+- [ ] **Step 2: Add imports and fixture**
+
+Near the top of conftest.py (near existing `import pytest`), add:
 
 ```python
 import pytest_asyncio
 from app.models.iam import Organization, SubscriptionTier
 ```
 
-Promote `pro_org` to conftest module scope. Add near the bottom (before `all_benchmark_scores`):
+Near the bottom (before `all_benchmark_scores`), add the module-scope fixture:
 
 ```python
 @pytest_asyncio.fixture
 async def pro_org(db_session) -> Organization:
-    """Pro-tier org used by benchmark tests so AI provider defaults resolve."""
+    """Pro-tier org for benchmarks so AI provider defaults resolve."""
     org = Organization(
         name="Benchmark Org",
         subscription_tier=SubscriptionTier.PRO.value,
@@ -2387,104 +1055,103 @@ async def pro_org(db_session) -> Organization:
     return org
 ```
 
-Add two more accumulators alongside `all_benchmark_scores`:
+Next to `all_benchmark_scores: list = []`, add:
 
 ```python
-all_batch_record_extraction_scores: list = []
-all_batch_record_mapping_scores: list = []
+all_batch_record_run_scores: list = []
 ```
 
-Update `pytest_terminal_summary`:
+Extend `pytest_terminal_summary`:
 
 ```python
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Print aggregate benchmark summary at the end of the run."""
+    """Print aggregate benchmark summary at end of run."""
     from tests.benchmarks.scoring import print_summary_table
-    from tests.benchmarks.batch_record_scoring import print_batch_record_summary
+    from tests.benchmarks.batch_record_scoring import print_run_summary
 
     if all_benchmark_scores:
         print_summary_table(all_benchmark_scores)
-    if all_batch_record_extraction_scores or all_batch_record_mapping_scores:
-        print_batch_record_summary(
-            all_batch_record_extraction_scores,
-            all_batch_record_mapping_scores,
-        )
+    if all_batch_record_run_scores:
+        print_run_summary(all_batch_record_run_scores)
 ```
 
-- [ ] **Step 2: Remove the duplicated `pro_org` fixture from `TestProtocolImportAccuracy`**
+- [ ] **Step 3: Remove the class-scope `pro_org` from `TestProtocolImportAccuracy`**
 
-Open `backend/tests/benchmarks/test_llm_eval.py`. Delete the `@pytest_asyncio.fixture async def pro_org(...)` method inside `TestProtocolImportAccuracy` (lines ~40-50). Test still uses `pro_org` arg — it now resolves via conftest.
+In `backend/tests/benchmarks/test_llm_eval.py`, delete the `@pytest_asyncio.fixture async def pro_org(...)` method inside the `TestProtocolImportAccuracy` class (around lines 40-50). Test method's `pro_org` arg now resolves via conftest.
 
-- [ ] **Step 3: Verify F-0058 benchmark still collects cleanly**
+- [ ] **Step 4: Verify F-0058 benchmark still collects**
 
 ```bash
-cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only
+cd /home/wesuuu/Code/trellisbio/backend && source .venv/bin/activate && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only -q
 ```
 
-Expected: collection succeeds, all `TestProtocolImportAccuracy::test_import_accuracy[*]` items listed. Do NOT run them (requires LLM).
+Expected: 6 `TestProtocolImportAccuracy::test_import_accuracy[*]` items.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add backend/tests/benchmarks/conftest.py backend/tests/benchmarks/test_llm_eval.py
-git commit -m "test(benchmark): promote pro_org + add batch-record accumulators [F-0057]"
+git commit -m "test(benchmark): promote pro_org + add run-score accumulator [F-0057]"
 ```
 
 ---
 
-### Task 16: Add `TestBatchRecordAccuracy` runner
+### Task 8: `TestBatchRecordAccuracy` runner class
 
 **Files:**
 - Modify: `backend/tests/benchmarks/test_llm_eval.py`
 
-- [ ] **Step 1: Add imports at top of file**
+- [ ] **Step 1: Add imports**
+
+At the top of `test_llm_eval.py`, near existing imports:
 
 ```python
 from app.services.batch_record_extractor import (
     extract_batch_record_data,
     extract_batch_record_pages,
     map_steps_to_protocol,
+    map_values_to_execution_data,
 )
 from tests.benchmarks.batch_record_scoring import (
-    print_extraction_report,
-    print_mapping_report,
-    score_extraction,
-    score_mapping,
+    build_auto_finalized_mappings,
+    print_run_report,
+    score_run,
 )
 from tests.benchmarks.conftest import (
-    all_batch_record_extraction_scores,
-    all_batch_record_mapping_scores,
+    all_batch_record_run_scores,
     discover_fixtures,
     load_json,
 )
 ```
 
-- [ ] **Step 2: Add fixture collection at module level**
+- [ ] **Step 2: Add module-level fixture collection**
 
-Near the top of the file, after `_fixture_dirs` / `_fixture_ids` lines:
+After the existing `_fixture_dirs` lines:
 
 ```python
 _br_fixture_dirs = discover_fixtures(
     subdir="document-to-run",
-    marker_file="expected_extraction.json",
+    marker_file="expected_run.json",
 )
 _br_fixture_ids = [d.name for d in _br_fixture_dirs]
 ```
 
-- [ ] **Step 3: Add the new test class at the bottom of `test_llm_eval.py`**
+Fixtures without `expected_run.json` (e.g., not authored yet) are skipped automatically.
+
+- [ ] **Step 3: Append the runner class at the bottom of the file**
 
 ```python
 @pytest.mark.benchmark
 class TestBatchRecordAccuracy:
-    """Feed real batch record documents through extraction + mapping and score."""
+    """Run the full batch-record-import pipeline and score the output Run."""
 
     @pytest.mark.parametrize(
         "fixture_dir", _br_fixture_dirs, ids=_br_fixture_ids,
     )
-    async def test_batch_record_accuracy(
+    async def test_batch_record_to_run(
         self, fixture_dir: Path, db_session, pro_org,
     ):
-        # Stage 1: extraction
+        # 1. Extract
         doc = find_document(fixture_dir)
         mime = get_mime_type(doc)
         text, page_images = await extract_batch_record_pages(
@@ -2494,483 +1161,223 @@ class TestBatchRecordAccuracy:
             text, page_images, db_session, org_id=pro_org.id,
         )
 
-        expected_extraction = load_json(fixture_dir, "expected_extraction.json")
-        ext_scores = score_extraction(
-            extraction, expected_extraction, fixture_dir.name,
-        )
-        print_extraction_report(ext_scores)
-        all_batch_record_extraction_scores.append(ext_scores)
-
-        assert ext_scores.overall >= 0.75, (
-            f"{fixture_dir.name} extraction: {ext_scores.overall:.0%} < 75%\n"
-            f"{json.dumps(ext_scores.to_dict(), indent=2)}"
-        )
-
-        # Stage 2: mapping (only if protocol.json exists)
-        protocol_path = fixture_dir / "protocol.json"
-        if not protocol_path.exists():
-            return
+        # 2. Map against target protocol
         protocol = load_json(fixture_dir, "protocol.json")
-
-        mapping_path = fixture_dir / "expected_mapping.json"
-        if not mapping_path.exists():
-            pytest.fail(
-                f"{fixture_dir.name}: protocol.json present but "
-                "expected_mapping.json missing"
-            )
-        expected_mapping = load_json(fixture_dir, "expected_mapping.json")
-
         mappings = await map_steps_to_protocol(
             extraction, protocol, db_session, org_id=pro_org.id,
         )
-        map_scores = score_mapping(
-            mappings, expected_mapping, fixture_dir.name,
-        )
-        print_mapping_report(map_scores)
-        all_batch_record_mapping_scores.append(map_scores)
 
-        assert map_scores.overall >= 0.75, (
-            f"{fixture_dir.name} mapping: {map_scores.overall:.0%} < 75%\n"
-            f"{json.dumps(map_scores.to_dict(), indent=2)}"
+        # 3. Simulate user-finalize: auto-accept all extracted values + pass through aux fields
+        finalized = build_auto_finalized_mappings(extraction, mappings)
+        execution_data = map_values_to_execution_data(
+            finalized, protocol, user_id=pro_org.id,
+        )
+
+        # 4. Score against expected_run.json
+        expected_run = load_json(fixture_dir, "expected_run.json")
+        run_metadata = {
+            "run_name": extraction.batch_id or extraction.document_title or "",
+        }
+        scores = score_run(
+            execution_data, run_metadata, expected_run, protocol, fixture_dir.name,
+        )
+        print_run_report(scores)
+        all_batch_record_run_scores.append(scores)
+
+        assert scores.overall >= 0.75, (
+            f"{fixture_dir.name}: {scores.overall:.0%} < 75%\n"
+            f"{json.dumps(scores.to_dict(), indent=2, default=str)}"
         )
 ```
 
-- [ ] **Step 4: Verify collection**
+- [ ] **Step 4: Verify collection (0 items until fixtures are authored)**
 
 ```bash
-cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only -q
+pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only -q 2>&1 | tail -10
 ```
 
-Expected: shows 4 `TestBatchRecordAccuracy::test_batch_record_accuracy[0X-<name>]` items (one per migrated fixture; `05-messy-scan` only appears after Task 21).
+Expected: 6 `TestProtocolImportAccuracy` items + 0 `TestBatchRecordAccuracy` items (no expected_run.json yet anywhere).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add backend/tests/benchmarks/test_llm_eval.py
-git commit -m "test(benchmark): add TestBatchRecordAccuracy parametrized runner [F-0057]"
+git commit -m "test(benchmark): add TestBatchRecordAccuracy runner [F-0057]"
 ```
 
 ---
 
-## Phase 5 — Author Ground-Truth Mapping Fixtures
+## Phase 5 — Author ground-truth fixtures (human review per scenario)
 
-Each scenario needs `protocol.json` + `expected_mapping.json`. These are hand-authored ground truth — **pause between tasks and show the user for sign-off**.
+Each task reads the scenario's existing `expected_extraction.json` (soon to be deleted) to understand what the document contains, then authors `protocol.json` + `expected_run.json`. **Pause for user sign-off before each commit.**
 
-### Task 17: Author `01-perfect-match/protocol.json` and `expected_mapping.json`
+### Task 9: Author 01-perfect-match fixtures
 
-**Files:**
-- Create: `backend/tests/benchmarks/document-to-run/01-perfect-match/protocol.json`
-- Create: `backend/tests/benchmarks/document-to-run/01-perfect-match/expected_mapping.json`
+- [ ] **Step 1:** Read `backend/tests/benchmarks/document-to-run/01-perfect-match/expected_extraction.json` — gives step structure, params, timestamps, signatures, notes.
 
-- [ ] **Step 1: Read the expected_extraction.json for this fixture**
+- [ ] **Step 2:** Author `protocol.json` with 3 nodes matching the 3 extraction steps. Give each a paramSchema with fields that map cleanly from the extracted labels.
 
-```bash
-cat backend/tests/benchmarks/document-to-run/01-perfect-match/expected_extraction.json
-```
+- [ ] **Step 3:** Author `expected_run.json` — `run_name` = batch_id ("LOT-2026-100"). Each protocol step gets `status: "completed"`, `results` keyed by schema_field, `notes` from extraction, and `timestamps/signatures/deviations` arrays pulled directly from the extraction.
 
-Extraction has 3 steps: Buffer Preparation, Centrifugation, Filtration.
-
-- [ ] **Step 2: Author `protocol.json`**
-
-Create the file with a 3-node protocol graph matching the 3 extraction steps exactly. Use parameter schema fields that align to the extracted labels.
-
-```json
-{
-  "nodes": [
-    {
-      "id": "node-buffer-prep",
-      "type": "unitOp",
-      "position": {"x": 0, "y": 0},
-      "data": {
-        "label": "Buffer Preparation",
-        "paramSchema": {
-          "type": "object",
-          "properties": {
-            "ph_value": {"type": "number", "title": "pH Value"},
-            "temperature_c": {"type": "number", "title": "Temperature (°C)"},
-            "volume_ml": {"type": "number", "title": "Volume (mL)"}
-          }
-        }
-      }
-    },
-    {
-      "id": "node-centrifugation",
-      "type": "unitOp",
-      "position": {"x": 200, "y": 0},
-      "data": {
-        "label": "Centrifugation",
-        "paramSchema": {
-          "type": "object",
-          "properties": {
-            "speed_g": {"type": "number", "title": "Speed (g)"},
-            "duration_min": {"type": "number", "title": "Duration (min)"},
-            "temperature_c": {"type": "number", "title": "Temperature (°C)"}
-          }
-        }
-      }
-    },
-    {
-      "id": "node-filtration",
-      "type": "unitOp",
-      "position": {"x": 400, "y": 0},
-      "data": {
-        "label": "Filtration",
-        "paramSchema": {
-          "type": "object",
-          "properties": {
-            "filter_size_um": {"type": "number", "title": "Filter Size (μm)"},
-            "pressure_psi": {"type": "number", "title": "Pressure (PSI)"}
-          }
-        }
-      }
-    }
-  ],
-  "edges": [
-    {"id": "e1", "source": "node-buffer-prep", "target": "node-centrifugation"},
-    {"id": "e2", "source": "node-centrifugation", "target": "node-filtration"}
-  ]
-}
-```
-
-- [ ] **Step 3: Author `expected_mapping.json`**
-
-```json
-{
-  "step_mappings": [
-    {
-      "extracted_step_name": "Buffer Preparation",
-      "protocol_step_name": "Buffer Preparation",
-      "mapped": true,
-      "param_mappings": [
-        {"extracted_label": "pH", "schema_field_key": "ph_value"},
-        {"extracted_label": "Temperature", "schema_field_key": "temperature_c"},
-        {"extracted_label": "Volume", "schema_field_key": "volume_ml"}
-      ]
-    },
-    {
-      "extracted_step_name": "Centrifugation",
-      "protocol_step_name": "Centrifugation",
-      "mapped": true,
-      "param_mappings": [
-        {"extracted_label": "Speed", "schema_field_key": "speed_g"},
-        {"extracted_label": "Duration", "schema_field_key": "duration_min"},
-        {"extracted_label": "Temperature", "schema_field_key": "temperature_c"}
-      ]
-    },
-    {
-      "extracted_step_name": "Filtration",
-      "protocol_step_name": "Filtration",
-      "mapped": true,
-      "param_mappings": [
-        {"extracted_label": "Filter Size", "schema_field_key": "filter_size_um"},
-        {"extracted_label": "Pressure", "schema_field_key": "pressure_psi"}
-      ]
-    }
-  ],
-  "unmapped_protocol_steps": [],
-  "unmapped_extracted_steps": []
-}
-```
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 4:** Show user the two files for sign-off. Commit only on approval:
 
 ```bash
-git add backend/tests/benchmarks/document-to-run/01-perfect-match/
-git commit -m "test(benchmark): author 01-perfect-match protocol + mapping [F-0057]"
+git add backend/tests/benchmarks/document-to-run/01-perfect-match/protocol.json \
+        backend/tests/benchmarks/document-to-run/01-perfect-match/expected_run.json
+git commit -m "test(benchmark): author 01-perfect-match protocol + expected_run [F-0057]"
 ```
 
----
+### Task 10: Author 02-wrong-protocol fixtures
 
-### Task 18: Author `02-wrong-protocol/protocol.json` and `expected_mapping.json`
+- [ ] **Step 1:** Read the extraction (cell-culture run: Cell Seeding / Incubation / Harvest).
 
-**Files:**
-- Create: `backend/tests/benchmarks/document-to-run/02-wrong-protocol/protocol.json`
-- Create: `backend/tests/benchmarks/document-to-run/02-wrong-protocol/expected_mapping.json`
+- [ ] **Step 2:** Author `protocol.json` with an unrelated 3-step purification protocol (e.g., Buffer Prep → Protein A Chromatography → Sterile Filtration).
 
-- [ ] **Step 1: Read the expected_extraction.json to identify the document's actual steps**
+- [ ] **Step 3:** Author `expected_run.json` — no step mappings possible, so `execution_data` should be empty (or mark all protocol steps as `na` with `na_reason: "Protocol does not match document"`). Pick ONE of those two conventions and document the choice in the file. Prefer **empty execution_data** — simpler and reflects the reality that the mapping stage produces no StepMappings. `run_name` = batch_id from extraction if present.
+
+- [ ] **Step 4:** Show user, commit on approval:
 
 ```bash
-cat backend/tests/benchmarks/document-to-run/02-wrong-protocol/expected_extraction.json
+git add backend/tests/benchmarks/document-to-run/02-wrong-protocol/protocol.json \
+        backend/tests/benchmarks/document-to-run/02-wrong-protocol/expected_run.json
+git commit -m "test(benchmark): author 02-wrong-protocol protocol + expected_run [F-0057]"
 ```
 
-Identify the step_names. For this scenario the *protocol* should be unrelated (e.g., a cell-culture protocol while the document describes purification), so nothing maps.
+### Task 11: Author 03-half-complete fixtures
 
-- [ ] **Step 2: Author a mismatched `protocol.json`**
+- [ ] **Step 1:** Read the extraction — typically fewer steps than a "full" protocol.
 
-Pick a 3-step protocol (e.g., Seeding / Incubation / Harvest) completely unrelated to the document's steps. Full file with nodes + edges similar to Task 17's shape.
+- [ ] **Step 2:** Author `protocol.json` with 5 steps where only 2-3 are covered by the document.
 
-- [ ] **Step 3: Author `expected_mapping.json` capturing "nothing maps"**
+- [ ] **Step 3:** Author `expected_run.json` — covered steps `status: "completed"` with all data; uncovered steps either not present in execution_data OR `status: "na"`. Prefer **not-present** (mirrors the real pipeline which only writes execution_data for mapped steps).
 
-```json
-{
-  "step_mappings": [],
-  "unmapped_protocol_steps": ["Seeding", "Incubation", "Harvest"],
-  "unmapped_extracted_steps": [
-    "<first extracted step_name from expected_extraction.json>",
-    "<second>",
-    "<third>"
-  ]
-}
-```
+- [ ] **Step 4:** Show user, commit on approval.
 
-Fill `unmapped_extracted_steps` with the actual step_names from `expected_extraction.json`.
+### Task 12: Author 04-extra-steps fixtures
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 1:** Read the extraction — document has extra steps not in protocol.
 
-```bash
-git add backend/tests/benchmarks/document-to-run/02-wrong-protocol/
-git commit -m "test(benchmark): author 02-wrong-protocol protocol + mapping [F-0057]"
-```
+- [ ] **Step 2:** Author `protocol.json` with fewer steps than the document — only the subset that should map.
 
----
+- [ ] **Step 3:** Author `expected_run.json` — only the mapped steps present. Extra extracted steps don't appear in execution_data (no protocol_step_id to key on).
 
-### Task 19: Author `03-half-complete/protocol.json` and `expected_mapping.json`
+- [ ] **Step 4:** Show user, commit on approval.
 
-**Files:**
-- Create: `backend/tests/benchmarks/document-to-run/03-half-complete/protocol.json`
-- Create: `backend/tests/benchmarks/document-to-run/03-half-complete/expected_mapping.json`
-
-- [ ] **Step 1: Read the extraction**
-
-```bash
-cat backend/tests/benchmarks/document-to-run/03-half-complete/expected_extraction.json
-```
-
-- [ ] **Step 2: Author a 5-step protocol where the document only covers ~2-3 steps**
-
-Include the 2-3 step_names from the extraction + 2-3 additional protocol steps that should be marked N/A (`unmapped_protocol_steps`).
-
-- [ ] **Step 3: Author `expected_mapping.json`** — `step_mappings` covers only the steps that appeared in the document; `unmapped_protocol_steps` lists the missing ones.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add backend/tests/benchmarks/document-to-run/03-half-complete/
-git commit -m "test(benchmark): author 03-half-complete protocol + mapping [F-0057]"
-```
-
----
-
-### Task 20: Author `04-extra-steps/protocol.json` and `expected_mapping.json`
-
-**Files:**
-- Create: `backend/tests/benchmarks/document-to-run/04-extra-steps/protocol.json`
-- Create: `backend/tests/benchmarks/document-to-run/04-extra-steps/expected_mapping.json`
-
-- [ ] **Step 1: Read the extraction**
-
-```bash
-cat backend/tests/benchmarks/document-to-run/04-extra-steps/expected_extraction.json
-```
-
-- [ ] **Step 2: Author a protocol with fewer steps than the document**
-
-Protocol has, say, 2 steps. Document has 4 extracted steps — 2 of them should map, 2 should be `unmapped_extracted_steps`.
-
-- [ ] **Step 3: Author `expected_mapping.json`** — `step_mappings` covers only the 2 that map; `unmapped_extracted_steps` lists the 2 extras.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add backend/tests/benchmarks/document-to-run/04-extra-steps/
-git commit -m "test(benchmark): author 04-extra-steps protocol + mapping [F-0057]"
-```
-
----
-
-## Phase 6 — Messy-Scan Fixture
-
-### Task 21: Create `05-messy-scan/` fixture
+### Task 13: Create 05-messy-scan fixture
 
 **Files:**
 - Create: `backend/tests/benchmarks/document-to-run/05-messy-scan/document.pdf`
-- Create: `backend/tests/benchmarks/document-to-run/05-messy-scan/expected_extraction.json`
 - Create: `backend/tests/benchmarks/document-to-run/05-messy-scan/protocol.json`
-- Create: `backend/tests/benchmarks/document-to-run/05-messy-scan/expected_mapping.json`
+- Create: `backend/tests/benchmarks/document-to-run/05-messy-scan/expected_run.json`
 
-- [ ] **Step 1: Look at how existing F-0058 `06-messy-scan` was generated**
+- [ ] **Step 1:** Generate a messy-scan style PDF. Simplest approach: copy `backend/tests/artifacts/templates/batch_record_filled_simple.pdf` to the fixture dir as `document.pdf`, then optionally run it through a Pillow-based degradation script (rotate 2°, Gaussian blur 0.8, noise) to simulate scan artifacts. Commit the resulting PDF.
 
-```bash
-ls backend/tests/benchmarks/input-to-protocol/06-messy-scan/
-cat backend/tests/benchmarks/input-to-protocol/06-messy-scan/expected.json | head -40
-```
+Alternative if the degradation script is friction: use an already-degraded sample from `tests/artifacts/templates/` if one exists, or skip degradation and note this fixture tests a clean-scan scenario (move the messy-scan label elsewhere).
 
-- [ ] **Step 2: Generate a handwritten-style batch record PDF**
+- [ ] **Step 2:** Author `protocol.json` + `expected_run.json` matching whatever the document actually contains. Since the document is a real filled batch record, read the content first to know what's expected.
 
-Options (pick one; document the choice in a commit message):
-
-**Option A — Use an existing filled template from `tests/artifacts/templates/`:**
-
-```bash
-cp backend/tests/artifacts/templates/batch_record_filled_simple.pdf backend/tests/benchmarks/document-to-run/05-messy-scan/document.pdf
-```
-
-Then simulate scan degradation with Pillow (blur + noise + slight rotation):
-
-```python
-# Save as scratch script, run once
-from pathlib import Path
-from pdf2image import convert_from_path
-from PIL import Image, ImageFilter
-import io
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-
-src = Path("backend/tests/benchmarks/document-to-run/05-messy-scan/document.pdf")
-pages = convert_from_path(str(src), dpi=150)
-degraded_pages = []
-for p in pages:
-    img = p.rotate(-2, fillcolor="white", expand=False)
-    img = img.filter(ImageFilter.GaussianBlur(radius=0.8))
-    # Add a bit of noise
-    degraded_pages.append(img)
-
-# Save as PDF
-degraded_pages[0].save(
-    src,
-    save_all=True,
-    append_images=degraded_pages[1:],
-    resolution=150.0,
-)
-```
-
-**Option B — Hand-craft a fully handwritten scenario:** use the `batch_record_blank_roles.docx` template, fill it by hand via a rendering script, then convert to PDF. Heavier but more realistic.
-
-For this task: **default to Option A.** If Option A isn't visually different enough from a clean scan, switch to B and note why in the commit message.
-
-- [ ] **Step 3: Author `expected_extraction.json`**
-
-Based on what the degraded document actually shows, write the ground-truth extraction JSON following the shape of `01-perfect-match/expected_extraction.json`. Tolerance for extraction is built into scoring, so minor value wobble is fine.
-
-- [ ] **Step 4: Author `protocol.json` + `expected_mapping.json`**
-
-Pick a protocol that matches the document's step set. Likely similar shape to Task 17's perfect-match fixture.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/tests/benchmarks/document-to-run/05-messy-scan/
-git commit -m "test(benchmark): add 05-messy-scan fixture for OCR robustness [F-0057]"
-```
+- [ ] **Step 3:** Show user, commit on approval.
 
 ---
 
-## Phase 7 — Cleanup & Dry Run
+## Phase 6 — Cleanup + Dry Run
 
-### Task 22: Delete the old smoke test and orphaned fixtures
+### Task 14: Delete the orphaned smoke test and now-unused expected_extraction.json files
 
-**Files:**
-- Delete: `backend/tests/integration/test_batch_record_import_llm.py`
-- Delete: `backend/tests/fixtures/sample_batch_record.pdf`
-- Delete: `backend/tests/fixtures/sample_batch_record_extraction.json`
-
-- [ ] **Step 1: Check nothing else references these files**
+- [ ] **Step 1:** Confirm nothing else references these paths:
 
 ```bash
-grep -r "sample_batch_record" backend/
-grep -r "test_batch_record_import_llm" backend/
+cd /home/wesuuu/Code/trellisbio
+grep -rn "sample_batch_record\|test_batch_record_import_llm\|expected_extraction" backend/ | grep -v "tests/benchmarks/document-to-run"
 ```
 
-Expected: only the files themselves match. If the integration test is imported elsewhere, pause and reconsider.
+Expected: only matches inside `document-to-run/` (the files we're about to delete) or in the deleted smoke test itself.
 
-- [ ] **Step 2: Delete**
+- [ ] **Step 2:** Delete files:
 
 ```bash
 git rm backend/tests/integration/test_batch_record_import_llm.py
 git rm backend/tests/fixtures/sample_batch_record.pdf
 git rm backend/tests/fixtures/sample_batch_record_extraction.json
+git rm backend/tests/benchmarks/document-to-run/01-perfect-match/expected_extraction.json
+git rm backend/tests/benchmarks/document-to-run/02-wrong-protocol/expected_extraction.json
+git rm backend/tests/benchmarks/document-to-run/03-half-complete/expected_extraction.json
+git rm backend/tests/benchmarks/document-to-run/04-extra-steps/expected_extraction.json
 ```
 
-- [ ] **Step 3: Run the full unit test suite to confirm nothing broke**
+- [ ] **Step 3:** Run unit tests to confirm nothing broke:
 
 ```bash
-cd backend && pytest tests/unit/ -q
+cd backend && source .venv/bin/activate && pytest tests/unit/ -q 2>&1 | tail -5
 ```
 
-Expected: all pass.
+Expected: no new failures (3 pre-existing `test_ai_config.py` failures from TD-0074 are unrelated and remain).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4:** Commit:
 
 ```bash
-git commit -m "test(benchmark): remove F-0057 smoke test and orphaned fixtures [F-0057]"
+git commit -m "test(benchmark): remove F-0057 smoke test and orphaned extraction fixtures [F-0057]"
 ```
 
----
+### Task 15: End-to-end dry run with real LLM + optional calibration
 
-### Task 23: End-to-end dry run with real LLM + calibrate
-
-**Files:** none modified in this task — it's an execution + calibration step.
-
-- [ ] **Step 1: Confirm an LLM provider is configured**
+- [ ] **Step 1:** Confirm an LLM provider is configured (Ollama at `localhost:11434` with `llama3.2-vision:11b`, or cloud creds via env):
 
 ```bash
-echo $BATCHRITE_AI_VISION_PROVIDER $BATCHRITE_AI_VISION_MODEL
+echo "Vision provider: $BATCHRITE_AI_VISION_PROVIDER  Model: $BATCHRITE_AI_VISION_MODEL"
 ```
 
-Either Anthropic/OpenAI creds via env or an Ollama instance at `localhost:11434` with `llama3.2-vision:11b` pulled. If neither, STOP — benchmark can't run.
+If neither is configured, STOP — benchmark can't run.
 
-- [ ] **Step 2: Run batch-record benchmark only**
+- [ ] **Step 2:** Run batch-record benchmark only:
 
 ```bash
-cd backend && pytest tests/benchmarks/test_llm_eval.py::TestBatchRecordAccuracy -m benchmark -v -s
+cd /home/wesuuu/Code/trellisbio/backend && source .venv/bin/activate && pytest tests/benchmarks/test_llm_eval.py::TestBatchRecordAccuracy -m benchmark -v -s
 ```
 
-Expected: 4–5 fixtures run. Each prints an extraction report (and a mapping report for 01–04 + 05 since all five have `protocol.json`).
+Expected: 5 fixtures run (01-05). Each prints a report. Summary table at end shows PASS/FAIL per fixture and dimensional breakdown.
 
-- [ ] **Step 3: Review outcomes**
+- [ ] **Step 3:** Review outcomes:
 
-- If all fixtures PASS: great, benchmark baseline is established.
-- If some FAIL with overall between 0.6 and 0.75: likely LLM quality issue — not a scoring bug. Note fixture names and move on.
-- If some FAIL with overall near 0: likely a scoring bug or fixture misauthoring. Pause and investigate before committing.
+- All PASS → benchmark baseline established.
+- Some FAIL at 0.60-0.75 → likely LLM quality gap, not scoring bug. Note fixture names.
+- Some FAIL near 0.0 → likely scoring bug or fixture misauthoring. Pause and investigate.
 
-- [ ] **Step 4: If calibration adjustments are needed**
+- [ ] **Step 4:** Calibrate only if needed:
 
-Scoring tolerances (numeric 5%, fuzzy thresholds 0.7 / 0.85) are the likely knobs. Only adjust if a clearly-correct extraction is scoring poorly — do NOT adjust to mask real LLM quality issues. If you adjust, update `tests/unit/test_batch_record_scoring.py` correspondingly.
+Scoring tolerances (numeric 5%, fuzzy 0.7/0.85) are the knobs. Only adjust if clearly-correct extractions score poorly. Do NOT relax tolerances to mask real LLM quality issues.
 
-- [ ] **Step 5: If all four migrated fixtures PASS, commit nothing**
-
-This task either passes clean (no commit) or produces a calibration commit:
+- [ ] **Step 5:** Confirm F-0058 still collects cleanly:
 
 ```bash
-# only if calibration changes were made
+pytest tests/benchmarks/test_llm_eval.py::TestProtocolImportAccuracy -m benchmark --collect-only
+```
+
+- [ ] **Step 6:** No commit on pass; calibration commit if any:
+
+```bash
+# only if tolerances adjusted
 git add backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): calibrate batch record scoring tolerances [F-0057]"
+git commit -m "test(benchmark): calibrate run-output scoring tolerances [F-0057]"
 ```
-
-- [ ] **Step 6: Run the F-0058 benchmark too, to confirm nothing upstream broke**
-
-```bash
-cd backend && pytest tests/benchmarks/test_llm_eval.py::TestProtocolImportAccuracy -m benchmark --collect-only
-```
-
-Expected: collects without errors (do not actually run unless verifying end-to-end — LLM cost).
-
-- [ ] **Step 7: Optional end-of-phase push**
-
-```bash
-git push origin $(git branch --show-current)
-```
-
-(Only if user has approved pushing this branch.)
 
 ---
 
 ## Self-Review Checklist
 
-**1. Spec coverage:** all sections in the spec are mapped to tasks:
-- Migration → Task 1
-- Shared benchmark utilities (architecture) → Tasks 2-4
-- `batch_record_scoring.py` dataclasses/helpers/scorers → Tasks 5-14
-- Conftest `pro_org` promotion + summary hook → Task 15
-- Runner → Task 16
-- Expected-mapping fixture format → Tasks 17-20 (validated by consumers in Task 23)
-- Error handling (missing protocol / missing mapping) → encoded in Task 16 runner
-- Messy-scan fixture → Task 21
-- Deletion of smoke test / orphans → Task 22
-- Unit tests for shared matching → Task 2
-- Unit tests for batch-record scorer → Tasks 5-13
-- Invocation commands → Task 23
+**1. Spec coverage:**
+- Product changes (backend schema + execution_data) → Task 1
+- Frontend pass-through → Task 2
+- Run scorer (dataclasses + helpers) → Task 3
+- `score_run` first 3 dims → Task 4
+- `score_run` remaining 5 dims → Task 5
+- Print helpers + auto-finalize → Task 6
+- Conftest promotion + accumulators + summary → Task 7
+- Runner class → Task 8
+- Fixture authoring (5 scenarios) → Tasks 9-13
+- Cleanup → Task 14
+- Dry run + calibration → Task 15
 
-**2. Placeholder scan:** four author-ground-truth tasks (Tasks 17-20) require per-fixture inspection — they ask the engineer to read the expected_extraction.json before authoring protocol.json + expected_mapping.json. That's correct — the ground truth depends on document content. Every code step includes full implementation. No TBD/TODO.
+**2. Placeholder scan:** None. Every step has concrete code or commands. Fixture authoring tasks defer to per-document inspection + user sign-off (inherent to the problem).
 
-**3. Type consistency:** `ExtractionScores`, `MappingScores`, `score_extraction`, `score_mapping`, `BatchRecordExtraction`, `StepMapping`, `ParamMapping` — names consistent across all tasks and match the extractor module. Shared helpers use public names (`fuzzy_ratio`, `align_by_name`, `f1`); batch-record scorer uses internal aliases (`_fuzzy_match`, `_align_steps`) for readability at call sites.
+**3. Type consistency:** `RunScores`, `RunScoreDetails`, `score_run` consistent across tasks. `build_auto_finalized_mappings` produces the shape consumed by `map_values_to_execution_data` (which accepts the post-Pydantic dicts). Frontend `FinalizedStepMapping` mirrors backend Pydantic schema exactly.
