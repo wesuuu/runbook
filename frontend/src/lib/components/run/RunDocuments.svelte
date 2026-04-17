@@ -53,58 +53,54 @@
     {/if}
 
     <div class="space-y-3">
-        <button
+        <Button
+            variant="outline"
             onclick={onDownloadSop}
-            class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
+            class="w-full h-auto justify-between px-4 py-3 font-medium"
         >
-            <div class="flex items-center justify-between">
-                <span class="font-medium text-foreground">
-                    Download SOP
-                </span>
-                <span class="text-muted-foreground/60">&darr;</span>
-            </div>
-        </button>
+            <span class="text-foreground">
+                Download SOP
+            </span>
+            <span class="text-muted-foreground/60">&darr;</span>
+        </Button>
 
         <hr class="my-3" />
 
-        <button
+        <Button
+            variant="outline"
             onclick={() => onDownloadBatchRecord(false)}
-            class="w-full text-left px-4 py-3 bg-background hover:bg-muted border border-border rounded-lg transition-colors"
+            class="w-full h-auto justify-between px-4 py-3 font-medium"
         >
-            <div class="flex items-center justify-between">
-                <span class="font-medium text-foreground">
-                    Download Blank Batch Record
-                </span>
-                <span class="text-muted-foreground/60">&darr;</span>
-            </div>
-        </button>
+            <span class="text-foreground">
+                Download Blank Batch Record
+            </span>
+            <span class="text-muted-foreground/60">&darr;</span>
+        </Button>
 
         {#if showFilledRecord}
-            <button
+            <Button
+                variant="outline"
                 onclick={handleFilledDownload}
-                class="w-full text-left px-4 py-3 {filledBgClass} border rounded-lg transition-colors"
+                class="w-full h-auto justify-between px-4 py-3 font-medium {filledBgClass}"
             >
-                <div class="flex items-center justify-between">
-                    <span class="font-medium {filledTextClass}">
-                        {filledLabel}
-                    </span>
-                    <span class={filledArrowClass}>&darr;</span>
-                </div>
-            </button>
+                <span class={filledTextClass}>
+                    {filledLabel}
+                </span>
+                <span class={filledArrowClass}>&darr;</span>
+            </Button>
 
             <hr class="my-3" />
 
-            <button
+            <Button
+                variant="outline"
                 onclick={() => goto(`/export?runs=${runId}`)}
-                class="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+                class="w-full h-auto justify-between px-4 py-3 font-medium bg-blue-50 hover:bg-blue-100 border-blue-200"
             >
-                <div class="flex items-center justify-between">
-                    <span class="font-medium text-blue-900">
-                        Export Data (CSV / Excel / JSON)
-                    </span>
-                    <span class="text-blue-600">&darr;</span>
-                </div>
-            </button>
+                <span class="text-blue-900">
+                    Export Data (CSV / Excel / JSON)
+                </span>
+                <span class="text-blue-600">&darr;</span>
+            </Button>
         {/if}
     </div>
 </div>

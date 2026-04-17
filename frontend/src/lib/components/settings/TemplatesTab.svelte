@@ -111,30 +111,27 @@
 
     <!-- Type filter -->
     <div class="flex gap-2">
-        <button
-            class="px-3 py-1 text-sm rounded-md transition-colors {typeFilter === ''
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted hover:bg-muted/80'}"
+        <Button
+            variant={typeFilter === '' ? 'default' : 'secondary'}
+            size="sm"
             onclick={() => (typeFilter = '')}
         >
             All
-        </button>
-        <button
-            class="px-3 py-1 text-sm rounded-md transition-colors {typeFilter === 'SOP'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted hover:bg-muted/80'}"
+        </Button>
+        <Button
+            variant={typeFilter === 'SOP' ? 'default' : 'secondary'}
+            size="sm"
             onclick={() => (typeFilter = 'SOP')}
         >
             SOP
-        </button>
-        <button
-            class="px-3 py-1 text-sm rounded-md transition-colors {typeFilter === 'BATCH_RECORD'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted hover:bg-muted/80'}"
+        </Button>
+        <Button
+            variant={typeFilter === 'BATCH_RECORD' ? 'default' : 'secondary'}
+            size="sm"
             onclick={() => (typeFilter = 'BATCH_RECORD')}
         >
             Batch Record
-        </button>
+        </Button>
     </div>
 
     <!-- Table -->
@@ -201,27 +198,33 @@
                             <td class="px-4 py-3 text-right">
                                 {#if isAdmin && !template.is_system}
                                     {#if !template.is_current_default && template.status === 'ACTIVE'}
-                                        <button
-                                            class="text-xs text-primary hover:underline mr-3"
+                                        <Button
+                                            variant="link"
+                                            size="sm"
+                                            class="h-auto p-0 text-xs mr-3"
                                             onclick={() => setAsDefault(template.id)}
                                         >
                                             Set Default
-                                        </button>
+                                        </Button>
                                     {/if}
                                     {#if template.status === 'ACTIVE'}
-                                        <button
-                                            class="text-xs text-destructive hover:underline"
+                                        <Button
+                                            variant="link"
+                                            size="sm"
+                                            class="h-auto p-0 text-xs text-destructive"
                                             onclick={() => archiveTemplate(template.id)}
                                         >
                                             Archive
-                                        </button>
+                                        </Button>
                                     {:else}
-                                        <button
-                                            class="text-xs text-primary hover:underline"
+                                        <Button
+                                            variant="link"
+                                            size="sm"
+                                            class="h-auto p-0 text-xs"
                                             onclick={() => unarchiveTemplate(template.id)}
                                         >
                                             Restore
-                                        </button>
+                                        </Button>
                                     {/if}
                                 {/if}
                             </td>
@@ -234,13 +237,15 @@
 
     <!-- Variable Reference (collapsible) -->
     <div class="mt-8">
-        <button
-            class="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+        <Button
+            variant="ghost"
+            size="sm"
+            class="h-auto p-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
             onclick={() => (showVariables = !showVariables)}
         >
             <span class="text-xs">{showVariables ? '\u25BC' : '\u25B6'}</span>
             Template Variable Reference
-        </button>
+        </Button>
         {#if showVariables && variableEntries.length}
             <div class="mt-3 border rounded-lg p-4 bg-muted/30 space-y-4">
                 {#each variableEntries as [section, vars]}
