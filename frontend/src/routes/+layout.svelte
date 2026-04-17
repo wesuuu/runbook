@@ -16,6 +16,8 @@
     import ChatPanel from '$lib/components/ChatPanel.svelte';
     import { initChat } from '$lib/chat-store.svelte';
     import { onDestroy } from 'svelte';
+    import { fade } from 'svelte/transition';
+    import { pageDuration } from '$lib/transitions';
     import '../app.css';
 
     let mobileNavOpen = $state(false);
@@ -174,10 +176,18 @@
         {/if}
 
         {#if isFullBleed || isPublicRoute}
-            {@render children()}
+            {#key $page.url.pathname}
+                <div in:fade={{ duration: pageDuration() }}>
+                    {@render children()}
+                </div>
+            {/key}
         {:else}
             <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-                {@render children()}
+                {#key $page.url.pathname}
+                    <div in:fade={{ duration: pageDuration() }}>
+                        {@render children()}
+                    </div>
+                {/key}
             </main>
         {/if}
     </div>
