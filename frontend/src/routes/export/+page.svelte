@@ -11,6 +11,7 @@
     } from '$lib/export-utils';
     import type { ColumnDef, ExportLayout, ExportFormat, ExportPreset } from '$lib/export-utils';
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
+    import { EmptyState } from '$lib/components/ui/empty-state';
     import * as Table from '$lib/components/ui/table';
 
     // Parse run IDs from URL
@@ -399,17 +400,14 @@
                 >Retry</button>
             </div>
         {:else if runIds.length === 0}
-            <div class="flex flex-col items-center justify-center py-32 gap-3">
-                <div class="text-sm text-slate-400">No runs specified.</div>
-                <button
-                    class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
-                    onclick={goBack}
-                >Go back</button>
-            </div>
+            <EmptyState
+                title="No runs specified"
+                actionLabel="Go back"
+                onAction={goBack}
+                class="py-32"
+            />
         {:else if rows.length === 0}
-            <div class="flex items-center justify-center py-32">
-                <div class="text-sm text-slate-400">No data to export.</div>
-            </div>
+            <EmptyState title="No data to export" class="py-32" />
         {:else}
             <Table.Root class="text-xs">
                 <Table.Header class="sticky top-0 z-10 bg-muted">
