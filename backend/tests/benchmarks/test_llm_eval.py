@@ -15,13 +15,26 @@ import pytest
 import pytest_asyncio
 
 from app.models.iam import Organization, SubscriptionTier
+from app.services.batch_record_extractor import (
+    extract_batch_record_data,
+    extract_batch_record_pages,
+    map_steps_to_protocol,
+    map_values_to_execution_data,
+)
+from tests.benchmarks.batch_record_scoring import (
+    build_auto_finalized_mappings,
+    print_run_report,
+    score_run,
+)
 from tests.benchmarks.conftest import (
+    all_batch_record_run_scores,
     all_benchmark_scores,
     build_seed_catalog,
     discover_fixtures,
     find_document,
     get_mime_type,
     load_expected,
+    load_json,
 )
 from tests.benchmarks.scoring import (
     print_score_report,
@@ -31,6 +44,12 @@ from tests.benchmarks.scoring import (
 # Collect all fixture dirs at module level for parametrize
 _fixture_dirs = discover_fixtures()
 _fixture_ids = [d.name for d in _fixture_dirs]
+
+_br_fixture_dirs = discover_fixtures(
+    subdir="document-to-run",
+    marker_file="expected_run.json",
+)
+_br_fixture_ids = [d.name for d in _br_fixture_dirs]
 
 
 @pytest.mark.benchmark
@@ -97,4 +116,53 @@ class TestProtocolImportAccuracy:
         assert scores.overall >= 0.75, (
             f"{fixture_dir.name}: {scores.overall:.0%} < 75%\n"
             f"{json.dumps(scores.to_dict(), indent=2)}"
+        )
+
+
+@pytest.mark.benchmark
+class TestBatchRecordAccuracy:
+    """Run the full batch-record-import pipeline and score the output Run."""
+
+    @pytest.mark.parametrize(
+        "fixture_dir", _br_fixture_dirs, ids=_br_fixture_ids,
+    )
+    async def test_batch_record_to_run(
+        self, fixture_dir: Path, db_session, pro_org,
+    ):
+        # 1. Extract
+        doc = find_document(fixture_dir)
+        mime = get_mime_type(doc)
+        text, page_images = await extract_batch_record_pages(
+            doc, mime, db_session, org_id=pro_org.id,
+        )
+        extraction = await extract_batch_record_data(
+            text, page_images, db_session, org_id=pro_org.id,
+        )
+
+        # 2. Map against target protocol
+        protocol = load_json(fixture_dir, "protocol.json")
+        mappings = await map_steps_to_protocol(
+            extraction, protocol, db_session, org_id=pro_org.id,
+        )
+
+        # 3. Simulate user-finalize: auto-accept all extracted values + pass through aux fields
+        finalized = build_auto_finalized_mappings(extraction, mappings)
+        execution_data = map_values_to_execution_data(
+            finalized, protocol, user_id=pro_org.id,
+        )
+
+        # 4. Score against expected_run.json
+        expected_run = load_json(fixture_dir, "expected_run.json")
+        run_metadata = {
+            "run_name": extraction.batch_id or extraction.document_title or "",
+        }
+        scores = score_run(
+            execution_data, run_metadata, expected_run, protocol, fixture_dir.name,
+        )
+        print_run_report(scores)
+        all_batch_record_run_scores.append(scores)
+
+        assert scores.overall >= 0.75, (
+            f"{fixture_dir.name}: {scores.overall:.0%} < 75%\n"
+            f"{json.dumps(scores.to_dict(), indent=2, default=str)}"
         )
