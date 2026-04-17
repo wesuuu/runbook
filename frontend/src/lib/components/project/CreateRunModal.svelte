@@ -2,6 +2,7 @@
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
     import * as Dialog from "$lib/components/ui/dialog";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         open: boolean;
@@ -139,19 +140,12 @@
             {/if}
         </div>
         <Dialog.Footer>
-            <button
-                onclick={close}
-                class="px-4 py-2 text-sm font-medium text-foreground/80 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
-            >
+            <Button variant="secondary" onclick={close}>
                 Cancel
-            </button>
-            <button
-                onclick={createRun}
-                disabled={!runName || !protocolId}
-                class="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
+            </Button>
+            <Button onclick={createRun} disabled={!runName || !protocolId}>
                 Create
-            </button>
+            </Button>
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>

@@ -308,12 +308,14 @@
                                     {/if}
                                 </div>
                             </div>
-                            <button
-                                class="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="h-auto p-0 text-xs text-slate-400 hover:text-red-500 hover:bg-transparent"
                                 onclick={() => removeApprover(approver.id)}
                             >
                                 Remove
-                            </button>
+                            </Button>
                         </div>
                     {/each}
                 </div>
@@ -329,13 +331,13 @@
                         <option value={member.id}>{member.full_name || member.email}</option>
                     {/each}
                 </select>
-                <button
-                    class="px-4 py-2 text-sm font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                <Button
+                    class="bg-teal-600 hover:bg-teal-700 text-white"
                     onclick={addApprover}
                     disabled={!newApproverUserId}
                 >
                     Add
-                </button>
+                </Button>
             </div>
         </div>
     {/if}
@@ -347,9 +349,11 @@
 
         <label class="flex items-center gap-3 cursor-pointer">
             <button
+                type="button"
                 class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors {permissionsEnabled ? 'bg-teal-600' : 'bg-slate-300'}"
                 role="switch"
                 aria-checked={permissionsEnabled}
+                aria-label="Restrict access to granted users and teams"
                 onclick={togglePermissionsEnabled}
             >
                 <span class="pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform {permissionsEnabled ? 'translate-x-4' : 'translate-x-0'}"></span>
@@ -395,12 +399,14 @@
                                         <option value={level.value}>{level.label}</option>
                                     {/each}
                                 </select>
-                                <button
-                                    class="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="h-auto p-0 text-xs text-slate-400 hover:text-red-500 hover:bg-transparent"
                                     onclick={() => removePermissionGrant(perm.id)}
                                 >
                                     Remove
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     {/each}
@@ -410,18 +416,22 @@
             <!-- Add Grant -->
             <div class="flex gap-2 items-end">
                 <div class="flex gap-1">
-                    <button
-                        class="px-2 py-1.5 text-xs font-medium rounded-l border transition-colors {newGrantPrincipalType === 'USER' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}"
+                    <Button
+                        variant={newGrantPrincipalType === 'USER' ? 'default' : 'outline'}
+                        size="sm"
+                        class="h-auto px-2 py-1.5 text-xs font-medium rounded-r-none"
                         onclick={() => { newGrantPrincipalType = 'USER'; newGrantPrincipalId = ''; }}
                     >
                         User
-                    </button>
-                    <button
-                        class="px-2 py-1.5 text-xs font-medium rounded-r border transition-colors {newGrantPrincipalType === 'TEAM' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}"
+                    </Button>
+                    <Button
+                        variant={newGrantPrincipalType === 'TEAM' ? 'default' : 'outline'}
+                        size="sm"
+                        class="h-auto px-2 py-1.5 text-xs font-medium rounded-l-none"
                         onclick={() => { newGrantPrincipalType = 'TEAM'; newGrantPrincipalId = ''; }}
                     >
                         Team
-                    </button>
+                    </Button>
                 </div>
                 <select
                     bind:value={newGrantPrincipalId}
@@ -448,13 +458,14 @@
                         <option value={level.value}>{level.label}</option>
                     {/each}
                 </select>
-                <button
-                    class="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                <Button
+                    size="sm"
+                    class="bg-teal-600 hover:bg-teal-700 text-white"
                     onclick={addPermissionGrant}
                     disabled={!newGrantPrincipalId}
                 >
                     Add
-                </button>
+                </Button>
             </div>
         </div>
     {/if}
@@ -496,12 +507,14 @@
                             </div>
                         </div>
                         {#if template.project_id === projectId}
-                            <button
-                                class="text-xs text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="h-auto p-0 text-xs text-slate-400 hover:text-red-500 hover:bg-transparent"
                                 onclick={() => archiveTemplate(template.id)}
                             >
                                 Archive
-                            </button>
+                            </Button>
                         {/if}
                     </div>
                 {/each}
@@ -510,13 +523,9 @@
     </div>
 
     <!-- Save Settings -->
-    <button
-        class="px-4 py-2 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        onclick={saveSettings}
-        disabled={settingsSaving}
-    >
+    <Button onclick={saveSettings} disabled={settingsSaving}>
         {settingsSaving ? "Saving..." : "Save Settings"}
-    </button>
+    </Button>
 </div>
 
 <!-- Convert Modal (project-scoped) -->

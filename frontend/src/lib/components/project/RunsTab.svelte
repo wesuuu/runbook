@@ -127,15 +127,16 @@
 >
     {#snippet toolbar()}
         {#if !hideExportColumn && selectedRunIds.size > 0}
-            <button
-                class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            <Button
+                size="sm"
+                class="bg-blue-600 text-white hover:bg-blue-700"
                 onclick={() => goto(`/export?runs=${[...selectedRunIds].join(',')}`)}
             >
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
                 Export {selectedRunIds.size} Run{selectedRunIds.size !== 1 ? 's' : ''}
-            </button>
+            </Button>
         {/if}
     {/snippet}
 
@@ -169,12 +170,14 @@
                         {r.experiment_name}
                     </a>
                 {:else}
-                    <button
-                        class="text-xs font-medium text-teal-600 border border-teal-200 rounded-md px-2 py-0.5 cursor-pointer transition-all hover:bg-teal-600 hover:text-white hover:border-teal-600"
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        class="h-auto px-2 py-0.5 text-xs font-medium text-teal-600 border-teal-200 hover:bg-teal-600 hover:text-white hover:border-teal-600"
                         onclick={(e: MouseEvent) => openAssignModal(r, e)}
                     >
                         Assign
-                    </button>
+                    </Button>
                 {/if}
             </td>
         {/if}
