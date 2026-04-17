@@ -22,6 +22,9 @@
     } from '$lib/utils/document-utils';
     import { Plus, Search, X } from 'lucide-svelte';
     import { z } from 'zod';
+    import { fade } from 'svelte/transition';
+    import { flip } from 'svelte/animate';
+    import { blockDuration, listDuration } from '$lib/transitions';
 
     // --- Schemas ---
     const DocumentItemSchema = z.object({
@@ -205,9 +208,9 @@
     </div>
 
     {#if searching}
-        <div class="text-center py-6 text-muted-foreground">Searching...</div>
+        <div transition:fade={{ duration: blockDuration() }} class="text-center py-6 text-muted-foreground">Searching...</div>
     {:else if searchError}
-        <div class="bg-destructive/10 text-destructive p-4 rounded-md">Search error: {searchError}</div>
+        <div transition:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Search error: {searchError}</div>
     {:else if isSearching}
         <!-- Search results -->
         <Card>
@@ -228,13 +231,13 @@
             </CardHeader>
             <CardContent>
                 {#if searchResults.length === 0}
-                    <div class="text-center py-8 text-muted-foreground">
+                    <div transition:fade={{ duration: blockDuration() }} class="text-center py-8 text-muted-foreground">
                         No matching documents found.
                     </div>
                 {:else}
                     <div class="divide-y divide-border">
-                        {#each searchResults as group}
-                            <a href="/library/{group.document_id}" class="block py-4 px-2 hover:bg-muted/50 rounded-md transition-colors -mx-2">
+                        {#each searchResults as group (group.document_id)}
+                            <a href="/library/{group.document_id}" class="block py-4 px-2 hover:bg-muted/50 rounded-md transition-colors -mx-2" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="flex items-center justify-between">
                                     <span class="font-semibold text-sm text-primary">{group.document_title}</span>
                                     <div class="flex items-center gap-2">
@@ -263,9 +266,9 @@
             </CardContent>
         </Card>
     {:else if loading}
-        <div class="text-center py-10 text-muted-foreground">Loading documents...</div>
+        <div transition:fade={{ duration: blockDuration() }} class="text-center py-10 text-muted-foreground">Loading documents...</div>
     {:else if error}
-        <div class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
+        <div transition:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
     {:else}
         <!-- Document list -->
         <Card>
@@ -275,7 +278,7 @@
             </CardHeader>
             <CardContent>
                 {#if documents.length === 0}
-                    <div class="text-center py-10">
+                    <div transition:fade={{ duration: blockDuration() }} class="text-center py-10">
                         <p class="text-muted-foreground">
                             Upload your SOPs, protocols, and reference documents to build your
                             searchable knowledge base.
@@ -284,8 +287,8 @@
                 {:else}
                     <!-- Mobile card layout -->
                     <div class="sm:hidden divide-y divide-border">
-                        {#each documents as doc}
-                            <a href="/library/{doc.id}" class="block py-3 px-1 min-h-11">
+                        {#each documents as doc (doc.id)}
+                            <a href="/library/{doc.id}" class="block py-3 px-1 min-h-11" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="flex items-center gap-2">
                                     <span class="font-semibold text-sm text-primary">{doc.title}</span>
                                     <Badge variant={getStatusColor(doc.status) as any}>{getStatusLabel(doc.status)}</Badge>
@@ -315,7 +318,7 @@
                                 </Table.Row>
                             </Table.Header>
                             <Table.Body>
-                                {#each documents as doc}
+                                {#each documents as doc (doc.id)}
                                     <Table.Row>
                                         <Table.Cell class="font-medium max-w-[300px] whitespace-normal break-words">
                                             <a
