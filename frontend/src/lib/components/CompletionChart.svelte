@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { Button } from '$lib/components/ui/button';
+
     type TrendItem = { date: string; count: number };
 
     let { trend = [], onToggleDays }: { trend: TrendItem[]; onToggleDays?: () => void } = $props();
@@ -78,12 +80,14 @@
             Completions
         </h2>
         {#if onToggleDays}
-            <button
-                class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted transition-colors"
+            <Button
+                variant="ghost"
+                size="sm"
+                class="h-auto text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground px-2 py-1"
                 onclick={onToggleDays}
             >
                 {trend.length <= 7 ? '14d' : '7d'}
-            </button>
+            </Button>
         {/if}
     </div>
 

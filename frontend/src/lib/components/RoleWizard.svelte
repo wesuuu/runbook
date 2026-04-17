@@ -9,6 +9,7 @@
     import * as Dialog from '$lib/components/ui/dialog';
     import ImageAnalysisDialog from "./ImageAnalysisDialog.svelte";
     import ImageGallery from "./ImageGallery.svelte";
+    import { Button } from "$lib/components/ui/button";
 
     interface SchemaProperty {
         type?: string;
@@ -481,20 +482,22 @@
         <!-- Step dots -->
         <div class="flex gap-1.5 mt-3 justify-center flex-wrap">
             {#each steps as step, i}
-                <button
+                <Button
+                    variant="ghost"
+                    rounded="full"
                     onclick={() => {
                         currentStepIdx = i;
                         saveError = null;
                         fieldErrors = {};
                         aiFilledFields = new Set();
                     }}
-                    class="w-3 h-3 rounded-full transition-all {i === currentStepIdx
-                        ? 'bg-teal-600 scale-125'
+                    class="size-3 p-0 shadow-none hover:bg-transparent {i === currentStepIdx
+                        ? 'bg-teal-600 scale-125 hover:bg-teal-600'
                         : stepData[step.id]?.status === 'completed'
-                            ? 'bg-emerald-400'
-                            : 'bg-slate-300'}"
+                            ? 'bg-emerald-400 hover:bg-emerald-400'
+                            : 'bg-slate-300 hover:bg-slate-300'}"
                     aria-label="Go to step {i + 1}"
-                ></button>
+                ></Button>
             {/each}
         </div>
     </div>
@@ -612,17 +615,19 @@
                                         class="flex-1 px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
                                     />
                                     {#if !readonly}
-                                        <button
-                                            type="button"
+                                        <Button
+                                            variant="outline"
+                                            size="icon"
                                             title="Scan barcode"
+                                            aria-label="Scan barcode"
                                             onclick={() => (scanningField = { key, type: prop.type })}
-                                            class="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-xl border border-slate-300 text-slate-500 hover:text-teal-700 hover:border-teal-400 hover:bg-teal-50 transition-colors"
+                                            class="size-12 rounded-xl text-slate-500 hover:text-teal-700 hover:border-teal-400 hover:bg-teal-50"
                                         >
                                             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75H16.5v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75H16.5v-.75z" />
                                             </svg>
-                                        </button>
+                                        </Button>
                                     {/if}
                                 </div>
                             {/if}
@@ -687,18 +692,20 @@
                             Capture data
                         </p>
                         <div class="flex flex-col sm:flex-row gap-3">
-                            <button
+                            <Button
+                                variant="outline"
                                 disabled
                                 title="Voice input coming soon"
-                                class="flex items-center justify-center gap-2.5 px-5 py-3 border border-slate-300 rounded-xl text-base text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-11"
+                                class="gap-2.5 px-5 py-3 rounded-xl text-base text-slate-600 min-h-11 h-auto"
                             >
                                 <span class="text-xl">🎤</span>
                                 <span>Voice Memo</span>
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                variant="outline"
                                 onclick={triggerCapture}
                                 disabled={uploading}
-                                class="flex items-center justify-center gap-2.5 px-5 py-3 border border-teal-300 rounded-xl text-base text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-11"
+                                class="gap-2.5 px-5 py-3 rounded-xl text-base text-teal-700 border-teal-300 bg-teal-50 hover:bg-teal-100 hover:text-teal-700 min-h-11 h-auto"
                             >
                                 {#if uploading}
                                     <span class="animate-spin text-xl">...</span>
@@ -707,7 +714,7 @@
                                     <span class="text-xl">📷</span>
                                     <span>Take Photo</span>
                                 {/if}
-                            </button>
+                            </Button>
                         </div>
                         <input
                             bind:this={fileInput}
@@ -743,13 +750,14 @@
 
             <!-- Complete Button -->
             {#if !readonly}
-                <button
+                <Button
+                    variant={currentData.status === "completed" ? "secondary" : "default"}
                     onclick={toggleStepComplete}
                     disabled={saving}
-                    class="w-full py-4 rounded-xl font-semibold text-lg transition-colors {currentData.status ===
+                    class="w-full h-auto py-4 rounded-xl font-semibold text-lg {currentData.status ===
                     'completed'
                         ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 ring-2 ring-emerald-300'
-                        : 'bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800'} disabled:opacity-50 disabled:cursor-not-allowed"
+                        : 'bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800'}"
                 >
                     {#if saving}
                         Saving...
@@ -758,32 +766,34 @@
                     {:else}
                         Mark Step Complete
                     {/if}
-                </button>
+                </Button>
             {/if}
         </div>
     {/if}
 
     <!-- Navigation -->
     <div class="flex justify-between items-center gap-4">
-        <button
+        <Button
+            variant="secondary"
             onclick={prevStep}
             disabled={currentStepIdx === 0}
-            class="flex-1 py-4 bg-slate-100 text-slate-700 rounded-xl font-semibold text-lg hover:bg-slate-200 active:bg-slate-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 h-auto py-4 rounded-xl font-semibold text-lg bg-slate-100 text-slate-700 hover:bg-slate-200 active:bg-slate-300"
         >
             ← Previous
-        </button>
+        </Button>
 
         <div class="text-base font-medium text-slate-500 shrink-0 px-2">
             {progress.current} / {progress.total}
         </div>
 
-        <button
+        <Button
+            variant="default"
             onclick={nextStep}
             disabled={currentStepIdx === steps.length - 1}
-            class="flex-1 py-4 bg-teal-600 text-white rounded-xl font-semibold text-lg hover:bg-teal-700 active:bg-teal-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 h-auto py-4 rounded-xl font-semibold text-lg bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800"
         >
             Next →
-        </button>
+        </Button>
     </div>
 
     <!-- All Steps Complete Summary -->
@@ -796,12 +806,13 @@
                 You have finished all steps for your role. You can review any step above, or finalize the run.
             </p>
             {#if onAllStepsComplete}
-                <button
+                <Button
+                    variant="default"
                     onclick={onAllStepsComplete}
-                    class="px-8 py-3 bg-emerald-600 text-white rounded-xl font-semibold text-lg hover:bg-emerald-700 transition-colors"
+                    class="h-auto px-8 py-3 rounded-xl font-semibold text-lg bg-emerald-600 text-white hover:bg-emerald-700"
                 >
                     Finalize Run
-                </button>
+                </Button>
             {/if}
         </div>
     {/if}
@@ -825,9 +836,10 @@
                         <div class="space-y-2">
                             {#each editableFields as [key, prop] (key)}
                                 {@const isSelected = selectedTagSet.has(key)}
-                                <button
+                                <Button
+                                    variant="outline"
                                     onclick={() => toggleTag(key)}
-                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all text-left {isSelected ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200 text-emerald-900' : 'border-slate-200 hover:border-slate-300 text-slate-700'}"
+                                    class="w-full h-auto justify-start gap-3 px-4 py-3 rounded-lg border-2 text-left {isSelected ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200 text-emerald-900 hover:bg-emerald-50 hover:text-emerald-900' : 'border-slate-200 hover:border-slate-300 text-slate-700'}"
                                 >
                                     <span class="flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors {isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 bg-white'}">
                                         {#if isSelected}
@@ -840,7 +852,7 @@
                                     {#if prop.unit}
                                         <span class="text-slate-400 text-sm">({prop.unit})</span>
                                     {/if}
-                                </button>
+                                </Button>
                             {/each}
                         </div>
                         {#if selectedTagSet.size === 0}
@@ -852,13 +864,14 @@
                 </div>
                 <!-- Footer -->
                 <div class="px-6 py-4 border-t border-slate-200">
-                    <button
+                    <Button
+                        variant="default"
                         onclick={saveTagsAndClose}
                         disabled={savingTags || (editableFields.length > 0 && selectedTagSet.size === 0)}
-                        class="w-full py-3 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        class="w-full h-auto py-3 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700"
                     >
                         {savingTags ? 'Saving...' : `Tag ${selectedTagSet.size > 0 ? `(${selectedTagSet.size})` : ''}`}
-                    </button>
+                    </Button>
                 </div>
             </Dialog.Content>
         </Dialog.Root>

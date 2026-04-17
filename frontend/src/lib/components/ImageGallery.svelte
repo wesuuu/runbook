@@ -1,5 +1,6 @@
 <script lang="ts">
     import { API_BASE } from '$lib/config';
+    import { Button } from '$lib/components/ui/button';
 
     interface RunImage {
         id: string;
@@ -48,10 +49,11 @@
                 {@const badge = getStatusBadge(image.id)}
                 {@const needsAnalysis = !isConfirmed && badge.label === 'Captured'}
                 <div class="flex flex-col items-center gap-1.5">
-                    <button
+                    <Button
+                        variant="outline"
                         onclick={() => onImageClick?.(image)}
                         title={isConfirmed ? 'Values confirmed — click to review' : 'Click to view'}
-                        class="relative group w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer {isConfirmed ? 'border-emerald-400' : badge.label === 'Analyzed' ? 'border-blue-300' : 'border-slate-200 hover:border-teal-400'}"
+                        class="relative group size-16 p-0 rounded-lg overflow-hidden border-2 focus-visible:ring-teal-500 {isConfirmed ? 'border-emerald-400 hover:border-emerald-400' : badge.label === 'Analyzed' ? 'border-blue-300 hover:border-blue-300' : 'border-slate-200 hover:border-teal-400'}"
                     >
                         <img
                             src="{API_BASE}/uploads/images/{image.file_path}"
@@ -66,17 +68,19 @@
                                 </svg>
                             </div>
                         {/if}
-                    </button>
+                    </Button>
                     <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {badge.color}">
                         {badge.label}
                     </span>
                     {#if needsAnalysis}
-                        <button
+                        <Button
+                            variant="link"
+                            size="sm"
+                            class="h-auto p-0 text-[10px] font-medium text-teal-600 hover:text-teal-800"
                             onclick={() => onAnalyzeClick?.(image)}
-                            class="text-[10px] font-medium text-teal-600 hover:text-teal-800 underline transition-colors duration-150 cursor-pointer"
                         >
                             Analyze
-                        </button>
+                        </Button>
                     {/if}
                 </div>
             {/each}

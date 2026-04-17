@@ -4,6 +4,7 @@
     import { getUser } from '$lib/auth.svelte';
     import { queueAction, updateExecutionData, recordActivity } from '$lib/field-mode.svelte';
     import { firstError, type FieldErrors } from '$lib/validation';
+    import { Button } from '$lib/components/ui/button';
 
     interface SchemaProperty {
         type?: string;
@@ -362,15 +363,17 @@
         </div>
         <div class="flex gap-1 mt-2 justify-center flex-wrap">
             {#each steps as step, i}
-                <button
+                <Button
+                    variant="ghost"
+                    rounded="full"
                     onclick={() => { currentStepIdx = i; fieldErrors = {}; recordActivity(); }}
-                    class="w-2.5 h-2.5 rounded-full transition-all {i === currentStepIdx
-                        ? 'bg-teal-600 scale-125'
+                    class="size-2.5 p-0 shadow-none hover:bg-transparent {i === currentStepIdx
+                        ? 'bg-teal-600 scale-125 hover:bg-teal-600'
                         : stepData[step.id]?.status === 'completed'
-                            ? 'bg-emerald-400'
-                            : 'bg-slate-300'}"
+                            ? 'bg-emerald-400 hover:bg-emerald-400'
+                            : 'bg-slate-300 hover:bg-slate-300'}"
                     aria-label="Go to step {i + 1}"
-                ></button>
+                ></Button>
             {/each}
         </div>
     </div>
@@ -445,17 +448,19 @@
                                         placeholder={expected !== undefined ? `Expected: ${expected}` : `Enter ${(prop.title || key).toLowerCase()}`}
                                         class="flex-1 px-3 py-3 border rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : 'border-slate-300'}"
                                     />
-                                    <button
-                                        type="button"
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
                                         title="Scan barcode"
+                                        aria-label="Scan barcode"
                                         onclick={() => (scanningField = { key, type: prop.type })}
-                                        class="flex-shrink-0 w-11 h-11 flex items-center justify-center rounded-xl border border-slate-300 text-slate-500 hover:text-teal-700 hover:border-teal-400 hover:bg-teal-50 transition-colors"
+                                        class="size-11 rounded-xl text-slate-500 hover:text-teal-700 hover:border-teal-400 hover:bg-teal-50"
                                     >
                                         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75H16.5v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75H16.5v-.75z" />
                                         </svg>
-                                    </button>
+                                    </Button>
                                 </div>
                             {/if}
                             {#if firstError(fieldErrors, key)}
@@ -503,10 +508,11 @@
                 <div class="pt-1">
                     <p class="text-xs text-slate-500 mb-2 font-medium">Capture data</p>
                     <div class="flex gap-2">
-                        <button
+                        <Button
+                            variant="outline"
                             onclick={triggerCapture}
                             disabled={capturing}
-                            class="flex items-center gap-2 px-4 py-2.5 border border-teal-300 rounded-xl text-sm text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50"
+                            class="h-auto gap-2 px-4 py-2.5 rounded-xl text-sm text-teal-700 border-teal-300 bg-teal-50 hover:bg-teal-100 hover:text-teal-700"
                         >
                             {#if capturing}
                                 <span class="animate-spin">...</span>
@@ -515,7 +521,7 @@
                                 <span>📷</span>
                                 <span>Take Photo</span>
                             {/if}
-                        </button>
+                        </Button>
                         {#if capturedImageCount > 0}
                             <span class="flex items-center text-xs text-slate-500 px-2">
                                 {capturedImageCount} image{capturedImageCount !== 1 ? 's' : ''} queued
@@ -540,12 +546,13 @@
             {/if}
 
             <!-- Complete Button -->
-            <button
+            <Button
+                variant={currentData.status === 'completed' ? 'secondary' : 'default'}
                 onclick={toggleStepComplete}
                 disabled={saving}
-                class="w-full py-3.5 rounded-xl font-semibold text-base transition-colors {currentData.status === 'completed'
+                class="w-full h-auto py-3.5 rounded-xl font-semibold text-base {currentData.status === 'completed'
                     ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 ring-2 ring-emerald-300'
-                    : 'bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800'} disabled:opacity-50"
+                    : 'bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800'}"
             >
                 {#if saving}
                     Saving...
@@ -554,29 +561,31 @@
                 {:else}
                     Mark Step Complete
                 {/if}
-            </button>
+            </Button>
         </div>
     {/if}
 
     <!-- Navigation -->
     <div class="flex justify-between items-center gap-3">
-        <button
+        <Button
+            variant="secondary"
             onclick={prevStep}
             disabled={currentStepIdx === 0}
-            class="flex-1 py-3.5 bg-slate-100 text-slate-700 rounded-xl font-semibold text-base hover:bg-slate-200 transition-colors disabled:opacity-40"
+            class="flex-1 h-auto py-3.5 rounded-xl font-semibold text-base bg-slate-100 text-slate-700 hover:bg-slate-200"
         >
             Previous
-        </button>
+        </Button>
         <div class="text-sm font-medium text-slate-500 shrink-0 px-1">
             {progress.current}/{progress.total}
         </div>
-        <button
+        <Button
+            variant="default"
             onclick={nextStep}
             disabled={currentStepIdx === steps.length - 1}
-            class="flex-1 py-3.5 bg-teal-600 text-white rounded-xl font-semibold text-base hover:bg-teal-700 transition-colors disabled:opacity-40"
+            class="flex-1 h-auto py-3.5 rounded-xl font-semibold text-base bg-teal-600 text-white hover:bg-teal-700"
         >
             Next
-        </button>
+        </Button>
     </div>
 
     {#if allComplete}
@@ -586,12 +595,13 @@
                 Your data will sync automatically when you reconnect.
             </p>
             {#if onAllStepsComplete}
-                <button
+                <Button
+                    variant="default"
                     onclick={onAllStepsComplete}
-                    class="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors"
+                    class="h-auto px-6 py-2.5 rounded-xl font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
                 >
                     Finish
-                </button>
+                </Button>
             {/if}
         </div>
     {/if}
@@ -613,9 +623,10 @@
                         <div class="space-y-2">
                             {#each editableFields as [key, prop] (key)}
                                 {@const isSelected = selectedTagSet.has(key)}
-                                <button
+                                <Button
+                                    variant="outline"
                                     onclick={() => toggleTag(key)}
-                                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border-2 transition-all text-left {isSelected ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200 text-emerald-900' : 'border-slate-200 hover:border-slate-300 text-slate-700'}"
+                                    class="w-full h-auto justify-start gap-3 px-3 py-2.5 rounded-lg border-2 text-left {isSelected ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200 text-emerald-900 hover:bg-emerald-50 hover:text-emerald-900' : 'border-slate-200 hover:border-slate-300 text-slate-700'}"
                                 >
                                     <span class="flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors {isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 bg-white'}">
                                         {#if isSelected}
@@ -628,7 +639,7 @@
                                     {#if prop.unit}
                                         <span class="text-slate-400 text-xs">({prop.unit})</span>
                                     {/if}
-                                </button>
+                                </Button>
                             {/each}
                         </div>
                     {:else}
@@ -636,13 +647,14 @@
                     {/if}
                 </div>
                 <div class="px-5 py-3 border-t border-slate-200">
-                    <button
+                    <Button
+                        variant="default"
                         onclick={saveTagsAndQueue}
                         disabled={editableFields.length > 0 && selectedTagSet.size === 0}
-                        class="w-full py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-40"
+                        class="w-full h-auto py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
                     >
                         Queue Image {selectedTagSet.size > 0 ? `(${selectedTagSet.size} tags)` : ''}
-                    </button>
+                    </Button>
                 </div>
             </Dialog.Content>
         </Dialog.Root>
