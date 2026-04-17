@@ -213,7 +213,7 @@ class TestGetEnvFallback:
             "credentials": {"base_url": "http://lab-box:11434"},
         }
 
-    def test_returns_none_credentials_when_provider_has_no_key(self, monkeypatch):
+    def test_returns_none_credentials_when_ollama_has_no_base_url(self, monkeypatch):
         """Ollama with no base_url is valid; credentials should be None."""
         monkeypatch.setattr(settings, "ai_text_provider", "ollama")
         monkeypatch.setattr(settings, "ai_text_model", "gemma3:latest")
@@ -222,6 +222,18 @@ class TestGetEnvFallback:
         assert result == {
             "provider": "ollama",
             "model_name": "gemma3:latest",
+            "credentials": None,
+        }
+
+    def test_returns_none_credentials_when_openrouter_has_no_api_key(self, monkeypatch):
+        """Mapped provider with empty ProviderConfig should yield None creds."""
+        monkeypatch.setattr(settings, "ai_vision_provider", "openrouter")
+        monkeypatch.setattr(settings, "ai_vision_model", "anthropic/claude-sonnet-4")
+        monkeypatch.setattr(settings, "openrouter", ProviderConfig())
+        result = _get_env_fallback("vision")
+        assert result == {
+            "provider": "openrouter",
+            "model_name": "anthropic/claude-sonnet-4",
             "credentials": None,
         }
 
