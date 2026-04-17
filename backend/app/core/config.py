@@ -1,7 +1,12 @@
 import warnings
 
-from pydantic import model_validator
+from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings
+
+
+class ProviderConfig(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
 
 
 class Settings(BaseSettings):
@@ -86,6 +91,12 @@ class Settings(BaseSettings):
     ai_template_convert_api_key: str = ""
     ai_template_convert_base_url: str = ""
 
+    # Provider-level credentials (env vars like BATCHRITE_OPENROUTER__API_KEY,
+    # BATCHRITE_OLLAMA__BASE_URL). Only providers currently in use are listed;
+    # add others (anthropic, openai, etc.) one line at a time when needed.
+    openrouter: ProviderConfig = ProviderConfig()
+    ollama: ProviderConfig = ProviderConfig()
+
     # Template conversion settings
     template_convert_max_tool_calls: int = 25
 
@@ -134,7 +145,12 @@ class Settings(BaseSettings):
     # Debug mode — enables dev-only endpoints (webhook echo, etc.)
     debug: bool = False
 
-    model_config = {"env_prefix": "BATCHRITE_", "env_file": ".env", "extra": "ignore"}
+    model_config = {
+        "env_prefix": "BATCHRITE_",
+        "env_file": ".env",
+        "extra": "ignore",
+        "env_nested_delimiter": "__",
+    }
 
 
 settings = Settings()
