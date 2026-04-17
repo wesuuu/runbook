@@ -15,22 +15,33 @@ BENCHMARKS_DIR = Path(__file__).parent
 INPUT_TO_PROTOCOL_DIR = BENCHMARKS_DIR / "input-to-protocol"
 
 
-def discover_fixtures() -> list[Path]:
-    """Find all fixture directories that contain expected.json."""
-    if not INPUT_TO_PROTOCOL_DIR.exists():
+def discover_fixtures(
+    subdir: str = "input-to-protocol",
+    marker_file: str = "expected.json",
+) -> list[Path]:
+    """Find all fixture directories under `subdir` that contain `marker_file`.
+
+    Defaults preserve the F-0058 call site: `discover_fixtures()` with no
+    args returns input-to-protocol dirs with `expected.json`.
+    """
+    root = BENCHMARKS_DIR / subdir
+    if not root.exists():
         return []
-    dirs = sorted(
-        d
-        for d in INPUT_TO_PROTOCOL_DIR.iterdir()
-        if d.is_dir() and (d / "expected.json").exists()
+    return sorted(
+        d for d in root.iterdir()
+        if d.is_dir() and (d / marker_file).exists()
     )
-    return dirs
+
+
+def load_json(fixture_dir: Path, filename: str) -> dict:
+    """Load a JSON file from a fixture directory."""
+    with open(fixture_dir / filename) as f:
+        return json.load(f)
 
 
 def load_expected(fixture_dir: Path) -> dict:
-    """Load expected.json from a fixture directory."""
-    with open(fixture_dir / "expected.json") as f:
-        return json.load(f)
+    """Backwards-compatible wrapper: load expected.json (F-0058 convention)."""
+    return load_json(fixture_dir, "expected.json")
 
 
 def find_document(fixture_dir: Path) -> Path:
