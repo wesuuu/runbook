@@ -498,6 +498,8 @@
         text-align: left;
         width: 100%;
         height: auto;
+        white-space: normal;
+        overflow: visible;
     }
 
     :global(.name-display:hover) {
@@ -551,6 +553,8 @@
         word-break: break-word;
         justify-content: flex-start;
         font-weight: normal;
+        white-space: normal;
+        overflow: visible;
     }
 
     :global(.description-display:hover) {

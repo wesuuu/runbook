@@ -135,12 +135,9 @@
 
             <div class="ml-auto flex items-center gap-2">
                 {#if hasActiveFilters}
-                    <button
-                        class="text-xs text-slate-400 hover:text-slate-600 underline"
-                        onclick={clearActivityFilters}
-                    >
+                    <Button variant="link" size="sm" class="h-auto p-0 text-xs text-slate-400 hover:text-slate-600" onclick={clearActivityFilters}>
                         Clear filters
-                    </button>
+                    </Button>
                 {/if}
                 <div class="relative">
                     <input
