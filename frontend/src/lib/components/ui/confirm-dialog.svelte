@@ -1,5 +1,7 @@
 <script lang="ts">
 	import * as Dialog from "./dialog/index.js";
+	import { Button } from "$lib/components/ui/button";
+	import type { ButtonVariant } from "$lib/components/ui/button";
 	import type { Snippet } from "svelte";
 
 	interface Props {
@@ -28,15 +30,11 @@
 		warning,
 	}: Props = $props();
 
-	const variantClasses: Record<string, string> = {
-		primary:
-			"bg-primary text-primary-foreground hover:bg-primary/90",
-		danger:
-			"bg-destructive text-white hover:bg-destructive/90",
-		warning:
-			"bg-accent text-accent-foreground hover:bg-accent/90",
-		success:
-			"bg-emerald-600 text-white hover:bg-emerald-700",
+	const buttonVariantFor: Record<NonNullable<Props["confirmVariant"]>, ButtonVariant> = {
+		primary: "default",
+		danger: "destructive",
+		warning: "default",
+		success: "default",
 	};
 
 	function handleOpenChange(value: boolean) {
@@ -60,19 +58,16 @@
 		{/if}
 
 		<Dialog.Footer>
-			<button
-				onclick={onCancel}
-				class="px-4 py-2 bg-muted text-foreground/80 rounded-lg font-medium hover:bg-muted/80 transition-colors"
-			>
+			<Button variant="secondary" onclick={onCancel}>
 				{cancelLabel}
-			</button>
-			<button
+			</Button>
+			<Button
+				variant={buttonVariantFor[confirmVariant]}
 				onclick={onConfirm}
 				disabled={loading}
-				class="px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed {variantClasses[confirmVariant]}"
 			>
 				{loading ? "..." : confirmLabel}
-			</button>
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

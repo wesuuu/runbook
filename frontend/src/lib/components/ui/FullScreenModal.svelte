@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { Snippet } from 'svelte';
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         open: boolean;
@@ -22,15 +23,16 @@
                 {@render headerActions()}
             {/if}
         </div>
-        <button
-            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        <Button
+            variant="ghost"
+            size="icon-sm"
             onclick={onClose}
             aria-label="Close"
         >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M6 18L18 6M6 6l12 12" />
             </svg>
-        </button>
+        </Button>
     </div>
 
     <!-- Content -->
