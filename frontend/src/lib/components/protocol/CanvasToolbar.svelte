@@ -1,5 +1,6 @@
 <script lang="ts">
     import { Position, type Node } from "@xyflow/svelte";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         interactionMode: "pan" | "select";
@@ -66,96 +67,114 @@
 
 <div class="canvas-toolbar">
     <div class="mode-toggle">
-        <button
-            class="mode-btn"
-            class:active={interactionMode === "pan"}
+        <Button
+            variant="ghost"
+            size="icon-sm"
+            class="mode-btn rounded-none"
+            data-active={interactionMode === "pan"}
             onclick={() => onInteractionModeChange("pan")}
             title="Pan mode (hold Shift to select)"
         >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v6"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
-        </button>
-        <button
-            class="mode-btn"
-            class:active={interactionMode === "select"}
+        </Button>
+        <Button
+            variant="ghost"
+            size="icon-sm"
+            class="mode-btn rounded-none"
+            data-active={interactionMode === "select"}
             onclick={() => onInteractionModeChange("select")}
             title="Select mode (drag to select nodes)"
         >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>
-        </button>
+        </Button>
     </div>
 
     <div class="toolbar-divider"></div>
 
     <div class="undo-redo-group">
-        <button
-            class="icon-toolbar-btn"
+        <Button
+            variant="ghost"
+            size="icon-sm"
+            class="rounded-none"
             onclick={onUndo}
             disabled={!canUndoAction}
             title="Undo (Ctrl+Z)"
         >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>
-        </button>
-        <button
-            class="icon-toolbar-btn"
+        </Button>
+        <Button
+            variant="ghost"
+            size="icon-sm"
+            class="rounded-none"
             onclick={onRedo}
             disabled={!canRedoAction}
             title="Redo (Ctrl+Shift+Z)"
         >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6.69 3L21 13"/></svg>
-        </button>
+        </Button>
     </div>
 
     <div class="toolbar-divider"></div>
 
-    <button
+    <Button
+        variant="outline"
+        size="sm"
         class="toolbar-btn"
-        class:active={layout === "horizontal"}
+        data-active={layout === "horizontal"}
         onclick={onToggleLayout}
         title="Toggle orientation"
     >
         {layout === "horizontal" ? "↔ Horizontal" : "↕ Vertical"}
-    </button>
+    </Button>
 
     <div class="toolbar-divider"></div>
 
-    <button
+    <Button
+        variant="outline"
+        size="sm"
         class="toolbar-btn"
-        class:active={handleOrientation === "horizontal"}
+        data-active={handleOrientation === "horizontal"}
         onclick={handleHandleOrientationToggle}
         title="Toggle handle orientation"
     >
         {handleOrientation === "horizontal"
             ? "→ Handles H"
             : "↓ Handles V"}
-    </button>
+    </Button>
 
     <div class="toolbar-divider"></div>
 
-    <button
+    <Button
+        variant="outline"
+        size="sm"
         class="toolbar-btn"
-        class:active={timeEnabled}
+        data-active={timeEnabled}
         onclick={onToggleTime}
     >
         Time: {timeEnabled ? "ON" : "OFF"}
-    </button>
+    </Button>
 
     <div class="toolbar-divider"></div>
 
-    <button
+    <Button
+        variant="outline"
+        size="sm"
         class="toolbar-btn"
         onclick={onToggleVersionHistory}
     >
         History{versionNumber > 0 ? ` (v${versionNumber})` : ""}
-    </button>
+    </Button>
 
     {#if versionNumber > 0}
         <div class="version-nav">
-            <button
-                class="version-nav-btn"
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                class="version-nav-btn rounded-none"
                 onclick={() => onBrowseVersion('prev')}
                 disabled={previewLoading || (previewingVersion ?? versionNumber) <= 1}
                 title="Previous version"
-            >&#x2039;</button>
+            >&#x2039;</Button>
             <span class="version-nav-label">
                 {#if previewingVersion !== null}
                     v{previewingVersion}
@@ -163,12 +182,14 @@
                     v{versionNumber}
                 {/if}
             </span>
-            <button
-                class="version-nav-btn"
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                class="version-nav-btn rounded-none"
                 onclick={() => onBrowseVersion('next')}
                 disabled={previewLoading || previewingVersion === null}
                 title="Next version"
-            >&#x203A;</button>
+            >&#x203A;</Button>
         </div>
     {/if}
 </div>
@@ -197,53 +218,25 @@
         overflow: hidden;
     }
 
-    .mode-btn {
-        padding: 5px 8px;
-        border: none;
-        background: white;
-        color: #475569;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.15s;
-    }
-
-    .mode-btn:first-child {
-        border-right: 1px solid hsl(240, 5.9%, 90%);
-    }
-
-    .mode-btn:hover {
-        background: #f8fafc;
-    }
-
-    .mode-btn.active {
+    :global(.mode-btn[data-active="true"]) {
         background: hsl(173, 58%, 39%);
         color: white;
     }
 
-    .toolbar-btn {
-        padding: 5px 10px;
-        border: 1px solid hsl(240, 5.9%, 90%);
-        border-radius: 6px;
-        background: white;
-        font-size: 11px;
-        font-weight: 600;
-        color: #475569;
-        cursor: pointer;
-        font-family: inherit;
-        transition: all 0.15s;
-        white-space: nowrap;
+    :global(.mode-btn[data-active="true"]:hover) {
+        background: hsl(173, 58%, 34%);
+        color: white;
     }
 
-    .toolbar-btn:hover {
-        background: #f8fafc;
-    }
-
-    .toolbar-btn.active {
+    :global(.toolbar-btn[data-active="true"]) {
         background: hsl(173, 58%, 39%);
         color: white;
         border-color: hsl(173, 58%, 39%);
+    }
+
+    :global(.toolbar-btn[data-active="true"]:hover) {
+        background: hsl(173, 58%, 34%);
+        color: white;
     }
 
     .undo-redo-group {
@@ -251,31 +244,6 @@
         border: 1px solid hsl(240, 5.9%, 90%);
         border-radius: 6px;
         overflow: hidden;
-    }
-
-    .icon-toolbar-btn {
-        padding: 5px 8px;
-        border: none;
-        background: white;
-        color: #475569;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.15s;
-    }
-
-    .icon-toolbar-btn:first-child {
-        border-right: 1px solid hsl(240, 5.9%, 90%);
-    }
-
-    .icon-toolbar-btn:hover:not(:disabled) {
-        background: #f8fafc;
-    }
-
-    .icon-toolbar-btn:disabled {
-        color: #cbd5e1;
-        cursor: not-allowed;
     }
 
     .toolbar-divider {
@@ -292,27 +260,6 @@
         border-radius: 6px;
         background: white;
         overflow: hidden;
-    }
-
-    .version-nav-btn {
-        padding: 4px 8px;
-        border: none;
-        background: transparent;
-        font-size: 16px;
-        font-weight: 600;
-        color: #475569;
-        cursor: pointer;
-        line-height: 1;
-        transition: background 0.15s;
-    }
-
-    .version-nav-btn:hover:not(:disabled) {
-        background: #f1f5f9;
-    }
-
-    .version-nav-btn:disabled {
-        color: #cbd5e1;
-        cursor: not-allowed;
     }
 
     .version-nav-label {

@@ -12,6 +12,7 @@
     import type { ColumnDef, ExportLayout, ExportFormat, ExportPreset } from '$lib/export-utils';
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import * as Table from '$lib/components/ui/table';
+    import { Button } from '$lib/components/ui/button';
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';
 
@@ -218,15 +219,17 @@
     <!-- Top bar -->
     <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div class="flex items-center gap-4">
-            <button
+            <Button
+                variant="ghost"
+                size="sm"
                 onclick={goBack}
-                class="text-sm text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 transition-colors duration-150 cursor-pointer"
+                class="text-slate-500 hover:text-slate-700 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
             >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M19 12H5M12 19l-7-7 7-7" />
                 </svg>
                 Back
-            </button>
+            </Button>
             <div class="h-5 w-px bg-slate-200"></div>
             <div>
                 <h1 class="text-lg font-semibold text-slate-900">Export Run Data</h1>
@@ -245,24 +248,31 @@
             <div class="flex items-center gap-2">
                 <span class="text-xs font-medium text-slate-500 uppercase tracking-wide hidden sm:inline">Format</span>
                 <div class="flex rounded-lg border border-slate-200 overflow-hidden">
-                    <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer min-h-11 sm:min-h-0 {format === 'csv' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                    <Button
+                        variant={format === 'csv' ? 'default' : 'ghost'}
+                        size="sm"
+                        class="rounded-none text-xs min-h-11 sm:min-h-0"
                         onclick={() => { format = 'csv'; }}
-                    >CSV</button>
-                    <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer min-h-11 sm:min-h-0 {format === 'xlsx' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                    >CSV</Button>
+                    <Button
+                        variant={format === 'xlsx' ? 'default' : 'ghost'}
+                        size="sm"
+                        class="rounded-none text-xs min-h-11 sm:min-h-0"
                         onclick={() => { format = 'xlsx'; }}
-                    >Excel</button>
-                    <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer min-h-11 sm:min-h-0 {format === 'json' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                    >Excel</Button>
+                    <Button
+                        variant={format === 'json' ? 'default' : 'ghost'}
+                        size="sm"
+                        class="rounded-none text-xs min-h-11 sm:min-h-0"
                         onclick={() => { format = 'json'; }}
-                    >JSON</button>
+                    >JSON</Button>
                 </div>
             </div>
 
             <!-- Copy to Clipboard -->
-            <button
-                class="px-4 py-2 bg-white text-slate-700 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
+            <Button
+                variant="outline"
+                class="min-h-11 sm:min-h-0"
                 disabled={selectedColumns.size === 0 || rows.length === 0}
                 onclick={copyToClipboard}
             >
@@ -281,11 +291,11 @@
                         Copy
                     </span>
                 {/if}
-            </button>
+            </Button>
 
             <!-- Download -->
-            <button
-                class="px-5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
+            <Button
+                class="min-h-11 sm:min-h-0"
                 disabled={selectedColumns.size === 0 || rows.length === 0 || downloading}
                 onclick={download}
             >
@@ -299,7 +309,7 @@
                     </svg>
                 {/if}
                 Download {format.toUpperCase()}
-            </button>
+            </Button>
         </div>
     </header>
 
@@ -307,15 +317,17 @@
     <div class="bg-white border-b border-slate-100 px-4 sm:px-6 py-2.5 flex flex-wrap items-center gap-3 sm:gap-6 shrink-0">
         <!-- Quick Setup presets -->
         <div class="relative">
-            <button
-                class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition-colors duration-150 cursor-pointer"
+            <Button
+                variant="outline"
+                size="sm"
+                class="text-xs"
                 onclick={() => { presetOpen = !presetOpen; }}
             >
                 Quick Setup
                 <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="m6 9 6 6 6-6" />
                 </svg>
-            </button>
+            </Button>
             {#if presetOpen}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div
@@ -325,13 +337,16 @@
                 ></div>
                 <div class="absolute top-full left-0 mt-1 w-56 bg-white rounded-lg border border-slate-200 shadow-lg z-20 py-1">
                     {#each PRESETS as preset}
-                        <button
-                            class="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors duration-150 cursor-pointer"
+                        <Button
+                            variant="ghost"
+                            class="w-full justify-start h-auto px-3 py-2 rounded-none font-normal"
                             onclick={() => applyPreset(preset)}
                         >
-                            <div class="text-xs font-medium text-slate-700">{preset.label}</div>
-                            <div class="text-[11px] text-slate-400">{preset.description}</div>
-                        </button>
+                            <div class="flex flex-col items-start">
+                                <div class="text-xs font-medium text-slate-700">{preset.label}</div>
+                                <div class="text-[11px] text-slate-400">{preset.description}</div>
+                            </div>
+                        </Button>
                     {/each}
                 </div>
             {/if}
@@ -343,18 +358,22 @@
         <div class="flex items-center gap-2">
             <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Layout</span>
             <div class="flex rounded-lg border border-slate-200 overflow-hidden">
-                <button
-                    class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer {layout === 'long' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                <Button
+                    variant={layout === 'long' ? 'default' : 'ghost'}
+                    size="sm"
+                    class="rounded-none text-xs"
                     onclick={() => { layout = 'long'; }}
                 >
                     Long
-                </button>
-                <button
-                    class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer {layout === 'wide' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                </Button>
+                <Button
+                    variant={layout === 'wide' ? 'default' : 'ghost'}
+                    size="sm"
+                    class="rounded-none text-xs"
                     onclick={() => { layout = 'wide'; }}
                 >
                     Wide
-                </button>
+                </Button>
             </div>
             <span class="text-[11px] text-slate-400 ml-1">
                 {layout === 'long' ? 'One row per parameter (best for SAS/Prism)' : 'One row per step (best for Excel)'}
@@ -367,28 +386,30 @@
         <div class="flex items-center gap-2">
             <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Columns</span>
             {#each Object.entries(columnGroups) as [group, cols]}
-                <button
-                    class="px-2.5 py-1 text-xs font-medium rounded-full border transition-colors duration-150 cursor-pointer
-                        {isGroupSelected(group)
-                            ? 'bg-slate-800 text-white border-slate-800'
-                            : isGroupPartial(group)
-                                ? 'bg-slate-200 text-slate-700 border-slate-300'
-                                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}"
+                <Button
+                    variant={isGroupSelected(group) ? 'default' : 'outline'}
+                    size="sm"
+                    rounded="full"
+                    class="text-xs {isGroupPartial(group) ? 'bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-200' : ''}"
                     onclick={() => toggleGroup(group)}
                     title="{cols.length} columns"
                 >
                     {groupLabels[group] || group}
-                </button>
+                </Button>
             {/each}
-            <button
-                class="text-xs text-slate-400 hover:text-slate-600 transition-colors duration-150 cursor-pointer ml-1"
+            <Button
+                variant="link"
+                size="sm"
+                class="h-auto p-0 text-xs text-slate-400 hover:text-slate-600 no-underline hover:no-underline ml-1"
                 onclick={selectAll}
-            >All</button>
+            >All</Button>
             <span class="text-slate-300">|</span>
-            <button
-                class="text-xs text-slate-400 hover:text-slate-600 transition-colors duration-150 cursor-pointer"
+            <Button
+                variant="link"
+                size="sm"
+                class="h-auto p-0 text-xs text-slate-400 hover:text-slate-600 no-underline hover:no-underline"
                 onclick={selectNone}
-            >None</button>
+            >None</Button>
         </div>
     </div>
 
@@ -401,18 +422,20 @@
         {:else if error}
             <div in:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-3">
                 <div class="text-sm text-red-500">{error}</div>
-                <button
-                    class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
+                <Button
+                    variant="link"
+                    class="text-slate-500 hover:text-slate-700"
                     onclick={loadPreview}
-                >Retry</button>
+                >Retry</Button>
             </div>
         {:else if runIds.length === 0}
             <div in:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-3">
                 <div class="text-sm text-slate-400">No runs specified.</div>
-                <button
-                    class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
+                <Button
+                    variant="link"
+                    class="text-slate-500 hover:text-slate-700"
                     onclick={goBack}
-                >Go back</button>
+                >Go back</Button>
             </div>
         {:else if rows.length === 0}
             <div in:fade={{ duration: blockDuration() }} class="flex items-center justify-center py-32">
@@ -427,8 +450,10 @@
                         </Table.Head>
                         {#each visibleColumns as col}
                             <Table.Head>
-                                <button
-                                    class="flex items-center gap-1.5 hover:text-red-500 group transition-colors duration-150 cursor-pointer"
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="h-auto p-0 font-medium hover:bg-transparent hover:text-red-500 group"
                                     onclick={() => toggleColumn(col.key)}
                                     title="Hide '{col.label}' column"
                                 >
@@ -436,7 +461,7 @@
                                     <svg class="w-3 h-3 text-muted-foreground/40 group-hover:text-red-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M18 6 6 18M6 6l12 12" />
                                     </svg>
-                                </button>
+                                </Button>
                             </Table.Head>
                         {/each}
                     </Table.Row>
@@ -473,19 +498,23 @@
             </span>
             {#if totalPages > 1}
                 <div class="flex items-center gap-2">
-                    <button
-                        class="px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded hover:bg-slate-50 transition-colors duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        class="text-xs text-slate-500 hover:text-slate-700"
                         disabled={previewPage === 0}
                         onclick={() => previewPage--}
-                    >Prev</button>
+                    >Prev</Button>
                     <span class="text-xs text-slate-400 min-w-[80px] text-center">
                         Page {previewPage + 1} / {totalPages}
                     </span>
-                    <button
-                        class="px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded hover:bg-slate-50 transition-colors duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        class="text-xs text-slate-500 hover:text-slate-700"
                         disabled={previewPage >= totalPages - 1}
                         onclick={() => previewPage++}
-                    >Next</button>
+                    >Next</Button>
                 </div>
             {/if}
         </div>

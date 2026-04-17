@@ -3,6 +3,7 @@
     import { marked } from 'marked';
     import DOMPurify from 'dompurify';
     import ChatSkillButtons from '$lib/components/ChatSkillButtons.svelte';
+    import { Button } from '$lib/components/ui/button';
     import {
         getPanelState, getActiveSession, getMessageInput, isSending,
         getMessageSources, getSkills,
@@ -85,11 +86,10 @@
 
 <!-- ─── COLLAPSED: FAB Button ─── -->
 {#if panelState === 'collapsed'}
-    <button
-        class="chat-fab rounded-full bg-primary text-primary-foreground shadow-lg
-            hover:shadow-xl hover:bg-primary/90 transition-all duration-150 flex items-center justify-center
-            {isOnChatPage ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}"
-        style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:40;width:3.5rem;height:3.5rem;"
+    <Button
+        rounded="full"
+        class="chat-fab shadow-lg hover:shadow-xl size-14 {isOnChatPage ? 'opacity-40' : ''}"
+        style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:40;"
         onclick={() => !isOnChatPage && openPanel()}
         disabled={isOnChatPage}
         aria-label="Open AI Chat"
@@ -97,7 +97,7 @@
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
         </svg>
-    </button>
+    </Button>
 {/if}
 
 <!-- ─── OPEN: Floating Panel ─── -->
@@ -123,8 +123,9 @@
             </div>
             <div class="flex items-center gap-0.5">
                 {#if activeSession}
-                    <button
-                        class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 cursor-pointer"
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
                         onclick={clearConversation}
                         aria-label="Clear conversation"
                         title="Clear conversation"
@@ -132,7 +133,7 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
                         </svg>
-                    </button>
+                    </Button>
                 {/if}
                 <!-- Open in full view -->
                 <a
@@ -147,15 +148,16 @@
                     </svg>
                 </a>
                 <!-- Close -->
-                <button
-                    class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 cursor-pointer"
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onclick={closePanel}
                     aria-label="Close chat panel"
                 >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                </button>
+                </Button>
             </div>
         </div>
 
@@ -270,9 +272,9 @@
                     rows="1"
                     disabled={sending}
                 ></textarea>
-                <button
-                    class="flex-shrink-0 w-9 h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90
-                        transition-colors duration-150 cursor-pointer flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                <Button
+                    size="icon"
+                    class="rounded-xl"
                     onclick={() => sendMessage()}
                     disabled={!messageInput.trim() || sending}
                     aria-label="Send message"
@@ -280,7 +282,7 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M6 12L3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5" />
                     </svg>
-                </button>
+                </Button>
             </div>
             {#if !hasMessages && skills.length > 0}
                 <div class="mt-2">

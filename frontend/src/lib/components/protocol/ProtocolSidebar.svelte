@@ -248,10 +248,14 @@
     <div class="sidebar-section">
         <div class="section-header-row">
             <span class="section-title">ROLES</span>
-            <button
+            <Button
+                variant="outline"
+                size="icon-sm"
                 class="icon-btn"
-                onclick={() => (showRoleInput = !showRoleInput)}>+</button
+                onclick={() => (showRoleInput = !showRoleInput)}
             >
+                +
+            </Button>
         </div>
 
         {#if showRoleInput}
@@ -277,10 +281,14 @@
                         style:background={role.color}
                     ></div>
                     <span class="role-name">{role.name}</span>
-                    <button
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
                         class="role-delete-btn"
-                        onclick={() => deleteRole(role.id)}>&#10005;</button
+                        onclick={() => deleteRole(role.id)}
                     >
+                        &#10005;
+                    </Button>
                 </div>
             {/each}
         </div>
@@ -336,7 +344,8 @@
         {:else}
             {#each [...categories().entries()] as [category, ops]}
                 <div class="category-group">
-                    <button
+                    <Button
+                        variant="ghost"
                         class="category-header"
                         onclick={() => toggleCategory(category)}
                     >
@@ -367,7 +376,7 @@
                             }}
                             title="Add unit op to {category}">+</span
                         >
-                    </button>
+                    </Button>
 
                     {#if !collapsedCategories.has(category)}
                         <div class="cat-ops">
@@ -419,39 +428,43 @@
     <!-- Save Button -->
     <div class="sidebar-footer">
         {#if hasUnitOpNodes}
-            <button
+            <Button
+                variant="outline"
                 class="preview-sop-btn"
                 onclick={onOpenPdfPreview}
                 disabled={!protocol}
             >
                 Preview Documents
-            </button>
+            </Button>
         {/if}
         <div class="button-group">
-            <button
+            <Button
+                variant="default"
                 class="save-btn"
                 onclick={onSaveDraft}
                 disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "ARCHIVED" || previewingVersion !== null}
                 title="Save changes as a draft (no publish)"
             >
                 {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked" : protocolStatus === "ARCHIVED" ? "Archived" : "Save Draft"}
-            </button>
-            <button
+            </Button>
+            <Button
+                variant="default"
                 class="publish-btn"
                 onclick={onSaveAndPublish}
                 disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED" || previewingVersion !== null}
                 title={approvalRequired ? "Submit protocol for approval" : "Publish protocol"}
             >
                 {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : approvalRequired ? "Submit for Approval" : "Publish"}
-            </button>
+            </Button>
         </div>
         {#if protocol && protocolStatus !== "PENDING_APPROVAL"}
-            <button
+            <Button
+                variant="outline"
                 class="delete-archive-btn"
                 onclick={protocolStatus === "ARCHIVED" ? onUnarchive : onDeleteOrArchive}
             >
                 {protocolStatus === "ARCHIVED" ? "Unarchive" : protocolStatus === "APPROVED" ? "Archive" : "Delete"}
-            </button>
+            </Button>
         {/if}
     </div>
 </aside>
@@ -594,24 +607,23 @@
         text-transform: uppercase;
     }
 
-    .icon-btn {
+    :global(.icon-btn) {
         width: 22px;
         height: 22px;
+        min-width: 22px;
         border: 1px solid hsl(240, 5.9%, 90%);
         border-radius: 4px;
         background: white;
         color: hsl(173, 58%, 39%);
-        cursor: pointer;
         font-size: 14px;
         font-weight: 700;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         line-height: 1;
+        padding: 0;
     }
 
-    .icon-btn:hover {
+    :global(.icon-btn:hover) {
         background: #f8fafc;
+        color: hsl(173, 58%, 39%);
     }
 
     .role-input-row {
@@ -666,26 +678,24 @@
         font-weight: 500;
     }
 
-    .role-delete-btn {
+    :global(.role-delete-btn) {
         width: 18px;
         height: 18px;
+        min-width: 18px;
         border: none;
         background: transparent;
         color: transparent;
-        cursor: pointer;
         border-radius: 4px;
         font-size: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        padding: 0;
     }
 
-    .role-item:hover .role-delete-btn {
+    .role-item:hover :global(.role-delete-btn) {
         color: #94a3b8;
     }
 
-    .role-delete-btn:hover {
-        background: #fee2e2;
+    :global(.role-delete-btn:hover) {
+        background: #fee2e2 !important;
         color: #ef4444 !important;
     }
 
@@ -730,20 +740,22 @@
         margin-bottom: 8px;
     }
 
-    .category-header {
+    :global(.category-header) {
         display: flex;
         align-items: center;
         gap: 8px;
         width: 100%;
+        height: auto;
         padding: 6px 4px;
         background: transparent;
         border: none;
-        cursor: pointer;
         font-family: inherit;
         border-radius: 4px;
+        justify-content: flex-start;
+        font-weight: 400;
     }
 
-    .category-header:hover {
+    :global(.category-header:hover) {
         background: #f8fafc;
     }
 
@@ -789,7 +801,7 @@
         transition: opacity 0.15s;
     }
 
-    .category-header:hover .cat-add-btn {
+    :global(.category-header:hover) .cat-add-btn {
         opacity: 1;
     }
 
@@ -897,8 +909,9 @@
         gap: 8px;
     }
 
-    .preview-sop-btn {
+    :global(.preview-sop-btn) {
         width: 100%;
+        height: auto;
         padding: 9px 16px;
         background: white;
         color: hsl(173, 58%, 39%);
@@ -906,22 +919,17 @@
         border-radius: 8px;
         font-size: 13px;
         font-weight: 600;
-        cursor: pointer;
-        transition: all 0.15s;
         margin-bottom: 8px;
     }
 
-    .preview-sop-btn:hover:not(:disabled) {
+    :global(.preview-sop-btn:hover:not(:disabled)) {
         background: hsl(173, 58%, 96%);
+        color: hsl(173, 58%, 39%);
     }
 
-    .preview-sop-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .save-btn {
+    :global(.save-btn) {
         flex: 1;
+        height: auto;
         padding: 10px 16px;
         background: hsl(173, 58%, 39%);
         color: white;
@@ -929,21 +937,16 @@
         border-radius: 8px;
         font-size: 13px;
         font-weight: 600;
-        cursor: pointer;
-        transition: background 0.15s;
     }
 
-    .save-btn:hover:not(:disabled) {
+    :global(.save-btn:hover:not(:disabled)) {
         background: hsl(173, 58%, 34%);
+        color: white;
     }
 
-    .save-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .publish-btn {
+    :global(.publish-btn) {
         flex: 1;
+        height: auto;
         padding: 10px 16px;
         background: hsl(34, 97%, 49%);
         color: white;
@@ -951,21 +954,16 @@
         border-radius: 8px;
         font-size: 13px;
         font-weight: 600;
-        cursor: pointer;
-        transition: background 0.15s;
     }
 
-    .publish-btn:hover:not(:disabled) {
+    :global(.publish-btn:hover:not(:disabled)) {
         background: hsl(34, 97%, 44%);
+        color: white;
     }
 
-    .publish-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .delete-archive-btn {
+    :global(.delete-archive-btn) {
         width: 100%;
+        height: auto;
         padding: 8px 16px;
         background: white;
         color: #dc2626;
@@ -973,15 +971,14 @@
         border-radius: 8px;
         font-size: 12px;
         font-weight: 600;
-        cursor: pointer;
         font-family: inherit;
-        transition: all 0.15s;
         margin-top: 4px;
     }
 
-    .delete-archive-btn:hover {
+    :global(.delete-archive-btn:hover) {
         background: #fef2f2;
         border-color: #f87171;
+        color: #dc2626;
     }
 
     /* Status badge */

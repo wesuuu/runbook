@@ -374,13 +374,14 @@
                         <div class="empty-message">No equipment assigned</div>
                     {/if}
                 </div>
-                <button
-                    type="button"
-                    class="manage-equipment-btn"
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="self-start"
                     onclick={() => (equipmentModalOpen = true)}
                 >
                     Manage Equipment
-                </button>
+                </Button>
             </div>
         {/if}
 
@@ -468,13 +469,14 @@
 
         <!-- Schema Editor (collapsible) -->
         <div class="section schema-section">
-            <button
-                class="schema-toggle"
+            <Button
+                variant="ghost"
+                class="w-full justify-between px-0 hover:bg-transparent"
                 onclick={() => (showSchemaEditor = !showSchemaEditor)}
             >
                 <span class="section-label" style="margin-bottom: 0;">EDIT SCHEMA</span>
                 <span class="schema-chevron" class:open={showSchemaEditor}>▾</span>
-            </button>
+            </Button>
 
             {#if showSchemaEditor}
                 <div class="schema-editor">
@@ -511,31 +513,38 @@
                                 <option value="number">Number</option>
                                 <option value="integer">Integer</option>
                             </select>
-                            <button
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                class="text-muted-foreground hover:bg-red-100 hover:text-red-600 size-6"
                                 onclick={() => removeSchemaRow(i)}
-                                class="schema-remove-btn"
                                 title="Remove parameter"
-                            >✕</button>
+                                aria-label="Remove parameter"
+                            >✕</Button>
                         </div>
                     {/each}
 
                     <!-- Add Parameter button -->
-                    <button
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        class="self-start text-xs h-7 px-2.5 text-[hsl(173,58%,39%)]"
                         onclick={addSchemaRow}
-                        class="schema-add-btn"
                     >
                         + Add Parameter
-                    </button>
+                    </Button>
 
                     <!-- Save as New Unit Op -->
                     <div class="save-as-new-area">
                         {#if !showSaveAsNew}
-                            <button
+                            <Button
+                                variant="link"
+                                size="sm"
+                                class="h-auto p-0 text-xs text-muted-foreground hover:text-[hsl(173,58%,39%)]"
                                 onclick={() => (showSaveAsNew = true)}
-                                class="save-as-new-link"
                             >
                                 Save as New Unit Op...
-                            </button>
+                            </Button>
                         {:else}
                             <div class="save-as-new-form">
                                 <input
@@ -548,17 +557,19 @@
                                     <span class="save-as-new-error">{saveAsNewError}</span>
                                 {/if}
                                 <div class="save-as-new-actions">
-                                    <button
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
                                         onclick={() => { showSaveAsNew = false; saveAsNewName = ''; }}
-                                        class="btn btn-secondary btn-sm"
-                                    >Cancel</button>
-                                    <button
+                                    >Cancel</Button>
+                                    <Button
+                                        variant="default"
+                                        size="sm"
                                         onclick={handleSaveAsNew}
-                                        class="btn btn-primary btn-sm"
                                         disabled={!saveAsNewName.trim() || saveAsNewSaving}
                                     >
                                         {saveAsNewSaving ? 'Saving...' : 'Save'}
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                         {/if}
@@ -795,63 +806,10 @@
         appearance: auto;
     }
 
-    .btn {
-        padding: 10px 16px;
-        border-radius: 8px;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        border: none;
-        transition: all 0.15s;
-    }
-
-    .btn-secondary {
-        background: white;
-        color: #475569;
-        border: 1px solid hsl(240, 5.9%, 90%);
-    }
-
-    .btn-secondary:hover {
-        background: #f8fafc;
-    }
-
-    .btn-primary {
-        background: hsl(173, 58%, 39%);
-        color: white;
-    }
-
-    .btn-primary:hover {
-        background: hsl(173, 58%, 34%);
-    }
-
-    .btn-sm {
-        padding: 5px 10px;
-        font-size: 11px;
-        flex: 0 1 auto;
-        width: auto;
-    }
-
-    .btn-sm:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
     /* --- Schema Editor --- */
     .schema-section {
         padding-top: 12px;
         padding-bottom: 12px;
-    }
-
-    .schema-toggle {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        width: 100%;
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        padding: 0;
-        margin-bottom: 0;
     }
 
     .schema-chevron {
@@ -899,67 +857,10 @@
         height: 28px !important;
     }
 
-    .schema-remove-btn {
-        width: 24px;
-        height: 24px;
-        border: none;
-        background: transparent;
-        color: #94a3b8;
-        cursor: pointer;
-        border-radius: 4px;
-        font-size: 11px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        padding: 0;
-        transition: all 0.15s;
-    }
-
-    .schema-remove-btn:hover {
-        background: #fee2e2;
-        color: #ef4444;
-    }
-
-    .schema-add-btn {
-        align-self: flex-start;
-        font-size: 11px;
-        padding: 4px 10px;
-        border: 1px solid hsl(240, 5.9%, 90%);
-        border-radius: 4px;
-        background: white;
-        color: hsl(173, 58%, 39%);
-        cursor: pointer;
-        font-weight: 600;
-        margin-top: 2px;
-        transition: background 0.15s;
-    }
-
-    .schema-add-btn:hover {
-        background: #f8fafc;
-    }
-
     .save-as-new-area {
         border-top: 1px solid #f1f5f9;
         padding-top: 10px;
         margin-top: 4px;
-    }
-
-    .save-as-new-link {
-        font-size: 11px;
-        color: #94a3b8;
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        padding: 0;
-        font-weight: 500;
-        text-decoration: underline;
-        text-underline-offset: 2px;
-        transition: color 0.15s;
-    }
-
-    .save-as-new-link:hover {
-        color: hsl(173, 58%, 39%);
     }
 
     .save-as-new-form {
@@ -1038,19 +939,4 @@
         padding: 8px 0;
     }
 
-    .manage-equipment-btn {
-        padding: 6px 12px;
-        background-color: white;
-        border: 1px solid hsl(240, 5.9%, 90%);
-        border-radius: 4px;
-        font-size: 12px;
-        font-weight: 500;
-        color: hsl(173, 58%, 39%);
-        cursor: pointer;
-        transition: background-color 0.15s;
-    }
-
-    .manage-equipment-btn:hover {
-        background-color: #f8fafc;
-    }
 </style>

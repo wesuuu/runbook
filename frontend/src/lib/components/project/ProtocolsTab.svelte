@@ -116,26 +116,32 @@
         <td class="py-3 px-4 text-sm text-slate-500 whitespace-nowrap text-right">{formatDate(proto.updated_at || proto.created_at)}</td>
         <td class="py-3 px-4 pr-6 sm:pr-10 text-right whitespace-nowrap">
             {#if proto.status?.toUpperCase() === 'ARCHIVED'}
-                <button
-                    class="text-[12px] font-medium text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded border border-slate-200 hover:border-slate-300 bg-white transition-colors"
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-auto px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-slate-700 border-slate-200 hover:border-slate-300"
                     onclick={(e: MouseEvent) => { e.stopPropagation(); unarchiveProtocol(proto.id); }}
                 >
                     Unarchive
-                </button>
+                </Button>
             {:else if proto.status?.toUpperCase() === 'DRAFT'}
-                <button
-                    class="text-[12px] font-medium text-red-500 hover:text-red-700 px-2.5 py-1 rounded border border-red-200 hover:border-red-300 bg-white transition-colors"
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-auto px-2.5 py-1 text-[12px] font-medium text-red-500 hover:text-red-700 border-red-200 hover:border-red-300 hover:bg-transparent"
                     onclick={(e: MouseEvent) => { e.stopPropagation(); deleteOrArchiveProtocol(proto.id); }}
                 >
                     Delete
-                </button>
+                </Button>
             {:else if proto.status?.toUpperCase() === 'APPROVED'}
-                <button
-                    class="text-[12px] font-medium text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded border border-slate-200 hover:border-slate-300 bg-white transition-colors"
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-auto px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-slate-700 border-slate-200 hover:border-slate-300"
                     onclick={(e: MouseEvent) => { e.stopPropagation(); deleteOrArchiveProtocol(proto.id); }}
                 >
                     Archive
-                </button>
+                </Button>
             {/if}
         </td>
     {/snippet}
@@ -147,12 +153,9 @@
             </div>
             <p class="text-[15px] font-semibold text-slate-600">No protocols yet</p>
             <p class="text-[13px] text-slate-400 mb-4">Create your first protocol to define a workflow.</p>
-            <button
-                class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
-                onclick={onCreateProtocol}
-            >
+            <Button onclick={onCreateProtocol}>
                 + New Protocol
-            </button>
+            </Button>
         {:else}
             <p class="text-[15px] font-semibold text-slate-600">No matching protocols</p>
             <p class="text-[13px] text-slate-400">Try a different search term.</p>

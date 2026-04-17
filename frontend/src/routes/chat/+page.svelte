@@ -4,6 +4,7 @@
     import DOMPurify from 'dompurify';
     import ChatSkillButtons from '$lib/components/ChatSkillButtons.svelte';
     import ProtocolImportModal from '$lib/components/ProtocolImportModal.svelte';
+    import { Button } from '$lib/components/ui/button';
     import { goto } from '$app/navigation';
     import {
         getChatSessions, getActiveSession, getMessageInput, isSending,
@@ -86,13 +87,13 @@
     >
         <div class="p-3 border-b border-border/40 flex items-center justify-between">
             <h2 class="text-sm font-semibold text-foreground">Chats</h2>
-            <button
-                class="text-xs px-2.5 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50"
+            <Button
+                size="sm"
                 onclick={() => createSession()}
                 disabled={creatingSession}
             >
                 {creatingSession ? '...' : '+ New'}
-            </button>
+            </Button>
         </div>
         <div class="flex-1 overflow-y-auto">
             {#if sessions.length === 0 && !loading}
@@ -116,15 +117,17 @@
                             <p class="text-sm font-medium truncate text-foreground">{session.title}</p>
                             <p class="text-xs text-muted-foreground mt-0.5">{formatDate(session.updated_at)}</p>
                         </div>
-                        <button
-                            class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all p-1 rounded"
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
                             onclick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
                             aria-label="Delete chat"
                         >
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                 <path d="M6 18L18 6M6 6l12 12" />
                             </svg>
-                        </button>
+                        </Button>
                     </div>
                 </div>
             {/each}
@@ -154,37 +157,37 @@
                         </div>
                     {/if}
                     <div class="flex gap-3 justify-center">
-                        <button
-                            class="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-medium disabled:opacity-50"
+                        <Button
                             onclick={() => createSession()}
                             disabled={creatingSession}
                         >
                             Start a conversation
-                        </button>
-                        <button
-                            class="px-4 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors text-sm font-medium flex items-center gap-2"
+                        </Button>
+                        <Button
                             onclick={() => (showImportModal = true)}
                         >
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                 <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
                             </svg>
                             Upload Protocol
-                        </button>
+                        </Button>
                     </div>
                 </div>
             </div>
         {:else}
             <!-- Chat header -->
             <div class="px-4 py-3 border-b border-border/40 flex items-center gap-3 bg-card/30">
-                <button
-                    class="md:hidden p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground"
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="md:hidden text-muted-foreground"
                     onclick={() => setSidebarCollapsed(!sidebarCollapsed)}
                     aria-label="Toggle sidebar"
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
-                </button>
+                </Button>
                 <div class="min-w-0 flex-1">
                     <h2 class="text-sm font-semibold text-foreground truncate">{activeSession.title}</h2>
                 </div>
@@ -246,15 +249,17 @@
                                     {@html renderMarkdown(msg.content)}
                                 </div>
                                 {#if getMessageSources(msg).length > 0}
-                                    <button
-                                        class="mt-2 text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+                                    <Button
+                                        variant="link"
+                                        size="sm"
+                                        class="mt-2 h-auto p-0 text-xs"
                                         onclick={() => showSourcesForMessage(msg)}
                                     >
                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                             <path d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
                                         </svg>
                                         {getMessageSources(msg).length} source{getMessageSources(msg).length > 1 ? 's' : ''}
-                                    </button>
+                                    </Button>
                                 {/if}
                                 {#if msg.metadata_?.context_warning}
                                     <div class="mt-2 px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/30 text-xs text-amber-600 dark:text-amber-400">
@@ -307,9 +312,9 @@
                         rows="1"
                         disabled={sending}
                     ></textarea>
-                    <button
-                        class="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90
-                            transition-colors flex items-center justify-center disabled:opacity-50"
+                    <Button
+                        size="icon-lg"
+                        class="flex-shrink-0 rounded-xl"
                         onclick={() => sendMessage()}
                         disabled={!messageInput.trim() || sending || !!messageError}
                         aria-label="Send message"
@@ -317,7 +322,7 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path d="M6 12L3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5" />
                         </svg>
-                    </button>
+                    </Button>
                 </div>
                 {#if messageError}
                     <p in:fade={{ duration: blockDuration() }} class="text-xs text-red-500 mt-1.5 max-w-4xl mx-auto">{messageError}</p>
@@ -339,15 +344,17 @@
         <div in:fade={{ duration: blockDuration() }} class="w-80 flex-shrink-0 border-l border-border/60 bg-card/30 flex flex-col overflow-hidden">
             <div class="p-3 border-b border-border/40 flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-foreground">Sources</h3>
-                <button
-                    class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="text-muted-foreground hover:text-foreground"
                     onclick={() => setSourcePanelOpen(false)}
                     aria-label="Close sources panel"
                 >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                </button>
+                </Button>
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-3">
                 {#each activeSources as source, i (`${source.document_id}-${source.chunk_index}`)}

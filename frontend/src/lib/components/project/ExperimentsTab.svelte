@@ -9,6 +9,7 @@
     import ProjectDataTable from "./ProjectDataTable.svelte";
     import RunsTab from "./RunsTab.svelte";
     import CreateRunModal from "./CreateRunModal.svelte";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         experiments: any[];
@@ -91,8 +92,9 @@
     rowClass={(e) => selectedExperimentId === e.id ? 'bg-slate-50 border-l-[3px] !border-l-teal-500' : ''}
 >
     {#snippet mobileCard(e)}
-        <button
-            class="w-full py-3 text-left min-h-11"
+        <Button
+            variant="ghost"
+            class="w-full h-auto min-h-11 py-3 px-0 flex-col items-stretch justify-start text-left"
             onclick={() => selectExperiment(e)}
         >
             <div class="flex items-center justify-between mb-1">
@@ -116,7 +118,7 @@
                 <span>&middot;</span>
                 <span>{formatDate(e.updated_at || e.created_at)}</span>
             </div>
-        </button>
+        </Button>
     {/snippet}
 
     {#snippet cells(e)}
@@ -206,12 +208,9 @@
         <div class="mx-4 sm:mx-8 border border-dashed border-slate-200 rounded-lg py-8 text-center">
             <p class="text-[15px] font-semibold text-slate-600 mb-1">This experiment doesn't have any run data yet.</p>
             <p class="text-[13px] text-slate-400 mb-4">Create a run to start collecting data.</p>
-            <button
-                onclick={openCreateRunForExperiment}
-                class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold hover:bg-slate-900 transition-colors cursor-pointer"
-            >
+            <Button onclick={openCreateRunForExperiment}>
                 + Create Run
-            </button>
+            </Button>
         </div>
     {/if}
     </div>

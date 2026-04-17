@@ -174,9 +174,10 @@
                             {/if}
                         </Button>
                     {:else}
-                        <button
+                        <Button
+                            variant="secondary"
                             onclick={() => downloadFile(att)}
-                            class="flex items-center justify-center h-32 w-full bg-muted rounded text-2xl hover:bg-muted/80 transition-colors cursor-pointer"
+                            class="flex h-32 w-full rounded text-2xl"
                         >
                             {#if att.content_type === 'application/pdf'}
                                 <span>PDF</span>
@@ -185,7 +186,7 @@
                             {:else}
                                 <span>FILE</span>
                             {/if}
-                        </button>
+                        </Button>
                     {/if}
 
                     <!-- Info -->
@@ -199,12 +200,14 @@
                         <span class="text-[10px] px-1.5 py-0.5 bg-muted rounded font-medium">
                             {att.run_status}
                         </span>
-                        <button
+                        <Button
+                            variant="ghost"
+                            size="sm"
                             onclick={() => deleteAttachment(att.id)}
-                            class="text-xs text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                            class="h-auto px-2 py-1 text-xs text-red-500 hover:bg-transparent hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                             Remove
-                        </button>
+                        </Button>
                     </div>
                 </div>
             {/each}

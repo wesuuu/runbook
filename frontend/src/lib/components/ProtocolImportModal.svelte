@@ -420,19 +420,21 @@
 <FullScreenModal bind:open title="Import Protocol" onClose={() => handleOpenChange(false)}>
     {#snippet headerActions()}
         <div class="flex gap-1">
-            <button
-                class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'import' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+            <Button
+                variant={activeTab === 'import' ? 'default' : 'ghost'}
+                size="sm"
                 onclick={() => (activeTab = 'import')}
             >
                 Import
-            </button>
-            <button
-                class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {activeTab === 'editor' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+            </Button>
+            <Button
+                variant={activeTab === 'editor' ? 'default' : 'ghost'}
+                size="sm"
                 onclick={() => (activeTab = 'editor')}
                 disabled={!currentGraph}
             >
                 Protocol Editor
-            </button>
+            </Button>
         </div>
     {/snippet}
             {#if activeTab === 'import'}

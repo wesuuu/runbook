@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
+	import { Button } from '$lib/components/ui/button';
 
 	interface Equipment {
 		id: string;
@@ -224,13 +225,14 @@
 
 			<!-- Create new equipment section -->
 			<div class="create-section">
-				<button
-					type="button"
-					class="toggle-create-btn"
+				<Button
+					variant="link"
+					size="sm"
+					class="h-auto p-0 justify-start font-medium"
 					onclick={() => (showCreateForm = !showCreateForm)}
 				>
 					{showCreateForm ? '✕ Cancel' : '+ Add New Equipment'}
-				</button>
+				</Button>
 
 				{#if showCreateForm}
 					<div class="create-form">
@@ -283,34 +285,25 @@
 							<div class="error-message">{createError}</div>
 						{/if}
 
-						<button
-							type="button"
-							class="create-btn"
+						<Button
+							class="w-full"
 							onclick={handleCreate}
 							disabled={isCreating}
 						>
 							{isCreating ? 'Creating...' : 'Create Equipment'}
-						</button>
+						</Button>
 					</div>
 				{/if}
 			</div>
 		</div>
 
 		<Dialog.Footer class="px-6 pb-6 pt-0 border-t border-border mt-0">
-			<button
-				type="button"
-				class="px-4 py-2 bg-muted text-foreground/80 rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors"
-				onclick={onClose}
-			>
+			<Button variant="secondary" onclick={onClose}>
 				Cancel
-			</button>
-			<button
-				type="button"
-				class="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
-				onclick={handleApply}
-			>
+			</Button>
+			<Button onclick={handleApply}>
 				Apply
-			</button>
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -459,21 +452,6 @@
 		padding-top: 0.75rem;
 	}
 
-	.toggle-create-btn {
-		background: none;
-		border: none;
-		color: hsl(var(--primary));
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		padding: 0;
-		text-align: left;
-	}
-
-	.toggle-create-btn:hover {
-		text-decoration: underline;
-	}
-
 	.create-form {
 		margin-top: 0.75rem;
 		padding: 0.75rem;
@@ -527,25 +505,4 @@
 		margin-bottom: 0.75rem;
 	}
 
-	.create-btn {
-		width: 100%;
-		padding: 0.5rem;
-		background-color: hsl(var(--primary));
-		color: hsl(var(--primary-foreground));
-		border: none;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background-color 0.2s;
-	}
-
-	.create-btn:hover:not(:disabled) {
-		opacity: 0.9;
-	}
-
-	.create-btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
 </style>

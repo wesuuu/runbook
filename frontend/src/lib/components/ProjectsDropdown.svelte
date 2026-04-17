@@ -5,6 +5,7 @@
     import { api } from '$lib/api';
     import { getCurrentOrg } from '$lib/auth.svelte';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+    import { Button } from '$lib/components/ui/button';
     import { ChevronDown, Plus, FolderOpen } from 'lucide-svelte';
 
     interface Project {
@@ -37,12 +38,14 @@
 
 <DropdownMenu.Root>
     <DropdownMenu.Trigger>
-        <button
-            class="flex items-center gap-1 {isActive ? 'text-foreground font-semibold' : 'text-muted-foreground'} hover:text-foreground transition-colors"
+        <Button
+            variant="ghost"
+            size="sm"
+            class="h-auto px-0 py-0 gap-1 hover:bg-transparent hover:text-foreground {isActive ? 'text-foreground font-semibold' : 'text-muted-foreground'}"
         >
             Projects
             <ChevronDown class="h-3.5 w-3.5 opacity-60" />
-        </button>
+        </Button>
     </DropdownMenu.Trigger>
     <DropdownMenu.Content align="end" class="w-64" style="background-color: white; z-index: 100;">
         {#if loading}

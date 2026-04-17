@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { getUser } from '$lib/auth.svelte';
+    import { Button } from '$lib/components/ui/button';
     import { isOnline } from '$lib/pwa.svelte';
     import {
         getFieldModeState,
@@ -199,13 +200,14 @@
                     <p class="text-xs text-emerald-700 mb-2">
                         You're back online! {queueCount} item{queueCount !== 1 ? 's' : ''} ready to sync.
                     </p>
-                    <button
+                    <Button
+                        size="sm"
                         onclick={async () => { syncing = true; await syncNow(); syncing = false; }}
                         disabled={syncing}
-                        class="px-4 py-1.5 bg-emerald-600 text-white text-xs rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50"
+                        class="text-xs"
                     >
                         {syncing ? 'Syncing...' : 'Sync Now'}
-                    </button>
+                    </Button>
                 </div>
             {/if}
         </div>

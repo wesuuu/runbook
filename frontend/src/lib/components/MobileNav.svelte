@@ -1,5 +1,6 @@
 <script lang="ts">
     import { slide, fade } from 'svelte/transition';
+    import { Button } from '$lib/components/ui/button';
 
     let { open = $bindable(false), currentPath = '' } = $props();
 
@@ -45,15 +46,17 @@
                 </div>
                 <span class="text-[15px] font-semibold text-foreground tracking-tight">Runbook</span>
             </a>
-            <button
-                class="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 cursor-pointer"
+            <Button
+                variant="ghost"
+                size="icon"
+                class="min-h-11 min-w-11 text-muted-foreground hover:text-foreground"
                 onclick={close}
                 aria-label="Close menu"
             >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path d="M18 6 6 18M6 6l12 12" />
                 </svg>
-            </button>
+            </Button>
         </div>
 
         <!-- Links -->

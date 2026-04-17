@@ -1,6 +1,7 @@
 <script lang="ts">
     import { getActiveRunName, getTimeRemaining, getQueueCount } from '$lib/field-mode.svelte';
     import * as Dialog from '$lib/components/ui/dialog';
+    import { Button } from '$lib/components/ui/button';
 
     let {
         userEmail = '',
@@ -75,13 +76,14 @@
                     <p class="text-sm text-red-400">{error}</p>
                 {/if}
 
-                <button
+                <Button
+                    variant="default"
                     onclick={handleUnlock}
                     disabled={loading || !password.trim()}
-                    class="w-full py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="w-full h-auto py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700"
                 >
                     {loading ? 'Unlocking...' : 'Unlock'}
-                </button>
+                </Button>
             </div>
 
             <!-- Queue status -->
