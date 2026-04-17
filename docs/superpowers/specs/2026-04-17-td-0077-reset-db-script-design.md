@@ -33,9 +33,16 @@ Public surface kept small; logic is split so the transactional work is callable 
 
 ```
 WIPE_TABLES: tuple[str, ...]           # ordered literal list of 24 tables
+ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1"})
+ALLOWED_DB_NAME = "batchrite"
 
 def mask_database_url(url: str) -> str
     # regex replaces the password segment with *** for safe display
+
+def assert_local_dev_db(url: str) -> None
+    # Parse URL, extract host + db name.
+    # Raise RuntimeError if host not in ALLOWED_HOSTS or db != ALLOWED_DB_NAME.
+    # Error message names the offending host/db so misconfig is obvious.
 
 async def reset_database(session: AsyncSession) -> None
     # 1. TRUNCATE {WIPE_TABLES} RESTART IDENTITY CASCADE (single statement)
@@ -49,7 +56,10 @@ def confirm_reset() -> bool
     # read "y/N" from stdin; only "y" (case-insensitive) proceeds
 
 async def _run() -> int
-    # orchestrator: confirm → open AsyncSessionLocal → session.begin() →
+    # orchestrator:
+    #   assert_local_dev_db(settings.database_url) → raises + exits non-zero
+    #     if pointed at anything other than localhost/batchrite
+    #   confirm → open AsyncSessionLocal → session.begin() →
     #   reset_database(session) → commit-on-exit
     # returns 0 on success, 1 on abort/error
 ```
@@ -91,6 +101,7 @@ Existing `seed_*` functions are already idempotent (check-before-insert by PK), 
 
 ## Safety
 
+- **Prod guard**: `assert_local_dev_db` refuses to run if `DATABASE_URL` points at anything other than host in `{localhost, 127.0.0.1}` AND database name `batchrite`. Runs **before** the confirmation prompt, so a misconfigured env var fails fast with a clear error and no y/N appears. This is a hard-coded allow-list — if we ever need to reset a non-localhost dev DB, we edit the constants intentionally.
 - **Masking**: `mask_database_url` replaces `://user:password@` with `://user:***@` so passwords never print to logs/terminal.
 - **TTY gate**: `sys.stdin.isatty()` check prevents `yes | reset-db.sh` and similar accidents.
 - **Explicit confirm**: default is N — any input other than `y` (case-insensitive, stripped) aborts.
@@ -104,6 +115,11 @@ Existing `seed_*` functions are already idempotent (check-before-insert by PK), 
   - Masks `postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite` → `...://postgres:***@...`
   - Masks a URL with a complex password (special chars).
   - Passes through URLs with no password unchanged.
+- `assert_local_dev_db`:
+  - Accepts `postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite` (no raise).
+  - Accepts `127.0.0.1` host.
+  - Rejects a prod-like host (e.g. `prod.db.internal`) with `RuntimeError` that names the host.
+  - Rejects a different DB name (e.g. `batchrite_prod`, `batchrite_staging`) with `RuntimeError` that names the db.
 - `WIPE_TABLES` sanity:
   - Contains all 24 expected names.
   - Contains none of the 9 preserve table names (users, organizations, organization_members, teams, team_members, projects, object_permissions, unit_op_definitions, ai_provider_configs).
@@ -132,9 +148,10 @@ Edge case not tested automatically: the TTY gate in `confirm_reset` — hard to 
 | Safe on empty DB | Same test + TRUNCATE is a no-op on empty tables |
 | Preserve tables untouched | `test_preserve_tables_untouched` |
 | CLAUDE.md mentions it | Edit to CLAUDE.md dev commands block |
+| **Extra: Prod guard** (new in this spec, not in original AC) | `assert_local_dev_db` refuses non-localhost or non-`batchrite` DATABASE_URL before the prompt |
 
 ## Out of scope
 
-- Remote/prod database reset safety (script is dev-only; no staging/prod guard beyond the masked URL print which surfaces the target).
 - Resetting `alembic_version` — migrations stay applied.
 - A non-interactive `--force` flag — ticket explicitly requires interactive confirmation.
+- Overriding the localhost/batchrite allow-list at runtime (env var, flag). If we ever need to reset a non-local dev DB, we edit the constants intentionally in code and review the change.
