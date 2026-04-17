@@ -390,13 +390,45 @@
         finalizing = true;
 
         try {
+            // Build map from protocol_step_id -> aggregated metadata drawn
+            // from each extracted step that the LLM mapped to it.
+            const metadataByStepId = new Map<string, {
+                timestamps: ExtractedStep['timestamps'];
+                signatures: ExtractedStep['signatures'];
+                deviations: ExtractedStep['deviations'];
+            }>();
+            if (importResult.extraction && importResult.step_mappings) {
+                for (const mapping of importResult.step_mappings) {
+                    const extractedStep = importResult.extraction.steps[mapping.extracted_step_index];
+                    if (!extractedStep) continue;
+                    const existing = metadataByStepId.get(mapping.protocol_step_id) || {
+                        timestamps: [],
+                        signatures: [],
+                        deviations: [],
+                    };
+                    existing.timestamps = [...existing.timestamps, ...extractedStep.timestamps];
+                    existing.signatures = [...existing.signatures, ...extractedStep.signatures];
+                    existing.deviations = [...existing.deviations, ...extractedStep.deviations];
+                    metadataByStepId.set(mapping.protocol_step_id, existing);
+                }
+            }
+
             const stepMappings = protocolSteps.map(step => {
+                const metadata = metadataByStepId.get(step.id) || {
+                    timestamps: [],
+                    signatures: [],
+                    deviations: [],
+                };
+
                 if (naSteps.has(step.id)) {
                     return {
                         protocol_step_id: step.id,
                         na: true,
                         na_reason: naSteps.get(step.id) || '',
                         values: [],
+                        timestamps: metadata.timestamps,
+                        signatures: metadata.signatures,
+                        deviations: metadata.deviations,
                     };
                 }
 
@@ -415,6 +447,9 @@
                         .filter(p => p.schemaFieldKey === '__notes__')
                         .map(p => `${p.extractedLabel}: ${p.value}`)
                         .join('; '),
+                    timestamps: metadata.timestamps,
+                    signatures: metadata.signatures,
+                    deviations: metadata.deviations,
                 };
             });
 
