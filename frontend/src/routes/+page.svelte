@@ -436,9 +436,9 @@
                         </h2>
                         <div class="card-warm rounded-xl divide-y divide-border/60 overflow-hidden">
                             {#each dashboard.my_work.recently_completed as run}
-                                <Button
-                                    variant="ghost"
-                                    class="w-full justify-between p-3.5 h-auto rounded-none text-left hover:bg-muted/40"
+                                <button
+                                    type="button"
+                                    class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
                                     <div class="flex items-center gap-2.5">
@@ -454,7 +454,7 @@
                                         </span>
                                         <span class="text-[11px] text-muted-foreground tabular-nums">{formatDate(run.updated_at)}</span>
                                     </div>
-                                </Button>
+                                </button>
                             {/each}
                         </div>
                     </section>
@@ -470,9 +470,9 @@
                         </h2>
                         <div class="card-warm rounded-xl divide-y divide-border/60 overflow-hidden">
                             {#each dashboard.my_work.planned_runs as run}
-                                <Button
-                                    variant="ghost"
-                                    class="w-full justify-between p-3.5 h-auto rounded-none text-left hover:bg-muted/40 group"
+                                <button
+                                    type="button"
+                                    class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer group"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
                                     <div>
@@ -483,7 +483,7 @@
                                         Setup
                                         <svg class="w-3 h-3 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                                     </span>
-                                </Button>
+                                </button>
                             {/each}
                         </div>
                     </section>
