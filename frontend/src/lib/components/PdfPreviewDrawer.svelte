@@ -4,6 +4,7 @@
     import { toast } from "$lib/toast";
     import { DocumentTemplateListSchema, type DocumentTemplate } from "$lib/schemas/templates";
     import { Button } from "$lib/components/ui/button";
+    import { X } from "lucide-svelte";
 
     let {
         protocolId,
@@ -225,7 +226,9 @@
                     </button>
                 </div>
             </div>
-            <button class="close-btn" onclick={onClose}>&times;</button>
+            <Button variant="ghost" size="icon-sm" onclick={onClose} aria-label="Close">
+                <X class="size-4" />
+            </Button>
         </div>
 
         <!-- Template selector bar -->
@@ -265,7 +268,7 @@
                 <div class="preview-placeholder error">
                     <span>Failed to load preview</span>
                     <p class="error-detail">{previewError}</p>
-                    <button class="retry-btn" onclick={loadPreview}>Retry</button>
+                    <Button variant="outline" size="sm" onclick={loadPreview}>Retry</Button>
                 </div>
             {:else if blobUrl}
                 <iframe src={blobUrl} title="PDF Preview" class="preview-iframe"></iframe>
@@ -330,26 +333,6 @@
         color: #0f172a;
         margin: 0;
         white-space: nowrap;
-    }
-
-    .close-btn {
-        width: 30px;
-        height: 30px;
-        border: none;
-        background: transparent;
-        color: #94a3b8;
-        font-size: 22px;
-        cursor: pointer;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-    }
-
-    .close-btn:hover {
-        background: #f1f5f9;
-        color: #475569;
     }
 
     .tab-bar {
@@ -451,22 +434,6 @@
         font-size: 11px;
         color: #94a3b8;
         margin: 0;
-    }
-
-    .retry-btn {
-        padding: 5px 12px;
-        border: 1px solid hsl(240, 5.9%, 90%);
-        border-radius: 6px;
-        background: white;
-        color: #475569;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        font-family: inherit;
-    }
-
-    .retry-btn:hover {
-        background: #f1f5f9;
     }
 
     /* Footer */

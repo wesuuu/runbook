@@ -203,12 +203,38 @@ procedure steps with their parameters, durations, and role assignments.
 UNIT OPERATION CATALOG (match steps to these when possible):
 {catalog}
 
+MATCHING RULES (CRITICAL — READ CAREFULLY):
+
+Your PRIMARY job is to match each extracted step to the closest catalog entry.
+Step names in the document will ALMOST NEVER be word-for-word identical to
+catalog names. You MUST match on MEANING, not exact text.
+
+Match examples (step name in document -> matched_unit_op_name):
+- "Sterile Filtration" -> "Filtration"
+- "QC Sampling" -> "Sample Collection"
+- "Seed Cells" -> "Seeding"
+- "Transfect Cells" -> "Transfection"
+- "Pre-warm Media" -> "Media Preparation"
+- "Incubate" -> "Incubation"
+- "Cell Count" -> "Cell Counting"
+- "Column Equilibration" (if Chromatography in catalog) -> "Chromatography"
+- "Load Clarified Harvest" -> "Chromatography"
+- "Wash" (in purification context) -> "Chromatography"
+- "Elution" -> "Chromatography"
+- "Centrifuge to remove DMSO" -> "Centrifugation"
+- "Adjust pH" / "Neutralize" -> "pH Adjustment"
+- "Fill Vials" -> "Fill"
+- "Visual Inspection" -> "Visual Inspection"
+
+Only set matched_unit_op_name to null when NO catalog entry is semantically
+close. Being unsure is not a reason to return null — pick the closest match.
+
 RULES:
-1. Set matched_unit_op_name to the EXACT catalog name when a step matches.
-2. Set matched_unit_op_name to null when no catalog match exists.
+1. Set matched_unit_op_name to the EXACT catalog name (copy-paste exactly, including capitalization and spaces).
+2. Set matched_unit_op_name to null ONLY when no catalog entry is semantically related to the step.
 3. Extract parameters mentioned in the text (values, units, defaults).
 4. Estimate durations from the text or domain knowledge.
-5. Extract role/responsibility names if mentioned (e.g. "Operator", "QC Lead").
+5. Extract role/responsibility names if mentioned (e.g. "Operator", "QC Lead", "Fill Operator", "QC Inspector", "Purification Scientist"). Match the EXACT role name from the document.
 6. Order steps sequentially as described in the document.
 7. Generate a concise protocol name and description.
 8. For each parameter, provide name (snake_case), type, unit, and default value."""
