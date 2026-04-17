@@ -1,0 +1,58 @@
+{
+  "protocol_name": "Tris-HCl Buffer Preparation",
+  "step_count": 4,
+  "steps": [
+    {
+      "name": "Buffer Preparation",
+      "category": "Media Prep",
+      "matched_unit_op_name": "Buffer Preparation",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 15,
+      "expected_params": {
+        "buffer_name": "Tris-HCl",
+        "volume_L": 10,
+        "pH_target": 7.4
+      }
+    },
+    {
+      "name": "pH Adjustment",
+      "category": "Reaction",
+      "matched_unit_op_name": "pH Adjustment",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 10,
+      "expected_params": {
+        "target_pH": 7.4,
+        "acid_or_base": "HCl"
+      }
+    },
+    {
+      "name": "Sterile Filtration",
+      "category": "Purification",
+      "matched_unit_op_name": "Filtration",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 20,
+      "expected_params": {
+        "filter_size_um": 0.22,
+        "filter_type": "PES"
+      }
+    },
+    {
+      "name": "QC Sampling",
+      "category": "Analytics",
+      "matched_unit_op_name": "Sample Collection",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 5,
+      "expected_params": {
+        "volume_mL": 50,
+        "storage_temp_C": 4
+      }
+    }
+  ],
+  "expected_roles": ["Operator"],
+  "expected_new_unit_op_count": 0,
+  "notes": "Baseline: all 4 steps should match existing catalog. Simple linear protocol."
+}

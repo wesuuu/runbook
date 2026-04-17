@@ -1,0 +1,82 @@
+{
+  "protocol_name": "CHO-K1 Cell Passage",
+  "step_count": 7,
+  "steps": [
+    {
+      "name": "Pre-warm Media",
+      "category": "Media Prep",
+      "matched_unit_op_name": "Media Preparation",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 20,
+      "expected_params": {
+        "media_name": "DMEM/F12"
+      }
+    },
+    {
+      "name": "Aspirate Spent Media",
+      "category": "Cell Culture",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": "Operator",
+      "duration_min": 5,
+      "expected_params": {}
+    },
+    {
+      "name": "PBS Wash",
+      "category": "Cell Culture",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": "Operator",
+      "duration_min": 5,
+      "expected_params": {}
+    },
+    {
+      "name": "Trypsinization",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Incubation",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 5,
+      "expected_params": {
+        "temperature_C": 37,
+        "duration_hours": 0.083
+      }
+    },
+    {
+      "name": "Neutralize and Harvest",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Harvest",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 10,
+      "expected_params": {}
+    },
+    {
+      "name": "Cell Count",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Cell Counting",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 10,
+      "expected_params": {
+        "method": "Trypan Blue"
+      }
+    },
+    {
+      "name": "Seed New Flasks",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Seeding",
+      "is_new": false,
+      "role": "Operator",
+      "duration_min": 10,
+      "expected_params": {
+        "cell_density": 500000,
+        "vessel_type": "T-175"
+      }
+    }
+  ],
+  "expected_roles": ["Operator"],
+  "expected_new_unit_op_count": 2,
+  "notes": "Mixed: 5 catalog matches, 2 new ops (Aspirate, PBS Wash). Trypsinization may map to Incubation."
+}

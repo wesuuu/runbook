@@ -1,0 +1,102 @@
+{
+  "protocol_name": "Drug Product Fill/Finish",
+  "step_count": 8,
+  "steps": [
+    {
+      "name": "Prepare Formulation Buffer",
+      "category": "Media Prep",
+      "matched_unit_op_name": "Buffer Preparation",
+      "is_new": false,
+      "role": "Fill Operator",
+      "duration_min": 30,
+      "expected_params": {
+        "volume_L": 5,
+        "pH_target": 6.0
+      }
+    },
+    {
+      "name": "Sterile Filtration",
+      "category": "Purification",
+      "matched_unit_op_name": "Filtration",
+      "is_new": false,
+      "role": "Fill Operator",
+      "duration_min": 20,
+      "expected_params": {
+        "filter_size_um": 0.22,
+        "filter_type": "PES"
+      }
+    },
+    {
+      "name": "Vial Filling",
+      "category": "Fill/Finish",
+      "matched_unit_op_name": "Fill",
+      "is_new": false,
+      "role": "Fill Operator",
+      "duration_min": 60,
+      "expected_params": {
+        "fill_volume_mL": 1.2,
+        "container_type": "2mL glass vial",
+        "fill_speed": "medium"
+      }
+    },
+    {
+      "name": "Stoppering and Crimping",
+      "category": "Fill/Finish",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": "Fill Operator",
+      "duration_min": 120,
+      "expected_params": {}
+    },
+    {
+      "name": "Visual Inspection",
+      "category": "Quality Control",
+      "matched_unit_op_name": "Visual Inspection",
+      "is_new": false,
+      "role": "QC Inspector",
+      "duration_min": 60,
+      "expected_params": {
+        "inspection_type": "100% manual"
+      }
+    },
+    {
+      "name": "Lyophilization",
+      "category": "Fill/Finish",
+      "matched_unit_op_name": "Lyophilization",
+      "is_new": false,
+      "role": "Fill Operator",
+      "duration_min": 1800,
+      "expected_params": {
+        "shelf_temp_C": -40,
+        "chamber_pressure_mTorr": 100,
+        "duration_hours": 30
+      }
+    },
+    {
+      "name": "Particulate Testing",
+      "category": "Quality Control",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": "QC Inspector",
+      "duration_min": 30,
+      "expected_params": {
+        "method": "light obscuration"
+      }
+    },
+    {
+      "name": "Potency Assay",
+      "category": "Analytics",
+      "matched_unit_op_name": "Assay",
+      "is_new": false,
+      "role": "QC Inspector",
+      "duration_min": 60,
+      "expected_params": {
+        "assay_type": "ELISA",
+        "method": "sandwich ELISA"
+      }
+    }
+  ],
+  "expected_roles": ["Fill Operator", "QC Inspector"],
+  "expected_new_unit_op_count": 2,
+  "notes": "Multi-role (2 roles), 2 new ops (Stoppering, Particulate Testing). Complex fill/finish workflow."
+}

@@ -1,0 +1,54 @@
+{
+  "protocol_name": "Cell Thaw Quick Reference",
+  "step_count": 4,
+  "steps": [
+    {
+      "name": "Thaw Cryovial",
+      "category": "Cell Culture",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": null,
+      "duration_min": 3,
+      "expected_params": {}
+    },
+    {
+      "name": "Add to Pre-warmed Media",
+      "category": "Media Prep",
+      "matched_unit_op_name": "Media Preparation",
+      "is_new": false,
+      "role": null,
+      "duration_min": 5,
+      "expected_params": {
+        "media_name": "DMEM",
+        "volume_L": 0.01
+      }
+    },
+    {
+      "name": "Centrifuge to Remove DMSO",
+      "category": "Purification",
+      "matched_unit_op_name": "Centrifugation",
+      "is_new": false,
+      "role": null,
+      "duration_min": 5,
+      "expected_params": {
+        "rcf_g": 300,
+        "duration_min": 5
+      }
+    },
+    {
+      "name": "Resuspend and Seed",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Seeding",
+      "is_new": false,
+      "role": null,
+      "duration_min": 5,
+      "expected_params": {
+        "cell_density": 300000,
+        "vessel_type": "T-75"
+      }
+    }
+  ],
+  "expected_roles": [],
+  "expected_new_unit_op_count": 1,
+  "notes": "Low-quality PNG scan. Tests OCR robustness. No roles specified. 1 new op (thaw may not match catalog depending on seed set)."
+}

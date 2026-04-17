@@ -1,0 +1,121 @@
+{
+  "protocol_name": "Protein A Purification",
+  "step_count": 10,
+  "steps": [
+    {
+      "name": "Column Equilibration",
+      "category": "Purification",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": "Purification Scientist",
+      "duration_min": 25,
+      "expected_params": {
+        "flow_rate_mL_min": 1.0
+      }
+    },
+    {
+      "name": "Load Clarified Harvest",
+      "category": "Purification",
+      "matched_unit_op_name": "Chromatography",
+      "is_new": false,
+      "role": "Purification Scientist",
+      "duration_min": 100,
+      "expected_params": {
+        "column_type": "Protein A",
+        "flow_rate_mL_min": 0.5
+      }
+    },
+    {
+      "name": "Wash",
+      "category": "Purification",
+      "matched_unit_op_name": "Chromatography",
+      "is_new": false,
+      "role": "Purification Scientist",
+      "duration_min": 50,
+      "expected_params": {
+        "flow_rate_mL_min": 1.0
+      }
+    },
+    {
+      "name": "Elution",
+      "category": "Purification",
+      "matched_unit_op_name": "Chromatography",
+      "is_new": false,
+      "role": "Purification Scientist",
+      "duration_min": 50,
+      "expected_params": {
+        "column_type": "Protein A",
+        "flow_rate_mL_min": 0.5
+      }
+    },
+    {
+      "name": "Neutralize Eluate",
+      "category": "Reaction",
+      "matched_unit_op_name": "pH Adjustment",
+      "is_new": false,
+      "role": "Purification Scientist",
+      "duration_min": 10,
+      "expected_params": {
+        "target_pH": 7.0
+      }
+    },
+    {
+      "name": "Viral Inactivation",
+      "category": "Purification",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": "Purification Scientist",
+      "duration_min": 60,
+      "expected_params": {}
+    },
+    {
+      "name": "Re-neutralize and Filter",
+      "category": "Purification",
+      "matched_unit_op_name": "Filtration",
+      "is_new": false,
+      "role": "Purification Scientist",
+      "duration_min": 15,
+      "expected_params": {
+        "filter_size_um": 0.22
+      }
+    },
+    {
+      "name": "Diafiltration",
+      "category": "Purification",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": "Purification Scientist",
+      "duration_min": 90,
+      "expected_params": {
+        "flow_rate_mL_min": 5.0
+      }
+    },
+    {
+      "name": "Concentration",
+      "category": "Purification",
+      "matched_unit_op_name": "Centrifugation",
+      "is_new": false,
+      "role": "Purification Scientist",
+      "duration_min": 30,
+      "expected_params": {
+        "rcf_g": 3000,
+        "temperature_C": 4
+      }
+    },
+    {
+      "name": "Final QC Sample Collection",
+      "category": "Analytics",
+      "matched_unit_op_name": "Sample Collection",
+      "is_new": false,
+      "role": "QC Analyst",
+      "duration_min": 10,
+      "expected_params": {
+        "volume_mL": 2,
+        "storage_temp_C": -80
+      }
+    }
+  ],
+  "expected_roles": ["Purification Scientist", "QC Analyst"],
+  "expected_new_unit_op_count": 3,
+  "notes": "Complex: 10 steps, 2 roles, 3 new ops. PNG image input tests OCR. Multiple chromatography steps."
+}

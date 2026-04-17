@@ -1,0 +1,80 @@
+{
+  "protocol_name": "HEK293 Transient Transfection",
+  "step_count": 6,
+  "steps": [
+    {
+      "name": "Seed Cells",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Seeding",
+      "is_new": false,
+      "role": "Scientist",
+      "duration_min": 15,
+      "expected_params": {
+        "cell_density": 500000,
+        "vessel_type": "6-well plate",
+        "volume_mL": 2
+      }
+    },
+    {
+      "name": "Prepare DNA-Lipid Complexes",
+      "category": "Cell Culture",
+      "matched_unit_op_name": null,
+      "is_new": true,
+      "role": "Scientist",
+      "duration_min": 15,
+      "expected_params": {
+        "dna_amount_ug": 2.5
+      }
+    },
+    {
+      "name": "Transfect Cells",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Transfection",
+      "is_new": false,
+      "role": "Scientist",
+      "duration_min": 10,
+      "expected_params": {
+        "reagent": "Lipofectamine 3000",
+        "dna_amount_ug": 2.5,
+        "method": "lipofection"
+      }
+    },
+    {
+      "name": "Incubate",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Incubation",
+      "is_new": false,
+      "role": "Scientist",
+      "duration_min": 300,
+      "expected_params": {
+        "temperature_C": 37,
+        "CO2_percent": 5
+      }
+    },
+    {
+      "name": "Media Change",
+      "category": "Media Prep",
+      "matched_unit_op_name": "Media Preparation",
+      "is_new": false,
+      "role": "Scientist",
+      "duration_min": 10,
+      "expected_params": {
+        "media_name": "DMEM"
+      }
+    },
+    {
+      "name": "Assess Transfection",
+      "category": "Cell Culture",
+      "matched_unit_op_name": "Cell Counting",
+      "is_new": false,
+      "role": "Scientist",
+      "duration_min": 15,
+      "expected_params": {
+        "method": "Trypan Blue"
+      }
+    }
+  ],
+  "expected_roles": ["Scientist"],
+  "expected_new_unit_op_count": 1,
+  "notes": "Domain-specific params (DNA amount, lipid ratio). 1 new op for DNA complex prep."
+}
