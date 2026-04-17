@@ -71,12 +71,14 @@
                             </p>
                         </div>
                         {#if version.version_number !== currentVersion}
-                            <button
-                                class="revert-btn"
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="w-full h-auto py-1.5 text-[11px] font-semibold text-slate-600 hover:border-teal-600 hover:text-teal-700"
                                 onclick={() => onRevert(version.version_number)}
                             >
                                 Revert to this version
-                            </button>
+                            </Button>
                         {/if}
                     </div>
                 {/each}
@@ -224,23 +226,4 @@
         font-weight: 500;
     }
 
-    .revert-btn {
-        width: 100%;
-        padding: 6px 12px;
-        border: 1px solid hsl(240, 5.9%, 90%);
-        border-radius: 6px;
-        background: white;
-        color: #475569;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.15s;
-        font-family: inherit;
-    }
-
-    .revert-btn:hover {
-        background: #f8fafc;
-        border-color: hsl(173, 58%, 39%);
-        color: hsl(173, 58%, 39%);
-    }
 </style>

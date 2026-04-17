@@ -179,29 +179,29 @@
                             <option value="number">Number</option>
                             <option value="integer">Integer</option>
                         </select>
-                        <button
-                            class="remove-param-btn"
-                            onclick={() => removeParam(i)}>✕</button
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            class="text-muted-foreground hover:bg-red-100 hover:text-red-500"
+                            onclick={() => removeParam(i)}
                         >
+                            ✕
+                        </Button>
                     </div>
                 {/each}
             </div>
         </div>
 
         <Dialog.Footer>
-            <button
-                class="px-4 py-2 bg-muted text-foreground/80 rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors duration-150 cursor-pointer"
-                onclick={onClose}
-            >
+            <Button variant="secondary" onclick={onClose}>
                 Cancel
-            </button>
-            <button
-                class="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            </Button>
+            <Button
                 onclick={handleCreate}
                 disabled={!name.trim() || !category}
             >
                 Create
-            </button>
+            </Button>
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>
@@ -348,21 +348,4 @@
         border-color: hsl(var(--primary));
     }
 
-    .remove-param-btn {
-        width: 24px;
-        height: 24px;
-        border: none;
-        background: transparent;
-        color: hsl(var(--muted-foreground));
-        cursor: pointer;
-        border-radius: 4px;
-        font-size: 12px;
-        flex-shrink: 0;
-        transition: all 0.15s;
-    }
-
-    .remove-param-btn:hover {
-        background: #fee2e2;
-        color: #ef4444;
-    }
 </style>

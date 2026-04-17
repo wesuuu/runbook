@@ -3,6 +3,7 @@
     import { getUser, getCurrentOrg, getOrgs, switchOrg, logout } from '$lib/auth.svelte';
     import { API_BASE } from '$lib/config';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+    import { Button } from '$lib/components/ui/button';
 
     function getInitials(): string {
         const user = getUser();
@@ -44,11 +45,13 @@
                 class="w-8 h-8 rounded-full object-cover hover:opacity-90 transition-opacity cursor-pointer"
             />
         {:else}
-            <button
-                class="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold hover:opacity-90 transition-opacity"
+            <Button
+                size="icon-sm"
+                rounded="full"
+                class="text-xs font-semibold hover:opacity-90"
             >
                 {getInitials()}
-            </button>
+            </Button>
         {/if}
     </DropdownMenu.Trigger>
     <DropdownMenu.Content align="end" class="w-56" style="background-color: white; z-index: 100;">

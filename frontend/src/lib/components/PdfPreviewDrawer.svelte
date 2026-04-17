@@ -210,20 +210,22 @@
             <div class="header-left">
                 <h3>PDF Preview</h3>
                 <div class="tab-bar">
-                    <button
-                        class="tab-btn"
-                        class:active={activeTab === "sop"}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        class="h-auto px-3.5 py-1.5 text-xs font-semibold {activeTab === 'sop' ? 'bg-slate-100 text-slate-900 border border-slate-200 hover:bg-slate-100' : 'text-slate-400'}"
                         onclick={() => handleTabChange("sop")}
                     >
                         SOP
-                    </button>
-                    <button
-                        class="tab-btn"
-                        class:active={activeTab === "batch-record"}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        class="h-auto px-3.5 py-1.5 text-xs font-semibold {activeTab === 'batch-record' ? 'bg-slate-100 text-slate-900 border border-slate-200 hover:bg-slate-100' : 'text-slate-400'}"
                         onclick={() => handleTabChange("batch-record")}
                     >
                         Batch Record
-                    </button>
+                    </Button>
                 </div>
             </div>
             <Button variant="ghost" size="icon-sm" onclick={onClose} aria-label="Close">
@@ -343,30 +345,6 @@
     .tab-bar {
         display: flex;
         gap: 2px;
-    }
-
-    .tab-btn {
-        padding: 6px 14px;
-        border: 1px solid transparent;
-        border-radius: 6px;
-        background: transparent;
-        font-size: 12px;
-        font-weight: 600;
-        color: #94a3b8;
-        cursor: pointer;
-        font-family: inherit;
-        transition: all 0.15s;
-    }
-
-    .tab-btn:hover {
-        color: #475569;
-        background: #f8fafc;
-    }
-
-    .tab-btn.active {
-        color: #0f172a;
-        background: #f1f5f9;
-        border-color: hsl(240, 5.9%, 90%);
     }
 
     /* Template selector bar */
