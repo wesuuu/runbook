@@ -13,6 +13,7 @@
     import ConnectivityBanner from '$lib/components/ConnectivityBanner.svelte';
     import MobileNav from '$lib/components/MobileNav.svelte';
     import { Toaster } from '$lib/components/ui/sonner';
+    import { Button } from '$lib/components/ui/button';
     import ChatPanel from '$lib/components/ChatPanel.svelte';
     import { initChat } from '$lib/chat-store.svelte';
     import { onDestroy } from 'svelte';
@@ -125,15 +126,17 @@
             >
                 <div class="flex items-center gap-2.5">
                     <!-- Hamburger button (mobile only) -->
-                    <button
-                        class="md:hidden min-h-11 min-w-11 flex items-center justify-center -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="md:hidden min-h-11 min-w-11 -ml-2 text-muted-foreground hover:text-foreground"
                         onclick={() => (mobileNavOpen = true)}
                         aria-label="Open menu"
                     >
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path d="M4 6h16M4 12h16M4 18h16" />
                         </svg>
-                    </button>
+                    </Button>
                     <a href="/" class="flex items-center gap-2.5 group">
                         <div
                             class="w-7 h-7 bg-primary rounded-md flex items-center justify-center shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all"

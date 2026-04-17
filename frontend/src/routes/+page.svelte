@@ -274,6 +274,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 {dashboard.is_admin ? 'md:grid-cols-6' : 'sm:grid-cols-3'} gap-3 mb-10">
             {#each counterData as counter, i}
                 <button
+                    type="button"
                     class="card-warm rounded-xl p-4 text-left hover:border-primary/30 hover:shadow-md transition-all duration-150 group relative overflow-hidden {counter.link ? 'cursor-pointer' : 'cursor-default'}"
                     onclick={() => counter.link ? goto(counter.link) : null}
                     style="animation: fadeSlideUp 0.4s ease-out {i * 0.06}s both"
@@ -304,13 +305,14 @@
                                 <p class="text-sm font-semibold text-teal-800">
                                     Pending Offline Uploads
                                 </p>
-                                <button
+                                <Button
+                                    variant="default"
+                                    size="sm"
                                     onclick={syncOrphaned}
                                     disabled={syncingOrphans}
-                                    class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {syncingOrphans ? 'Syncing...' : 'Sync Now'}
-                                </button>
+                                </Button>
                             </div>
                             {#each orphanedRuns as orphan}
                                 <p class="text-xs text-teal-700">
@@ -348,6 +350,7 @@
                         <div class="space-y-2.5">
                             {#each dashboard.my_work.needs_action as run}
                                 <button
+                                    type="button"
                                     class="w-full card-warm rounded-xl p-4 text-left border-l-3 border-l-amber-400 hover:border-l-amber-500 hover:shadow-md transition-all duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
@@ -391,6 +394,7 @@
                         <div class="space-y-2.5">
                             {#each dashboard.my_work.active_runs as run}
                                 <button
+                                    type="button"
                                     class="w-full card-warm rounded-xl p-4 text-left hover:shadow-md hover:border-primary/20 transition-all duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
@@ -432,8 +436,9 @@
                         </h2>
                         <div class="card-warm rounded-xl divide-y divide-border/60 overflow-hidden">
                             {#each dashboard.my_work.recently_completed as run}
-                                <button
-                                    class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer"
+                                <Button
+                                    variant="ghost"
+                                    class="w-full justify-between p-3.5 h-auto rounded-none text-left hover:bg-muted/40"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
                                     <div class="flex items-center gap-2.5">
@@ -449,7 +454,7 @@
                                         </span>
                                         <span class="text-[11px] text-muted-foreground tabular-nums">{formatDate(run.updated_at)}</span>
                                     </div>
-                                </button>
+                                </Button>
                             {/each}
                         </div>
                     </section>
@@ -465,8 +470,9 @@
                         </h2>
                         <div class="card-warm rounded-xl divide-y divide-border/60 overflow-hidden">
                             {#each dashboard.my_work.planned_runs as run}
-                                <button
-                                    class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer group"
+                                <Button
+                                    variant="ghost"
+                                    class="w-full justify-between p-3.5 h-auto rounded-none text-left hover:bg-muted/40 group"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
                                     <div>
@@ -477,7 +483,7 @@
                                         Setup
                                         <svg class="w-3 h-3 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                                     </span>
-                                </button>
+                                </Button>
                             {/each}
                         </div>
                     </section>
@@ -493,13 +499,14 @@
                         </div>
                         <p class="font-semibold text-foreground mb-1">No runs yet</p>
                         <p class="text-sm text-muted-foreground mb-5">Get started by creating a project and running a protocol.</p>
-                        <button
-                            class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors duration-150 cursor-pointer"
+                        <Button
+                            variant="link"
+                            class="text-sm font-semibold hover:text-primary/80 hover:no-underline"
                             onclick={() => goto('/projects')}
                         >
                             View Projects
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                        </button>
+                        </Button>
                     </div>
                 {/if}
             </div>
@@ -539,13 +546,15 @@
                         </div>
                         {#if activityItems.length < activityTotal}
                             <div class="p-3 border-t border-border/50 text-center">
-                                <button
-                                    class="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors duration-150 tracking-wide uppercase cursor-pointer disabled:cursor-not-allowed"
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="text-[11px] font-semibold text-muted-foreground hover:text-foreground tracking-wide uppercase"
                                     onclick={loadMoreActivity}
                                     disabled={activityLoading}
                                 >
                                     {activityLoading ? 'Loading...' : 'Load more'}
-                                </button>
+                                </Button>
                             </div>
                         {/if}
                     {/if}
