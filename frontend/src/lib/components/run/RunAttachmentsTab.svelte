@@ -1,6 +1,7 @@
 <script lang="ts">
     import { api } from '$lib/api';
     import type { RunAttachment } from '$lib/schemas';
+    import { Button } from '$lib/components/ui/button';
 
     let {
         runId,
@@ -159,7 +160,7 @@
                 <div class="bg-white rounded-lg border border-border p-3 group">
                     <!-- Preview -->
                     {#if isImage(att.content_type)}
-                        <button onclick={() => downloadFile(att)} class="block w-full cursor-pointer">
+                        <Button variant="ghost" onclick={() => downloadFile(att)} class="block w-full h-auto p-0 hover:bg-transparent">
                             {#if blobUrls[att.id]}
                                 <img
                                     src={blobUrls[att.id]}
@@ -171,7 +172,7 @@
                                     Loading...
                                 </div>
                             {/if}
-                        </button>
+                        </Button>
                     {:else}
                         <button
                             onclick={() => downloadFile(att)}

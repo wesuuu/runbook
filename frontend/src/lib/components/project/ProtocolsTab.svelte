@@ -3,6 +3,7 @@
     import { api } from "$lib/api";
     import { shortId, formatDate, protocolStatusClasses, protocolStatusLabel } from "./projectUtils";
     import ProjectDataTable from "./ProjectDataTable.svelte";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         projectId: string;
@@ -69,7 +70,7 @@
     onRowClick={(proto) => goto(`/protocols/${proto.id}`)}
 >
     {#snippet mobileCard(proto)}
-        <button class="w-full py-3 text-left min-h-11" onclick={() => goto(`/protocols/${proto.id}`)}>
+        <Button variant="ghost" class="w-full h-auto min-h-11 py-3 px-0 flex-col items-stretch justify-start text-left" onclick={() => goto(`/protocols/${proto.id}`)}>
             <div class="flex items-center justify-between mb-1">
                 <span class="text-sm font-medium text-slate-800">{proto.name}</span>
                 <span class="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full {protocolStatusClasses(proto.status)}">
@@ -88,7 +89,7 @@
                 <span>&middot;</span>
                 <span>{formatDate(proto.updated_at || proto.created_at)}</span>
             </div>
-        </button>
+        </Button>
     {/snippet}
 
     {#snippet cells(proto)}

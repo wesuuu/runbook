@@ -3,6 +3,7 @@
     import { shortId, formatDate, statusClasses, statusLabel } from "./projectUtils";
     import ProjectDataTable from "./ProjectDataTable.svelte";
     import AssignToExperimentModal from "./AssignToExperimentModal.svelte";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         runs: any[];
@@ -139,7 +140,7 @@
     {/snippet}
 
     {#snippet mobileCard(r)}
-        <button class="w-full py-3 text-left min-h-11" onclick={() => goto(`/runs/${r.id}`)}>
+        <Button variant="ghost" class="w-full h-auto min-h-11 py-3 px-0 flex-col items-stretch justify-start text-left" onclick={() => goto(`/runs/${r.id}`)}>
             <div class="flex items-center justify-between mb-1">
                 <span class="text-sm font-medium text-slate-800">{r.name}</span>
                 <span class="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full {statusClasses(r.status)}">
@@ -151,7 +152,7 @@
                 <span>&middot;</span>
                 <span>{formatDate(r.updated_at || r.created_at)}</span>
             </div>
-        </button>
+        </Button>
     {/snippet}
 
     {#snippet cells(r)}

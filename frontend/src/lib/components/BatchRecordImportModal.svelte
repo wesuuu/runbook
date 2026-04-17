@@ -3,6 +3,7 @@
     import { toast } from 'svelte-sonner';
     import FullScreenModal from '$lib/components/ui/FullScreenModal.svelte';
     import ConfidenceBadge from '$lib/components/ConfidenceBadge.svelte';
+    import { Button } from '$lib/components/ui/button';
     import {
         BatchRecordImportResponseSchema,
         BatchRecordFinalizeResponseSchema,
@@ -499,9 +500,9 @@
                         <div class="space-y-1">
                             <p class="text-sm font-medium">{selectedFile.name}</p>
                             <p class="text-xs text-muted-foreground">{(selectedFile.size / 1024 / 1024).toFixed(1)} MB</p>
-                            <button class="text-xs text-primary hover:underline" onclick={(e: MouseEvent) => { e.stopPropagation(); selectedFile = null; }}>
+                            <Button variant="link" size="sm" class="h-auto p-0 text-xs" onclick={(e: MouseEvent) => { e.stopPropagation(); selectedFile = null; }}>
                                 Remove
-                            </button>
+                            </Button>
                         </div>
                     {:else}
                         <div class="space-y-2">
@@ -644,9 +645,9 @@
                                     <div class="flex items-center gap-2">
                                         <span class="text-sm text-yellow-700">Marked N/A:</span>
                                         <span class="text-sm">{naSteps.get(step.id)}</span>
-                                        <button class="text-xs text-primary hover:underline" onclick={() => unmarkStepNA(step.id)}>
+                                        <Button variant="link" size="sm" class="h-auto p-0 text-xs" onclick={() => unmarkStepNA(step.id)}>
                                             Undo
-                                        </button>
+                                        </Button>
                                     </div>
                                 {:else if params.length > 0}
                                     <!-- Parameter rows -->
@@ -685,12 +686,12 @@
                                                     </td>
                                                     <td class="py-2 text-right space-x-1">
                                                         {#if !param.accepted && !param.rejected}
-                                                            <button class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-800 hover:bg-green-200" onclick={() => acceptParam(param.paramKey)}>Accept</button>
+                                                            <Button size="sm" class="h-6 px-2 text-xs bg-green-100 text-green-800 hover:bg-green-200 shadow-none" onclick={() => acceptParam(param.paramKey)}>Accept</Button>
                                                         {/if}
                                                         {#if !param.rejected}
-                                                            <button class="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-800 hover:bg-red-200" onclick={() => rejectParam(param.paramKey)}>Reject</button>
+                                                            <Button size="sm" class="h-6 px-2 text-xs bg-red-100 text-red-800 hover:bg-red-200 shadow-none" onclick={() => rejectParam(param.paramKey)}>Reject</Button>
                                                         {:else}
-                                                            <button class="text-xs px-1.5 py-0.5 rounded bg-muted text-foreground hover:bg-muted/80" onclick={() => acceptParam(param.paramKey)}>Restore</button>
+                                                            <Button variant="secondary" size="sm" class="h-6 px-2 text-xs" onclick={() => acceptParam(param.paramKey)}>Restore</Button>
                                                         {/if}
                                                         <!-- Move dropdown -->
                                                         <select

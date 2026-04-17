@@ -1,6 +1,8 @@
 <script lang="ts">
     import { getExpiryWarningLevel, getTimeRemaining, type ExpiryWarningLevel } from '$lib/field-mode.svelte';
     import * as Dialog from '$lib/components/ui/dialog';
+    import { Button } from '$lib/components/ui/button';
+    import { X } from 'lucide-svelte';
 
     const warningLevel = $derived(getExpiryWarningLevel());
     const timeRemaining = $derived(getTimeRemaining());
@@ -40,12 +42,9 @@
             <p class="text-sm text-slate-500 mb-6">
                 Your offline session is about to expire. Connect to the internet and sync your data now to avoid losing queued items.
             </p>
-            <button
-                onclick={() => (dismissed = true)}
-                class="px-6 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors cursor-pointer"
-            >
+            <Button variant="destructive" onclick={() => (dismissed = true)}>
                 I Understand
-            </button>
+            </Button>
         </Dialog.Content>
     </Dialog.Root>
 {:else if (warningLevel === 'amber' || warningLevel === 'red') && !dismissed}
@@ -55,10 +54,8 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <span>Session expires in {timeRemaining}. Sync your data soon.</span>
-        <button onclick={() => (dismissed = true)} aria-label="Dismiss warning" class="ml-2 opacity-70 hover:opacity-100">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
+        <Button variant="ghost" size="icon-sm" onclick={() => (dismissed = true)} aria-label="Dismiss warning" class="ml-2 h-6 w-6 opacity-70 hover:opacity-100 hover:bg-transparent text-current">
+            <X class="w-4 h-4" />
+        </Button>
     </div>
 {/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { api } from "$lib/api";
     import AuditTimeline from "$lib/components/AuditTimeline.svelte";
+    import { Button } from "$lib/components/ui/button";
     import type { AuditEntry, DetailLine } from "$lib/components/AuditTimeline.svelte";
     import { stepEditSummary, entityBadgeClasses, changedKeys, versionSummary } from "./projectUtils";
 
@@ -175,9 +176,9 @@
             {#if hasActiveFilters}
                 <p class="text-[15px] font-semibold text-slate-600">No matching activity</p>
                 <p class="text-[13px] text-slate-400">Try adjusting your filters or search term.</p>
-                <button class="mt-2 text-xs text-slate-500 hover:text-slate-700 underline" onclick={clearActivityFilters}>
+                <Button variant="link" size="sm" class="mt-2 h-auto p-0 text-xs text-slate-500 hover:text-slate-700" onclick={clearActivityFilters}>
                     Clear all filters
-                </button>
+                </Button>
             {:else}
                 <p class="text-[15px] font-semibold text-slate-600">No activity yet</p>
                 <p class="text-[13px] text-slate-400">Changes to this project and its protocols and runs will appear here.</p>

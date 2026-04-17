@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import * as Dialog from '$lib/components/ui/dialog';
+    import { Button } from '$lib/components/ui/button';
 
     interface Props {
         runId: string;
@@ -139,14 +140,8 @@
         </div>
 
         <div class="flex gap-3 mt-6">
-            <button onclick={() => showModal = false}
-                class="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors cursor-pointer">
-                Cancel
-            </button>
-            <button onclick={confirmDownload}
-                class="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors cursor-pointer">
-                Download
-            </button>
+            <Button variant="outline" class="flex-1" onclick={() => showModal = false}>Cancel</Button>
+            <Button class="flex-1" onclick={confirmDownload}>Download</Button>
         </div>
     </Dialog.Content>
 </Dialog.Root>
