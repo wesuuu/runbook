@@ -1,0 +1,46 @@
+{
+  "run_name": "LOT-2026-400",
+  "execution_data": {
+    "node-buffer-prep": {
+      "status": "completed",
+      "results": {
+        "ph_value": 7.2,
+        "temperature_c": 25.0,
+        "volume_ml": 500
+      },
+      "notes": "",
+      "timestamps": [],
+      "signatures": [
+        {"initials_or_name": "JKL", "role": "Operator"}
+      ],
+      "deviations": []
+    },
+    "node-centrifugation": {
+      "status": "completed",
+      "results": {
+        "speed_g": 3000,
+        "duration_min": 15,
+        "temperature_c": 4.0
+      },
+      "notes": "",
+      "timestamps": [],
+      "signatures": [
+        {"initials_or_name": "JKL", "role": "Operator"}
+      ],
+      "deviations": []
+    },
+    "node-filtration": {
+      "status": "completed",
+      "results": {
+        "filter_size_um": 0.22,
+        "pressure_psi": 5
+      },
+      "notes": "",
+      "timestamps": [],
+      "signatures": [
+        {"initials_or_name": "JKL", "role": "Operator"}
+      ],
+      "deviations": []
+    }
+  }
+}
