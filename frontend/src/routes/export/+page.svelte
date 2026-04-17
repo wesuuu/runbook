@@ -12,6 +12,8 @@
     import type { ColumnDef, ExportLayout, ExportFormat, ExportPreset } from '$lib/export-utils';
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import * as Table from '$lib/components/ui/table';
+    import { fade } from 'svelte/transition';
+    import { blockDuration } from '$lib/transitions';
 
     // Parse run IDs from URL
     const runIds = $derived(
@@ -265,15 +267,19 @@
                 onclick={copyToClipboard}
             >
                 {#if copyFeedback}
-                    <svg class="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M20 6 9 17l-5-5" />
-                    </svg>
-                    Copied!
+                    <span transition:fade={{ duration: blockDuration() }} class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 6 9 17l-5-5" />
+                        </svg>
+                        Copied!
+                    </span>
                 {:else}
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </svg>
-                    Copy
+                    <span class="flex items-center gap-2">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                        Copy
+                    </span>
                 {/if}
             </button>
 
@@ -389,9 +395,11 @@
     <!-- Table -->
     <div class="flex-1 overflow-auto">
         {#if loading}
-            <LoadingSpinner message="Loading preview..." size="sm" />
+            <div transition:fade={{ duration: blockDuration() }}>
+                <LoadingSpinner message="Loading preview..." size="sm" />
+            </div>
         {:else if error}
-            <div class="flex flex-col items-center justify-center py-32 gap-3">
+            <div transition:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-3">
                 <div class="text-sm text-red-500">{error}</div>
                 <button
                     class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
@@ -399,7 +407,7 @@
                 >Retry</button>
             </div>
         {:else if runIds.length === 0}
-            <div class="flex flex-col items-center justify-center py-32 gap-3">
+            <div transition:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-3">
                 <div class="text-sm text-slate-400">No runs specified.</div>
                 <button
                     class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
@@ -407,7 +415,7 @@
                 >Go back</button>
             </div>
         {:else if rows.length === 0}
-            <div class="flex items-center justify-center py-32">
+            <div transition:fade={{ duration: blockDuration() }} class="flex items-center justify-center py-32">
                 <div class="text-sm text-slate-400">No data to export.</div>
             </div>
         {:else}
