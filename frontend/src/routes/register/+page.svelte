@@ -5,6 +5,7 @@
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
     import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
+    import ErrorAlert from '$lib/components/ui/error-alert.svelte';
 
     let fullName = $state('');
     let email = $state('');
@@ -59,9 +60,7 @@
             <CardContent>
                 <form onsubmit={handleSubmit} class="space-y-4">
                     {#if error}
-                        <div class="bg-destructive/10 text-destructive text-sm p-3 rounded-md">
-                            {error}
-                        </div>
+                        <ErrorAlert message={error} />
                     {/if}
 
                     <div class="space-y-2">

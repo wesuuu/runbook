@@ -3,6 +3,8 @@
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
     import { Button } from "$lib/components/ui/button";
+    import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
+    import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import CreateRunModal from "$lib/components/project/CreateRunModal.svelte";
     import AddExistingRunModal from "$lib/components/project/AddExistingRunModal.svelte";
     import RunsTab from "$lib/components/project/RunsTab.svelte";
@@ -135,17 +137,9 @@
 </script>
 
 {#if loading}
-    <div
-        class="flex items-center justify-center min-h-[calc(100vh-57px)] bg-gray-100 text-sm text-slate-400"
-    >
-        Loading experiment...
-    </div>
+    <LoadingSpinner message="Loading experiment..." fullPage />
 {:else if error}
-    <div
-        class="max-w-xl mx-auto mt-8 p-4 bg-red-50 text-red-600 rounded-lg text-sm"
-    >
-        Error: {error}
-    </div>
+    <ErrorAlert message="Error: {error}" class="max-w-xl mx-auto mt-8" />
 {:else if experiment}
     <div
         class="min-h-[calc(100vh-57px)] w-full mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"

@@ -40,6 +40,11 @@ Never hardcode provider/model strings.
 
 ## Worktree Dev Servers
 
+Worktrees have independent file trees but **no untracked/ignored files** (`node_modules/`, `.venv/`). Before starting dev servers in a worktree:
+
+1. `cd frontend && npm install` — install frontend dependencies
+2. `cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt` — set up backend venv
+
 Alternate ports to avoid collisions with main workspace:
 - Main: backend :8000, frontend :5173
 - Worktree 1: backend :8010, frontend :5183

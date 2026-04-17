@@ -126,7 +126,7 @@
                 <div class="flex items-center gap-2.5">
                     <!-- Hamburger button (mobile only) -->
                     <button
-                        class="md:hidden min-h-11 min-w-11 flex items-center justify-center -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        class="md:hidden min-h-11 min-w-11 flex items-center justify-center -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                         onclick={() => (mobileNavOpen = true)}
                         aria-label="Open menu"
                     >

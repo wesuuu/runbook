@@ -6,6 +6,8 @@
     import { getOrphanedActions, type QueuedAction } from '$lib/offline-db';
     import { syncNow } from '$lib/sync-manager';
     import CompletionChart from '$lib/components/CompletionChart.svelte';
+    import { Button } from '$lib/components/ui/button';
+    import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import { toast } from '$lib/toast';
     import { timeAgo } from '$lib/utils';
 
@@ -247,21 +249,16 @@
 </script>
 
 {#if loading}
-    <div class="flex items-center justify-center py-32">
-        <div class="flex flex-col items-center gap-4">
-            <div class="w-8 h-8 border-2 border-border border-t-primary rounded-full animate-spin"></div>
-            <p class="text-sm text-muted-foreground tracking-wide">Loading dashboard...</p>
-        </div>
-    </div>
+    <LoadingSpinner message="Loading dashboard..." />
 {:else if error}
     <div class="flex flex-col items-center justify-center py-32 gap-4">
         <div class="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
             <span class="text-destructive text-lg">!</span>
         </div>
         <p class="text-sm text-destructive">{error}</p>
-        <button class="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4" onclick={loadDashboard}>
+        <Button variant="link" class="text-muted-foreground" onclick={loadDashboard}>
             Retry
-        </button>
+        </Button>
     </div>
 {:else if dashboard}
     <div class="max-w-6xl mx-auto">
@@ -277,7 +274,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 {dashboard.is_admin ? 'md:grid-cols-6' : 'sm:grid-cols-3'} gap-3 mb-10">
             {#each counterData as counter, i}
                 <button
-                    class="card-warm rounded-xl p-4 text-left hover:border-primary/30 hover:shadow-md transition-all group relative overflow-hidden"
+                    class="card-warm rounded-xl p-4 text-left hover:border-primary/30 hover:shadow-md transition-all duration-150 group relative overflow-hidden {counter.link ? 'cursor-pointer' : 'cursor-default'}"
                     onclick={() => counter.link ? goto(counter.link) : null}
                     style="animation: fadeSlideUp 0.4s ease-out {i * 0.06}s both"
                 >
@@ -310,7 +307,7 @@
                                 <button
                                     onclick={syncOrphaned}
                                     disabled={syncingOrphans}
-                                    class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
+                                    class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {syncingOrphans ? 'Syncing...' : 'Sync Now'}
                                 </button>
@@ -351,7 +348,7 @@
                         <div class="space-y-2.5">
                             {#each dashboard.my_work.needs_action as run}
                                 <button
-                                    class="w-full card-warm rounded-xl p-4 text-left border-l-3 border-l-amber-400 hover:border-l-amber-500 hover:shadow-md transition-all"
+                                    class="w-full card-warm rounded-xl p-4 text-left border-l-3 border-l-amber-400 hover:border-l-amber-500 hover:shadow-md transition-all duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
                                     <div class="flex items-center justify-between mb-2.5">
@@ -394,7 +391,7 @@
                         <div class="space-y-2.5">
                             {#each dashboard.my_work.active_runs as run}
                                 <button
-                                    class="w-full card-warm rounded-xl p-4 text-left hover:shadow-md hover:border-primary/20 transition-all"
+                                    class="w-full card-warm rounded-xl p-4 text-left hover:shadow-md hover:border-primary/20 transition-all duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
                                     <div class="flex items-center justify-between mb-2.5">
@@ -436,7 +433,7 @@
                         <div class="card-warm rounded-xl divide-y divide-border/60 overflow-hidden">
                             {#each dashboard.my_work.recently_completed as run}
                                 <button
-                                    class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors"
+                                    class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
                                     <div class="flex items-center gap-2.5">
@@ -469,7 +466,7 @@
                         <div class="card-warm rounded-xl divide-y divide-border/60 overflow-hidden">
                             {#each dashboard.my_work.planned_runs as run}
                                 <button
-                                    class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors group"
+                                    class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer group"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
                                     <div>
@@ -497,7 +494,7 @@
                         <p class="font-semibold text-foreground mb-1">No runs yet</p>
                         <p class="text-sm text-muted-foreground mb-5">Get started by creating a project and running a protocol.</p>
                         <button
-                            class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors"
+                            class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors duration-150 cursor-pointer"
                             onclick={() => goto('/projects')}
                         >
                             View Projects
@@ -543,7 +540,7 @@
                         {#if activityItems.length < activityTotal}
                             <div class="p-3 border-t border-border/50 text-center">
                                 <button
-                                    class="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors tracking-wide uppercase"
+                                    class="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors duration-150 tracking-wide uppercase cursor-pointer disabled:cursor-not-allowed"
                                     onclick={loadMoreActivity}
                                     disabled={activityLoading}
                                 >

@@ -10,6 +10,8 @@
         PRESETS,
     } from '$lib/export-utils';
     import type { ColumnDef, ExportLayout, ExportFormat, ExportPreset } from '$lib/export-utils';
+    import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
+    import * as Table from '$lib/components/ui/table';
 
     // Parse run IDs from URL
     const runIds = $derived(
@@ -216,7 +218,7 @@
         <div class="flex items-center gap-4">
             <button
                 onclick={goBack}
-                class="text-sm text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
+                class="text-sm text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 transition-colors duration-150 cursor-pointer"
             >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -242,15 +244,15 @@
                 <span class="text-xs font-medium text-slate-500 uppercase tracking-wide hidden sm:inline">Format</span>
                 <div class="flex rounded-lg border border-slate-200 overflow-hidden">
                     <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors min-h-11 sm:min-h-0 {format === 'csv' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                        class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer min-h-11 sm:min-h-0 {format === 'csv' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
                         onclick={() => { format = 'csv'; }}
                     >CSV</button>
                     <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors min-h-11 sm:min-h-0 {format === 'xlsx' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                        class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer min-h-11 sm:min-h-0 {format === 'xlsx' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
                         onclick={() => { format = 'xlsx'; }}
                     >Excel</button>
                     <button
-                        class="px-3 py-1.5 text-xs font-medium transition-colors min-h-11 sm:min-h-0 {format === 'json' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                        class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer min-h-11 sm:min-h-0 {format === 'json' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
                         onclick={() => { format = 'json'; }}
                     >JSON</button>
                 </div>
@@ -258,7 +260,7 @@
 
             <!-- Copy to Clipboard -->
             <button
-                class="px-4 py-2 bg-white text-slate-700 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
+                class="px-4 py-2 bg-white text-slate-700 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
                 disabled={selectedColumns.size === 0 || rows.length === 0}
                 onclick={copyToClipboard}
             >
@@ -277,7 +279,7 @@
 
             <!-- Download -->
             <button
-                class="px-5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
+                class="px-5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-11 sm:min-h-0"
                 disabled={selectedColumns.size === 0 || rows.length === 0 || downloading}
                 onclick={download}
             >
@@ -300,7 +302,7 @@
         <!-- Quick Setup presets -->
         <div class="relative">
             <button
-                class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition-colors"
+                class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition-colors duration-150 cursor-pointer"
                 onclick={() => { presetOpen = !presetOpen; }}
             >
                 Quick Setup
@@ -318,7 +320,7 @@
                 <div class="absolute top-full left-0 mt-1 w-56 bg-white rounded-lg border border-slate-200 shadow-lg z-20 py-1">
                     {#each PRESETS as preset}
                         <button
-                            class="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors"
+                            class="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors duration-150 cursor-pointer"
                             onclick={() => applyPreset(preset)}
                         >
                             <div class="text-xs font-medium text-slate-700">{preset.label}</div>
@@ -336,13 +338,13 @@
             <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Layout</span>
             <div class="flex rounded-lg border border-slate-200 overflow-hidden">
                 <button
-                    class="px-3 py-1.5 text-xs font-medium transition-colors {layout === 'long' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                    class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer {layout === 'long' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
                     onclick={() => { layout = 'long'; }}
                 >
                     Long
                 </button>
                 <button
-                    class="px-3 py-1.5 text-xs font-medium transition-colors {layout === 'wide' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
+                    class="px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer {layout === 'wide' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"
                     onclick={() => { layout = 'wide'; }}
                 >
                     Wide
@@ -360,7 +362,7 @@
             <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Columns</span>
             {#each Object.entries(columnGroups) as [group, cols]}
                 <button
-                    class="px-2.5 py-1 text-xs font-medium rounded-full border transition-colors
+                    class="px-2.5 py-1 text-xs font-medium rounded-full border transition-colors duration-150 cursor-pointer
                         {isGroupSelected(group)
                             ? 'bg-slate-800 text-white border-slate-800'
                             : isGroupPartial(group)
@@ -373,12 +375,12 @@
                 </button>
             {/each}
             <button
-                class="text-xs text-slate-400 hover:text-slate-600 ml-1"
+                class="text-xs text-slate-400 hover:text-slate-600 transition-colors duration-150 cursor-pointer ml-1"
                 onclick={selectAll}
             >All</button>
             <span class="text-slate-300">|</span>
             <button
-                class="text-xs text-slate-400 hover:text-slate-600"
+                class="text-xs text-slate-400 hover:text-slate-600 transition-colors duration-150 cursor-pointer"
                 onclick={selectNone}
             >None</button>
         </div>
@@ -387,14 +389,12 @@
     <!-- Table -->
     <div class="flex-1 overflow-auto">
         {#if loading}
-            <div class="flex items-center justify-center py-32">
-                <div class="text-sm text-slate-400">Loading preview...</div>
-            </div>
+            <LoadingSpinner message="Loading preview..." size="sm" />
         {:else if error}
             <div class="flex flex-col items-center justify-center py-32 gap-3">
                 <div class="text-sm text-red-500">{error}</div>
                 <button
-                    class="text-sm text-slate-500 hover:text-slate-700 underline"
+                    class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
                     onclick={loadPreview}
                 >Retry</button>
             </div>
@@ -402,7 +402,7 @@
             <div class="flex flex-col items-center justify-center py-32 gap-3">
                 <div class="text-sm text-slate-400">No runs specified.</div>
                 <button
-                    class="text-sm text-slate-500 hover:text-slate-700 underline"
+                    class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
                     onclick={goBack}
                 >Go back</button>
             </div>
@@ -411,49 +411,49 @@
                 <div class="text-sm text-slate-400">No data to export.</div>
             </div>
         {:else}
-            <table class="w-full border-collapse text-xs">
-                <thead class="sticky top-0 z-10">
-                    <tr class="bg-slate-100">
-                        <th class="text-center py-2.5 px-2 font-semibold text-slate-400 whitespace-nowrap border-b border-slate-200 w-[50px]">
+            <Table.Root class="text-xs">
+                <Table.Header class="sticky top-0 z-10 bg-muted">
+                    <Table.Row>
+                        <Table.Head class="text-center w-[50px] text-muted-foreground">
                             #
-                        </th>
+                        </Table.Head>
                         {#each visibleColumns as col}
-                            <th class="text-left py-2.5 px-3 font-semibold text-slate-600 whitespace-nowrap border-b border-slate-200">
+                            <Table.Head>
                                 <button
-                                    class="flex items-center gap-1.5 hover:text-red-500 group"
+                                    class="flex items-center gap-1.5 hover:text-red-500 group transition-colors duration-150 cursor-pointer"
                                     onclick={() => toggleColumn(col.key)}
                                     title="Hide '{col.label}' column"
                                 >
                                     <span>{col.label}</span>
-                                    <svg class="w-3 h-3 text-slate-300 group-hover:text-red-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <svg class="w-3 h-3 text-muted-foreground/40 group-hover:text-red-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M18 6 6 18M6 6l12 12" />
                                     </svg>
                                 </button>
-                            </th>
+                            </Table.Head>
                         {/each}
-                    </tr>
-                </thead>
-                <tbody>
+                    </Table.Row>
+                </Table.Header>
+                <Table.Body>
                     {#each pagedRows as row, i}
-                        <tr class="{i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-blue-50/40 transition-colors">
-                            <td class="text-center py-1.5 px-2 text-slate-400 font-mono border-b border-slate-50">
+                        <Table.Row class={i % 2 === 0 ? '' : 'bg-muted/30'}>
+                            <Table.Cell class="text-center text-muted-foreground font-mono">
                                 {previewPage * PAGE_SIZE + i + 1}
-                            </td>
+                            </Table.Cell>
                             {#each visibleColumns as col}
-                                <td class="py-1.5 px-3 text-slate-700 whitespace-nowrap max-w-[250px] truncate border-b border-slate-50" title={String(row[col.key] ?? '')}>
+                                <Table.Cell class="max-w-[250px] truncate" title={String(row[col.key] ?? '')}>
                                     {#if col.key === 'edited'}
-                                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium {row[col.key] ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'}">
+                                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium {row[col.key] ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}">
                                             {row[col.key] ? 'Yes' : 'No'}
                                         </span>
                                     {:else}
                                         {row[col.key] ?? ''}
                                     {/if}
-                                </td>
+                                </Table.Cell>
                             {/each}
-                        </tr>
+                        </Table.Row>
                     {/each}
-                </tbody>
-            </table>
+                </Table.Body>
+            </Table.Root>
         {/if}
     </div>
 
@@ -466,7 +466,7 @@
             {#if totalPages > 1}
                 <div class="flex items-center gap-2">
                     <button
-                        class="px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                        class="px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded hover:bg-slate-50 transition-colors duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                         disabled={previewPage === 0}
                         onclick={() => previewPage--}
                     >Prev</button>
@@ -474,7 +474,7 @@
                         Page {previewPage + 1} / {totalPages}
                     </span>
                     <button
-                        class="px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                        class="px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded hover:bg-slate-50 transition-colors duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                         disabled={previewPage >= totalPages - 1}
                         onclick={() => previewPage++}
                     >Next</button>

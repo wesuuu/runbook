@@ -13,6 +13,7 @@
     } from '$lib/components/ui/card';
     import * as Dialog from '$lib/components/ui/dialog';
     import { toast } from 'svelte-sonner';
+    import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import {
         getFileTypeLabel,
         getStatusColor,
@@ -305,7 +306,7 @@
     </a>
 
     {#if loading}
-        <div class="text-center py-10 text-muted-foreground">Loading document...</div>
+        <LoadingSpinner message="Loading document..." />
     {:else if error}
         <div class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
     {:else if document}
@@ -426,7 +427,7 @@
                         <nav class="space-y-0.5 max-h-[calc(100vh-8rem)] overflow-y-auto">
                             {#each sectionNav as section}
                                 <button
-                                    class="block w-full text-left text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-muted/50 transition-colors truncate"
+                                    class="block w-full text-left text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-muted/50 transition-colors duration-150 cursor-pointer truncate"
                                     onclick={() => handleSidebarClick(section.chunkIndex)}
                                     title={section.heading}
                                 >
@@ -483,7 +484,7 @@
                                     />
                                     {#if docSearchQuery}
                                         <button
-                                            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors duration-150 cursor-pointer"
                                             onclick={clearDocSearch}
                                         >
                                             <X class="h-3.5 w-3.5" />
@@ -532,7 +533,7 @@
                                     {#if isEnriched && role === 'front_matter'}
                                         {#if i === 0 || getChunkRole(allChunks[i - 1]) !== 'front_matter'}
                                             <button
-                                                class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mb-2 mt-4"
+                                                class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mb-2 mt-4 transition-colors duration-150 cursor-pointer"
                                                 onclick={() => (showFrontMatter = !showFrontMatter)}
                                             >
                                                 {#if showFrontMatter}
@@ -560,7 +561,7 @@
                                     {:else if isEnriched && role === 'toc'}
                                         {#if i === 0 || getChunkRole(allChunks[i - 1]) !== 'toc'}
                                             <button
-                                                class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mb-2 mt-4"
+                                                class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mb-2 mt-4 transition-colors duration-150 cursor-pointer"
                                                 onclick={() => (showToc = !showToc)}
                                             >
                                                 {#if showToc}

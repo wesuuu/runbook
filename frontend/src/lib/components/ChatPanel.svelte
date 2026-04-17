@@ -87,8 +87,8 @@
 {#if panelState === 'collapsed'}
     <button
         class="chat-fab rounded-full bg-primary text-primary-foreground shadow-lg
-            hover:shadow-xl hover:bg-primary/90 transition-all flex items-center justify-center
-            {isOnChatPage ? 'opacity-40 cursor-not-allowed' : ''}"
+            hover:shadow-xl hover:bg-primary/90 transition-all duration-150 flex items-center justify-center
+            {isOnChatPage ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}"
         style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:40;width:3.5rem;height:3.5rem;"
         onclick={() => !isOnChatPage && openPanel()}
         disabled={isOnChatPage}
@@ -124,7 +124,7 @@
             <div class="flex items-center gap-0.5">
                 {#if activeSession}
                     <button
-                        class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 cursor-pointer"
                         onclick={clearConversation}
                         aria-label="Clear conversation"
                         title="Clear conversation"
@@ -148,7 +148,7 @@
                 </a>
                 <!-- Close -->
                 <button
-                    class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 cursor-pointer"
                     onclick={closePanel}
                     aria-label="Close chat panel"
                 >
@@ -272,7 +272,7 @@
                 ></textarea>
                 <button
                     class="flex-shrink-0 w-9 h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90
-                        transition-colors flex items-center justify-center disabled:opacity-50"
+                        transition-colors duration-150 cursor-pointer flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                     onclick={() => sendMessage()}
                     disabled={!messageInput.trim() || sending}
                     aria-label="Send message"

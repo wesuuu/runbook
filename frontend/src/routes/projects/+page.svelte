@@ -12,6 +12,8 @@
         CardDescription,
     } from '$lib/components/ui/card';
     import { Plus } from 'lucide-svelte';
+    import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
+    import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import { ProjectListSchema, type Project } from '$lib/schemas';
 
     let projects = $state<Project[]>([]);
@@ -49,13 +51,9 @@
     </div>
 
     {#if loading}
-        <div class="text-center py-10 text-muted-foreground">
-            Loading projects...
-        </div>
+        <LoadingSpinner message="Loading projects..." />
     {:else if error}
-        <div class="bg-destructive/10 text-destructive p-4 rounded-md">
-            Error: {error}
-        </div>
+        <ErrorAlert message="Error: {error}" />
     {:else}
         <Card>
             <CardHeader>

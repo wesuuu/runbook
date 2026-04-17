@@ -3,7 +3,7 @@
 
 /* Safelist button variant classes that tailwind-variants constructs at runtime.
    Tailwind v4's scanner doesn't detect classes inside tv() config objects. */
-@source inline("bg-destructive bg-destructive/90 bg-destructive/60 bg-primary bg-primary/90 bg-secondary bg-secondary/80 bg-accent bg-accent/50 bg-background bg-input/30 bg-input/50 min-w-[420px] hover:bg-teal-600 hover:text-white hover:border-teal-600");
+@source inline("bg-destructive bg-destructive/90 bg-destructive/60 bg-primary bg-primary/90 bg-secondary bg-secondary/80 bg-accent bg-accent/50 bg-accent/90 bg-background bg-input/30 bg-input/50 min-w-[420px] hover:bg-teal-600 hover:text-white hover:border-teal-600 hover:bg-destructive/90 hover:bg-accent/90 hover:bg-emerald-700 bg-emerald-600");
 
 @theme {
     /* ── Deep Slate + Warm Copper ── */

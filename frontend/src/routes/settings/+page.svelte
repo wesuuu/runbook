@@ -599,37 +599,37 @@
     <!-- Tabs -->
     <div class="flex border-b border-border overflow-x-auto">
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'organization' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'organization' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = 'organization')}
         >
             Organization
         </button>
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'teams' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'teams' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = 'teams')}
         >
             Teams
         </button>
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'profile' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'profile' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = 'profile')}
         >
             Profile
         </button>
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'notifications' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'notifications' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => { activeTab = 'notifications'; if (channels.length === 0 && !channelsLoading) loadChannels(); }}
         >
             Notifications
         </button>
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'ai' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'ai' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = 'ai')}
         >
             AI Models
         </button>
         <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap min-h-11 {activeTab === 'templates' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'templates' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = 'templates')}
         >
             Templates
@@ -650,7 +650,7 @@
                             <div class="flex gap-1">
                                 {#each [{ value: 'all', label: 'All' }, { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }] as filter}
                                     <button
-                                        class="px-3 py-1 text-xs font-medium rounded-full transition-colors {memberStatusFilter === filter.value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground'}"
+                                        class="px-3 py-1 text-xs font-medium rounded-full transition-colors duration-150 cursor-pointer {memberStatusFilter === filter.value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80'}"
                                         onclick={() => { memberStatusFilter = filter.value as any; }}
                                     >
                                         {filter.label}
@@ -837,7 +837,7 @@
                     <div class="divide-y divide-border rounded-md border">
                         {#each teams as team}
                             <div>
-                                <div class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/50" onclick={() => toggleTeam(team.id)}>
+                                <div class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors duration-150" onclick={() => toggleTeam(team.id)}>
                                     <div class="flex items-center gap-2">
                                         <span class="text-xs text-muted-foreground">{expandedTeamId === team.id ? '▼' : '▶'}</span>
                                         <span class="text-sm font-medium">{team.name}</span>
@@ -996,7 +996,7 @@
                     <div class="flex gap-2">
                         {#each [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']] as [value, label]}
                             <button
-                                class="px-4 py-2 rounded-md text-sm font-medium border transition-colors {fontSize === value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
+                                class="px-4 py-2 rounded-md text-sm font-medium border transition-colors duration-150 cursor-pointer {fontSize === value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
                                 onclick={() => { fontSize = value; savePreferences(); }}
                             >
                                 {label}
@@ -1011,7 +1011,7 @@
                     <div class="flex gap-2">
                         {#each [['comfortable', 'Comfortable'], ['compact', 'Compact']] as [value, label]}
                             <button
-                                class="px-4 py-2 rounded-md text-sm font-medium border transition-colors {density === value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
+                                class="px-4 py-2 rounded-md text-sm font-medium border transition-colors duration-150 cursor-pointer {density === value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
                                 onclick={() => { density = value; savePreferences(); }}
                             >
                                 {label}
@@ -1055,13 +1055,13 @@
                         {#each channels as channel}
                             <div class="py-3">
                                 <div class="flex items-center justify-between">
-                                    <button class="flex items-center gap-3 text-left flex-1 min-w-0" onclick={() => toggleExpandChannel(channel.id)}>
+                                    <Button variant="ghost" class="flex items-center gap-3 text-left flex-1 min-w-0 h-auto py-0 px-0 justify-start" onclick={() => toggleExpandChannel(channel.id)}>
                                         <span class="text-xs text-muted-foreground">{expandedChannelId === channel.id ? '▼' : '▶'}</span>
                                         <div class="min-w-0">
                                             <p class="text-sm font-medium truncate">{channel.name}</p>
                                             <p class="text-xs text-muted-foreground">{getChannelTypeLabel(channel.channel_type)}</p>
                                         </div>
-                                    </button>
+                                    </Button>
                                     <div class="flex items-center gap-2 shrink-0">
                                         {#if channelTestResults.has(channel.id)}
                                             {@const result = channelTestResults.get(channel.id)}
@@ -1127,7 +1127,7 @@
                         <div class="flex flex-wrap gap-2">
                             {#each CHANNEL_TYPES as ct}
                                 <button
-                                    class="px-3 py-1.5 rounded-md text-sm font-medium border transition-colors {newChannelType === ct.value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
+                                    class="px-3 py-1.5 rounded-md text-sm font-medium border transition-colors duration-150 cursor-pointer {newChannelType === ct.value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
                                     onclick={() => { newChannelType = ct.value; newChannelConfig = {}; }}
                                 >
                                     {ct.label}

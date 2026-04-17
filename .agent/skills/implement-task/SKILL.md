@@ -23,6 +23,8 @@ Pick up a ClickUp task, design the approach, implement with TDD, and close it ou
 
 `clickup_get_task` with the provided ID. Read description, acceptance criteria, priority, linked tasks. If no ID given, ask. Immediately `clickup_update_task` to set status `in progress`.
 
+**Rename the session** with `/rename` to `<TASK-ID> <task title>` so it's easy to find and resume later. Example: `/rename TD-0067 Frontend component reuse audit`.
+
 ### 2. Brainstorm and plan
 
 Invoke `superpowers:brainstorming` with the task description and codebase context. After the approach converges, invoke `superpowers:writing-plans` for a concrete plan. **Wait for user approval before proceeding.**
@@ -33,16 +35,19 @@ Follow the approved plan with TDD (Red-Green-Refactor). Run the full test suite 
 
 ### 4. Browser verification (if frontend changed)
 
-Open the app in Chrome via `mcp__claude-in-chrome__*` tools:
-- Test happy path and edge cases on affected pages
-- For bugs: confirm the original scenario is fixed
-- Check for visual regressions
+Launch the **`qa-verify`** agent to handle browser verification. Pass it:
+- How to login
+- What feature was implemented and which pages are affected
+- The task description / acceptance criteria
+- Any edge cases worth testing
 
-Dev DB credentials: `localhost:5432`, user `postgres`, password `postgres`, database `batchrite`. Any password works in dev. Clean up test data via `psql` after verification.
+The qa-verify agent will test functional correctness AND audit UI/UX quality. It specifically catches layout issues like oversized elements (inputs/buttons stretching too wide), overflow, and spacing inconsistencies. **It must fix any FAIL or POLISH issues it finds before returning.**
+
+Dev DB credentials: `localhost:5432`, user `postgres`, password `postgres`, database `batchrite`. Any password works in dev.
 
 ### 5. User verification
 
-Present summary: what was done, acceptance criteria met, tests added. **Ask user to verify.** Iterate until they confirm.
+Present summary: what was done, acceptance criteria met, tests added. **Ask user to verify.** Iterate until they confirm. If the change(s) is larger than expected, consider invoking `superpowers:writing-plans` again to update the plan and get user approval on the new scope before proceeding.
 
 ### 6. Close the task
 

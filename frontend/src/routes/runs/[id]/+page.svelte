@@ -5,6 +5,9 @@
     import { goto } from '$app/navigation';
     import RoleWizard from "$lib/components/RoleWizard.svelte";
     import GoOfflineDialog from "$lib/components/GoOfflineDialog.svelte";
+    import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
+    import ErrorAlert from '$lib/components/ui/error-alert.svelte';
+    import * as Table from '$lib/components/ui/table';
     import RunDocuments from "$lib/components/run/RunDocuments.svelte";
     import RoleAssignmentPanel from "$lib/components/run/RoleAssignmentPanel.svelte";
     import RunResultsSummary from "$lib/components/run/RunResultsSummary.svelte";
@@ -313,12 +316,7 @@
 
 <div class="min-h-screen bg-background">
     {#if loading}
-        <div class="flex items-center justify-center h-screen text-muted-foreground">
-            <div class="text-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-border mx-auto mb-3"></div>
-                Loading run...
-            </div>
-        </div>
+        <LoadingSpinner message="Loading run..." size="lg" fullPage />
     {:else if error && !run}
         <div class="flex items-center justify-center h-screen">
             <div class="text-center">
@@ -342,7 +340,7 @@
                         : tab[0].toUpperCase() + tab.slice(1)}
                     <button
                         onclick={() => activeTab = tab}
-                        class="py-3 text-sm font-medium border-b-2 transition-colors
+                        class="py-3 text-sm font-medium border-b-2 transition-colors duration-150 cursor-pointer
                             {activeTab === tab
                                 ? 'border-primary text-primary'
                                 : 'border-transparent text-muted-foreground hover:text-foreground'}"
@@ -394,9 +392,7 @@
                 </div>
 
                 {#if error}
-                    <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                        {error}
-                    </div>
+                    <ErrorAlert message={error} class="mb-6" />
                 {/if}
 
                 <!-- Protocol Info -->
@@ -442,35 +438,35 @@
                         </p>
 
                         <div class="overflow-x-auto">
-                            <table class="w-full text-sm">
-                                <thead>
-                                    <tr class="border-b border-border">
-                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80 w-8">#</th>
-                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80">Step</th>
-                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80">Category</th>
-                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80">Duration</th>
-                                        <th class="text-left py-3 px-4 font-semibold text-foreground/80">Parameters</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
+                            <Table.Root>
+                                <Table.Header>
+                                    <Table.Row>
+                                        <Table.Head class="w-8">#</Table.Head>
+                                        <Table.Head>Step</Table.Head>
+                                        <Table.Head>Category</Table.Head>
+                                        <Table.Head>Duration</Table.Head>
+                                        <Table.Head>Parameters</Table.Head>
+                                    </Table.Row>
+                                </Table.Header>
+                                <Table.Body>
                                     {#each getAllUnitOpSteps() as step, i}
-                                        <tr class="border-b border-border/60 hover:bg-background">
-                                            <td class="py-3 px-4 text-muted-foreground font-mono">{i + 1}</td>
-                                            <td class="py-3 px-4">
+                                        <Table.Row>
+                                            <Table.Cell class="text-muted-foreground font-mono">{i + 1}</Table.Cell>
+                                            <Table.Cell>
                                                 <p class="font-medium text-foreground">{step.name}</p>
                                                 {#if step.description}
                                                     <p class="text-xs text-muted-foreground mt-1">{step.description}</p>
                                                 {/if}
-                                            </td>
-                                            <td class="py-3 px-4">
+                                            </Table.Cell>
+                                            <Table.Cell>
                                                 <span class="inline-block text-xs font-semibold px-2 py-1 bg-muted text-foreground/80 rounded">
                                                     {step.category || '—'}
                                                 </span>
-                                            </td>
-                                            <td class="py-3 px-4 text-foreground/80">
+                                            </Table.Cell>
+                                            <Table.Cell class="text-foreground/80">
                                                 {step.duration_min ? `${step.duration_min} min` : '—'}
-                                            </td>
-                                            <td class="py-3 px-4">
+                                            </Table.Cell>
+                                            <Table.Cell>
                                                 {#if step.params && Object.keys(step.params).length > 0}
                                                     <div class="space-y-1">
                                                         {#each Object.entries(step.params) as [key, value]}
@@ -483,11 +479,11 @@
                                                 {:else}
                                                     <span class="text-muted-foreground/60">—</span>
                                                 {/if}
-                                            </td>
-                                        </tr>
+                                            </Table.Cell>
+                                        </Table.Row>
                                     {/each}
-                                </tbody>
-                            </table>
+                                </Table.Body>
+                            </Table.Root>
                         </div>
                     </div>
                 {/if}
@@ -518,7 +514,7 @@
                     <button
                         onclick={() => (showStartConfirm = true)}
                         disabled={!allRolesAssigned()}
-                        class="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
+                        class="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors duration-150 cursor-pointer disabled:bg-muted disabled:cursor-not-allowed"
                     >
                         Start Run
                     </button>
@@ -555,7 +551,7 @@
                             <div class="flex items-center gap-2">
                                 <button
                                     onclick={() => (showGoOffline = true)}
-                                    class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium border border-amber-300 bg-amber-50 text-amber-700 rounded-full hover:bg-amber-100 transition-colors"
+                                    class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium border border-amber-300 bg-amber-50 text-amber-700 rounded-full hover:bg-amber-100 transition-colors duration-150 cursor-pointer"
                                     title="Enter offline field mode for this run"
                                 >
                                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -666,7 +662,7 @@
                                 <button
                                     onclick={analyzeAllImages}
                                     disabled={analyzingAll}
-                                    class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {analyzingAll ? 'Analyzing...' : 'Analyze All'}
                                 </button>
@@ -807,7 +803,7 @@
                         </a>
                         <button
                             onclick={enterEditMode}
-                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors"
+                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors duration-150 cursor-pointer"
                         >
                             Edit Run
                         </button>
@@ -920,7 +916,7 @@
                         </a>
                         <button
                             onclick={enterEditMode}
-                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors"
+                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors duration-150 cursor-pointer"
                         >
                             Edit Again
                         </button>

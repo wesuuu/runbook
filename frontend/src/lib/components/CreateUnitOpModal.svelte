@@ -190,13 +190,13 @@
 
         <Dialog.Footer>
             <button
-                class="px-4 py-2 bg-muted text-foreground/80 rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors"
+                class="px-4 py-2 bg-muted text-foreground/80 rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors duration-150 cursor-pointer"
                 onclick={onClose}
             >
                 Cancel
             </button>
             <button
-                class="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                class="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 onclick={handleCreate}
                 disabled={!name.trim() || !category}
             >
@@ -358,6 +358,7 @@
         border-radius: 4px;
         font-size: 12px;
         flex-shrink: 0;
+        transition: all 0.15s;
     }
 
     .remove-param-btn:hover {

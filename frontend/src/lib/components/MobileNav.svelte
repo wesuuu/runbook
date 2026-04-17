@@ -24,7 +24,7 @@
 {#if open}
     <!-- Backdrop -->
     <div
-        class="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+        class="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm cursor-pointer"
         transition:fade={{ duration: 200 }}
         onclick={close}
         onkeydown={(e) => e.key === 'Escape' && close()}
@@ -46,7 +46,7 @@
                 <span class="text-[15px] font-semibold text-foreground tracking-tight">Runbook</span>
             </a>
             <button
-                class="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                class="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 cursor-pointer"
                 onclick={close}
                 aria-label="Close menu"
             >

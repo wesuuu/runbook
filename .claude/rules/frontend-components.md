@@ -89,3 +89,15 @@ function setTab(tab: TabName) {
 - CSS custom properties for theming (`--cat-color`, `--lane-color`)
 - Dark mode via CSS classes
 - `cn()` for conditional/merged classnames
+
+## Interactive Elements
+
+- **Pointer cursor**: All clickable elements (links, buttons, cards, rows, avatars, icons acting as actions) must use `cursor-pointer`.
+- **Hover feedback**: Clickable elements need visible hover states — darken with `hover:brightness-90` or `hover:bg-muted`, or scale up slightly with `hover:scale-105` (appropriate for avatars, icons, cards).
+- **Transitions on hover**: Always pair hover effects with a smooth transition: `transition-all duration-150` or similar.
+
+## Page & Element Transitions
+
+- **Page navigation**: Use Svelte transitions on page-level content so route changes feel smooth, not jarring. Apply `fade` or `fly` from `svelte/transition` on the top-level wrapper of each page.
+- **Element creation/destruction**: When elements enter or leave the DOM (lists, cards, modals, toasts), apply Svelte transitions (`fade`, `fly`, `slide`, `scale`). Use `animate:flip` for reordering lists.
+- **Loading states**: Transition between loading skeletons and loaded content with `fade` to avoid hard pops.

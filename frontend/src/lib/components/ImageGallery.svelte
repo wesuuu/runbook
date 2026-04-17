@@ -51,7 +51,7 @@
                     <button
                         onclick={() => onImageClick?.(image)}
                         title={isConfirmed ? 'Values confirmed — click to review' : 'Click to view'}
-                        class="relative group w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 {isConfirmed ? 'border-emerald-400' : badge.label === 'Analyzed' ? 'border-blue-300' : 'border-slate-200 hover:border-teal-400'}"
+                        class="relative group w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer {isConfirmed ? 'border-emerald-400' : badge.label === 'Analyzed' ? 'border-blue-300' : 'border-slate-200 hover:border-teal-400'}"
                     >
                         <img
                             src="{API_BASE}/uploads/images/{image.file_path}"
@@ -73,7 +73,7 @@
                     {#if needsAnalysis}
                         <button
                             onclick={() => onAnalyzeClick?.(image)}
-                            class="text-[10px] font-medium text-teal-600 hover:text-teal-800 underline"
+                            class="text-[10px] font-medium text-teal-600 hover:text-teal-800 underline transition-colors duration-150 cursor-pointer"
                         >
                             Analyze
                         </button>

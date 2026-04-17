@@ -121,7 +121,7 @@
 <DropdownMenu.Root onOpenChange={(open) => { if (open) fetchNotifications(); }}>
     <DropdownMenu.Trigger>
         <button
-            class="relative w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            class="relative w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-150 cursor-pointer"
             aria-label="Notifications"
         >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -143,7 +143,7 @@
             <span class="text-sm font-semibold">Notifications</span>
             {#if unreadCount > 0}
                 <button
-                    class="text-xs text-primary hover:underline"
+                    class="text-xs text-primary hover:underline cursor-pointer transition-colors duration-150"
                     onclick={markAllRead}
                 >
                     Mark all read
@@ -163,7 +163,7 @@
             {:else}
                 {#each notifications as notif (notif.id)}
                     <button
-                        class="w-full text-left px-3 py-2.5 hover:bg-accent/50 transition-colors border-b border-border/30 last:border-b-0 {notif.read_at ? 'opacity-60' : ''}"
+                        class="w-full text-left px-3 py-2.5 hover:bg-accent/50 transition-colors duration-150 cursor-pointer border-b border-border/30 last:border-b-0 {notif.read_at ? 'opacity-60' : ''}"
                         onclick={() => { if (!notif.read_at) markRead(notif.id); }}
                     >
                         <div class="flex items-start gap-2">

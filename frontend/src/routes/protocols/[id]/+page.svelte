@@ -62,6 +62,7 @@
     import CreateUnitOpModal from "$lib/components/CreateUnitOpModal.svelte";
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
     import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
+    import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
 
     // --- Embedded Mode Props ---
     // When used inside ProtocolImportModal, these props are set.
@@ -123,6 +124,29 @@
     // Track unsaved changes
     let hasUnsavedChanges = $state(false);
     let lastSavedState = $state<string>("");
+
+    // Confirm dialog state
+    let confirmOpen = $state(false);
+    let confirmTitle = $state('');
+    let confirmMessage = $state('');
+    let confirmLabel = $state('Confirm');
+    let confirmVariant = $state<'primary' | 'danger' | 'warning'>('danger');
+    let confirmAction = $state<() => void>(() => {});
+
+    function showConfirm(opts: {
+        title: string;
+        message: string;
+        label?: string;
+        variant?: 'primary' | 'danger' | 'warning';
+        onConfirm: () => void;
+    }) {
+        confirmTitle = opts.title;
+        confirmMessage = opts.message;
+        confirmLabel = opts.label ?? 'Confirm';
+        confirmVariant = opts.variant ?? 'danger';
+        confirmAction = opts.onConfirm;
+        confirmOpen = true;
+    }
 
     // Undo/redo
     let undoRedoState = $state(createUndoRedoState());
@@ -201,12 +225,19 @@
             if (!node) return;
             const label = (node.data.label as string) || "this item";
             const kind = node.type === "swimLane" ? "role lane" : node.type === "processStart" ? "process start" : "unit operation";
-            if (!confirm(`Delete ${kind} "${label}"? This cannot be undone.`)) return;
-            pushUndoSnapshot();
-            const result = removeNode(nodes, edges, nodeId);
-            nodes = result.nodes;
-            edges = result.edges;
-            if (selectedNodeId === nodeId) selectedNodeId = null;
+            showConfirm({
+                title: `Delete ${kind}`,
+                message: `Delete ${kind} "${label}"? This cannot be undone.`,
+                label: 'Delete',
+                variant: 'danger',
+                onConfirm: () => {
+                    pushUndoSnapshot();
+                    const result = removeNode(nodes, edges, nodeId);
+                    nodes = result.nodes;
+                    edges = result.edges;
+                    if (selectedNodeId === nodeId) selectedNodeId = null;
+                },
+            });
         },
     });
 
@@ -450,8 +481,17 @@
 
     async function revertToVersion(versionNum: number) {
         if (!protocol) return;
-        if (!confirm(`Revert to version ${versionNum}? This creates a new version with the old graph.`)) return;
+        showConfirm({
+            title: 'Revert version',
+            message: `Revert to version ${versionNum}? This creates a new version with the old graph.`,
+            label: 'Revert',
+            variant: 'warning',
+            onConfirm: () => doRevertToVersion(versionNum),
+        });
+    }
 
+    async function doRevertToVersion(versionNum: number) {
+        if (!protocol) return;
         try {
             const updated: any = await api.post(
                 `/science/protocols/${protocol.id}/revert/${versionNum}`,
@@ -546,9 +586,23 @@
     async function submitForApproval() {
         if (!protocol) return;
         if (hasUnsavedChanges) {
-            if (!confirm("You have unsaved changes. Save first before submitting?")) return;
-            await saveDraft();
+            showConfirm({
+                title: 'Unsaved changes',
+                message: 'You have unsaved changes. Save first before submitting?',
+                label: 'Save & Submit',
+                variant: 'warning',
+                onConfirm: async () => {
+                    await saveDraft();
+                    await doSubmitForApproval();
+                },
+            });
+            return;
         }
+        await doSubmitForApproval();
+    }
+
+    async function doSubmitForApproval() {
+        if (!protocol) return;
         try {
             const updated: any = await api.post(
                 `/science/protocols/${protocol.id}/submit-for-approval`,
@@ -573,18 +627,24 @@
 
     async function deleteOrArchiveProtocol() {
         if (!protocol) return;
-        if (!confirm('Are you sure you want to delete/archive this protocol?')) return;
-        try {
-            await api.delete(`/science/protocols/${protocol.id}`);
-            // Navigate back to the project page
-            if (protocol.project_id) {
-                window.location.href = `/projects/${protocol.project_id}`;
-            } else {
-                window.location.href = '/';
-            }
-        } catch (e: unknown) {
-            toast.error(e instanceof Error ? e.message : 'Failed to delete/archive');
-        }
+        showConfirm({
+            title: 'Delete protocol',
+            message: 'Are you sure you want to delete/archive this protocol?',
+            label: 'Delete',
+            variant: 'danger',
+            onConfirm: async () => {
+                try {
+                    await api.delete(`/science/protocols/${protocol!.id}`);
+                    if (protocol!.project_id) {
+                        window.location.href = `/projects/${protocol!.project_id}`;
+                    } else {
+                        window.location.href = '/';
+                    }
+                } catch (e: unknown) {
+                    toast.error(e instanceof Error ? e.message : 'Failed to delete/archive');
+                }
+            },
+        });
     }
 
     // --- Drag & Drop ---
@@ -1059,4 +1119,14 @@
         />
     {/if}
 </div>
+
+<ConfirmDialog
+    bind:open={confirmOpen}
+    title={confirmTitle}
+    message={confirmMessage}
+    confirmLabel={confirmLabel}
+    {confirmVariant}
+    onConfirm={() => { confirmAction(); confirmOpen = false; }}
+    onCancel={() => (confirmOpen = false)}
+/>
 

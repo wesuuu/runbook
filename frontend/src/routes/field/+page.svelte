@@ -23,6 +23,7 @@
     import FieldModeRoleWizard from '$lib/components/FieldModeRoleWizard.svelte';
     import FieldModeLockScreen from '$lib/components/FieldModeLockScreen.svelte';
     import ExpiryWarningBanner from '$lib/components/ExpiryWarningBanner.svelte';
+    import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
 
     let ready = $state(false);
     let showEndConfirm = $state(false);
@@ -212,27 +213,14 @@
 </div>
 
 <!-- End Field Mode Confirmation (unsynced while offline) -->
-{#if showEndConfirm}
-    <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-        <div class="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-[95%]">
-            <h3 class="text-lg font-bold text-slate-900 mb-2">Unsynced Data</h3>
-            <p class="text-sm text-slate-600 mb-4">
-                You have <strong>{queueCount}</strong> unsynced item{queueCount !== 1 ? 's' : ''}. Connect to the internet first to avoid losing data.
-            </p>
-            <div class="flex gap-3">
-                <button
-                    onclick={() => (showEndConfirm = false)}
-                    class="flex-1 py-2.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                    Stay
-                </button>
-                <button
-                    onclick={handleForceEnd}
-                    class="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700"
-                >
-                    End & Lose Data
-                </button>
-            </div>
-        </div>
-    </div>
-{/if}
+<ConfirmDialog
+    bind:open={showEndConfirm}
+    title="Unsynced Data"
+    message="You have {queueCount} unsynced item{queueCount !== 1 ? 's' : ''}. Connect to the internet first to avoid losing data."
+    confirmLabel="End & Lose Data"
+    cancelLabel="Stay"
+    confirmVariant="danger"
+    loading={endingSession}
+    onConfirm={handleForceEnd}
+    onCancel={() => (showEndConfirm = false)}
+/>

@@ -1,5 +1,6 @@
 backend/uploads/images/*
 backend/uploads/*
+.claude
 
 # Benchmark fixture documents (generated, not committed)
 backend/tests/benchmarks/input-to-protocol/*/document.*
