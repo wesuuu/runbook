@@ -39,7 +39,7 @@
 		{#if showCloseButton}
 			<DialogPrimitive.Close
 				style="position: absolute; right: 1rem; top: 1rem"
-				class="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground"
+				class="rounded-sm p-1 opacity-70 text-muted-foreground ring-offset-background transition-all hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
 			>
 				<X class="h-4 w-4" />
 				<span style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border-width: 0">Close</span>
