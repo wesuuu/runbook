@@ -1,5 +1,9 @@
 backend/uploads/images/*
 backend/uploads/*
+
+# Benchmark fixture documents (generated, not committed)
+backend/tests/benchmarks/input-to-protocol/*/document.*
+
 # Python
 __pycache__/
 *.py[cod]
