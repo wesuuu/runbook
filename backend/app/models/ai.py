@@ -40,8 +40,8 @@ DEFAULT_CONFIGS = {
         "model_name": "qwen3.5:27b",
     },
     "protocol_generation": {
-        "provider": "ollama",
-        "model_name": "qwen3:latest",
+        "provider": "openrouter",
+        "model_name": "anthropic/claude-sonnet-4",
     },
     "template_convert": {
         "provider": "ollama",
