@@ -7,6 +7,7 @@
     import { syncNow } from '$lib/sync-manager';
     import CompletionChart from '$lib/components/CompletionChart.svelte';
     import { Button } from '$lib/components/ui/button';
+    import { EmptyState } from '$lib/components/ui/empty-state';
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import { toast } from '$lib/toast';
     import { timeAgo } from '$lib/utils';
@@ -485,21 +486,20 @@
 
                 <!-- Empty state -->
                 {#if dashboard.my_work.needs_action.length === 0 && dashboard.my_work.active_runs.length === 0 && dashboard.my_work.recently_completed.length === 0 && dashboard.my_work.planned_runs.length === 0}
-                    <div class="card-warm rounded-xl p-14 text-center" style="animation: fadeSlideUp 0.4s ease-out 0.2s both">
-                        <div class="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-8 h-8 text-muted-foreground/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                                <path d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-                            </svg>
-                        </div>
-                        <p class="font-semibold text-foreground mb-1">No runs yet</p>
-                        <p class="text-sm text-muted-foreground mb-5">Get started by creating a project and running a protocol.</p>
-                        <button
-                            class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors duration-150 cursor-pointer"
-                            onclick={() => goto('/projects')}
+                    <div class="card-warm rounded-xl" style="animation: fadeSlideUp 0.4s ease-out 0.2s both">
+                        <EmptyState
+                            title="No runs yet"
+                            description="Get started by creating a project and running a protocol."
+                            actionLabel="View Projects"
+                            onAction={() => goto('/projects')}
+                            class="py-14"
                         >
-                            View Projects
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                        </button>
+                            {#snippet icon()}
+                                <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+                                </svg>
+                            {/snippet}
+                        </EmptyState>
                     </div>
                 {/if}
             </div>
@@ -509,9 +509,7 @@
                 <h2 class="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">Recent Activity</h2>
                 <div class="card-warm rounded-xl overflow-hidden">
                     {#if activityItems.length === 0}
-                        <div class="p-10 text-center">
-                            <p class="text-sm text-muted-foreground">No recent activity.</p>
-                        </div>
+                        <EmptyState title="No recent activity" />
                     {:else}
                         <div class="divide-y divide-border/50">
                             {#each activityItems as item}
