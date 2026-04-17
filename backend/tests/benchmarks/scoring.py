@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from difflib import SequenceMatcher
+
+from tests.benchmarks.matching import align_by_name, f1, fuzzy_ratio
 
 
 @dataclass
@@ -81,29 +82,10 @@ def _match_steps(
 ) -> list[tuple[dict, dict | None]]:
     """Match expected steps to actual steps by fuzzy name similarity.
 
-    Returns list of (expected_step, matched_actual_step_or_None).
+    Thin wrapper over `matching.align_by_name` preserving the F-0058 call
+    signature — expected/actual dicts keyed by "name".
     """
-    remaining_actual = list(actual_steps)
-    matches: list[tuple[dict, dict | None]] = []
-
-    for exp in expected_steps:
-        best_match = None
-        best_ratio = 0.0
-        for act in remaining_actual:
-            act_name = act.get("name", "")
-            ratio = SequenceMatcher(
-                None, exp["name"].lower(), act_name.lower()
-            ).ratio()
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_match = act
-        if best_match and best_ratio >= 0.7:
-            matches.append((exp, best_match))
-            remaining_actual.remove(best_match)
-        else:
-            matches.append((exp, None))
-
-    return matches
+    return align_by_name(expected_steps, actual_steps, "name", threshold=0.7)
 
 
 def score_proposal(
@@ -146,14 +128,10 @@ def score_proposal(
         if s.get("name", "?") not in matched_actual_names
     ]
 
-    recall = len(matched_expected) / len(expected_steps) if expected_steps else 1.0
-    precision = (
-        len(matched_expected) / len(actual_steps) if actual_steps else (1.0 if not expected_steps else 0.0)
-    )
-    scores.step_detection = (
-        2 * precision * recall / (precision + recall)
-        if (precision + recall) > 0
-        else 0.0
+    scores.step_detection = f1(
+        n_matched=len(matched_expected),
+        n_expected=len(expected_steps),
+        n_actual=len(actual_steps),
     )
 
     # -- 2. Catalog Matching --

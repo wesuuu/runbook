@@ -101,6 +101,34 @@ export const BatchRecordImportResponseSchema = z.object({
     created_at: z.string(),
 }).passthrough();
 
+// ── Finalize request ────────────────────────────────────────────────
+
+export const FinalizedValueSchema = z.object({
+    schema_field_key: z.string(),
+    value: z.unknown(),
+    accepted: z.boolean(),
+    edited: z.boolean().default(false),
+    original_value: z.unknown().optional(),
+    original_confidence: z.number().default(0),
+}).passthrough();
+
+export const FinalizedStepMappingSchema = z.object({
+    protocol_step_id: z.string(),
+    values: z.array(FinalizedValueSchema).default([]),
+    notes: z.string().default(''),
+    na: z.boolean().default(false),
+    na_reason: z.string().default(''),
+    timestamps: z.array(ExtractedTimestampSchema).default([]),
+    signatures: z.array(ExtractedSignatureSchema).default([]),
+    deviations: z.array(ExtractedDeviationSchema).default([]),
+}).passthrough();
+
+export const BatchRecordFinalizeRequestSchema = z.object({
+    protocol_id: z.string().uuid(),
+    run_name: z.string().min(1).max(200),
+    step_mappings: z.array(FinalizedStepMappingSchema),
+}).passthrough();
+
 // ── Finalize response ───────────────────────────────────────────────
 
 export const BatchRecordFinalizeResponseSchema = z.object({
@@ -120,6 +148,12 @@ export type StepMapping = z.infer<typeof StepMappingSchema>;
 export type ParamMapping = z.infer<typeof ParamMappingSchema>;
 export type ProcessingProgress = z.infer<typeof ProcessingProgressSchema>;
 export type BatchRecordFinalizeResponse = z.infer<typeof BatchRecordFinalizeResponseSchema>;
+export type FinalizedValue = z.infer<typeof FinalizedValueSchema>;
+export type FinalizedStepMapping = z.infer<typeof FinalizedStepMappingSchema>;
+export type BatchRecordFinalizeRequest = z.infer<typeof BatchRecordFinalizeRequestSchema>;
+export type ExtractedTimestamp = z.infer<typeof ExtractedTimestampSchema>;
+export type ExtractedSignature = z.infer<typeof ExtractedSignatureSchema>;
+export type ExtractedDeviation = z.infer<typeof ExtractedDeviationSchema>;
 
 // ── Frontend-only types for review state ────────────────────────────
 

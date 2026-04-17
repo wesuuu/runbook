@@ -1,0 +1,56 @@
+{
+  "nodes": [
+    {
+      "id": "node-buffer-prep",
+      "type": "unitOp",
+      "position": {"x": 0, "y": 0},
+      "data": {
+        "label": "Buffer Preparation",
+        "paramSchema": {
+          "type": "object",
+          "properties": {
+            "ph_value": {"type": "number", "title": "pH Value"},
+            "conductivity_ms_cm": {"type": "number", "title": "Conductivity (mS/cm)"},
+            "volume_l": {"type": "number", "title": "Volume (L)"}
+          }
+        }
+      }
+    },
+    {
+      "id": "node-protein-a",
+      "type": "unitOp",
+      "position": {"x": 200, "y": 0},
+      "data": {
+        "label": "Protein A Chromatography",
+        "paramSchema": {
+          "type": "object",
+          "properties": {
+            "flow_rate_ml_min": {"type": "number", "title": "Flow Rate (mL/min)"},
+            "load_volume_l": {"type": "number", "title": "Load Volume (L)"},
+            "elution_ph": {"type": "number", "title": "Elution pH"}
+          }
+        }
+      }
+    },
+    {
+      "id": "node-sterile-filtration",
+      "type": "unitOp",
+      "position": {"x": 400, "y": 0},
+      "data": {
+        "label": "Sterile Filtration",
+        "paramSchema": {
+          "type": "object",
+          "properties": {
+            "filter_size_um": {"type": "number", "title": "Filter Size (μm)"},
+            "pressure_psi": {"type": "number", "title": "Pressure (PSI)"},
+            "volume_l": {"type": "number", "title": "Volume (L)"}
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    {"id": "e1", "source": "node-buffer-prep", "target": "node-protein-a"},
+    {"id": "e2", "source": "node-protein-a", "target": "node-sterile-filtration"}
+  ]
+}

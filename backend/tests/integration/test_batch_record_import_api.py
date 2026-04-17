@@ -834,6 +834,84 @@ async def test_finalize_rejects_already_finalized(
 
 
 @pytest.mark.asyncio
+async def test_finalize_preserves_timestamps_signatures_deviations(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    import_in_review: BatchRecordImport,
+    protocol: Protocol,
+):
+    """Finalize carries timestamps/signatures/deviations into Run.execution_data."""
+    resp = await client.post(
+        f"/science/batch-record-imports/{import_in_review.id}/finalize",
+        json={
+            "protocol_id": str(protocol.id),
+            "run_name": "Timestamped Run",
+            "step_mappings": [
+                {
+                    "protocol_step_id": "node-buf",
+                    "values": [
+                        {
+                            "schema_field_key": "ph_value",
+                            "value": 7.2,
+                            "accepted": True,
+                            "original_confidence": 0.95,
+                        },
+                    ],
+                    "notes": "ok",
+                    "na": False,
+                    "na_reason": "",
+                    "timestamps": [
+                        {
+                            "label": "Start Time",
+                            "value": "08:30",
+                            "confidence": 0.9,
+                        },
+                    ],
+                    "signatures": [
+                        {
+                            "initials_or_name": "JKL",
+                            "role": "Operator",
+                            "confidence": 0.88,
+                        },
+                    ],
+                    "deviations": [
+                        {
+                            "description": "Minor delay",
+                            "severity": "minor",
+                            "step_reference": "",
+                            "confidence": 0.7,
+                        },
+                    ],
+                },
+            ],
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+
+    run = await db_session.get(Run, uuid.UUID(resp.json()["run_id"]))
+    step_data = run.execution_data["node-buf"]
+
+    assert step_data["status"] == "completed"
+
+    assert len(step_data["timestamps"]) == 1
+    assert step_data["timestamps"][0]["label"] == "Start Time"
+    assert step_data["timestamps"][0]["value"] == "08:30"
+    assert step_data["timestamps"][0]["confidence"] == 0.9
+
+    assert len(step_data["signatures"]) == 1
+    assert step_data["signatures"][0]["initials_or_name"] == "JKL"
+    assert step_data["signatures"][0]["role"] == "Operator"
+    assert step_data["signatures"][0]["confidence"] == 0.88
+
+    assert len(step_data["deviations"]) == 1
+    assert step_data["deviations"][0]["description"] == "Minor delay"
+    assert step_data["deviations"][0]["severity"] == "minor"
+    assert step_data["deviations"][0]["confidence"] == 0.7
+
+
+@pytest.mark.asyncio
 async def test_finalize_rejects_extracting_status(
     client: AsyncClient,
     auth_headers: dict,

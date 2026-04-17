@@ -9,28 +9,42 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
+
+from app.models.iam import Organization, SubscriptionTier
 
 
 BENCHMARKS_DIR = Path(__file__).parent
 INPUT_TO_PROTOCOL_DIR = BENCHMARKS_DIR / "input-to-protocol"
 
 
-def discover_fixtures() -> list[Path]:
-    """Find all fixture directories that contain expected.json."""
-    if not INPUT_TO_PROTOCOL_DIR.exists():
+def discover_fixtures(
+    subdir: str = "input-to-protocol",
+    marker_file: str = "expected.json",
+) -> list[Path]:
+    """Find all fixture directories under `subdir` that contain `marker_file`.
+
+    Defaults preserve the F-0058 call site: `discover_fixtures()` with no
+    args returns input-to-protocol dirs with `expected.json`.
+    """
+    root = BENCHMARKS_DIR / subdir
+    if not root.exists():
         return []
-    dirs = sorted(
-        d
-        for d in INPUT_TO_PROTOCOL_DIR.iterdir()
-        if d.is_dir() and (d / "expected.json").exists()
+    return sorted(
+        d for d in root.iterdir()
+        if d.is_dir() and (d / marker_file).exists()
     )
-    return dirs
+
+
+def load_json(fixture_dir: Path, filename: str) -> dict:
+    """Load a JSON file from a fixture directory."""
+    with open(fixture_dir / filename) as f:
+        return json.load(f)
 
 
 def load_expected(fixture_dir: Path) -> dict:
-    """Load expected.json from a fixture directory."""
-    with open(fixture_dir / "expected.json") as f:
-        return json.load(f)
+    """Backwards-compatible wrapper: load expected.json (F-0058 convention)."""
+    return load_json(fixture_dir, "expected.json")
 
 
 def find_document(fixture_dir: Path) -> Path:
@@ -242,16 +256,34 @@ def unit_ops_catalog() -> list[MagicMock]:
     return build_seed_catalog()
 
 
-# -- Shared score accumulator + pytest summary hook --
+@pytest_asyncio.fixture
+async def pro_org(db_session) -> Organization:
+    """Pro-tier org for benchmarks so AI provider defaults resolve."""
+    org = Organization(
+        name="Benchmark Org",
+        subscription_tier=SubscriptionTier.PRO.value,
+    )
+    db_session.add(org)
+    await db_session.flush()
+    return org
+
+
+# -- Shared score accumulators + pytest summary hook --
 
 all_benchmark_scores: list = []
 """Shared list that test files append BenchmarkScores to.
 The pytest_terminal_summary hook prints aggregate results."""
 
+all_batch_record_run_scores: list = []
+"""Shared list that batch record run benchmarks append scores to."""
+
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Print aggregate benchmark summary at the end of the run."""
-    if all_benchmark_scores:
-        from tests.benchmarks.scoring import print_summary_table
+    """Print aggregate benchmark summary at end of run."""
+    from tests.benchmarks.scoring import print_summary_table
+    from tests.benchmarks.batch_record_scoring import print_run_summary
 
+    if all_benchmark_scores:
         print_summary_table(all_benchmark_scores)
+    if all_batch_record_run_scores:
+        print_run_summary(all_batch_record_run_scores)
