@@ -12,7 +12,9 @@ import json
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
+from app.models.iam import Organization, SubscriptionTier
 from tests.benchmarks.conftest import (
     all_benchmark_scores,
     build_seed_catalog,
@@ -35,8 +37,19 @@ _fixture_ids = [d.name for d in _fixture_dirs]
 class TestProtocolImportAccuracy:
     """Feed real documents through the LLM import pipeline and score results."""
 
+    @pytest_asyncio.fixture
+    async def pro_org(self, db_session) -> Organization:
+        """Create a Pro-tier org so AI provider defaults resolve."""
+        org = Organization(
+            name="Benchmark Org",
+            subscription_tier=SubscriptionTier.PRO.value,
+        )
+        db_session.add(org)
+        await db_session.flush()
+        return org
+
     @pytest.mark.parametrize("fixture_dir", _fixture_dirs, ids=_fixture_ids)
-    async def test_import_accuracy(self, fixture_dir: Path, db_session):
+    async def test_import_accuracy(self, fixture_dir: Path, db_session, pro_org):
         """Run a single fixture through extract -> parse -> build_proposal."""
         from app.services.protocol_importer import (
             build_proposal,
@@ -55,11 +68,13 @@ class TestProtocolImportAccuracy:
         catalog = build_seed_catalog()
 
         # Step 1: Extract text from document
-        text = await extract_text(doc_path, mime_type, db_session)
+        text = await extract_text(doc_path, mime_type, db_session, org_id=pro_org.id)
         assert text and text.strip(), f"No text extracted from {doc_path.name}"
 
         # Step 2: Parse with real LLM
-        parsed = await parse_protocol_text(text, catalog, db_session)
+        parsed = await parse_protocol_text(
+            text, catalog, db_session, org_id=pro_org.id
+        )
         assert parsed.steps, "LLM returned no steps"
 
         # Step 3: Build proposal (deterministic matching)
