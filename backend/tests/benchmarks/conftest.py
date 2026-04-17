@@ -256,7 +256,7 @@ def unit_ops_catalog() -> list[MagicMock]:
     return build_seed_catalog()
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture
 async def pro_org(db_session) -> Organization:
     """Pro-tier org for benchmarks so AI provider defaults resolve."""
     org = Organization(
