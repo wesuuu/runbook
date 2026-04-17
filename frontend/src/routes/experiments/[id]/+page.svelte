@@ -140,16 +140,16 @@
 </script>
 
 {#if loading}
-    <div transition:fade={{ duration: blockDuration() }}>
+    <div in:fade={{ duration: blockDuration() }}>
         <LoadingSpinner message="Loading experiment..." fullPage />
     </div>
 {:else if error}
-    <div transition:fade={{ duration: blockDuration() }}>
+    <div in:fade={{ duration: blockDuration() }}>
         <ErrorAlert message="Error: {error}" class="max-w-xl mx-auto mt-8" />
     </div>
 {:else if experiment}
     <div
-        transition:fade={{ duration: blockDuration() }}
+        in:fade={{ duration: blockDuration() }}
         class="min-h-[calc(100vh-57px)] w-full mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
     >
         <!-- Header -->

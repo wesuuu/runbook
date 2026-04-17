@@ -1019,7 +1019,7 @@
         {/if}
 
         {#if loading}
-            <div transition:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
+            <div in:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
                 <div class="w-7 h-7 border-3 border-slate-200 border-t-[hsl(173,58%,39%)] rounded-full animate-spin"></div>
                 <p>Loading protocol...</p>
             </div>

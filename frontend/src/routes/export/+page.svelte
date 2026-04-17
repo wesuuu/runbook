@@ -267,7 +267,7 @@
                 onclick={copyToClipboard}
             >
                 {#if copyFeedback}
-                    <span transition:fade={{ duration: blockDuration() }} class="flex items-center gap-2">
+                    <span in:fade={{ duration: blockDuration() }} class="flex items-center gap-2">
                         <svg class="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M20 6 9 17l-5-5" />
                         </svg>
@@ -395,11 +395,11 @@
     <!-- Table -->
     <div class="flex-1 overflow-auto">
         {#if loading}
-            <div transition:fade={{ duration: blockDuration() }}>
+            <div in:fade={{ duration: blockDuration() }}>
                 <LoadingSpinner message="Loading preview..." size="sm" />
             </div>
         {:else if error}
-            <div transition:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-3">
+            <div in:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-3">
                 <div class="text-sm text-red-500">{error}</div>
                 <button
                     class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
@@ -407,7 +407,7 @@
                 >Retry</button>
             </div>
         {:else if runIds.length === 0}
-            <div transition:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-3">
+            <div in:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-3">
                 <div class="text-sm text-slate-400">No runs specified.</div>
                 <button
                     class="text-sm text-slate-500 hover:text-slate-700 underline transition-colors duration-150 cursor-pointer"
@@ -415,7 +415,7 @@
                 >Go back</button>
             </div>
         {:else if rows.length === 0}
-            <div transition:fade={{ duration: blockDuration() }} class="flex items-center justify-center py-32">
+            <div in:fade={{ duration: blockDuration() }} class="flex items-center justify-center py-32">
                 <div class="text-sm text-slate-400">No data to export.</div>
             </div>
         {:else}

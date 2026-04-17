@@ -208,9 +208,9 @@
     </div>
 
     {#if searching}
-        <div transition:fade={{ duration: blockDuration() }} class="text-center py-6 text-muted-foreground">Searching...</div>
+        <div in:fade={{ duration: blockDuration() }} class="text-center py-6 text-muted-foreground">Searching...</div>
     {:else if searchError}
-        <div transition:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Search error: {searchError}</div>
+        <div in:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Search error: {searchError}</div>
     {:else if isSearching}
         <!-- Search results -->
         <Card>
@@ -231,7 +231,7 @@
             </CardHeader>
             <CardContent>
                 {#if searchResults.length === 0}
-                    <div transition:fade={{ duration: blockDuration() }} class="text-center py-8 text-muted-foreground">
+                    <div in:fade={{ duration: blockDuration() }} class="text-center py-8 text-muted-foreground">
                         No matching documents found.
                     </div>
                 {:else}
@@ -266,9 +266,9 @@
             </CardContent>
         </Card>
     {:else if loading}
-        <div transition:fade={{ duration: blockDuration() }} class="text-center py-10 text-muted-foreground">Loading documents...</div>
+        <div in:fade={{ duration: blockDuration() }} class="text-center py-10 text-muted-foreground">Loading documents...</div>
     {:else if error}
-        <div transition:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
+        <div in:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
     {:else}
         <!-- Document list -->
         <Card>
@@ -278,7 +278,7 @@
             </CardHeader>
             <CardContent>
                 {#if documents.length === 0}
-                    <div transition:fade={{ duration: blockDuration() }} class="text-center py-10">
+                    <div in:fade={{ duration: blockDuration() }} class="text-center py-10">
                         <p class="text-muted-foreground">
                             Upload your SOPs, protocols, and reference documents to build your
                             searchable knowledge base.

@@ -318,18 +318,18 @@
 
 <div class="min-h-screen bg-background">
     {#if loading}
-        <div transition:fade={{ duration: blockDuration() }}>
+        <div in:fade={{ duration: blockDuration() }}>
             <LoadingSpinner message="Loading run..." size="lg" fullPage />
         </div>
     {:else if error && !run}
-        <div transition:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen">
+        <div in:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen">
             <div class="text-center">
                 <div class="text-red-500 font-semibold mb-2">Error loading run</div>
                 <div class="text-muted-foreground text-sm">{error}</div>
             </div>
         </div>
     {:else if !run}
-        <div transition:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen text-muted-foreground">
+        <div in:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen text-muted-foreground">
             Run not found
         </div>
     {:else}

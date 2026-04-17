@@ -54,15 +54,15 @@
     </div>
 
     {#if loading}
-        <div transition:fade={{ duration: blockDuration() }}>
+        <div in:fade={{ duration: blockDuration() }}>
             <LoadingSpinner message="Loading projects..." />
         </div>
     {:else if error}
-        <div transition:fade={{ duration: blockDuration() }}>
+        <div in:fade={{ duration: blockDuration() }}>
             <ErrorAlert message="Error: {error}" />
         </div>
     {:else}
-        <div transition:fade={{ duration: blockDuration() }}>
+        <div in:fade={{ duration: blockDuration() }}>
         <Card>
             <CardHeader>
                 <CardTitle>All Projects</CardTitle>
@@ -70,7 +70,7 @@
             </CardHeader>
             <CardContent>
                 {#if projects.length === 0}
-                    <div class="text-center py-10 text-muted-foreground" transition:fade={{ duration: blockDuration() }}>
+                    <div class="text-center py-10 text-muted-foreground" in:fade={{ duration: blockDuration() }}>
                         No projects found. Create one to get started.
                     </div>
                 {:else}

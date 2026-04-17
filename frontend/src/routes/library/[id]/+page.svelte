@@ -309,14 +309,14 @@
     </a>
 
     {#if loading}
-        <div transition:fade={{ duration: blockDuration() }}>
+        <div in:fade={{ duration: blockDuration() }}>
             <LoadingSpinner message="Loading document..." />
         </div>
     {:else if error}
-        <div transition:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
+        <div in:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
     {:else if document}
         <!-- Header -->
-        <div transition:fade={{ duration: blockDuration() }} class="space-y-3">
+        <div in:fade={{ duration: blockDuration() }} class="space-y-3">
             <h1 class="text-3xl font-bold tracking-tight">{document.title}</h1>
             <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <Badge variant="outline">{getFileTypeLabel(document.mime_type)}</Badge>
@@ -522,7 +522,7 @@
                                 />
                             </div>
                         {:else if allChunks.length === 0}
-                            <p transition:fade={{ duration: blockDuration() }} class="text-muted-foreground text-center py-8">
+                            <p in:fade={{ duration: blockDuration() }} class="text-muted-foreground text-center py-8">
                                 {#if document.status === 'PROCESSING'}
                                     Content will appear here once processing is complete.
                                 {:else if document.status === 'UPLOADED' || document.status === 'QUEUED'}

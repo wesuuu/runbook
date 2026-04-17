@@ -252,11 +252,11 @@
 </script>
 
 {#if loading}
-    <div transition:fade={{ duration: blockDuration() }}>
+    <div in:fade={{ duration: blockDuration() }}>
         <LoadingSpinner message="Loading dashboard..." />
     </div>
 {:else if error}
-    <div transition:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-4">
+    <div in:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-4">
         <div class="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
             <span class="text-destructive text-lg">!</span>
         </div>
@@ -266,7 +266,7 @@
         </Button>
     </div>
 {:else if dashboard}
-    <div transition:fade={{ duration: blockDuration() }} class="max-w-6xl mx-auto">
+    <div in:fade={{ duration: blockDuration() }} class="max-w-6xl mx-auto">
         <!-- Greeting -->
         <div class="mb-8">
             <h1 class="text-2xl font-bold tracking-tight text-foreground">

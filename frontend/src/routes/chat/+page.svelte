@@ -96,7 +96,7 @@
         </div>
         <div class="flex-1 overflow-y-auto">
             {#if sessions.length === 0 && !loading}
-                <div transition:fade={{ duration: blockDuration() }} class="p-4 text-sm text-muted-foreground text-center">
+                <div in:fade={{ duration: blockDuration() }} class="p-4 text-sm text-muted-foreground text-center">
                     No chats yet. Start a new conversation.
                 </div>
             {/if}
@@ -136,7 +136,7 @@
       <div class="flex-1 flex flex-col min-w-0">
         {#if !activeSession}
             <!-- Empty state -->
-            <div transition:fade={{ duration: blockDuration() }} class="flex-1 flex items-center justify-center">
+            <div in:fade={{ duration: blockDuration() }} class="flex-1 flex items-center justify-center">
                 <div class="text-center max-w-md px-6">
                     <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
                         <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
@@ -193,7 +193,7 @@
             <!-- Messages -->
             <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-4xl mx-auto w-full">
                 {#if activeSession.messages.length === 0}
-                    <div transition:fade={{ duration: blockDuration() }} class="text-center py-12">
+                    <div in:fade={{ duration: blockDuration() }} class="text-center py-12">
                         <p class="text-sm text-muted-foreground">Send a message to start the conversation.</p>
                     </div>
                 {/if}
@@ -272,7 +272,7 @@
                 {/each}
 
                 {#if sending}
-                    <div transition:fade={{ duration: blockDuration() }} class="flex justify-start">
+                    <div in:fade={{ duration: blockDuration() }} class="flex justify-start">
                         <div class="bg-muted/70 rounded-xl px-4 py-3">
                             <div class="flex items-center gap-1.5">
                                 <div class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 0ms"></div>
@@ -320,7 +320,7 @@
                     </button>
                 </div>
                 {#if messageError}
-                    <p transition:fade={{ duration: blockDuration() }} class="text-xs text-red-500 mt-1.5 max-w-4xl mx-auto">{messageError}</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-xs text-red-500 mt-1.5 max-w-4xl mx-auto">{messageError}</p>
                 {/if}
                 {#if !hasMessages && skills.length > 0}
                     <div class="max-w-4xl mx-auto mt-2">
@@ -336,7 +336,7 @@
 
       <!-- Sources panel (right side) -->
       {#if sourcePanelOpen && activeSources.length > 0}
-        <div transition:fade={{ duration: blockDuration() }} class="w-80 flex-shrink-0 border-l border-border/60 bg-card/30 flex flex-col overflow-hidden">
+        <div in:fade={{ duration: blockDuration() }} class="w-80 flex-shrink-0 border-l border-border/60 bg-card/30 flex flex-col overflow-hidden">
             <div class="p-3 border-b border-border/40 flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-foreground">Sources</h3>
                 <button

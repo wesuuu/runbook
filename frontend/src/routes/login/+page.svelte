@@ -55,7 +55,7 @@
                 <CardContent>
                     <form onsubmit={handleSubmit} class="space-y-5">
                         {#if error}
-                            <div transition:fade={{ duration: blockDuration() }}>
+                            <div in:fade={{ duration: blockDuration() }}>
                                 <ErrorAlert message={error} />
                             </div>
                         {/if}

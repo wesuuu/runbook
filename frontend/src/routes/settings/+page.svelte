@@ -689,11 +689,11 @@
             </CardContent>
 
             {#if membersLoading}
-                <div transition:fade={{ duration: blockDuration() }} class="px-8 py-8 text-center">
+                <div in:fade={{ duration: blockDuration() }} class="px-8 py-8 text-center">
                     <p class="text-sm text-muted-foreground">Loading members...</p>
                 </div>
             {:else if membersError}
-                <div transition:fade={{ duration: blockDuration() }} class="px-8 py-8 text-center">
+                <div in:fade={{ duration: blockDuration() }} class="px-8 py-8 text-center">
                     <p class="text-sm text-destructive">{membersError}</p>
                 </div>
             {:else}
@@ -833,9 +833,9 @@
                 {/if}
 
                 {#if teamsLoading}
-                    <p transition:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">Loading teams...</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">Loading teams...</p>
                 {:else if teams.length === 0}
-                    <p transition:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">No teams yet. Create one above.</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">No teams yet. Create one above.</p>
                 {:else}
                     <div class="divide-y divide-border rounded-md border">
                         {#each teams as team (team.id)}
@@ -899,7 +899,7 @@
                             </div>
                         {/if}
                         {#if avatarUploading}
-                            <div transition:fade={{ duration: blockDuration() }} class="absolute inset-0 rounded-full bg-background/70 flex items-center justify-center">
+                            <div in:fade={{ duration: blockDuration() }} class="absolute inset-0 rounded-full bg-background/70 flex items-center justify-center">
                                 <div class="w-5 h-5 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin"></div>
                             </div>
                         {/if}
@@ -973,7 +973,7 @@
                     </div>
                 </div>
                 {#if passwordError}
-                    <p transition:fade={{ duration: blockDuration() }} class="text-sm text-destructive">{passwordError}</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-sm text-destructive">{passwordError}</p>
                 {/if}
                 <div class="flex items-center gap-3">
                     <Button onclick={changePassword} disabled={passwordSaving || !currentPassword || !newPassword}>
@@ -1045,9 +1045,9 @@
             </CardHeader>
             <CardContent>
                 {#if channelsLoading}
-                    <p transition:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">Loading channels...</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">Loading channels...</p>
                 {:else if channels.length === 0 && !showAddChannel}
-                    <div transition:fade={{ duration: blockDuration() }} class="text-center py-8">
+                    <div in:fade={{ duration: blockDuration() }} class="text-center py-8">
                         <p class="text-sm text-muted-foreground mb-3">No notification channels configured yet.</p>
                         <Button size="sm" variant="outline" onclick={() => { showAddChannel = true; newChannelType = 'SLACK'; newChannelName = ''; newChannelConfig = {}; }}>
                             Add your first channel
