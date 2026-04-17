@@ -1,6 +1,6 @@
-export const PAGE_MS = 150;
-export const BLOCK_MS = 120;
-export const LIST_MS = 150;
+export const PAGE_MS = 250;
+export const BLOCK_MS = 220;
+export const LIST_MS = 200;
 
 export function prefersReducedMotion(): boolean {
     const mm = (globalThis as { matchMedia?: (q: string) => { matches: boolean } }).matchMedia;
