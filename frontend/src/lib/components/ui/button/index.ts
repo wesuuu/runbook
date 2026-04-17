@@ -1,5 +1,6 @@
 import Root, {
 	type ButtonProps,
+	type ButtonRounded,
 	type ButtonSize,
 	type ButtonVariant,
 	buttonVariants,
@@ -12,6 +13,7 @@ export {
 	Root as Button,
 	buttonVariants,
 	type ButtonProps,
+	type ButtonRounded,
 	type ButtonSize,
 	type ButtonVariant,
 };

@@ -15,6 +15,7 @@
 				secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 shadow-xs",
 				ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
 				link: "text-primary underline-offset-4 hover:underline",
+				tab: "border-b-2 border-transparent text-muted-foreground hover:text-foreground rounded-none shadow-none data-[active=true]:border-foreground data-[active=true]:text-foreground",
 			},
 			size: {
 				default: "h-9 px-4 py-2 has-[>svg]:px-3",
@@ -24,20 +25,27 @@
 				"icon-sm": "size-8",
 				"icon-lg": "size-10",
 			},
+			rounded: {
+				default: "",
+				full: "rounded-full",
+			},
 		},
 		defaultVariants: {
 			variant: "default",
 			size: "default",
+			rounded: "default",
 		},
 	});
 
 	export type ButtonVariant = VariantProps<typeof buttonVariants>["variant"];
 	export type ButtonSize = VariantProps<typeof buttonVariants>["size"];
+	export type ButtonRounded = VariantProps<typeof buttonVariants>["rounded"];
 
 	export type ButtonProps = WithElementRef<HTMLButtonAttributes> &
 		WithElementRef<HTMLAnchorAttributes> & {
 			variant?: ButtonVariant;
 			size?: ButtonSize;
+			rounded?: ButtonRounded;
 		};
 </script>
 
@@ -46,6 +54,7 @@
 		class: className,
 		variant = "default",
 		size = "default",
+		rounded = "default",
 		ref = $bindable(null),
 		href = undefined,
 		type = "button",
@@ -59,7 +68,7 @@
 	<a
 		bind:this={ref}
 		data-slot="button"
-		class={cn(buttonVariants({ variant, size }), className)}
+		class={cn(buttonVariants({ variant, size, rounded }), className)}
 		href={disabled ? undefined : href}
 		aria-disabled={disabled}
 		role={disabled ? "link" : undefined}
@@ -72,7 +81,7 @@
 	<button
 		bind:this={ref}
 		data-slot="button"
-		class={cn(buttonVariants({ variant, size }), className)}
+		class={cn(buttonVariants({ variant, size, rounded }), className)}
 		{type}
 		{disabled}
 		{...restProps}
