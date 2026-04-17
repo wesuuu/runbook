@@ -222,4 +222,126 @@ def score_run(
         na_correct / na_total if na_total > 0 else 1.0
     )
 
+    # ── 3. timestamps F1 over (step, label, value) ──
+    exp_ts: list[tuple] = []
+    for step_id, s in expected_ed.items():
+        for t in s.get("timestamps", []) or []:
+            exp_ts.append((step_id, t.get("label", ""), t.get("value", "")))
+    act_ts: list[tuple] = []
+    for step_id, s in actual_ed.items():
+        for t in s.get("timestamps", []) or []:
+            act_ts.append((step_id, t.get("label", ""), t.get("value", "")))
+    if not exp_ts and not act_ts:
+        scores.timestamps = 1.0
+    elif not exp_ts:
+        scores.timestamps = 0.0
+    else:
+        matched = 0
+        remaining = list(act_ts)
+        for exp in exp_ts:
+            best = None
+            best_r = 0.0
+            for act in remaining:
+                r = (
+                    _fuzzy_match(exp[0], act[0]) * 0.5
+                    + _fuzzy_match(exp[1], act[1]) * 0.25
+                    + _fuzzy_match(exp[2], act[2]) * 0.25
+                )
+                if r > best_r:
+                    best_r = r
+                    best = act
+            if best is not None and best_r >= 0.7:
+                matched += 1
+                remaining.remove(best)
+            else:
+                d.timestamps_missed.append({
+                    "step": exp[0], "label": exp[1], "value": exp[2],
+                })
+        scores.timestamps = f1(
+            n_matched=matched, n_expected=len(exp_ts), n_actual=len(act_ts),
+        )
+
+    # ── 4. signatures F1 over (step, initials, role) ──
+    def _f1_tuples(exp_list, act_list, threshold=0.7):
+        if not exp_list and not act_list:
+            return 1.0, []
+        if not exp_list:
+            return 0.0, []
+        matched, missed = 0, []
+        remaining = list(act_list)
+        for exp in exp_list:
+            best, best_r = None, 0.0
+            for act in remaining:
+                r = sum(_fuzzy_match(e, a) for e, a in zip(exp, act)) / len(exp)
+                if r > best_r:
+                    best_r = r
+                    best = act
+            if best is not None and best_r >= threshold:
+                matched += 1
+                remaining.remove(best)
+            else:
+                missed.append(exp)
+        return (
+            f1(n_matched=matched, n_expected=len(exp_list), n_actual=len(act_list)),
+            missed,
+        )
+
+    exp_sigs, act_sigs = [], []
+    for step_id, s in expected_ed.items():
+        for sig in s.get("signatures", []) or []:
+            exp_sigs.append((step_id, sig.get("initials_or_name", ""), sig.get("role") or ""))
+    for step_id, s in actual_ed.items():
+        for sig in s.get("signatures", []) or []:
+            act_sigs.append((step_id, sig.get("initials_or_name", ""), sig.get("role") or ""))
+    scores.signatures, sig_missed = _f1_tuples(exp_sigs, act_sigs)
+    d.signatures_missed.extend(
+        {"step": m[0], "initials_or_name": m[1], "role": m[2]} for m in sig_missed
+    )
+
+    # ── 5. deviations F1 over (step, description) ──
+    exp_devs, act_devs = [], []
+    for step_id, s in expected_ed.items():
+        for dv in s.get("deviations", []) or []:
+            exp_devs.append((step_id, dv.get("description", "")))
+    for step_id, s in actual_ed.items():
+        for dv in s.get("deviations", []) or []:
+            act_devs.append((step_id, dv.get("description", "")))
+    scores.deviations, dev_missed = _f1_tuples(exp_devs, act_devs, threshold=0.6)
+    d.deviations_missed.extend(
+        {"step": m[0], "description": m[1]} for m in dev_missed
+    )
+
+    # ── 7. notes_preservation (avg fuzzy ratio per matched completed step) ──
+    notes_scores: list[float] = []
+    for step_id in matched_keys:
+        exp_step = expected_ed[step_id]
+        if exp_step.get("status") != "completed":
+            continue
+        exp_notes = exp_step.get("notes", "") or ""
+        act_notes = actual_ed[step_id].get("notes", "") or ""
+        if not exp_notes and not act_notes:
+            continue
+        ratio = _fuzzy_match(exp_notes, act_notes)
+        notes_scores.append(ratio)
+        if ratio < 0.7:
+            d.notes_mismatches.append({
+                "step": step_id, "expected": exp_notes, "actual": act_notes,
+            })
+    scores.notes_preservation = (
+        sum(notes_scores) / len(notes_scores) if notes_scores else 1.0
+    )
+
+    # ── 8. run_metadata (run_name fuzzy ≥0.8) ──
+    exp_name = expected_run.get("run_name", "") or ""
+    act_name = actual_run_metadata.get("run_name", "") or ""
+    if not exp_name and not act_name:
+        scores.run_metadata = 1.0
+    elif _fuzzy_match(exp_name, act_name) >= 0.8:
+        scores.run_metadata = 1.0
+    else:
+        scores.run_metadata = 0.0
+        d.run_metadata_mismatches.append({
+            "field": "run_name", "expected": exp_name, "actual": act_name,
+        })
+
     return scores

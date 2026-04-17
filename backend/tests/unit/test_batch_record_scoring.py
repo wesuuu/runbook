@@ -136,3 +136,49 @@ def test_score_run_na_correctness_wrong():
     scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
     assert scores.na_correctness == 0.0
     assert scores.details.na_mismatches
+
+
+def test_score_run_timestamps_match():
+    ts = [{"label": "Start Time", "value": "08:30"}]
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": ts, "signatures": [], "deviations": []}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": ts, "signatures": [], "deviations": []}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.timestamps == 1.0
+
+
+def test_score_run_timestamps_missing():
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [], "signatures": [], "deviations": []}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [{"label": "Start Time", "value": "08:30"}], "signatures": [], "deviations": []}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.timestamps == 0.0
+    assert scores.details.timestamps_missed
+
+
+def test_score_run_signatures_and_deviations():
+    sigs = [{"initials_or_name": "JKL", "role": "Operator"}]
+    devs = [{"description": "Minor delay"}]
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [], "signatures": sigs, "deviations": devs}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "", "timestamps": [], "signatures": sigs, "deviations": devs}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    assert scores.signatures == 1.0
+    assert scores.deviations == 1.0
+
+
+def test_score_run_notes_preservation():
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": "Solution clear.", "timestamps": [], "signatures": [], "deviations": []}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": "Solution was clear.", "timestamps": [], "signatures": [], "deviations": []}})
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "t"}, expected, protocol, "t")
+    # Fuzzy ratio of the two strings is high -> preserved
+    assert scores.notes_preservation >= 0.8
+
+
+def test_score_run_run_metadata_match():
+    actual_ed = {"node-a": {"status": "completed", "results": {}, "notes": ""}}
+    expected = _mk_expected({"node-a": {"status": "completed", "results": {}, "notes": ""}}, run_name="LOT-2026-100")
+    protocol = _mk_protocol_graph(["node-a"])
+    scores = score_run(actual_ed, {"run_name": "LOT-2026-100"}, expected, protocol, "t")
+    assert scores.run_metadata == 1.0
