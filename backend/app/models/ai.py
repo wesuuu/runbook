@@ -20,8 +20,8 @@ SUPPORTED_CAPABILITIES = ("vision", "text", "embedding", "doc_structure", "chat"
 
 DEFAULT_CONFIGS = {
     "vision": {
-        "provider": "ollama",
-        "model_name": "llama3.2-vision:11b",
+        "provider": "openrouter",
+        "model_name": "anthropic/claude-sonnet-4",
     },
     "text": {
         "provider": "ollama",
