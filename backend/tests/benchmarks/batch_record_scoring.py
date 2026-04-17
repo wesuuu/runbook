@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from tests.benchmarks.matching import fuzzy_ratio
+from tests.benchmarks.matching import f1, fuzzy_ratio
 
 
 _fuzzy_match = fuzzy_ratio
@@ -132,3 +132,94 @@ class RunScores:
                 "run_metadata_mismatches": self.details.run_metadata_mismatches,
             },
         }
+
+
+def score_run(
+    actual_execution_data: dict,
+    actual_run_metadata: dict,
+    expected_run: dict,
+    protocol_graph: dict,
+    fixture_name: str = "",
+) -> RunScores:
+    """Score the pipeline's Run output against expected_run.json."""
+    scores = RunScores(fixture_name=fixture_name)
+    d = scores.details
+
+    expected_ed = expected_run.get("execution_data", {})
+    actual_ed = actual_execution_data
+
+    d.steps_expected = len(expected_ed)
+    d.steps_found = len(actual_ed)
+
+    # ── 1. step_completeness (F1 over protocol_step_ids) ──
+    expected_keys = set(expected_ed.keys())
+    actual_keys = set(actual_ed.keys())
+    matched_keys = expected_keys & actual_keys
+    d.steps_missed = sorted(expected_keys - actual_keys)
+    d.steps_extra = sorted(actual_keys - expected_keys)
+    scores.step_completeness = f1(
+        n_matched=len(matched_keys),
+        n_expected=len(expected_keys),
+        n_actual=len(actual_keys),
+    )
+
+    # ── 2. param_accuracy (per matched completed step, exact-key + value match) ──
+    param_total = 0
+    param_correct = 0
+    for step_id in matched_keys:
+        exp_step = expected_ed[step_id]
+        act_step = actual_ed[step_id]
+        if exp_step.get("status") != "completed":
+            continue
+        exp_results = exp_step.get("results", {}) or {}
+        act_results = act_step.get("results", {}) or {}
+        for key, exp_val in exp_results.items():
+            param_total += 1
+            if key not in act_results:
+                d.param_value_mismatches.append({
+                    "step": step_id, "key": key,
+                    "expected": exp_val, "actual": None,
+                })
+                continue
+            act_val = act_results[key]
+            if isinstance(exp_val, (int, float)) and isinstance(act_val, (int, float)):
+                if _numeric_equal(exp_val, act_val):
+                    param_correct += 1
+                else:
+                    d.param_value_mismatches.append({
+                        "step": step_id, "key": key,
+                        "expected": exp_val, "actual": act_val,
+                    })
+            else:
+                if str(exp_val).lower().strip() == str(act_val).lower().strip():
+                    param_correct += 1
+                else:
+                    d.param_value_mismatches.append({
+                        "step": step_id, "key": key,
+                        "expected": exp_val, "actual": act_val,
+                    })
+    scores.param_accuracy = (
+        param_correct / param_total if param_total > 0 else 1.0
+    )
+
+    # ── 3. na_correctness (per matched step, status must match) ──
+    na_total = 0
+    na_correct = 0
+    for step_id in matched_keys:
+        exp_status = expected_ed[step_id].get("status")
+        act_status = actual_ed[step_id].get("status")
+        if exp_status in ("completed", "na"):
+            na_total += 1
+            if exp_status == act_status:
+                na_correct += 1
+            else:
+                d.na_mismatches.append({
+                    "step": step_id,
+                    "expected": exp_status,
+                    "actual": act_status,
+                })
+    scores.na_correctness = (
+        na_correct / na_total if na_total > 0 else 1.0
+    )
+
+    return scores
