@@ -6,6 +6,8 @@
     import { Label } from '$lib/components/ui/label';
     import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
+    import { fade } from 'svelte/transition';
+    import { blockDuration } from '$lib/transitions';
 
     let email = $state('');
     let password = $state('');
@@ -53,7 +55,9 @@
                 <CardContent>
                     <form onsubmit={handleSubmit} class="space-y-5">
                         {#if error}
-                            <ErrorAlert message={error} />
+                            <div transition:fade={{ duration: blockDuration() }}>
+                                <ErrorAlert message={error} />
+                            </div>
                         {/if}
 
                         <div class="space-y-2">
