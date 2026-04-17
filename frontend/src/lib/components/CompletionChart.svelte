@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { fly } from 'svelte/transition';
+    import { blockDuration } from '$lib/transitions';
     import { Button } from '$lib/components/ui/button';
 
     type TrendItem = { date: string; count: number };
@@ -73,7 +75,7 @@
     }
 </script>
 
-<div class="card-warm rounded-xl p-5 mb-8" style="animation: fadeSlideUp 0.4s ease-out 0.12s both">
+<div class="card-warm rounded-xl p-5 mb-8" in:fly={{ y: 12, duration: blockDuration(), delay: 120 }}>
     <div class="flex items-center justify-between mb-3">
         <h2 class="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2.5">
             <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>

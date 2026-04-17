@@ -24,6 +24,8 @@
     import ProtocolImportModal from "$lib/components/ProtocolImportModal.svelte";
     import CreateRunModal from "$lib/components/project/CreateRunModal.svelte";
     import BatchRecordImportModal from "$lib/components/BatchRecordImportModal.svelte";
+    import { fade } from "svelte/transition";
+    import { blockDuration } from "$lib/transitions";
 
     const id = $derived($page.params.id ?? "");
 
@@ -237,12 +239,14 @@
     </div>
 {:else if loading}
     <div
+        in:fade={{ duration: blockDuration() }}
         class="flex items-center justify-center min-h-[calc(100vh-57px)] bg-gray-100 text-sm text-slate-400"
     >
         Loading project...
     </div>
 {:else if error}
     <div
+        in:fade={{ duration: blockDuration() }}
         class="max-w-xl mx-auto mt-8 p-4 bg-red-50 text-red-600 rounded-lg text-sm"
     >
         Error: {error}
@@ -250,6 +254,7 @@
 {:else if project}
     <!-- DASHBOARD MODE -->
     <div
+        in:fade={{ duration: blockDuration() }}
         class="min-h-[calc(100vh-57px)] w-full mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
     >
         <!-- Header -->

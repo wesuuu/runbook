@@ -28,6 +28,9 @@
     import { getToken } from '$lib/auth.svelte';
     import { Input } from '$lib/components/ui/input';
     import { ArrowLeft, RotateCcw, Trash2, ExternalLink, Search, X, ChevronDown, ChevronRight, List } from 'lucide-svelte';
+    import { fade } from 'svelte/transition';
+    import { flip } from 'svelte/animate';
+    import { blockDuration, listDuration } from '$lib/transitions';
     import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
     import { z } from 'zod';
 
@@ -306,12 +309,14 @@
     </a>
 
     {#if loading}
-        <LoadingSpinner message="Loading document..." />
+        <div in:fade={{ duration: blockDuration() }}>
+            <LoadingSpinner message="Loading document..." />
+        </div>
     {:else if error}
-        <div class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
+        <div in:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
     {:else if document}
         <!-- Header -->
-        <div class="space-y-3">
+        <div in:fade={{ duration: blockDuration() }} class="space-y-3">
             <h1 class="text-3xl font-bold tracking-tight">{document.title}</h1>
             <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <Badge variant="outline">{getFileTypeLabel(document.mime_type)}</Badge>
@@ -425,16 +430,17 @@
                             <span class="text-sm font-medium">Contents</span>
                         </div>
                         <nav class="space-y-0.5 max-h-[calc(100vh-8rem)] overflow-y-auto">
-                            {#each sectionNav as section}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    class="w-full justify-start h-auto text-left text-xs text-muted-foreground font-normal px-2 py-1.5 truncate"
+                            {#each sectionNav as section, i (i)}
+                                <button
+                                    type="button"
+                                    class="block w-full text-left text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-muted/50 transition-colors duration-150 cursor-pointer truncate"
                                     onclick={() => handleSidebarClick(section.chunkIndex)}
                                     title={section.heading}
+                                    animate:flip={{ duration: listDuration() }}
+                                    in:fade={{ duration: listDuration() }}
                                 >
                                     <span class="truncate w-full">{section.heading}</span>
-                                </Button>
+                                </button>
                             {/each}
                         </nav>
                     </div>
@@ -519,7 +525,7 @@
                                 />
                             </div>
                         {:else if allChunks.length === 0}
-                            <p class="text-muted-foreground text-center py-8">
+                            <p in:fade={{ duration: blockDuration() }} class="text-muted-foreground text-center py-8">
                                 {#if document.status === 'PROCESSING'}
                                     Content will appear here once processing is complete.
                                 {:else if document.status === 'UPLOADED' || document.status === 'QUEUED'}

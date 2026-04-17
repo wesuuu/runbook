@@ -15,6 +15,9 @@
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import { ProjectListSchema, type Project } from '$lib/schemas';
+    import { fade } from 'svelte/transition';
+    import { flip } from 'svelte/animate';
+    import { blockDuration, listDuration } from '$lib/transitions';
 
     let projects = $state<Project[]>([]);
     let loading = $state(true);
@@ -51,10 +54,15 @@
     </div>
 
     {#if loading}
-        <LoadingSpinner message="Loading projects..." />
+        <div in:fade={{ duration: blockDuration() }}>
+            <LoadingSpinner message="Loading projects..." />
+        </div>
     {:else if error}
-        <ErrorAlert message="Error: {error}" />
+        <div in:fade={{ duration: blockDuration() }}>
+            <ErrorAlert message="Error: {error}" />
+        </div>
     {:else}
+        <div in:fade={{ duration: blockDuration() }}>
         <Card>
             <CardHeader>
                 <CardTitle>All Projects</CardTitle>
@@ -62,14 +70,14 @@
             </CardHeader>
             <CardContent>
                 {#if projects.length === 0}
-                    <div class="text-center py-10 text-muted-foreground">
+                    <div class="text-center py-10 text-muted-foreground" in:fade={{ duration: blockDuration() }}>
                         No projects found. Create one to get started.
                     </div>
                 {:else}
                     <!-- Mobile card layout -->
                     <div class="sm:hidden divide-y divide-border">
-                        {#each projects as project}
-                            <a href="/projects/{project.id}" class="block py-3 px-1 min-h-11">
+                        {#each projects as project (project.id)}
+                            <a href="/projects/{project.id}" class="block py-3 px-1 min-h-11" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="font-semibold text-sm text-primary">{project.name}</div>
                                 {#if project.description}
                                     <div class="text-xs text-muted-foreground mt-1 line-clamp-2">{project.description}</div>
@@ -93,7 +101,7 @@
                                 </Table.Row>
                             </Table.Header>
                             <Table.Body>
-                                {#each projects as project}
+                                {#each projects as project (project.id)}
                                     <Table.Row>
                                         <Table.Cell class="font-medium">
                                             <a
@@ -118,5 +126,6 @@
                 {/if}
             </CardContent>
         </Card>
+        </div>
     {/if}
 </div>

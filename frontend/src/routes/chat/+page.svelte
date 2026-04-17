@@ -15,6 +15,9 @@
         showSourcesForMessage, registerScrollFn, activateSkill,
     } from '$lib/chat-store.svelte';
     import type { ChatMessage } from '$lib/schemas/chat';
+    import { fade } from 'svelte/transition';
+    import { flip } from 'svelte/animate';
+    import { blockDuration, listDuration } from '$lib/transitions';
 
     // Derived state from shared store
     const sessions = $derived(getChatSessions());
@@ -94,7 +97,7 @@
         </div>
         <div class="flex-1 overflow-y-auto">
             {#if sessions.length === 0 && !loading}
-                <div class="p-4 text-sm text-muted-foreground text-center">
+                <div in:fade={{ duration: blockDuration() }} class="p-4 text-sm text-muted-foreground text-center">
                     No chats yet. Start a new conversation.
                 </div>
             {/if}
@@ -106,6 +109,8 @@
                     tabindex="0"
                     onclick={() => selectSession(session.id)}
                     onkeydown={(e) => e.key === 'Enter' && selectSession(session.id)}
+                    animate:flip={{ duration: listDuration() }}
+                    in:fade={{ duration: listDuration() }}
                 >
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0 flex-1">
@@ -134,7 +139,7 @@
       <div class="flex-1 flex flex-col min-w-0">
         {#if !activeSession}
             <!-- Empty state -->
-            <div class="flex-1 flex items-center justify-center">
+            <div in:fade={{ duration: blockDuration() }} class="flex-1 flex items-center justify-center">
                 <div class="text-center max-w-md px-6">
                     <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
                         <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
@@ -191,12 +196,13 @@
             <!-- Messages -->
             <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-4xl mx-auto w-full">
                 {#if activeSession.messages.length === 0}
-                    <div class="text-center py-12">
+                    <div in:fade={{ duration: blockDuration() }} class="text-center py-12">
                         <p class="text-sm text-muted-foreground">Send a message to start the conversation.</p>
                     </div>
                 {/if}
 
                 {#each activeSession.messages as msg (msg.id)}
+                    <div animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                     {#if msg.role === 'summary'}
                         <div class="flex items-center gap-3 py-2 px-4">
                             <div class="flex-1 h-px bg-border/40"></div>
@@ -267,10 +273,11 @@
                         </div>
                     </div>
                     {/if}
+                    </div>
                 {/each}
 
                 {#if sending}
-                    <div class="flex justify-start">
+                    <div in:fade={{ duration: blockDuration() }} class="flex justify-start">
                         <div class="bg-muted/70 rounded-xl px-4 py-3">
                             <div class="flex items-center gap-1.5">
                                 <div class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 0ms"></div>
@@ -318,7 +325,7 @@
                     </Button>
                 </div>
                 {#if messageError}
-                    <p class="text-xs text-red-500 mt-1.5 max-w-4xl mx-auto">{messageError}</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-xs text-red-500 mt-1.5 max-w-4xl mx-auto">{messageError}</p>
                 {/if}
                 {#if !hasMessages && skills.length > 0}
                     <div class="max-w-4xl mx-auto mt-2">
@@ -334,7 +341,7 @@
 
       <!-- Sources panel (right side) -->
       {#if sourcePanelOpen && activeSources.length > 0}
-        <div class="w-80 flex-shrink-0 border-l border-border/60 bg-card/30 flex flex-col overflow-hidden">
+        <div in:fade={{ duration: blockDuration() }} class="w-80 flex-shrink-0 border-l border-border/60 bg-card/30 flex flex-col overflow-hidden">
             <div class="p-3 border-b border-border/40 flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-foreground">Sources</h3>
                 <Button
@@ -350,10 +357,12 @@
                 </Button>
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-3">
-                {#each activeSources as source, i}
+                {#each activeSources as source, i (`${source.document_id}-${source.chunk_index}`)}
                     <a
                         href="/library/{source.document_id}?chunk={source.chunk_index}"
                         class="block rounded-lg border border-border/40 p-3 hover:bg-muted/50 transition-colors group"
+                        animate:flip={{ duration: listDuration() }}
+                        in:fade={{ duration: listDuration() }}
                     >
                         <div class="flex items-start gap-2">
                             <span class="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center mt-0.5">
