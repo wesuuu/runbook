@@ -1,0 +1,39 @@
+{
+  "run_name": "LOT-2026-300",
+  "execution_data": {
+    "node-buffer-prep": {
+      "status": "completed",
+      "results": {
+        "ph_value": 7.2,
+        "temperature_c": 25.0,
+        "volume_ml": 500
+      },
+      "notes": "Completed successfully.",
+      "timestamps": [
+        {"label": "Start Time", "value": "08:30"}
+      ],
+      "signatures": [
+        {"initials_or_name": "JKL", "role": "Operator"}
+      ],
+      "deviations": []
+    },
+    "node-centrifugation": {
+      "status": "completed",
+      "results": {
+        "speed_g": 3000
+      },
+      "notes": "Run stopped due to equipment failure.",
+      "timestamps": [
+        {"label": "Start Time", "value": "09:15"}
+      ],
+      "signatures": [],
+      "deviations": [
+        {
+          "description": "RUN ABORTED — Equipment failure at centrifugation step. Centrifuge vibration detected at 3000g. Run stopped per SOP.",
+          "severity": "major",
+          "step_reference": "Centrifugation"
+        }
+      ]
+    }
+  }
+}

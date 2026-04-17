@@ -1,0 +1,55 @@
+{
+  "nodes": [
+    {
+      "id": "node-buffer-prep",
+      "type": "unitOp",
+      "position": {"x": 0, "y": 0},
+      "data": {
+        "label": "Buffer Preparation",
+        "paramSchema": {
+          "type": "object",
+          "properties": {
+            "ph_value": {"type": "number", "title": "pH Value"},
+            "temperature_c": {"type": "number", "title": "Temperature (°C)"},
+            "volume_ml": {"type": "number", "title": "Volume (mL)"}
+          }
+        }
+      }
+    },
+    {
+      "id": "node-centrifugation",
+      "type": "unitOp",
+      "position": {"x": 200, "y": 0},
+      "data": {
+        "label": "Centrifugation",
+        "paramSchema": {
+          "type": "object",
+          "properties": {
+            "speed_g": {"type": "number", "title": "Speed (g)"},
+            "duration_min": {"type": "number", "title": "Duration (min)"},
+            "temperature_c": {"type": "number", "title": "Temperature (°C)"}
+          }
+        }
+      }
+    },
+    {
+      "id": "node-filtration",
+      "type": "unitOp",
+      "position": {"x": 400, "y": 0},
+      "data": {
+        "label": "Filtration",
+        "paramSchema": {
+          "type": "object",
+          "properties": {
+            "filter_size_um": {"type": "number", "title": "Filter Size (μm)"},
+            "pressure_psi": {"type": "number", "title": "Pressure (PSI)"}
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    {"id": "e1", "source": "node-buffer-prep", "target": "node-centrifugation"},
+    {"id": "e2", "source": "node-centrifugation", "target": "node-filtration"}
+  ]
+}
