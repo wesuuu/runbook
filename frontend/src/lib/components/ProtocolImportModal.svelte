@@ -8,6 +8,7 @@
     import { Label } from '$lib/components/ui/label';
     import { Textarea } from '$lib/components/ui/textarea';
     import FullScreenModal from '$lib/components/ui/FullScreenModal.svelte';
+    import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
     import {
         isAllowedFileType,
         isFileSizeValid,
@@ -398,14 +399,21 @@
     }
 
     // Prevent accidental close
+    let discardConfirmOpen = $state(false);
+
     function handleOpenChange(isOpen: boolean) {
         if (!isOpen && (proposal || uploading)) {
-            if (!confirm("You'll lose your import progress. Are you sure?")) {
-                return;
-            }
+            discardConfirmOpen = true;
+            return;
         }
         if (!isOpen) resetState();
         open = isOpen;
+    }
+
+    function confirmDiscardImport() {
+        discardConfirmOpen = false;
+        resetState();
+        open = false;
     }
 </script>
 
@@ -623,3 +631,13 @@
                 {/if}
             {/if}
 </FullScreenModal>
+
+<ConfirmDialog
+    bind:open={discardConfirmOpen}
+    title="Discard import?"
+    message="You'll lose your import progress. Are you sure?"
+    confirmLabel="Discard"
+    confirmVariant="danger"
+    onConfirm={confirmDiscardImport}
+    onCancel={() => (discardConfirmOpen = false)}
+/>

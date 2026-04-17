@@ -4,6 +4,7 @@
     import FullScreenModal from '$lib/components/ui/FullScreenModal.svelte';
     import ConfidenceBadge from '$lib/components/ConfidenceBadge.svelte';
     import { Button } from '$lib/components/ui/button';
+    import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
     import {
         BatchRecordImportResponseSchema,
         BatchRecordFinalizeResponseSchema,
@@ -455,12 +456,19 @@
         stopPolling();
     }
 
+    let discardConfirmOpen = $state(false);
+
     function handleClose() {
         if (wizardStep !== 'upload' && (importResult || uploading)) {
-            if (!confirm("You'll lose your import progress. Are you sure?")) {
-                return;
-            }
+            discardConfirmOpen = true;
+            return;
         }
+        resetState();
+        open = false;
+    }
+
+    function confirmDiscardImport() {
+        discardConfirmOpen = false;
         resetState();
         open = false;
     }
@@ -870,3 +878,13 @@
     {/if}
 
 </FullScreenModal>
+
+<ConfirmDialog
+    bind:open={discardConfirmOpen}
+    title="Discard import?"
+    message="You'll lose your import progress. Are you sure?"
+    confirmLabel="Discard"
+    confirmVariant="danger"
+    onConfirm={confirmDiscardImport}
+    onCancel={() => (discardConfirmOpen = false)}
+/>

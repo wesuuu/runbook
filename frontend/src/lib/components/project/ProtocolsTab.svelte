@@ -4,6 +4,7 @@
     import { shortId, formatDate, protocolStatusClasses, protocolStatusLabel } from "./projectUtils";
     import ProjectDataTable from "./ProjectDataTable.svelte";
     import { Button } from "$lib/components/ui/button";
+    import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
 
     interface Props {
         projectId: string;
@@ -16,6 +17,8 @@
     let { projectId, protocols, onReloadProtocols, onCreateProtocol, onImportProtocol }: Props = $props();
 
     let showArchived = $state(false);
+    let deleteConfirmOpen = $state(false);
+    let pendingDeleteId = $state<string | null>(null);
 
     const columns = [
         { key: 'id', label: 'ID', hideBelow: 'lg' as const },
@@ -42,10 +45,18 @@
         );
     }
 
-    async function deleteOrArchiveProtocol(protocolId: string) {
-        if (!confirm('Are you sure you want to delete/archive this protocol?')) return;
+    function deleteOrArchiveProtocol(protocolId: string) {
+        pendingDeleteId = protocolId;
+        deleteConfirmOpen = true;
+    }
+
+    async function confirmDeleteOrArchive() {
+        if (!pendingDeleteId) return;
+        const id = pendingDeleteId;
+        deleteConfirmOpen = false;
+        pendingDeleteId = null;
         try {
-            await api.delete(`/science/protocols/${protocolId}`);
+            await api.delete(`/science/protocols/${id}`);
             await onReloadProtocols(showArchived);
         } catch (e: any) {
             console.error('Failed to delete/archive protocol:', e);
@@ -148,3 +159,13 @@
         {/if}
     {/snippet}
 </ProjectDataTable>
+
+<ConfirmDialog
+    bind:open={deleteConfirmOpen}
+    title="Delete/archive protocol?"
+    message="Are you sure you want to delete/archive this protocol?"
+    confirmLabel="Delete"
+    confirmVariant="danger"
+    onConfirm={confirmDeleteOrArchive}
+    onCancel={() => { deleteConfirmOpen = false; pendingDeleteId = null; }}
+/>

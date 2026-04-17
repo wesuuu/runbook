@@ -5,6 +5,7 @@
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
     import * as Dialog from '$lib/components/ui/dialog';
+    import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
     import { formatFileSize } from '$lib/utils/document-utils';
     import { API_BASE } from '$lib/config';
     import { getToken } from '$lib/auth.svelte';
@@ -391,12 +392,19 @@
         URL.revokeObjectURL(url);
     }
 
+    let discardConfirmOpen = $state(false);
+
     function handleClose() {
         if (conversionId && !showSaveDialog) {
-            if (!confirm("You'll lose your conversion progress. Are you sure?")) {
-                return;
-            }
+            discardConfirmOpen = true;
+            return;
         }
+        open = false;
+        resetState();
+    }
+
+    function confirmDiscardConversion() {
+        discardConfirmOpen = false;
         open = false;
         resetState();
     }
@@ -814,3 +822,13 @@
     </div>
 </div>
 {/if}
+
+<ConfirmDialog
+    bind:open={discardConfirmOpen}
+    title="Discard conversion?"
+    message="You'll lose your conversion progress. Are you sure?"
+    confirmLabel="Discard"
+    confirmVariant="danger"
+    onConfirm={confirmDiscardConversion}
+    onCancel={() => (discardConfirmOpen = false)}
+/>
