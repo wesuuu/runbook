@@ -6,6 +6,7 @@ against `expected_run.json` fixtures. One public entry point `score_run`.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 from tests.benchmarks.matching import f1, fuzzy_ratio
@@ -345,3 +346,96 @@ def score_run(
         })
 
     return scores
+
+
+def print_run_report(scores: RunScores) -> None:
+    status = "PASS" if scores.passed else "FAIL"
+    d = scores.details
+    print()
+    print(f"{'=' * 65}")
+    print(f"  [RUN] {scores.fixture_name:<42} {status} {scores.overall:.0%}")
+    print(f"{'=' * 65}")
+    print(f"  {'Dimension':<24} {'Score':>6}  Detail")
+    print(f"  {'-' * 60}")
+    print(f"  {'Step Completeness':<24} {scores.step_completeness:>5.2f}  "
+          f"{d.steps_found}/{d.steps_expected} found, {len(d.steps_extra)} extra")
+    print(f"  {'Param Accuracy':<24} {scores.param_accuracy:>5.2f}  "
+          f"{len(d.param_value_mismatches)} mismatches")
+    print(f"  {'Timestamps':<24} {scores.timestamps:>5.2f}  "
+          f"{len(d.timestamps_missed)} missed")
+    print(f"  {'Signatures':<24} {scores.signatures:>5.2f}  "
+          f"{len(d.signatures_missed)} missed")
+    print(f"  {'Deviations':<24} {scores.deviations:>5.2f}  "
+          f"{len(d.deviations_missed)} missed")
+    print(f"  {'N/A Correctness':<24} {scores.na_correctness:>5.2f}  "
+          f"{len(d.na_mismatches)} mismatches")
+    print(f"  {'Notes Preservation':<24} {scores.notes_preservation:>5.2f}")
+    print(f"  {'Run Metadata':<24} {scores.run_metadata:>5.2f}")
+    print(f"  {'-' * 60}")
+    print(f"  {'Overall (weighted)':<24} {scores.overall:>5.2f}  threshold: 0.75")
+    print(f"{'=' * 65}")
+    if d.steps_missed:
+        print(f"  Steps missed: {d.steps_missed}")
+    if d.param_value_mismatches:
+        print(f"  Param mismatches (first 5):")
+        print(f"    {json.dumps(d.param_value_mismatches[:5], indent=4, default=str)}")
+    print()
+
+
+def print_run_summary(scores_list: list[RunScores]) -> None:
+    if not scores_list:
+        return
+    print()
+    print(f"{'=' * 95}")
+    print(f"  BATCH RECORD RUN-OUTPUT SUMMARY")
+    print(f"{'=' * 95}")
+    print(
+        f"  {'Fixture':<25} {'Overall':>7} {'Step':>6} {'Param':>6} "
+        f"{'Time':>6} {'Sig':>6} {'Dev':>6} {'N/A':>6} {'Note':>6} {'Meta':>6} {'Status':>7}"
+    )
+    print(f"  {'-' * 90}")
+    for s in scores_list:
+        st = "PASS" if s.passed else "FAIL"
+        print(
+            f"  {s.fixture_name:<25} {s.overall:>6.0%} "
+            f"{s.step_completeness:>5.0%} {s.param_accuracy:>5.0%} "
+            f"{s.timestamps:>5.0%} {s.signatures:>5.0%} {s.deviations:>5.0%} "
+            f"{s.na_correctness:>5.0%} {s.notes_preservation:>5.0%} "
+            f"{s.run_metadata:>5.0%} {st:>7}"
+        )
+    passed = sum(1 for s in scores_list if s.passed)
+    print(f"  {'-' * 90}")
+    print(f"  {passed}/{len(scores_list)} run fixtures passed")
+    print(f"{'=' * 95}\n")
+
+
+def build_auto_finalized_mappings(extraction, mappings) -> list[dict]:
+    """Simulate the user auto-accepting all extracted values in the review UI.
+
+    Produces the `step_mappings` payload shape that `map_values_to_execution_data`
+    consumes (see `FinalizedStepMapping` schema).
+    """
+    finalized: list[dict] = []
+    for sm in mappings:
+        step = extraction.steps[sm.extracted_step_index]
+        finalized.append({
+            "protocol_step_id": sm.protocol_step_id,
+            "values": [
+                {
+                    "schema_field_key": pm.schema_field_key,
+                    "value": pm.extracted_value,
+                    "accepted": True,
+                    "edited": False,
+                    "original_value": pm.extracted_value,
+                    "original_confidence": pm.confidence,
+                }
+                for pm in sm.param_mappings
+            ],
+            "notes": step.notes or "",
+            "na": False,
+            "na_reason": "",
+            "timestamps": [t.model_dump() for t in step.timestamps],
+            "signatures": [s.model_dump() for s in step.signatures],
+            "deviations": [dv.model_dump() for dv in step.deviations],
+        })
+    return finalized
