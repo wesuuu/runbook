@@ -9,6 +9,9 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
+
+from app.models.iam import Organization, SubscriptionTier
 
 
 BENCHMARKS_DIR = Path(__file__).parent
@@ -253,16 +256,34 @@ def unit_ops_catalog() -> list[MagicMock]:
     return build_seed_catalog()
 
 
-# -- Shared score accumulator + pytest summary hook --
+@pytest_asyncio.fixture(scope="module")
+async def pro_org(db_session) -> Organization:
+    """Pro-tier org for benchmarks so AI provider defaults resolve."""
+    org = Organization(
+        name="Benchmark Org",
+        subscription_tier=SubscriptionTier.PRO.value,
+    )
+    db_session.add(org)
+    await db_session.flush()
+    return org
+
+
+# -- Shared score accumulators + pytest summary hook --
 
 all_benchmark_scores: list = []
 """Shared list that test files append BenchmarkScores to.
 The pytest_terminal_summary hook prints aggregate results."""
 
+all_batch_record_run_scores: list = []
+"""Shared list that batch record run benchmarks append scores to."""
+
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Print aggregate benchmark summary at the end of the run."""
-    if all_benchmark_scores:
-        from tests.benchmarks.scoring import print_summary_table
+    """Print aggregate benchmark summary at end of run."""
+    from tests.benchmarks.scoring import print_summary_table
+    from tests.benchmarks.batch_record_scoring import print_run_summary
 
+    if all_benchmark_scores:
         print_summary_table(all_benchmark_scores)
+    if all_batch_record_run_scores:
+        print_run_summary(all_batch_record_run_scores)

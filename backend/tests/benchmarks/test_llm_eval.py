@@ -37,17 +37,6 @@ _fixture_ids = [d.name for d in _fixture_dirs]
 class TestProtocolImportAccuracy:
     """Feed real documents through the LLM import pipeline and score results."""
 
-    @pytest_asyncio.fixture
-    async def pro_org(self, db_session) -> Organization:
-        """Create a Pro-tier org so AI provider defaults resolve."""
-        org = Organization(
-            name="Benchmark Org",
-            subscription_tier=SubscriptionTier.PRO.value,
-        )
-        db_session.add(org)
-        await db_session.flush()
-        return org
-
     @pytest.mark.parametrize("fixture_dir", _fixture_dirs, ids=_fixture_ids)
     async def test_import_accuracy(self, fixture_dir: Path, db_session, pro_org):
         """Run a single fixture through extract -> parse -> build_proposal."""
