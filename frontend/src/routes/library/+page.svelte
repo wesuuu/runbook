@@ -195,12 +195,14 @@
             oninput={handleSearchInput}
         />
         {#if searchQuery}
-            <button
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                class="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground hover:text-foreground"
                 onclick={clearSearch}
             >
                 <X class="h-4 w-4" />
-            </button>
+            </Button>
         {/if}
     </div>
 

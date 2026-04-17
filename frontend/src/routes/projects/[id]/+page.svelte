@@ -341,38 +341,38 @@
             <!-- Action buttons -->
             <div class="shrink-0 flex gap-2.5 items-start pt-6">
                 {#if activeTab === "experiments"}
-                    <button
-                        class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
+                    <Button
+                        size="sm"
                         onclick={() => (showExperimentModal = true)}
                     >
                         + New Experiment
-                    </button>
+                    </Button>
                 {:else if activeTab === "runs"}
-                    <button
-                        class="px-4.5 py-2 bg-teal-600 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-teal-700"
+                    <Button
+                        size="sm"
                         onclick={() => (showBatchImportModal = true)}
                     >
                         Import Batch Record
-                    </button>
-                    <button
-                        class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
+                    </Button>
+                    <Button
+                        size="sm"
                         onclick={() => (showRunModal = true)}
                     >
                         + New Run
-                    </button>
+                    </Button>
                 {:else if activeTab === "protocols"}
-                    <button
-                        class="px-4.5 py-2 bg-teal-600 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-teal-700"
+                    <Button
+                        size="sm"
                         onclick={() => (showImportModal = true)}
                     >
                         Import Protocol
-                    </button>
-                    <button
-                        class="px-4.5 py-2 bg-slate-800 text-white rounded-lg text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
+                    </Button>
+                    <Button
+                        size="sm"
                         onclick={createProtocol}
                     >
                         + New Protocol
-                    </button>
+                    </Button>
                 {/if}
             </div>
         </div>
@@ -380,12 +380,14 @@
         <!-- Tab Navigation -->
         <nav class="flex px-4 sm:px-8 border-b border-gray-200 overflow-x-auto">
             {#each validTabs as tab}
-                <button
-                    class="px-5 py-3 text-sm font-medium text-slate-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-all -mb-px hover:text-slate-800 {activeTab === tab ? '!text-slate-900 !font-semibold !border-slate-900' : ''}"
+                <Button
+                    variant="tab"
+                    data-active={activeTab === tab}
                     onclick={() => setTab(tab)}
+                    class="px-5 py-3 -mb-px"
                 >
                     {tab === "protocols" ? "Protocols" : tab === "experiments" ? "Experiments" : tab === "runs" ? "All Runs" : tab === "activity" ? "Activity" : "Settings"}
-                </button>
+                </Button>
             {/each}
         </nav>
 
@@ -482,23 +484,22 @@
             </div>
         </div>
         <Dialog.Footer>
-            <button
+            <Button
+                variant="secondary"
                 onclick={() => {
                     showExperimentModal = false;
                     newExperimentName = "";
                     newExperimentDescription = "";
                 }}
-                class="px-4 py-2 text-sm font-medium text-foreground/80 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
             >
                 Cancel
-            </button>
-            <button
+            </Button>
+            <Button
                 onclick={createExperiment}
                 disabled={!newExperimentName}
-                class="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
                 Create
-            </button>
+            </Button>
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>

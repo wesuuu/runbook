@@ -426,13 +426,15 @@
                         </div>
                         <nav class="space-y-0.5 max-h-[calc(100vh-8rem)] overflow-y-auto">
                             {#each sectionNav as section}
-                                <button
-                                    class="block w-full text-left text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-muted/50 transition-colors duration-150 cursor-pointer truncate"
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="w-full justify-start h-auto text-left text-xs text-muted-foreground font-normal px-2 py-1.5 truncate"
                                     onclick={() => handleSidebarClick(section.chunkIndex)}
                                     title={section.heading}
                                 >
-                                    {section.heading}
-                                </button>
+                                    <span class="truncate w-full">{section.heading}</span>
+                                </Button>
                             {/each}
                         </nav>
                     </div>
@@ -483,12 +485,14 @@
                                         oninput={handleDocSearch}
                                     />
                                     {#if docSearchQuery}
-                                        <button
-                                            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors duration-150 cursor-pointer"
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            class="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
                                             onclick={clearDocSearch}
                                         >
                                             <X class="h-3.5 w-3.5" />
-                                        </button>
+                                        </Button>
                                     {/if}
                                 </div>
                             {/if}
@@ -532,8 +536,10 @@
                                     <!-- Collapsible front matter -->
                                     {#if isEnriched && role === 'front_matter'}
                                         {#if i === 0 || getChunkRole(allChunks[i - 1]) !== 'front_matter'}
-                                            <button
-                                                class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mb-2 mt-4 transition-colors duration-150 cursor-pointer"
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                class="h-auto px-0 py-1 gap-2 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent mb-2 mt-4 font-normal"
                                                 onclick={() => (showFrontMatter = !showFrontMatter)}
                                             >
                                                 {#if showFrontMatter}
@@ -542,7 +548,7 @@
                                                     <ChevronRight class="h-3 w-3" />
                                                 {/if}
                                                 Front Matter
-                                            </button>
+                                            </Button>
                                         {/if}
                                         {#if showFrontMatter}
                                             <div
@@ -560,8 +566,10 @@
                                     <!-- Collapsible TOC -->
                                     {:else if isEnriched && role === 'toc'}
                                         {#if i === 0 || getChunkRole(allChunks[i - 1]) !== 'toc'}
-                                            <button
-                                                class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground mb-2 mt-4 transition-colors duration-150 cursor-pointer"
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                class="h-auto px-0 py-1 gap-2 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent mb-2 mt-4 font-normal"
                                                 onclick={() => (showToc = !showToc)}
                                             >
                                                 {#if showToc}
@@ -570,7 +578,7 @@
                                                     <ChevronRight class="h-3 w-3" />
                                                 {/if}
                                                 Table of Contents
-                                            </button>
+                                            </Button>
                                         {/if}
                                         {#if showToc}
                                             <div
