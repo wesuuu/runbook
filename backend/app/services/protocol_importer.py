@@ -63,7 +63,7 @@ class ImportedStep(BaseModel):
     name: str = Field(description="Step name")
     description: str = Field(default="", description="Brief description")
     category: str = Field(default="General", description="Category")
-    duration_min: int = Field(default=30, description="Estimated duration in minutes")
+    duration_min: int | None = Field(default=30, description="Estimated duration in minutes")
     params: list[ImportedParam] = Field(
         default_factory=list,
         description="Parameters for this step",
@@ -214,7 +214,12 @@ RULES:
 8. For each parameter, provide name (snake_case), type, unit, and default value."""
 
     model = await get_model("protocol_generation", db, org_id=org_id)
-    agent = Agent(model, system_prompt=system_prompt, output_type=ParsedProtocol)
+    agent = Agent(
+        model,
+        system_prompt=system_prompt,
+        output_type=ParsedProtocol,
+        output_retries=3,
+    )
     result = await agent.run(
         f"Parse this protocol document into structured steps:\n\n{text}"
     )
@@ -252,7 +257,7 @@ def build_proposal(
                 name=step.name,
                 description=step.description,
                 category=matched_op.category,
-                duration_min=step.duration_min,
+                duration_min=step.duration_min or 30,
                 params=params,
                 param_schema=param_schema,
                 role=step.role,
@@ -270,7 +275,7 @@ def build_proposal(
                 name=step.name,
                 description=step.description,
                 category=step.category,
-                duration_min=step.duration_min,
+                duration_min=step.duration_min or 30,
                 params=params_dict,
                 param_schema=param_schema,
                 role=step.role,
