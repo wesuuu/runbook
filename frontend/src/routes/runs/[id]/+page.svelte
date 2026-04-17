@@ -19,6 +19,8 @@
     import { ConfirmDialog } from "$lib/components/ui/dialog";
     import { PendingImagesSchema, AnalyzePendingResultSchema, RunRoleAssignmentListSchema, UserSearchSchema } from '$lib/schemas';
     import { z } from 'zod';
+    import { fade } from 'svelte/transition';
+    import { blockDuration } from '$lib/transitions';
 
     const id = $derived($page.params.id);
 
@@ -316,16 +318,18 @@
 
 <div class="min-h-screen bg-background">
     {#if loading}
-        <LoadingSpinner message="Loading run..." size="lg" fullPage />
+        <div transition:fade={{ duration: blockDuration() }}>
+            <LoadingSpinner message="Loading run..." size="lg" fullPage />
+        </div>
     {:else if error && !run}
-        <div class="flex items-center justify-center h-screen">
+        <div transition:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen">
             <div class="text-center">
                 <div class="text-red-500 font-semibold mb-2">Error loading run</div>
                 <div class="text-muted-foreground text-sm">{error}</div>
             </div>
         </div>
     {:else if !run}
-        <div class="flex items-center justify-center h-screen text-muted-foreground">
+        <div transition:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen text-muted-foreground">
             Run not found
         </div>
     {:else}
