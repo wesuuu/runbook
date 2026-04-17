@@ -108,7 +108,7 @@
             <div class="flex items-center gap-1.5">
                 {#each allEntityTypes as et}
                     <button
-                        class="px-2.5 py-1 text-xs font-medium rounded-full border transition-colors {activityEntityFilter.includes(et)
+                        class="px-2.5 py-1 text-xs leading-5 font-medium rounded-full border transition-colors {activityEntityFilter.includes(et)
                             ? entityBadgeClasses(et) + ' ring-1 ring-offset-1'
                             : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300'}"
                         onclick={() => toggleEntityFilter(et)}
@@ -123,7 +123,7 @@
             <div class="flex items-center gap-1.5 flex-wrap">
                 {#each allActionTypes as at}
                     <button
-                        class="px-2.5 py-1 text-xs font-medium rounded-full border transition-colors {activityActionFilter.includes(at.value)
+                        class="px-2.5 py-1 text-xs leading-5 font-medium rounded-full border transition-colors {activityActionFilter.includes(at.value)
                             ? 'bg-slate-800 text-white border-slate-800'
                             : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300'}"
                         onclick={() => toggleActionFilter(at.value)}
