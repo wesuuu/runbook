@@ -4,7 +4,7 @@
 
 **Goal:** Add an LLM accuracy benchmark for the F-0057 paper batch-record import pipeline — migrate the four orphaned fixtures into `backend/tests/benchmarks/document-to-run/`, add stage-separated scoring (extraction + mapping), wire a parametrized runner under the existing `-m benchmark` marker.
 
-**Architecture:** New `batch_record_scoring.py` with two scorers (`score_extraction`, `score_mapping`) and helper alignment/tolerance utilities. New `TestBatchRecordAccuracy` class in the existing `test_llm_eval.py`. Conftest extended with fixture discovery, shared `pro_org` fixture, and an updated `pytest_terminal_summary` that prints three tables (protocol-import, batch-record-extraction, batch-record-mapping).
+**Architecture:** Centralize shared benchmark utilities first: `matching.py` with `fuzzy_ratio`/`align_by_name`/`f1`, generalized `discover_fixtures(subdir, marker_file)` + `load_json()` in conftest, and migrate F-0058's `scoring.py` to consume these. Then build `batch_record_scoring.py` (two scorers: `score_extraction`, `score_mapping`) on top of the shared helpers. New `TestBatchRecordAccuracy` class in the existing `test_llm_eval.py`. Conftest extended with shared `pro_org` fixture and an updated `pytest_terminal_summary` that prints three tables (protocol-import, batch-record-extraction, batch-record-mapping).
 
 **Tech Stack:** pytest + pytest-asyncio, `difflib.SequenceMatcher` for fuzzy string match, `dataclasses` for score containers, `pydantic_ai` pipeline (already in place).
 
@@ -15,8 +15,10 @@
 ## File Structure
 
 **Create:**
-- `backend/tests/benchmarks/batch_record_scoring.py` — dataclasses, helpers, `score_extraction`, `score_mapping`, `print_extraction_report`, `print_mapping_report`
-- `backend/tests/unit/test_batch_record_scoring.py` — unit tests for the scorer (no LLM required)
+- `backend/tests/benchmarks/matching.py` — shared `fuzzy_ratio`, `align_by_name`, `f1` helpers
+- `backend/tests/unit/test_benchmark_matching.py` — unit tests for shared matching helpers
+- `backend/tests/benchmarks/batch_record_scoring.py` — dataclasses, batch-record-specific helpers (`_numeric_equal`, `_unit_equal`), `score_extraction`, `score_mapping`, `print_extraction_report`, `print_mapping_report`
+- `backend/tests/unit/test_batch_record_scoring.py` — unit tests for the batch-record scorer (no LLM required)
 - `backend/tests/benchmarks/document-to-run/` — new fixture tree
 - `backend/tests/benchmarks/document-to-run/0{1..5}-<name>/document.pdf` — migrated + new scenario docs
 - `backend/tests/benchmarks/document-to-run/0{1..5}-<name>/expected_extraction.json`
@@ -24,9 +26,9 @@
 - `backend/tests/benchmarks/document-to-run/0{1..5}-<name>/expected_mapping.json`
 
 **Modify:**
-- `backend/tests/benchmarks/conftest.py` — add batch-record fixture discovery, promote `pro_org` to module scope, extend `pytest_terminal_summary`
-- `backend/tests/benchmarks/test_llm_eval.py` — add `TestBatchRecordAccuracy` class
-- `backend/tests/benchmarks/scoring.py` — no change (keeps F-0058 signature untouched)
+- `backend/tests/benchmarks/conftest.py` — generalize `discover_fixtures(subdir, marker_file)` + `load_json(fixture_dir, filename)`, promote `pro_org` to module scope, extend `pytest_terminal_summary`
+- `backend/tests/benchmarks/scoring.py` — migrate `_match_steps` internals to use `matching.align_by_name`; replace inline F1 with `matching.f1`. Public API unchanged.
+- `backend/tests/benchmarks/test_llm_eval.py` — update F-0058 class to use generalized `discover_fixtures`; add `TestBatchRecordAccuracy` class
 
 **Delete:**
 - `backend/tests/integration/test_batch_record_import_llm.py` (superseded smoke test)
@@ -74,7 +76,7 @@ git mv backend/tests/fixtures/batch_record_extra_steps_expected.json backend/tes
 - [ ] **Step 3: Verify moves**
 
 Run: `ls backend/tests/benchmarks/document-to-run/*/`
-Expected: each of 01–04 shows `document.pdf` and `expected_extraction.json`. `05-messy-scan` is empty (populated in Task 18).
+Expected: each of 01–04 shows `document.pdf` and `expected_extraction.json`. `05-messy-scan` is empty (populated in Task 21).
 
 - [ ] **Step 4: Commit**
 
@@ -85,9 +87,407 @@ git commit -m "test(benchmark): migrate batch record fixtures to document-to-run
 
 ---
 
-## Phase 1 — Scoring Module Core (TDD)
+## Phase 0.5 — Centralize shared benchmark utilities
 
-### Task 2: Create scoring module skeleton with dataclasses
+These three tasks extract helpers currently inline in F-0058's scoring + conftest, so the batch-record benchmark and any future benchmark consume them without duplication. F-0058 tests keep the same public API — the migration is internals-only.
+
+### Task 2: Create `matching.py` with fuzzy/alignment/F1 helpers (TDD)
+
+**Files:**
+- Create: `backend/tests/benchmarks/matching.py`
+- Create: `backend/tests/unit/test_benchmark_matching.py`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `backend/tests/unit/test_benchmark_matching.py`:
+
+```python
+"""Unit tests for benchmarks.matching shared helpers."""
+
+from tests.benchmarks.matching import align_by_name, f1, fuzzy_ratio
+
+
+def test_fuzzy_ratio_identical():
+    assert fuzzy_ratio("Buffer Preparation", "Buffer Preparation") == 1.0
+
+
+def test_fuzzy_ratio_case_insensitive():
+    assert fuzzy_ratio("Buffer Prep", "buffer prep") == 1.0
+
+
+def test_fuzzy_ratio_similar():
+    assert fuzzy_ratio("Buffer Prep", "Buffer Preparation") >= 0.7
+
+
+def test_fuzzy_ratio_different():
+    assert fuzzy_ratio("Buffer Prep", "Centrifugation") < 0.5
+
+
+def test_fuzzy_ratio_empty_strings():
+    assert fuzzy_ratio("", "") == 1.0
+    assert fuzzy_ratio("", "foo") == 0.0
+    assert fuzzy_ratio("foo", "") == 0.0
+
+
+def test_align_by_name_perfect():
+    expected = [{"name": "A"}, {"name": "B"}]
+    actual = [{"name": "A"}, {"name": "B"}]
+    aligned = align_by_name(expected, actual, "name")
+    assert len(aligned) == 2
+    assert all(e is not None and a is not None for e, a in aligned)
+
+
+def test_align_by_name_with_step_name_key():
+    expected = [{"step_name": "A"}, {"step_name": "B"}]
+    actual = [{"step_name": "A"}]
+    aligned = align_by_name(expected, actual, "step_name")
+    assert aligned[0][1] is not None
+    assert aligned[1][1] is None
+
+
+def test_align_by_name_fuzzy_above_threshold():
+    expected = [{"name": "Buffer Preparation"}]
+    actual = [{"name": "Buffer Prep"}]
+    aligned = align_by_name(expected, actual, "name", threshold=0.7)
+    assert aligned[0][1] is not None
+
+
+def test_align_by_name_no_match_below_threshold():
+    expected = [{"name": "Filtration"}]
+    actual = [{"name": "Incubation"}]
+    aligned = align_by_name(expected, actual, "name", threshold=0.7)
+    assert aligned[0][1] is None
+
+
+def test_align_by_name_greedy_ambiguous():
+    expected = [{"name": "Buffer Prep"}, {"name": "Buffer Preparation"}]
+    actual = [{"name": "Buffer Prep"}]
+    aligned = align_by_name(expected, actual, "name", threshold=0.7)
+    assert aligned[0][1] is not None  # first wins
+    assert aligned[1][1] is None      # second is missed
+
+
+def test_f1_perfect():
+    assert f1(n_matched=3, n_expected=3, n_actual=3) == 1.0
+
+
+def test_f1_all_missed():
+    assert f1(n_matched=0, n_expected=3, n_actual=0) == 0.0
+
+
+def test_f1_recall_half():
+    # recall 0.5, precision 1.0 -> F1 ≈ 0.667
+    val = f1(n_matched=1, n_expected=2, n_actual=1)
+    assert 0.65 < val < 0.68
+
+
+def test_f1_precision_half():
+    # recall 1.0, precision 0.5 -> F1 ≈ 0.667
+    val = f1(n_matched=1, n_expected=1, n_actual=2)
+    assert 0.65 < val < 0.68
+
+
+def test_f1_both_empty():
+    # Nothing expected, nothing found — trivially perfect
+    assert f1(n_matched=0, n_expected=0, n_actual=0) == 1.0
+```
+
+- [ ] **Step 2: Run to verify fail**
+
+```bash
+cd backend && source .venv/bin/activate && pytest tests/unit/test_benchmark_matching.py -v
+```
+
+Expected: FAIL with `ModuleNotFoundError: No module named 'tests.benchmarks.matching'`.
+
+- [ ] **Step 3: Implement the module**
+
+Create `backend/tests/benchmarks/matching.py`:
+
+```python
+"""Shared matching helpers for benchmark scoring.
+
+Used by both the F-0058 protocol-import scorer and the F-0057 batch-record
+scorer. Stays small and stateless by design — domain-specific scoring
+lives in each benchmark's own scoring module.
+"""
+
+from __future__ import annotations
+
+from difflib import SequenceMatcher
+
+
+def fuzzy_ratio(a: str, b: str) -> float:
+    """Case-insensitive fuzzy similarity ratio in [0.0, 1.0].
+
+    Whitespace stripped from both ends. Two empty strings count as a
+    perfect match (1.0); one empty and one non-empty is 0.0.
+    """
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+
+
+def align_by_name(
+    expected: list[dict],
+    actual: list[dict],
+    name_key: str,
+    threshold: float = 0.7,
+) -> list[tuple[dict, dict | None]]:
+    """Greedy best-match alignment by fuzzy ratio on a named field.
+
+    Returns (expected_item, matched_actual_or_None) pairs in expected order.
+    Each actual item matches at most one expected item. If the best
+    available ratio is below `threshold`, the expected item is marked
+    unmatched.
+    """
+    remaining = list(actual)
+    out: list[tuple[dict, dict | None]] = []
+    for exp in expected:
+        exp_name = exp.get(name_key, "")
+        best = None
+        best_ratio = 0.0
+        for act in remaining:
+            ratio = fuzzy_ratio(exp_name, act.get(name_key, ""))
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best = act
+        if best is not None and best_ratio >= threshold:
+            out.append((exp, best))
+            remaining.remove(best)
+        else:
+            out.append((exp, None))
+    return out
+
+
+def f1(n_matched: int, n_expected: int, n_actual: int) -> float:
+    """F1 score from match counts.
+
+    Empty expected AND empty actual → 1.0 (trivially perfect).
+    Empty expected with non-empty actual → 0.0 (all hallucinations).
+    """
+    if n_expected == 0 and n_actual == 0:
+        return 1.0
+    recall = n_matched / n_expected if n_expected else 0.0
+    precision = n_matched / n_actual if n_actual else 0.0
+    denom = precision + recall
+    return 2 * precision * recall / denom if denom > 0 else 0.0
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+cd backend && pytest tests/unit/test_benchmark_matching.py -v
+```
+
+Expected: all pass (14 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/tests/benchmarks/matching.py backend/tests/unit/test_benchmark_matching.py
+git commit -m "test(benchmark): extract shared matching helpers [F-0057]"
+```
+
+---
+
+### Task 3: Generalize `discover_fixtures` and add `load_json` in conftest
+
+**Files:**
+- Modify: `backend/tests/benchmarks/conftest.py`
+
+Goal: same public functions, parameterized over subdir + marker filename, so every benchmark uses one helper.
+
+- [ ] **Step 1: Update conftest**
+
+Open `backend/tests/benchmarks/conftest.py`. Replace the `discover_fixtures()` and `load_expected()` block (roughly lines 18-33) with:
+
+```python
+def discover_fixtures(
+    subdir: str = "input-to-protocol",
+    marker_file: str = "expected.json",
+) -> list[Path]:
+    """Find all fixture directories under `subdir` that contain `marker_file`.
+
+    Defaults preserve the F-0058 call site: `discover_fixtures()` with no
+    args returns input-to-protocol dirs with `expected.json`.
+    """
+    root = BENCHMARKS_DIR / subdir
+    if not root.exists():
+        return []
+    return sorted(
+        d for d in root.iterdir()
+        if d.is_dir() and (d / marker_file).exists()
+    )
+
+
+def load_json(fixture_dir: Path, filename: str) -> dict:
+    """Load a JSON file from a fixture directory."""
+    with open(fixture_dir / filename) as f:
+        return json.load(f)
+
+
+def load_expected(fixture_dir: Path) -> dict:
+    """Backwards-compatible wrapper: load expected.json (F-0058 convention)."""
+    return load_json(fixture_dir, "expected.json")
+```
+
+Keep `INPUT_TO_PROTOCOL_DIR` constant as-is (for any external imports).
+
+- [ ] **Step 2: Verify F-0058 benchmark still collects**
+
+```bash
+cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only -q
+```
+
+Expected: `TestProtocolImportAccuracy::test_import_accuracy[*]` items collected for all 6 scenarios without error.
+
+- [ ] **Step 3: Verify `test_benchmark_matching.py` and all unit tests still pass**
+
+```bash
+cd backend && pytest tests/unit/ -q
+```
+
+Expected: all pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/tests/benchmarks/conftest.py
+git commit -m "test(benchmark): generalize discover_fixtures and add load_json [F-0057]"
+```
+
+---
+
+### Task 4: Migrate F-0058 `scoring.py` to use shared `matching` helpers
+
+**Files:**
+- Modify: `backend/tests/benchmarks/scoring.py`
+
+Goal: replace the inline `SequenceMatcher` usage in `_match_steps` and the inline F1 arithmetic in `score_proposal` with calls to `matching.fuzzy_ratio`, `matching.align_by_name`, `matching.f1`. Public API (`score_proposal`, `BenchmarkScores`, `print_score_report`, `print_summary_table`) unchanged.
+
+- [ ] **Step 1: Add import at top of `scoring.py`**
+
+After the existing `from difflib import SequenceMatcher` line, add:
+
+```python
+from tests.benchmarks.matching import align_by_name, f1, fuzzy_ratio
+```
+
+(Keep the `SequenceMatcher` import for now — remove in Step 3 once nothing uses it.)
+
+- [ ] **Step 2: Replace `_match_steps` body with a thin wrapper around `align_by_name`**
+
+Find the existing function (around line 79):
+
+```python
+def _match_steps(
+    expected_steps: list[dict], actual_steps: list[dict]
+) -> list[tuple[dict, dict | None]]:
+    """Match expected steps to actual steps by fuzzy name similarity.
+
+    Returns list of (expected_step, matched_actual_step_or_None).
+    """
+    remaining_actual = list(actual_steps)
+    matches: list[tuple[dict, dict | None]] = []
+
+    for exp in expected_steps:
+        best_match = None
+        best_ratio = 0.0
+        for act in remaining_actual:
+            act_name = act.get("name", "")
+            ratio = SequenceMatcher(
+                None, exp["name"].lower(), act_name.lower()
+            ).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_match = act
+        if best_match and best_ratio >= 0.7:
+            matches.append((exp, best_match))
+            remaining_actual.remove(best_match)
+        else:
+            matches.append((exp, None))
+
+    return matches
+```
+
+Replace with:
+
+```python
+def _match_steps(
+    expected_steps: list[dict], actual_steps: list[dict]
+) -> list[tuple[dict, dict | None]]:
+    """Match expected steps to actual steps by fuzzy name similarity.
+
+    Thin wrapper over `matching.align_by_name` preserving the F-0058 call
+    signature — expected/actual dicts keyed by "name".
+    """
+    return align_by_name(expected_steps, actual_steps, "name", threshold=0.7)
+```
+
+- [ ] **Step 3: Replace inline F1 in `score_proposal` with `f1()`**
+
+Find the block around lines 149-157 inside `score_proposal`:
+
+```python
+    recall = len(matched_expected) / len(expected_steps) if expected_steps else 1.0
+    precision = (
+        len(matched_expected) / len(actual_steps) if actual_steps else (1.0 if not expected_steps else 0.0)
+    )
+    scores.step_detection = (
+        2 * precision * recall / (precision + recall)
+        if (precision + recall) > 0
+        else 0.0
+    )
+```
+
+Replace with:
+
+```python
+    scores.step_detection = f1(
+        n_matched=len(matched_expected),
+        n_expected=len(expected_steps),
+        n_actual=len(actual_steps),
+    )
+```
+
+- [ ] **Step 4: Remove now-unused `SequenceMatcher` import**
+
+Delete the line `from difflib import SequenceMatcher` at the top of `scoring.py` (nothing else in this file uses it after the migration).
+
+- [ ] **Step 5: Verify F-0058 scorer unit tests still pass**
+
+If the repo has any tests that import from `scoring.py`, run them:
+
+```bash
+cd backend && grep -rl "from tests.benchmarks.scoring import\|from tests.benchmarks import scoring" tests/ | head
+cd backend && pytest tests/unit/ -q
+```
+
+Expected: no failures. (The F-0058 scoring module is consumed by the benchmark LLM runner, which isn't run without `-m benchmark`.)
+
+- [ ] **Step 6: Verify F-0058 benchmark still collects cleanly**
+
+```bash
+cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only -q
+```
+
+Expected: 6 `TestProtocolImportAccuracy::test_import_accuracy[*]` items collected without errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add backend/tests/benchmarks/scoring.py
+git commit -m "test(benchmark): migrate F-0058 scoring to shared matching helpers [F-0057]"
+```
+
+---
+
+## Phase 1 — Batch-Record Scoring Module (TDD)
+
+### Task 5: Create batch-record scoring module skeleton with dataclasses
 
 **Files:**
 - Create: `backend/tests/benchmarks/batch_record_scoring.py`
@@ -317,13 +717,15 @@ git commit -m "test(benchmark): add batch record scoring dataclasses [F-0057]"
 
 ---
 
-### Task 3: Implement fuzzy/numeric/unit helpers (TDD)
+### Task 6: Add numeric/unit helpers and re-export fuzzy match (TDD)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py` (add helpers)
 - Modify: `backend/tests/unit/test_batch_record_scoring.py`
 
-- [ ] **Step 1: Write failing tests for helpers**
+`fuzzy_ratio` is already implemented and tested in `matching.py` (Task 2). This task adds the batch-record-specific numeric tolerance and unit-synonym helpers, and aliases `_fuzzy_match = fuzzy_ratio` internally so the scorer functions can call `_fuzzy_match(...)` idiomatically.
+
+- [ ] **Step 1: Write failing tests for the new helpers**
 
 Append to `backend/tests/unit/test_batch_record_scoring.py`:
 
@@ -335,21 +737,9 @@ from tests.benchmarks.batch_record_scoring import (
 )
 
 
-def test_fuzzy_match_identical():
-    assert _fuzzy_match("Buffer Preparation", "Buffer Preparation") == 1.0
-
-
-def test_fuzzy_match_case_insensitive():
+def test_fuzzy_match_aliased_to_matching():
+    # Smoke test: the local alias delegates to matching.fuzzy_ratio.
     assert _fuzzy_match("Buffer Prep", "buffer prep") == 1.0
-
-
-def test_fuzzy_match_similar():
-    # "Buffer Prep" vs "Buffer Preparation" should be a strong match
-    assert _fuzzy_match("Buffer Prep", "Buffer Preparation") >= 0.7
-
-
-def test_fuzzy_match_different():
-    assert _fuzzy_match("Buffer Prep", "Centrifugation") < 0.5
 
 
 def test_numeric_equal_exact():
@@ -413,7 +803,12 @@ Expected: FAIL with import error for `_fuzzy_match`, `_numeric_equal`, `_unit_eq
 Append to `backend/tests/benchmarks/batch_record_scoring.py`:
 
 ```python
-from difflib import SequenceMatcher
+from tests.benchmarks.matching import fuzzy_ratio
+
+
+# Local alias so scorer call sites read `_fuzzy_match(...)` idiomatically
+# while the actual implementation lives in the shared matching module.
+_fuzzy_match = fuzzy_ratio
 
 
 _UNIT_SYNONYMS: dict[str, str] = {
@@ -445,15 +840,6 @@ _UNIT_SYNONYMS: dict[str, str] = {
     "hours": "hr",
     "h": "hr",
 }
-
-
-def _fuzzy_match(a: str, b: str) -> float:
-    """Case-insensitive fuzzy ratio in [0.0, 1.0]."""
-    if not a and not b:
-        return 1.0
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
 
 def _numeric_equal(a: float | int, b: float | int) -> bool:
@@ -493,84 +879,60 @@ def _unit_equal(a: str | None, b: str | None) -> bool:
 cd backend && pytest tests/unit/test_batch_record_scoring.py -v
 ```
 
-Expected: all tests PASS (including 4 from Task 2 + new helper tests).
+Expected: all PASS (prior dataclass tests + new helper tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): add batch record scoring helpers [F-0057]"
+git commit -m "test(benchmark): add batch record numeric/unit helpers [F-0057]"
 ```
 
 ---
 
-### Task 4: Implement step alignment (TDD)
+### Task 7: Step alignment wrapper over `align_by_name` (TDD)
+
+`align_by_name` lives in `matching.py` (tested in Task 2). This task adds a tiny wrapper so the scorer uses `_align_steps(expected, actual)` idiomatically (the name_key and threshold for batch records are constant).
 
 **Files:**
-- Modify: `backend/tests/benchmarks/batch_record_scoring.py` (add `_align_steps`)
+- Modify: `backend/tests/benchmarks/batch_record_scoring.py`
 - Modify: `backend/tests/unit/test_batch_record_scoring.py`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Write the wrapper smoke test**
 
-Append to test file:
+Append:
 
 ```python
 from tests.benchmarks.batch_record_scoring import _align_steps
 
 
-def test_align_steps_perfect_match():
-    expected = [{"step_name": "A"}, {"step_name": "B"}]
-    actual = [{"step_name": "A"}, {"step_name": "B"}]
-    aligned = _align_steps(expected, actual)
-    assert len(aligned) == 2
-    assert aligned[0][0]["step_name"] == "A" and aligned[0][1]["step_name"] == "A"
-    assert aligned[1][0]["step_name"] == "B" and aligned[1][1]["step_name"] == "B"
-
-
-def test_align_steps_missing_expected():
+def test_align_steps_wrapper_preserves_step_name_key():
+    # Smoke test: wrapper passes "step_name" through to align_by_name.
     expected = [{"step_name": "A"}, {"step_name": "B"}]
     actual = [{"step_name": "A"}]
     aligned = _align_steps(expected, actual)
-    assert len(aligned) == 2
-    assert aligned[1][1] is None  # B has no actual match
-
-
-def test_align_steps_fuzzy_match():
-    expected = [{"step_name": "Buffer Preparation"}]
-    actual = [{"step_name": "Buffer Prep"}]
-    aligned = _align_steps(expected, actual)
     assert aligned[0][1] is not None
-
-
-def test_align_steps_no_match_below_threshold():
-    expected = [{"step_name": "Filtration"}]
-    actual = [{"step_name": "Incubation"}]
-    aligned = _align_steps(expected, actual)
-    assert aligned[0][1] is None
-
-
-def test_align_steps_greedy_ambiguous():
-    # Two expected fuzzy-matching one actual — first expected wins
-    expected = [{"step_name": "Buffer Prep"}, {"step_name": "Buffer Preparation"}]
-    actual = [{"step_name": "Buffer Prep"}]
-    aligned = _align_steps(expected, actual)
-    assert aligned[0][1] is not None  # first wins
-    assert aligned[1][1] is None      # second is missed
+    assert aligned[1][1] is None
 ```
+
+(Exhaustive alignment behavior is covered by `test_benchmark_matching.py`.)
 
 - [ ] **Step 2: Run to verify fail**
 
 ```bash
-cd backend && pytest tests/unit/test_batch_record_scoring.py -v
+cd backend && pytest tests/unit/test_batch_record_scoring.py -v -k align_steps
 ```
 
 Expected: FAIL with import error for `_align_steps`.
 
-- [ ] **Step 3: Implement `_align_steps`**
+- [ ] **Step 3: Add wrapper**
 
 Append to `batch_record_scoring.py`:
 
 ```python
+from tests.benchmarks.matching import align_by_name
+
+
 _STEP_MATCH_THRESHOLD = 0.7
 
 
@@ -580,25 +942,12 @@ def _align_steps(
 ) -> list[tuple[dict, dict | None]]:
     """Greedy best-match by fuzzy step_name similarity.
 
-    Returns (expected_step, matched_actual_or_None) pairs in expected order.
+    Thin wrapper over `matching.align_by_name` using "step_name" as the
+    key and the batch-record threshold.
     """
-    remaining = list(actual)
-    out: list[tuple[dict, dict | None]] = []
-    for exp in expected:
-        exp_name = exp.get("step_name", "")
-        best = None
-        best_ratio = 0.0
-        for act in remaining:
-            ratio = _fuzzy_match(exp_name, act.get("step_name", ""))
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best = act
-        if best is not None and best_ratio >= _STEP_MATCH_THRESHOLD:
-            out.append((exp, best))
-            remaining.remove(best)
-        else:
-            out.append((exp, None))
-    return out
+    return align_by_name(
+        expected, actual, "step_name", threshold=_STEP_MATCH_THRESHOLD,
+    )
 ```
 
 - [ ] **Step 4: Run tests**
@@ -613,14 +962,14 @@ Expected: all pass.
 
 ```bash
 git add backend/tests/benchmarks/batch_record_scoring.py backend/tests/unit/test_batch_record_scoring.py
-git commit -m "test(benchmark): add step alignment for batch record scoring [F-0057]"
+git commit -m "test(benchmark): add _align_steps wrapper for batch record [F-0057]"
 ```
 
 ---
 
 ## Phase 2 — Extraction Scoring (TDD per dimension)
 
-### Task 5: `score_extraction` — step_detection dimension (TDD)
+### Task 8: `score_extraction` — step_detection dimension (TDD)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
@@ -754,7 +1103,7 @@ git commit -m "test(benchmark): score step_detection dimension [F-0057]"
 
 ---
 
-### Task 6: `score_extraction` — param_extraction (TDD)
+### Task 9: `score_extraction` — param_extraction (TDD)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
@@ -949,7 +1298,7 @@ git commit -m "test(benchmark): score param_extraction dimension [F-0057]"
 
 ---
 
-### Task 7: `score_extraction` — metadata + timestamps (TDD)
+### Task 10: `score_extraction` — metadata + timestamps (TDD)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
@@ -1151,7 +1500,7 @@ git commit -m "test(benchmark): score metadata and timestamps dimensions [F-0057
 
 ---
 
-### Task 8: `score_extraction` — signatures_deviations + confidence_calibration (TDD)
+### Task 11: `score_extraction` — signatures_deviations + confidence_calibration (TDD)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
@@ -1395,7 +1744,7 @@ git commit -m "test(benchmark): score signatures_deviations and confidence dimen
 
 ## Phase 3 — Mapping Scoring (TDD)
 
-### Task 9: `score_mapping` — step_matching + param_field_matching (TDD)
+### Task 12: `score_mapping` — step_matching + param_field_matching (TDD)
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
@@ -1735,12 +2084,12 @@ git commit -m "test(benchmark): score mapping dimensions [F-0057]"
 
 ---
 
-### Task 10: `score_mapping` — na_detection + extra_step_handling edge cases (TDD)
+### Task 13: `score_mapping` — na_detection + extra_step_handling edge cases (TDD)
 
 **Files:**
 - Modify: `backend/tests/unit/test_batch_record_scoring.py`
 
-(Implementation already in place from Task 9; this task just adds the tests.)
+(Implementation already in place from Task 12; this task just adds the tests.)
 
 - [ ] **Step 1: Write edge case tests**
 
@@ -1856,7 +2205,7 @@ git commit -m "test(benchmark): add edge-case tests for mapping dimensions [F-00
 
 ---
 
-### Task 11: Print helpers for benchmark reports
+### Task 14: Print helpers for benchmark reports
 
 **Files:**
 - Modify: `backend/tests/benchmarks/batch_record_scoring.py`
@@ -2007,61 +2356,20 @@ git commit -m "test(benchmark): add batch record report printers [F-0057]"
 
 ## Phase 4 — Conftest & Runner
 
-### Task 12: Extend `conftest.py` with fixture discovery + pro_org promotion + summary
+### Task 15: Extend `conftest.py` with `pro_org` promotion + summary hook
 
 **Files:**
 - Modify: `backend/tests/benchmarks/conftest.py`
 
-- [ ] **Step 1: Read current state**
+Fixture discovery and JSON loading are already generalized (Task 3). This task adds the module-scope `pro_org` fixture, the two new score accumulators, and extends the summary hook.
 
-```bash
-cat backend/tests/benchmarks/conftest.py | head -30
-```
+- [ ] **Step 1: Apply edits**
 
-- [ ] **Step 2: Apply edits**
-
-Add to the top imports section of `conftest.py`:
+Add to the top imports section of `conftest.py` (near the existing pytest import):
 
 ```python
 import pytest_asyncio
 from app.models.iam import Organization, SubscriptionTier
-```
-
-Add after `INPUT_TO_PROTOCOL_DIR = BENCHMARKS_DIR / "input-to-protocol"`:
-
-```python
-DOCUMENT_TO_RUN_DIR = BENCHMARKS_DIR / "document-to-run"
-
-
-def discover_batch_record_fixtures() -> list[Path]:
-    """Find all document-to-run fixture directories with expected_extraction.json."""
-    if not DOCUMENT_TO_RUN_DIR.exists():
-        return []
-    return sorted(
-        d for d in DOCUMENT_TO_RUN_DIR.iterdir()
-        if d.is_dir() and (d / "expected_extraction.json").exists()
-    )
-
-
-def load_expected_extraction(fixture_dir: Path) -> dict:
-    with open(fixture_dir / "expected_extraction.json") as f:
-        return json.load(f)
-
-
-def load_protocol(fixture_dir: Path) -> dict | None:
-    p = fixture_dir / "protocol.json"
-    if not p.exists():
-        return None
-    with open(p) as f:
-        return json.load(f)
-
-
-def load_expected_mapping(fixture_dir: Path) -> dict | None:
-    p = fixture_dir / "expected_mapping.json"
-    if not p.exists():
-        return None
-    with open(p) as f:
-        return json.load(f)
 ```
 
 Promote `pro_org` to conftest module scope. Add near the bottom (before `all_benchmark_scores`):
@@ -2103,11 +2411,11 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         )
 ```
 
-- [ ] **Step 3: Remove the duplicated `pro_org` fixture from `TestProtocolImportAccuracy`**
+- [ ] **Step 2: Remove the duplicated `pro_org` fixture from `TestProtocolImportAccuracy`**
 
 Open `backend/tests/benchmarks/test_llm_eval.py`. Delete the `@pytest_asyncio.fixture async def pro_org(...)` method inside `TestProtocolImportAccuracy` (lines ~40-50). Test still uses `pro_org` arg — it now resolves via conftest.
 
-- [ ] **Step 4: Verify F-0058 benchmark still collects cleanly**
+- [ ] **Step 3: Verify F-0058 benchmark still collects cleanly**
 
 ```bash
 cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only
@@ -2115,16 +2423,16 @@ cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-on
 
 Expected: collection succeeds, all `TestProtocolImportAccuracy::test_import_accuracy[*]` items listed. Do NOT run them (requires LLM).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add backend/tests/benchmarks/conftest.py backend/tests/benchmarks/test_llm_eval.py
-git commit -m "test(benchmark): add batch record fixture discovery and shared pro_org [F-0057]"
+git commit -m "test(benchmark): promote pro_org + add batch-record accumulators [F-0057]"
 ```
 
 ---
 
-### Task 13: Add `TestBatchRecordAccuracy` runner
+### Task 16: Add `TestBatchRecordAccuracy` runner
 
 **Files:**
 - Modify: `backend/tests/benchmarks/test_llm_eval.py`
@@ -2146,10 +2454,8 @@ from tests.benchmarks.batch_record_scoring import (
 from tests.benchmarks.conftest import (
     all_batch_record_extraction_scores,
     all_batch_record_mapping_scores,
-    discover_batch_record_fixtures,
-    load_expected_extraction,
-    load_expected_mapping,
-    load_protocol,
+    discover_fixtures,
+    load_json,
 )
 ```
 
@@ -2158,7 +2464,10 @@ from tests.benchmarks.conftest import (
 Near the top of the file, after `_fixture_dirs` / `_fixture_ids` lines:
 
 ```python
-_br_fixture_dirs = discover_batch_record_fixtures()
+_br_fixture_dirs = discover_fixtures(
+    subdir="document-to-run",
+    marker_file="expected_extraction.json",
+)
 _br_fixture_ids = [d.name for d in _br_fixture_dirs]
 ```
 
@@ -2185,7 +2494,7 @@ class TestBatchRecordAccuracy:
             text, page_images, db_session, org_id=pro_org.id,
         )
 
-        expected_extraction = load_expected_extraction(fixture_dir)
+        expected_extraction = load_json(fixture_dir, "expected_extraction.json")
         ext_scores = score_extraction(
             extraction, expected_extraction, fixture_dir.name,
         )
@@ -2198,16 +2507,18 @@ class TestBatchRecordAccuracy:
         )
 
         # Stage 2: mapping (only if protocol.json exists)
-        protocol = load_protocol(fixture_dir)
-        if protocol is None:
+        protocol_path = fixture_dir / "protocol.json"
+        if not protocol_path.exists():
             return
+        protocol = load_json(fixture_dir, "protocol.json")
 
-        expected_mapping = load_expected_mapping(fixture_dir)
-        if expected_mapping is None:
+        mapping_path = fixture_dir / "expected_mapping.json"
+        if not mapping_path.exists():
             pytest.fail(
                 f"{fixture_dir.name}: protocol.json present but "
                 "expected_mapping.json missing"
             )
+        expected_mapping = load_json(fixture_dir, "expected_mapping.json")
 
         mappings = await map_steps_to_protocol(
             extraction, protocol, db_session, org_id=pro_org.id,
@@ -2230,7 +2541,7 @@ class TestBatchRecordAccuracy:
 cd backend && pytest tests/benchmarks/test_llm_eval.py -m benchmark --collect-only -q
 ```
 
-Expected: shows 4 `TestBatchRecordAccuracy::test_batch_record_accuracy[0X-<name>]` items (one per migrated fixture; `05-messy-scan` only appears after Task 18).
+Expected: shows 4 `TestBatchRecordAccuracy::test_batch_record_accuracy[0X-<name>]` items (one per migrated fixture; `05-messy-scan` only appears after Task 21).
 
 - [ ] **Step 5: Commit**
 
@@ -2245,7 +2556,7 @@ git commit -m "test(benchmark): add TestBatchRecordAccuracy parametrized runner 
 
 Each scenario needs `protocol.json` + `expected_mapping.json`. These are hand-authored ground truth — **pause between tasks and show the user for sign-off**.
 
-### Task 14: Author `01-perfect-match/protocol.json` and `expected_mapping.json`
+### Task 17: Author `01-perfect-match/protocol.json` and `expected_mapping.json`
 
 **Files:**
 - Create: `backend/tests/benchmarks/document-to-run/01-perfect-match/protocol.json`
@@ -2370,7 +2681,7 @@ git commit -m "test(benchmark): author 01-perfect-match protocol + mapping [F-00
 
 ---
 
-### Task 15: Author `02-wrong-protocol/protocol.json` and `expected_mapping.json`
+### Task 18: Author `02-wrong-protocol/protocol.json` and `expected_mapping.json`
 
 **Files:**
 - Create: `backend/tests/benchmarks/document-to-run/02-wrong-protocol/protocol.json`
@@ -2386,7 +2697,7 @@ Identify the step_names. For this scenario the *protocol* should be unrelated (e
 
 - [ ] **Step 2: Author a mismatched `protocol.json`**
 
-Pick a 3-step protocol (e.g., Seeding / Incubation / Harvest) completely unrelated to the document's steps. Full file with nodes + edges similar to Task 14's shape.
+Pick a 3-step protocol (e.g., Seeding / Incubation / Harvest) completely unrelated to the document's steps. Full file with nodes + edges similar to Task 17's shape.
 
 - [ ] **Step 3: Author `expected_mapping.json` capturing "nothing maps"**
 
@@ -2413,7 +2724,7 @@ git commit -m "test(benchmark): author 02-wrong-protocol protocol + mapping [F-0
 
 ---
 
-### Task 16: Author `03-half-complete/protocol.json` and `expected_mapping.json`
+### Task 19: Author `03-half-complete/protocol.json` and `expected_mapping.json`
 
 **Files:**
 - Create: `backend/tests/benchmarks/document-to-run/03-half-complete/protocol.json`
@@ -2440,7 +2751,7 @@ git commit -m "test(benchmark): author 03-half-complete protocol + mapping [F-00
 
 ---
 
-### Task 17: Author `04-extra-steps/protocol.json` and `expected_mapping.json`
+### Task 20: Author `04-extra-steps/protocol.json` and `expected_mapping.json`
 
 **Files:**
 - Create: `backend/tests/benchmarks/document-to-run/04-extra-steps/protocol.json`
@@ -2469,7 +2780,7 @@ git commit -m "test(benchmark): author 04-extra-steps protocol + mapping [F-0057
 
 ## Phase 6 — Messy-Scan Fixture
 
-### Task 18: Create `05-messy-scan/` fixture
+### Task 21: Create `05-messy-scan/` fixture
 
 **Files:**
 - Create: `backend/tests/benchmarks/document-to-run/05-messy-scan/document.pdf`
@@ -2533,7 +2844,7 @@ Based on what the degraded document actually shows, write the ground-truth extra
 
 - [ ] **Step 4: Author `protocol.json` + `expected_mapping.json`**
 
-Pick a protocol that matches the document's step set. Likely similar shape to Task 14's perfect-match fixture.
+Pick a protocol that matches the document's step set. Likely similar shape to Task 17's perfect-match fixture.
 
 - [ ] **Step 5: Commit**
 
@@ -2546,7 +2857,7 @@ git commit -m "test(benchmark): add 05-messy-scan fixture for OCR robustness [F-
 
 ## Phase 7 — Cleanup & Dry Run
 
-### Task 19: Delete the old smoke test and orphaned fixtures
+### Task 22: Delete the old smoke test and orphaned fixtures
 
 **Files:**
 - Delete: `backend/tests/integration/test_batch_record_import_llm.py`
@@ -2586,7 +2897,7 @@ git commit -m "test(benchmark): remove F-0057 smoke test and orphaned fixtures [
 
 ---
 
-### Task 20: End-to-end dry run with real LLM + calibrate
+### Task 23: End-to-end dry run with real LLM + calibrate
 
 **Files:** none modified in this task — it's an execution + calibration step.
 
@@ -2647,18 +2958,19 @@ git push origin $(git branch --show-current)
 ## Self-Review Checklist
 
 **1. Spec coverage:** all sections in the spec are mapped to tasks:
-- Architecture → Task 2, 12, 13
-- `batch_record_scoring.py` dataclasses/helpers/scorers → Tasks 2-11
-- Fixture discovery + conftest promotion → Task 12
-- Runner → Task 13
-- Expected-mapping fixture format → Tasks 14-17 (and validated by consumers in Task 20)
-- Error handling (missing protocol / missing mapping) → encoded in Task 13 runner
 - Migration → Task 1
-- Messy-scan fixture → Task 18
-- Deletion of smoke test / orphans → Task 19
-- Unit tests for scorer → Tasks 2-10
-- Invocation commands → Task 20
+- Shared benchmark utilities (architecture) → Tasks 2-4
+- `batch_record_scoring.py` dataclasses/helpers/scorers → Tasks 5-14
+- Conftest `pro_org` promotion + summary hook → Task 15
+- Runner → Task 16
+- Expected-mapping fixture format → Tasks 17-20 (validated by consumers in Task 23)
+- Error handling (missing protocol / missing mapping) → encoded in Task 16 runner
+- Messy-scan fixture → Task 21
+- Deletion of smoke test / orphans → Task 22
+- Unit tests for shared matching → Task 2
+- Unit tests for batch-record scorer → Tasks 5-13
+- Invocation commands → Task 23
 
-**2. Placeholder scan:** two tasks intentionally require per-fixture inspection (Tasks 15-17 ask the engineer to read the expected_extraction.json before authoring protocol.json + expected_mapping.json). That's correct — the ground truth depends on document content. Every scoring step includes full code. No TBD/TODO.
+**2. Placeholder scan:** four author-ground-truth tasks (Tasks 17-20) require per-fixture inspection — they ask the engineer to read the expected_extraction.json before authoring protocol.json + expected_mapping.json. That's correct — the ground truth depends on document content. Every code step includes full implementation. No TBD/TODO.
 
-**3. Type consistency:** `ExtractionScores`, `MappingScores`, `score_extraction`, `score_mapping`, `BatchRecordExtraction`, `StepMapping`, `ParamMapping` — names consistent across all tasks and match the extractor module.
+**3. Type consistency:** `ExtractionScores`, `MappingScores`, `score_extraction`, `score_mapping`, `BatchRecordExtraction`, `StepMapping`, `ParamMapping` — names consistent across all tasks and match the extractor module. Shared helpers use public names (`fuzzy_ratio`, `align_by_name`, `f1`); batch-record scorer uses internal aliases (`_fuzzy_match`, `_align_steps`) for readability at call sites.
