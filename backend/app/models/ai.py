@@ -41,7 +41,7 @@ DEFAULT_CONFIGS = {
     },
     "protocol_generation": {
         "provider": "ollama",
-        "model_name": "qwen3:latest",
+        "model_name": "qwen3.5:27b",
     },
     "template_convert": {
         "provider": "ollama",

@@ -86,6 +86,53 @@ class ParsedProtocol(BaseModel):
     steps: list[ImportedStep] = Field(description="Ordered list of steps")
 
 
+# ── Two-agent pipeline: structure first, params second ─────────────
+
+
+class StepSkeleton(BaseModel):
+    """Step without params — output of structure agent (agent 1)."""
+
+    name: str = Field(description="Step name")
+    description: str = Field(default="", description="Brief description")
+    category: str = Field(default="General", description="Category")
+    duration_min: int | None = Field(default=30, description="Estimated duration in minutes")
+    role: str | None = Field(
+        default=None,
+        description="Role/responsibility if mentioned",
+    )
+    matched_unit_op_name: str | None = Field(
+        default=None,
+        description="Exact name from the unit op catalog if a match was found",
+    )
+
+
+class ProtocolSkeleton(BaseModel):
+    """Protocol structure without params — output of structure agent (agent 1)."""
+
+    protocol_name: str = Field(description="Protocol name")
+    protocol_description: str = Field(default="", description="Protocol description")
+    steps: list[StepSkeleton] = Field(description="Ordered list of steps (no params)")
+
+
+class StepParams(BaseModel):
+    """Params for a single step — output of param agent (agent 2)."""
+
+    step_index: int = Field(description="Zero-based index of the step in the skeleton")
+    params: list[ImportedParam] = Field(
+        default_factory=list,
+        description="Parameters extracted for this step",
+    )
+
+
+class ProtocolParams(BaseModel):
+    """All per-step params — output of param agent (agent 2)."""
+
+    steps: list[StepParams] = Field(
+        default_factory=list,
+        description="Params for each step, keyed by step_index",
+    )
+
+
 # ── Proposal models (returned for frontend review) ─────────────────
 
 
@@ -173,83 +220,194 @@ async def extract_text(
 # ── LLM parsing ─────────────────────────────────────────────────────
 
 
+def _build_catalog_string(unit_ops: list[UnitOpDefinition]) -> str:
+    """Format the unit op catalog as a human-readable bullet list."""
+    lines = []
+    for op in unit_ops:
+        schema_str = ""
+        if op.param_schema and op.param_schema.get("properties"):
+            props = list(op.param_schema["properties"].keys())
+            schema_str = f" (params: {', '.join(props)})"
+        lines.append(
+            f"- {op.name} [{op.category}]{schema_str}: "
+            f"{op.description or 'No description'}"
+        )
+    return "\n".join(lines) if lines else "(empty catalog)"
+
+
+async def extract_protocol_skeleton(
+    text: str,
+    unit_ops: list[UnitOpDefinition],
+    db: AsyncSession,
+    org_id: UUID | None = None,
+) -> ProtocolSkeleton:
+    """Agent 1: extract protocol structure — steps, catalog matches, roles, durations."""
+    from pydantic_ai import Agent
+
+    catalog = _build_catalog_string(unit_ops)
+
+    system_prompt = f"""You parse biotech protocol documents into a structured step list.
+
+UNIT OPERATION CATALOG:
+{catalog}
+
+YOUR ONLY JOB: extract each procedure step and match it to the closest catalog entry.
+
+For EVERY step, set matched_unit_op_name to the EXACT catalog name (copy-paste
+including capitalization and spaces). Step names in documents rarely match
+catalog names word-for-word — match on MEANING.
+
+Matching examples:
+- "Sterile Filtration" -> "Filtration"
+- "Seed Cells" -> "Seeding"
+- "Transfect Cells" -> "Transfection"
+- "Incubate" -> "Incubation"
+- "Pre-warm Media" / "Media Change" -> "Media Preparation"
+- "Cell Count" / "Assess Transfection" -> "Cell Counting"
+- "QC Sampling" -> "Sample Collection"
+- "Vial Filling" -> "Fill"
+- "Potency Assay" -> "Assay"
+- "Column Equilibration" / "Load" / "Wash" / "Elution" -> "Chromatography"
+- "Neutralize" / "Adjust pH" -> "pH Adjustment"
+- "Lyophilization" -> "Lyophilization"
+- "Visual Inspection" -> "Visual Inspection"
+
+Use null ONLY when no catalog entry is semantically related.
+
+ALSO capture per step:
+- role: exact role name if mentioned (e.g. "Fill Operator", "QC Inspector"), else null
+- duration_min: estimate from text or domain knowledge (integer)
+- category: closest category
+
+Do NOT extract parameters yet — that is a separate task. Keep output minimal."""
+
+    model = await get_model("protocol_generation", db, org_id=org_id)
+    agent = Agent(
+        model,
+        system_prompt=system_prompt,
+        output_type=ProtocolSkeleton,
+        output_retries=3,
+    )
+    result = await agent.run(
+        f"Extract the step structure from this protocol document:\n\n{text}"
+    )
+    return result.output
+
+
+async def extract_protocol_params(
+    text: str,
+    skeleton: ProtocolSkeleton,
+    unit_ops: list[UnitOpDefinition],
+    db: AsyncSession,
+    org_id: UUID | None = None,
+) -> ProtocolParams:
+    """Agent 2: extract parameters for each step in the skeleton."""
+    from pydantic_ai import Agent
+
+    # Build per-step context: for matched steps, include the catalog param schema
+    # so the LLM knows exactly which param names/types to extract.
+    unit_ops_by_name = {op.name.lower(): op for op in unit_ops}
+
+    step_lines = []
+    for idx, step in enumerate(skeleton.steps):
+        matched = (
+            unit_ops_by_name.get(step.matched_unit_op_name.lower())
+            if step.matched_unit_op_name
+            else None
+        )
+        if matched and matched.param_schema and matched.param_schema.get("properties"):
+            expected_params = ", ".join(matched.param_schema["properties"].keys())
+            step_lines.append(
+                f"Step {idx}: {step.name}\n"
+                f"  Matched: {matched.name}\n"
+                f"  Expected params: {expected_params}"
+            )
+        else:
+            step_lines.append(
+                f"Step {idx}: {step.name}\n"
+                f"  Matched: none (extract any params you find in the text)"
+            )
+    step_list = "\n".join(step_lines)
+
+    system_prompt = f"""You extract parameter values from biotech protocol documents.
+
+You will receive a protocol document and a list of already-identified steps.
+Your job: for each step, extract the specific parameter values mentioned in
+the text (volumes, temperatures, pH, times, reagents, methods, etc.).
+
+For matched steps, focus on extracting the expected param names listed.
+For unmatched steps, extract any parameters you can identify.
+
+For EACH parameter, provide:
+- name: snake_case (e.g. "volume_L", "target_pH", "cell_density")
+- type: "number", "string", or "boolean"
+- unit: unit of measurement if applicable (e.g. "mL", "°C", "minutes"), else null
+- default: the actual value from the document (number for numbers, string for strings)
+
+Return ONLY the params for each step, keyed by step_index (0-based).
+If a step has no extractable params, return an empty params list for it."""
+
+    user_prompt = f"""STEPS:
+{step_list}
+
+PROTOCOL DOCUMENT TEXT:
+{text}
+
+Extract the parameter values for each step above."""
+
+    model = await get_model("protocol_generation", db, org_id=org_id)
+    agent = Agent(
+        model,
+        system_prompt=system_prompt,
+        output_type=ProtocolParams,
+        output_retries=3,
+    )
+    result = await agent.run(user_prompt)
+    return result.output
+
+
 async def parse_protocol_text(
     text: str,
     unit_ops: list[UnitOpDefinition],
     db: AsyncSession,
     org_id: UUID | None = None,
 ) -> ParsedProtocol:
-    """Parse protocol text into structured steps using LLM."""
-    from pydantic_ai import Agent
+    """Parse protocol text into structured steps using two sequential LLM agents.
 
-    # Build unit op catalog string
-    catalog_lines = []
-    for op in unit_ops:
-        schema_str = ""
-        if op.param_schema and op.param_schema.get("properties"):
-            props = list(op.param_schema["properties"].keys())
-            schema_str = f" (params: {', '.join(props)})"
-        catalog_lines.append(
-            f"- {op.name} [{op.category}]{schema_str}: "
-            f"{op.description or 'No description'}"
+    Agent 1 extracts the step structure (names, catalog matches, roles, durations).
+    Agent 2 extracts parameter values for each step.
+
+    Splitting reduces per-call output size and keeps each agent focused on one task.
+    """
+    # Agent 1: extract skeleton
+    skeleton = await extract_protocol_skeleton(text, unit_ops, db, org_id)
+
+    # Agent 2: extract params for each step
+    params_result = await extract_protocol_params(
+        text, skeleton, unit_ops, db, org_id
+    )
+
+    # Merge: attach params to each step by index
+    params_by_index = {sp.step_index: sp.params for sp in params_result.steps}
+    merged_steps = []
+    for idx, sk in enumerate(skeleton.steps):
+        merged_steps.append(
+            ImportedStep(
+                name=sk.name,
+                description=sk.description,
+                category=sk.category,
+                duration_min=sk.duration_min,
+                params=params_by_index.get(idx, []),
+                role=sk.role,
+                matched_unit_op_name=sk.matched_unit_op_name,
+            )
         )
-    catalog = "\n".join(catalog_lines) if catalog_lines else "(empty catalog)"
 
-    system_prompt = f"""You are a protocol design assistant for biotech Process Development.
-
-Given the text of a laboratory protocol document, extract a structured list of
-procedure steps with their parameters, durations, and role assignments.
-
-UNIT OPERATION CATALOG (match steps to these when possible):
-{catalog}
-
-MATCHING RULES (CRITICAL — READ CAREFULLY):
-
-Your PRIMARY job is to match each extracted step to the closest catalog entry.
-Step names in the document will ALMOST NEVER be word-for-word identical to
-catalog names. You MUST match on MEANING, not exact text.
-
-Match examples (step name in document -> matched_unit_op_name):
-- "Sterile Filtration" -> "Filtration"
-- "QC Sampling" -> "Sample Collection"
-- "Seed Cells" -> "Seeding"
-- "Transfect Cells" -> "Transfection"
-- "Pre-warm Media" -> "Media Preparation"
-- "Incubate" -> "Incubation"
-- "Cell Count" -> "Cell Counting"
-- "Column Equilibration" (if Chromatography in catalog) -> "Chromatography"
-- "Load Clarified Harvest" -> "Chromatography"
-- "Wash" (in purification context) -> "Chromatography"
-- "Elution" -> "Chromatography"
-- "Centrifuge to remove DMSO" -> "Centrifugation"
-- "Adjust pH" / "Neutralize" -> "pH Adjustment"
-- "Fill Vials" -> "Fill"
-- "Visual Inspection" -> "Visual Inspection"
-
-Only set matched_unit_op_name to null when NO catalog entry is semantically
-close. Being unsure is not a reason to return null — pick the closest match.
-
-RULES:
-1. Set matched_unit_op_name to the EXACT catalog name (copy-paste exactly, including capitalization and spaces).
-2. Set matched_unit_op_name to null ONLY when no catalog entry is semantically related to the step.
-3. Extract parameters mentioned in the text (values, units, defaults).
-4. Estimate durations from the text or domain knowledge.
-5. Extract role/responsibility names if mentioned (e.g. "Operator", "QC Lead", "Fill Operator", "QC Inspector", "Purification Scientist"). Match the EXACT role name from the document.
-6. Order steps sequentially as described in the document.
-7. Generate a concise protocol name and description.
-8. For each parameter, provide name (snake_case), type, unit, and default value."""
-
-    model = await get_model("protocol_generation", db, org_id=org_id)
-    agent = Agent(
-        model,
-        system_prompt=system_prompt,
-        output_type=ParsedProtocol,
-        output_retries=3,
+    return ParsedProtocol(
+        protocol_name=skeleton.protocol_name,
+        protocol_description=skeleton.protocol_description,
+        steps=merged_steps,
     )
-    result = await agent.run(
-        f"Parse this protocol document into structured steps:\n\n{text}"
-    )
-    return result.output
 
 
 # ── Proposal building ───────────────────────────────────────────────
