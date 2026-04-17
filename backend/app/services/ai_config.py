@@ -33,6 +33,14 @@ _PROVIDER_ENV_KEYS: dict[str, str] = {
     "fireworks": "FIREWORKS_API_KEY",
 }
 
+# Map provider name → attribute name on Settings holding its ProviderConfig.
+# Only providers whose ProviderConfig field exists on Settings belong here;
+# add a new entry whenever a new provider field is added to Settings.
+_PROVIDER_SETTINGS_ATTRS: dict[str, str] = {
+    "openrouter": "openrouter",
+    "ollama": "ollama",
+}
+
 
 def _build_model_string(
     provider: str, model_name: str, credentials: dict | None = None
@@ -46,7 +54,7 @@ def _build_model_string(
     If credentials include an api_key, it is injected into os.environ
     under the standard env var name that pydantic-ai expects (e.g.,
     OPENROUTER_API_KEY). This bridges the gap between Batchrite's
-    config system (BATCHRITE_AI_{CAP}_API_KEY) and pydantic-ai.
+    config system (BATCHRITE_<PROVIDER>__API_KEY) and pydantic-ai.
     """
     import os
 
@@ -61,7 +69,7 @@ def _build_model_string(
         )
 
     # Inject API key into os.environ if provided via credentials
-    # (from DB config or BATCHRITE_AI_*_API_KEY env vars)
+    # (from DB config or BATCHRITE_<PROVIDER>__API_KEY env vars)
     if credentials and credentials.get("api_key"):
         env_key = _PROVIDER_ENV_KEYS.get(provider)
         if env_key and not os.environ.get(env_key):
@@ -89,25 +97,31 @@ def _build_model_string(
 def _get_env_fallback(capability: str) -> dict | None:
     """Check env vars for a capability config.
 
+    Reads ``ai_{capability}_provider`` + ``ai_{capability}_model`` from settings,
+    then looks up credentials on the provider-level ProviderConfig
+    (``settings.<provider>.api_key`` / ``.base_url``).
+
     Returns a config dict or None.
     """
-    prefix = f"ai_{capability}_"
-    provider = getattr(settings, f"{prefix}provider", None)
-    model_name = getattr(settings, f"{prefix}model", None)
-    if provider and model_name:
-        api_key = getattr(settings, f"{prefix}api_key", None)
-        base_url = getattr(settings, f"{prefix}base_url", None)
-        creds = {}
-        if api_key:
-            creds["api_key"] = api_key
-        if base_url:
-            creds["base_url"] = base_url
-        return {
-            "provider": provider,
-            "model_name": model_name,
-            "credentials": creds or None,
-        }
-    return None
+    provider = getattr(settings, f"ai_{capability}_provider", "")
+    model_name = getattr(settings, f"ai_{capability}_model", "")
+    if not (provider and model_name):
+        return None
+
+    creds: dict = {}
+    attr = _PROVIDER_SETTINGS_ATTRS.get(provider)
+    if attr is not None:
+        pc = getattr(settings, attr)
+        if pc.api_key:
+            creds["api_key"] = pc.api_key
+        if pc.base_url:
+            creds["base_url"] = pc.base_url
+
+    return {
+        "provider": provider,
+        "model_name": model_name,
+        "credentials": creds or None,
+    }
 
 
 async def _is_org_pro_or_above(org_id: Optional[UUID], db: AsyncSession) -> bool:
