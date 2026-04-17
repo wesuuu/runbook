@@ -18,7 +18,9 @@ All AI features use pydantic-ai and follow the same architecture. New AI capabil
 Every AI capability resolves its provider/model through `get_model(capability, db, org_id)`:
 
 1. **Org DB config** (highest priority) -- `AiProviderConfig` table row for org+capability
-2. **Platform env vars** (Pro+ only) -- `BATCHRITE_AI_{CAPABILITY}_{PROVIDER,MODEL,API_KEY,BASE_URL}`
+2. **Platform env vars** (Pro+ only):
+   - Capability provider + model: `BATCHRITE_AI_{CAPABILITY}_{PROVIDER,MODEL}`
+   - Provider-level credentials: `BATCHRITE_{PROVIDER}__API_KEY` (and `BATCHRITE_OLLAMA__BASE_URL` where applicable)
 3. **Hardcoded defaults** (Pro+ only) -- `DEFAULT_CONFIGS` dict in `models/ai.py`
 
 Non-Pro orgs without custom DB config get a `ValueError`. Never bypass this chain.
@@ -27,7 +29,7 @@ Non-Pro orgs without custom DB config get a `ValueError`. Never bypass this chai
 
 1. Add capability name to `SUPPORTED_CAPABILITIES` in `models/ai.py`
 2. Add default config to `DEFAULT_CONFIGS` dict
-3. Add env var fields to `Settings` in `config.py`: `ai_{capability}_provider`, `_model`, `_api_key`, `_base_url`
+3. Add env var fields to `Settings` in `config.py`: `ai_{capability}_provider` and `ai_{capability}_model`. **Do not add `_api_key` or `_base_url`** — credentials resolve from the provider-level `settings.<provider>.api_key` (and `base_url` for Ollama). If the capability uses a provider not yet in `Settings` (e.g., a new `anthropic` field), add a `ProviderConfig` field for it and a matching entry in `_PROVIDER_SETTINGS_ATTRS` in `ai_config.py`.
 4. Use `get_model("capability", db, org_id)` in your service code
 
 ## Agent Creation Pattern
@@ -68,7 +70,7 @@ Register tools in Agent constructor: `Agent(model, tools=[tool1, tool2], deps_ty
 
 ## API Key Injection
 
-Keys are injected into `os.environ` on-demand by `_build_model_string()`. The `_PROVIDER_ENV_KEYS` dict maps provider names to their expected env var names. Credentials stored in JSONB in DB are extracted and set before agent creation.
+Keys are injected into `os.environ` on-demand by `_build_model_string()`. The `_PROVIDER_ENV_KEYS` dict maps provider names to their expected env var names. Credentials stored in JSONB in DB (or on `settings.<provider>.api_key` from env vars) are extracted and set before agent creation.
 
 ## Output Sanitization
 
