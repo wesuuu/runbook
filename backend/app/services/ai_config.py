@@ -34,8 +34,10 @@ _PROVIDER_ENV_KEYS: dict[str, str] = {
 }
 
 # Map provider name → attribute name on Settings holding its ProviderConfig.
-# Only providers whose ProviderConfig field exists on Settings belong here;
-# add a new entry whenever a new provider field is added to Settings.
+# Identity-mapped today; kept as a dict so provider names that don't match
+# their Settings attribute (e.g. `google_vertex` serving provider `google`)
+# can diverge later without touching _get_env_fallback. Add a new entry
+# whenever a new ProviderConfig field is added to Settings.
 _PROVIDER_SETTINGS_ATTRS: dict[str, str] = {
     "openrouter": "openrouter",
     "ollama": "ollama",
@@ -108,7 +110,7 @@ def _get_env_fallback(capability: str) -> dict | None:
     if not (provider and model_name):
         return None
 
-    creds: dict = {}
+    creds: dict[str, str] = {}
     attr = _PROVIDER_SETTINGS_ATTRS.get(provider)
     if attr is not None:
         pc = getattr(settings, attr)
