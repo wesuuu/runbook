@@ -112,9 +112,16 @@
                 selectedColumns = new Set(columns.map((c: ColumnDef) => c.key));
             }
         } catch (e: unknown) {
-            error = e instanceof Error ? e.message : 'Failed to load preview';
-            columns = [];
-            rows = [];
+            const msg = e instanceof Error ? e.message : 'Failed to load preview';
+            // Treat "not found" (404) as an empty result — show EmptyState instead of raw error
+            if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('404')) {
+                columns = [];
+                rows = [];
+            } else {
+                error = msg;
+                columns = [];
+                rows = [];
+            }
         } finally {
             loading = false;
         }
