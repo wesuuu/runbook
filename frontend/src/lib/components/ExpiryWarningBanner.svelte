@@ -55,7 +55,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <span>Session expires in {timeRemaining}. Sync your data soon.</span>
-        <button onclick={() => (dismissed = true)} class="ml-2 opacity-70 hover:opacity-100">
+        <button onclick={() => (dismissed = true)} aria-label="Dismiss warning" class="ml-2 opacity-70 hover:opacity-100">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
