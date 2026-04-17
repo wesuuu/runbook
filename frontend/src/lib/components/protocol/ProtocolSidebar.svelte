@@ -2,6 +2,7 @@
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
     import { api } from "$lib/api";
     import { getNextRoleColor } from "$lib/components/protocol/protocolNodes";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         protocol: any;
@@ -195,10 +196,10 @@
                 autofocus
             />
         {:else if protocol}
-            <button class="name-display" onclick={startEditingName}>
+            <Button variant="ghost" class="name-display" onclick={startEditingName}>
                 {protocol.name}
                 <span class="edit-hint">&#9998;</span>
-            </button>
+            </Button>
         {:else}
             <span class="name-placeholder">Loading...</span>
         {/if}
@@ -232,9 +233,9 @@
                     autofocus
                 ></textarea>
             {:else}
-                <button class="description-display" onclick={startEditingDescription}>
+                <Button variant="ghost" class="description-display" onclick={startEditingDescription}>
                     {protocol.description || "Add description..."}
-                </button>
+                </Button>
             {/if}
 
             <a href="/projects/{protocol.project_id}?tab=protocols" class="back-link">
@@ -264,7 +265,7 @@
                         if (e.key === "Enter") addRole();
                     }}
                 />
-                <button class="role-add-btn" onclick={addRole}>Add</button>
+                <Button size="sm" onclick={addRole}>Add</Button>
             </div>
         {/if}
 
@@ -483,7 +484,7 @@
         box-sizing: border-box;
     }
 
-    .name-display {
+    :global(.name-display) {
         display: flex;
         align-items: center;
         gap: 6px;
@@ -496,10 +497,12 @@
         padding: 0;
         text-align: left;
         width: 100%;
+        height: auto;
     }
 
-    .name-display:hover {
+    :global(.name-display:hover) {
         color: hsl(173, 58%, 39%);
+        background: transparent;
     }
 
     .edit-hint {
@@ -508,7 +511,7 @@
         transition: opacity 0.15s;
     }
 
-    .name-display:hover .edit-hint {
+    :global(.name-display:hover) .edit-hint {
         opacity: 1;
     }
 
@@ -532,7 +535,7 @@
         margin-top: 6px;
     }
 
-    .description-display {
+    :global(.description-display) {
         display: block;
         font-size: 12px;
         color: #94a3b8;
@@ -542,13 +545,17 @@
         padding: 0;
         text-align: left;
         width: 100%;
+        height: auto;
         margin-top: 6px;
         line-height: 1.4;
         word-break: break-word;
+        justify-content: flex-start;
+        font-weight: normal;
     }
 
-    .description-display:hover {
+    :global(.description-display:hover) {
         color: hsl(173, 58%, 39%);
+        background: transparent;
     }
 
     .back-link {
@@ -621,17 +628,6 @@
     .role-input:focus {
         outline: none;
         border-color: hsl(173, 58%, 39%);
-    }
-
-    .role-add-btn {
-        padding: 5px 10px;
-        background: hsl(173, 58%, 39%);
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
     }
 
     .roles-list {

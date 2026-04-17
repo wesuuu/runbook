@@ -1,6 +1,7 @@
 <script lang="ts">
     import { categoryColors } from "$lib/categoryColors";
     import * as Dialog from "$lib/components/ui/dialog";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         open: boolean;
@@ -156,7 +157,7 @@
             <div class="params-section">
                 <div class="params-header">
                     <span class="params-title">Parameters</span>
-                    <button class="add-param-btn" onclick={addParam}>+ Add</button>
+                    <Button size="sm" variant="outline" onclick={addParam}>+ Add</Button>
                 </div>
 
                 {#each params as param, i}
@@ -313,21 +314,6 @@
         font-size: 12px;
         font-weight: 600;
         color: hsl(var(--muted-foreground));
-    }
-
-    .add-param-btn {
-        font-size: 11px;
-        padding: 4px 10px;
-        border: 1px solid hsl(var(--border));
-        border-radius: 4px;
-        background: hsl(var(--background));
-        color: hsl(var(--primary));
-        cursor: pointer;
-        font-weight: 600;
-    }
-
-    .add-param-btn:hover {
-        background: hsl(var(--muted));
     }
 
     .param-builder-row {

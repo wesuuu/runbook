@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { Button } from "$lib/components/ui/button";
+
     interface BranchError {
         sourceNodeLabel: string;
         targetNodeLabels: string[];
@@ -37,9 +39,7 @@
 {#if protocolStatus === 'ARCHIVED'}
     <div class="archive-banner">
         <span>This protocol is archived and cannot be edited.</span>
-        <button class="preview-banner-btn restore" onclick={onUnarchive}>
-            Unarchive
-        </button>
+        <Button size="sm" onclick={onUnarchive}>Unarchive</Button>
     </div>
 {/if}
 
@@ -48,12 +48,8 @@
     <div class="preview-banner">
         <span>Viewing <strong>v{previewingVersion}</strong> of {versionNumber} (read-only preview)</span>
         <div class="preview-banner-actions">
-            <button class="preview-banner-btn restore" onclick={onRestorePreviewedVersion}>
-                Restore this version
-            </button>
-            <button class="preview-banner-btn exit" onclick={onExitPreview}>
-                Back to current
-            </button>
+            <Button size="sm" onclick={onRestorePreviewedVersion}>Restore this version</Button>
+            <Button size="sm" variant="outline" onclick={onExitPreview}>Back to current</Button>
         </div>
     </div>
 {/if}
@@ -122,17 +118,6 @@
         gap: 6px;
     }
 
-    .preview-banner-btn {
-        padding: 4px 10px;
-        border-radius: 5px;
-        border: none;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        font-family: inherit;
-        transition: all 0.15s;
-    }
-
     .archive-banner {
         position: absolute;
         top: 56px;
@@ -150,25 +135,6 @@
         font-size: 12px;
         color: #475569;
         white-space: nowrap;
-    }
-
-    .preview-banner-btn.restore {
-        background: hsl(173, 58%, 39%);
-        color: white;
-    }
-
-    .preview-banner-btn.restore:hover {
-        background: hsl(173, 58%, 33%);
-    }
-
-    .preview-banner-btn.exit {
-        background: white;
-        color: #475569;
-        border: 1px solid #e2e8f0;
-    }
-
-    .preview-banner-btn.exit:hover {
-        background: #f8fafc;
     }
 
     .validation-banner {
