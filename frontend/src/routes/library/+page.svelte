@@ -12,6 +12,7 @@
         CardTitle,
         CardDescription,
     } from '$lib/components/ui/card';
+    import { EmptyState } from '$lib/components/ui/empty-state';
     import DocumentUploadDialog from '$lib/components/DocumentUploadDialog.svelte';
     import {
         getFileTypeLabel,
@@ -228,9 +229,7 @@
             </CardHeader>
             <CardContent>
                 {#if searchResults.length === 0}
-                    <div class="text-center py-8 text-muted-foreground">
-                        No matching documents found.
-                    </div>
+                    <EmptyState title="No matching documents found" class="py-8" />
                 {:else}
                     <div class="divide-y divide-border">
                         {#each searchResults as group}
@@ -275,12 +274,10 @@
             </CardHeader>
             <CardContent>
                 {#if documents.length === 0}
-                    <div class="text-center py-10">
-                        <p class="text-muted-foreground">
-                            Upload your SOPs, protocols, and reference documents to build your
-                            searchable knowledge base.
-                        </p>
-                    </div>
+                    <EmptyState
+                        title="No documents yet"
+                        description="Upload your SOPs, protocols, and reference documents to build your searchable knowledge base."
+                    />
                 {:else}
                     <!-- Mobile card layout -->
                     <div class="sm:hidden divide-y divide-border">

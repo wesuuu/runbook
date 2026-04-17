@@ -4,6 +4,7 @@
     import DOMPurify from 'dompurify';
     import ChatSkillButtons from '$lib/components/ChatSkillButtons.svelte';
     import ProtocolImportModal from '$lib/components/ProtocolImportModal.svelte';
+    import { EmptyState } from '$lib/components/ui/empty-state';
     import { goto } from '$app/navigation';
     import {
         getChatSessions, getActiveSession, getMessageInput, isSending,
@@ -93,9 +94,11 @@
         </div>
         <div class="flex-1 overflow-y-auto">
             {#if sessions.length === 0 && !loading}
-                <div class="p-4 text-sm text-muted-foreground text-center">
-                    No chats yet. Start a new conversation.
-                </div>
+                <EmptyState
+                    title="No chats yet"
+                    description="Start a new conversation."
+                    class="py-6"
+                />
             {/if}
             {#each sessions as session (session.id)}
                 <div

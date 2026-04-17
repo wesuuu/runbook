@@ -15,6 +15,7 @@
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import { ProjectListSchema, type Project } from '$lib/schemas';
+    import { EmptyState } from '$lib/components/ui/empty-state';
 
     let projects = $state<Project[]>([]);
     let loading = $state(true);
@@ -62,9 +63,10 @@
             </CardHeader>
             <CardContent>
                 {#if projects.length === 0}
-                    <div class="text-center py-10 text-muted-foreground">
-                        No projects found. Create one to get started.
-                    </div>
+                    <EmptyState
+                        title="No projects found"
+                        description="Create one to get started."
+                    />
                 {:else}
                     <!-- Mobile card layout -->
                     <div class="sm:hidden divide-y divide-border">
