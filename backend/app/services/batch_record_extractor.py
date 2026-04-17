@@ -769,6 +769,9 @@ def map_values_to_execution_data(
             "status": "completed",
             "results": results,
             "notes": notes,
+            "timestamps": mapping.get("timestamps", []),
+            "signatures": mapping.get("signatures", []),
+            "deviations": mapping.get("deviations", []),
             "completed_by_user_id": str(user_id),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

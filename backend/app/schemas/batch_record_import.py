@@ -119,6 +119,9 @@ class FinalizedStepMapping(BaseModel):
     notes: str = ""
     na: bool = False
     na_reason: str = ""
+    timestamps: List[ExtractedTimestampResponse] = []
+    signatures: List[ExtractedSignatureResponse] = []
+    deviations: List[ExtractedDeviationResponse] = []
 
 
 class BatchRecordFinalizeRequest(BaseModel):
