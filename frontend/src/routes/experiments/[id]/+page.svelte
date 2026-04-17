@@ -14,6 +14,9 @@
         experimentStatusClasses,
         experimentStatusLabel,
     } from "$lib/components/project/projectUtils";
+    import { fade } from "svelte/transition";
+    import { flip } from "svelte/animate";
+    import { blockDuration, listDuration } from "$lib/transitions";
     // Edra rich text editor — lazy loaded to avoid SSR issues
     let EdraEditor: any = $state(null);
     let EdraToolBar: any = $state(null);
@@ -137,11 +140,16 @@
 </script>
 
 {#if loading}
-    <LoadingSpinner message="Loading experiment..." fullPage />
+    <div transition:fade={{ duration: blockDuration() }}>
+        <LoadingSpinner message="Loading experiment..." fullPage />
+    </div>
 {:else if error}
-    <ErrorAlert message="Error: {error}" class="max-w-xl mx-auto mt-8" />
+    <div transition:fade={{ duration: blockDuration() }}>
+        <ErrorAlert message="Error: {error}" class="max-w-xl mx-auto mt-8" />
+    </div>
 {:else if experiment}
     <div
+        transition:fade={{ duration: blockDuration() }}
         class="min-h-[calc(100vh-57px)] w-full mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
     >
         <!-- Header -->
@@ -267,9 +275,11 @@
 
             {#if notes.length > 0}
                 <div class="space-y-3 mb-4">
-                    {#each notes as note}
+                    {#each notes as note (note.id)}
                         <div
                             class="bg-slate-50 border border-slate-200 rounded-lg p-3"
+                            animate:flip={{ duration: listDuration() }}
+                            in:fade={{ duration: listDuration() }}
                         >
                             <p class="text-sm text-slate-800">{note.content}</p>
                             <div
