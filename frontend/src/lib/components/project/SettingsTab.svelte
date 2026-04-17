@@ -332,7 +332,6 @@
                     {/each}
                 </select>
                 <Button
-                    class="bg-teal-600 hover:bg-teal-700 text-white"
                     onclick={addApprover}
                     disabled={!newApproverUserId}
                 >
@@ -460,7 +459,6 @@
                 </select>
                 <Button
                     size="sm"
-                    class="bg-teal-600 hover:bg-teal-700 text-white"
                     onclick={addPermissionGrant}
                     disabled={!newGrantPrincipalId}
                 >

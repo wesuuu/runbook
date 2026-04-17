@@ -76,7 +76,7 @@
                         <Button
                             variant="link"
                             size="sm"
-                            class="h-auto p-0 text-[10px] font-medium text-teal-600 hover:text-teal-800"
+                            class="h-auto p-0 text-[10px] font-medium"
                             onclick={() => onAnalyzeClick?.(image)}
                         >
                             Analyze

@@ -74,7 +74,7 @@
                             <Button
                                 variant="outline"
                                 size="sm"
-                                class="w-full h-auto py-1.5 text-[11px] font-semibold text-slate-600 hover:border-teal-600 hover:text-teal-700"
+                                class="w-full h-auto py-1.5 text-[11px] font-semibold"
                                 onclick={() => onRevert(version.version_number)}
                             >
                                 Revert to this version
