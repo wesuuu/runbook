@@ -1,6 +1,7 @@
 <script lang="ts">
     import { slide, fade } from 'svelte/transition';
     import { Button } from '$lib/components/ui/button';
+    import Logo from '$lib/components/Logo.svelte';
 
     let { open = $bindable(false), currentPath = '' } = $props();
 
@@ -41,10 +42,10 @@
         <!-- Header -->
         <div class="flex items-center justify-between px-5 py-4 border-b border-border">
             <a href="/" class="flex items-center gap-2.5" onclick={close}>
-                <div class="w-7 h-7 bg-primary rounded-md flex items-center justify-center shadow-sm shadow-primary/20">
-                    <span class="font-mono text-sm font-medium text-primary-foreground leading-none">R</span>
+                <div class="shadow-sm shadow-primary/20 rounded-md">
+                    <Logo size="sm" />
                 </div>
-                <span class="text-[15px] font-semibold text-foreground tracking-tight">Runbook</span>
+                <span class="text-[15px] font-semibold text-foreground tracking-tight">Batchrite</span>
             </a>
             <Button
                 variant="ghost"
