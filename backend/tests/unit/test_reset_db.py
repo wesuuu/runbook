@@ -109,3 +109,17 @@ def test_assert_local_dev_db_rejects_empty_db_name():
     url = "postgresql+asyncpg://postgres:postgres@localhost:5432/"
     with pytest.raises(RuntimeError):
         assert_local_dev_db(url)
+
+
+from unittest.mock import patch
+
+from app.db.reset import confirm_reset
+
+
+def test_confirm_reset_aborts_when_stdin_not_tty(capsys):
+    with patch("sys.stdin") as fake_stdin:
+        fake_stdin.isatty.return_value = False
+        result = confirm_reset()
+    assert result is False
+    captured = capsys.readouterr()
+    assert "not a TTY" in captured.err or "not a TTY" in captured.out

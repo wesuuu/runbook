@@ -125,3 +125,62 @@ async def reset_database(session: AsyncSession) -> None:
         await seed_unit_ops(session)
     finally:
         await session.execute(text("SET session_replication_role = 'origin'"))
+
+
+import asyncio
+import sys
+
+from app.core.config import settings
+from app.db.session import AsyncSessionLocal
+
+
+def confirm_reset() -> bool:
+    """Print plan + prompt y/N. Return True only on explicit ``y``.
+
+    Auto-aborts when stdin is not a TTY so the script can't be driven by
+    ``yes`` or a forgotten pipe.
+    """
+    if not sys.stdin.isatty():
+        print(
+            "[reset-db] stdin is not a TTY; aborting to prevent unattended reset.",
+            file=sys.stderr,
+        )
+        return False
+
+    print()
+    print(f"Target database: {mask_database_url(settings.database_url)}")
+    print()
+    print("The following tables will be WIPED (TRUNCATE ... RESTART IDENTITY CASCADE):")
+    for table in WIPE_TABLES:
+        print(f"  - {table}")
+    print()
+    print(
+        "Preserved/re-seeded: users, organizations, organization_members, teams, "
+        "team_members, projects, object_permissions, unit_op_definitions, "
+        "ai_provider_configs."
+    )
+    print()
+    answer = input("Proceed? [y/N]: ").strip().lower()
+    return answer == "y"
+
+
+async def _run() -> int:
+    try:
+        assert_local_dev_db(settings.database_url)
+    except RuntimeError as exc:
+        print(f"[reset-db] {exc}", file=sys.stderr)
+        return 2
+
+    if not confirm_reset():
+        print("[reset-db] Aborted. No changes made.")
+        return 1
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            await reset_database(session)
+    print("[reset-db] Reset complete.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(_run()))
