@@ -87,3 +87,41 @@ def assert_local_dev_db(url: str) -> None:
             f"Refusing to reset: DATABASE_URL database is {db_name!r}, "
             f"expected {ALLOWED_DB_NAME!r}."
         )
+
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.seed import (
+    seed_org,
+    seed_permissions,
+    seed_projects,
+    seed_teams,
+    seed_unit_ops,
+    seed_users,
+)
+
+
+async def reset_database(session: AsyncSession) -> None:
+    """Wipe ``WIPE_TABLES`` and re-apply the seed baseline.
+
+    The caller is responsible for the transaction — in the CLI path we wrap
+    this in ``async with session.begin()`` for atomicity; in tests we call it
+    inside the per-test SAVEPOINT.
+    """
+    tables = ", ".join(WIPE_TABLES)
+    await session.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+    # Temporarily disable FK checks so we can seed tables that have
+    # mutual FK dependencies (users.selected_org_id ↔ organization_members)
+    # without worrying about insertion order. ``session_replication_role``
+    # is a session-local GUC; its effect is confined to this transaction.
+    await session.execute(text("SET session_replication_role = 'replica'"))
+    try:
+        await seed_users(session)
+        await seed_org(session)
+        await seed_teams(session)
+        await seed_projects(session)
+        await seed_permissions(session)
+        await seed_unit_ops(session)
+    finally:
+        await session.execute(text("SET session_replication_role = 'origin'"))
