@@ -63,17 +63,22 @@ def test_mask_database_url_masks_simple_password():
     assert masked == "postgresql+asyncpg://postgres:***@localhost:5432/batchrite"
 
 
-def test_mask_database_url_masks_complex_password():
+def test_mask_database_url_masks_password_with_unencoded_at_sign():
+    # The password contains unencoded ``@`` and ``#`` — the masker must anchor
+    # on the LAST ``@`` before the host, not the first one.
     url = "postgresql+asyncpg://user:p@ss!w0rd#1@db.host.internal:5432/mydb"
     masked = mask_database_url(url)
-    # Password runs up to the LAST @ before the host segment.
-    assert "p@ss!w0rd#1" not in masked
-    assert "***" in masked
-    assert "db.host.internal" in masked
+    assert masked == "postgresql+asyncpg://user:***@db.host.internal:5432/mydb"
 
 
-def test_mask_database_url_passes_through_url_without_password():
+def test_mask_database_url_passes_through_url_without_userinfo():
     url = "postgresql+asyncpg://localhost:5432/batchrite"
+    masked = mask_database_url(url)
+    assert masked == url
+
+
+def test_mask_database_url_passes_through_url_with_user_but_no_password():
+    url = "postgresql+asyncpg://user@localhost:5432/batchrite"
     masked = mask_database_url(url)
     assert masked == url
 

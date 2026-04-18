@@ -42,24 +42,34 @@ WIPE_TABLES: tuple[str, ...] = (
     "verification_tokens",
 )
 
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 
 def mask_database_url(url: str) -> str:
-    """Return url with the password segment replaced by ``***``.
+    """Return ``url`` with the password segment replaced by ``***``.
 
-    Leaves the rest of the URL untouched so users can still see the target
-    host + database before confirming a destructive action.
+    Anchors on the LAST ``@`` before the path component (the one that actually
+    separates userinfo from ``host[:port]/db``). This correctly handles
+    passwords containing unencoded ``@`` characters, where ``urlsplit`` would
+    otherwise split on the first ``@`` and leak the rest of the password into
+    the displayed host segment.
     """
-    parts = urlsplit(url)
-    if parts.password is None:
+    scheme_sep = url.find("://")
+    if scheme_sep < 0:
         return url
-    # Rebuild netloc with masked password.
-    userinfo = parts.username or ""
-    masked_netloc = f"{userinfo}:***@{parts.hostname or ''}"
-    if parts.port is not None:
-        masked_netloc = f"{masked_netloc}:{parts.port}"
-    return urlunsplit((parts.scheme, masked_netloc, parts.path, parts.query, parts.fragment))
+    scheme_end = scheme_sep + 3  # position just after "://"
+    # Find the first ":" after the scheme (start of the password).
+    first_colon = url.find(":", scheme_end)
+    if first_colon < 0:
+        return url
+    # Search for the password-terminating "@" only within the authority
+    # component (before the path starts).
+    path_start = url.find("/", scheme_end)
+    search_region_end = path_start if path_start >= 0 else len(url)
+    last_at = url.rfind("@", first_colon + 1, search_region_end)
+    if last_at < 0:
+        return url
+    return url[:first_colon + 1] + "***" + url[last_at:]
 
 
 ALLOWED_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1"})
