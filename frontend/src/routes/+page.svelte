@@ -527,6 +527,8 @@
                             description="Get started by creating a project and running a protocol."
                             actionLabel="View Projects"
                             onAction={() => goto('/projects')}
+                            secondaryActionLabel="Take the tour"
+                            secondaryOnAction={() => (welcomeOpen = true)}
                             class="py-14"
                         >
                             {#snippet icon()}
