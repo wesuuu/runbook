@@ -1,5 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { goto } from '$app/navigation';
+    import { fade } from 'svelte/transition';
+    import { flip } from 'svelte/animate';
+    import { blockDuration, listDuration } from '$lib/transitions';
     import { api } from '$lib/api';
     import { getCurrentOrg } from '$lib/auth.svelte';
     import { Button, buttonVariants } from '$lib/components/ui/button';
@@ -16,10 +20,13 @@
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import { ProjectListSchema, type Project } from '$lib/schemas';
     import { EmptyState } from '$lib/components/ui/empty-state';
+    import TourModal from '$lib/onboarding/TourModal.svelte';
+    import { markAllDismissed } from '$lib/onboarding/tourStore.svelte';
 
     let projects = $state<Project[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
+    let welcomeOpen = $state(false);
 
     async function loadProjects() {
         loading = true;
@@ -33,6 +40,19 @@
         } finally {
             loading = false;
         }
+    }
+
+    async function startProjectTourFromWelcome() {
+        welcomeOpen = false;
+        const { project_id } = await api.post<{ project_id: string }>(
+            '/onboarding/tour/project/start', {},
+        );
+        goto(`/projects/${project_id}?tour=project`);
+    }
+
+    async function dismissWelcome() {
+        welcomeOpen = false;
+        await markAllDismissed();
     }
 
     onMount(loadProjects);
@@ -71,6 +91,8 @@
                     <EmptyState
                         title="No projects found"
                         description="Create one to get started."
+                        secondaryActionLabel="Take the tour"
+                        secondaryOnAction={() => (welcomeOpen = true)}
                     />
                 {:else}
                     <!-- Mobile card layout -->
@@ -128,3 +150,13 @@
         </div>
     {/if}
 </div>
+
+<TourModal
+    bind:open={welcomeOpen}
+    title="Welcome to Batchrite"
+    description="Want a quick tour of your workspace? Start with how projects are laid out."
+    primaryLabel="Check out how projects are laid out"
+    secondaryLabel="Dismiss"
+    onPrimary={startProjectTourFromWelcome}
+    onSecondary={dismissWelcome}
+/>
