@@ -439,6 +439,7 @@
                     onReloadProtocols={reloadProtocols}
                     onCreateProtocol={createProtocol}
                     onImportProtocol={() => (showImportModal = true)}
+                    onOpenTour={() => (projectTourModalOpen = true)}
                 />
             {:else if activeTab === "activity"}
                 <ActivityTab projectId={id} />

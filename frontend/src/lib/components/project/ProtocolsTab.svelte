@@ -12,9 +12,10 @@
         onReloadProtocols: (showArchived: boolean) => Promise<void>;
         onCreateProtocol: () => void;
         onImportProtocol?: () => void;
+        onOpenTour?: () => void;
     }
 
-    let { projectId, protocols, onReloadProtocols, onCreateProtocol, onImportProtocol }: Props = $props();
+    let { projectId, protocols, onReloadProtocols, onCreateProtocol, onImportProtocol, onOpenTour }: Props = $props();
 
     let showArchived = $state(false);
     let deleteConfirmOpen = $state(false);
@@ -153,9 +154,16 @@
             </div>
             <p class="text-[15px] font-semibold text-slate-600">No protocols yet</p>
             <p class="text-[13px] text-slate-400 mb-4">Create your first protocol to define a workflow.</p>
-            <Button onclick={onCreateProtocol}>
-                + New Protocol
-            </Button>
+            <div class="flex flex-col sm:flex-row items-center gap-2 justify-center">
+                <Button onclick={onCreateProtocol}>
+                    + New Protocol
+                </Button>
+                {#if onOpenTour}
+                    <Button variant="outline" onclick={onOpenTour}>
+                        Take the tour
+                    </Button>
+                {/if}
+            </div>
         {:else}
             <p class="text-[15px] font-semibold text-slate-600">No matching protocols</p>
             <p class="text-[13px] text-slate-400">Try a different search term.</p>
