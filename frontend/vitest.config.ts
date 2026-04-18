@@ -5,10 +5,13 @@ export default defineConfig({
     plugins: [svelte({ hot: false })],
     test: {
         include: ['src/**/*.test.ts'],
+        environment: 'jsdom',
+        setupFiles: ['./vitest.setup.ts'],
     },
     resolve: {
         alias: {
             $lib: new URL('./src/lib', import.meta.url).pathname,
         },
+        conditions: ['browser'],
     },
 });
