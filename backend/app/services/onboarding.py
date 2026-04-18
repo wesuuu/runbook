@@ -47,12 +47,26 @@ def get_sample_protocol_graph() -> dict[str, Any]:
                     "label": "Buffer Prep",
                     "category": "Media Prep",
                     "duration_min": 30,
-                    "params": {"buffer_name": "PBS", "volume_L": 10},
+                    "description": "Prepare {{volume_L}}L of {{buffer_name}} buffer at pH {{ph}}.",
+                    "params": {"buffer_name": "PBS", "volume_L": 10, "ph": 7.4},
                     "paramSchema": {
                         "type": "object",
                         "properties": {
-                            "buffer_name": {"type": "string", "default": "PBS"},
-                            "volume_L": {"type": "number", "default": 10},
+                            "buffer_name": {
+                                "type": "string",
+                                "title": "Buffer Name",
+                                "default": "PBS",
+                            },
+                            "volume_L": {
+                                "type": "number",
+                                "title": "Volume (L)",
+                                "default": 10,
+                            },
+                            "ph": {
+                                "type": "number",
+                                "title": "pH",
+                                "default": 7.4,
+                            },
                         },
                     },
                 },

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { getContext } from "svelte";
+    import { getContext, onMount } from "svelte";
     import type { Node } from "@xyflow/svelte";
     import { X } from "lucide-svelte";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
@@ -70,6 +70,15 @@
     // Schema editor state
     let showSchemaEditor: boolean = $state(false);
     let editSchemaRows: SchemaParamRow[] = $state([]);
+
+    // Listen for onboarding tour request to expand the schema editor
+    onMount(() => {
+        function expand() {
+            showSchemaEditor = true;
+        }
+        window.addEventListener('onboarding:expand-schema-editor', expand);
+        return () => window.removeEventListener('onboarding:expand-schema-editor', expand);
+    });
 
     // Save-as-new-unit-op state
     let showSaveAsNew: boolean = $state(false);
@@ -277,7 +286,7 @@
         </div>
 
         <!-- Description -->
-        <div class="section">
+        <div class="section" data-tour="inspector-instruction">
             <label class="section-label" for="node-description">Instruction</label>
             {#if paramKeys.length > 0}
                 <p class="template-hint">
@@ -468,7 +477,7 @@
         {/if}
 
         <!-- Schema Editor (collapsible) -->
-        <div class="section schema-section">
+        <div class="section schema-section" data-tour="inspector-schema">
             <Button
                 variant="ghost"
                 class="w-full justify-between px-0 hover:bg-transparent"
