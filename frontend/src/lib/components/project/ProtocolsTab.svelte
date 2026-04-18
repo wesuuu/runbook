@@ -13,10 +13,21 @@
         onReloadProtocols: (showArchived: boolean) => Promise<void>;
         onCreateProtocol: () => void;
         onImportProtocol?: () => void;
-        onOpenTour?: () => void;
     }
 
-    let { projectId, protocols, onReloadProtocols, onCreateProtocol, onImportProtocol, onOpenTour }: Props = $props();
+    let { projectId, protocols, onReloadProtocols, onCreateProtocol, onImportProtocol }: Props = $props();
+
+    async function loadSampleProtocol() {
+        try {
+            const { protocol_id } = await api.post<{ project_id: string; protocol_id: string }>(
+                '/onboarding/tour/protocol/start',
+                {},
+            );
+            goto(`/protocols/${protocol_id}?tour=protocol`);
+        } catch (e: any) {
+            console.error('Failed to load sample protocol:', e);
+        }
+    }
 
     let showArchived = $state(false);
     let deleteConfirmOpen = $state(false);
@@ -169,11 +180,9 @@
                 <Button onclick={onCreateProtocol}>
                     + New Protocol
                 </Button>
-                {#if onOpenTour}
-                    <Button variant="outline" onclick={onOpenTour}>
-                        Take the tour
-                    </Button>
-                {/if}
+                <Button variant="outline" onclick={loadSampleProtocol}>
+                    Load sample protocol
+                </Button>
             </div>
         {:else}
             <p class="text-[15px] font-semibold text-slate-600">No matching protocols</p>

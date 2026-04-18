@@ -64,7 +64,8 @@
     import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
     import { HelpMenu, TourModal, runProtocolTour } from "$lib/onboarding";
-    import { shouldShowDot, markDismissed } from "$lib/onboarding/tourStore.svelte";
+    import { shouldShowDot, markDismissed, isCompleted, isDismissed, isHydrated } from "$lib/onboarding/tourStore.svelte";
+    import { goto } from "$app/navigation";
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
 
@@ -131,6 +132,7 @@
 
     // -- Onboarding Tour --
     let protocolTourModalOpen = $state(false);
+    let protocolTourAutoStarted = $state(false);
 
     function openProtocolTourModal() {
         protocolTourModalOpen = true;
@@ -145,6 +147,37 @@
         protocolTourModalOpen = false;
         await markDismissed('protocol');
     }
+
+    // Auto-start the protocol tour when arriving from "Load sample protocol" with ?tour=protocol
+    $effect(() => {
+        if (embedded) return;
+        const tour = $page.url.searchParams.get('tour');
+        if (
+            tour === 'protocol' &&
+            !protocolTourAutoStarted &&
+            isHydrated() &&
+            !isCompleted('protocol') &&
+            !isDismissed('protocol')
+        ) {
+            protocolTourAutoStarted = true;
+            setTimeout(() => runProtocolTour(() => {}), 500);
+            const url = new URL($page.url);
+            url.searchParams.delete('tour');
+            goto(url.pathname + url.search, {
+                replaceState: true,
+                keepFocus: true,
+                noScroll: true,
+            });
+        } else if (tour === 'protocol' && isHydrated() && (isCompleted('protocol') || isDismissed('protocol'))) {
+            const url = new URL($page.url);
+            url.searchParams.delete('tour');
+            goto(url.pathname + url.search, {
+                replaceState: true,
+                keepFocus: true,
+                noScroll: true,
+            });
+        }
+    });
 
     // Confirm dialog state
     let confirmOpen = $state(false);
