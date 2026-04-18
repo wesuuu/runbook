@@ -8,19 +8,20 @@ export const SELECT_SAMPLE_NODE_EVENT = 'onboarding:select-sample-node';
 export const CLEAR_SAMPLE_NODE_EVENT = 'onboarding:clear-sample-node';
 /** Event the Inspector listens to — expands the Edit Schema collapsible. */
 export const EXPAND_SCHEMA_EDITOR_EVENT = 'onboarding:expand-schema-editor';
+/** Event the Inspector listens to — sets the instruction textarea content. */
+export const SET_INSTRUCTION_EVENT = 'onboarding:set-instruction';
+/** Event the editor listens to — triggers saveDraft. */
+export const SAVE_PROTOCOL_EVENT = 'onboarding:save-protocol';
+/** Event the editor listens to — opens the PDF preview drawer. */
+export const OPEN_PDF_PREVIEW_EVENT = 'onboarding:open-pdf-preview';
+/** Event the editor listens to — closes the PDF preview drawer. */
+export const CLOSE_PDF_PREVIEW_EVENT = 'onboarding:close-pdf-preview';
 
-function selectSampleNode(nodeId: string): void {
-    window.dispatchEvent(
-        new CustomEvent(SELECT_SAMPLE_NODE_EVENT, { detail: { nodeId } }),
-    );
-}
+const SAMPLE_INSTRUCTION =
+    'Prepare {{volume_L}}L of {{buffer_name}} buffer, adjusting to pH {{ph}} with HCl.';
 
-function clearSampleNode(): void {
-    window.dispatchEvent(new CustomEvent(CLEAR_SAMPLE_NODE_EVENT));
-}
-
-function expandSchemaEditor(): void {
-    window.dispatchEvent(new CustomEvent(EXPAND_SCHEMA_EDITOR_EVENT));
+function fire(event: string, detail?: unknown): void {
+    window.dispatchEvent(new CustomEvent(event, { detail }));
 }
 
 export function runProtocolTour(onFinish: () => void): void {
@@ -51,8 +52,7 @@ export function runProtocolTour(onFinish: () => void): void {
                     description:
                         'Drag unit operations from here onto the canvas to add new steps after Process Start.',
                     onNextClick: async () => {
-                        // Select the first unit op so the Inspector mounts for the next step.
-                        selectSampleNode('sample-buffer');
+                        fire(SELECT_SAMPLE_NODE_EVENT, { nodeId: 'sample-buffer' });
                         await new Promise((resolve) => setTimeout(resolve, 250));
                         d.moveNext();
                     },
@@ -67,44 +67,78 @@ export function runProtocolTour(onFinish: () => void): void {
                 },
             },
             {
-                element: '[data-tour="inspector-instruction"]',
-                popover: {
-                    title: 'Instruction (with templating)',
-                    description:
-                        'Write what the operator should do. Reference any parameter with double curly braces — e.g. {{volume_L}} — and the preview below updates live with the filled-in value.',
-                },
-            },
-            {
                 element: '[data-tour="inspector-schema"]',
                 popover: {
                     title: 'Edit Schema',
                     description:
-                        'Expand this section to shape the unit op\'s parameters. Use "+ Add Parameter" to introduce new fields (key, label, type) — they immediately show up as inputs above and become available as {{variables}} in the instruction.',
-                    onPrevClick: () => {
-                        d.movePrevious();
-                    },
-                    onNextClick: () => {
-                        clearSampleNode();
+                        'Expand this section to shape the unit op\'s parameters. Use "+ Add Parameter" to add new fields (key, label, type). They immediately show up as inputs above and become available as {{variables}} in the instruction.',
+                },
+                onHighlightStarted: () => {
+                    fire(EXPAND_SCHEMA_EDITOR_EVENT);
+                },
+            },
+            {
+                element: '[data-tour="inspector-instruction"]',
+                popover: {
+                    title: 'Write an Instruction',
+                    description:
+                        "Let's write the operator instruction. Watch — we'll type one that references the parameters you just saw.",
+                    onNextClick: async () => {
+                        fire(SET_INSTRUCTION_EVENT, { text: SAMPLE_INSTRUCTION });
+                        await new Promise((resolve) => setTimeout(resolve, 150));
                         d.moveNext();
                     },
                 },
-                onHighlightStarted: () => {
-                    // Open the collapsible so the user can see the schema editor contents.
-                    expandSchemaEditor();
+            },
+            {
+                element: '[data-tour="inspector-instruction-preview"]',
+                popover: {
+                    title: 'Rendered Preview',
+                    description:
+                        'Every {{variable}} in the instruction is replaced by its live value below. This is exactly what the operator sees at run time.',
                 },
             },
             {
                 element: '[data-tour="protocol-save"]',
                 popover: {
                     title: 'Save',
-                    description: 'Save your changes — nothing is persisted until you click here.',
+                    description:
+                        "Let's save what we just edited so the final document can be generated from it.",
+                    onNextClick: async () => {
+                        fire(SAVE_PROTOCOL_EVENT);
+                        // Give the save request a moment to kick off before opening the preview.
+                        await new Promise((resolve) => setTimeout(resolve, 600));
+                        d.moveNext();
+                    },
+                },
+            },
+            {
+                element: '[data-tour="pdf-preview"]',
+                popover: {
+                    title: 'Preview Documents',
+                    description:
+                        'Here is the SOP rendered from the protocol you just edited. The instruction is merged with the live parameter values — same templating you saw in the Inspector preview.',
+                    onPrevClick: () => {
+                        fire(CLOSE_PDF_PREVIEW_EVENT);
+                        d.movePrevious();
+                    },
+                    onNextClick: () => {
+                        fire(CLOSE_PDF_PREVIEW_EVENT);
+                        d.moveNext();
+                    },
+                },
+                onHighlightStarted: async () => {
+                    fire(OPEN_PDF_PREVIEW_EVENT);
+                    // Drawer mounts and the modal wrapper needs a beat to paint.
+                    await new Promise((resolve) => setTimeout(resolve, 400));
                 },
             },
         ],
         onDestroyStarted: async () => {
             const completed = d.isActive() && d.isLastStep();
-            // Always clear tour-driven selection so the inspector doesn't linger.
-            clearSampleNode();
+            // Clean up any tour-driven state so nothing lingers after the tour.
+            fire(CLEAR_SAMPLE_NODE_EVENT);
+            fire(CLOSE_PDF_PREVIEW_EVENT);
             if (completed) {
                 await markCompleted('protocol');
             } else {

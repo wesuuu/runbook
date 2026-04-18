@@ -71,13 +71,23 @@
     let showSchemaEditor: boolean = $state(false);
     let editSchemaRows: SchemaParamRow[] = $state([]);
 
-    // Listen for onboarding tour request to expand the schema editor
+    // Listen for onboarding tour events to script the demo.
     onMount(() => {
         function expand() {
             showSchemaEditor = true;
         }
+        function setInstruction(e: Event) {
+            const { text } = (e as CustomEvent).detail ?? {};
+            if (typeof text !== 'string') return;
+            editDescription = text;
+            handleApply();
+        }
         window.addEventListener('onboarding:expand-schema-editor', expand);
-        return () => window.removeEventListener('onboarding:expand-schema-editor', expand);
+        window.addEventListener('onboarding:set-instruction', setInstruction);
+        return () => {
+            window.removeEventListener('onboarding:expand-schema-editor', expand);
+            window.removeEventListener('onboarding:set-instruction', setInstruction);
+        };
     });
 
     // Save-as-new-unit-op state
@@ -302,7 +312,7 @@
                 rows="3"
             ></textarea>
             {#if renderedPreview}
-                <div class="template-preview">
+                <div class="template-preview" data-tour="inspector-instruction-preview">
                     <span class="preview-label">Preview</span>
                     <p class="preview-text">{renderedPreview}</p>
                 </div>

@@ -152,7 +152,7 @@
         await markDismissed('protocol');
     }
 
-    // Let the protocol tour drive node selection automatically.
+    // Let the protocol tour drive node selection, saves, and the PDF preview drawer.
     $effect(() => {
         if (embedded) return;
         function selectNode(e: Event) {
@@ -163,11 +163,26 @@
         function clearNode() {
             nodes = nodes.map((n) => (n.selected ? { ...n, selected: false } : n));
         }
+        function triggerSave() {
+            saveDraft();
+        }
+        function triggerOpenPdfPreview() {
+            openPdfPreview();
+        }
+        function triggerClosePdfPreview() {
+            showPdfDrawer = false;
+        }
         window.addEventListener(SELECT_SAMPLE_NODE_EVENT, selectNode);
         window.addEventListener(CLEAR_SAMPLE_NODE_EVENT, clearNode);
+        window.addEventListener('onboarding:save-protocol', triggerSave);
+        window.addEventListener('onboarding:open-pdf-preview', triggerOpenPdfPreview);
+        window.addEventListener('onboarding:close-pdf-preview', triggerClosePdfPreview);
         return () => {
             window.removeEventListener(SELECT_SAMPLE_NODE_EVENT, selectNode);
             window.removeEventListener(CLEAR_SAMPLE_NODE_EVENT, clearNode);
+            window.removeEventListener('onboarding:save-protocol', triggerSave);
+            window.removeEventListener('onboarding:open-pdf-preview', triggerOpenPdfPreview);
+            window.removeEventListener('onboarding:close-pdf-preview', triggerClosePdfPreview);
         };
     });
 
