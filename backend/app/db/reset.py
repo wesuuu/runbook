@@ -5,6 +5,12 @@ Or: scripts/reset-db.sh (from repo root)
 
 Guarded to only run against localhost/batchrite to prevent accidental
 use against a staging or production database.
+
+Exit codes:
+    0 = success
+    1 = user aborted at confirmation prompt (or stdin was not a TTY)
+    2 = DATABASE_URL rejected by the prod guard
+    3 = unexpected error during wipe/re-seed (transaction rolled back)
 """
 from __future__ import annotations
 
@@ -121,20 +127,20 @@ async def reset_database(session: AsyncSession) -> None:
     """
     tables = ", ".join(WIPE_TABLES)
     await session.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
-    # Temporarily disable FK checks so we can seed tables that have
-    # mutual FK dependencies (users.selected_org_id ↔ organization_members)
-    # without worrying about insertion order. ``session_replication_role``
-    # is a session-local GUC; its effect is confined to this transaction.
-    await session.execute(text("SET session_replication_role = 'replica'"))
-    try:
-        await seed_users(session)
-        await seed_org(session)
-        await seed_teams(session)
-        await seed_projects(session)
-        await seed_permissions(session)
-        await seed_unit_ops(session)
-    finally:
-        await session.execute(text("SET session_replication_role = 'origin'"))
+    # SET LOCAL scopes the GUC to this transaction; commit or rollback both
+    # release it automatically, so there's no need for a try/finally to
+    # restore it. Needed because seed_users sets users.selected_org_id=ORG_ID
+    # before seed_org creates the referenced organization — a latent
+    # ordering issue in backend/app/db/seed.py:83 that should be fixed
+    # properly (TODO: file follow-up TD ticket to reorder seed.py so FK
+    # disabling isn't required).
+    await session.execute(text("SET LOCAL session_replication_role = 'replica'"))
+    await seed_users(session)
+    await seed_org(session)
+    await seed_teams(session)
+    await seed_projects(session)
+    await seed_permissions(session)
+    await seed_unit_ops(session)
 
 
 import asyncio
@@ -185,9 +191,17 @@ async def _run() -> int:
         print("[reset-db] Aborted. No changes made.")
         return 1
 
-    async with AsyncSessionLocal() as session:
-        async with session.begin():
-            await reset_database(session)
+    try:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await reset_database(session)
+    except Exception as exc:  # noqa: BLE001 — surface any failure as exit 3
+        # session.begin() rolls back automatically on exception, so data
+        # integrity is preserved; we just convert the traceback into a
+        # clean non-zero exit code distinct from user-abort (1) and
+        # prod-guard rejection (2).
+        print(f"[reset-db] Reset failed: {exc}", file=sys.stderr)
+        return 3
     print("[reset-db] Reset complete.")
     return 0
 
