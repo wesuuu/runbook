@@ -81,10 +81,13 @@ async def seed_users(db: AsyncSession):
             hashed_password=DEFAULT_PASSWORD,
             full_name=name,
             selected_org_id=ORG_ID,
+            email_verified=True,
         )
-        # Backfill existing seed users that lack selected_org_id
+        # Backfill existing seed users that lack selected_org_id / verification
         if user.selected_org_id is None:
             user.selected_org_id = ORG_ID
+        if not user.email_verified:
+            user.email_verified = True
 
 
 async def seed_org(db: AsyncSession):
