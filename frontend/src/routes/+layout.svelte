@@ -205,7 +205,7 @@
         closeButton={true}
         richColors={false}
     />
-    {#if showNav && shouldShowChat}
-        <ChatPanel />
+    {#if showNav}
+        <ChatPanel showFab={shouldShowChat} />
     {/if}
 {/if}

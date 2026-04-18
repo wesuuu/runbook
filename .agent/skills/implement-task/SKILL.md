@@ -19,11 +19,13 @@ Pick up a ClickUp task, design the approach, implement with TDD, and close it ou
 
 ## Process
 
-### 1. Fetch and claim
+### 1. Fetch and claim, start worktree
 
 `clickup_get_task` with the provided ID. Read description, acceptance criteria, priority, linked tasks. If no ID given, ask. Immediately `clickup_update_task` to set status `in progress`.
 
 **Rename the session** with `/rename` to `<TASK-ID> <task title>` so it's easy to find and resume later. Example: `/rename TD-0067 Frontend component reuse audit`.
+
+**Start a worktree immediately** with `EnterWorktree`. All implementation work happens in the worktree—no feature branches, no PRs, no other git management. When work is done, commit and push directly from the worktree, then exit with `ExitWorktree`.
 
 ### 2. Brainstorm and plan
 
@@ -53,8 +55,11 @@ Present summary: what was done, acceptance criteria met, tests added. **Ask user
 
 Only after explicit user confirmation:
 
-1. `clickup_create_task_comment` with summary of changes, files modified, and tests added
-2. `clickup_update_task` to set status `complete`
+1. **Exit the worktree** with `ExitWorktree` action `keep` (preserves commits) or `remove` (discards; use only if work was abandoned)
+2. `clickup_create_task_comment` with summary of changes, files modified, and tests added
+3. `clickup_update_task` to set status `complete`
+
+Commits from the worktree remain on the branch you exit from. If the worktree branch is not on main, those commits must be merged or rebased per your project's integration process (but this is outside the scope of implement-task—focus on the task itself).
 
 ## Common Mistakes
 
@@ -66,7 +71,23 @@ Only after explicit user confirmation:
 
 ## Rules
 
+- **Worktree-only workflow.** Start a worktree after claiming the task. All work happens inside the worktree. Exit when done (keep or remove per CLAUDE.md).
+- **No feature branches.** Do NOT create feature branches (git checkout -b, git branch, etc.). Work in the worktree instead.
+- **No PRs.** Do NOT invoke `/ship`, create pull requests, or use any other PR-based workflow. Worktrees isolate your work; commit directly to main when complete.
 - **User confirms completion.** Never mark complete without explicit sign-off.
 - **Tests must pass.** Do not close a task with failing tests.
 - **Minimal scope.** Implement what the task describes. Unrelated issues go to `/add_task`.
 - **One task at a time.** Focus on the single task unless told otherwise.
+
+## Red Flags — Worktree Discipline
+
+If you catch yourself thinking any of these, you're about to violate the worktree rule:
+
+- "I'll just commit directly to main in this session" — No. Worktree enforces isolation. Use it.
+- "Feature branch is faster than worktree" — False. Worktrees are faster (parallel, isolated, no merge conflicts).
+- "The task is too small for a worktree" — Size doesn't matter. Worktree enforces discipline. Use it.
+- "I'll use /ship instead" — No. /ship creates PRs. Forbidden. Use worktree + direct commit.
+- "Worktree is overkill for a bug fix" — Worktree applies to all tasks, no exceptions.
+- "I can skip the worktree if the change is isolated" — Isolation is exactly why you use worktrees. No exceptions.
+
+**All of these mean: Start a worktree. No workarounds.**

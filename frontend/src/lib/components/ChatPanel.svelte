@@ -13,6 +13,8 @@
         registerScrollFn, activateSkill,
     } from '$lib/chat-store.svelte';
 
+    let { showFab = true } = $props();
+
     let messagesEndEl = $state<HTMLDivElement>(undefined!);
     let inputEl = $state<HTMLTextAreaElement>(undefined!);
     let isMobile = $state(false);
@@ -83,7 +85,7 @@
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 <!-- ─── COLLAPSED: FAB Button ─── -->
-{#if panelState === 'collapsed'}
+{#if panelState === 'collapsed' && showFab}
     <div transition:scale={{ duration: 200, start: 0 }} style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:40;">
         <Button
             rounded="full"

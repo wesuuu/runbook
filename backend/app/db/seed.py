@@ -9,6 +9,7 @@ permissions, and unit operations. All functions are idempotent
 
 import asyncio
 import uuid
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,8 @@ from app.models.iam import (
     TeamRole,
 )
 from app.models.science import Project, UnitOpDefinition
+from app.models.templates import DocumentTemplate, TemplateType
+from app.services.template_seeder import seed_system_templates
 
 
 # --- Fixed UUIDs for reproducibility ---
@@ -501,6 +504,67 @@ async def seed_newbie_user(db: AsyncSession):
     await db.flush()
 
 
+async def seed_document_templates(db: AsyncSession):
+    """Seed system-wide default document templates."""
+    from app.services.file_storage import FileStorageService
+
+    # Copy template files to storage
+    storage = FileStorageService()
+    seed_system_templates(str(storage.storage_root))
+
+    # Define system templates
+    templates = [
+        {
+            "filename": "sop_default.docx",
+            "name": "Standard Operating Procedure",
+            "template_type": TemplateType.SOP,
+            "description": "Default SOP template for generating procedure documents",
+        },
+        {
+            "filename": "batch_record_default.docx",
+            "name": "Batch Record",
+            "template_type": TemplateType.BATCH_RECORD,
+            "description": "Default batch record template for documenting batches",
+        },
+    ]
+
+    for template_info in templates:
+        # Check if already exists
+        result = await db.execute(
+            select(DocumentTemplate).where(
+                DocumentTemplate.is_system == True,
+                DocumentTemplate.template_type == template_info["template_type"],
+            )
+        )
+        if result.scalar_one_or_none() is not None:
+            continue
+
+        # Get file info
+        filename = template_info["filename"]
+        file_path = f"system/document_templates/{filename}"
+        full_path = storage.storage_root / file_path
+        file_size = full_path.stat().st_size if full_path.exists() else 0
+
+        # Create template record
+        template = DocumentTemplate(
+            org_id=None,  # System-wide, not org-specific
+            project_id=None,
+            uploaded_by_id=None,
+            name=template_info["name"],
+            description=template_info["description"],
+            template_type=template_info["template_type"],
+            file_path=file_path,
+            original_filename=filename,
+            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            file_size_bytes=file_size,
+            is_system=True,
+            variables={},
+        )
+        db.add(template)
+
+    await db.flush()
+
+
 async def run_seed():
     """Run all seed functions in order."""
     async with AsyncSessionLocal() as db:
@@ -508,6 +572,8 @@ async def run_seed():
         await seed_users(db)
         print("Seeding organization...")
         await seed_org(db)
+        print("Seeding document templates...")
+        await seed_document_templates(db)
         print("Seeding teams...")
         await seed_teams(db)
         print("Seeding projects...")
