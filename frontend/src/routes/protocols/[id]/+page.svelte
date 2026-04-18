@@ -148,12 +148,28 @@
         await markDismissed('protocol');
     }
 
-    // Auto-start the protocol tour when arriving from "Load sample protocol" with ?tour=protocol
+    // Auto-start the protocol tour when arriving from "Load sample protocol" with ?tour=protocol.
+    // Guarded on is_tour_sample so the tour only runs on the actual sample protocol — it references
+    // the seeded ProcessStart node by id, which doesn't exist on user-created protocols.
     $effect(() => {
         if (embedded) return;
         const tour = $page.url.searchParams.get('tour');
+        if (tour !== 'protocol') return;
+        // Wait until the protocol has loaded before deciding; prevents firing before we know whether
+        // this is the sample.
+        if (!protocol) return;
+        if (!protocol.is_tour_sample) {
+            // Non-sample protocol — strip the stray param and do nothing.
+            const url = new URL($page.url);
+            url.searchParams.delete('tour');
+            goto(url.pathname + url.search, {
+                replaceState: true,
+                keepFocus: true,
+                noScroll: true,
+            });
+            return;
+        }
         if (
-            tour === 'protocol' &&
             !protocolTourAutoStarted &&
             isHydrated() &&
             !isCompleted('protocol') &&
@@ -168,7 +184,7 @@
                 keepFocus: true,
                 noScroll: true,
             });
-        } else if (tour === 'protocol' && isHydrated() && (isCompleted('protocol') || isDismissed('protocol'))) {
+        } else if (isHydrated() && (isCompleted('protocol') || isDismissed('protocol'))) {
             const url = new URL($page.url);
             url.searchParams.delete('tour');
             goto(url.pathname + url.search, {
@@ -1017,7 +1033,7 @@
         bind:this={flowContainer}
         data-tour="protocol-canvas"
     >
-        {#if !embedded}
+        {#if !embedded && protocol?.is_tour_sample}
             <div class="absolute top-3 right-3 z-30">
                 <HelpMenu dotVisible={shouldShowDot('protocol')} onTakeTour={openProtocolTourModal} />
             </div>
