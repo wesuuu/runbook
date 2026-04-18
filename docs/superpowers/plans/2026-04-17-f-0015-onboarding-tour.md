@@ -905,7 +905,114 @@ git commit -m "feat(backend): seed 'My First Project' on org registration [F-001
 
 ---
 
-### Task 10: Bypass archival guard when deleting sample protocols
+### Task 10: Add a fresh demo user for tour testing
+
+This adds a verified-but-empty seed user so you can log in and see the welcome modal pop up. The user has an empty `tour_state` (default), their own org, and a single "My First Project" — so the first-login experience is indistinguishable from a real new signup.
+
+**Files:**
+- Modify: `backend/app/db/seed.py`
+
+- [ ] **Step 1: Add the user UUID constants**
+
+In `backend/app/db/seed.py`, after the existing `USER_VIEWER` UUID constant (around line 42), add:
+
+```python
+USER_NEWBIE = uuid.UUID("20000000-0000-0000-0000-0000000000ff")
+ORG_ID_NEWBIE = uuid.UUID("10000000-0000-0000-0000-0000000000ff")
+PROJECT_NEWBIE = uuid.UUID("40000000-0000-0000-0000-0000000000ff")
+```
+
+- [ ] **Step 2: Add a new seed function**
+
+After the existing `seed_projects` function (or wherever the order makes sense — before `main`), add:
+
+```python
+async def seed_newbie_user(db: AsyncSession):
+    """Create a fresh, email-verified user with an empty tour_state.
+
+    Used for manually testing the F-0015 onboarding tour. The user has
+    their own org and a single "My First Project" — matching what a real
+    new signup looks like, so the welcome modal auto-opens on login.
+    """
+    # Fresh org just for this user
+    await _upsert(
+        db, Organization, ORG_ID_NEWBIE, name="Newbie's Organization"
+    )
+
+    user = await _upsert(
+        db, User, USER_NEWBIE,
+        email="newbie@bioprocess.com",
+        hashed_password=DEFAULT_PASSWORD,
+        full_name="Newbie Tester",
+        selected_org_id=ORG_ID_NEWBIE,
+        email_verified=True,
+    )
+    # Always reset tour_state so repeated seeds give a clean test experience
+    user.tour_state = {}
+
+    # Org membership (ADMIN)
+    result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == USER_NEWBIE,
+            OrganizationMember.organization_id == ORG_ID_NEWBIE,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        db.add(OrganizationMember(
+            user_id=USER_NEWBIE,
+            organization_id=ORG_ID_NEWBIE,
+            role="ADMIN",
+        ))
+
+    # Seed a single starter project (mirrors what auth/register does)
+    await _upsert(
+        db, Project, PROJECT_NEWBIE,
+        name="My First Project",
+        description="Created for you — rename or delete as you like.",
+        organization_id=ORG_ID_NEWBIE,
+    )
+
+    await db.flush()
+```
+
+- [ ] **Step 3: Call it from `main()`**
+
+Find the `main()` coroutine at the bottom of `seed.py`. Inside its transaction block (after the existing seed function calls like `seed_users`, `seed_org`, etc.), add:
+
+```python
+        await seed_newbie_user(db)
+```
+
+- [ ] **Step 4: Re-seed the database**
+
+```bash
+cd backend && source .venv/bin/activate
+python -m app.db.seed
+```
+
+Expected: existing seed data is untouched, plus a new `newbie@bioprocess.com` user exists with an empty `tour_state`.
+
+Alternative: if you prefer a clean slate, use `../scripts/reset-db.sh` which wipes user data and re-seeds.
+
+- [ ] **Step 5: Test manually**
+
+1. Log in at `http://localhost:5173` as `newbie@bioprocess.com` / `password123`.
+2. Dashboard should load and the welcome modal should auto-open.
+3. Clicking "Check out how projects are laid out" should navigate to `/projects/<uuid>?tour=project` and start the driver.js walkthrough.
+4. Clicking "Dismiss" should close the modal and suppress it on refresh.
+
+(Obviously steps 2–4 won't work until the frontend Phase 3 tasks are done. But you can verify the user + org + project exist in the DB now.)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/app/db/seed.py
+git commit -m "chore(seed): add newbie user for F-0015 tour testing [F-0015]"
+```
+
+---
+
+### Task 11: Bypass archival guard when deleting sample protocols
 
 **Files:**
 - Modify: `backend/app/api/endpoints/protocols.py:366-437`
@@ -986,7 +1093,7 @@ git commit -m "feat(backend): bypass archival guard for is_tour_sample protocols
 
 ---
 
-### Task 11: Expose `is_tour_sample` in Protocol API responses
+### Task 12: Expose `is_tour_sample` in Protocol API responses
 
 **Files:**
 - Modify: `backend/app/schemas/science.py` (ProtocolResponse)
@@ -1012,7 +1119,7 @@ git commit -m "feat(backend): expose is_tour_sample in ProtocolResponse [F-0015]
 
 ## Phase 2 — Frontend foundation
 
-### Task 12: Install driver.js
+### Task 13: Install driver.js
 
 **Files:**
 - Modify: `frontend/package.json`
@@ -1033,7 +1140,7 @@ git commit -m "chore(frontend): add driver.js [F-0015]"
 
 ---
 
-### Task 13: Write failing tests for tour state store
+### Task 14: Write failing tests for tour state store
 
 **Files:**
 - Create: `frontend/src/lib/onboarding/tourStore.test.ts`
@@ -1127,7 +1234,7 @@ Expected: FAIL — module does not exist.
 
 ---
 
-### Task 14: Implement tour state store
+### Task 15: Implement tour state store
 
 **Files:**
 - Create: `frontend/src/lib/onboarding/tourStore.svelte.ts`
@@ -1243,7 +1350,7 @@ git commit -m "feat(frontend): tour state store (hydrate + mark) [F-0015]"
 
 ---
 
-### Task 15: Build reusable `TourModal` component
+### Task 16: Build reusable `TourModal` component
 
 **Files:**
 - Create: `frontend/src/lib/onboarding/TourModal.svelte`
@@ -1375,7 +1482,7 @@ git commit -m "feat(frontend): reusable TourModal component [F-0015]"
 
 ---
 
-### Task 16: Build `HintDot` component
+### Task 17: Build `HintDot` component
 
 **Files:**
 - Create: `frontend/src/lib/onboarding/HintDot.svelte`
@@ -1456,7 +1563,7 @@ git commit -m "feat(frontend): HintDot pulsing hint component [F-0015]"
 
 ---
 
-### Task 17: Build `HelpMenu` component
+### Task 18: Build `HelpMenu` component
 
 **Files:**
 - Create: `frontend/src/lib/onboarding/HelpMenu.svelte`
@@ -1500,7 +1607,7 @@ git commit -m "feat(frontend): HelpMenu dropdown with tour trigger [F-0015]"
 
 ---
 
-### Task 18: Write the three driver.js tour configs
+### Task 19: Write the three driver.js tour configs
 
 **Files:**
 - Create: `frontend/src/lib/onboarding/tours/projectTour.ts`
@@ -1701,7 +1808,7 @@ git commit -m "feat(frontend): driver.js tour configs for project/protocol/run [
 
 ---
 
-### Task 19: Add `index.ts` barrel export
+### Task 20: Add `index.ts` barrel export
 
 **Files:**
 - Create: `frontend/src/lib/onboarding/index.ts`
@@ -1729,7 +1836,7 @@ git commit -m "feat(frontend): onboarding module barrel export [F-0015]"
 
 ## Phase 3 — Page integrations
 
-### Task 20: Hydrate tour state on login
+### Task 21: Hydrate tour state on login
 
 **Files:**
 - Modify: `frontend/src/lib/auth.svelte.ts`
@@ -1769,7 +1876,7 @@ git commit -m "feat(frontend): hydrate tour state on login [F-0015]"
 
 ---
 
-### Task 21: Mount welcome modal on dashboard
+### Task 22: Mount welcome modal on dashboard
 
 **Files:**
 - Modify: `frontend/src/routes/+page.svelte`
@@ -1839,7 +1946,7 @@ git commit -m "feat(frontend): welcome modal on dashboard first login [F-0015]"
 
 ---
 
-### Task 22: Add `data-tour` hooks and tour integration to project detail page
+### Task 23: Add `data-tour` hooks and tour integration to project detail page
 
 **Files:**
 - Modify: `frontend/src/routes/projects/[id]/+page.svelte`
@@ -1928,7 +2035,7 @@ git commit -m "feat(frontend): project tour integration + data-tour hooks [F-001
 
 ---
 
-### Task 23: Add `data-tour` hooks and tour integration to protocol editor
+### Task 24: Add `data-tour` hooks and tour integration to protocol editor
 
 **Files:**
 - Modify: `frontend/src/routes/protocols/[id]/+page.svelte`
@@ -2005,7 +2112,7 @@ git commit -m "feat(frontend): protocol tour integration + data-tour hooks [F-00
 
 ---
 
-### Task 24: Add `data-tour` hooks and tour integration to runner page
+### Task 25: Add `data-tour` hooks and tour integration to runner page
 
 **Files:**
 - Modify: `frontend/src/routes/runs/[id]/+page.svelte`
@@ -2076,7 +2183,7 @@ git commit -m "feat(frontend): run tour integration + data-tour hooks [F-0015]"
 
 ## Phase 4 — Empty state CTAs and polish
 
-### Task 25: Extend `EmptyState` component with secondary action
+### Task 26: Extend `EmptyState` component with secondary action
 
 **Files:**
 - Modify: `frontend/src/lib/components/ui/empty-state/empty-state.svelte`
@@ -2157,7 +2264,7 @@ git commit -m "feat(frontend): EmptyState gains secondary action prop [F-0015]"
 
 ---
 
-### Task 26: Wire "Take the tour" secondary CTA on dashboard empty state
+### Task 27: Wire "Take the tour" secondary CTA on dashboard empty state
 
 **Files:**
 - Modify: `frontend/src/routes/+page.svelte`
@@ -2186,7 +2293,7 @@ git commit -m "feat(frontend): dashboard empty state links to tour [F-0015]"
 
 ---
 
-### Task 27: Wire "Take the tour" on projects list empty state
+### Task 28: Wire "Take the tour" on projects list empty state
 
 **Files:**
 - Modify: `frontend/src/routes/projects/+page.svelte`
@@ -2255,7 +2362,7 @@ git commit -m "feat(frontend): projects list empty state links to tour [F-0015]"
 
 ---
 
-### Task 28: Wire "Take the tour" on protocols-tab empty state inside project detail
+### Task 29: Wire "Take the tour" on protocols-tab empty state inside project detail
 
 **Files:**
 - Modify: `frontend/src/lib/components/project/ProtocolsTab.svelte` (or inline if the tab is implemented inline)
@@ -2268,7 +2375,7 @@ grep -rn "No protocols\|protocols.length === 0" frontend/src/
 
 - [ ] **Step 2: Extend the EmptyState call with `secondaryActionLabel` + `secondaryOnAction`**
 
-The action should open the welcome modal in the parent (pass a callback prop to `ProtocolsTab.svelte` from `projects/[id]/+page.svelte`, and open `welcomeOpen` state there — reuse the state added in Task 22 or add a new one).
+The action should open the welcome modal in the parent (pass a callback prop to `ProtocolsTab.svelte` from `projects/[id]/+page.svelte`, and open `welcomeOpen` state there — reuse the state added in Task 23 or add a new one).
 
 Example call in `ProtocolsTab.svelte`:
 
@@ -2298,7 +2405,7 @@ git commit -m "feat(frontend): protocols-tab empty state links to tour [F-0015]"
 
 ---
 
-### Task 29: Render "Sample" badge on tour-sample protocols
+### Task 30: Render "Sample" badge on tour-sample protocols
 
 **Files:**
 - Modify: `frontend/src/lib/components/project/ProtocolsTab.svelte` (or wherever the protocol list is rendered)
@@ -2340,7 +2447,7 @@ git commit -m "feat(frontend): Sample badge on tour-sample protocols [F-0015]"
 
 ## Phase 5 — E2E tests and final polish
 
-### Task 30: Playwright — happy path for each tour segment
+### Task 31: Playwright — happy path for each tour segment
 
 **Files:**
 - Create: `frontend/tests/e2e/onboarding.spec.ts`
@@ -2418,7 +2525,7 @@ git commit -m "test(frontend): E2E happy paths for onboarding tour [F-0015]"
 
 ---
 
-### Task 31: Run the full test suite
+### Task 32: Run the full test suite
 
 - [ ] **Step 1: Backend**
 
@@ -2464,7 +2571,7 @@ git commit -m "fix: post-test-suite fixups [F-0015]"
 
 ---
 
-### Task 32: Lint and format
+### Task 33: Lint and format
 
 - [ ] **Step 1: Backend**
 
