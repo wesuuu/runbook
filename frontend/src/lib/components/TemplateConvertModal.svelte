@@ -449,12 +449,21 @@
     });
 </script>
 
-{#if open}
-<div class="fixed inset-0 z-50 flex flex-col bg-background">
+<Dialog.Root open={open}>
+    <Dialog.Content
+        class="w-screen h-screen max-w-none sm:max-w-none max-h-none overflow-y-visible rounded-none border-0 p-0 gap-0 bg-background flex flex-col overflow-hidden"
+        style="top: 0; left: 0; translate: none"
+        showCloseButton={false}
+        onEscapeKeydown={(e) => { e.preventDefault(); handleClose(); }}
+        interactOutsideBehavior="ignore"
+    >
     <!-- Header -->
     <div class="flex items-center justify-between border-b border-border px-6 py-3 shrink-0">
         <div class="flex items-center gap-6">
-            <h2 class="text-lg font-semibold">Convert Document to Template</h2>
+            <Dialog.Title class="text-lg font-semibold">Convert Document to Template</Dialog.Title>
+            <Dialog.Description class="sr-only">
+                Upload a completed document and convert it into a reusable template.
+            </Dialog.Description>
             {#if step === 'review'}
                 <span class="text-sm text-muted-foreground">
                     {variablesDetected.length} variables detected
@@ -820,8 +829,8 @@
         {/if}
     </div>
     </div>
-</div>
-{/if}
+    </Dialog.Content>
+</Dialog.Root>
 
 <ConfirmDialog
     bind:open={discardConfirmOpen}

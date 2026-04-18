@@ -10,6 +10,7 @@
 	let {
 		ref = $bindable(null),
 		class: className,
+		style: styleProp,
 		portalProps,
 		children,
 		showCloseButton = true,
@@ -20,6 +21,7 @@
 		>;
 		children: Snippet;
 		showCloseButton?: boolean;
+		style?: string;
 	} = $props();
 </script>
 
@@ -28,7 +30,7 @@
 	<DialogPrimitive.Content
 		bind:ref
 		data-slot="dialog-content"
-		style="top: 50%; left: 50%; translate: -50% -50%"
+		style={styleProp ?? "top: 50%; left: 50%; translate: -50% -50%"}
 		class={cn(
 			"bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed z-50 grid w-11/12 max-h-[90vh] overflow-y-auto gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
 			className,
