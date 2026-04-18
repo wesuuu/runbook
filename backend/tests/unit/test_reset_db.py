@@ -52,3 +52,27 @@ def test_wipe_tables_excludes_preserve_tables():
 
 def test_wipe_tables_has_no_duplicates():
     assert len(WIPE_TABLES) == len(set(WIPE_TABLES))
+
+
+from app.db.reset import mask_database_url
+
+
+def test_mask_database_url_masks_simple_password():
+    url = "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite"
+    masked = mask_database_url(url)
+    assert masked == "postgresql+asyncpg://postgres:***@localhost:5432/batchrite"
+
+
+def test_mask_database_url_masks_complex_password():
+    url = "postgresql+asyncpg://user:p@ss!w0rd#1@db.host.internal:5432/mydb"
+    masked = mask_database_url(url)
+    # Password runs up to the LAST @ before the host segment.
+    assert "p@ss!w0rd#1" not in masked
+    assert "***" in masked
+    assert "db.host.internal" in masked
+
+
+def test_mask_database_url_passes_through_url_without_password():
+    url = "postgresql+asyncpg://localhost:5432/batchrite"
+    masked = mask_database_url(url)
+    assert masked == url

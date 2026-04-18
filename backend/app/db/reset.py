@@ -41,3 +41,22 @@ WIPE_TABLES: tuple[str, ...] = (
     "invitations",
     "verification_tokens",
 )
+
+from urllib.parse import urlsplit, urlunsplit
+
+
+def mask_database_url(url: str) -> str:
+    """Return url with the password segment replaced by ``***``.
+
+    Leaves the rest of the URL untouched so users can still see the target
+    host + database before confirming a destructive action.
+    """
+    parts = urlsplit(url)
+    if parts.password is None:
+        return url
+    # Rebuild netloc with masked password.
+    userinfo = parts.username or ""
+    masked_netloc = f"{userinfo}:***@{parts.hostname or ''}"
+    if parts.port is not None:
+        masked_netloc = f"{masked_netloc}:{parts.port}"
+    return urlunsplit((parts.scheme, masked_netloc, parts.path, parts.query, parts.fragment))
