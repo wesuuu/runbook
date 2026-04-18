@@ -10,6 +10,8 @@
 		description?: string;
 		actionLabel?: string;
 		onAction?: () => void;
+		secondaryActionLabel?: string;
+		secondaryOnAction?: () => void;
 		class?: string;
 	}
 
@@ -19,6 +21,8 @@
 		description,
 		actionLabel,
 		onAction,
+		secondaryActionLabel,
+		secondaryOnAction,
 		class: className,
 	}: Props = $props();
 </script>
@@ -46,6 +50,16 @@
 			onclick={onAction}
 		>
 			{actionLabel}
+		</Button>
+	{/if}
+	{#if secondaryActionLabel}
+		<Button
+			variant="ghost"
+			size="sm"
+			class="mt-2 text-muted-foreground"
+			onclick={secondaryOnAction}
+		>
+			{secondaryActionLabel}
 		</Button>
 	{/if}
 </div>
