@@ -470,15 +470,16 @@
                 </span>
             {/if}
         </div>
-        <button
-            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        <Button
+            variant="ghost"
+            size="icon-sm"
             onclick={handleClose}
             aria-label="Close"
         >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M6 18L18 6M6 6l12 12" />
             </svg>
-        </button>
+        </Button>
     </div>
 
     <!-- Content -->
@@ -504,22 +505,20 @@
                     <div>
                         <Label>Template Type</Label>
                         <div class="flex gap-2 mt-1">
-                            <button
-                                class="flex-1 px-4 py-2 text-sm font-medium rounded-md border transition-colors {templateType === 'SOP'
-                                    ? 'border-primary bg-primary/10 text-primary'
-                                    : 'border-border hover:border-primary/50'}"
+                            <Button
+                                variant="outline"
+                                class="flex-1 {templateType === 'SOP' ? 'border-primary bg-primary/10 text-primary hover:bg-primary/15' : ''}"
                                 onclick={() => (templateType = 'SOP')}
                             >
                                 Protocol
-                            </button>
-                            <button
-                                class="flex-1 px-4 py-2 text-sm font-medium rounded-md border transition-colors {templateType === 'BATCH_RECORD'
-                                    ? 'border-primary bg-primary/10 text-primary'
-                                    : 'border-border hover:border-primary/50'}"
+                            </Button>
+                            <Button
+                                variant="outline"
+                                class="flex-1 {templateType === 'BATCH_RECORD' ? 'border-primary bg-primary/10 text-primary hover:bg-primary/15' : ''}"
                                 onclick={() => (templateType = 'BATCH_RECORD')}
                             >
                                 Batch Record
-                            </button>
+                            </Button>
                         </div>
                     </div>
 
@@ -616,30 +615,30 @@
                 <div class="flex-1 overflow-hidden flex flex-col min-w-0">
                     <div class="px-4 py-2 border-b border-border bg-muted/30 flex items-center justify-between">
                         <div class="flex gap-1 bg-muted rounded-md p-0.5">
-                            <button
-                                class="px-3 py-1 text-xs font-medium rounded transition-colors {previewMode === 'original'
-                                    ? 'bg-background text-foreground shadow-sm'
-                                    : 'text-muted-foreground hover:text-foreground'}"
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="h-7 px-3 text-xs {previewMode === 'original' ? 'bg-background text-foreground shadow-sm hover:bg-background' : 'text-muted-foreground'}"
                                 onclick={async () => { previewMode = 'original'; await fetchOriginalPreview(); }}
                             >
                                 Original
-                            </button>
-                            <button
-                                class="px-3 py-1 text-xs font-medium rounded transition-colors {previewMode === 'rendered'
-                                    ? 'bg-background text-foreground shadow-sm'
-                                    : 'text-muted-foreground hover:text-foreground'}"
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="h-7 px-3 text-xs {previewMode === 'rendered' ? 'bg-background text-foreground shadow-sm hover:bg-background' : 'text-muted-foreground'}"
                                 onclick={() => (previewMode = 'rendered')}
                             >
                                 Rendered
-                            </button>
-                            <button
-                                class="px-3 py-1 text-xs font-medium rounded transition-colors {previewMode === 'template'
-                                    ? 'bg-background text-foreground shadow-sm'
-                                    : 'text-muted-foreground hover:text-foreground'}"
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="h-7 px-3 text-xs {previewMode === 'template' ? 'bg-background text-foreground shadow-sm hover:bg-background' : 'text-muted-foreground'}"
                                 onclick={async () => { previewMode = 'template'; if (!templateBlobUrl) await fetchTemplatePreview(); }}
                             >
                                 Template
-                            </button>
+                            </Button>
                         </div>
                     </div>
                     <div class="flex-1 overflow-auto bg-muted/10">

@@ -7,6 +7,7 @@
      * Renders a vertical timeline with avatars, action descriptions,
      * timestamps, and structured detail lines.
      */
+    import { Button } from '$lib/components/ui/button';
 
     export interface AuditEntry {
         id: string;
@@ -210,20 +211,24 @@
                 Showing {showingFrom}–{showingTo} of {total}
             </span>
             <div class="flex gap-2">
-                <button
-                    class="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-slate-200"
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-auto px-3 py-1.5 text-xs font-medium text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
                     disabled={!canPrev || loading}
                     onclick={() => handlePageChange(Math.max(0, offset - limit))}
                 >
                     Previous
-                </button>
-                <button
-                    class="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-slate-200"
+                </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-auto px-3 py-1.5 text-xs font-medium text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
                     disabled={!canNext || loading}
                     onclick={() => handlePageChange(offset + limit)}
                 >
                     Next
-                </button>
+                </Button>
             </div>
         </div>
     {/if}

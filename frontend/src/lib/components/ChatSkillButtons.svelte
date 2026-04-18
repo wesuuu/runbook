@@ -4,6 +4,7 @@
         FlaskConical, Sparkles, FileSearch, GitCompare,
         Wrench, BookOpen, BarChart3, Bug,
     } from 'lucide-svelte';
+    import { Button } from '$lib/components/ui/button';
 
     let {
         skills = [],
@@ -45,50 +46,50 @@
     <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
         {#each skills as skill (skill.name)}
             {@const Icon = getIcon(skill.icon)}
-            <button
-                class="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full
-                    border border-border/60 bg-card hover:bg-muted cursor-pointer
-                    transition-colors text-sm font-medium text-foreground
-                    active:scale-95"
+            <Button
+                variant="outline"
+                rounded="full"
+                class="h-auto px-4 py-2 bg-card text-foreground active:scale-95"
                 onclick={() => handleSkillClick(skill)}
                 title={skill.description}
             >
                 <Icon class="w-4 h-4 text-primary" />
                 {skill.name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-            </button>
+            </Button>
         {/each}
     </div>
 {:else}
     <!-- Dropdown (tools menu in active chat) -->
     <div class="relative">
-        <button
-            class="p-2 rounded-lg border border-border/60 bg-background
-                hover:bg-muted/70 transition-colors text-muted-foreground
-                hover:text-foreground"
+        <Button
+            variant="outline"
+            size="icon-sm"
+            class="size-9 p-2 text-muted-foreground hover:text-foreground hover:bg-muted/70"
             onclick={() => (dropdownOpen = !dropdownOpen)}
             title="Tools"
             aria-label="Chat tools"
         >
             <Wrench class="w-4 h-4" />
-        </button>
+        </Button>
 
         {#if dropdownOpen}
             <!-- Backdrop -->
-            <button
-                class="fixed inset-0 z-30"
+            <Button
+                variant="ghost"
+                class="fixed inset-0 z-30 h-auto w-auto rounded-none p-0 shadow-none hover:bg-transparent"
                 onclick={() => (dropdownOpen = false)}
                 aria-label="Close menu"
-                tabindex="-1"
-            ></button>
+                tabindex={-1}
+            ></Button>
 
             <!-- Menu -->
             <div class="absolute bottom-full left-0 mb-2 z-40 w-64 rounded-lg border border-border/60
                 bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95">
                 {#each skills as skill (skill.name)}
                     {@const Icon = getIcon(skill.icon)}
-                    <button
-                        class="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-left
-                            hover:bg-muted/70 transition-colors"
+                    <Button
+                        variant="ghost"
+                        class="w-full h-auto justify-start gap-3 px-3 py-2.5 text-sm text-left rounded-none"
                         onclick={() => handleSkillClick(skill)}
                     >
                         <Icon class="w-4 h-4 text-primary flex-shrink-0" />
@@ -98,7 +99,7 @@
                             </p>
                             <p class="text-xs text-muted-foreground truncate">{skill.description}</p>
                         </div>
-                    </button>
+                    </Button>
                 {/each}
             </div>
         {/if}

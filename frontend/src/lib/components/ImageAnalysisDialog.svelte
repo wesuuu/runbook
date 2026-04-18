@@ -2,6 +2,7 @@
     import { api } from '$lib/api';
     import { API_BASE } from '$lib/config';
     import * as Dialog from '$lib/components/ui/dialog';
+    import { Button } from '$lib/components/ui/button';
 
     interface ExtractedValue {
         field_key: string;
@@ -230,12 +231,14 @@
             {#if errorMsg}
                 <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
                     <p class="text-red-700">{errorMsg}</p>
-                    <button
+                    <Button
+                        variant="link"
+                        size="sm"
+                        class="h-auto p-0 mt-2 text-xs text-red-600 hover:text-red-800"
                         onclick={() => { analysisAttempted = false; }}
-                        class="mt-2 text-xs text-red-600 underline hover:text-red-800"
                     >
                         Retry analysis
-                    </button>
+                    </Button>
                 </div>
             {/if}
 
@@ -302,7 +305,10 @@
                                 </div>
                                 <div class="flex gap-1.5 shrink-0">
                                     {#if !isRejected}
-                                        <button
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            class="h-7 px-2 text-xs {editedValues[ev.field_key] !== undefined ? 'bg-teal-50 border-teal-300 text-teal-700 hover:bg-teal-100' : 'text-muted-foreground'}"
                                             onclick={() => {
                                                 if (editedValues[ev.field_key] !== undefined) {
                                                     const { [ev.field_key]: _, ...rest } = editedValues;
@@ -311,17 +317,18 @@
                                                     editedValues = { ...editedValues, [ev.field_key]: String(ev.value) };
                                                 }
                                             }}
-                                            class="px-2 py-1 text-xs rounded border {editedValues[ev.field_key] !== undefined ? 'bg-teal-50 border-teal-300 text-teal-700' : 'border-border text-muted-foreground hover:bg-muted'}"
                                         >
                                             {editedValues[ev.field_key] !== undefined ? 'Done' : 'Edit'}
-                                        </button>
+                                        </Button>
                                     {/if}
-                                    <button
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-7 px-2 text-xs {isRejected ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' : 'text-muted-foreground'}"
                                         onclick={() => toggleReject(ev.field_key)}
-                                        class="px-2 py-1 text-xs rounded border {isRejected ? 'bg-red-50 border-red-300 text-red-700' : 'border-border text-muted-foreground hover:bg-muted'}"
                                     >
                                         {isRejected ? 'Undo' : 'Reject'}
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                         {/each}
@@ -340,13 +347,12 @@
                         disabled={conversing}
                         class="flex-1 px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50"
                     />
-                    <button
+                    <Button
                         onclick={sendReply}
                         disabled={conversing || !userReply.trim()}
-                        class="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {conversing ? '...' : 'Send'}
-                    </button>
+                    </Button>
                 </div>
             {/if}
         </div>
@@ -354,19 +360,15 @@
         <!-- Footer Actions -->
         {#if extractedValues.length > 0 && conversationStatus !== 'confirmed'}
             <div class="flex justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
-                <button
-                    onclick={resetAndClose}
-                    class="px-4 py-2 bg-muted text-foreground/80 rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors"
-                >
+                <Button variant="secondary" onclick={resetAndClose}>
                     Dismiss
-                </button>
-                <button
+                </Button>
+                <Button
                     onclick={confirmValues}
                     disabled={confirming}
-                    class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {confirming ? 'Confirming...' : 'Confirm Values'}
-                </button>
+                </Button>
             </div>
         {/if}
     </Dialog.Content>

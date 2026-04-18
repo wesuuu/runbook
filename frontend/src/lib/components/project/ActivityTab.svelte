@@ -122,16 +122,18 @@
         <div class="flex flex-wrap items-center gap-3 p-2">
             <div class="flex items-center gap-1.5">
                 {#each allEntityTypes as et}
-                    <button
-                        class="px-2.5 py-1.5 text-xs font-medium rounded-full border transition-colors {activityEntityFilter.includes(
-                            et,
-                        )
-                            ? entityBadgeClasses(et) + ' ring-1 ring-offset-1'
-                            : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300'}"
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        rounded="full"
+                        class={"h-auto px-2.5 py-1.5 text-xs font-medium " +
+                            (activityEntityFilter.includes(et)
+                                ? entityBadgeClasses(et) + ' ring-1 ring-offset-1'
+                                : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300')}
                         onclick={() => toggleEntityFilter(et)}
                     >
                         {et}
-                    </button>
+                    </Button>
                 {/each}
             </div>
 
@@ -139,16 +141,18 @@
 
             <div class="flex items-center gap-1.5 flex-wrap">
                 {#each allActionTypes as at}
-                    <button
-                        class="px-2.5 py-1.5 text-xs font-medium rounded-full border transition-colors {activityActionFilter.includes(
-                            at.value,
-                        )
-                            ? 'bg-slate-800 text-white border-slate-800'
-                            : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300'}"
+                    <Button
+                        variant={activityActionFilter.includes(at.value) ? "default" : "outline"}
+                        size="sm"
+                        rounded="full"
+                        class={"h-auto px-2.5 py-1.5 text-xs font-medium " +
+                            (activityActionFilter.includes(at.value)
+                                ? ''
+                                : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300')}
                         onclick={() => toggleActionFilter(at.value)}
                     >
                         {at.label}
-                    </button>
+                    </Button>
                 {/each}
             </div>
 

@@ -19,6 +19,9 @@
     import { formatDate } from '$lib/components/project/projectUtils';
     import AiSettingsTab from '$lib/components/AiSettingsTab.svelte';
     import TemplatesTab from '$lib/components/settings/TemplatesTab.svelte';
+    import { fade } from 'svelte/transition';
+    import { flip } from 'svelte/animate';
+    import { blockDuration, listDuration } from '$lib/transitions';
 
     let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates'>('organization');
 
@@ -598,42 +601,54 @@
 
     <!-- Tabs -->
     <div class="flex border-b border-border overflow-x-auto">
-        <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'organization' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        <Button
+            variant="tab"
+            data-active={activeTab === 'organization'}
             onclick={() => (activeTab = 'organization')}
+            class="py-2.5 min-h-11"
         >
             Organization
-        </button>
-        <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'teams' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        </Button>
+        <Button
+            variant="tab"
+            data-active={activeTab === 'teams'}
             onclick={() => (activeTab = 'teams')}
+            class="py-2.5 min-h-11"
         >
             Teams
-        </button>
-        <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'profile' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        </Button>
+        <Button
+            variant="tab"
+            data-active={activeTab === 'profile'}
             onclick={() => (activeTab = 'profile')}
+            class="py-2.5 min-h-11"
         >
             Profile
-        </button>
-        <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'notifications' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        </Button>
+        <Button
+            variant="tab"
+            data-active={activeTab === 'notifications'}
             onclick={() => { activeTab = 'notifications'; if (channels.length === 0 && !channelsLoading) loadChannels(); }}
+            class="py-2.5 min-h-11"
         >
             Notifications
-        </button>
-        <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'ai' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        </Button>
+        <Button
+            variant="tab"
+            data-active={activeTab === 'ai'}
             onclick={() => (activeTab = 'ai')}
+            class="py-2.5 min-h-11"
         >
             AI Models
-        </button>
-        <button
-            class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer whitespace-nowrap min-h-11 {activeTab === 'templates' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        </Button>
+        <Button
+            variant="tab"
+            data-active={activeTab === 'templates'}
             onclick={() => (activeTab = 'templates')}
+            class="py-2.5 min-h-11"
         >
             Templates
-        </button>
+        </Button>
     </div>
 
     <!-- Organization Tab -->
@@ -649,12 +664,14 @@
                         {#if isOrgAdmin && pendingInvitations.length > 0}
                             <div class="flex gap-1">
                                 {#each [{ value: 'all', label: 'All' }, { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }] as filter}
-                                    <button
-                                        class="px-3 py-1 text-xs font-medium rounded-full transition-colors duration-150 cursor-pointer {memberStatusFilter === filter.value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80'}"
+                                    <Button
+                                        size="sm"
+                                        rounded="full"
+                                        class="h-auto px-3 py-1 text-xs font-medium shadow-none {memberStatusFilter === filter.value ? 'bg-foreground text-background hover:bg-foreground/90' : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80'}"
                                         onclick={() => { memberStatusFilter = filter.value as any; }}
                                     >
                                         {filter.label}
-                                    </button>
+                                    </Button>
                                 {/each}
                             </div>
                         {/if}
@@ -686,11 +703,11 @@
             </CardContent>
 
             {#if membersLoading}
-                <div class="px-8 py-8 text-center">
+                <div in:fade={{ duration: blockDuration() }} class="px-8 py-8 text-center">
                     <p class="text-sm text-muted-foreground">Loading members...</p>
                 </div>
             {:else if membersError}
-                <div class="px-8 py-8 text-center">
+                <div in:fade={{ duration: blockDuration() }} class="px-8 py-8 text-center">
                     <p class="text-sm text-destructive">{membersError}</p>
                 </div>
             {:else}
@@ -830,13 +847,13 @@
                 {/if}
 
                 {#if teamsLoading}
-                    <p class="text-sm text-muted-foreground py-4 text-center">Loading teams...</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">Loading teams...</p>
                 {:else if teams.length === 0}
-                    <p class="text-sm text-muted-foreground py-4 text-center">No teams yet. Create one above.</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">No teams yet. Create one above.</p>
                 {:else}
                     <div class="divide-y divide-border rounded-md border">
-                        {#each teams as team}
-                            <div>
+                        {#each teams as team (team.id)}
+                            <div animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors duration-150" onclick={() => toggleTeam(team.id)}>
                                     <div class="flex items-center gap-2">
                                         <span class="text-xs text-muted-foreground">{expandedTeamId === team.id ? '▼' : '▶'}</span>
@@ -896,7 +913,7 @@
                             </div>
                         {/if}
                         {#if avatarUploading}
-                            <div class="absolute inset-0 rounded-full bg-background/70 flex items-center justify-center">
+                            <div in:fade={{ duration: blockDuration() }} class="absolute inset-0 rounded-full bg-background/70 flex items-center justify-center">
                                 <div class="w-5 h-5 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin"></div>
                             </div>
                         {/if}
@@ -970,7 +987,7 @@
                     </div>
                 </div>
                 {#if passwordError}
-                    <p class="text-sm text-destructive">{passwordError}</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-sm text-destructive">{passwordError}</p>
                 {/if}
                 <div class="flex items-center gap-3">
                     <Button onclick={changePassword} disabled={passwordSaving || !currentPassword || !newPassword}>
@@ -995,12 +1012,12 @@
                     <Label>Font Size</Label>
                     <div class="flex gap-2">
                         {#each [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']] as [value, label]}
-                            <button
-                                class="px-4 py-2 rounded-md text-sm font-medium border transition-colors duration-150 cursor-pointer {fontSize === value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
+                            <Button
+                                variant={fontSize === value ? 'default' : 'outline'}
                                 onclick={() => { fontSize = value; savePreferences(); }}
                             >
                                 {label}
-                            </button>
+                            </Button>
                         {/each}
                     </div>
                 </div>
@@ -1010,12 +1027,12 @@
                     <Label>Density</Label>
                     <div class="flex gap-2">
                         {#each [['comfortable', 'Comfortable'], ['compact', 'Compact']] as [value, label]}
-                            <button
-                                class="px-4 py-2 rounded-md text-sm font-medium border transition-colors duration-150 cursor-pointer {density === value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
+                            <Button
+                                variant={density === value ? 'default' : 'outline'}
                                 onclick={() => { density = value; savePreferences(); }}
                             >
                                 {label}
-                            </button>
+                            </Button>
                         {/each}
                     </div>
                 </div>
@@ -1042,9 +1059,9 @@
             </CardHeader>
             <CardContent>
                 {#if channelsLoading}
-                    <p class="text-sm text-muted-foreground py-4 text-center">Loading channels...</p>
+                    <p in:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">Loading channels...</p>
                 {:else if channels.length === 0 && !showAddChannel}
-                    <div class="text-center py-8">
+                    <div in:fade={{ duration: blockDuration() }} class="text-center py-8">
                         <p class="text-sm text-muted-foreground mb-3">No notification channels configured yet.</p>
                         <Button size="sm" variant="outline" onclick={() => { showAddChannel = true; newChannelType = 'SLACK'; newChannelName = ''; newChannelConfig = {}; }}>
                             Add your first channel
@@ -1052,8 +1069,8 @@
                     </div>
                 {:else}
                     <div class="divide-y divide-border">
-                        {#each channels as channel}
-                            <div class="py-3">
+                        {#each channels as channel (channel.id)}
+                            <div class="py-3" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="flex items-center justify-between">
                                     <Button variant="ghost" class="flex items-center gap-3 text-left flex-1 min-w-0 h-auto py-0 px-0 justify-start" onclick={() => toggleExpandChannel(channel.id)}>
                                         <span class="text-xs text-muted-foreground">{expandedChannelId === channel.id ? '▼' : '▶'}</span>
@@ -1073,6 +1090,7 @@
                                             Test
                                         </Button>
                                         <button
+                                            type="button"
                                             class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors {channel.enabled ? 'bg-primary' : 'bg-muted'}"
                                             role="switch"
                                             aria-checked={channel.enabled}
@@ -1126,12 +1144,13 @@
                         <Label>Channel Type</Label>
                         <div class="flex flex-wrap gap-2">
                             {#each CHANNEL_TYPES as ct}
-                                <button
-                                    class="px-3 py-1.5 rounded-md text-sm font-medium border transition-colors duration-150 cursor-pointer {newChannelType === ct.value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}"
+                                <Button
+                                    variant={newChannelType === ct.value ? 'default' : 'outline'}
+                                    size="sm"
                                     onclick={() => { newChannelType = ct.value; newChannelConfig = {}; }}
                                 >
                                     {ct.label}
-                                </button>
+                                </Button>
                             {/each}
                         </div>
                     </div>

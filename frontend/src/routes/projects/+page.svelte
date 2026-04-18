@@ -52,10 +52,15 @@
     </div>
 
     {#if loading}
-        <LoadingSpinner message="Loading projects..." />
+        <div in:fade={{ duration: blockDuration() }}>
+            <LoadingSpinner message="Loading projects..." />
+        </div>
     {:else if error}
-        <ErrorAlert message="Error: {error}" />
+        <div in:fade={{ duration: blockDuration() }}>
+            <ErrorAlert message="Error: {error}" />
+        </div>
     {:else}
+        <div in:fade={{ duration: blockDuration() }}>
         <Card>
             <CardHeader>
                 <CardTitle>All Projects</CardTitle>
@@ -70,8 +75,8 @@
                 {:else}
                     <!-- Mobile card layout -->
                     <div class="sm:hidden divide-y divide-border">
-                        {#each projects as project}
-                            <a href="/projects/{project.id}" class="block py-3 px-1 min-h-11">
+                        {#each projects as project (project.id)}
+                            <a href="/projects/{project.id}" class="block py-3 px-1 min-h-11" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="font-semibold text-sm text-primary">{project.name}</div>
                                 {#if project.description}
                                     <div class="text-xs text-muted-foreground mt-1 line-clamp-2">{project.description}</div>
@@ -95,7 +100,7 @@
                                 </Table.Row>
                             </Table.Header>
                             <Table.Body>
-                                {#each projects as project}
+                                {#each projects as project (project.id)}
                                     <Table.Row>
                                         <Table.Cell class="font-medium">
                                             <a
@@ -120,5 +125,6 @@
                 {/if}
             </CardContent>
         </Card>
+        </div>
     {/if}
 </div>

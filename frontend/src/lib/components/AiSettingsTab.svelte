@@ -2,6 +2,7 @@
     import { api } from '$lib/api';
     import { PROVIDERS, CAPABILITIES, getProviderDef, type ProviderDef } from '$lib/ai-providers';
     import { AiSettingsListSchema, AiTestConnectionSchema, type AiProviderConfig } from '$lib/schemas/ai';
+    import { Button } from '$lib/components/ui/button';
 
     let { isAdmin = false }: { isAdmin: boolean } = $props();
 
@@ -184,16 +185,20 @@
                 {#if !isExpanded}
                     <div class="flex items-center gap-3 mt-3">
                         {#if isAdmin}
-                            <button
-                                class="text-xs text-primary hover:underline"
+                            <Button
+                                variant="link"
+                                size="sm"
+                                class="h-auto p-0 text-xs"
                                 onclick={() => startEdit(cap.id)}
                             >
                                 {state === 'not-configured' ? 'Configure' : 'Edit'}
-                            </button>
+                            </Button>
                         {/if}
                         {#if state === 'app-default' || state === 'custom'}
-                            <button
-                                class="text-xs px-3 py-1 bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                            <Button
+                                variant="default"
+                                size="sm"
+                                class="h-auto text-xs px-3 py-1"
                                 onclick={() => testConnection(cap.id)}
                                 disabled={testing[cap.id]}
                             >
@@ -203,7 +208,7 @@
                                 {:else}
                                     Test Connection
                                 {/if}
-                            </button>
+                            </Button>
                         {/if}
                     </div>
                     {#if testResults[cap.id]}
@@ -271,15 +276,19 @@
 
                         <!-- Action buttons -->
                         <div class="flex items-center gap-2 pt-2 flex-wrap">
-                            <button
-                                class="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:opacity-90"
+                            <Button
+                                variant="default"
+                                size="sm"
+                                class="h-auto px-3 py-1.5 text-xs"
                                 onclick={() => saveConfig(cap.id)}
                                 disabled={saving || !editModelName}
                             >
                                 {saving ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                                class="px-3 py-1.5 text-xs border rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="h-auto px-3 py-1.5 text-xs"
                                 onclick={() => testConnection(cap.id)}
                                 disabled={testing[cap.id]}
                             >
@@ -289,20 +298,24 @@
                                 {:else}
                                     Test Connection
                                 {/if}
-                            </button>
-                            <button
-                                class="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="h-auto px-3 py-1.5 text-xs text-muted-foreground"
                                 onclick={cancelEdit}
                             >
                                 Cancel
-                            </button>
+                            </Button>
                             {#if state === 'custom' && isPro}
-                                <button
-                                    class="ml-auto px-3 py-1.5 text-xs text-amber-700 hover:underline"
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    class="ml-auto h-auto px-3 py-1.5 text-xs text-amber-700"
                                     onclick={() => deleteConfig(cap.id)}
                                 >
                                     Use App Default
-                                </button>
+                                </Button>
                             {/if}
                         </div>
 

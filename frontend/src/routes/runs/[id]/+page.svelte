@@ -17,8 +17,11 @@
     import RunAttachmentsTab from "$lib/components/run/RunAttachmentsTab.svelte";
     import RunHistory from "$lib/components/run/RunHistory.svelte";
     import { ConfirmDialog } from "$lib/components/ui/dialog";
+    import { Button } from "$lib/components/ui/button";
     import { PendingImagesSchema, AnalyzePendingResultSchema, RunRoleAssignmentListSchema, UserSearchSchema } from '$lib/schemas';
     import { z } from 'zod';
+    import { fade } from 'svelte/transition';
+    import { blockDuration } from '$lib/transitions';
 
     const id = $derived($page.params.id);
 
@@ -316,16 +319,18 @@
 
 <div class="min-h-screen bg-background">
     {#if loading}
-        <LoadingSpinner message="Loading run..." size="lg" fullPage />
+        <div in:fade={{ duration: blockDuration() }}>
+            <LoadingSpinner message="Loading run..." size="lg" fullPage />
+        </div>
     {:else if error && !run}
-        <div class="flex items-center justify-center h-screen">
+        <div in:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen">
             <div class="text-center">
                 <div class="text-red-500 font-semibold mb-2">Error loading run</div>
                 <div class="text-muted-foreground text-sm">{error}</div>
             </div>
         </div>
     {:else if !run}
-        <div class="flex items-center justify-center h-screen text-muted-foreground">
+        <div in:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen text-muted-foreground">
             Run not found
         </div>
     {:else}
@@ -338,15 +343,14 @@
                     {@const label = tab === 'notes' && noteCount > 0 ? `Notes (${noteCount})`
                         : tab === 'attachments' && attachCount > 0 ? `Attachments (${attachCount})`
                         : tab[0].toUpperCase() + tab.slice(1)}
-                    <button
+                    <Button
+                        variant="tab"
+                        data-active={activeTab === tab}
                         onclick={() => activeTab = tab}
-                        class="py-3 text-sm font-medium border-b-2 transition-colors duration-150 cursor-pointer
-                            {activeTab === tab
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-muted-foreground hover:text-foreground'}"
+                        class="py-3"
                     >
                         {label}
-                    </button>
+                    </Button>
                 {/each}
             </nav>
         </div>
@@ -511,13 +515,13 @@
                         &larr; Back to project
                     </a>
 
-                    <button
+                    <Button
                         onclick={() => (showStartConfirm = true)}
                         disabled={!allRolesAssigned()}
-                        class="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors duration-150 cursor-pointer disabled:bg-muted disabled:cursor-not-allowed"
+                        size="lg"
                     >
                         Start Run
-                    </button>
+                    </Button>
                 </div>
 
                 <ConfirmDialog
@@ -549,16 +553,19 @@
                                 {/if}
                             </div>
                             <div class="flex items-center gap-2">
-                                <button
+                                <Button
                                     onclick={() => (showGoOffline = true)}
-                                    class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium border border-amber-300 bg-amber-50 text-amber-700 rounded-full hover:bg-amber-100 transition-colors duration-150 cursor-pointer"
+                                    variant="outline"
+                                    size="sm"
+                                    rounded="full"
+                                    class="gap-1.5 px-3 py-1 text-xs font-medium border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-700"
                                     title="Enter offline field mode for this run"
                                 >
                                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
                                     </svg>
                                     Go Offline
-                                </button>
+                                </Button>
                                 <span class="inline-block text-xs font-semibold px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full">
                                     Running
                                 </span>
@@ -659,13 +666,13 @@
                                         <p class="text-xs text-amber-600 mt-1">{analyzeAllProgress}</p>
                                     {/if}
                                 </div>
-                                <button
+                                <Button
                                     onclick={analyzeAllImages}
                                     disabled={analyzingAll}
-                                    class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    class="bg-amber-600 text-white hover:bg-amber-700"
                                 >
                                     {analyzingAll ? 'Analyzing...' : 'Analyze All'}
-                                </button>
+                                </Button>
                             </div>
                         {/if}
 
@@ -801,12 +808,13 @@
                         >
                             &larr; Back to project
                         </a>
-                        <button
+                        <Button
                             onclick={enterEditMode}
-                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors duration-150 cursor-pointer"
+                            size="lg"
+                            class="bg-amber-600 text-white hover:bg-amber-700"
                         >
                             Edit Run
-                        </button>
+                        </Button>
                     </div>
                   {:else}
                     <RunEditMode
@@ -914,12 +922,13 @@
                         >
                             &larr; Back to project
                         </a>
-                        <button
+                        <Button
                             onclick={enterEditMode}
-                            class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors duration-150 cursor-pointer"
+                            size="lg"
+                            class="bg-amber-600 text-white hover:bg-amber-700"
                         >
                             Edit Again
-                        </button>
+                        </Button>
                     </div>
                   {:else}
                     <RunEditMode

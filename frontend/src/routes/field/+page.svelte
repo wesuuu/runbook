@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { getUser } from '$lib/auth.svelte';
+    import { Button } from '$lib/components/ui/button';
     import { isOnline } from '$lib/pwa.svelte';
     import {
         getFieldModeState,
@@ -24,6 +25,8 @@
     import FieldModeLockScreen from '$lib/components/FieldModeLockScreen.svelte';
     import ExpiryWarningBanner from '$lib/components/ExpiryWarningBanner.svelte';
     import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
+    import { fade } from 'svelte/transition';
+    import { blockDuration } from '$lib/transitions';
 
     let ready = $state(false);
     let showEndConfirm = $state(false);
@@ -149,17 +152,19 @@
     ontouchmove={handleInteraction}
 >
     {#if !ready}
-        <div class="flex items-center justify-center h-screen">
+        <div in:fade={{ duration: blockDuration() }} class="flex items-center justify-center h-screen">
             <div class="text-center">
                 <div class="w-8 h-8 border-2 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
                 <p class="text-sm text-slate-500">Loading field mode...</p>
             </div>
         </div>
     {:else if fieldState === 'locked'}
-        <FieldModeLockScreen
-            userEmail={user?.email ?? ''}
-            onUnlock={handleUnlock}
-        />
+        <div in:fade={{ duration: blockDuration() }}>
+            <FieldModeLockScreen
+                userEmail={user?.email ?? ''}
+                onUnlock={handleUnlock}
+            />
+        </div>
     {:else if snapshot}
         <FieldModeHeader
             onEndFieldMode={handleEndFieldMode}
@@ -191,17 +196,18 @@
 
             <!-- Online sync hint -->
             {#if online && queueCount > 0}
-                <div class="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-center">
+                <div in:fade={{ duration: blockDuration() }} class="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-center">
                     <p class="text-xs text-emerald-700 mb-2">
                         You're back online! {queueCount} item{queueCount !== 1 ? 's' : ''} ready to sync.
                     </p>
-                    <button
+                    <Button
+                        size="sm"
                         onclick={async () => { syncing = true; await syncNow(); syncing = false; }}
                         disabled={syncing}
-                        class="px-4 py-1.5 bg-emerald-600 text-white text-xs rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50"
+                        class="text-xs"
                     >
                         {syncing ? 'Syncing...' : 'Sync Now'}
-                    </button>
+                    </Button>
                 </div>
             {/if}
         </div>

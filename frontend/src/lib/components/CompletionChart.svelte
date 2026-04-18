@@ -1,4 +1,8 @@
 <script lang="ts">
+    import { fly } from 'svelte/transition';
+    import { blockDuration } from '$lib/transitions';
+    import { Button } from '$lib/components/ui/button';
+
     type TrendItem = { date: string; count: number };
 
     let { trend = [], onToggleDays }: { trend: TrendItem[]; onToggleDays?: () => void } = $props();
@@ -71,19 +75,21 @@
     }
 </script>
 
-<div class="card-warm rounded-xl p-5 mb-8" style="animation: fadeSlideUp 0.4s ease-out 0.12s both">
+<div class="card-warm rounded-xl p-5 mb-8" in:fly={{ y: 12, duration: blockDuration(), delay: 120 }}>
     <div class="flex items-center justify-between mb-3">
         <h2 class="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2.5">
             <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
             Completions
         </h2>
         {#if onToggleDays}
-            <button
-                class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted transition-colors"
+            <Button
+                variant="ghost"
+                size="sm"
+                class="h-auto text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground px-2 py-1"
                 onclick={onToggleDays}
             >
                 {trend.length <= 7 ? '14d' : '7d'}
-            </button>
+            </Button>
         {/if}
     </div>
 

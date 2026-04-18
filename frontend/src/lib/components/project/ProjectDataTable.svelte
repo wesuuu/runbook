@@ -2,6 +2,7 @@
     import type { Snippet } from 'svelte';
     import { flip } from 'svelte/animate';
     import { compareValues, sortIndicator, type SortDir } from './projectUtils';
+    import { Button } from '$lib/components/ui/button';
 
     interface Column {
         key: string;
@@ -214,19 +215,23 @@
         </div>
         {#if totalPages > 1}
             <div class="flex items-center gap-1">
-                <button
-                    class="px-2.5 py-1 text-[12px] font-medium rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-auto px-2.5 py-1 text-[12px] font-medium text-slate-500 border-slate-200 hover:bg-slate-50"
                     disabled={page <= 1}
                     onclick={() => { page = page - 1; }}
-                >Prev</button>
+                >Prev</Button>
                 <span class="text-[12px] text-slate-500 px-2">
                     {page} / {totalPages}
                 </span>
-                <button
-                    class="px-2.5 py-1 text-[12px] font-medium rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-auto px-2.5 py-1 text-[12px] font-medium text-slate-500 border-slate-200 hover:bg-slate-50"
                     disabled={page >= totalPages}
                     onclick={() => { page = page + 1; }}
-                >Next</button>
+                >Next</Button>
             </div>
         {/if}
     </div>

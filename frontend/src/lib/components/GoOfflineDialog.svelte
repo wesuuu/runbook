@@ -4,6 +4,7 @@
     import { activateFieldMode, type RunSnapshot } from '$lib/field-mode.svelte';
     import { goto } from '$app/navigation';
     import * as Dialog from '$lib/components/ui/dialog';
+    import { Button } from '$lib/components/ui/button';
 
     let {
         open = $bindable(false),
@@ -157,24 +158,25 @@
 
         <!-- Footer -->
         <div class="px-6 py-4 border-t border-border flex gap-3">
-            <button
+            <Button
+                variant="outline"
+                class="flex-1"
                 onclick={handleClose}
                 disabled={loading}
-                class="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-foreground/80 hover:bg-muted transition-colors disabled:opacity-50"
             >
                 Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+                class="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
                 onclick={handleSubmit}
                 disabled={loading || !password.trim()}
-                class="flex-1 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 {#if loading}
                     {step === 'prefetching' ? 'Downloading...' : 'Verifying...'}
                 {:else}
                     Go Offline
                 {/if}
-            </button>
+            </Button>
         </div>
     </Dialog.Content>
 </Dialog.Root>

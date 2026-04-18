@@ -580,13 +580,13 @@
                 </div>
 
                 <!-- Start button -->
-                <button
-                    class="w-full px-4 py-2.5 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                <Button
+                    class="w-full"
                     disabled={!selectedFile || !selectedProtocolId || uploading}
                     onclick={startImport}
                 >
                     {uploading ? 'Uploading...' : 'Start Import'}
-                </button>
+                </Button>
             </div>
         </div>
 
@@ -600,12 +600,12 @@
                             <path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
                         </svg>
                         <p class="text-sm font-medium text-destructive">{error}</p>
-                        <button
-                            class="px-4 py-2 text-sm font-medium text-foreground bg-muted rounded-lg hover:bg-muted/80"
+                        <Button
+                            variant="secondary"
                             onclick={() => { error = null; wizardStep = 'upload'; }}
                         >
                             Try Again
-                        </button>
+                        </Button>
                     </div>
                 {:else}
                     <!-- Spinner -->
@@ -659,8 +659,9 @@
 
                     <div class="border rounded-lg {isNA ? 'border-yellow-300 bg-yellow-50/50' : hasLowConfidence ? 'border-amber-300' : params.length > 0 ? 'border-green-200' : 'border-red-200'}">
                         <!-- Step header -->
-                        <button
-                            class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/30 transition-colors"
+                        <Button
+                            variant="ghost"
+                            class="w-full justify-between px-4 py-3 h-auto rounded-none font-normal hover:bg-muted/30"
                             onclick={() => toggleStep(step.id)}
                         >
                             <div class="flex items-center gap-3">
@@ -679,7 +680,7 @@
                                     <span class="text-red-600 font-medium">No data</span>
                                 {/if}
                             </div>
-                        </button>
+                        </Button>
 
                         <!-- Step content (expanded) -->
                         {#if isExpanded}
@@ -777,8 +778,9 @@
                                                 class="flex-1 px-2 py-1.5 text-sm border rounded-md"
                                                 id="na-reason-{step.id}"
                                             />
-                                            <button
-                                                class="px-3 py-1.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-md hover:bg-yellow-200"
+                                            <Button
+                                                size="sm"
+                                                class="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 shadow-none"
                                                 onclick={() => {
                                                     const input = document.getElementById(`na-reason-${step.id}`) as HTMLInputElement;
                                                     if (input?.value.trim()) {
@@ -787,7 +789,7 @@
                                                 }}
                                             >
                                                 Mark N/A
-                                            </button>
+                                            </Button>
                                         </div>
                                     </div>
                                 {/if}
@@ -900,13 +902,12 @@
                             {/if}
                         </span>
                     {/if}
-                    <button
-                        class="px-5 py-2.5 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    <Button
                         disabled={!canFinalize}
                         onclick={handleFinalize}
                     >
                         {finalizing ? 'Creating...' : 'Create Completed Run'}
-                    </button>
+                    </Button>
                 </div>
             </div>
         </div>

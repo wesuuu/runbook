@@ -1,5 +1,6 @@
 <script lang="ts">
     import { getUser } from "$lib/auth.svelte";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         swimLaneNodes: any[];
@@ -66,24 +67,25 @@
                         </select>
                     </div>
                     {#if selectedUserId && selectedUserId !== (assignment?.user_id ?? "")}
-                        <button
+                        <Button
+                            size="sm"
                             onclick={() =>
                                 onUpdateAssignment(lane.id, lane.data.label, selectedUserId)
                             }
-                            class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
                         >
                             Save
-                        </button>
+                        </Button>
                     {/if}
                     {#if assignment?.user_id && !selectedUserId}
-                        <button
+                        <Button
+                            variant="destructive"
+                            size="sm"
                             onclick={() =>
                                 onUpdateAssignment(lane.id, lane.data.label, null)
                             }
-                            class="px-4 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors"
                         >
                             Clear
-                        </button>
+                        </Button>
                     {/if}
                 </div>
             {/each}
@@ -92,16 +94,17 @@
         <!-- Go Offline option for current user (role-based) -->
         {#if getCurrentUserAssignment()}
             <div class="mt-6 pt-5 border-t border-border/60">
-                <button
+                <Button
+                    variant="outline"
                     onclick={onShowGoOffline}
-                    class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-amber-300 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors"
+                    class="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-700"
                     title="Prepare offline session before starting the run"
                 >
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
                     </svg>
                     Prepare Offline Session
-                </button>
+                </Button>
                 <p class="text-xs text-muted-foreground mt-2">
                     Download run data now so you can work offline when the run starts.
                 </p>
@@ -140,24 +143,25 @@
                 </select>
             </div>
             {#if selectedUserId && selectedUserId !== (assignment?.user_id ?? "")}
-                <button
+                <Button
+                    size="sm"
                     onclick={() =>
                         onUpdateAssignment("__run__", "Operator", selectedUserId)
                     }
-                    class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
                 >
                     Save
-                </button>
+                </Button>
             {/if}
             {#if assignment?.user_id && !selectedUserId}
-                <button
+                <Button
+                    variant="destructive"
+                    size="sm"
                     onclick={() =>
                         onUpdateAssignment("__run__", "Operator", null)
                     }
-                    class="px-4 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors"
                 >
                     Clear
-                </button>
+                </Button>
             {/if}
         </div>
 

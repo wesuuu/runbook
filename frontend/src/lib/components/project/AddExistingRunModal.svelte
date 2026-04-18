@@ -1,6 +1,7 @@
 <script lang="ts">
     import { api } from "$lib/api";
     import * as Dialog from "$lib/components/ui/dialog";
+    import { Button } from "$lib/components/ui/button";
     import { shortId, statusClasses, statusLabel, formatDate } from "./projectUtils";
 
     interface Props {
@@ -89,13 +90,15 @@
                                 <span>{formatDate(run.updated_at || run.created_at)}</span>
                             </div>
                         </div>
-                        <button
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            class="ml-3 text-teal-600 border-teal-200 hover:bg-teal-50 hover:text-teal-700"
                             onclick={() => linkRun(run.id)}
                             disabled={submitting === run.id}
-                            class="ml-3 shrink-0 px-3 py-1 text-xs font-medium text-teal-600 border border-teal-200 rounded-lg hover:bg-teal-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {submitting === run.id ? '...' : 'Add'}
-                        </button>
+                        </Button>
                     </div>
                 {:else}
                     <div class="py-6 text-center text-sm text-slate-400">
@@ -105,12 +108,9 @@
             </div>
         </div>
         <Dialog.Footer>
-            <button
-                onclick={close}
-                class="px-4 py-2 text-sm font-medium text-foreground/80 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
-            >
+            <Button variant="secondary" onclick={close}>
                 Done
-            </button>
+            </Button>
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>

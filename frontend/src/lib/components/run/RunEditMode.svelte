@@ -1,5 +1,6 @@
 <script lang="ts">
     import RoleWizard from "$lib/components/RoleWizard.svelte";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         runId: string;
@@ -74,17 +75,14 @@
 {/if}
 
 <div class="flex justify-between items-center">
-    <button
-        onclick={onCancel}
-        class="px-6 py-2 bg-muted text-foreground/80 rounded-lg font-medium hover:bg-muted transition-colors"
-    >
+    <Button variant="secondary" onclick={onCancel} class="px-6">
         Cancel
-    </button>
-    <button
+    </Button>
+    <Button
         onclick={onSave}
         disabled={savingEdits}
-        class="px-6 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors disabled:bg-muted disabled:cursor-not-allowed"
+        class="px-6 bg-amber-600 text-white hover:bg-amber-700"
     >
         {savingEdits ? 'Saving...' : 'Save Edits'}
-    </button>
+    </Button>
 </div>

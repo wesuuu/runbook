@@ -6,6 +6,7 @@
         triggerHaptic,
     } from './barcodeScannerUtils';
     import * as Dialog from '$lib/components/ui/dialog';
+    import { Button } from '$lib/components/ui/button';
 
     interface Props {
         open: boolean;
@@ -152,12 +153,14 @@
 
         <!-- Footer -->
         <div class="px-5 py-3 border-t border-border flex items-center justify-between">
-            <button
+            <Button
+                variant="link"
+                size="sm"
+                class="h-auto p-0 text-sm font-medium"
                 onclick={handleClose}
-                class="text-sm text-primary font-medium hover:text-primary/80 transition-colors"
             >
                 Type manually
-            </button>
+            </Button>
             <span class="text-xs text-muted-foreground">
                 Code 128 / Code 39 / QR / DataMatrix
             </span>

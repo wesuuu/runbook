@@ -11,6 +11,9 @@
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import { toast } from '$lib/toast';
     import { timeAgo } from '$lib/utils';
+    import { fade, fly } from 'svelte/transition';
+    import { flip } from 'svelte/animate';
+    import { blockDuration, listDuration } from '$lib/transitions';
 
     type RunSummary = {
         id: string;
@@ -250,9 +253,11 @@
 </script>
 
 {#if loading}
-    <LoadingSpinner message="Loading dashboard..." />
+    <div in:fade={{ duration: blockDuration() }}>
+        <LoadingSpinner message="Loading dashboard..." />
+    </div>
 {:else if error}
-    <div class="flex flex-col items-center justify-center py-32 gap-4">
+    <div in:fade={{ duration: blockDuration() }} class="flex flex-col items-center justify-center py-32 gap-4">
         <div class="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
             <span class="text-destructive text-lg">!</span>
         </div>
@@ -262,7 +267,7 @@
         </Button>
     </div>
 {:else if dashboard}
-    <div class="max-w-6xl mx-auto">
+    <div in:fade={{ duration: blockDuration() }} class="max-w-6xl mx-auto">
         <!-- Greeting -->
         <div class="mb-8">
             <h1 class="text-2xl font-bold tracking-tight text-foreground">
@@ -273,11 +278,13 @@
 
         <!-- Counters -->
         <div class="grid grid-cols-2 sm:grid-cols-3 {dashboard.is_admin ? 'md:grid-cols-6' : 'sm:grid-cols-3'} gap-3 mb-10">
-            {#each counterData as counter, i}
+            {#each counterData as counter, i (counter.label)}
                 <button
+                    type="button"
                     class="card-warm rounded-xl p-4 text-left hover:border-primary/30 hover:shadow-md transition-all duration-150 group relative overflow-hidden {counter.link ? 'cursor-pointer' : 'cursor-default'}"
                     onclick={() => counter.link ? goto(counter.link) : null}
-                    style="animation: fadeSlideUp 0.4s ease-out {i * 0.06}s both"
+                    animate:flip={{ duration: listDuration() }}
+                    in:fly={{ y: 12, duration: blockDuration(), delay: i * 60 }}
                 >
                     <div class="text-3xl font-bold {counter.color} tracking-tight">{counter.value}</div>
                     <div class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mt-1.5">{counter.label}</div>
@@ -299,19 +306,20 @@
             <div class="lg:col-span-3 space-y-6">
                 <!-- Orphaned Offline Queue Items -->
                 {#if orphanedRuns.length > 0}
-                    <section style="animation: fadeSlideUp 0.3s ease-out 0.05s both">
+                    <section in:fly={{ y: 12, duration: blockDuration(), delay: 50 }} out:fade={{ duration: blockDuration() }}>
                         <div class="bg-teal-50 border border-teal-200 rounded-xl p-4">
                             <div class="flex items-center justify-between mb-2">
                                 <p class="text-sm font-semibold text-teal-800">
                                     Pending Offline Uploads
                                 </p>
-                                <button
+                                <Button
+                                    variant="default"
+                                    size="sm"
                                     onclick={syncOrphaned}
                                     disabled={syncingOrphans}
-                                    class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {syncingOrphans ? 'Syncing...' : 'Sync Now'}
-                                </button>
+                                </Button>
                             </div>
                             {#each orphanedRuns as orphan}
                                 <p class="text-xs text-teal-700">
@@ -324,7 +332,7 @@
 
                 <!-- Pending Image Analyses -->
                 {#if dashboard.pending_analyses}
-                    <section style="animation: fadeSlideUp 0.3s ease-out 0.1s both">
+                    <section in:fly={{ y: 12, duration: blockDuration(), delay: 100 }} out:fade={{ duration: blockDuration() }}>
                         <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between">
                             <div>
                                 <p class="text-sm font-semibold text-amber-800">
@@ -340,7 +348,7 @@
 
                 <!-- Needs Action -->
                 {#if dashboard.my_work.needs_action.length > 0}
-                    <section style="animation: fadeSlideUp 0.4s ease-out 0.2s both">
+                    <section in:fly={{ y: 12, duration: blockDuration(), delay: 200 }} out:fade={{ duration: blockDuration() }}>
                         <h2 class="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2.5">
                             <span class="w-2 h-2 bg-amber-500 rounded-full status-pulse"></span>
                             Needs Your Action
@@ -349,6 +357,7 @@
                         <div class="space-y-2.5">
                             {#each dashboard.my_work.needs_action as run}
                                 <button
+                                    type="button"
                                     class="w-full card-warm rounded-xl p-4 text-left border-l-3 border-l-amber-400 hover:border-l-amber-500 hover:shadow-md transition-all duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
@@ -383,7 +392,7 @@
 
                 <!-- Active Runs -->
                 {#if dashboard.my_work.active_runs.length > 0}
-                    <section style="animation: fadeSlideUp 0.4s ease-out 0.3s both">
+                    <section in:fly={{ y: 12, duration: blockDuration(), delay: 300 }} out:fade={{ duration: blockDuration() }}>
                         <h2 class="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2.5">
                             <span class="w-2 h-2 bg-primary rounded-full"></span>
                             Active Runs
@@ -392,6 +401,7 @@
                         <div class="space-y-2.5">
                             {#each dashboard.my_work.active_runs as run}
                                 <button
+                                    type="button"
                                     class="w-full card-warm rounded-xl p-4 text-left hover:shadow-md hover:border-primary/20 transition-all duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
@@ -426,7 +436,7 @@
 
                 <!-- Recently Completed -->
                 {#if dashboard.my_work.recently_completed.length > 0}
-                    <section style="animation: fadeSlideUp 0.4s ease-out 0.4s both">
+                    <section in:fly={{ y: 12, duration: blockDuration(), delay: 400 }} out:fade={{ duration: blockDuration() }}>
                         <h2 class="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2.5">
                             <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
                             Recently Completed
@@ -434,6 +444,7 @@
                         <div class="card-warm rounded-xl divide-y divide-border/60 overflow-hidden">
                             {#each dashboard.my_work.recently_completed as run}
                                 <button
+                                    type="button"
                                     class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
@@ -458,7 +469,7 @@
 
                 <!-- Planned Runs -->
                 {#if dashboard.my_work.planned_runs.length > 0}
-                    <section style="animation: fadeSlideUp 0.4s ease-out 0.5s both">
+                    <section in:fly={{ y: 12, duration: blockDuration(), delay: 500 }} out:fade={{ duration: blockDuration() }}>
                         <h2 class="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2.5">
                             <span class="w-2 h-2 bg-muted-foreground/40 rounded-full"></span>
                             Planned
@@ -467,6 +478,7 @@
                         <div class="card-warm rounded-xl divide-y divide-border/60 overflow-hidden">
                             {#each dashboard.my_work.planned_runs as run}
                                 <button
+                                    type="button"
                                     class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer group"
                                     onclick={() => goto(`/runs/${run.id}`)}
                                 >
@@ -505,17 +517,19 @@
             </div>
 
             <!-- Activity Feed (2/5 width) -->
-            <div class="lg:col-span-2" style="animation: fadeSlideUp 0.4s ease-out 0.35s both">
+            <div class="lg:col-span-2" in:fly={{ y: 12, duration: blockDuration(), delay: 350 }}>
                 <h2 class="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">Recent Activity</h2>
                 <div class="card-warm rounded-xl overflow-hidden">
                     {#if activityItems.length === 0}
                         <EmptyState title="No recent activity" />
                     {:else}
                         <div class="divide-y divide-border/50">
-                            {#each activityItems as item}
+                            {#each activityItems as item (item.id)}
                                 <a
                                     href={activityLink(item)}
                                     class="flex gap-3 p-3.5 hover:bg-muted/30 transition-colors"
+                                    animate:flip={{ duration: listDuration() }}
+                                    in:fade={{ duration: listDuration() }}
                                 >
                                     <!-- Avatar -->
                                     <div class="w-7 h-7 rounded-lg {actorColor(item.actor_name)} flex items-center justify-center shrink-0 mt-0.5">
@@ -537,13 +551,15 @@
                         </div>
                         {#if activityItems.length < activityTotal}
                             <div class="p-3 border-t border-border/50 text-center">
-                                <button
-                                    class="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors duration-150 tracking-wide uppercase cursor-pointer disabled:cursor-not-allowed"
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="text-[11px] font-semibold text-muted-foreground hover:text-foreground tracking-wide uppercase"
                                     onclick={loadMoreActivity}
                                     disabled={activityLoading}
                                 >
                                     {activityLoading ? 'Loading...' : 'Load more'}
-                                </button>
+                                </Button>
                             </div>
                         {/if}
                     {/if}
@@ -553,15 +569,3 @@
     </div>
 {/if}
 
-<style>
-    @keyframes fadeSlideUp {
-        from {
-            opacity: 0;
-            transform: translateY(12px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-</style>

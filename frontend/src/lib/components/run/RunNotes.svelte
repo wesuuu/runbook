@@ -2,6 +2,7 @@
     import { api } from '$lib/api';
     import { getUser } from '$lib/auth.svelte';
     import type { RunNote } from '$lib/schemas';
+    import { Button } from '$lib/components/ui/button';
 
     let {
         runId,
@@ -97,13 +98,12 @@
                 <span class="text-xs text-muted-foreground hidden sm:inline">
                     {navigator.platform?.includes('Mac') ? 'Cmd' : 'Ctrl'}+Enter to submit
                 </span>
-                <button
+                <Button
                     onclick={addNote}
                     disabled={!newNote.trim() || submitting}
-                    class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {submitting ? 'Adding...' : 'Add Note'}
-                </button>
+                </Button>
             </div>
         </div>
     </div>

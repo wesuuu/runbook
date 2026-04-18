@@ -14,6 +14,9 @@
         experimentStatusClasses,
         experimentStatusLabel,
     } from "$lib/components/project/projectUtils";
+    import { fade } from "svelte/transition";
+    import { flip } from "svelte/animate";
+    import { blockDuration, listDuration } from "$lib/transitions";
     // Edra rich text editor — lazy loaded to avoid SSR issues
     let EdraEditor: any = $state(null);
     let EdraToolBar: any = $state(null);
@@ -137,11 +140,16 @@
 </script>
 
 {#if loading}
-    <LoadingSpinner message="Loading experiment..." fullPage />
+    <div in:fade={{ duration: blockDuration() }}>
+        <LoadingSpinner message="Loading experiment..." fullPage />
+    </div>
 {:else if error}
-    <ErrorAlert message="Error: {error}" class="max-w-xl mx-auto mt-8" />
+    <div in:fade={{ duration: blockDuration() }}>
+        <ErrorAlert message="Error: {error}" class="max-w-xl mx-auto mt-8" />
+    </div>
 {:else if experiment}
     <div
+        in:fade={{ duration: blockDuration() }}
         class="min-h-[calc(100vh-57px)] w-full mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
     >
         <!-- Header -->
@@ -235,18 +243,19 @@
                     Runs ({experiment.runs?.length ?? 0})
                 </h3>
                 <div class="flex gap-2">
-                    <button
-                        class="px-3 py-1.5 text-xs font-medium text-teal-600 border border-teal-200 rounded-lg hover:bg-teal-50 transition-colors cursor-pointer whitespace-nowrap"
+                    <Button
+                        variant="outline"
+                        size="sm"
                         onclick={() => (showAddExistingModal = true)}
                     >
                         Add Existing
-                    </button>
-                    <button
-                        class="px-3 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900"
+                    </Button>
+                    <Button
+                        size="sm"
                         onclick={() => (showRunModal = true)}
                     >
                         + New Run
-                    </button>
+                    </Button>
                 </div>
             </div>
 
@@ -267,9 +276,11 @@
 
             {#if notes.length > 0}
                 <div class="space-y-3 mb-4">
-                    {#each notes as note}
+                    {#each notes as note (note.id)}
                         <div
                             class="bg-slate-50 border border-slate-200 rounded-lg p-3"
+                            animate:flip={{ duration: listDuration() }}
+                            in:fade={{ duration: listDuration() }}
                         >
                             <p class="text-sm text-slate-800">{note.content}</p>
                             <div
@@ -303,13 +314,13 @@
                     rows={2}
                     class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
                 ></textarea>
-                <button
+                <Button
                     onclick={addNote}
                     disabled={!newNote.trim() || submittingNote}
-                    class="self-end px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors hover:bg-slate-900 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    class="self-end"
                 >
                     {submittingNote ? "..." : "Add"}
-                </button>
+                </Button>
             </div>
         </div>
     </div>

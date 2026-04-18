@@ -125,18 +125,24 @@
 
         <!-- Tab buttons -->
         <div class="flex gap-1 border-b border-border mb-4">
-            <button
-                class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'upload' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}"
+            <Button
+                variant="tab"
+                size="sm"
+                class="h-auto px-4 py-2"
+                data-active={activeTab === 'upload'}
                 onclick={() => (activeTab = 'upload')}
             >
                 Upload File
-            </button>
-            <button
-                class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'url' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}"
+            </Button>
+            <Button
+                variant="tab"
+                size="sm"
+                class="h-auto px-4 py-2"
+                data-active={activeTab === 'url'}
                 onclick={() => (activeTab = 'url')}
             >
                 Import from URL
-            </button>
+            </Button>
         </div>
 
         {#if error}
