@@ -451,7 +451,8 @@
 
 <Dialog.Root open={open}>
     <Dialog.Content
-        class="w-screen h-screen max-w-none max-h-none rounded-none border-0 p-0 bg-background flex flex-col overflow-hidden"
+        class="w-screen h-screen max-w-none sm:max-w-none max-h-none overflow-y-visible rounded-none border-0 p-0 gap-0 bg-background flex flex-col overflow-hidden"
+        style="top: 0; left: 0; translate: none"
         showCloseButton={false}
         onEscapeKeydown={(e) => { e.preventDefault(); handleClose(); }}
         interactOutsideBehavior="ignore"
