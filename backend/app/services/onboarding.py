@@ -1,0 +1,187 @@
+"""Onboarding tour artifact helpers.
+
+Find-or-create sample projects, protocols, and runs used during the guided
+tour. Sample protocol/run are flagged with is_tour_sample=True; sample
+project is a normal project that the user can rename or delete freely.
+"""
+from __future__ import annotations
+
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.iam import Organization, User
+from app.models.science import Project, Protocol, Run, RunStatus
+
+SAMPLE_PROJECT_NAME = "My First Project"
+SAMPLE_PROTOCOL_NAME = "Sample Protocol"
+SAMPLE_RUN_NAME = "Sample Run"
+
+
+def get_sample_protocol_graph() -> dict[str, Any]:
+    """Return the pre-populated graph for the sample protocol."""
+    return {
+        "nodes": [
+            {
+                "id": "sample-buffer",
+                "type": "unitOp",
+                "position": {"x": 100, "y": 150},
+                "data": {
+                    "label": "Buffer Prep",
+                    "category": "Media Prep",
+                    "duration_min": 30,
+                    "params": {"buffer_name": "PBS", "volume_L": 10},
+                    "paramSchema": {
+                        "type": "object",
+                        "properties": {
+                            "buffer_name": {"type": "string", "default": "PBS"},
+                            "volume_L": {"type": "number", "default": 10},
+                        },
+                    },
+                },
+            },
+            {
+                "id": "sample-media",
+                "type": "unitOp",
+                "position": {"x": 400, "y": 150},
+                "data": {
+                    "label": "Media Prep",
+                    "category": "Media Prep",
+                    "duration_min": 45,
+                    "params": {"media_name": "DMEM", "volume_L": 5},
+                    "paramSchema": {
+                        "type": "object",
+                        "properties": {
+                            "media_name": {"type": "string", "default": "DMEM"},
+                            "volume_L": {"type": "number", "default": 5},
+                        },
+                    },
+                },
+            },
+            {
+                "id": "sample-seed",
+                "type": "unitOp",
+                "position": {"x": 700, "y": 150},
+                "data": {
+                    "label": "Seeding",
+                    "category": "Cell Culture",
+                    "duration_min": 60,
+                    "params": {"cell_density": 1e6},
+                    "paramSchema": {
+                        "type": "object",
+                        "properties": {
+                            "cell_density": {"type": "number", "default": 1e6},
+                        },
+                    },
+                },
+            },
+        ],
+        "edges": [
+            {"id": "e1", "source": "sample-buffer", "target": "sample-media"},
+            {"id": "e2", "source": "sample-media", "target": "sample-seed"},
+        ],
+        "layout": "horizontal",
+        "handleOrientation": "horizontal",
+        "timeEnabled": False,
+        "startTime": "08:00",
+        "pixelsPerHour": 200,
+    }
+
+
+async def find_or_create_sample_project(
+    db: AsyncSession, user: User, org: Organization
+) -> Project:
+    """Return any existing project for the org; create 'My First Project' if none."""
+    stmt = (
+        select(Project)
+        .where(Project.organization_id == org.id)
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    project = result.scalar_one_or_none()
+    if project is not None:
+        return project
+
+    project = Project(
+        name=SAMPLE_PROJECT_NAME,
+        description="Seeded by the onboarding tour.",
+        organization_id=org.id,
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+    return project
+
+
+async def find_or_create_sample_protocol(
+    db: AsyncSession, user: User, org: Organization
+) -> Protocol:
+    """Return the user's org's sample protocol; create with a pre-populated graph if missing.
+
+    Sample protocols are nested under a project (so project_id is set); we match
+    by is_tour_sample=True joined to a project in the given org.
+    """
+    result = await db.execute(
+        select(Protocol)
+        .join(Project, Project.id == Protocol.project_id)
+        .where(
+            Protocol.is_tour_sample.is_(True),
+            Project.organization_id == org.id,
+        )
+        .limit(1)
+    )
+    protocol = result.scalar_one_or_none()
+    if protocol is not None:
+        return protocol
+
+    project = await find_or_create_sample_project(db, user, org)
+    protocol = Protocol(
+        name=SAMPLE_PROTOCOL_NAME,
+        description="A pre-built sample to illustrate the protocol editor.",
+        project_id=project.id,
+        status="DRAFT",
+        graph=get_sample_protocol_graph(),
+        is_tour_sample=True,
+    )
+    db.add(protocol)
+    await db.commit()
+    await db.refresh(protocol)
+    return protocol
+
+
+async def find_or_create_sample_run(
+    db: AsyncSession, user: User, protocol: Protocol
+) -> Run:
+    """Delete any prior sample run for this user, then create a fresh one."""
+    await delete_sample_run(db, user)
+
+    run = Run(
+        name=SAMPLE_RUN_NAME,
+        project_id=protocol.project_id,
+        protocol_id=protocol.id,
+        status=RunStatus.PLANNED,
+        graph=protocol.graph,
+        started_by_id=user.id,
+        is_tour_sample=True,
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    return run
+
+
+async def delete_sample_run(db: AsyncSession, user: User) -> None:
+    """Delete this user's sample run, if any. Idempotent."""
+    stmt = (
+        select(Run)
+        .where(
+            Run.is_tour_sample.is_(True),
+            Run.started_by_id == user.id,
+        )
+    )
+    result = await db.execute(stmt)
+    for run in result.scalars().all():
+        await db.delete(run)
+    await db.commit()
