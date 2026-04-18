@@ -169,7 +169,13 @@
         const props = (schema.properties || {}) as Record<string, any>;
         const synced: Record<string, any> = {};
         for (const [key, prop] of Object.entries(props)) {
-            synced[key] = key in current ? current[key] : (prop.default ?? (prop.enum?.[0] ?? ''));
+            if (key in current) {
+                synced[key] = current[key];
+            } else if (prop.default !== undefined) {
+                synced[key] = prop.default;
+            } else if (prop.enum?.[0] !== undefined) {
+                synced[key] = prop.enum[0];
+            }
         }
         return synced;
     }
