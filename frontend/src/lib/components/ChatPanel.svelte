@@ -4,6 +4,7 @@
     import DOMPurify from 'dompurify';
     import ChatSkillButtons from '$lib/components/ChatSkillButtons.svelte';
     import { Button } from '$lib/components/ui/button';
+    import { scale } from 'svelte/transition';
     import {
         getPanelState, getActiveSession, getMessageInput, isSending,
         getMessageSources, getSkills,
@@ -11,8 +12,6 @@
         setMessageInput, sendMessage, clearConversation,
         registerScrollFn, activateSkill,
     } from '$lib/chat-store.svelte';
-
-    let { currentPath = '' } = $props();
 
     let messagesEndEl = $state<HTMLDivElement>(undefined!);
     let inputEl = $state<HTMLTextAreaElement>(undefined!);
@@ -30,7 +29,6 @@
     const activeSession = $derived(getActiveSession());
     const messageInput = $derived(getMessageInput());
     const sending = $derived(isSending());
-    const isOnChatPage = $derived(currentPath.startsWith('/chat'));
     const skills = $derived(getSkills());
 
     const hasMessages = $derived(
@@ -63,7 +61,7 @@
     function handleGlobalKeydown(e: KeyboardEvent) {
         if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
             e.preventDefault();
-            if (!isOnChatPage) togglePanel();
+            togglePanel();
         }
     }
 
@@ -86,18 +84,18 @@
 
 <!-- ─── COLLAPSED: FAB Button ─── -->
 {#if panelState === 'collapsed'}
-    <Button
-        rounded="full"
-        class="chat-fab shadow-lg hover:shadow-xl size-14 {isOnChatPage ? 'opacity-40' : ''}"
-        style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:40;"
-        onclick={() => !isOnChatPage && openPanel()}
-        disabled={isOnChatPage}
-        aria-label="Open AI Chat"
-    >
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-            <path d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
-        </svg>
-    </Button>
+    <div transition:scale={{ duration: 200, start: 0 }} style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:40;">
+        <Button
+            rounded="full"
+            class="chat-fab shadow-lg hover:shadow-xl size-14"
+            onclick={() => openPanel()}
+            aria-label="Open AI Chat"
+        >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
+            </svg>
+        </Button>
+    </div>
 {/if}
 
 <!-- ─── OPEN: Floating Panel ─── -->
@@ -297,15 +295,10 @@
 {/if}
 
 <style>
-    @keyframes chat-fab-in {
-        from { opacity: 0; transform: translateY(12px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
     @keyframes chat-panel-in {
         from { opacity: 0; transform: translateY(20px); }
         to { opacity: 1; transform: translateY(0); }
     }
-    .chat-fab { animation: chat-fab-in 0.2s ease-out both; }
     .chat-panel { animation: chat-panel-in 0.25s ease-out both; }
     .chat-prose :global(pre) {
         background-color: hsl(var(--muted));
