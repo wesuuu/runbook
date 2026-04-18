@@ -63,6 +63,8 @@
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
     import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
+    import { HelpMenu, TourModal, runProtocolTour } from "$lib/onboarding";
+    import { shouldShowDot, markDismissed } from "$lib/onboarding/tourStore.svelte";
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
 
@@ -126,6 +128,23 @@
     // Track unsaved changes
     let hasUnsavedChanges = $state(false);
     let lastSavedState = $state<string>("");
+
+    // -- Onboarding Tour --
+    let protocolTourModalOpen = $state(false);
+
+    function openProtocolTourModal() {
+        protocolTourModalOpen = true;
+    }
+
+    function startProtocolTour() {
+        protocolTourModalOpen = false;
+        runProtocolTour(() => {});
+    }
+
+    async function dismissProtocolTour() {
+        protocolTourModalOpen = false;
+        await markDismissed('protocol');
+    }
 
     // Confirm dialog state
     let confirmOpen = $state(false);
@@ -932,6 +951,7 @@
 <div class="flex {embedded ? 'h-full' : 'h-[calc(100vh-57px)]'} font-sans">
     <!-- ============= SIDEBAR ============= -->
     {#if !embedded}
+    <div class="contents" data-tour="protocol-sidebar">
     <ProtocolSidebar
         {protocol}
         {roles}
@@ -953,6 +973,7 @@
         onDeleteOrArchive={deleteOrArchiveProtocol}
         onUnarchive={unarchiveProtocol}
     />
+    </div>
     {/if}
 
     <!-- ============= CANVAS ============= -->
@@ -961,7 +982,13 @@
         ondrop={onDrop}
         ondragover={onDragOver}
         bind:this={flowContainer}
+        data-tour="protocol-canvas"
     >
+        {#if !embedded}
+            <div class="absolute top-3 right-3 z-30">
+                <HelpMenu dotVisible={shouldShowDot('protocol')} onTakeTour={openProtocolTourModal} />
+            </div>
+        {/if}
         <!-- Toolbar -->
         <CanvasToolbar
             {interactionMode}
@@ -1056,6 +1083,7 @@
 
     <!-- ============= INSPECTOR ============= -->
     {#if selectedNode}
+        <div class="contents" data-tour="protocol-inspector">
         {#if selectedNode.type === "processStart"}
             <ProcessStartInspector
                 node={selectedNode}
@@ -1074,6 +1102,7 @@
                 onClose={() => (selectedNodeId = null)}
             />
         {/if}
+        </div>
     {/if}
 
     <!-- ============= CREATE MODAL ============= -->
@@ -1130,5 +1159,16 @@
     {confirmVariant}
     onConfirm={() => { confirmAction(); confirmOpen = false; }}
     onCancel={() => (confirmOpen = false)}
+/>
+
+<!-- PROTOCOL TOUR MODAL -->
+<TourModal
+    bind:open={protocolTourModalOpen}
+    title="Tour: how to construct a protocol"
+    description="A 4-step walkthrough of the protocol editor."
+    primaryLabel="Take tour"
+    secondaryLabel="Dismiss"
+    onPrimary={startProtocolTour}
+    onSecondary={dismissProtocolTour}
 />
 
