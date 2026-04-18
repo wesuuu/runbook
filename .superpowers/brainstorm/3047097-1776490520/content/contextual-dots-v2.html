@@ -1,0 +1,193 @@
+<h2>Refined: one dot per context, next to a "?" help button</h2>
+<p class="subtitle">The dot is scarce and intentional. It's just the entry. The tour itself is the multi-step explanation.</p>
+
+<style>
+  .mock {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    color: #1f2937;
+  }
+  .editor-frame {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 12px;
+  }
+  .toolbar {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+  }
+  .toolbar-left, .toolbar-right { display: flex; gap: 6px; align-items: center; }
+  .btn {
+    padding: 6px 12px;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #374151;
+  }
+  .btn.primary { background: #2563eb; color: white; border-color: #2563eb; }
+  .help-btn {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #6b7280;
+    position: relative;
+  }
+  .sidebar {
+    padding: 12px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .sidebar-item {
+    padding: 6px 8px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    color: #374151;
+  }
+  .canvas {
+    min-height: 140px;
+    background:
+      linear-gradient(#f3f4f6 1px, transparent 1px) 0 0 / 20px 20px,
+      linear-gradient(90deg, #f3f4f6 1px, transparent 1px) 0 0 / 20px 20px,
+      #fafafa;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .node {
+    display: inline-block;
+    padding: 8px 12px;
+    background: white;
+    border: 2px solid #3b82f6;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #1f2937;
+  }
+  .hint-dot {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #3b82f6;
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    animation: pulse 2s infinite;
+    top: -4px;
+    right: -4px;
+    z-index: 10;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(59, 130, 246, 0.7); }
+    70%  { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+    100% { box-shadow: 0 0 0 0   rgba(59, 130, 246, 0); }
+  }
+  .caption {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+  .state-row {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 6px;
+    margin-top: 12px;
+  }
+  .state-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7280;
+    min-width: 160px;
+  }
+</style>
+
+<h3>Editor — before the tour is taken</h3>
+<div class="mock">
+  <div class="editor-frame">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <span class="btn">Save</span>
+        <span class="btn">Undo</span>
+        <span class="btn primary">+ Unit Op</span>
+      </div>
+      <div class="toolbar-right">
+        <span class="help-btn">?<div class="hint-dot"></div></span>
+      </div>
+    </div>
+    <div class="sidebar">
+      <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; margin-bottom: 6px;">Unit Ops</div>
+      <div class="sidebar-item">Buffer Prep</div>
+      <div class="sidebar-item">Media Prep</div>
+      <div class="sidebar-item">Seeding</div>
+    </div>
+    <div class="canvas"><div class="node">Sample Protocol</div></div>
+  </div>
+</div>
+<div class="caption">
+  <strong>One pulsing dot</strong> on the "?" button in the corner. Everything else is clean. Hovering the dot shows a tooltip: "Take a tour of the editor". Clicking it runs a ~5-step walkthrough (sidebar → canvas → save → etc.).
+</div>
+
+<h3>Same editor — after the tour has been taken or dismissed</h3>
+<div class="mock">
+  <div class="editor-frame">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <span class="btn">Save</span>
+        <span class="btn">Undo</span>
+        <span class="btn primary">+ Unit Op</span>
+      </div>
+      <div class="toolbar-right">
+        <span class="help-btn">?</span>
+      </div>
+    </div>
+    <div class="sidebar">
+      <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; margin-bottom: 6px;">Unit Ops</div>
+      <div class="sidebar-item">Buffer Prep</div>
+      <div class="sidebar-item">Media Prep</div>
+      <div class="sidebar-item">Seeding</div>
+    </div>
+    <div class="canvas"><div class="node">Sample Protocol</div></div>
+  </div>
+</div>
+<div class="caption">
+  Dot is gone. The "?" button stays — discoverable for replay without being noisy.
+</div>
+
+<h3>State model for the dot</h3>
+<div class="state-row">
+  <div class="state-label">Dot visible when</div>
+  <div style="font-size: 13px; color: #374151;">user has not yet started or completed this context's tour</div>
+</div>
+<div class="state-row">
+  <div class="state-label">Dot hidden when</div>
+  <div style="font-size: 13px; color: #374151;">tour completed OR user clicked "Skip" OR user clicked "Don't show again"</div>
+</div>
+<div class="state-row">
+  <div class="state-label">Replay mechanism</div>
+  <div style="font-size: 13px; color: #374151;">"?" help button stays always visible; opens a small menu with "Take tour" option</div>
+</div>
+<div class="state-row">
+  <div class="state-label">Persisted in</div>
+  <div style="font-size: 13px; color: #374151;">User.preferences JSONB: <code style="background:#f3f4f6;padding:2px 4px;border-radius:3px;">{tours_completed: ["editor", "runner"]}</code></div>
+</div>

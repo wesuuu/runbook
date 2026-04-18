@@ -1,0 +1,151 @@
+<h2>Contextual hint dots — what they look like</h2>
+<p class="subtitle">Small pulsing blue dots anchored next to key UI elements. Clicking one launches the tour for that context.</p>
+
+<style>
+  .dot-mockup {
+    position: relative;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    min-height: 80px;
+    color: #1f2937;
+  }
+  .fake-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+    background: #f9fafb;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    position: relative;
+  }
+  .fake-btn {
+    padding: 6px 12px;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #374151;
+  }
+  .fake-btn.primary { background: #2563eb; color: white; border-color: #2563eb; }
+  .fake-sidebar {
+    width: 180px;
+    padding: 12px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    position: relative;
+  }
+  .fake-sidebar-item {
+    padding: 6px 8px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: #374151;
+  }
+  .fake-canvas {
+    flex: 1;
+    min-height: 140px;
+    background:
+      linear-gradient(#f3f4f6 1px, transparent 1px) 0 0 / 20px 20px,
+      linear-gradient(90deg, #f3f4f6 1px, transparent 1px) 0 0 / 20px 20px,
+      #fafafa;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 12px;
+    position: relative;
+  }
+  .fake-node {
+    display: inline-block;
+    padding: 8px 12px;
+    background: white;
+    border: 2px solid #3b82f6;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #1f2937;
+  }
+  /* the dot itself */
+  .hint-dot {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #3b82f6;
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    animation: pulse 2s infinite;
+    cursor: pointer;
+    z-index: 10;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(59, 130, 246, 0.7); }
+    70%  { box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
+    100% { box-shadow: 0 0 0 0   rgba(59, 130, 246, 0); }
+  }
+  .caption {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 8px;
+  }
+  .click-demo {
+    margin-top: 24px;
+    padding: 16px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #1e3a8a;
+  }
+</style>
+
+<h3 style="margin-top: 24px;">Example 1: Dot anchored to the editor toolbar</h3>
+<div class="dot-mockup">
+  <div class="fake-toolbar">
+    <span class="fake-btn">Save</span>
+    <span class="fake-btn">Undo</span>
+    <span class="fake-btn primary">Add Unit Op</span>
+    <div class="hint-dot" style="top: -4px; right: -4px;"></div>
+  </div>
+  <div class="caption">A pulsing dot sits at the corner of the toolbar. First-time visitors notice it. Hovering shows "Take a tour of the protocol editor". Clicking starts the multi-step editor walkthrough.</div>
+</div>
+
+<h3>Example 2: Dot anchored to the sidebar (unit op library)</h3>
+<div class="dot-mockup" style="display: flex; gap: 12px;">
+  <div class="fake-sidebar">
+    <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; margin-bottom: 6px;">Unit Ops</div>
+    <div class="fake-sidebar-item">Buffer Prep</div>
+    <div class="fake-sidebar-item">Media Prep</div>
+    <div class="fake-sidebar-item">Seeding</div>
+    <div class="hint-dot" style="top: 10px; right: 10px;"></div>
+  </div>
+  <div class="fake-canvas">
+    <div class="fake-node">Buffer Prep</div>
+  </div>
+  <div class="caption" style="flex-basis: 100%;">Same pulsing dot, but anchored to the sidebar. When the user clicks it, a driver.js popover appears explaining "Drag unit ops from here onto the canvas to build your protocol."</div>
+</div>
+
+<h3>Example 3: Dot on the runner page ("Start run" button)</h3>
+<div class="dot-mockup">
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <span style="font-size: 13px; color: #374151;">Run: Sample Protocol · 1 of 4 steps</span>
+    <div style="position: relative; display: inline-block;">
+      <span class="fake-btn primary">Start Run</span>
+      <div class="hint-dot" style="top: -4px; right: -4px;"></div>
+    </div>
+  </div>
+  <div class="caption">On the runner page, the dot anchors to the "Start Run" button — the user's natural first click. Dismissed after first click or after the tour completes.</div>
+</div>
+
+<div class="click-demo">
+  <strong>How it behaves:</strong>
+  <ul style="margin: 8px 0 0 16px; padding: 0;">
+    <li>Dots only appear for users who haven't completed that context's tour</li>
+    <li>Click the dot → multi-step driver.js tour begins, highlighting elements in sequence</li>
+    <li>Dismiss the tour anytime ("Skip") → dot disappears, remembered per user</li>
+    <li>Re-accessible from a "?" help menu if they want to replay</li>
+  </ul>
+</div>
