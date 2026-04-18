@@ -22,22 +22,33 @@ Hide the chat floating action button (FAB) on specific pages and replace the sli
 
 ## Implementation Approach
 
-### 1. Route Matching
+### 1. Utility Function (DRY)
 
-Create a derived state that checks if the current path matches any hidden routes:
+Create a reusable utility function in `lib/utils/chat.ts`:
 
 ```typescript
-const shouldHideChat = $derived.by(() => {
-  const path = currentPath;
+export function shouldHideChatIcon(path: string): boolean {
   return /^\/protocols\/[^/]+$/.test(path) ||
          /^\/runs\/[^/]+$/.test(path) ||
          /^\/library\/[^/]+$/.test(path) ||
          path.startsWith('/chat') ||
          path === '/export';
-});
+}
 ```
 
-This regex-based approach ensures dynamic routes like `/protocols/123` match, but `/protocols` alone does not.
+This centralizes the logic so it can be reused if needed elsewhere without duplication.
+
+### 2. Route Matching in ChatPanel
+
+Import and use the utility to create a derived state:
+
+```typescript
+import { shouldHideChatIcon } from '$lib/utils/chat';
+
+const shouldHideChat = $derived(shouldHideChatIcon(currentPath));
+```
+
+This keeps ChatPanel clean and the logic testable independently.
 
 ### 2. Conditional Rendering & Animation
 
