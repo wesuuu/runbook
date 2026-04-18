@@ -183,7 +183,7 @@
     });
 </script>
 
-<aside class="sidebar">
+<aside class="sidebar" data-tour="protocol-sidebar">
     <!-- Header -->
     <div class="sidebar-header">
         {#if editingName}
@@ -444,6 +444,7 @@
                 onclick={onSaveDraft}
                 disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "ARCHIVED" || previewingVersion !== null}
                 title="Save changes as a draft (no publish)"
+                data-tour="protocol-save"
             >
                 {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked" : protocolStatus === "ARCHIVED" ? "Archived" : "Save Draft"}
             </Button>

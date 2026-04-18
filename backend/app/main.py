@@ -380,6 +380,7 @@ from app.api.endpoints import (
     library,
     templates,
     template_convert,
+    onboarding,
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -403,6 +404,7 @@ app.include_router(template_convert.router, prefix="/science", tags=["template-c
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(offline.router, tags=["offline"])
 app.include_router(sync.router, tags=["sync"])
+app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 
 # Dev-only endpoints (webhook echo, etc.)
 if settings.debug:

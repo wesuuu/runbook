@@ -19,6 +19,8 @@
     import { ConfirmDialog } from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
     import { PendingImagesSchema, AnalyzePendingResultSchema, RunRoleAssignmentListSchema, UserSearchSchema } from '$lib/schemas';
+    import { HelpMenu, TourModal, runRunTour } from '$lib/onboarding';
+    import { shouldShowDot, markDismissed } from '$lib/onboarding/tourStore.svelte';
     import { z } from 'zod';
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';
@@ -55,6 +57,23 @@
     let isEditMode = $state(false);
     let editExecutionData = $state<Record<string, any>>({});
     let savingEdits = $state(false);
+
+    // -- Onboarding Tour --
+    let runTourModalOpen = $state(false);
+
+    function openRunTourModal() {
+        runTourModalOpen = true;
+    }
+
+    function startRunTour() {
+        runTourModalOpen = false;
+        runRunTour(() => {});
+    }
+
+    async function dismissRunTour() {
+        runTourModalOpen = false;
+        await markDismissed('run');
+    }
 
     // Load data whenever id changes
     $effect(() => {
@@ -336,7 +355,7 @@
     {:else}
         <!-- Tab Bar -->
         <div class="border-b border-border bg-background sticky top-0 z-10">
-            <nav class="max-w-5xl mx-auto flex gap-6 px-6">
+            <nav class="max-w-5xl mx-auto flex items-center gap-6 px-6">
                 {#each (['execution', 'notes', 'attachments', 'history'] as const) as tab}
                     {@const noteCount = run.notes?.length ?? 0}
                     {@const attachCount = activeAttachmentCount}
@@ -352,6 +371,9 @@
                         {label}
                     </Button>
                 {/each}
+                <div class="ml-auto">
+                    <HelpMenu dotVisible={shouldShowDot('run')} onTakeTour={openRunTourModal} />
+                </div>
             </nav>
         </div>
 
@@ -421,19 +443,21 @@
                 {/if}
 
                 <!-- Role Assignments -->
-                <RoleAssignmentPanel
-                    swimLaneNodes={getSwimLaneNodes()}
-                    {roleAssignments}
-                    {projectMembers}
-                    {assignmentChanges}
-                    onUpdateAssignment={updateRoleAssignment}
-                    onAssignmentChange={(laneId, value) => { assignmentChanges[laneId] = value; }}
-                    onShowGoOffline={() => (showGoOffline = true)}
-                />
+                <div class="contents" data-tour="run-role-panel">
+                    <RoleAssignmentPanel
+                        swimLaneNodes={getSwimLaneNodes()}
+                        {roleAssignments}
+                        {projectMembers}
+                        {assignmentChanges}
+                        onUpdateAssignment={updateRoleAssignment}
+                        onAssignmentChange={(laneId, value) => { assignmentChanges[laneId] = value; }}
+                        onShowGoOffline={() => (showGoOffline = true)}
+                    />
+                </div>
 
                 <!-- Electronic Batch Record -->
                 {#if getAllUnitOpSteps().length > 0}
-                    <div class="mb-8 p-6 card-warm rounded-xl">
+                    <div class="mb-8 p-6 card-warm rounded-xl" data-tour="run-step-list">
                         <h2 class="text-lg font-semibold text-foreground mb-6">
                             Electronic Batch Record
                         </h2>
@@ -641,7 +665,7 @@
 
                     <!-- Assigned User View (Wizard) -->
                     {#if getCurrentUserAssignment()}
-                        <div class="bg-white rounded-lg border border-border p-2 sm:p-8">
+                        <div class="bg-white rounded-lg border border-border p-2 sm:p-8" data-tour="run-step-complete">
                             <RoleWizard
                                 steps={getWizardSteps()}
                                 runId={run.id}
@@ -779,14 +803,16 @@
                     </div>
 
                     <!-- Results Summary -->
-                    <RunResultsSummary
-                        swimLaneNodes={getSwimLaneNodes()}
-                        allSteps={getAllUnitOpSteps()}
-                        {roleAssignments}
-                        {projectMembers}
-                        executionData={run.execution_data || {}}
-                        {getStepsForRole}
-                    />
+                    <div class="contents" data-tour="run-results">
+                        <RunResultsSummary
+                            swimLaneNodes={getSwimLaneNodes()}
+                            allSteps={getAllUnitOpSteps()}
+                            {roleAssignments}
+                            {projectMembers}
+                            executionData={run.execution_data || {}}
+                            {getStepsForRole}
+                        />
+                    </div>
 
                     <!-- Documents Section -->
                     <div class="mb-8">
@@ -892,15 +918,17 @@
                     </div>
 
                     <!-- Edited Results Summary -->
-                    <RunResultsSummary
-                        swimLaneNodes={getSwimLaneNodes()}
-                        allSteps={getAllUnitOpSteps()}
-                        {roleAssignments}
-                        {projectMembers}
-                        executionData={run.execution_data || {}}
-                        showEditAnnotations={true}
-                        {getStepsForRole}
-                    />
+                    <div class="contents" data-tour="run-results">
+                        <RunResultsSummary
+                            swimLaneNodes={getSwimLaneNodes()}
+                            allSteps={getAllUnitOpSteps()}
+                            {roleAssignments}
+                            {projectMembers}
+                            executionData={run.execution_data || {}}
+                            showEditAnnotations={true}
+                            {getStepsForRole}
+                        />
+                    </div>
 
                     <!-- Documents Section -->
                     <div class="mb-8">
@@ -985,3 +1013,14 @@
         />
     {/if}
 </div>
+
+<!-- RUN TOUR MODAL -->
+<TourModal
+    bind:open={runTourModalOpen}
+    title="Tour: how to run a protocol"
+    description="A 4-step walkthrough of the runner."
+    primaryLabel="Take tour"
+    secondaryLabel="Dismiss"
+    onPrimary={startRunTour}
+    onSecondary={dismissRunTour}
+/>

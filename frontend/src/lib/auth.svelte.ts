@@ -126,6 +126,16 @@ function clearCachedAuthData(): void {
     localStorage.removeItem('cached_current_org');
 }
 
+/** Hydrate onboarding tour state; swallow errors (non-fatal). Lazy import avoids circular dep. */
+async function hydrateTourStateSafely(): Promise<void> {
+    try {
+        const { hydrateTourState } = await import('$lib/onboarding/tourStore.svelte');
+        await hydrateTourState();
+    } catch {
+        // non-fatal; tour state can remain un-hydrated
+    }
+}
+
 /** Check if an error is a network failure (not a server response). */
 function isNetworkError(err: unknown): boolean {
     if (err instanceof TypeError && err.message.includes('fetch')) return true;
@@ -145,6 +155,7 @@ export async function login(email: string, password: string): Promise<void> {
     user = await authFetch<User>('GET', '/auth/me');
     await loadOrgs();
     cacheAuthData();
+    await hydrateTourStateSafely();
 }
 
 export async function register(email: string, password: string, fullName: string): Promise<void> {
@@ -171,6 +182,7 @@ export async function handleVerificationCallback(authToken: string): Promise<voi
     user = await authFetch<User>('GET', '/auth/me');
     await loadOrgs();
     cacheAuthData();
+    await hydrateTourStateSafely();
 }
 
 export function logout(): void {
@@ -225,6 +237,7 @@ export async function initialize(): Promise<void> {
         if (user.email_verified) {
             await loadOrgs();
             cacheAuthData();
+            await hydrateTourStateSafely();
         }
     } catch (err) {
         if (isNetworkError(err)) {

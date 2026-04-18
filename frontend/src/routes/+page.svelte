@@ -14,6 +14,8 @@
     import { fade, fly } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
+    import TourModal from '$lib/onboarding/TourModal.svelte';
+    import { isWelcomeEmpty, isHydrated, markAllDismissed } from '$lib/onboarding/tourStore.svelte';
 
     type RunSummary = {
         id: string;
@@ -81,6 +83,27 @@
 
     let orphanedRuns = $state<Array<{ runId: string; runName: string; count: number; dateRange: string }>>([]);
     let syncingOrphans = $state(false);
+
+    let welcomeOpen = $state(false);
+
+    $effect(() => {
+        if (isHydrated() && isWelcomeEmpty()) {
+            welcomeOpen = true;
+        }
+    });
+
+    async function startProjectTourFromWelcome() {
+        welcomeOpen = false;
+        const { project_id } = await api.post<{ project_id: string }>(
+            '/onboarding/tour/project/start', {},
+        );
+        goto(`/projects/${project_id}?tour=project`);
+    }
+
+    async function dismissWelcome() {
+        welcomeOpen = false;
+        await markAllDismissed();
+    }
 
     onMount(() => {
         loadDashboard();
@@ -504,6 +527,8 @@
                             description="Get started by creating a project and running a protocol."
                             actionLabel="View Projects"
                             onAction={() => goto('/projects')}
+                            secondaryActionLabel="Take the tour"
+                            secondaryOnAction={() => (welcomeOpen = true)}
                             class="py-14"
                         >
                             {#snippet icon()}
@@ -568,4 +593,14 @@
         </div>
     </div>
 {/if}
+
+<TourModal
+    bind:open={welcomeOpen}
+    title="Welcome to Batchrite"
+    description="Want a quick tour of your workspace? Start with how projects are laid out."
+    primaryLabel="Check out how projects are laid out"
+    secondaryLabel="Dismiss"
+    onPrimary={startProjectTourFromWelcome}
+    onSecondary={dismissWelcome}
+/>
 

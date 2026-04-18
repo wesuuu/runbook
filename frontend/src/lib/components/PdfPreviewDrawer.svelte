@@ -204,7 +204,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="modal-backdrop" onclick={handleOverlayClick}>
-    <div class="modal">
+    <div class="modal" data-tour="pdf-preview">
         <!-- Header -->
         <div class="modal-header">
             <div class="header-left">

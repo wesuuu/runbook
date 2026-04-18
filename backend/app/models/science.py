@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional, Any
 
-from sqlalchemy import String, Integer, ForeignKey, Enum, Index, desc, CheckConstraint
+from sqlalchemy import String, Integer, ForeignKey, Enum, Index, desc, CheckConstraint, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -107,6 +107,9 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     version_number: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    is_tour_sample: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False, index=True
+    )
 
     # The template graph structure
     graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -181,6 +184,9 @@ class Run(Base, UUIDMixin, TimestampMixin):
     # Optional experiment grouping
     experiment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("experiments.id"), nullable=True
+    )
+    is_tour_sample: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False, index=True
     )
 
     # Relationships

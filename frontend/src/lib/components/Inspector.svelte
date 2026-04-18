@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { getContext } from "svelte";
+    import { getContext, onMount } from "svelte";
     import type { Node } from "@xyflow/svelte";
     import { X } from "lucide-svelte";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
@@ -70,6 +70,25 @@
     // Schema editor state
     let showSchemaEditor: boolean = $state(false);
     let editSchemaRows: SchemaParamRow[] = $state([]);
+
+    // Listen for onboarding tour events to script the demo.
+    onMount(() => {
+        function expand() {
+            showSchemaEditor = true;
+        }
+        function setInstruction(e: Event) {
+            const { text } = (e as CustomEvent).detail ?? {};
+            if (typeof text !== 'string') return;
+            editDescription = text;
+            handleApply();
+        }
+        window.addEventListener('onboarding:expand-schema-editor', expand);
+        window.addEventListener('onboarding:set-instruction', setInstruction);
+        return () => {
+            window.removeEventListener('onboarding:expand-schema-editor', expand);
+            window.removeEventListener('onboarding:set-instruction', setInstruction);
+        };
+    });
 
     // Save-as-new-unit-op state
     let showSaveAsNew: boolean = $state(false);
@@ -248,7 +267,7 @@
 </script>
 
 {#if node}
-    <aside class="inspector">
+    <aside class="inspector" data-tour="protocol-inspector">
         <!-- Header -->
         <div class="inspector-header">
             <div class="header-top">
@@ -277,7 +296,7 @@
         </div>
 
         <!-- Description -->
-        <div class="section">
+        <div class="section" data-tour="inspector-instruction">
             <label class="section-label" for="node-description">Instruction</label>
             {#if paramKeys.length > 0}
                 <p class="template-hint">
@@ -293,7 +312,7 @@
                 rows="3"
             ></textarea>
             {#if renderedPreview}
-                <div class="template-preview">
+                <div class="template-preview" data-tour="inspector-instruction-preview">
                     <span class="preview-label">Preview</span>
                     <p class="preview-text">{renderedPreview}</p>
                 </div>
@@ -468,7 +487,7 @@
         {/if}
 
         <!-- Schema Editor (collapsible) -->
-        <div class="section schema-section">
+        <div class="section schema-section" data-tour="inspector-schema">
             <Button
                 variant="ghost"
                 class="w-full justify-between px-0 hover:bg-transparent"

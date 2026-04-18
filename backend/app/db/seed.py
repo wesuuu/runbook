@@ -41,6 +41,10 @@ USER_SCIENTIST1 = uuid.UUID("20000000-0000-0000-0000-000000000004")
 USER_SCIENTIST2 = uuid.UUID("20000000-0000-0000-0000-000000000005")
 USER_VIEWER = uuid.UUID("20000000-0000-0000-0000-000000000006")
 
+USER_NEWBIE = uuid.UUID("20000000-0000-0000-0000-0000000000ff")
+ORG_ID_NEWBIE = uuid.UUID("10000000-0000-0000-0000-0000000000ff")
+PROJECT_NEWBIE = uuid.UUID("40000000-0000-0000-0000-0000000000ff")
+
 TEAM_UPSTREAM = uuid.UUID("30000000-0000-0000-0000-000000000001")
 TEAM_DOWNSTREAM = uuid.UUID("30000000-0000-0000-0000-000000000002")
 TEAM_QA = uuid.UUID("30000000-0000-0000-0000-000000000003")
@@ -449,6 +453,54 @@ async def seed_unit_ops(db: AsyncSession):
     await db.flush()
 
 
+async def seed_newbie_user(db: AsyncSession):
+    """Create a fresh, email-verified user with an empty tour_state.
+
+    Used for manually testing the F-0015 onboarding tour. The user has
+    their own org and a single "My First Project" — matching what a real
+    new signup looks like, so the welcome modal auto-opens on login.
+    """
+    # Fresh org just for this user
+    await _upsert(
+        db, Organization, ORG_ID_NEWBIE, name="Newbie's Organization"
+    )
+
+    user = await _upsert(
+        db, User, USER_NEWBIE,
+        email="newbie@bioprocess.com",
+        hashed_password=DEFAULT_PASSWORD,
+        full_name="Newbie Tester",
+        selected_org_id=ORG_ID_NEWBIE,
+        email_verified=True,
+    )
+    # Always reset tour_state so repeated seeds give a clean test experience
+    user.tour_state = {}
+
+    # Org membership (ADMIN)
+    result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == USER_NEWBIE,
+            OrganizationMember.organization_id == ORG_ID_NEWBIE,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        db.add(OrganizationMember(
+            user_id=USER_NEWBIE,
+            organization_id=ORG_ID_NEWBIE,
+            role="ADMIN",
+        ))
+
+    # Seed a single starter project (mirrors what auth/register does)
+    await _upsert(
+        db, Project, PROJECT_NEWBIE,
+        name="My First Project",
+        description="Created for you — rename or delete as you like.",
+        organization_id=ORG_ID_NEWBIE,
+    )
+
+    await db.flush()
+
+
 async def run_seed():
     """Run all seed functions in order."""
     async with AsyncSessionLocal() as db:
@@ -464,6 +516,8 @@ async def run_seed():
         await seed_permissions(db)
         print("Seeding unit operations...")
         await seed_unit_ops(db)
+        print("Seeding newbie user...")
+        await seed_newbie_user(db)
 
         await db.commit()
         print("Seed complete!")

@@ -63,6 +63,12 @@
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
     import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
+    import { HelpMenu, TourModal, runProtocolTour } from "$lib/onboarding";
+    import { shouldShowDot, markDismissed } from "$lib/onboarding/tourStore.svelte";
+    import {
+        SELECT_SAMPLE_NODE_EVENT,
+        CLEAR_SAMPLE_NODE_EVENT,
+    } from "$lib/onboarding/tours/protocolTour";
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
 
@@ -126,6 +132,59 @@
     // Track unsaved changes
     let hasUnsavedChanges = $state(false);
     let lastSavedState = $state<string>("");
+
+    // -- Onboarding Tour --
+    // The pulsing dot on the HelpMenu (shown only on the sample protocol) is the trigger;
+    // no auto-start. Clicking the dot opens the modal, which starts the tour.
+    let protocolTourModalOpen = $state(false);
+
+    function openProtocolTourModal() {
+        protocolTourModalOpen = true;
+    }
+
+    function startProtocolTour() {
+        protocolTourModalOpen = false;
+        runProtocolTour(() => {});
+    }
+
+    async function dismissProtocolTour() {
+        protocolTourModalOpen = false;
+        await markDismissed('protocol');
+    }
+
+    // Let the protocol tour drive node selection, saves, and the PDF preview drawer.
+    $effect(() => {
+        if (embedded) return;
+        function selectNode(e: Event) {
+            const { nodeId } = (e as CustomEvent).detail ?? {};
+            if (!nodeId) return;
+            nodes = nodes.map((n) => ({ ...n, selected: n.id === nodeId }));
+        }
+        function clearNode() {
+            nodes = nodes.map((n) => (n.selected ? { ...n, selected: false } : n));
+        }
+        function triggerSave() {
+            saveDraft();
+        }
+        function triggerOpenPdfPreview() {
+            openPdfPreview();
+        }
+        function triggerClosePdfPreview() {
+            showPdfDrawer = false;
+        }
+        window.addEventListener(SELECT_SAMPLE_NODE_EVENT, selectNode);
+        window.addEventListener(CLEAR_SAMPLE_NODE_EVENT, clearNode);
+        window.addEventListener('onboarding:save-protocol', triggerSave);
+        window.addEventListener('onboarding:open-pdf-preview', triggerOpenPdfPreview);
+        window.addEventListener('onboarding:close-pdf-preview', triggerClosePdfPreview);
+        return () => {
+            window.removeEventListener(SELECT_SAMPLE_NODE_EVENT, selectNode);
+            window.removeEventListener(CLEAR_SAMPLE_NODE_EVENT, clearNode);
+            window.removeEventListener('onboarding:save-protocol', triggerSave);
+            window.removeEventListener('onboarding:open-pdf-preview', triggerOpenPdfPreview);
+            window.removeEventListener('onboarding:close-pdf-preview', triggerClosePdfPreview);
+        };
+    });
 
     // Confirm dialog state
     let confirmOpen = $state(false);
@@ -961,7 +1020,13 @@
         ondrop={onDrop}
         ondragover={onDragOver}
         bind:this={flowContainer}
+        data-tour="protocol-canvas"
     >
+        {#if !embedded && protocol?.is_tour_sample}
+            <div class="absolute top-3 right-3 z-30">
+                <HelpMenu dotVisible={shouldShowDot('protocol')} onTakeTour={openProtocolTourModal} />
+            </div>
+        {/if}
         <!-- Toolbar -->
         <CanvasToolbar
             {interactionMode}
@@ -1130,5 +1195,16 @@
     {confirmVariant}
     onConfirm={() => { confirmAction(); confirmOpen = false; }}
     onCancel={() => (confirmOpen = false)}
+/>
+
+<!-- PROTOCOL TOUR MODAL -->
+<TourModal
+    bind:open={protocolTourModalOpen}
+    title="Tour: how to construct a protocol"
+    description="A 4-step walkthrough of the protocol editor."
+    primaryLabel="Take tour"
+    secondaryLabel="Dismiss"
+    onPrimary={startProtocolTour}
+    onSecondary={dismissProtocolTour}
 />
 

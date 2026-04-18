@@ -21,6 +21,7 @@ export const ProtocolSchema = z.object({
     version_number: z.number().default(0),
     graph: z.record(z.string(), z.unknown()).default({}),
     roles: z.array(ProtocolRoleSchema).default([]),
+    is_tour_sample: z.boolean().default(false),
     created_at: z.string(),
     updated_at: z.string(),
 }).passthrough();
