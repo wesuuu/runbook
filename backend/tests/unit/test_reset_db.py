@@ -1,5 +1,15 @@
 """Unit tests for app.db.reset (pure functions + constant sanity)."""
-from app.db.reset import WIPE_TABLES
+from unittest.mock import patch
+
+import pytest
+
+from app.db.reset import (
+    PRESERVED_TABLES,
+    WIPE_TABLES,
+    assert_local_dev_db,
+    confirm_reset,
+    mask_database_url,
+)
 
 
 EXPECTED_WIPE = {
@@ -29,32 +39,23 @@ EXPECTED_WIPE = {
     "verification_tokens",
 }
 
-PRESERVE_TABLES = {
-    "users",
-    "organizations",
-    "organization_members",
-    "teams",
-    "team_members",
-    "projects",
-    "object_permissions",
-    "unit_op_definitions",
-    "ai_provider_configs",
-}
-
 
 def test_wipe_tables_matches_expected_set():
     assert set(WIPE_TABLES) == EXPECTED_WIPE
 
 
 def test_wipe_tables_excludes_preserve_tables():
-    assert set(WIPE_TABLES).isdisjoint(PRESERVE_TABLES)
+    # Single source of truth: import PRESERVED_TABLES from the module rather
+    # than duplicating it here.
+    assert set(WIPE_TABLES).isdisjoint(set(PRESERVED_TABLES))
 
 
 def test_wipe_tables_has_no_duplicates():
     assert len(WIPE_TABLES) == len(set(WIPE_TABLES))
 
 
-from app.db.reset import mask_database_url
+def test_preserved_tables_has_no_duplicates():
+    assert len(PRESERVED_TABLES) == len(set(PRESERVED_TABLES))
 
 
 def test_mask_database_url_masks_simple_password():
@@ -83,11 +84,6 @@ def test_mask_database_url_passes_through_url_with_user_but_no_password():
     assert masked == url
 
 
-import pytest
-
-from app.db.reset import assert_local_dev_db
-
-
 def test_assert_local_dev_db_accepts_localhost():
     assert_local_dev_db("postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite")
 
@@ -114,11 +110,6 @@ def test_assert_local_dev_db_rejects_empty_db_name():
     url = "postgresql+asyncpg://postgres:postgres@localhost:5432/"
     with pytest.raises(RuntimeError):
         assert_local_dev_db(url)
-
-
-from unittest.mock import patch
-
-from app.db.reset import confirm_reset
 
 
 def test_confirm_reset_aborts_when_stdin_not_tty(capsys):

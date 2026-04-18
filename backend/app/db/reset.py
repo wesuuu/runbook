@@ -14,6 +14,28 @@ Exit codes:
 """
 from __future__ import annotations
 
+import asyncio
+import sys
+from urllib.parse import urlsplit
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.db.seed import (
+    seed_org,
+    seed_permissions,
+    seed_projects,
+    seed_teams,
+    seed_unit_ops,
+    seed_users,
+)
+from app.db.session import AsyncSessionLocal
+
+
+# Ordered tuple (not frozenset) so ``confirm_reset`` prints the tables in a
+# stable, domain-grouped order for the operator to eyeball before typing ``y``.
+# TRUNCATE itself ignores order — the tuple shape is purely cosmetic.
 WIPE_TABLES: tuple[str, ...] = (
     # Science graph
     "experiments",
@@ -48,7 +70,23 @@ WIPE_TABLES: tuple[str, ...] = (
     "verification_tokens",
 )
 
-from urllib.parse import urlsplit
+# Tables left intact and re-seeded via the idempotent seed_* helpers. Kept as
+# a module-level constant so tests can import it as the single source of truth
+# rather than duplicating the list.
+PRESERVED_TABLES: tuple[str, ...] = (
+    "users",
+    "organizations",
+    "organization_members",
+    "teams",
+    "team_members",
+    "projects",
+    "object_permissions",
+    "unit_op_definitions",
+    "ai_provider_configs",
+)
+
+ALLOWED_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1"})
+ALLOWED_DB_NAME: str = "batchrite"
 
 
 def mask_database_url(url: str) -> str:
@@ -78,10 +116,6 @@ def mask_database_url(url: str) -> str:
     return url[:first_colon + 1] + "***" + url[last_at:]
 
 
-ALLOWED_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1"})
-ALLOWED_DB_NAME: str = "batchrite"
-
-
 def assert_local_dev_db(url: str) -> None:
     """Raise RuntimeError unless ``url`` points at the local dev DB.
 
@@ -103,19 +137,6 @@ def assert_local_dev_db(url: str) -> None:
             f"Refusing to reset: DATABASE_URL database is {db_name!r}, "
             f"expected {ALLOWED_DB_NAME!r}."
         )
-
-
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.db.seed import (
-    seed_org,
-    seed_permissions,
-    seed_projects,
-    seed_teams,
-    seed_unit_ops,
-    seed_users,
-)
 
 
 async def reset_database(session: AsyncSession) -> None:
@@ -143,13 +164,6 @@ async def reset_database(session: AsyncSession) -> None:
     await seed_unit_ops(session)
 
 
-import asyncio
-import sys
-
-from app.core.config import settings
-from app.db.session import AsyncSessionLocal
-
-
 def confirm_reset() -> bool:
     """Print plan + prompt y/N. Return True only on explicit ``y``.
 
@@ -170,11 +184,7 @@ def confirm_reset() -> bool:
     for table in WIPE_TABLES:
         print(f"  - {table}")
     print()
-    print(
-        "Preserved/re-seeded: users, organizations, organization_members, teams, "
-        "team_members, projects, object_permissions, unit_op_definitions, "
-        "ai_provider_configs."
-    )
+    print("Preserved/re-seeded: " + ", ".join(PRESERVED_TABLES) + ".")
     print()
     answer = input("Proceed? [y/N]: ").strip().lower()
     return answer == "y"
