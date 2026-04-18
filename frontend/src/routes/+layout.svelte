@@ -26,12 +26,21 @@
 
     let { children } = $props();
 
+    function shouldHideChatIcon(path: string): boolean {
+        return /^\/protocols\/[^/]+$/.test(path) ||
+               /^\/runs\/[^/]+$/.test(path) ||
+               /^\/library\/[^/]+$/.test(path) ||
+               path.startsWith('/chat') ||
+               path === '/export';
+    }
+
     const publicRoutes = ['/login', '/register', '/check-email'];
     const fieldModeRoutes = ['/field'];
 
     const isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
     const isFieldMode = $derived(fieldModeRoutes.some((r) => $page.url.pathname.startsWith(r)));
     const showNav = $derived(!isPublicRoute && !isFieldMode && isAuthenticated());
+    const shouldShowChat = $derived(!shouldHideChatIcon($page.url.pathname));
     const isFullBleed = $derived(
         $page.url.pathname.startsWith('/protocols/') ||
         $page.url.pathname.startsWith('/export') ||
@@ -196,7 +205,7 @@
         closeButton={true}
         richColors={false}
     />
-    {#if showNav}
-        <ChatPanel currentPath={$page.url.pathname} />
+    {#if showNav && shouldShowChat}
+        <ChatPanel />
     {/if}
 {/if}
