@@ -43,7 +43,7 @@ Never hardcode provider/model strings.
 Worktrees have independent file trees but **no untracked/ignored files** (`node_modules/`, `.venv/`). Before starting dev servers in a worktree:
 
 1. `cd frontend && npm install` — install frontend dependencies
-2. `cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt` — set up backend venv
+2. `cd backend && python -m venv .venv && source .venv/bin/activate && pip install poetry && poetry install --no-root` — set up backend venv (project uses `pyproject.toml` via Poetry; there is no `requirements.txt`)
 
 Alternate ports to avoid collisions with main workspace:
 - Main: backend :8000, frontend :5173
