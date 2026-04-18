@@ -88,6 +88,7 @@ class ProtocolResponse(ProtocolBase):
     organization_id: Optional[UUID] = None
     status: str = "DRAFT"
     version_number: int = 0
+    is_tour_sample: bool = False
     roles: List[ProtocolRoleResponse] = []
     created_at: datetime
     updated_at: datetime
