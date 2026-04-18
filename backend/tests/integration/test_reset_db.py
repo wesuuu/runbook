@@ -124,15 +124,30 @@ async def test_reset_is_idempotent(db_session):
 
 
 @pytest.mark.asyncio
-async def test_reset_preserves_baseline_ids(db_session):
-    await reset_database(db_session)
-    before_users = set((await db_session.execute(select(User.id))).scalars().all())
-    before_orgs = set((await db_session.execute(select(Organization.id))).scalars().all())
-    before_projects = set(
-        (await db_session.execute(select(Project.id))).scalars().all()
-    )
+async def test_reset_preserves_baseline_rows(db_session):
+    """Reset must leave preserve-table rows untouched, not wipe-and-reinsert.
 
-    # Add a stray Protocol to trigger a wipe cycle.
+    The seed UUIDs are fixed literals, so an ID-only check is tautological:
+    it passes whether rows were preserved OR deleted-and-recreated. Snapshot
+    ``created_at`` too — if the row was wiped and re-inserted, the server
+    default fires again and the timestamp changes.
+    """
+    # First reset populates the baseline.
+    await reset_database(db_session)
+    before_users = {
+        u.id: u.created_at
+        for u in (await db_session.execute(select(User))).scalars().all()
+    }
+    before_orgs = {
+        o.id: o.created_at
+        for o in (await db_session.execute(select(Organization))).scalars().all()
+    }
+    before_projects = {
+        p.id: p.created_at
+        for p in (await db_session.execute(select(Project))).scalars().all()
+    }
+
+    # Add a stray Protocol so the next reset has actual work to do.
     proj_id = next(iter(before_projects))
     db_session.add(Protocol(
         name="ephemeral",
@@ -141,15 +156,32 @@ async def test_reset_preserves_baseline_ids(db_session):
     ))
     await db_session.flush()
 
+    # Second reset: wipes the protocol, re-runs idempotent seed.
     await reset_database(db_session)
 
-    after_users = set((await db_session.execute(select(User.id))).scalars().all())
-    after_orgs = set((await db_session.execute(select(Organization.id))).scalars().all())
-    after_projects = set(
-        (await db_session.execute(select(Project.id))).scalars().all()
-    )
+    after_users = {
+        u.id: u.created_at
+        for u in (await db_session.execute(select(User))).scalars().all()
+    }
+    after_orgs = {
+        o.id: o.created_at
+        for o in (await db_session.execute(select(Organization))).scalars().all()
+    }
+    after_projects = {
+        p.id: p.created_at
+        for p in (await db_session.execute(select(Project))).scalars().all()
+    }
 
-    # Baseline UUIDs unchanged — no churn on preserve tables.
-    assert before_users == after_users
-    assert before_orgs == after_orgs
-    assert before_projects == after_projects
+    # Equal IDs AND equal created_at means the rows survived — if they had
+    # been TRUNCATEd and re-inserted by the idempotent seed, created_at
+    # would advance to the second reset's wall clock.
+    assert before_users == after_users, (
+        "user rows were wiped-and-reinserted (created_at changed); "
+        "reset should have preserved them"
+    )
+    assert before_orgs == after_orgs, (
+        "organization rows were wiped-and-reinserted (created_at changed)"
+    )
+    assert before_projects == after_projects, (
+        "project rows were wiped-and-reinserted (created_at changed)"
+    )
