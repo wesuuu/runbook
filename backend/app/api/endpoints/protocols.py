@@ -387,6 +387,17 @@ async def delete_or_archive_protocol(
         options=[selectinload(Protocol.roles)],
     )
 
+    # Sample/tour protocols always hard-delete, bypassing status guards.
+    if protocol.is_tour_sample:
+        await log_audit(
+            db, user.id, "DELETE", "Protocol",
+            protocol.id,
+            {"name": protocol.name, "action": "hard_delete_sample"},
+        )
+        await db.delete(protocol)
+        await db.commit()
+        return {"action": "deleted", "protocol_id": str(protocol_id)}
+
     if protocol.status == "PENDING_APPROVAL":
         raise HTTPException(
             status_code=400,
