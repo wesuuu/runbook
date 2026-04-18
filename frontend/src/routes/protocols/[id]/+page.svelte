@@ -65,6 +65,10 @@
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
     import { HelpMenu, TourModal, runProtocolTour } from "$lib/onboarding";
     import { shouldShowDot, markDismissed } from "$lib/onboarding/tourStore.svelte";
+    import {
+        SELECT_SAMPLE_NODE_EVENT,
+        CLEAR_SAMPLE_NODE_EVENT,
+    } from "$lib/onboarding/tours/protocolTour";
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
 
@@ -147,6 +151,25 @@
         protocolTourModalOpen = false;
         await markDismissed('protocol');
     }
+
+    // Let the protocol tour drive node selection automatically.
+    $effect(() => {
+        if (embedded) return;
+        function selectNode(e: Event) {
+            const { nodeId } = (e as CustomEvent).detail ?? {};
+            if (!nodeId) return;
+            nodes = nodes.map((n) => ({ ...n, selected: n.id === nodeId }));
+        }
+        function clearNode() {
+            nodes = nodes.map((n) => (n.selected ? { ...n, selected: false } : n));
+        }
+        window.addEventListener(SELECT_SAMPLE_NODE_EVENT, selectNode);
+        window.addEventListener(CLEAR_SAMPLE_NODE_EVENT, clearNode);
+        return () => {
+            window.removeEventListener(SELECT_SAMPLE_NODE_EVENT, selectNode);
+            window.removeEventListener(CLEAR_SAMPLE_NODE_EVENT, clearNode);
+        };
+    });
 
     // Confirm dialog state
     let confirmOpen = $state(false);
