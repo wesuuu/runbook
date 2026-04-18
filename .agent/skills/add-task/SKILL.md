@@ -7,6 +7,17 @@ description: Use when the user wants to create a ClickUp task -- feature request
 
 Create a well-scoped task in the appropriate ClickUp list. Interview the caller until you understand the full picture before writing anything.
 
+## 🚨 CRITICAL: Task Name Format
+
+**Task names MUST follow: `[PREFIX-XXXX] Short title`**
+
+Where `PREFIX-XXXX` is the **NEXT sequential ID** determined from existing tasks in that list.
+
+❌ **Wrong:** "Chat disabled for non-Pro users without AI configured"
+✅ **Right:** "BUG-0050 Chat disabled for non-Pro users without AI configured"
+
+This is not optional. The sequential ID is how tasks are referenced and searched. Without it, the task is unfindable.
+
 ## When to Use
 
 - User describes something that should be tracked (bug, feature idea, debt, QA finding)
@@ -41,9 +52,13 @@ Ask questions **one at a time**. Adapt to task type:
 
 **Stop when** you can write testable acceptance criteria (features) or clear reproduction steps (bugs). 2-4 questions is usually enough.
 
-### 3. Research and deduplicate
+### 3. Research, deduplicate, and GET THE SEQUENTIAL ID
 
-Grep/read relevant files to confirm scope. `clickup_filter_tasks` on the target list to check for duplicates -- offer to update if similar exists. Determine next sequential ID from existing tasks.
+Grep/read relevant files to confirm scope. Use `clickup_filter_tasks` on the target list to check for duplicates -- offer to update if similar exists. 
+
+**CRITICAL:** Before drafting, look at all existing tasks in the target list. Find the highest number. Increment it. This becomes your `XXXX` for the task name.
+
+Example: If BUG-0049 is the highest, your next task is **BUG-0050**.
 
 ### 4. Draft, confirm, create
 
@@ -85,15 +100,34 @@ All tasks use this structure. Include only the fields relevant to the task type.
 
 ## Common Mistakes
 
-- **Skipping the interview**: Creating a vague task from a one-liner. 2-4 questions prevent wasted implementation time later.
-- **Not checking duplicates**: Similar task already exists, now there are two competing tickets.
-- **Over-interviewing**: 6+ questions when the scope is already clear. Stop when you can write acceptance criteria.
-- **Wrong list**: Logging a broken feature as tech debt instead of a bug. If something worked and now doesn't, it's a bug.
+| Mistake | Fix | Severity |
+|---------|-----|----------|
+| Creating task name WITHOUT `[PREFIX-XXXX]` | You MUST look up the next sequential ID first. Non-negotiable. | 🔴 CRITICAL |
+| Thinking "the user can add the number later" | No. The sequential ID belongs in the task name at creation. If you forget it, delete and recreate. | 🔴 CRITICAL |
+| Not determining the next sequential ID before drafting | Look at all existing tasks in the list. Find the highest number. Increment it. Do this BEFORE you draft anything. | 🔴 CRITICAL |
+| Skipping the interview | Creating a vague task from a one-liner. 2-4 questions prevent wasted implementation time later. | 🟡 HIGH |
+| Not checking duplicates | Similar task already exists, now there are two competing tickets. | 🟡 HIGH |
+| Over-interviewing | 6+ questions when the scope is already clear. Stop when you can write acceptance criteria. | 🟡 MEDIUM |
+| Wrong list | Logging a broken feature as tech debt instead of a bug. If something worked and now doesn't, it's a bug. | 🟡 MEDIUM |
 
 ## Rules
 
 - **Interview first.** Don't create a vague task.
 - **One question at a time.** Don't overwhelm.
+- **Look up sequential ID before drafting.** Find the highest number in the list, increment it.
 - **Draft before creating.** User confirms before it hits ClickUp.
+- **Task name MUST be `[PREFIX-XXXX] Short title`.** No exceptions. Ever.
 - **Don't duplicate.** Check existing tasks first.
 - **Default priority**: normal, unless user specifies otherwise.
+
+## 🚨 Red Flags
+
+These thoughts mean STOP — you're about to violate the sequential ID requirement:
+
+- ❌ "I'll just create the task and they can add the number later"
+- ❌ "The sequential ID isn't critical, the content is"
+- ❌ "I can look up the number after drafting"
+- ❌ "This is a simple task, I don't need to follow the full process"
+- ❌ "The task name doesn't have the number yet, but I'll mention it to the user"
+
+**All of these mean: STOP. Determine the sequential ID BEFORE you draft or create anything.**
