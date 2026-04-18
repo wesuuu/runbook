@@ -181,6 +181,15 @@ async def register(
         role="ADMIN",
     ))
 
+    # Seed "My First Project" for onboarding (F-0015)
+    from app.models.science import Project
+
+    db.add(Project(
+        name="My First Project",
+        description="Created for you — rename or delete as you like.",
+        organization_id=org.id,
+    ))
+
     # Create verification token
     token_str = generate_verification_token()
     db.add(VerificationToken(

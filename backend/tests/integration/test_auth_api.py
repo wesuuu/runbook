@@ -44,6 +44,42 @@ async def test_register_returns_verification_token(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_register_seeds_first_project(
+    client: AsyncClient, db_session: AsyncSession,
+):
+    from app.models.iam import Organization
+    from app.models.science import Project
+
+    with patch(
+        "app.api.endpoints.auth.get_email_provider"
+    ) as mock_provider:
+        mock_provider.return_value = AsyncMock()
+        mock_provider.return_value.send = AsyncMock()
+
+        resp = await client.post("/auth/register", json={
+            "email": "seeded@example.com",
+            "password": "securepass",
+            "full_name": "Seeded User",
+        })
+    assert resp.status_code == 200
+
+    # Find the newly-created org (by name pattern) and its project.
+    org_result = await db_session.execute(
+        select(Organization).where(
+            Organization.name == "Seeded User's Organization"
+        )
+    )
+    org = org_result.scalar_one()
+
+    proj_result = await db_session.execute(
+        select(Project).where(Project.organization_id == org.id)
+    )
+    projects = proj_result.scalars().all()
+    assert len(projects) == 1
+    assert projects[0].name == "My First Project"
+
+
+@pytest.mark.asyncio
 async def test_register_duplicate_email(
     client: AsyncClient, test_user: User,
 ):
