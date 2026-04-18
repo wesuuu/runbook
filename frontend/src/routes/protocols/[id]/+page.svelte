@@ -64,8 +64,7 @@
     import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
     import { HelpMenu, TourModal, runProtocolTour } from "$lib/onboarding";
-    import { shouldShowDot, markDismissed, isCompleted, isDismissed, isHydrated } from "$lib/onboarding/tourStore.svelte";
-    import { goto } from "$app/navigation";
+    import { shouldShowDot, markDismissed } from "$lib/onboarding/tourStore.svelte";
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
 
@@ -131,8 +130,9 @@
     let lastSavedState = $state<string>("");
 
     // -- Onboarding Tour --
+    // The pulsing dot on the HelpMenu (shown only on the sample protocol) is the trigger;
+    // no auto-start. Clicking the dot opens the modal, which starts the tour.
     let protocolTourModalOpen = $state(false);
-    let protocolTourAutoStarted = $state(false);
 
     function openProtocolTourModal() {
         protocolTourModalOpen = true;
@@ -147,53 +147,6 @@
         protocolTourModalOpen = false;
         await markDismissed('protocol');
     }
-
-    // Auto-start the protocol tour when arriving from "Load sample protocol" with ?tour=protocol.
-    // Guarded on is_tour_sample so the tour only runs on the actual sample protocol — it references
-    // the seeded ProcessStart node by id, which doesn't exist on user-created protocols.
-    $effect(() => {
-        if (embedded) return;
-        const tour = $page.url.searchParams.get('tour');
-        if (tour !== 'protocol') return;
-        // Wait until the protocol has loaded before deciding; prevents firing before we know whether
-        // this is the sample.
-        if (!protocol) return;
-        if (!protocol.is_tour_sample) {
-            // Non-sample protocol — strip the stray param and do nothing.
-            const url = new URL($page.url);
-            url.searchParams.delete('tour');
-            goto(url.pathname + url.search, {
-                replaceState: true,
-                keepFocus: true,
-                noScroll: true,
-            });
-            return;
-        }
-        if (
-            !protocolTourAutoStarted &&
-            isHydrated() &&
-            !isCompleted('protocol') &&
-            !isDismissed('protocol')
-        ) {
-            protocolTourAutoStarted = true;
-            setTimeout(() => runProtocolTour(() => {}), 500);
-            const url = new URL($page.url);
-            url.searchParams.delete('tour');
-            goto(url.pathname + url.search, {
-                replaceState: true,
-                keepFocus: true,
-                noScroll: true,
-            });
-        } else if (isHydrated() && (isCompleted('protocol') || isDismissed('protocol'))) {
-            const url = new URL($page.url);
-            url.searchParams.delete('tour');
-            goto(url.pathname + url.search, {
-                replaceState: true,
-                keepFocus: true,
-                noScroll: true,
-            });
-        }
-    });
 
     // Confirm dialog state
     let confirmOpen = $state(false);

@@ -23,7 +23,7 @@
                 '/onboarding/tour/protocol/start',
                 {},
             );
-            goto(`/protocols/${protocol_id}?tour=protocol`);
+            goto(`/protocols/${protocol_id}`);
         } catch (e: any) {
             console.error('Failed to load sample protocol:', e);
         }
