@@ -60,3 +60,30 @@ def mask_database_url(url: str) -> str:
     if parts.port is not None:
         masked_netloc = f"{masked_netloc}:{parts.port}"
     return urlunsplit((parts.scheme, masked_netloc, parts.path, parts.query, parts.fragment))
+
+
+ALLOWED_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1"})
+ALLOWED_DB_NAME: str = "batchrite"
+
+
+def assert_local_dev_db(url: str) -> None:
+    """Raise RuntimeError unless ``url`` points at the local dev DB.
+
+    Hard-coded allow-list (``localhost``/``127.0.0.1`` + ``batchrite``) so a
+    misconfigured ``DATABASE_URL`` can't wipe a non-local database. Intentional
+    non-local resets require editing this constant.
+    """
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    # path is like "/batchrite" — strip the leading slash
+    db_name = parts.path.lstrip("/")
+    if host not in ALLOWED_HOSTS:
+        raise RuntimeError(
+            f"Refusing to reset: DATABASE_URL host is {host!r}, "
+            f"not in allow-list {sorted(ALLOWED_HOSTS)}."
+        )
+    if db_name != ALLOWED_DB_NAME:
+        raise RuntimeError(
+            f"Refusing to reset: DATABASE_URL database is {db_name!r}, "
+            f"expected {ALLOWED_DB_NAME!r}."
+        )

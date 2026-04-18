@@ -76,3 +76,36 @@ def test_mask_database_url_passes_through_url_without_password():
     url = "postgresql+asyncpg://localhost:5432/batchrite"
     masked = mask_database_url(url)
     assert masked == url
+
+
+import pytest
+
+from app.db.reset import assert_local_dev_db
+
+
+def test_assert_local_dev_db_accepts_localhost():
+    assert_local_dev_db("postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite")
+
+
+def test_assert_local_dev_db_accepts_127_0_0_1():
+    assert_local_dev_db("postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/batchrite")
+
+
+def test_assert_local_dev_db_rejects_non_local_host():
+    url = "postgresql+asyncpg://postgres:postgres@prod.db.internal:5432/batchrite"
+    with pytest.raises(RuntimeError) as exc:
+        assert_local_dev_db(url)
+    assert "prod.db.internal" in str(exc.value)
+
+
+def test_assert_local_dev_db_rejects_wrong_db_name():
+    url = "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite_prod"
+    with pytest.raises(RuntimeError) as exc:
+        assert_local_dev_db(url)
+    assert "batchrite_prod" in str(exc.value)
+
+
+def test_assert_local_dev_db_rejects_empty_db_name():
+    url = "postgresql+asyncpg://postgres:postgres@localhost:5432/"
+    with pytest.raises(RuntimeError):
+        assert_local_dev_db(url)
