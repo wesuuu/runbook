@@ -8,6 +8,7 @@
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';
+    import Logo from '$lib/components/Logo.svelte';
 
     let email = $state('');
     let password = $state('');
@@ -37,10 +38,8 @@
 
     <div class="w-full max-w-sm relative z-10">
         <div class="flex flex-col items-center mb-10">
-            <div
-                class="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20 mb-4"
-            >
-                <span class="font-mono text-xl font-medium text-primary-foreground leading-none">B</span>
+            <div class="shadow-lg shadow-primary/20 mb-4 rounded-xl">
+                <Logo size="lg" />
             </div>
             <h1 class="text-2xl font-bold text-foreground tracking-tight">Batchrite</h1>
             <p class="text-sm text-muted-foreground mt-1.5">Laboratory Execution System</p>
