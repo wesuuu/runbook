@@ -186,7 +186,14 @@ def confirm_reset() -> bool:
     print()
     print("Preserved/re-seeded: " + ", ".join(PRESERVED_TABLES) + ".")
     print()
-    answer = input("Proceed? [y/N]: ").strip().lower()
+    try:
+        answer = input("Proceed? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        # Closed stdin (EOF / ^D) or operator hit ^C at the prompt — treat
+        # as an abort, not a crash. Extra newline so the next shell prompt
+        # doesn't collide with the partial "Proceed? [y/N]: ".
+        print()
+        return False
     return answer == "y"
 
 

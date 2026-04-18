@@ -119,3 +119,45 @@ def test_confirm_reset_aborts_when_stdin_not_tty(capsys):
     assert result is False
     captured = capsys.readouterr()
     assert "not a TTY" in captured.err or "not a TTY" in captured.out
+
+
+def test_confirm_reset_accepts_lowercase_y():
+    with patch("sys.stdin") as fake_stdin, \
+            patch("builtins.input", return_value="y"):
+        fake_stdin.isatty.return_value = True
+        assert confirm_reset() is True
+
+
+def test_confirm_reset_accepts_uppercase_y():
+    # ``Y`` is lowercased by ``.lower()`` and must compare equal to ``"y"``.
+    with patch("sys.stdin") as fake_stdin, \
+            patch("builtins.input", return_value="Y"):
+        fake_stdin.isatty.return_value = True
+        assert confirm_reset() is True
+
+
+@pytest.mark.parametrize("answer", ["yes", "n", "N", "", " ", "proceed", "YES"])
+def test_confirm_reset_rejects_non_y_answers(answer):
+    with patch("sys.stdin") as fake_stdin, \
+            patch("builtins.input", return_value=answer):
+        fake_stdin.isatty.return_value = True
+        assert confirm_reset() is False, (
+            f"confirm_reset() should reject {answer!r} — only exact ``y``/``Y`` "
+            "counts as confirmation"
+        )
+
+
+def test_confirm_reset_handles_eof_as_abort():
+    # Piping /dev/null or pressing ^D closes stdin — input() raises EOFError.
+    with patch("sys.stdin") as fake_stdin, \
+            patch("builtins.input", side_effect=EOFError):
+        fake_stdin.isatty.return_value = True
+        assert confirm_reset() is False
+
+
+def test_confirm_reset_handles_keyboard_interrupt_as_abort():
+    # Operator hits ^C at the prompt — treat as an explicit "no".
+    with patch("sys.stdin") as fake_stdin, \
+            patch("builtins.input", side_effect=KeyboardInterrupt):
+        fake_stdin.isatty.return_value = True
+        assert confirm_reset() is False
