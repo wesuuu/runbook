@@ -953,7 +953,6 @@
 <div class="flex {embedded ? 'h-full' : 'h-[calc(100vh-57px)]'} font-sans">
     <!-- ============= SIDEBAR ============= -->
     {#if !embedded}
-    <div class="contents" data-tour="protocol-sidebar">
     <ProtocolSidebar
         {protocol}
         {roles}
@@ -975,7 +974,6 @@
         onDeleteOrArchive={deleteOrArchiveProtocol}
         onUnarchive={unarchiveProtocol}
     />
-    </div>
     {/if}
 
     <!-- ============= CANVAS ============= -->
@@ -1085,7 +1083,6 @@
 
     <!-- ============= INSPECTOR ============= -->
     {#if selectedNode}
-        <div class="contents" data-tour="protocol-inspector">
         {#if selectedNode.type === "processStart"}
             <ProcessStartInspector
                 node={selectedNode}
@@ -1104,7 +1101,6 @@
                 onClose={() => (selectedNodeId = null)}
             />
         {/if}
-        </div>
     {/if}
 
     <!-- ============= CREATE MODAL ============= -->

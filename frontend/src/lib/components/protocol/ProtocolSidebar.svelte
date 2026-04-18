@@ -183,7 +183,7 @@
     });
 </script>
 
-<aside class="sidebar">
+<aside class="sidebar" data-tour="protocol-sidebar">
     <!-- Header -->
     <div class="sidebar-header">
         {#if editingName}

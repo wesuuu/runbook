@@ -248,7 +248,7 @@
 </script>
 
 {#if node}
-    <aside class="inspector">
+    <aside class="inspector" data-tour="protocol-inspector">
         <!-- Header -->
         <div class="inspector-header">
             <div class="header-top">
