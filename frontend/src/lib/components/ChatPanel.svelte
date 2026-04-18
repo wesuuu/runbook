@@ -102,7 +102,7 @@
 <!-- ─── COLLAPSED: FAB Button ─── -->
 {#if panelState === "collapsed" && showFab}
     <div
-        transition:fly={{ duration: 200, y: 100 }}
+        transition:fly={{ duration: 300, y: 100 }}
         style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:40;"
     >
         <Button
