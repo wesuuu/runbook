@@ -25,7 +25,7 @@
     import CreateRunModal from "$lib/components/project/CreateRunModal.svelte";
     import BatchRecordImportModal from "$lib/components/BatchRecordImportModal.svelte";
     import { HelpMenu, TourModal, runProjectTour } from "$lib/onboarding";
-    import { shouldShowDot, markDismissed } from "$lib/onboarding/tourStore.svelte";
+    import { shouldShowDot, markDismissed, isCompleted, isDismissed, isHydrated } from "$lib/onboarding/tourStore.svelte";
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
 
@@ -91,9 +91,32 @@
 
     $effect(() => {
         const tour = $page.url.searchParams.get('tour');
-        if (tour === 'project' && !projectTourAutoStarted) {
+        if (
+            tour === 'project' &&
+            !projectTourAutoStarted &&
+            isHydrated() &&
+            !isCompleted('project') &&
+            !isDismissed('project')
+        ) {
             projectTourAutoStarted = true;
             setTimeout(() => runProjectTour(() => {}), 300);
+            // Strip the ?tour param so refreshing doesn't re-trigger the tour
+            const url = new URL($page.url);
+            url.searchParams.delete('tour');
+            goto(url.pathname + url.search, {
+                replaceState: true,
+                keepFocus: true,
+                noScroll: true,
+            });
+        } else if (tour === 'project' && isHydrated() && (isCompleted('project') || isDismissed('project'))) {
+            // Already toured — clean up stale URL param without starting again
+            const url = new URL($page.url);
+            url.searchParams.delete('tour');
+            goto(url.pathname + url.search, {
+                replaceState: true,
+                keepFocus: true,
+                noScroll: true,
+            });
         }
     });
 
