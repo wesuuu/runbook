@@ -21,13 +21,28 @@ SAMPLE_RUN_NAME = "Sample Run"
 
 
 def get_sample_protocol_graph() -> dict[str, Any]:
-    """Return the pre-populated graph for the sample protocol."""
+    """Return the pre-populated graph for the sample protocol.
+
+    Vertical layout with a ProcessStart node at the root. Edges connect
+    top-to-bottom (handleOrientation="vertical"), matching a typical
+    batch-record flow from process kickoff through downstream steps.
+    """
     return {
         "nodes": [
             {
+                "id": "sample-start",
+                "type": "processStart",
+                "position": {"x": 400, "y": 40},
+                "width": 220,
+                "data": {
+                    "label": "Start of Protocol",
+                    "description": "Marks the beginning of the process. Every protocol has one.",
+                },
+            },
+            {
                 "id": "sample-buffer",
                 "type": "unitOp",
-                "position": {"x": 100, "y": 150},
+                "position": {"x": 400, "y": 200},
                 "data": {
                     "label": "Buffer Prep",
                     "category": "Media Prep",
@@ -45,7 +60,7 @@ def get_sample_protocol_graph() -> dict[str, Any]:
             {
                 "id": "sample-media",
                 "type": "unitOp",
-                "position": {"x": 400, "y": 150},
+                "position": {"x": 400, "y": 400},
                 "data": {
                     "label": "Media Prep",
                     "category": "Media Prep",
@@ -63,7 +78,7 @@ def get_sample_protocol_graph() -> dict[str, Any]:
             {
                 "id": "sample-seed",
                 "type": "unitOp",
-                "position": {"x": 700, "y": 150},
+                "position": {"x": 400, "y": 600},
                 "data": {
                     "label": "Seeding",
                     "category": "Cell Culture",
@@ -79,11 +94,12 @@ def get_sample_protocol_graph() -> dict[str, Any]:
             },
         ],
         "edges": [
+            {"id": "e0", "source": "sample-start", "target": "sample-buffer"},
             {"id": "e1", "source": "sample-buffer", "target": "sample-media"},
             {"id": "e2", "source": "sample-media", "target": "sample-seed"},
         ],
-        "layout": "horizontal",
-        "handleOrientation": "horizontal",
+        "layout": "vertical",
+        "handleOrientation": "vertical",
         "timeEnabled": False,
         "startTime": "08:00",
         "pixelsPerHour": 200,
