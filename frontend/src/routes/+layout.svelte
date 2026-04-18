@@ -109,10 +109,7 @@
     <div class="min-h-screen flex items-center justify-center bg-background">
         <div class="flex flex-col items-center gap-4">
             <div class="relative">
-                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <span class="font-mono text-lg font-medium text-primary">R</span>
-                </div>
-                <div class="absolute inset-0 w-10 h-10 rounded-xl border-2 border-primary/20 animate-ping"></div>
+                <Logo size="md" />
             </div>
             <p class="text-sm text-muted-foreground tracking-wide">Loading...</p>
         </div>
