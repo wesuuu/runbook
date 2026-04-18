@@ -24,6 +24,8 @@
     import ProtocolImportModal from "$lib/components/ProtocolImportModal.svelte";
     import CreateRunModal from "$lib/components/project/CreateRunModal.svelte";
     import BatchRecordImportModal from "$lib/components/BatchRecordImportModal.svelte";
+    import { HelpMenu, TourModal, runProjectTour } from "$lib/onboarding";
+    import { shouldShowDot, markDismissed } from "$lib/onboarding/tourStore.svelte";
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
 
@@ -68,6 +70,32 @@
     // -- Form State for "New Project" mode --
     let form = $state({ name: "", description: "", organization_id: "" });
     let organizations = $state<any[]>([]);
+
+    // -- Onboarding Tour --
+    let projectTourModalOpen = $state(false);
+    let projectTourAutoStarted = $state(false);
+
+    function openProjectTourModal() {
+        projectTourModalOpen = true;
+    }
+
+    function startProjectTour() {
+        projectTourModalOpen = false;
+        runProjectTour(() => {});
+    }
+
+    async function dismissProjectTour() {
+        projectTourModalOpen = false;
+        await markDismissed('project');
+    }
+
+    $effect(() => {
+        const tour = $page.url.searchParams.get('tour');
+        if (tour === 'project' && !projectTourAutoStarted) {
+            projectTourAutoStarted = true;
+            setTimeout(() => runProjectTour(() => {}), 300);
+        }
+    });
 
     // -- Derived --
     const shortProjectId = $derived(
@@ -379,6 +407,7 @@
                         + New Protocol
                     </Button>
                 {/if}
+                <HelpMenu dotVisible={shouldShowDot('project')} onTakeTour={openProjectTourModal} />
             </div>
         </div>
 
@@ -388,6 +417,7 @@
                 <Button
                     variant="tab"
                     data-active={activeTab === tab}
+                    data-tour={`project-tab-${tab}`}
                     onclick={() => setTab(tab)}
                     class="px-5 py-3 -mb-px"
                 >
@@ -508,3 +538,14 @@
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>
+
+<!-- PROJECT TOUR MODAL -->
+<TourModal
+    bind:open={projectTourModalOpen}
+    title="Tour: how projects are laid out"
+    description="A quick 5-step walkthrough of the project tabs."
+    primaryLabel="Take tour"
+    secondaryLabel="Dismiss"
+    onPrimary={startProjectTour}
+    onSecondary={dismissProjectTour}
+/>
