@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
+    import { hydrateTourState } from "$lib/onboarding/tourStore.svelte";
     import { shortId, formatDate, protocolStatusClasses, protocolStatusLabel } from "./projectUtils";
     import ProjectDataTable from "./ProjectDataTable.svelte";
     import { Button } from "$lib/components/ui/button";
@@ -23,6 +24,9 @@
                 '/onboarding/tour/protocol/start',
                 {},
             );
+            // Backend resets the protocol segment in tour_state; refresh local store so the
+            // pulsing dot re-appears on arrival.
+            await hydrateTourState();
             goto(`/protocols/${protocol_id}`);
         } catch (e: any) {
             console.error('Failed to load sample protocol:', e);

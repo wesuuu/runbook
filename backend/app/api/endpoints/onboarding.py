@@ -77,6 +77,14 @@ async def tour_project_start(
     return TourProjectStartResponse(project_id=project.id)
 
 
+def _clear_segment_from_tour_state(user: User, segment: str) -> None:
+    """Remove segment from both completed and dismissed lists so its dot re-appears."""
+    state = dict(user.tour_state or {})
+    completed = [s for s in state.get("completed", []) if s != segment]
+    dismissed = [s for s in state.get("dismissed", []) if s != segment]
+    user.tour_state = {"completed": completed, "dismissed": dismissed}
+
+
 @router.post("/tour/protocol/start", response_model=TourProtocolStartResponse)
 async def tour_protocol_start(
     user: User = Depends(get_current_user),
@@ -84,6 +92,10 @@ async def tour_protocol_start(
 ):
     org = await _get_current_org(db, user)
     protocol = await find_or_create_sample_protocol(db, user, org)
+    # Clicking "Load sample protocol" is an explicit re-invitation: reset the
+    # protocol segment so the HelpMenu dot pulses again on arrival.
+    _clear_segment_from_tour_state(user, "protocol")
+    await db.commit()
     return TourProtocolStartResponse(
         project_id=protocol.project_id,
         protocol_id=protocol.id,
