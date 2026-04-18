@@ -19,6 +19,7 @@
     import { onDestroy } from 'svelte';
     import { fade } from 'svelte/transition';
     import { pageDuration } from '$lib/transitions';
+    import Logo from '$lib/components/Logo.svelte';
     import '../app.css';
 
     let mobileNavOpen = $state(false);
@@ -140,10 +141,8 @@
                         </svg>
                     </Button>
                     <a href="/" class="flex items-center gap-2.5 group">
-                        <div
-                            class="w-7 h-7 bg-primary rounded-md flex items-center justify-center shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all"
-                        >
-                            <span class="font-mono text-sm font-medium text-primary-foreground leading-none">B</span>
+                        <div class="shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all rounded-md">
+                            <Logo size="md" />
                         </div>
                         <span class="text-[15px] font-semibold text-foreground tracking-tight">Batchrite</span>
                     </a>
