@@ -4,6 +4,7 @@
     import { shortId, formatDate, protocolStatusClasses, protocolStatusLabel } from "./projectUtils";
     import ProjectDataTable from "./ProjectDataTable.svelte";
     import { Button } from "$lib/components/ui/button";
+    import { Badge } from "$lib/components/ui/badge";
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
 
     interface Props {
@@ -84,7 +85,12 @@
     {#snippet mobileCard(proto)}
         <Button variant="ghost" class="w-full h-auto min-h-11 py-3 px-0 flex-col items-stretch justify-start text-left" onclick={() => goto(`/protocols/${proto.id}`)}>
             <div class="flex items-center justify-between mb-1">
-                <span class="text-sm font-medium text-slate-800">{proto.name}</span>
+                <span class="text-sm font-medium text-slate-800">
+                    {proto.name}
+                    {#if proto.is_tour_sample}
+                        <Badge variant="secondary" class="ml-2 bg-blue-50 text-blue-700 ring-1 ring-blue-200">Sample</Badge>
+                    {/if}
+                </span>
                 <span class="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full {protocolStatusClasses(proto.status)}">
                     {protocolStatusLabel(proto.status)}
                 </span>
@@ -106,7 +112,12 @@
 
     {#snippet cells(proto)}
         <td class="hidden lg:table-cell py-3 px-4 pl-6 sm:pl-10 text-xs text-slate-400 font-mono whitespace-nowrap">{shortId(proto.id)}</td>
-        <td class="py-3 px-4 text-sm font-medium text-slate-800">{proto.name}</td>
+        <td class="py-3 px-4 text-sm font-medium text-slate-800">
+            {proto.name}
+            {#if proto.is_tour_sample}
+                <Badge variant="secondary" class="ml-2 bg-blue-50 text-blue-700 ring-1 ring-blue-200">Sample</Badge>
+            {/if}
+        </td>
         <td class="hidden md:table-cell py-3 px-4 text-sm font-medium text-slate-800 max-w-[300px] whitespace-nowrap overflow-hidden text-ellipsis">{proto.description || "--"}</td>
         <td class="hidden lg:table-cell py-3 px-4 text-xs text-slate-400 font-mono whitespace-nowrap">{proto.version_number ? `v${proto.version_number}` : "--"}</td>
         <td class="py-3 px-4 whitespace-nowrap">
