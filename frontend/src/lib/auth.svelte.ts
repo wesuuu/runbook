@@ -159,6 +159,60 @@ export async function login(email: string, password: string): Promise<void> {
     await hydrateTourStateSafely();
 }
 
+export async function oauthLogin(provider: 'google' | 'microsoft'): Promise<void> {
+    const { generateCodeVerifier, generateCodeChallenge, generateState } = await import('$lib/oauth');
+
+    const codeVerifier = generateCodeVerifier();
+    const state = generateState();
+
+    // Store in sessionStorage for callback
+    sessionStorage.setItem(`oauth_code_verifier_${provider}`, codeVerifier);
+    sessionStorage.setItem(`oauth_state_${provider}`, state);
+
+    // Get authorization URL from backend
+    const response = await fetch(`${API_BASE}/auth/oauth/${provider}/authorize`);
+    if (!response.ok) {
+        throw new Error(`Failed to get OAuth authorization URL`);
+    }
+
+    const { authorize_url } = await response.json() as { authorize_url: string };
+    window.location.href = authorize_url;
+}
+
+export async function handleOAuthCallback(provider: string, code: string, state: string): Promise<void> {
+    const codeVerifier = sessionStorage.getItem(`oauth_code_verifier_${provider}`);
+    const storedState = sessionStorage.getItem(`oauth_state_${provider}`);
+
+    if (!codeVerifier) {
+        throw new Error('No PKCE verifier found in session');
+    }
+
+    if (!storedState || storedState !== state) {
+        throw new Error('State token mismatch — potential CSRF attack');
+    }
+
+    // Exchange code for token
+    const response = await fetch(`${API_BASE}/auth/oauth/${provider}/callback?code=${code}&state=${state}&code_verifier=${codeVerifier}`);
+    if (!response.ok) {
+        const error = await response.json() as { detail: string };
+        throw new Error(error.detail || 'OAuth callback failed');
+    }
+
+    const { access_token } = await response.json() as { access_token: string };
+
+    // Store token and load user
+    token = access_token;
+    localStorage.setItem('auth_token', token);
+    user = await authFetch<User>('GET', '/auth/me');
+    await loadOrgs();
+    cacheAuthData();
+    await hydrateTourStateSafely();
+
+    // Clean up sessionStorage
+    sessionStorage.removeItem(`oauth_code_verifier_${provider}`);
+    sessionStorage.removeItem(`oauth_state_${provider}`);
+}
+
 export async function register(email: string, password: string, fullName: string): Promise<void> {
     const res = await authFetch<{ verification_token: string }>('POST', '/auth/register', {
         email,

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { login } from '$lib/auth.svelte';
+    import { login, oauthLogin } from '$lib/auth.svelte';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
@@ -14,6 +14,7 @@
     let password = $state('');
     let error = $state<string | null>(null);
     let loading = $state(false);
+    let oauthLoading = $state(false);
 
     async function handleSubmit(e: Event) {
         e.preventDefault();
@@ -27,6 +28,18 @@
             error = err instanceof Error ? err.message : 'Login failed';
         } finally {
             loading = false;
+        }
+    }
+
+    async function handleOAuthLogin(provider: 'google' | 'microsoft') {
+        error = null;
+        oauthLoading = true;
+
+        try {
+            await oauthLogin(provider);
+        } catch (err: unknown) {
+            error = err instanceof Error ? err.message : `${provider} login failed`;
+            oauthLoading = false;
         }
     }
 </script>
@@ -52,13 +65,45 @@
                     <CardDescription>Enter your credentials to continue.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <form onsubmit={handleSubmit} class="space-y-5">
-                        {#if error}
-                            <div in:fade={{ duration: blockDuration() }}>
-                                <ErrorAlert message={error} />
-                            </div>
-                        {/if}
+                    {#if error}
+                        <div in:fade={{ duration: blockDuration() }} class="mb-4">
+                            <ErrorAlert message={error} />
+                        </div>
+                    {/if}
 
+                    <div class="space-y-3 mb-6">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            class="w-full h-11 font-semibold tracking-wide transition-all"
+                            disabled={oauthLoading}
+                            onclick={() => handleOAuthLogin('google')}
+                            on:click={() => handleOAuthLogin('google')}
+                        >
+                            Sign In with Google
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            class="w-full h-11 font-semibold tracking-wide transition-all"
+                            disabled={oauthLoading}
+                            onclick={() => handleOAuthLogin('microsoft')}
+                            on:click={() => handleOAuthLogin('microsoft')}
+                        >
+                            Sign In with Microsoft
+                        </Button>
+                    </div>
+
+                    <div class="relative mb-6">
+                        <div class="absolute inset-0 flex items-center">
+                            <div class="w-full border-t border-border/50"></div>
+                        </div>
+                        <div class="relative flex justify-center text-xs">
+                            <span class="px-2 bg-background text-muted-foreground">or continue with email</span>
+                        </div>
+                    </div>
+
+                    <form onsubmit={handleSubmit} class="space-y-5">
                         <div class="space-y-2">
                             <Label for="email" class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</Label>
                             <Input
