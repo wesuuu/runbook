@@ -139,7 +139,7 @@ class User(Base, UUIDMixin, TimestampMixin):
     email_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     oauth_subject: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     oauth_email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     selected_org_id: Mapped[Optional[uuid.UUID]] = mapped_column(
