@@ -1,3 +1,4 @@
+import json
 import logging
 import tempfile
 from pathlib import Path
@@ -521,7 +522,8 @@ async def update_protocol(
     if "graph" in changes and save_as_draft:
         new_graph = changes["graph"]
         # Check if graph actually changed compared to current protocol
-        if new_graph != protocol.graph:
+        # Use JSON serialization for reliable comparison (handles type/ordering differences)
+        if json.dumps(new_graph, sort_keys=True) != json.dumps(protocol.graph, sort_keys=True):
             # Create/update draft version without modifying main protocol
             draft_version_number = protocol.version_number + 1
 
