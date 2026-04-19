@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404
+from app.core.deps import get_current_user, get_or_404, get_org_id_from_request
 from app.db.session import get_db
 from app.models.chat import ChatSession, ChatNotification
 from app.models.iam import Organization, OrganizationMember, OrgRole, SubscriptionTier, TIER_RANK, User
@@ -36,14 +36,21 @@ router = APIRouter()
 
 
 async def _get_user_org(
-    user: User, db: AsyncSession
+    user: User, db: AsyncSession, org_id: uuid.UUID | None = None,
 ) -> tuple[uuid.UUID, str]:
-    """Return (org_id, org_role) for the user."""
-    result = await db.execute(
-        select(OrganizationMember.organization_id, OrganizationMember.role)
-        .where(OrganizationMember.user_id == user.id)
-        .limit(1)
+    """Return (org_id, org_role) for the user's current org (from JWT).
+
+    If org_id is provided (typically from get_org_id_from_request), uses that
+    to find the specific membership. Falls back to first membership otherwise.
+    """
+    stmt = select(OrganizationMember.organization_id, OrganizationMember.role).where(
+        OrganizationMember.user_id == user.id
     )
+    if org_id is not None:
+        stmt = stmt.where(OrganizationMember.organization_id == org_id)
+    stmt = stmt.limit(1)
+
+    result = await db.execute(stmt)
     row = result.one_or_none()
     if row is None:
         raise HTTPException(
@@ -284,6 +291,7 @@ async def _get_org_admin_emails(org_id: uuid.UUID, db: AsyncSession) -> list[str
 @router.post("/notify-admin", response_model=NotifyAdminResponse)
 async def notify_admin(
     current_user: User = Depends(get_current_user),
+    current_org_id: uuid.UUID | None = Depends(get_org_id_from_request),
     db: AsyncSession = Depends(get_db),
 ):
     """Notify org admins that a non-Pro user needs AI configured.
@@ -294,8 +302,8 @@ async def notify_admin(
     """
     from datetime import datetime
 
-    # Get user's org
-    org_id, _ = await _get_user_org(current_user, db)
+    # Get user's current org (from JWT token)
+    org_id, _ = await _get_user_org(current_user, db, org_id=current_org_id)
 
     # Check if org is Pro (if so, they don't need to notify)
     result = await db.execute(
@@ -333,7 +341,7 @@ async def notify_admin(
     # Record notification
     notification = ChatNotification(
         user_id=current_user.id,
-        organization_id=org_id,
+        org_id=org_id,
     )
     db.add(notification)
     await db.commit()
