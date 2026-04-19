@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     auth_enabled: bool = True
 
+    # OAuth Configuration
+    oauth_google_client_id: str = ""
+    oauth_google_client_secret: str = ""
+    oauth_microsoft_client_id: str = ""
+    oauth_microsoft_client_secret: str = ""
+    oauth_microsoft_tenant: str = "common"
+    oauth_callback_url: str = "http://localhost:5173/auth/callback"
+
     # SMTP / Email
     smtp_host: str = "localhost"
     smtp_port: int = 1025
