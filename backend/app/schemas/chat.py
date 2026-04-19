@@ -89,3 +89,8 @@ class ChatConfigResponse(BaseModel):
     model_name: str
     context_window: int
     compaction_threshold: float
+
+
+class NotifyAdminResponse(BaseModel):
+    message: str
+    user_notified_at: datetime

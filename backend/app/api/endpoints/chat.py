@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.deps import get_current_user, get_or_404
 from app.db.session import get_db
-from app.models.chat import ChatSession
-from app.models.iam import OrganizationMember, OrgRole, User
+from app.models.chat import ChatSession, ChatNotification
+from app.models.iam import Organization, OrganizationMember, OrgRole, SubscriptionTier, TIER_RANK, User
 from app.schemas.chat import (
     ChatCompletionResponse,
     ChatConfigResponse,
@@ -24,9 +24,11 @@ from app.schemas.chat import (
     ChatSkillListResponse,
     ChatSkillResponse,
     ChatSourceReference,
+    NotifyAdminResponse,
 )
 from app.services import chat_service
 from app.services.ai_config import get_context_window, get_model_display_name
+from app.services.rate_limit import RateLimitService
 
 logger = logging.getLogger(__name__)
 
@@ -261,3 +263,92 @@ async def send_chat_message(
             status_code=500,
             detail="Failed to generate AI response",
         )
+
+
+# ─── Admin Notifications ───
+
+
+async def _get_org_admin_emails(org_id: uuid.UUID, db: AsyncSession) -> list[str]:
+    """Get all admin emails for an org."""
+    result = await db.execute(
+        select(User.email)
+        .join(OrganizationMember, OrganizationMember.user_id == User.id)
+        .where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.role == OrgRole.ADMIN.value,
+        )
+    )
+    return result.scalars().all()
+
+
+@router.post("/notify-admin", response_model=NotifyAdminResponse)
+async def notify_admin(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Notify org admins that a non-Pro user needs AI configured.
+
+    Rate limits:
+    - 1 per user per 24h
+    - 3 per org per 24h
+    """
+    from datetime import datetime
+
+    # Get user's org
+    org_id, _ = await _get_user_org(current_user, db)
+
+    # Check if org is Pro (if so, they don't need to notify)
+    result = await db.execute(
+        select(Organization.subscription_tier).where(Organization.id == org_id)
+    )
+    tier = result.scalar_one_or_none()
+    if tier and TIER_RANK.get(SubscriptionTier(tier), 0) >= TIER_RANK[SubscriptionTier.PRO]:
+        raise HTTPException(
+            status_code=403,
+            detail="Your organization has Pro subscription. AI is available by default.",
+        )
+
+    # Check per-user rate limit (1 per 24h)
+    user_rate_limit = RateLimitService(max_attempts=1, window_seconds=86400)
+    user_key = f"notify-admin:user:{current_user.id}"
+    if not await user_rate_limit.is_allowed(user_key, db):
+        raise HTTPException(
+            status_code=429,
+            detail="You've already notified admins recently. They'll get back to you soon.",
+        )
+
+    # Check per-org rate limit (3 per 24h)
+    org_rate_limit = RateLimitService(max_attempts=3, window_seconds=86400)
+    org_key = f"notify-admin:org:{org_id}"
+    if not await org_rate_limit.is_allowed(org_key, db):
+        raise HTTPException(
+            status_code=429,
+            detail="Your organization has reached its notification limit. Please try again later.",
+        )
+
+    # Record rate limit attempts (both per-user and per-org)
+    await user_rate_limit.record_attempt(user_key, db)
+    await org_rate_limit.record_attempt(org_key, db)
+
+    # Record notification
+    notification = ChatNotification(
+        user_id=current_user.id,
+        organization_id=org_id,
+    )
+    db.add(notification)
+    await db.commit()
+
+    # Log the notification (non-critical, don't fail if logging fails)
+    try:
+        logger.info(
+            "Chat AI notification sent from user %s in org %s",
+            current_user.id,
+            org_id,
+        )
+    except Exception as e:
+        logger.error("Failed to log chat notification: %s", e)
+
+    return NotifyAdminResponse(
+        message="Admin notified! They'll get back to you soon.",
+        user_notified_at=datetime.utcnow(),
+    )
