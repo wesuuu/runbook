@@ -7,6 +7,9 @@
     import { Button } from '$lib/components/ui/button';
     import { EmptyState } from '$lib/components/ui/empty-state';
     import { goto } from '$app/navigation';
+    import { toast } from 'svelte-sonner';
+    import { getCurrentOrg } from '$lib/auth.svelte';
+    import { api } from '$lib/api';
     import {
         getChatSessions, getActiveSession, getMessageInput, isSending,
         isLoading, isCreatingSession, isSidebarCollapsed, isSourcePanelOpen,
@@ -37,9 +40,15 @@
         activeSession !== null && activeSession.messages.length > 0
     );
 
+    const currentOrg = $derived(getCurrentOrg());
+    const isOrgPro = $derived(currentOrg?.subscription_tier === 'pro');
+
     let messagesEndEl = $state<HTMLDivElement>(undefined!);
     let inputEl = $state<HTMLTextAreaElement>(undefined!);
     let showImportModal = $state(false);
+    let notifyLoading = $state(false);
+    let notifyMessage = $state<string | null>(null);
+    let notifyError = $state<string | null>(null);
 
     onMount(async () => {
         await initChat();
@@ -73,6 +82,30 @@
         yesterday.setDate(yesterday.getDate() - 1);
         if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
         return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+
+    async function handleNotifyAdmin() {
+        notifyLoading = true;
+        notifyError = null;
+        try {
+            await api.post('/chat/notify-admin', {});
+            notifyMessage = 'Admin notified! They\'ll get back to you soon.';
+            toast.success('Notification sent to administrators');
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                const errorMsg = err.message;
+                if (errorMsg.includes('429')) {
+                    notifyError = 'You\'ve already notified admins recently. Please try again later.';
+                } else {
+                    notifyError = errorMsg;
+                }
+            } else {
+                notifyError = 'Failed to notify administrators';
+            }
+            toast.error(notifyError);
+        } finally {
+            notifyLoading = false;
+        }
     }
 </script>
 
@@ -139,8 +172,42 @@
 
     <!-- Main chat area + sources panel -->
     <div class="flex-1 flex min-w-0">
-      <div class="flex-1 flex flex-col min-w-0">
-        {#if !activeSession}
+      {#if !isOrgPro}
+        <!-- Non-Pro Empty State -->
+        <div class="flex-1 flex items-center justify-center">
+          <div class="text-center max-w-md px-6">
+            <div class="w-14 h-14 rounded-2xl bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
+              <svg class="w-7 h-7 text-amber-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+              </svg>
+            </div>
+            <h2 class="text-lg font-semibold text-foreground mb-2">AI Features Unavailable</h2>
+            <p class="text-sm text-muted-foreground mb-6">
+              Your organization doesn't have AI Chat enabled. Contact your administrator to set up Batchrite AI.
+            </p>
+            <Button
+              onclick={handleNotifyAdmin}
+              disabled={notifyLoading || notifyMessage !== null}
+              variant="default"
+            >
+              {notifyLoading ? 'Sending...' : 'Contact Administrator'}
+            </Button>
+            {#if notifyMessage}
+              <p in:fade={{ duration: blockDuration() }} class="text-sm text-green-600 dark:text-green-400 mt-3">
+                ✓ {notifyMessage}
+              </p>
+            {/if}
+            {#if notifyError}
+              <p in:fade={{ duration: blockDuration() }} class="text-sm text-red-600 dark:text-red-400 mt-3">
+                {notifyError}
+              </p>
+            {/if}
+          </div>
+        </div>
+      {:else}
+        <!-- Chat UI (Pro organizations) -->
+        <div class="flex-1 flex flex-col min-w-0">
+          {#if !activeSession}
             <!-- Empty state -->
             <div in:fade={{ duration: blockDuration() }} class="flex-1 flex items-center justify-center">
                 <div class="text-center max-w-md px-6">
@@ -395,6 +462,7 @@
                 {/each}
             </div>
         </div>
+      {/if}
       {/if}
     </div>
 </div>
