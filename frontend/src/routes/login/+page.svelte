@@ -1,6 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { login, oauthLogin } from '$lib/auth.svelte';
+    import { login } from '$lib/auth.svelte';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
@@ -14,7 +14,6 @@
     let password = $state('');
     let error = $state<string | null>(null);
     let loading = $state(false);
-    let oauthLoading = $state(false);
 
     async function handleSubmit(e: Event) {
         e.preventDefault();
@@ -28,18 +27,6 @@
             error = err instanceof Error ? err.message : 'Login failed';
         } finally {
             loading = false;
-        }
-    }
-
-    async function handleOAuthLogin(provider: 'google' | 'microsoft') {
-        error = null;
-        oauthLoading = true;
-
-        try {
-            await oauthLogin(provider);
-        } catch (err: unknown) {
-            error = err instanceof Error ? err.message : `${provider} login failed`;
-            oauthLoading = false;
         }
     }
 </script>
@@ -71,6 +58,7 @@
                         </div>
                     {/if}
 
+                    <!-- OAuth buttons — uncomment when credentials configured
                     <div class="space-y-3 mb-6">
                         <Button
                             type="button"
@@ -102,6 +90,7 @@
                             <span class="px-2 bg-background text-muted-foreground">or continue with email</span>
                         </div>
                     </div>
+                    -->
 
                     <form onsubmit={handleSubmit} class="space-y-5">
                         <div class="space-y-2">
