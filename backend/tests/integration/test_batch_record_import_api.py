@@ -29,7 +29,7 @@ from app.models.jobs import BackgroundJob, JobStatus
 from app.models.science import Project, Protocol, Run
 from app.services.background_jobs import BackgroundJobService
 from fastapi import HTTPException
-from app.services.batch_record_extractor import (
+from app.services.batch.batch_record_extractor import (
     BatchRecordExtraction,
     StepMapping,
     ParamMapping,

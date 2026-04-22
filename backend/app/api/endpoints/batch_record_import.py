@@ -28,7 +28,7 @@ from app.schemas.batch_record_import import (
 from app.schemas.jobs import ProcessingProgress
 from app.services.audit import log_audit
 from app.services.background_jobs import BackgroundJobService
-from app.services.batch_record_extractor import (
+from app.services.batch.batch_record_extractor import (
     map_values_to_execution_data,
     run_batch_record_extraction,
 )

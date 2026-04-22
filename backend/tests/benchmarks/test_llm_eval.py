@@ -15,7 +15,7 @@ import pytest
 import pytest_asyncio
 
 from app.models.iam import Organization, SubscriptionTier
-from app.services.batch_record_extractor import (
+from app.services.batch.batch_record_extractor import (
     extract_batch_record_data,
     extract_batch_record_pages,
     map_steps_to_protocol,

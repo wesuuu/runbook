@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.batch_record_extractor import (
+from app.services.batch.batch_record_extractor import (
     BatchRecordExtraction,
     ExtractedDeviation,
     ExtractedParameterValue,
@@ -326,7 +326,7 @@ class TestExtractBatchRecordData:
         )
 
         with patch(
-            "app.services.batch_record_extractor._extract_single_call",
+            "app.services.batch.batch_record_extractor._extract_single_call",
             new_callable=lambda: AsyncMock(return_value=mock_extraction),
         ):
             result = await extract_batch_record_data(
@@ -356,7 +356,7 @@ class TestExtractBatchRecordData:
             return mock_extraction
 
         with patch(
-            "app.services.batch_record_extractor._extract_single_call",
+            "app.services.batch.batch_record_extractor._extract_single_call",
             side_effect=mock_single_call,
         ):
             result = await extract_batch_record_data(
@@ -368,7 +368,7 @@ class TestExtractBatchRecordData:
 
     async def test_non_context_error_propagates(self):
         with patch(
-            "app.services.batch_record_extractor._extract_single_call",
+            "app.services.batch.batch_record_extractor._extract_single_call",
             new_callable=lambda: AsyncMock(
                 side_effect=ValueError("some other error")
             ),
@@ -410,7 +410,7 @@ class TestExtractChunked:
         text = "\n\n".join(f"text page {i}" for i in range(1, 11))
 
         with patch(
-            "app.services.batch_record_extractor._extract_single_call",
+            "app.services.batch.batch_record_extractor._extract_single_call",
             side_effect=mock_single,
         ):
             result = await _extract_chunked(text, pages, None, None)
@@ -426,7 +426,7 @@ class TestExtractChunked:
         mock_result = BatchRecordExtraction(overall_confidence=0.0)
 
         with patch(
-            "app.services.batch_record_extractor._extract_single_call",
+            "app.services.batch.batch_record_extractor._extract_single_call",
             new_callable=lambda: AsyncMock(return_value=mock_result),
         ):
             result = await _extract_chunked("", [], None, None)
