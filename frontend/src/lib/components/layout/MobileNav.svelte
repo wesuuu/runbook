@@ -1,7 +1,7 @@
 <script lang="ts">
     import { slide, fade } from 'svelte/transition';
     import { Button } from '$lib/components/ui/button';
-    import Logo from '$lib/components/Logo.svelte';
+    import Logo from '$lib/components/layout/Logo.svelte';
 
     let { open = $bindable(false), currentPath = '' } = $props();
 

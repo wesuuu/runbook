@@ -5,7 +5,7 @@
     import { getCurrentOrg, getUser } from '$lib/auth.svelte';
     import { getOrphanedActions, type QueuedAction } from '$lib/offline-db';
     import { syncNow } from '$lib/sync-manager';
-    import CompletionChart from '$lib/components/CompletionChart.svelte';
+    import CompletionChart from '$lib/components/analytics/CompletionChart.svelte';
     import { Button } from '$lib/components/ui/button';
     import { EmptyState } from '$lib/components/ui/empty-state';
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';

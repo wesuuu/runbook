@@ -1,7 +1,7 @@
 <script lang="ts">
     import { api } from '$lib/api';
-    import AuditTimeline from '$lib/components/AuditTimeline.svelte';
-    import type { AuditEntry, DetailLine } from '$lib/components/AuditTimeline.svelte';
+    import AuditTimeline from '$lib/components/analytics/AuditTimeline.svelte';
+    import type { AuditEntry, DetailLine } from '$lib/components/analytics/AuditTimeline.svelte';
 
     let { runId }: { runId: string } = $props();
 

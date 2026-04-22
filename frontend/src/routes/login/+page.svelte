@@ -8,7 +8,7 @@
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';
-    import Logo from '$lib/components/Logo.svelte';
+    import Logo from '$lib/components/layout/Logo.svelte';
 
     let email = $state('');
     let password = $state('');

@@ -3,8 +3,8 @@
     import { api } from "$lib/api";
     import { getUser } from "$lib/auth.svelte";
     import { goto } from '$app/navigation';
-    import RoleWizard from "$lib/components/RoleWizard.svelte";
-    import GoOfflineDialog from "$lib/components/GoOfflineDialog.svelte";
+    import RoleWizard from "$lib/components/run/RoleWizard.svelte";
+    import GoOfflineDialog from "$lib/components/shared/GoOfflineDialog.svelte";
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import * as Table from '$lib/components/ui/table';

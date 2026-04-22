@@ -20,10 +20,10 @@
     } from '$lib/field-mode.svelte';
     import { syncNow, isSyncing } from '$lib/sync-manager';
     import { getUnsyncedCount } from '$lib/offline-db';
-    import FieldModeHeader from '$lib/components/FieldModeHeader.svelte';
-    import FieldModeRoleWizard from '$lib/components/FieldModeRoleWizard.svelte';
-    import FieldModeLockScreen from '$lib/components/FieldModeLockScreen.svelte';
-    import ExpiryWarningBanner from '$lib/components/ExpiryWarningBanner.svelte';
+    import FieldModeHeader from '$lib/components/field-mode/FieldModeHeader.svelte';
+    import FieldModeRoleWizard from '$lib/components/field-mode/FieldModeRoleWizard.svelte';
+    import FieldModeLockScreen from '$lib/components/field-mode/FieldModeLockScreen.svelte';
+    import ExpiryWarningBanner from '$lib/components/shared/ExpiryWarningBanner.svelte';
     import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';

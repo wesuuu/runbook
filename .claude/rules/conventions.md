@@ -27,6 +27,26 @@ Never hardcode provider/model strings.
 - Prefer extending existing services over creating new ones.
 - **Frontend components**: Reuse shared UI from `lib/components/ui/` (buttons, dialogs, cards, dropdowns, tables). Never build a custom modal, table, or button from scratch -- compose from the existing shadcn-svelte primitives. If a pattern appears on 2+ pages (e.g., a confirmation dialog, a data table with sorting), extract it into a shared component in `lib/components/`.
 
+### Component placement
+
+New Svelte components under `frontend/src/lib/components/` MUST go in a domain subdirectory, not at the root. Choose the most specific existing bucket before creating a new one.
+
+- `ui/` — shadcn-svelte primitives only (buttons, inputs, dialogs, etc.)
+- `edra/` — rich-text editor (edra integration)
+- `protocol/` — protocol-editor canvas pieces, nodes, inspector, sidebar
+- `project/` — project page tabs and project-scoped dialogs
+- `run/` — run execution surfaces (edit mode, attachments, history, role wizard)
+- `settings/` — settings page tabs and their modals
+- `field-mode/` — tablet/field-mode flows
+- `modals/` — heavy dialogs wrapping a form, import, or picker flow (contrast with lightweight confirmation dialogs, which go in `shared/`)
+- `media/` — camera, image, PDF, barcode scanning
+- `analytics/` — charts, audit trails, version history
+- `ai/` — chat and agent UX
+- `layout/` — global app chrome (nav, user menu, logo, banners that live in `+layout.svelte`)
+- `shared/` — small cross-cutting presentational pieces (badges, small banners, markdown rendering, generic tables)
+
+If a component is used by only one domain's routes, prefer that domain's bucket over `modals/` or `shared/`.
+
 ## Dependency Injection
 
 - DB: `Depends(get_db)` | User: `Depends(get_current_user)`

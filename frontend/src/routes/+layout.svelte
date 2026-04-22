@@ -7,19 +7,19 @@
     import { initConnectivity, destroyConnectivity } from '$lib/pwa.svelte';
     import { initFieldMode } from '$lib/field-mode.svelte';
     import { initSyncManager, destroySyncManager } from '$lib/sync-manager';
-    import UserMenu from '$lib/components/UserMenu.svelte';
-    import ProjectsDropdown from '$lib/components/ProjectsDropdown.svelte';
-    import NotificationBell from '$lib/components/NotificationBell.svelte';
-    import ConnectivityBanner from '$lib/components/ConnectivityBanner.svelte';
-    import MobileNav from '$lib/components/MobileNav.svelte';
+    import UserMenu from '$lib/components/layout/UserMenu.svelte';
+    import ProjectsDropdown from '$lib/components/layout/ProjectsDropdown.svelte';
+    import NotificationBell from '$lib/components/layout/NotificationBell.svelte';
+    import ConnectivityBanner from '$lib/components/shared/ConnectivityBanner.svelte';
+    import MobileNav from '$lib/components/layout/MobileNav.svelte';
     import { Toaster } from '$lib/components/ui/sonner';
     import { Button } from '$lib/components/ui/button';
-    import ChatPanel from '$lib/components/ChatPanel.svelte';
+    import ChatPanel from '$lib/components/ai/ChatPanel.svelte';
     import { initChat } from '$lib/chat-store.svelte';
     import { onDestroy } from 'svelte';
     import { fade } from 'svelte/transition';
     import { pageDuration } from '$lib/transitions';
-    import Logo from '$lib/components/Logo.svelte';
+    import Logo from '$lib/components/layout/Logo.svelte';
     import '../app.css';
 
     let mobileNavOpen = $state(false);

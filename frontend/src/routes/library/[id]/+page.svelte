@@ -31,7 +31,7 @@
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
-    import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+    import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
     import { z } from 'zod';
 
     // --- Schemas ---

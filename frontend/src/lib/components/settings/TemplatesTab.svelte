@@ -11,7 +11,7 @@
     } from '$lib/schemas/templates';
     import { Button } from '$lib/components/ui/button';
     import TemplateUploadModal from './TemplateUploadModal.svelte';
-    import TemplateConvertModal from '$lib/components/TemplateConvertModal.svelte';
+    import TemplateConvertModal from '$lib/components/modals/TemplateConvertModal.svelte';
 
     let { isAdmin = false }: { isAdmin: boolean } = $props();
 
