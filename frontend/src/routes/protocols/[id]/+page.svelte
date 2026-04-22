@@ -59,7 +59,7 @@
     import Inspector from "$lib/components/protocol/Inspector.svelte";
     import ProcessStartInspector from "$lib/components/protocol/ProcessStartInspector.svelte";
     import TimeAxis from "$lib/components/protocol/TimeAxis.svelte";
-    import CreateUnitOpModal from "$lib/components/CreateUnitOpModal.svelte";
+    import CreateUnitOpModal from "$lib/components/modals/CreateUnitOpModal.svelte";
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
     import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";

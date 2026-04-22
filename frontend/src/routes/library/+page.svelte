@@ -13,7 +13,7 @@
         CardDescription,
     } from '$lib/components/ui/card';
     import { EmptyState } from '$lib/components/ui/empty-state';
-    import DocumentUploadDialog from '$lib/components/DocumentUploadDialog.svelte';
+    import DocumentUploadDialog from '$lib/components/modals/DocumentUploadDialog.svelte';
     import {
         getFileTypeLabel,
         getStatusColor,

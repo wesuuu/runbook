@@ -6,7 +6,7 @@
     import { Button } from '$lib/components/ui/button';
     import { Badge } from '$lib/components/ui/badge';
     import { DocumentTemplateListSchema, type DocumentTemplate } from '$lib/schemas/templates';
-    import TemplateConvertModal from '$lib/components/TemplateConvertModal.svelte';
+    import TemplateConvertModal from '$lib/components/modals/TemplateConvertModal.svelte';
 
     interface Props {
         projectId: string;

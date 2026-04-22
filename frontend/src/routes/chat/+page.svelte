@@ -3,7 +3,7 @@
     import { marked } from 'marked';
     import DOMPurify from 'dompurify';
     import ChatSkillButtons from '$lib/components/ChatSkillButtons.svelte';
-    import ProtocolImportModal from '$lib/components/ProtocolImportModal.svelte';
+    import ProtocolImportModal from '$lib/components/modals/ProtocolImportModal.svelte';
     import { Button } from '$lib/components/ui/button';
     import { EmptyState } from '$lib/components/ui/empty-state';
     import { goto } from '$app/navigation';
