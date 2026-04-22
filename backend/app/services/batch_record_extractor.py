@@ -271,7 +271,7 @@ async def extract_batch_record_pages(
         return text, [(1, image_bytes)]
 
     # Fallback: text-only extraction (DOCX, etc.)
-    from app.services.protocol_importer import extract_text
+    from app.services.protocols.protocol_importer import extract_text
 
     text = await extract_text(file_path, mime_type, db, org_id)
     return text, []

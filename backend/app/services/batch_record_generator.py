@@ -1,7 +1,7 @@
 """DEPRECATED — Batch record PDF generator (fpdf2-based).
 
 This module is superseded by the docxtpl template engine
-(app.services.template_engine). Kept for reference during the
+(app.services.protocols.template_engine). Kept for reference during the
 transition to .docx-based templates. Remove once Phase 0 of
 F-0065 (Custom Document Templates) is verified in production.
 """

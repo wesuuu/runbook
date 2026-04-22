@@ -59,7 +59,7 @@ from app.services.file_storage import FileStorageService
 from app.services.documents.document_processor import build_book, process_document
 from app.services.permissions import check_permission
 from app.services.task_runner import get_task_runner
-from app.services.url_importer import import_from_url
+from app.services.protocols.url_importer import import_from_url
 
 router = APIRouter()
 

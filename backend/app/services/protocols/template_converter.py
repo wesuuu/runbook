@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.services.file_storage import FileStorageService
-from app.services.template_engine import KNOWN_VARIABLES, get_mock_context
+from app.services.protocols.template_engine import KNOWN_VARIABLES, get_mock_context
 
 logger = logging.getLogger(__name__)
 
@@ -2273,7 +2273,7 @@ async def save_to_library(
 ) -> dict[str, Any]:
     """Save the converted template to the DocumentTemplate library."""
     from app.models.templates import DocumentTemplate
-    from app.services.template_engine import parse_template
+    from app.services.protocols.template_engine import parse_template
 
     template_bytes = state.read("template.docx")
 

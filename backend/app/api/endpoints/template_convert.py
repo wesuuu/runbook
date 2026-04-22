@@ -39,7 +39,7 @@ from app.schemas.template_convert import (
     RefineRequest,
     SaveRequest,
 )
-from app.services.template_converter import (
+from app.services.protocols.template_converter import (
     ConversionState,
     _active_streams,
     convert_document,
@@ -371,7 +371,7 @@ async def get_template_pdf(
             status_code=404, detail="Template not found"
         )
 
-    from app.services.template_converter import _to_pdf
+    from app.services.protocols.template_converter import _to_pdf
 
     docx_bytes = state.read("template.docx")
     pdf_bytes = await _to_pdf(docx_bytes, "template.docx")

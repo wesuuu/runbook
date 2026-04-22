@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.protocol_importer import (
+from app.services.protocols.protocol_importer import (
     ImportedParam,
     ImportedStep,
     ParsedProtocol,

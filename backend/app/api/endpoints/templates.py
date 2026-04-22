@@ -32,7 +32,7 @@ from app.models.templates import DocumentTemplate
 from app.schemas.templates import DocumentTemplateResponse, DocumentTemplateUpdate
 from app.services.file_storage import FileStorageService
 from app.services.permissions import check_permission
-from app.services.template_engine import (
+from app.services.protocols.template_engine import (
     get_mock_context,
     parse_template,
     render_to_pdf,

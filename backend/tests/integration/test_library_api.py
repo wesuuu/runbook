@@ -518,7 +518,7 @@ async def test_import_from_url_success(
     mock_response.raise_for_status = lambda: None
 
     with patch(
-        "app.services.url_importer.httpx.AsyncClient"
+        "app.services.protocols.url_importer.httpx.AsyncClient"
     ) as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -527,11 +527,11 @@ async def test_import_from_url_success(
         mock_client_cls.return_value = mock_client
 
         with patch(
-            "app.services.url_importer.check_robots_txt",
+            "app.services.protocols.url_importer.check_robots_txt",
             return_value=True,
         ):
             with patch(
-                "app.services.url_importer.is_private_ip",
+                "app.services.protocols.url_importer.is_private_ip",
                 return_value=False,
             ):
                 resp = await client.post(
@@ -554,7 +554,7 @@ async def test_import_from_url_rejects_private_ip(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
     with patch(
-        "app.services.url_importer.is_private_ip", return_value=True
+        "app.services.protocols.url_importer.is_private_ip", return_value=True
     ):
         resp = await client.post(
             "/library/documents/from-url",
@@ -581,10 +581,10 @@ async def test_import_from_url_respects_robots_txt(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
     with patch(
-        "app.services.url_importer.is_private_ip", return_value=False
+        "app.services.protocols.url_importer.is_private_ip", return_value=False
     ):
         with patch(
-            "app.services.url_importer.check_robots_txt",
+            "app.services.protocols.url_importer.check_robots_txt",
             return_value=False,
         ):
             resp = await client.post(
@@ -606,7 +606,7 @@ async def test_import_from_url_stores_source_url(
     mock_response.raise_for_status = lambda: None
 
     with patch(
-        "app.services.url_importer.httpx.AsyncClient"
+        "app.services.protocols.url_importer.httpx.AsyncClient"
     ) as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -615,11 +615,11 @@ async def test_import_from_url_stores_source_url(
         mock_client_cls.return_value = mock_client
 
         with patch(
-            "app.services.url_importer.check_robots_txt",
+            "app.services.protocols.url_importer.check_robots_txt",
             return_value=True,
         ):
             with patch(
-                "app.services.url_importer.is_private_ip",
+                "app.services.protocols.url_importer.is_private_ip",
                 return_value=False,
             ):
                 resp = await client.post(

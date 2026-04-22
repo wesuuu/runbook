@@ -87,7 +87,7 @@ async def create_protocol(
             raise HTTPException(403, "Org admin required for organization protocols")
 
     # Resolve default template IDs: project > org > system
-    from app.services.template_engine import resolve_default_template_id
+    from app.services.protocols.template_engine import resolve_default_template_id
 
     org_id = protocol.organization_id
     if not org_id and protocol.project_id:
@@ -149,7 +149,7 @@ async def import_protocol(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a protocol document and get an AI-generated import proposal."""
-    from app.services.protocol_importer import (
+    from app.services.protocols.protocol_importer import (
         extract_text,
         parse_protocol_text,
         build_proposal,
@@ -216,7 +216,7 @@ async def refine_protocol_endpoint(
 
     General-purpose: works for imported protocols and existing ones.
     """
-    from app.services.protocol_importer import refine_protocol
+    from app.services.protocols.protocol_importer import refine_protocol
     from app.models.science import UnitOpDefinition
 
     org_id = user.selected_org_id
@@ -246,7 +246,7 @@ async def finalize_protocol_import(
     db: AsyncSession = Depends(get_db),
 ):
     """Finalize a protocol import: create unit ops, roles, and protocol."""
-    from app.services.protocol_importer import StepProposal, finalize_import
+    from app.services.protocols.protocol_importer import StepProposal, finalize_import
 
     # Validate scope
     if request.project_id and request.organization_id:

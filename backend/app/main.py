@@ -309,7 +309,7 @@ async def lifespan(app: FastAPI):
         logger.exception("Document recovery sweep failed on startup")
 
     # Seed system document templates into file storage
-    from app.services.template_seeder import seed_system_templates
+    from app.services.protocols.template_seeder import seed_system_templates
     seed_system_templates()
 
     # Start the heartbeat background task

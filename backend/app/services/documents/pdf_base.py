@@ -1,7 +1,7 @@
 """DEPRECATED — Shared PDF utilities, constants, and table drawing helpers (fpdf2-based).
 
 This module is superseded by the docxtpl template engine
-(app.services.template_engine). Some utility functions (_render_template,
+(app.services.protocols.template_engine). Some utility functions (_render_template,
 _build_param_sentence, etc.) are still imported by template_engine for
 context building. Remove the fpdf2-specific functions once Phase 0 of
 F-0065 (Custom Document Templates) is verified in production.

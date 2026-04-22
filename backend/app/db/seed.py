@@ -30,7 +30,7 @@ from app.models.iam import (
 )
 from app.models.science import Project, UnitOpDefinition
 from app.models.templates import DocumentTemplate, TemplateType
-from app.services.template_seeder import seed_system_templates
+from app.services.protocols.template_seeder import seed_system_templates
 
 
 # --- Fixed UUIDs for reproducibility ---

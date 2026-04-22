@@ -1,7 +1,7 @@
 """Seed system .docx templates into the file storage directory.
 
 Copies bundled .docx template files from the source directory
-(app/services/templates/) into the FileStorageService storage root
+(app/services/documents/templates/) into the FileStorageService storage root
 under system/document_templates/. Idempotent — skips files that
 already exist.
 """
@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 
 
-SYSTEM_TEMPLATES_SOURCE = Path(__file__).parent / "templates"
+SYSTEM_TEMPLATES_SOURCE = Path(__file__).parent.parent / "documents" / "templates"
 SYSTEM_TEMPLATES_DEST = "system/document_templates"
 
 
