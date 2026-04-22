@@ -1,39 +1,25 @@
 """Dashboard endpoint — My Work, Team Activity, Operational Counters."""
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, or_, and_, desc
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.execution import AuditLog
-from app.models.iam import (
-    OrganizationMember,
-    User,
-)
-from app.models.science import (
-    Project,
-    Protocol,
-    Run,
-    RunRoleAssignment,
-)
 from app.models.ai import ImageConversation, RunImage
-from app.schemas.dashboard import (
-    ActivityItem,
-    ActivityPage,
-    CompletionTrendItem,
-    Counters,
-    DashboardResponse,
-    MyWork,
-    PendingAnalyses,
-    RunSummary,
-)
-from app.services.permissions import get_visible_project_ids
+from app.models.execution import AuditLog
+from app.models.iam import OrganizationMember, User
+from app.models.science import Project, Protocol, Run, RunRoleAssignment
+from app.schemas.dashboard import (ActivityItem, ActivityPage,
+                                   CompletionTrendItem, Counters,
+                                   DashboardResponse, MyWork, PendingAnalyses,
+                                   RunSummary)
+from app.services.core.permissions import get_visible_project_ids
 
 router = APIRouter()
 

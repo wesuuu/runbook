@@ -15,7 +15,7 @@ import pytest
 import pytest_asyncio
 
 from app.models.iam import Organization, SubscriptionTier
-from app.services.batch_record_extractor import (
+from app.services.batch.batch_record_extractor import (
     extract_batch_record_data,
     extract_batch_record_pages,
     map_steps_to_protocol,
@@ -59,7 +59,7 @@ class TestProtocolImportAccuracy:
     @pytest.mark.parametrize("fixture_dir", _fixture_dirs, ids=_fixture_ids)
     async def test_import_accuracy(self, fixture_dir: Path, db_session, pro_org):
         """Run a single fixture through extract -> parse -> build_proposal."""
-        from app.services.protocol_importer import (
+        from app.services.protocols.protocol_importer import (
             build_proposal,
             extract_text,
             parse_protocol_text,

@@ -1,8 +1,8 @@
 """Tests for batch record PDF generation and role parsing."""
 
 import pytest
-from app.services.graph_processing import _parse_graph_roles_and_steps
-from app.services.pdf import generate_batch_record_pdf, _get_initials
+from app.services.data.graph_processing import _parse_graph_roles_and_steps
+from app.services.documents.pdf import generate_batch_record_pdf, _get_initials
 
 
 class TestParseGraphRolesAndSteps:

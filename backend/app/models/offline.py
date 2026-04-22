@@ -3,12 +3,12 @@
 import uuid
 from typing import Optional
 
-from sqlalchemy import String, ForeignKey, Text, DateTime
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.mixins import UUIDMixin, TimestampMixin
+from app.models.mixins import TimestampMixin, UUIDMixin
 
 
 class RevokedOfflineToken(Base, UUIDMixin, TimestampMixin):

@@ -1,9 +1,8 @@
+from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
-from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # --- Request schemas ---
 

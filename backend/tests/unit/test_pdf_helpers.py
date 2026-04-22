@@ -1,7 +1,7 @@
 """Tests for PDF helper functions in pdf_base.py."""
 
 import pytest
-from app.services.pdf_base import (
+from app.services.documents.pdf_base import (
     _format_value,
     _build_param_sentence,
     _render_template,

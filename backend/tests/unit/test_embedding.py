@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.services.embedding import (
+from app.services.ai.embedding import (
     embed_texts,
     embed_query,
     _embed_ollama,
@@ -11,7 +11,7 @@ from app.services.embedding import (
     EmbeddingError,
     BATCH_SIZE,
 )
-from app.services.document_processor import _pad_embedding
+from app.services.documents.document_processor import _pad_embedding
 from app.models.library import EMBEDDING_DIMENSIONS
 
 
@@ -48,7 +48,7 @@ class TestEmbedOllama:
             "embeddings": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
         }
 
-        with patch("app.services.embedding.httpx.AsyncClient") as mock_cls:
+        with patch("app.services.ai.embedding.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -68,7 +68,7 @@ class TestEmbedOllama:
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
 
-        with patch("app.services.embedding.httpx.AsyncClient") as mock_cls:
+        with patch("app.services.ai.embedding.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -84,7 +84,7 @@ class TestEmbedOllama:
         mock_response.status_code = 200
         mock_response.json.return_value = {"embeddings": [[0.1]]}
 
-        with patch("app.services.embedding.httpx.AsyncClient") as mock_cls:
+        with patch("app.services.ai.embedding.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -112,7 +112,7 @@ class TestEmbedOpenAICompatible:
             ]
         }
 
-        with patch("app.services.embedding.httpx.AsyncClient") as mock_cls:
+        with patch("app.services.ai.embedding.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -143,7 +143,7 @@ class TestEmbedOpenAICompatible:
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
 
-        with patch("app.services.embedding.httpx.AsyncClient") as mock_cls:
+        with patch("app.services.ai.embedding.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -169,7 +169,7 @@ class TestEmbedTexts:
         db = AsyncMock()
 
         with patch(
-            "app.services.embedding.get_full_config",
+            "app.services.ai.embedding.get_full_config",
             return_value={
                 "provider": "ollama",
                 "model_name": "nomic-embed-text",
@@ -178,7 +178,7 @@ class TestEmbedTexts:
             },
         ):
             with patch(
-                "app.services.embedding._embed_ollama",
+                "app.services.ai.embedding._embed_ollama",
                 return_value=[[0.1, 0.2]],
             ) as mock_ollama:
                 result = await embed_texts(["hello"], db)
@@ -193,7 +193,7 @@ class TestEmbedQuery:
         db = AsyncMock()
 
         with patch(
-            "app.services.embedding.embed_texts",
+            "app.services.ai.embedding.embed_texts",
             return_value=[[0.1, 0.2, 0.3]],
         ):
             result = await embed_query("test query", db)

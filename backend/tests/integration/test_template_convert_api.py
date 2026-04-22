@@ -198,7 +198,7 @@ class TestSaveEndpoint:
         self, client, auth_headers, test_org
     ):
         """Should return 422 for invalid template_type on save."""
-        from app.services.template_converter import ConversionState
+        from app.services.protocols.template_converter import ConversionState
 
         conv_id = uuid4()
         state = ConversionState(test_org.id, conv_id)
@@ -244,7 +244,7 @@ class TestFileServingEndpoints:
         self, client, auth_headers, test_org
     ):
         """Should serve the template file when it exists."""
-        from app.services.template_converter import ConversionState
+        from app.services.protocols.template_converter import ConversionState
 
         conv_id = uuid4()
         state = ConversionState(test_org.id, conv_id)
@@ -264,7 +264,7 @@ class TestFileServingEndpoints:
         self, client, auth_headers, test_org
     ):
         """Should serve the preview PDF when it exists."""
-        from app.services.template_converter import ConversionState
+        from app.services.protocols.template_converter import ConversionState
 
         conv_id = uuid4()
         state = ConversionState(test_org.id, conv_id)

@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.markdown_chunker import (
+from app.services.documents.markdown_chunker import (
     chunk_by_pages,
     chunk_markdown,
     rechunk_with_structure,
@@ -9,13 +9,13 @@ from app.services.markdown_chunker import (
     _split_at_headings,
     _strip_skip_lines,
 )
-from app.services.document_structure import (
+from app.services.documents.document_structure import (
     DocumentOutline,
     DocumentStructure,
     PageAnalysis,
     PageHeading,
 )
-from app.services.text_chunker import PageData
+from app.services.data.text_chunker import PageData
 
 
 class TestEmptyAndShortTexts:

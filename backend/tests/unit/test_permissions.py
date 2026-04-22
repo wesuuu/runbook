@@ -18,7 +18,7 @@ from app.models.iam import (
 )
 from app.models.science import Project, Protocol, Run
 from app.core.security import hash_password
-from app.services.permissions import check_permission
+from app.services.core.permissions import check_permission
 
 
 # --- Helpers ---

@@ -7,15 +7,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    Form,
-    HTTPException,
-    Query,
-    Request,
-    UploadFile,
-)
+from fastapi import (APIRouter, Depends, Form, HTTPException, Query, Request,
+                     UploadFile)
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,42 +17,25 @@ from sqlalchemy.orm import defer, selectinload
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.iam import (
-    ObjectPermission,
-    OrganizationMember,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-    User,
-)
-from app.models.library import (
-    ALLOWED_DOCUMENT_TYPES,
-    MAX_DOCUMENT_SIZE_BYTES,
-    MIME_EXTENSION_MAP,
-    Document,
-    DocumentChunk,
-    DocumentStatus,
-    validate_file_content,
-)
+from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
+                            PermissionLevel, PrincipalType, User)
+from app.models.library import (ALLOWED_DOCUMENT_TYPES,
+                                MAX_DOCUMENT_SIZE_BYTES, MIME_EXTENSION_MAP,
+                                Document, DocumentChunk, DocumentStatus,
+                                validate_file_content)
 from app.schemas.jobs import ProcessingProgress
-from app.services.background_jobs import BackgroundJobService
-from app.schemas.library import (
-    DocumentChunkResponse,
-    DocumentDetailResponse,
-    DocumentListResponse,
-    DocumentResponse,
-    ImportUrlRequest,
-    SearchResponse,
-    SearchResultGroup,
-    SearchResultItem,
-    TOCEntry,
-)
-from app.services.audit import log_audit
-from app.services.file_storage import FileStorageService
-from app.services.document_processor import build_book, process_document
-from app.services.permissions import check_permission
-from app.services.task_runner import get_task_runner
-from app.services.url_importer import import_from_url
+from app.schemas.library import (DocumentChunkResponse, DocumentDetailResponse,
+                                 DocumentListResponse, DocumentResponse,
+                                 ImportUrlRequest, SearchResponse,
+                                 SearchResultGroup, SearchResultItem, TOCEntry)
+from app.services.core.audit import log_audit
+from app.services.core.background_jobs import BackgroundJobService
+from app.services.core.file_storage import FileStorageService
+from app.services.core.permissions import check_permission
+from app.services.core.task_runner import get_task_runner
+from app.services.documents.document_processor import (build_book,
+                                                       process_document)
+from app.services.protocols.url_importer import import_from_url
 
 router = APIRouter()
 
@@ -572,7 +548,7 @@ async def enrich_document_endpoint(
 
     Only works for PDF documents that are INDEXED or ENRICHED.
     """
-    from app.services.document_processor import enrich_document
+    from app.services.documents.document_processor import enrich_document
 
     org_id = await _get_user_org_id(current_user, db)
 
@@ -627,8 +603,8 @@ async def search_documents(
     # Attempt to get query embedding for vector search
     query_embedding = None
     try:
-        from app.services.embedding import embed_query
-        from app.services.document_processor import _pad_embedding
+        from app.services.ai.embedding import embed_query
+        from app.services.documents.document_processor import _pad_embedding
 
         raw = await embed_query(q, db)
         query_embedding = _pad_embedding(raw)
@@ -827,8 +803,8 @@ async def backfill_embeddings(
         return {"embedded": 0, "remaining": 0}
 
     try:
-        from app.services.embedding import embed_texts
-        from app.services.document_processor import _pad_embedding
+        from app.services.ai.embedding import embed_texts
+        from app.services.documents.document_processor import _pad_embedding
 
         texts = [c.content for c in chunks]
         embeddings = await embed_texts(texts, db)

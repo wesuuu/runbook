@@ -10,25 +10,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.deps import get_current_user, get_or_404, get_org_id_from_request
 from app.db.session import get_db
-from app.models.chat import ChatSession, ChatNotification
-from app.models.iam import Organization, OrganizationMember, OrgRole, SubscriptionTier, TIER_RANK, User
-from app.schemas.chat import (
-    ChatCompletionResponse,
-    ChatConfigResponse,
-    ChatMessageCreate,
-    ChatSessionCreate,
-    ChatSessionDetailResponse,
-    ChatSessionListResponse,
-    ChatSessionResponse,
-    ChatSessionUpdate,
-    ChatSkillListResponse,
-    ChatSkillResponse,
-    ChatSourceReference,
-    NotifyAdminResponse,
-)
-from app.services import chat_service
-from app.services.ai_config import get_context_window, get_model_display_name
-from app.services.rate_limit import RateLimitService
+from app.models.chat import ChatNotification, ChatSession
+from app.models.iam import (TIER_RANK, Organization, OrganizationMember,
+                            OrgRole, SubscriptionTier, User)
+from app.schemas.chat import (ChatCompletionResponse, ChatConfigResponse,
+                              ChatMessageCreate, ChatSessionCreate,
+                              ChatSessionDetailResponse,
+                              ChatSessionListResponse, ChatSessionResponse,
+                              ChatSessionUpdate, ChatSkillListResponse,
+                              ChatSkillResponse, ChatSourceReference,
+                              NotifyAdminResponse)
+from app.services.ai import chat_service
+from app.services.ai.ai_config import (get_context_window,
+                                       get_model_display_name)
+from app.services.core.rate_limit import RateLimitService
 
 logger = logging.getLogger(__name__)
 

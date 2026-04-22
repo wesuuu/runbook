@@ -12,7 +12,7 @@ from app.models.ai import RunImage, ImageConversation
 from app.models.execution import AuditLog
 from app.models.science import Project, Protocol, Run, RunStatus
 from app.models.iam import User
-from app.services.ai_vision import ImageAnalysisResult, ExtractedValue
+from app.services.ai.ai_vision import ImageAnalysisResult, ExtractedValue
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ async def test_run(db_session: AsyncSession, test_project: Project) -> Run:
 
 @pytest.fixture
 def tmp_image_storage(tmp_path: Path):
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     original_init = FileStorageService.__init__
 

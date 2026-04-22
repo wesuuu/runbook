@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.services.rate_limit import RateLimitService
+from app.services.core.rate_limit import RateLimitService
 
 
 @pytest.mark.asyncio

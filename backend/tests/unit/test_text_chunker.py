@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.text_chunker import TextChunk, chunk_text
+from app.services.data.text_chunker import TextChunk, chunk_text
 
 
 class TestEmptyAndShortTexts:

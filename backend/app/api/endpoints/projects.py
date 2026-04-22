@@ -1,36 +1,24 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
 import sqlalchemy
-from sqlalchemy import select, func, or_
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, get_or_404, require_permission
 from app.db.session import get_db
 from app.models.execution import AuditLog
-from app.models.iam import (
-    User,
-    Team,
-    OrganizationMember,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-)
+from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
+                            PermissionLevel, PrincipalType, Team, User)
 from app.models.science import Experiment, Project, Protocol, Run
-from app.schemas.project import (
-    ProjectCreate,
-    ProjectUpdate,
-    ProjectResponse,
-    AuditLogEntry,
-    AuditLogPage,
-    ApproverGrant,
-    ApproverEntry,
-)
-from app.services.audit import log_audit
-from app.services.permissions import check_permission, get_visible_project_ids
+from app.schemas.project import (ApproverEntry, ApproverGrant, AuditLogEntry,
+                                 AuditLogPage, ProjectCreate, ProjectResponse,
+                                 ProjectUpdate)
+from app.services.core.audit import log_audit
+from app.services.core.permissions import (check_permission,
+                                           get_visible_project_ids)
 
 router = APIRouter()
 

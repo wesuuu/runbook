@@ -16,22 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.db.session import AsyncSessionLocal
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    Team,
-    TeamMember,
-    User,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-    TeamRole,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            Team, TeamMember, TeamRole, User)
 from app.models.science import Project, UnitOpDefinition
 from app.models.templates import DocumentTemplate, TemplateType
-from app.services.template_seeder import seed_system_templates
-
+from app.services.protocols.template_seeder import seed_system_templates
 
 # --- Fixed UUIDs for reproducibility ---
 ORG_ID = uuid.UUID("10000000-0000-0000-0000-000000000001")
@@ -506,7 +496,7 @@ async def seed_newbie_user(db: AsyncSession):
 
 async def seed_document_templates(db: AsyncSession):
     """Seed system-wide default document templates."""
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     # Copy template files to storage
     storage = FileStorageService()

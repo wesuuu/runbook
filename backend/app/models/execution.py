@@ -1,11 +1,12 @@
 import uuid
-from typing import Optional, Any
-from sqlalchemy import String, ForeignKey, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import Any, Optional
+
+from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.mixins import UUIDMixin, TimestampMixin
+from app.models.mixins import TimestampMixin, UUIDMixin
 
 # RunSheet model removed in favor of Run.execution_data
 

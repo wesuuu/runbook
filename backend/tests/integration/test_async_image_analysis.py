@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import RunImage, ImageConversation
 from app.models.science import Project, Protocol, Run, RunStatus
-from app.services.ai_vision import ImageAnalysisResult, ExtractedValue
+from app.services.ai.ai_vision import ImageAnalysisResult, ExtractedValue
 
 
 # ── Shared fixtures ──────────────────────────────────────────────────
@@ -120,7 +120,7 @@ async def test_run(db_session: AsyncSession, test_project: Project) -> Run:
 
 @pytest.fixture
 def tmp_image_storage(tmp_path: Path):
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     original_init = FileStorageService.__init__
 

@@ -3,14 +3,13 @@ import uuid
 from datetime import datetime
 from typing import Any, List, Optional
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from pgvector.sqlalchemy import Vector
-
 from app.models.base import Base
-from app.models.mixins import UUIDMixin, TimestampMixin
+from app.models.mixins import TimestampMixin, UUIDMixin
 
 # Documents stuck in PROCESSING longer than this are considered stalled
 # and eligible for recovery by another pod on startup.

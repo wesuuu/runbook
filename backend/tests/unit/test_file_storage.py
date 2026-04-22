@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
 
-from app.services.file_storage import FileStorageService
+from app.services.core.file_storage import FileStorageService
 
 
 def _make_upload(

@@ -12,12 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from app.services.template_engine import build_context, render_to_docx, render_to_pdf
+from app.services.protocols.template_engine import build_context, render_to_docx, render_to_pdf
 
 ARTIFACTS_DIR = Path(__file__).parent.parent / "artifacts" / "templates"
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "images"
-SOP_TEMPLATE = Path("app/services/templates/sop_default.docx")
-BR_TEMPLATE = Path("app/services/templates/batch_record_default.docx")
+SOP_TEMPLATE = Path("app/services/documents/templates/sop_default.docx")
+BR_TEMPLATE = Path("app/services/documents/templates/batch_record_default.docx")
 
 
 @pytest.fixture(autouse=True)

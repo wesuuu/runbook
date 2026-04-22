@@ -9,17 +9,14 @@ from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.iam import User, ObjectType, PermissionLevel
-from app.models.science import Protocol, ProtocolVersion, Project
-from app.schemas.science import (
-    ProtocolResponse,
-    ProtocolApprovalAction,
-    ProtocolVersionListItem,
-    ProtocolVersionResponse,
-)
-from app.services.audit import log_audit
-from app.services.notifications import send_notification
-from app.services.permissions import check_permission
+from app.models.iam import ObjectType, PermissionLevel, User
+from app.models.science import Project, Protocol, ProtocolVersion
+from app.schemas.science import (ProtocolApprovalAction, ProtocolResponse,
+                                 ProtocolVersionListItem,
+                                 ProtocolVersionResponse)
+from app.services.core.audit import log_audit
+from app.services.core.notifications import send_notification
+from app.services.core.permissions import check_permission
 
 logger = logging.getLogger(__name__)
 

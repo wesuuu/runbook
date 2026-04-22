@@ -1,46 +1,29 @@
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from fastapi import (APIRouter, Depends, HTTPException, Query, Request,
+                     UploadFile, status)
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user
-from app.core.security import (
-    create_access_token,
-    create_verification_jwt,
-    generate_verification_token,
-    hash_password,
-    verify_password,
-)
+from app.core.security import (create_access_token, create_verification_jwt,
+                               generate_verification_token, hash_password,
+                               verify_password)
 from app.db.session import get_db
-from app.models.iam import (
-    Invitation,
-    InvitationStatus,
-    Organization,
-    OrganizationMember,
-    User,
-    VerificationToken,
-)
-from app.services.file_storage import FileStorageService
-from app.schemas.auth import (
-    LoginRequest,
-    PasswordChange,
-    PreferencesUpdate,
-    ProfileUpdate,
-    RegisterRequest,
-    ResendVerificationResponse,
-    SwitchOrgRequest,
-    TokenResponse,
-    UserResponse,
-    VerificationTokenResponse,
-)
-from app.services.email_service import get_email_provider
+from app.models.iam import (Invitation, InvitationStatus, Organization,
+                            OrganizationMember, User, VerificationToken)
+from app.schemas.auth import (LoginRequest, PasswordChange, PreferencesUpdate,
+                              ProfileUpdate, RegisterRequest,
+                              ResendVerificationResponse, SwitchOrgRequest,
+                              TokenResponse, UserResponse,
+                              VerificationTokenResponse)
+from app.services.core.email_service import get_email_provider
+from app.services.core.file_storage import FileStorageService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

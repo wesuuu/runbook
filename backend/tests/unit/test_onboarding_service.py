@@ -1,11 +1,11 @@
-"""Unit tests for app.services.onboarding."""
+"""Unit tests for app.services.core.onboarding."""
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization, User
 from app.models.science import Project, Protocol, Run
-from app.services.onboarding import (
+from app.services.core.onboarding import (
     delete_sample_run,
     find_or_create_sample_project,
     find_or_create_sample_protocol,

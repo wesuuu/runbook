@@ -1,10 +1,10 @@
+from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
-from datetime import datetime
+
 from pydantic import BaseModel, Field
 
-from app.models.ai import SUPPORTED_PROVIDERS, SUPPORTED_CAPABILITIES
-
+from app.models.ai import SUPPORTED_CAPABILITIES, SUPPORTED_PROVIDERS
 
 # --- AI Provider Settings ---
 

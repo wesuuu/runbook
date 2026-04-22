@@ -1,7 +1,7 @@
 """Tests for SOP PDF generation."""
 
 import pytest
-from app.services.pdf import generate_sop_pdf
+from app.services.documents.pdf import generate_sop_pdf
 
 
 class TestGenerateSopPdf:

@@ -19,7 +19,7 @@ from uuid import uuid4
 import pytest
 from docx import Document
 
-from app.services.template_converter import (
+from app.services.protocols.template_converter import (
     ConversionState,
     EventStream,
     _apply_substitutions_to_docx,

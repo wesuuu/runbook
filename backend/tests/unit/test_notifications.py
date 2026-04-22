@@ -3,12 +3,12 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.services.notifications.channels.base import (
+from app.services.core.notifications.channels.base import (
     BaseChannel, FormattedMessage, TransientError, PermanentError,
 )
-from app.services.notifications.channels.console import ConsoleChannel
-from app.services.notifications.channels.webhook import WebhookChannel
-from app.services.notifications.templates import TEMPLATES
+from app.services.core.notifications.channels.console import ConsoleChannel
+from app.services.core.notifications.channels.webhook import WebhookChannel
+from app.services.core.notifications.templates import TEMPLATES
 
 
 # ── Template Tests ───────────────────────────────────────────────────────

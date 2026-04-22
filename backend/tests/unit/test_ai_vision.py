@@ -5,7 +5,7 @@ from unittest.mock import patch, AsyncMock
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.services.ai_vision import (
+from app.services.ai.ai_vision import (
     ImageAnalysisResult,
     ExtractedValue,
     analyze_image,
