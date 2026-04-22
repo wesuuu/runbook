@@ -5,10 +5,10 @@
         firstError,
         type FieldErrors,
     } from "$lib/validation";
-    import BarcodeScanner from "./BarcodeScanner.svelte";
+    import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
     import * as Dialog from '$lib/components/ui/dialog';
-    import ImageAnalysisDialog from "./ImageAnalysisDialog.svelte";
-    import ImageGallery from "./ImageGallery.svelte";
+    import ImageAnalysisDialog from "$lib/components/ImageAnalysisDialog.svelte";
+    import ImageGallery from "$lib/components/ImageGallery.svelte";
     import { Button } from "$lib/components/ui/button";
 
     interface SchemaProperty {

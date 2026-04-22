@@ -1,5 +1,5 @@
 <script lang="ts">
-    import RoleWizard from "$lib/components/RoleWizard.svelte";
+    import RoleWizard from "$lib/components/run/RoleWizard.svelte";
     import { Button } from "$lib/components/ui/button";
 
     interface Props {
