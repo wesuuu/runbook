@@ -20,16 +20,16 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from ulid import ULID
-
 from docxtpl import DocxTemplate
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import BinaryContent
 from sqlalchemy.ext.asyncio import AsyncSession
+from ulid import ULID
 
 from app.core.config import settings
 from app.services.core.file_storage import FileStorageService
-from app.services.protocols.template_engine import KNOWN_VARIABLES, get_mock_context
+from app.services.protocols.template_engine import (KNOWN_VARIABLES,
+                                                    get_mock_context)
 
 logger = logging.getLogger(__name__)
 
@@ -536,8 +536,9 @@ def _add_table_loop_to_docx(
     template row wrapped in {%tr for %} / {%tr endfor %} tags.
     Uses docxtpl's {%tr %} syntax for table-row loops.
     """
-    from docx import Document
     from copy import deepcopy
+
+    from docx import Document
     from lxml import etree
 
     doc = Document(BytesIO(docx_bytes))

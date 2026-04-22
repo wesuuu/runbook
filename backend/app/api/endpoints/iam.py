@@ -6,52 +6,28 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import select, and_, func
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.security import generate_verification_token
-
 from app.core.deps import get_current_user, get_or_404
+from app.core.security import generate_verification_token
 from app.db.session import get_db
-from app.models.iam import (
-    Invitation,
-    InvitationStatus,
-    Organization,
-    OrganizationMember,
-    Team,
-    TeamMember,
-    User,
-    ObjectPermission,
-    ObjectType,
-    PermissionLevel,
-    OrgRole,
-    TeamRole,
-)
-from app.models.science import Equipment
-from app.schemas.iam import (
-    InvitationCreate,
-    InvitationResponse,
-    OrganizationCreate,
-    OrganizationResponse,
-    OrgMemberAdd,
-    OrgMemberUpdate,
-    OrgMemberResponse,
-    TeamCreate,
-    TeamResponse,
-    TeamMemberAdd,
-    TeamMemberResponse,
-    PermissionGrant,
-    PermissionResponse,
-    UserSearchResponse,
-)
-from app.schemas.science import (
-    EquipmentCreate,
-    EquipmentResponse,
-    EquipmentUpdate,
-)
-from app.services.core.permissions import check_permission
 from app.models.execution import AuditLog
+from app.models.iam import (Invitation, InvitationStatus, ObjectPermission,
+                            ObjectType, Organization, OrganizationMember,
+                            OrgRole, PermissionLevel, Team, TeamMember,
+                            TeamRole, User)
+from app.models.science import Equipment
+from app.schemas.iam import (InvitationCreate, InvitationResponse,
+                             OrganizationCreate, OrganizationResponse,
+                             OrgMemberAdd, OrgMemberResponse, OrgMemberUpdate,
+                             PermissionGrant, PermissionResponse, TeamCreate,
+                             TeamMemberAdd, TeamMemberResponse, TeamResponse,
+                             UserSearchResponse)
+from app.schemas.science import (EquipmentCreate, EquipmentResponse,
+                                 EquipmentUpdate)
+from app.services.core.permissions import check_permission
 
 router = APIRouter()
 

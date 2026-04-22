@@ -12,39 +12,29 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.iam import User, OrganizationMember
-from app.models.notifications import (
-    NotificationChannel,
-    NotificationSubscription,
-    Notification,
-    NotificationDelivery,
-    ChannelType,
-    NotificationEventType,
-    DeliveryStatus,
-)
-from app.schemas.notifications import (
-    ChannelCreate,
-    ChannelUpdate,
-    ChannelResponse,
-    ChannelTestResult,
-    SubscriptionCreate,
-    SubscriptionResponse,
-    NotificationResponse,
-    NotificationListResponse,
-    UnreadCountResponse,
-    DeliveryResponse,
-    DeliveryListResponse,
-)
+from app.models.iam import OrganizationMember, User
+from app.models.notifications import (ChannelType, DeliveryStatus,
+                                      Notification, NotificationChannel,
+                                      NotificationDelivery,
+                                      NotificationEventType,
+                                      NotificationSubscription)
+from app.schemas.notifications import (ChannelCreate, ChannelResponse,
+                                       ChannelTestResult, ChannelUpdate,
+                                       DeliveryListResponse, DeliveryResponse,
+                                       NotificationListResponse,
+                                       NotificationResponse,
+                                       SubscriptionCreate,
+                                       SubscriptionResponse,
+                                       UnreadCountResponse)
 from app.services.core.notifications.channels import get_channel
-from app.services.core.notifications.channels.base import (
-    TransientError, PermanentError,
-)
+from app.services.core.notifications.channels.base import (PermanentError,
+                                                           TransientError)
 
 logger = logging.getLogger("notifications.api")
 

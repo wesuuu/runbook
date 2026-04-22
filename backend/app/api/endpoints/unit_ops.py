@@ -3,18 +3,17 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, or_, and_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.iam import User, OrganizationMember, OrgRole, ObjectType, PermissionLevel
-from app.models.science import UnitOpDefinition, Project
-from app.schemas.science import (
-    UnitOpDefinitionCreate,
-    UnitOpDefinitionUpdate,
-    UnitOpDefinitionResponse,
-)
+from app.models.iam import (ObjectType, OrganizationMember, OrgRole,
+                            PermissionLevel, User)
+from app.models.science import Project, UnitOpDefinition
+from app.schemas.science import (UnitOpDefinitionCreate,
+                                 UnitOpDefinitionResponse,
+                                 UnitOpDefinitionUpdate)
 from app.services.core.permissions import check_permission
 
 logger = logging.getLogger(__name__)

@@ -7,12 +7,14 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic_ai import RunContext
-from sqlalchemy import func, select, text as sa_text
+from sqlalchemy import func, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
+from app.models.chat import (ChatMessage, ChatMessageRole, ChatSession,
+                             ChatSessionStatus)
 from app.models.science import UnitOpDefinition
 from app.services.ai.ai_config import get_context_window, get_model
 
@@ -418,14 +420,12 @@ async def create_protocol_tool(
             Example: "Dissolve Tris | Buffer Preparation | 15"
     """
     import json as json_mod
-    from app.models.science import Protocol, Project
-    from app.services.ai.protocol_generator import (
-        build_graph,
-        GeneratedStep,
-        GeneratedProtocol,
-    )
-    from app.services.core.permissions import check_permission
+
     from app.models.iam import ObjectType, PermissionLevel
+    from app.models.science import Project, Protocol
+    from app.services.ai.protocol_generator import (GeneratedProtocol,
+                                                    GeneratedStep, build_graph)
+    from app.services.core.permissions import check_permission
 
     db = ctx.deps.db
 
@@ -847,6 +847,7 @@ def _get_skills_toolset():
     global _skills_toolset
     if _skills_toolset is None:
         from pydantic_ai_skills import SkillsToolset
+
         from app.core.config import settings
         _skills_toolset = SkillsToolset(directories=[settings.skills_dir])
     return _skills_toolset
@@ -944,14 +945,9 @@ async def compact_history(
 
     Returns (compacted_messages, summary_text_or_none).
     """
-    from pydantic_ai.messages import (
-        ModelMessagesTypeAdapter,
-        ModelRequest,
-        ModelResponse,
-        SystemPromptPart,
-        TextPart,
-        UserPromptPart,
-    )
+    from pydantic_ai.messages import (ModelMessagesTypeAdapter, ModelRequest,
+                                      ModelResponse, SystemPromptPart,
+                                      TextPart, UserPromptPart)
 
     # Serialize to dicts for accurate token estimation
     serialized = ModelMessagesTypeAdapter.dump_python(messages, mode="json")

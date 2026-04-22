@@ -4,29 +4,20 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
 
-from app.models.jobs import BackgroundJob, JobStatus
 from app.core.config import settings
+from app.models.jobs import BackgroundJob, JobStatus
+from app.models.library import (EMBEDDING_DIMENSIONS, Document, DocumentChunk,
+                                DocumentStatus)
 from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService
-from app.models.library import (
-    EMBEDDING_DIMENSIONS,
-    Document,
-    DocumentChunk,
-    DocumentStatus,
-)
-from app.services.documents.markdown_chunker import (
-    chunk_by_pages,
-    chunk_markdown,
-    rechunk_with_structure,
-)
 from app.services.core.task_runner import get_task_runner
 from app.services.data.text_chunker import PageData, chunk_text
+from app.services.documents.markdown_chunker import (chunk_by_pages,
+                                                     chunk_markdown,
+                                                     rechunk_with_structure)
 
 logger = logging.getLogger(__name__)
 
@@ -584,9 +575,9 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
     The document is already readable at this point (status=INDEXED).
     This just makes it better. If it fails, the document stays INDEXED.
     """
-    from app.services.documents.document_structure import analyze_document_structure
-
     import app.db.base  # noqa: F401
+    from app.services.documents.document_structure import \
+        analyze_document_structure
 
     engine = create_async_engine(db_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -846,9 +837,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
     """
     import app.db.base  # noqa: F401
     from app.services.documents.document_structure import (
-        DocumentStructure,
-        analyze_document_structure,
-    )
+        DocumentStructure, analyze_document_structure)
 
     engine = create_async_engine(db_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -1001,12 +990,10 @@ async def build_book(document_id: UUID, db_url: str) -> None:
 
                 if page_images:
                     # Check LLM availability
-                    from app.services.ai.ai_config import (
-                        get_full_config, get_model,
-                    )
+                    from app.services.ai.ai_config import (get_full_config,
+                                                           get_model)
                     from app.services.documents.document_structure import (
-                        _check_llm_available, _is_ollama_model,
-                    )
+                        _check_llm_available, _is_ollama_model)
 
                     try:
                         model = await get_model("doc_structure", session, org_id=doc.org_id)
@@ -1071,9 +1058,8 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                             0, 1,
                         )
                         try:
-                            from app.services.documents.document_structure import (
-                                extract_toc,
-                            )
+                            from app.services.documents.document_structure import \
+                                extract_toc
                             toc = await extract_toc(
                                 page_images,
                                 structure.outline,

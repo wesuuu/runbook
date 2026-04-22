@@ -2,12 +2,12 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import ForeignKey, String, Text, Index, DateTime
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.mixins import UUIDMixin, TimestampMixin
+from app.models.mixins import TimestampMixin, UUIDMixin
 
 
 class ChatSessionStatus(str):

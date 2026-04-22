@@ -10,18 +10,15 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from docxtpl import DocxTemplate, InlineImage, RichText
 from docx.shared import Mm, Pt
+from docxtpl import DocxTemplate, InlineImage, RichText
 
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
-from app.services.documents.pdf_base import (
-    _build_param_sentence,
-    _format_value,
-    _get_editable_params,
-    _get_initials,
-    _get_param_title,
-    _render_template,
-)
+from app.services.documents.pdf_base import (_build_param_sentence,
+                                             _format_value,
+                                             _get_editable_params,
+                                             _get_initials, _get_param_title,
+                                             _render_template)
 
 # ── Known template variables (for upload validation) ──
 

@@ -1,16 +1,14 @@
 import uuid
 from enum import Enum
-from typing import Optional, Any
+from typing import Any, Optional
 
-from sqlalchemy import (
-    String, Integer, ForeignKey, Boolean, CheckConstraint, Index, Text,
-    DateTime,
-)
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, ForeignKey, Index,
+                        Integer, String, Text)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.mixins import UUIDMixin, TimestampMixin
+from app.models.mixins import TimestampMixin, UUIDMixin
 
 
 class ChannelType(str, Enum):

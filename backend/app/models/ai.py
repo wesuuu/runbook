@@ -6,8 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.mixins import UUIDMixin, TimestampMixin
-
+from app.models.mixins import TimestampMixin, UUIDMixin
 
 SUPPORTED_PROVIDERS = (
     "ollama", "anthropic", "openai", "google", "groq", "mistral",

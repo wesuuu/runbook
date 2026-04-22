@@ -1,6 +1,7 @@
 import logging
 
-from app.services.core.notifications.channels.base import BaseChannel, FormattedMessage
+from app.services.core.notifications.channels.base import (BaseChannel,
+                                                           FormattedMessage)
 
 logger = logging.getLogger("notifications.console")
 

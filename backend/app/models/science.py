@@ -1,12 +1,13 @@
 import uuid
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
-from sqlalchemy import String, Integer, ForeignKey, Enum, Index, desc, CheckConstraint, Boolean
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (Boolean, CheckConstraint, Enum, ForeignKey, Index,
+                        Integer, String, desc)
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.mixins import UUIDMixin, TimestampMixin
+from app.models.mixins import TimestampMixin, UUIDMixin
 
 
 class ExperimentStatus(str, Enum):

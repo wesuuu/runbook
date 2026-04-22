@@ -3,12 +3,13 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, List, Optional
 
-from sqlalchemy import DateTime, String, ForeignKey, Boolean, UniqueConstraint, Index
+from sqlalchemy import (Boolean, DateTime, ForeignKey, Index, String,
+                        UniqueConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.mixins import UUIDMixin, TimestampMixin
+from app.models.mixins import TimestampMixin, UUIDMixin
 
 
 class SubscriptionTier(str, Enum):

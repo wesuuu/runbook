@@ -4,37 +4,23 @@ from pathlib import Path
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
+                     HTTPException, Query, UploadFile)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, get_or_404, require_permission
 from app.db.session import get_db
-from app.models.iam import (
-    User,
-    ObjectType,
-    PermissionLevel,
-    OrganizationMember,
-)
-from app.models.science import (
-    Protocol,
-    ProtocolVersion,
-    ProtocolRole,
-    Run,
-    Project,
-)
-from app.schemas.science import (
-    ProtocolCreate,
-    ProtocolUpdate,
-    ProtocolResponse,
-    ProtocolRoleCreate,
-    ProtocolRoleUpdate,
-    ProtocolRoleResponse,
-    ProtocolImportProposalResponse,
-    ProtocolRefineRequest,
-    ProtocolImportFinalizeRequest,
-)
+from app.models.iam import (ObjectType, OrganizationMember, PermissionLevel,
+                            User)
+from app.models.science import (Project, Protocol, ProtocolRole,
+                                ProtocolVersion, Run)
+from app.schemas.science import (ProtocolCreate, ProtocolImportFinalizeRequest,
+                                 ProtocolImportProposalResponse,
+                                 ProtocolRefineRequest, ProtocolResponse,
+                                 ProtocolRoleCreate, ProtocolRoleResponse,
+                                 ProtocolRoleUpdate, ProtocolUpdate)
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
@@ -87,7 +73,8 @@ async def create_protocol(
             raise HTTPException(403, "Org admin required for organization protocols")
 
     # Resolve default template IDs: project > org > system
-    from app.services.protocols.template_engine import resolve_default_template_id
+    from app.services.protocols.template_engine import \
+        resolve_default_template_id
 
     org_id = protocol.organization_id
     if not org_id and protocol.project_id:
@@ -149,12 +136,10 @@ async def import_protocol(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a protocol document and get an AI-generated import proposal."""
-    from app.services.protocols.protocol_importer import (
-        extract_text,
-        parse_protocol_text,
-        build_proposal,
-    )
     from app.models.science import UnitOpDefinition
+    from app.services.protocols.protocol_importer import (build_proposal,
+                                                          extract_text,
+                                                          parse_protocol_text)
 
     # Validate file type
     allowed_types = {
@@ -216,8 +201,8 @@ async def refine_protocol_endpoint(
 
     General-purpose: works for imported protocols and existing ones.
     """
-    from app.services.protocols.protocol_importer import refine_protocol
     from app.models.science import UnitOpDefinition
+    from app.services.protocols.protocol_importer import refine_protocol
 
     org_id = user.selected_org_id
 
@@ -246,7 +231,8 @@ async def finalize_protocol_import(
     db: AsyncSession = Depends(get_db),
 ):
     """Finalize a protocol import: create unit ops, roles, and protocol."""
-    from app.services.protocols.protocol_importer import StepProposal, finalize_import
+    from app.services.protocols.protocol_importer import (StepProposal,
+                                                          finalize_import)
 
     # Validate scope
     if request.project_id and request.organization_id:

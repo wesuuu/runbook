@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 
 from app.schemas.jobs import ProcessingProgress
 
-
 # ── Extraction response (read-only, from AI) ────────────────────────
 
 

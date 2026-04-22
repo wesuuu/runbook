@@ -19,19 +19,14 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.messages import BinaryContent
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
 
-from app.models.batch_record_import import (
-    BatchRecordImport,
-    BatchRecordImportStatus,
-)
+from app.models.batch_record_import import (BatchRecordImport,
+                                            BatchRecordImportStatus)
 from app.models.jobs import BackgroundJob
 from app.models.science import Protocol
-from app.services.ai.ai_config import get_model, get_full_config
+from app.services.ai.ai_config import get_full_config, get_model
 from app.services.core.background_jobs import BackgroundJobService
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 
@@ -313,10 +308,8 @@ async def _extract_single_call(
     org_id: UUID | None = None,
 ) -> BatchRecordExtraction:
     """Extract from all pages in a single LLM call."""
-    from app.services.ai.ai_vision import (
-        _is_ollama_model,
-        _get_ollama_model_name,
-    )
+    from app.services.ai.ai_vision import (_get_ollama_model_name,
+                                           _is_ollama_model)
 
     if page_images:
         model = await get_model("vision", db, org_id=org_id)
@@ -657,7 +650,8 @@ async def map_steps_to_protocol(
     Sends extracted step names + protocol step names + param schemas
     to the text model and gets back a structured mapping.
     """
-    from app.services.ai.ai_vision import _is_ollama_model, _get_ollama_model_name
+    from app.services.ai.ai_vision import (_get_ollama_model_name,
+                                           _is_ollama_model)
 
     _, flat_steps, _ = _parse_graph_roles_and_steps(protocol_graph)
     if not flat_steps or not extraction.steps:

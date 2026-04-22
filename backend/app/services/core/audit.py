@@ -1,7 +1,10 @@
-from uuid import UUID
 from typing import Any, Dict
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.execution import AuditLog
+
 
 async def log_audit(
     db: AsyncSession,

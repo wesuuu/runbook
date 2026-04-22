@@ -11,21 +11,13 @@ from typing import Any
 from fpdf import FPDF
 
 from app.services.core.file_storage import IMAGE_MIME_TYPES
-
-from app.services.documents.pdf_base import (
-    _resolve_format,
-    _fs,
-    _rs,
-    _format_value,
-    _render_template,
-    _build_param_sentence,
-    _get_initials,
-    _CURSIVE_FONT_PATH,
-    _draw_cursive_initials,
-    _wrap_text,
-    _draw_table_row,
-    _get_editable_params,
-)
+from app.services.documents.pdf_base import (_CURSIVE_FONT_PATH,
+                                             _build_param_sentence,
+                                             _draw_cursive_initials,
+                                             _draw_table_row, _format_value,
+                                             _fs, _get_editable_params,
+                                             _get_initials, _render_template,
+                                             _resolve_format, _rs, _wrap_text)
 
 
 class _BatchPdf(FPDF):

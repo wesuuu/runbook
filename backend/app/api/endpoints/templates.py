@@ -19,24 +19,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    OrgRole,
-    ObjectType,
-    PermissionLevel,
-    User,
-)
+from app.models.iam import (ObjectType, Organization, OrganizationMember,
+                            OrgRole, PermissionLevel, User)
 from app.models.science import Project
 from app.models.templates import DocumentTemplate
-from app.schemas.templates import DocumentTemplateResponse, DocumentTemplateUpdate
+from app.schemas.templates import (DocumentTemplateResponse,
+                                   DocumentTemplateUpdate)
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
-from app.services.protocols.template_engine import (
-    get_mock_context,
-    parse_template,
-    render_to_pdf,
-)
+from app.services.protocols.template_engine import (get_mock_context,
+                                                    parse_template,
+                                                    render_to_pdf)
 
 logger = logging.getLogger(__name__)
 

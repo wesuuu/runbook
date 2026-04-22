@@ -1,11 +1,12 @@
 import logging
 from typing import NamedTuple, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from fastapi import HTTPException, status
 
-from app.models.iam import User
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
+from app.models.iam import User
 
 logger = logging.getLogger(__name__)
 

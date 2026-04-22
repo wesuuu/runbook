@@ -12,17 +12,16 @@ import base64
 import json
 import logging
 from typing import Any, Awaitable, Callable, Literal, Optional
+from uuid import UUID
 
 import httpx
 from pydantic import BaseModel, Field
-from uuid import UUID
-
 from pydantic_ai import Agent
 from pydantic_ai.messages import BinaryContent
 from pydantic_ai.models.openai import OpenAIChatModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.ai.ai_config import get_full_config, get_model, ModelType
+from app.services.ai.ai_config import ModelType, get_full_config, get_model
 
 logger = logging.getLogger(__name__)
 

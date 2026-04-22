@@ -9,7 +9,6 @@ already exist.
 import shutil
 from pathlib import Path
 
-
 SYSTEM_TEMPLATES_SOURCE = Path(__file__).parent.parent / "documents" / "templates"
 SYSTEM_TEMPLATES_DEST = "system/document_templates"
 

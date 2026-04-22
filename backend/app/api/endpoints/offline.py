@@ -8,18 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, get_db
-from app.core.security import verify_password, create_offline_token
+from app.core.security import create_offline_token, verify_password
 from app.models.iam import User
 from app.models.offline import RevokedOfflineToken
 from app.models.science import Run, RunRoleAssignment, UnitOpDefinition
-from app.schemas.offline import (
-    OfflineSessionRequest,
-    OfflineSessionResponse,
-    RunPrefetchResponse,
-    RoleAssignmentPrefetch,
-    RevokeTokenRequest,
-    RevokedTokenResponse,
-)
+from app.schemas.offline import (OfflineSessionRequest, OfflineSessionResponse,
+                                 RevokedTokenResponse, RevokeTokenRequest,
+                                 RoleAssignmentPrefetch, RunPrefetchResponse)
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 

@@ -1,15 +1,13 @@
-from app.services.core.notifications.channels.base import (
-    BaseChannel,
-    FormattedMessage,
-    TransientError,
-    PermanentError,
-)
+from app.services.core.notifications.channels.base import (BaseChannel,
+                                                           FormattedMessage,
+                                                           PermanentError,
+                                                           TransientError)
 from app.services.core.notifications.channels.console import ConsoleChannel
-from app.services.core.notifications.channels.webhook import WebhookChannel
+from app.services.core.notifications.channels.discord import DiscordChannel
 from app.services.core.notifications.channels.email import EmailChannel
 from app.services.core.notifications.channels.slack import SlackChannel
 from app.services.core.notifications.channels.teams import TeamsChannel
-from app.services.core.notifications.channels.discord import DiscordChannel
+from app.services.core.notifications.channels.webhook import WebhookChannel
 
 CHANNEL_REGISTRY: dict[str, type[BaseChannel]] = {
     "CONSOLE": ConsoleChannel,

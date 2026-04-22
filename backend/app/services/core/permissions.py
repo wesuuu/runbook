@@ -1,20 +1,14 @@
 from uuid import UUID
 
-from sqlalchemy import select, or_, not_
+from sqlalchemy import not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    ObjectPermission,
-    OrganizationMember,
-    TeamMember,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-    PERMISSION_RANK,
-)
 from app.core.config import settings
-from app.models.science import Project, Protocol, Run
+from app.models.iam import (PERMISSION_RANK, ObjectPermission, ObjectType,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            TeamMember)
 from app.models.library import Document
+from app.models.science import Project, Protocol, Run
 
 
 def _meets_level(

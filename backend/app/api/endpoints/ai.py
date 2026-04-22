@@ -2,49 +2,33 @@ import logging
 import os
 import uuid as uuid_mod
 from pathlib import Path
-
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from fastapi import (APIRouter, Depends, HTTPException, Query, Request,
+                     UploadFile, status)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_or_404, get_org_id_from_request
+from app.core.deps import get_current_user, get_or_404, get_org_id_from_request
 from app.db.session import get_db
-from app.models.ai import (
-    AiProviderConfig,
-    ImageConversation,
-    RunImage,
-    ALLOWED_IMAGE_TYPES,
-    MAX_IMAGE_SIZE_BYTES,
-    SUPPORTED_CAPABILITIES,
-    SUPPORTED_PROVIDERS,
-    DEFAULT_CONFIGS,
-)
+from app.models.ai import (ALLOWED_IMAGE_TYPES, DEFAULT_CONFIGS,
+                           MAX_IMAGE_SIZE_BYTES, SUPPORTED_CAPABILITIES,
+                           SUPPORTED_PROVIDERS, AiProviderConfig,
+                           ImageConversation, RunImage)
+from app.models.iam import Organization, OrganizationMember, User
 from app.models.science import Run, RunStatus
-from app.schemas.ai import (
-    AiProviderConfigResponse,
-    AiProviderConfigUpdate,
-    AiSettingsListResponse,
-    AiTestConnectionResponse,
-    AnalysisResponse,
-    BatchAnalyzeResponse,
-    ConfirmRequest,
-    ConfirmResponse,
-    ConverseRequest,
-    ExtractedValueSchema,
-    ImageConversationResponse,
-    RunImageDetailResponse,
-    RunImageListResponse,
-    RunImageResponse,
-    TagImageRequest,
-)
-from app.core.deps import get_current_user
-from app.models.iam import Organization, User, OrganizationMember
-from app.services.ai.ai_provider_validation import validate_provider_credentials
+from app.schemas.ai import (AiProviderConfigResponse, AiProviderConfigUpdate,
+                            AiSettingsListResponse, AiTestConnectionResponse,
+                            AnalysisResponse, BatchAnalyzeResponse,
+                            ConfirmRequest, ConfirmResponse, ConverseRequest,
+                            ExtractedValueSchema, ImageConversationResponse,
+                            RunImageDetailResponse, RunImageListResponse,
+                            RunImageResponse, TagImageRequest)
+from app.services.ai.ai_provider_validation import \
+    validate_provider_credentials
 from app.services.ai.ai_vision import analyze_image, continue_conversation
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import FileStorageService
@@ -191,6 +175,7 @@ async def test_ai_connection(
             )
         else:
             from pydantic_ai import Agent
+
             from app.services.ai.ai_config import get_model
 
             model = await get_model(capability, db, org_id=org_id)

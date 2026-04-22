@@ -11,11 +11,7 @@ import httpx
 import trafilatura
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.library import (
-    Document,
-    DocumentStatus,
-    MAX_URL_RESPONSE_BYTES,
-)
+from app.models.library import MAX_URL_RESPONSE_BYTES, Document, DocumentStatus
 
 logger = logging.getLogger(__name__)
 

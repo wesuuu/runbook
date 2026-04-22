@@ -7,12 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.ai import (
-    AiProviderConfig,
-    DEFAULT_CONFIGS,
-    SUPPORTED_PROVIDERS,
-)
-from app.models.iam import Organization, SubscriptionTier, TIER_RANK
+from app.models.ai import (DEFAULT_CONFIGS, SUPPORTED_PROVIDERS,
+                           AiProviderConfig)
+from app.models.iam import TIER_RANK, Organization, SubscriptionTier
 
 ModelType = Union[str, OpenAIChatModel]
 

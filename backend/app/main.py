@@ -8,10 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, or_, select, update
-from sqlalchemy.ext.asyncio import (
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 
@@ -229,11 +226,8 @@ async def _recover_stalled_documents() -> None:
     Uses SELECT … FOR UPDATE SKIP LOCKED so multiple pods starting
     simultaneously won't double-process.
     """
-    from app.models.library import (
-        Document,
-        DocumentStatus,
-        STALE_PROCESSING_SECONDS,
-    )
+    from app.models.library import (STALE_PROCESSING_SECONDS, Document,
+                                    DocumentStatus)
     from app.services.documents.document_processor import process_document
 
     engine = create_async_engine(settings.database_url)
@@ -334,6 +328,7 @@ app = FastAPI(
 
 # Auth middleware — decodes JWT and stashes on request.state
 from app.core.middleware import AuthMiddleware
+
 app.add_middleware(AuthMiddleware)
 
 # CORS Configuration
@@ -358,30 +353,12 @@ async def health_check():
     return {"status": "ok", "service": "batchrite-backend"}
 
 
-from app.api.endpoints import (
-    auth,
-    batch_record_import,
-    projects,
-    iam,
-    unit_ops,
-    protocols,
-    protocol_versions,
-    protocol_pdfs,
-    runs,
-    export_data,
-    project_members,
-    ai,
-    chat,
-    dashboard,
-    experiments,
-    notifications,
-    offline,
-    sync,
-    library,
-    templates,
-    template_convert,
-    onboarding,
-)
+from app.api.endpoints import (ai, auth, batch_record_import, chat, dashboard,
+                               experiments, export_data, iam, library,
+                               notifications, offline, onboarding,
+                               project_members, projects, protocol_pdfs,
+                               protocol_versions, protocols, runs, sync,
+                               template_convert, templates, unit_ops)
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])

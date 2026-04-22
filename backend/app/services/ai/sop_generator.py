@@ -10,13 +10,9 @@ from typing import Any
 
 from fpdf import FPDF
 
-from app.services.documents.pdf_base import (
-    _resolve_format,
-    _fs,
-    _rs,
-    _render_template,
-    _build_param_sentence,
-)
+from app.services.documents.pdf_base import (_build_param_sentence, _fs,
+                                             _render_template, _resolve_format,
+                                             _rs)
 
 
 class _SopPdf(FPDF):

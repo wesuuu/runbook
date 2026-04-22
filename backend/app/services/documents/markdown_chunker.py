@@ -10,14 +10,12 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Optional
 
-from app.services.data.text_chunker import PageData, TextChunk, _get_page_number
-
+from app.services.data.text_chunker import (PageData, TextChunk,
+                                            _get_page_number)
 
 if TYPE_CHECKING:
-    from app.services.documents.document_structure import (
-        DocumentStructure,
-        PageHeading,
-    )
+    from app.services.documents.document_structure import (DocumentStructure,
+                                                           PageHeading)
 
 
 # Patterns for Markdown block boundaries

@@ -10,7 +10,6 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any
 
-
 # ── Column definitions ──
 
 LONG_COLUMNS: list[dict[str, str]] = [

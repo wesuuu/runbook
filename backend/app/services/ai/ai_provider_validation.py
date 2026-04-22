@@ -3,21 +3,20 @@
 import logging
 
 from fastapi import HTTPException
-
 from pydantic_ai.providers.anthropic import AnthropicProvider
-from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.providers.ollama import OllamaProvider
+from pydantic_ai.providers.bedrock import BedrockProvider
+from pydantic_ai.providers.cerebras import CerebrasProvider
+from pydantic_ai.providers.cohere import CohereProvider
+from pydantic_ai.providers.deepseek import DeepSeekProvider
+from pydantic_ai.providers.fireworks import FireworksProvider
+from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.providers.mistral import MistralProvider
-from pydantic_ai.providers.cohere import CohereProvider
+from pydantic_ai.providers.ollama import OllamaProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
-from pydantic_ai.providers.xai import XaiProvider
-from pydantic_ai.providers.cerebras import CerebrasProvider
-from pydantic_ai.providers.deepseek import DeepSeekProvider
 from pydantic_ai.providers.together import TogetherProvider
-from pydantic_ai.providers.fireworks import FireworksProvider
-from pydantic_ai.providers.bedrock import BedrockProvider
-from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.providers.xai import XaiProvider
 
 logger = logging.getLogger(__name__)
 

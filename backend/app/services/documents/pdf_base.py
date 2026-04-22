@@ -14,7 +14,6 @@ from fpdf import FPDF
 
 from app.services.documents.fonts import FONTS_DIR
 
-
 # ── Default format options ──
 
 DEFAULT_FORMAT: dict[str, Any] = {

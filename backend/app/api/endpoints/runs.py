@@ -5,52 +5,34 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    Form,
-    HTTPException,
-    Query,
-    Request,
-    UploadFile,
-)
+from fastapi import (APIRouter, BackgroundTasks, Depends, Form, HTTPException,
+                     Query, Request, UploadFile)
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import func, select, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.deps import get_current_user, get_or_404, get_org_id_from_request, require_permission
+from app.api.endpoints.protocol_pdfs import (_load_template,
+                                             _resolve_template_path)
+from app.core.deps import (get_current_user, get_or_404,
+                           get_org_id_from_request, require_permission)
 from app.db.session import get_db
+from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
-from app.models.iam import User, ObjectType, PermissionLevel
-from app.models.science import (
-    Protocol,
-    Run,
-    Project,
-    RunRoleAssignment,
-)
-from app.models.ai import RunImage, ImageConversation
-from app.schemas.science import (
-    RunCreate,
-    RunUpdate,
-    RunResponse,
-    RunRoleAssignmentCreate,
-    RunRoleAssignmentResponse,
-    RunRoleAssignmentListResponse,
-    RunNote,
-    RunNoteCreate,
-    RunNoteListResponse,
-    RunAttachment,
-    RunAttachmentListResponse,
-)
+from app.models.iam import ObjectType, PermissionLevel, User
+from app.models.science import Project, Protocol, Run, RunRoleAssignment
+from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
+                                 RunCreate, RunNote, RunNoteCreate,
+                                 RunNoteListResponse, RunResponse,
+                                 RunRoleAssignmentCreate,
+                                 RunRoleAssignmentListResponse,
+                                 RunRoleAssignmentResponse, RunUpdate)
 from app.services.core.audit import log_audit
-from app.services.core.file_storage import FileStorageService, IMAGE_MIME_TYPES
-from app.services.data.graph_processing import _parse_graph_roles_and_steps
+from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
+from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.template_engine import build_context, render_to_pdf
-from app.api.endpoints.protocol_pdfs import _load_template, _resolve_template_path
 
 logger = logging.getLogger(__name__)
 
