@@ -1,5 +1,5 @@
 <script lang="ts">
-    import BarcodeScanner from './BarcodeScanner.svelte';
+    import BarcodeScanner from '$lib/components/BarcodeScanner.svelte';
     import * as Dialog from '$lib/components/ui/dialog';
     import { getUser } from '$lib/auth.svelte';
     import { queueAction, updateExecutionData, recordActivity } from '$lib/field-mode.svelte';
