@@ -19,6 +19,7 @@
     import { ConfirmDialog } from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
     import { PendingImagesSchema, AnalyzePendingResultSchema, RunRoleAssignmentListSchema, UserSearchSchema } from '$lib/schemas';
+    import { renderTemplate } from '$lib/utils/template';
     import { HelpMenu, TourModal, runRunTour } from '$lib/onboarding';
     import { shouldShowDot, markDismissed } from '$lib/onboarding/tourStore.svelte';
     import { z } from 'zod';
@@ -479,22 +480,22 @@
                                 <Table.Body>
                                     {#each getAllUnitOpSteps() as step, i}
                                         <Table.Row>
-                                            <Table.Cell class="text-muted-foreground font-mono">{i + 1}</Table.Cell>
-                                            <Table.Cell>
+                                            <Table.Cell class="text-muted-foreground font-mono align-top">{i + 1}</Table.Cell>
+                                            <Table.Cell class="max-w-md whitespace-normal align-top">
                                                 <p class="font-medium text-foreground">{step.name}</p>
                                                 {#if step.description}
-                                                    <p class="text-xs text-muted-foreground mt-1">{step.description}</p>
+                                                    <p class="text-xs text-muted-foreground mt-1 break-words">{renderTemplate(step.description, step.params)}</p>
                                                 {/if}
                                             </Table.Cell>
-                                            <Table.Cell>
+                                            <Table.Cell class="align-top">
                                                 <span class="inline-block text-xs font-semibold px-2 py-1 bg-muted text-foreground/80 rounded">
                                                     {step.category || '—'}
                                                 </span>
                                             </Table.Cell>
-                                            <Table.Cell class="text-foreground/80">
+                                            <Table.Cell class="text-foreground/80 align-top">
                                                 {step.duration_min ? `${step.duration_min} min` : '—'}
                                             </Table.Cell>
-                                            <Table.Cell>
+                                            <Table.Cell class="align-top">
                                                 {#if step.params && Object.keys(step.params).length > 0}
                                                     <div class="space-y-1">
                                                         {#each Object.entries(step.params) as [key, value]}
