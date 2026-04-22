@@ -14,7 +14,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import DEFAULT_CONFIGS
-from app.services.ai_config import get_credentials, get_full_config
+from app.services.ai.ai_config import get_credentials, get_full_config
 
 logger = logging.getLogger(__name__)
 

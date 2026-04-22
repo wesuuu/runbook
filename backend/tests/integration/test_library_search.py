@@ -75,7 +75,7 @@ class TestKeywordSearch:
 
         # Mock embedding to fail — forces keyword-only mode
         with patch(
-            "app.services.embedding.embed_query",
+            "app.services.ai.embedding.embed_query",
             side_effect=Exception("no embeddings"),
         ):
             resp = await client.get(
@@ -102,7 +102,7 @@ class TestKeywordSearch:
         )
 
         with patch(
-            "app.services.embedding.embed_query",
+            "app.services.ai.embedding.embed_query",
             side_effect=Exception("no embeddings"),
         ):
             resp = await client.get(
@@ -126,7 +126,7 @@ class TestKeywordSearch:
         )
 
         with patch(
-            "app.services.embedding.embed_query",
+            "app.services.ai.embedding.embed_query",
             side_effect=Exception("no embeddings"),
         ):
             resp = await client.get(
@@ -151,7 +151,7 @@ class TestKeywordSearch:
         )
 
         with patch(
-            "app.services.embedding.embed_query",
+            "app.services.ai.embedding.embed_query",
             side_effect=Exception("no embeddings"),
         ):
             resp = await client.get(
@@ -206,7 +206,7 @@ class TestResultGrouping:
         await db_session.flush()
 
         with patch(
-            "app.services.embedding.embed_query",
+            "app.services.ai.embedding.embed_query",
             side_effect=Exception("no embeddings"),
         ):
             resp = await client.get(
@@ -234,7 +234,7 @@ class TestSearchModes:
         )
 
         with patch(
-            "app.services.embedding.embed_query",
+            "app.services.ai.embedding.embed_query",
             side_effect=Exception("offline"),
         ):
             resp = await client.get(

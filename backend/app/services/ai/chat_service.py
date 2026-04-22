@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
 from app.models.science import UnitOpDefinition
-from app.services.ai_config import get_context_window, get_model
+from app.services.ai.ai_config import get_context_window, get_model
 
 logger = logging.getLogger(__name__)
 
@@ -419,7 +419,7 @@ async def create_protocol_tool(
     """
     import json as json_mod
     from app.models.science import Protocol, Project
-    from app.services.protocol_generator import (
+    from app.services.ai.protocol_generator import (
         build_graph,
         GeneratedStep,
         GeneratedProtocol,
@@ -678,7 +678,7 @@ async def retrieve_relevant_chunks(
     # Try to get query embedding
     query_embedding = None
     try:
-        from app.services.embedding import embed_query
+        from app.services.ai.embedding import embed_query
         from app.services.document_processor import _pad_embedding
 
         raw = await embed_query(query, db)

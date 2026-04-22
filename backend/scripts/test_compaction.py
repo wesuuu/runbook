@@ -15,8 +15,8 @@ import uuid
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
-from app.services.ai_config import get_context_window, get_model
-from app.services.chat_service import (
+from app.services.ai.ai_config import get_context_window, get_model
+from app.services.ai.chat_service import (
     compact_history,
     estimate_messages_tokens,
     estimate_tokens,

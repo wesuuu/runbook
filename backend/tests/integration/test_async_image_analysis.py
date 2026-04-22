@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import RunImage, ImageConversation
 from app.models.science import Project, Protocol, Run, RunStatus
-from app.services.ai_vision import ImageAnalysisResult, ExtractedValue
+from app.services.ai.ai_vision import ImageAnalysisResult, ExtractedValue
 
 
 # ── Shared fixtures ──────────────────────────────────────────────────

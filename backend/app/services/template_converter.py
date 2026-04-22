@@ -1859,7 +1859,7 @@ async def convert_document(
     and calls apply_substitutions to create the template. The original
     DOCX formatting is fully preserved.
     """
-    from app.services.ai_config import get_model
+    from app.services.ai.ai_config import get_model
 
     if conversion_id is None:
         conversion_id = str(ULID())
@@ -2022,7 +2022,7 @@ async def refine_template(
 
     Uses the same tool-based agent loop as convert_document.
     """
-    from app.services.ai_config import get_model
+    from app.services.ai.ai_config import get_model
 
     cid = str(state.conversion_id)
     event_stream = EventStream()

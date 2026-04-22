@@ -13,7 +13,7 @@ from app.models.chat import (
     ChatSessionStatus,
 )
 from app.models.iam import Organization, OrganizationMember, User
-from app.services.chat_service import (
+from app.services.ai.chat_service import (
     create_session,
     delete_session,
     get_session,
@@ -419,7 +419,7 @@ class TestCompactHistory:
         ]
 
         with patch(
-            "app.services.chat_service._generate_summary",
+            "app.services.ai.chat_service._generate_summary",
             new_callable=AsyncMock,
             return_value="Summary of the conversation.",
         ):
@@ -454,7 +454,7 @@ class TestCompactHistory:
         ]
 
         with patch(
-            "app.services.chat_service._generate_summary",
+            "app.services.ai.chat_service._generate_summary",
             new_callable=AsyncMock,
             return_value="Test summary content.",
         ):

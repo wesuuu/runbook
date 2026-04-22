@@ -12,7 +12,7 @@ from app.models.ai import RunImage, ImageConversation
 from app.models.execution import AuditLog
 from app.models.science import Project, Protocol, Run, RunStatus
 from app.models.iam import User
-from app.services.ai_vision import ImageAnalysisResult, ExtractedValue
+from app.services.ai.ai_vision import ImageAnalysisResult, ExtractedValue
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────

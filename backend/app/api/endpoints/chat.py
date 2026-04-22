@@ -25,8 +25,8 @@ from app.schemas.chat import (
     ChatSkillResponse,
     ChatSourceReference,
 )
-from app.services import chat_service
-from app.services.ai_config import get_context_window, get_model_display_name
+from app.services.ai import chat_service
+from app.services.ai.ai_config import get_context_window, get_model_display_name
 
 logger = logging.getLogger(__name__)
 

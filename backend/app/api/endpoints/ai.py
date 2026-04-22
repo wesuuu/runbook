@@ -44,8 +44,8 @@ from app.schemas.ai import (
 )
 from app.core.deps import get_current_user
 from app.models.iam import Organization, User, OrganizationMember
-from app.services.ai_provider_validation import validate_provider_credentials
-from app.services.ai_vision import analyze_image, continue_conversation
+from app.services.ai.ai_provider_validation import validate_provider_credentials
+from app.services.ai.ai_vision import analyze_image, continue_conversation
 from app.services.audit import log_audit
 from app.services.file_storage import FileStorageService
 
@@ -178,7 +178,7 @@ async def test_ai_connection(
 
     try:
         if capability == "embedding":
-            from app.services.embedding import embed_texts
+            from app.services.ai.embedding import embed_texts
             result = await embed_texts(["hello"], db, org_id=org_id)
             if result and len(result) > 0:
                 return AiTestConnectionResponse(
@@ -191,7 +191,7 @@ async def test_ai_connection(
             )
         else:
             from pydantic_ai import Agent
-            from app.services.ai_config import get_model
+            from app.services.ai.ai_config import get_model
 
             model = await get_model(capability, db, org_id=org_id)
             agent = Agent(model)

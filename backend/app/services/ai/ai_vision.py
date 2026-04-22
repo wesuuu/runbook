@@ -13,7 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import BinaryContent
 from pydantic_ai.models.openai import OpenAIChatModel
 
-from app.services.ai_config import get_model, get_full_config, ModelType
+from app.services.ai.ai_config import get_model, get_full_config, ModelType
 from sqlalchemy.ext.asyncio import AsyncSession
 
 

@@ -71,7 +71,7 @@ async def _preflight_ai_check(
     db: AsyncSession, org_id: UUID
 ) -> None:
     """Validate the template_convert AI capability is configured."""
-    from app.services.ai_config import get_model
+    from app.services.ai.ai_config import get_model
 
     try:
         await get_model("template_convert", db, org_id=org_id)

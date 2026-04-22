@@ -17,8 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.science import Protocol, ProtocolRole, UnitOpDefinition
-from app.services.ai_config import get_model
-from app.services.protocol_generator import (
+from app.services.ai.ai_config import get_model
+from app.services.ai.protocol_generator import (
     GeneratedProtocol,
     GeneratedStep,
     build_graph,
@@ -210,7 +210,7 @@ async def extract_text(
         return await asyncio.to_thread(extract_docx, file_path)
 
     if mime_type.startswith("image/"):
-        from app.services.ai_vision import extract_document_text
+        from app.services.ai.ai_vision import extract_document_text
 
         return await extract_document_text(str(file_path), db, org_id)
 

@@ -7,7 +7,7 @@ for backward compatibility. All PDF generation logic lives in:
 - batch_record_generator.py: batch record PDF generation
 """
 
-from app.services.sop_generator import generate_sop_pdf
+from app.services.ai.sop_generator import generate_sop_pdf
 from app.services.batch_record_generator import generate_batch_record_pdf
 from app.services.pdf_base import _get_initials
 

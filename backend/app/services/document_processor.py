@@ -219,7 +219,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
             )
             embeddings: list[list[float]] = []
             try:
-                from app.services.embedding import embed_texts
+                from app.services.ai.embedding import embed_texts
 
                 async def _emb_progress(current: int, total: int) -> None:
                     await BackgroundJobService.update_progress(
@@ -288,7 +288,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
             # --- Submit async enrichment if LLM is configured ---
             if doc.mime_type == "application/pdf":
                 try:
-                    from app.services.ai_config import get_full_config
+                    from app.services.ai.ai_config import get_full_config
 
                     cfg = await get_full_config("doc_structure", session, org_id=doc.org_id)
                     if cfg.get("is_enabled", True):
@@ -1001,7 +1001,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
 
                 if page_images:
                     # Check LLM availability
-                    from app.services.ai_config import (
+                    from app.services.ai.ai_config import (
                         get_full_config, get_model,
                     )
                     from app.services.document_structure import (
@@ -1206,7 +1206,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
 
             embeddings: list[list[float]] = []
             try:
-                from app.services.embedding import embed_texts
+                from app.services.ai.embedding import embed_texts
 
                 async def _emb_progress(
                     current: int, total: int

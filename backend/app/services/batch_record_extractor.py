@@ -31,7 +31,7 @@ from app.models.batch_record_import import (
 )
 from app.models.jobs import BackgroundJob
 from app.models.science import Protocol
-from app.services.ai_config import get_model, get_full_config
+from app.services.ai.ai_config import get_model, get_full_config
 from app.services.background_jobs import BackgroundJobService
 from app.services.graph_processing import _parse_graph_roles_and_steps
 
@@ -264,7 +264,7 @@ async def extract_batch_record_pages(
         return text, images
 
     if mime_type.startswith("image/"):
-        from app.services.ai_vision import extract_document_text
+        from app.services.ai.ai_vision import extract_document_text
 
         text = await extract_document_text(str(file_path), db, org_id)
         image_bytes = await asyncio.to_thread(file_path.read_bytes)
@@ -313,7 +313,7 @@ async def _extract_single_call(
     org_id: UUID | None = None,
 ) -> BatchRecordExtraction:
     """Extract from all pages in a single LLM call."""
-    from app.services.ai_vision import (
+    from app.services.ai.ai_vision import (
         _is_ollama_model,
         _get_ollama_model_name,
     )
@@ -361,7 +361,7 @@ async def _ollama_extract(
     org_id: UUID | None = None,
 ) -> BatchRecordExtraction:
     """Extract batch record data using Ollama's native /api/chat API."""
-    from app.services.ai_vision import _get_ollama_model_name
+    from app.services.ai.ai_vision import _get_ollama_model_name
 
     config = await get_full_config("vision", db, org_id=org_id)
     creds = config.get("credentials") or {}
@@ -657,7 +657,7 @@ async def map_steps_to_protocol(
     Sends extracted step names + protocol step names + param schemas
     to the text model and gets back a structured mapping.
     """
-    from app.services.ai_vision import _is_ollama_model, _get_ollama_model_name
+    from app.services.ai.ai_vision import _is_ollama_model, _get_ollama_model_name
 
     _, flat_steps, _ = _parse_graph_roles_and_steps(protocol_graph)
     if not flat_steps or not extraction.steps:

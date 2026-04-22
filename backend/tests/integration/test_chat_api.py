@@ -13,7 +13,7 @@ from app.models.iam import Organization
 @pytest.fixture(autouse=True)
 def mock_llm_and_rag():
     with patch(
-        "app.services.chat_service._call_llm",
+        "app.services.ai.chat_service._call_llm",
         new_callable=AsyncMock,
         return_value=("I'm Batchrite AI, happy to help!", [], [], [], None),
     ):
@@ -319,7 +319,7 @@ class TestSendChatMessageWithRAG:
     @pytest.fixture(autouse=True)
     def override_mocks(self):
         """Override the module-level mocks with RAG-aware ones."""
-        from app.services.chat_service import RetrievedChunk
+        from app.services.ai.chat_service import RetrievedChunk
 
         fake_sources = [
             RetrievedChunk(
@@ -334,7 +334,7 @@ class TestSendChatMessageWithRAG:
         ]
         fake_tool_calls = [{"tool": "search_documents", "query": "buffer prep", "results": 1}]
         with patch(
-            "app.services.chat_service._call_llm",
+            "app.services.ai.chat_service._call_llm",
             new_callable=AsyncMock,
             return_value=(
                 "Based on the Buffer Prep SOP [1], you should mix Tris-HCl.",

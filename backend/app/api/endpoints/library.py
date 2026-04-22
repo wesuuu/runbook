@@ -627,7 +627,7 @@ async def search_documents(
     # Attempt to get query embedding for vector search
     query_embedding = None
     try:
-        from app.services.embedding import embed_query
+        from app.services.ai.embedding import embed_query
         from app.services.document_processor import _pad_embedding
 
         raw = await embed_query(q, db)
@@ -827,7 +827,7 @@ async def backfill_embeddings(
         return {"embedded": 0, "remaining": 0}
 
     try:
-        from app.services.embedding import embed_texts
+        from app.services.ai.embedding import embed_texts
         from app.services.document_processor import _pad_embedding
 
         texts = [c.content for c in chunks]

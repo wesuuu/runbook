@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.protocol_generator import (
+from app.services.ai.protocol_generator import (
     GeneratedProtocol,
     GeneratedStep,
     build_graph,

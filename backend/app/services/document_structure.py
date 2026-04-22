@@ -22,7 +22,7 @@ from pydantic_ai.messages import BinaryContent
 from pydantic_ai.models.openai import OpenAIChatModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.ai_config import get_full_config, get_model, ModelType
+from app.services.ai.ai_config import get_full_config, get_model, ModelType
 
 logger = logging.getLogger(__name__)
 
