@@ -23,7 +23,7 @@
     import FieldModeHeader from '$lib/components/field-mode/FieldModeHeader.svelte';
     import FieldModeRoleWizard from '$lib/components/field-mode/FieldModeRoleWizard.svelte';
     import FieldModeLockScreen from '$lib/components/field-mode/FieldModeLockScreen.svelte';
-    import ExpiryWarningBanner from '$lib/components/ExpiryWarningBanner.svelte';
+    import ExpiryWarningBanner from '$lib/components/shared/ExpiryWarningBanner.svelte';
     import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';

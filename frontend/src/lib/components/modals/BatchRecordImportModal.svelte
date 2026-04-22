@@ -2,7 +2,7 @@
     import { api } from '$lib/api';
     import { toast } from 'svelte-sonner';
     import FullScreenModal from '$lib/components/ui/FullScreenModal.svelte';
-    import ConfidenceBadge from '$lib/components/ConfidenceBadge.svelte';
+    import ConfidenceBadge from '$lib/components/shared/ConfidenceBadge.svelte';
     import { Button } from '$lib/components/ui/button';
     import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
     import {
