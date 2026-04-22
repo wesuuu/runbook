@@ -46,7 +46,7 @@ from app.schemas.science import (
 )
 from app.services.audit import log_audit
 from app.services.file_storage import FileStorageService, IMAGE_MIME_TYPES
-from app.services.graph_processing import _parse_graph_roles_and_steps
+from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.notifications import send_notification
 from app.services.permissions import check_permission
 from app.services.protocols.template_engine import build_context, render_to_pdf

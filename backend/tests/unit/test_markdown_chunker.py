@@ -15,7 +15,7 @@ from app.services.documents.document_structure import (
     PageAnalysis,
     PageHeading,
 )
-from app.services.text_chunker import PageData
+from app.services.data.text_chunker import PageData
 
 
 class TestEmptyAndShortTexts:

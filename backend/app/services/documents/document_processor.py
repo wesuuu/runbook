@@ -26,7 +26,7 @@ from app.services.documents.markdown_chunker import (
     rechunk_with_structure,
 )
 from app.services.task_runner import get_task_runner
-from app.services.text_chunker import PageData, chunk_text
+from app.services.data.text_chunker import PageData, chunk_text
 
 logger = logging.getLogger(__name__)
 
