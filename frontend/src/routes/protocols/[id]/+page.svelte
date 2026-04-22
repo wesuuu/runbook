@@ -60,7 +60,7 @@
     import ProcessStartInspector from "$lib/components/protocol/ProcessStartInspector.svelte";
     import TimeAxis from "$lib/components/protocol/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/modals/CreateUnitOpModal.svelte";
-    import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
+    import VersionHistoryDrawer from "$lib/components/analytics/VersionHistoryDrawer.svelte";
     import PdfPreviewDrawer from "$lib/components/media/PdfPreviewDrawer.svelte";
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
     import { HelpMenu, TourModal, runProtocolTour } from "$lib/onboarding";

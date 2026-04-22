@@ -1,11 +1,11 @@
 <script lang="ts">
     import { api } from "$lib/api";
-    import AuditTimeline from "$lib/components/AuditTimeline.svelte";
+    import AuditTimeline from "$lib/components/analytics/AuditTimeline.svelte";
     import { Button } from "$lib/components/ui/button";
     import type {
         AuditEntry,
         DetailLine,
-    } from "$lib/components/AuditTimeline.svelte";
+    } from "$lib/components/analytics/AuditTimeline.svelte";
     import {
         stepEditSummary,
         entityBadgeClasses,
