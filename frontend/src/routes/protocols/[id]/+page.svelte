@@ -61,7 +61,7 @@
     import TimeAxis from "$lib/components/protocol/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/modals/CreateUnitOpModal.svelte";
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
-    import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";
+    import PdfPreviewDrawer from "$lib/components/media/PdfPreviewDrawer.svelte";
     import ConfirmDialog from "$lib/components/ui/confirm-dialog.svelte";
     import { HelpMenu, TourModal, runProtocolTour } from "$lib/onboarding";
     import { shouldShowDot, markDismissed } from "$lib/onboarding/tourStore.svelte";
