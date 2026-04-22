@@ -17,7 +17,7 @@
     } from '$lib/components/ui/card';
     import ProjectDataTable from '$lib/components/project/ProjectDataTable.svelte';
     import { formatDate } from '$lib/components/project/projectUtils';
-    import AiSettingsTab from '$lib/components/AiSettingsTab.svelte';
+    import AiSettingsTab from '$lib/components/settings/AiSettingsTab.svelte';
     import TemplatesTab from '$lib/components/settings/TemplatesTab.svelte';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
