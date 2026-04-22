@@ -2,7 +2,7 @@
     import { tick } from "svelte";
     import { marked } from "marked";
     import DOMPurify from "dompurify";
-    import ChatSkillButtons from "$lib/components/ChatSkillButtons.svelte";
+    import ChatSkillButtons from "$lib/components/ai/ChatSkillButtons.svelte";
     import { Button } from "$lib/components/ui/button";
     import { scale, fly } from "svelte/transition";
     import {

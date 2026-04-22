@@ -14,7 +14,7 @@
     import MobileNav from '$lib/components/MobileNav.svelte';
     import { Toaster } from '$lib/components/ui/sonner';
     import { Button } from '$lib/components/ui/button';
-    import ChatPanel from '$lib/components/ChatPanel.svelte';
+    import ChatPanel from '$lib/components/ai/ChatPanel.svelte';
     import { initChat } from '$lib/chat-store.svelte';
     import { onDestroy } from 'svelte';
     import { fade } from 'svelte/transition';
