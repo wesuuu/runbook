@@ -53,12 +53,12 @@
         canRedo,
         buildGraphSnapshot,
     } from "$lib/components/protocol/undoRedo";
-    import UnitOpNode from "$lib/components/UnitOpNode.svelte";
-    import SwimLaneNode from "$lib/components/SwimLaneNode.svelte";
-    import ProcessStartNode from "$lib/components/ProcessStartNode.svelte";
-    import Inspector from "$lib/components/Inspector.svelte";
-    import ProcessStartInspector from "$lib/components/ProcessStartInspector.svelte";
-    import TimeAxis from "$lib/components/TimeAxis.svelte";
+    import UnitOpNode from "$lib/components/protocol/UnitOpNode.svelte";
+    import SwimLaneNode from "$lib/components/protocol/SwimLaneNode.svelte";
+    import ProcessStartNode from "$lib/components/protocol/ProcessStartNode.svelte";
+    import Inspector from "$lib/components/protocol/Inspector.svelte";
+    import ProcessStartInspector from "$lib/components/protocol/ProcessStartInspector.svelte";
+    import TimeAxis from "$lib/components/protocol/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/CreateUnitOpModal.svelte";
     import VersionHistoryDrawer from "$lib/components/VersionHistoryDrawer.svelte";
     import PdfPreviewDrawer from "$lib/components/PdfPreviewDrawer.svelte";

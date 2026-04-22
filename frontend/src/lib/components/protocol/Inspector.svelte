@@ -3,7 +3,7 @@
     import type { Node } from "@xyflow/svelte";
     import { X } from "lucide-svelte";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
-    import EquipmentPickerModal from "./EquipmentPickerModal.svelte";
+    import EquipmentPickerModal from "$lib/components/EquipmentPickerModal.svelte";
     import { Button } from "$lib/components/ui/button";
 
     interface Equipment {
