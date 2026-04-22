@@ -520,43 +520,40 @@ async def update_protocol(
     # If graph is being updated and save_as_draft is True
     if "graph" in changes and save_as_draft:
         new_graph = changes["graph"]
-        # Check if graph actually changed compared to current protocol
-        if new_graph != protocol.graph:
-            # Create/update draft version without modifying main protocol
-            draft_version_number = protocol.version_number + 1
+        # Always create/update the draft when save_as_draft is requested.
+        # The user's intent to save a draft means we should always have a
+        # draft version to publish, even if the graph is semantically unchanged.
+        draft_version_number = protocol.version_number + 1
 
-            # Check if draft already exists
-            existing_draft = await db.execute(
-                select(ProtocolVersion).where(
-                    (ProtocolVersion.protocol_id == protocol_id)
-                    & (ProtocolVersion.version_number == draft_version_number)
-                    & (ProtocolVersion.is_draft == True)
-                )
+        # Check if draft already exists
+        existing_draft = await db.execute(
+            select(ProtocolVersion).where(
+                (ProtocolVersion.protocol_id == protocol_id)
+                & (ProtocolVersion.version_number == draft_version_number)
+                & (ProtocolVersion.is_draft == True)
             )
-            draft = existing_draft.scalar_one_or_none()
+        )
+        draft = existing_draft.scalar_one_or_none()
 
-            if draft:
-                # Update existing draft
-                draft.graph = new_graph
-            else:
-                # Create new draft version
-                draft = ProtocolVersion(
-                    protocol_id=protocol.id,
-                    version_number=draft_version_number,
-                    graph=new_graph,
-                    name=changes.get("name", protocol.name),
-                    description=changes.get("description", protocol.description),
-                    created_by_id=user.id,
-                    is_draft=True,
-                    sop_template_id=protocol.sop_template_id,
-                    batch_record_template_id=protocol.batch_record_template_id,
-                )
-                db.add(draft)
-
-            audit_changes = {"action": "saved_draft", "draft_version": draft_version_number}
+        if draft:
+            # Update existing draft
+            draft.graph = new_graph
         else:
-            # No meaningful changes to graph
-            audit_changes = {"action": "save_draft_attempt", "result": "no_changes"}
+            # Create new draft version
+            draft = ProtocolVersion(
+                protocol_id=protocol.id,
+                version_number=draft_version_number,
+                graph=new_graph,
+                name=changes.get("name", protocol.name),
+                description=changes.get("description", protocol.description),
+                created_by_id=user.id,
+                is_draft=True,
+                sop_template_id=protocol.sop_template_id,
+                batch_record_template_id=protocol.batch_record_template_id,
+            )
+            db.add(draft)
+
+        audit_changes = {"action": "saved_draft", "draft_version": draft_version_number}
     else:
         # Normal save: update protocol graph and create version
         if "graph" in changes:

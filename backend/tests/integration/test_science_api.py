@@ -904,13 +904,17 @@ async def test_publish_draft_not_found(
 
 
 @pytest.mark.asyncio
-async def test_save_draft_no_changes(
+async def test_save_draft_always_creates_version(
     client: AsyncClient,
     auth_headers: dict,
     test_project: Project,
     db_session: AsyncSession,
 ):
-    """Test that saving identical graph doesn't create new version."""
+    """Save-as-draft always creates a draft version, even for unchanged graphs.
+
+    The user's explicit intent to save means a draft must exist so it can be
+    published. Skipping draft creation caused publish to fail with 404.
+    """
     protocol = Protocol(
         name="Test Protocol",
         project_id=test_project.id,
@@ -921,7 +925,7 @@ async def test_save_draft_no_changes(
     db_session.add(protocol)
     await db_session.flush()
 
-    # Try to save the exact same graph
+    # Save the exact same graph
     resp = await client.put(
         f"/science/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": {"nodes": [{"id": "1"}], "edges": []}},
@@ -929,14 +933,13 @@ async def test_save_draft_no_changes(
     )
     assert resp.status_code == 200
 
-    # Check that no new version was created
+    # A draft v1 should now exist so publish can find it
     resp = await client.get(
         f"/science/protocols/{protocol.id}/versions",
         headers=auth_headers,
     )
     versions = resp.json()
-    # Should not have v1 since no changes
-    assert all(v["version_number"] != 1 for v in versions)
+    assert any(v["version_number"] == 1 for v in versions)
 
 
 @pytest.mark.asyncio

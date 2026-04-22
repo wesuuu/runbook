@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, Text, Index, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -65,3 +66,33 @@ class ChatMessage(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     session: Mapped["ChatSession"] = relationship(back_populates="messages")
+
+
+class ChatRateLimitAttempt(Base):
+    __tablename__ = "chat_rate_limit_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    attempted_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        Index("idx_key_attempted_at", "key", "attempted_at"),
+    )
+
+
+class ChatNotification(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "chat_notifications"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+
+    __table_args__ = (
+        Index("idx_org_created_at", "org_id", "created_at"),
+        Index("idx_user_created_at", "user_id", "created_at"),
+    )

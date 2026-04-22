@@ -3,7 +3,7 @@
     import { page } from '$app/stores';
     import { beforeNavigate } from '$app/navigation';
     import { goto } from '$app/navigation';
-    import { initialize, isAuthenticated, isEmailVerified, isInitialized, getUserPreferences, handleVerificationCallback } from '$lib/auth.svelte';
+    import { initialize, isAuthenticated, isEmailVerified, isInitialized, getCurrentOrg, getUserPreferences, handleVerificationCallback } from '$lib/auth.svelte';
     import { initConnectivity, destroyConnectivity } from '$lib/pwa.svelte';
     import { initFieldMode } from '$lib/field-mode.svelte';
     import { initSyncManager, destroySyncManager } from '$lib/sync-manager';
@@ -34,6 +34,10 @@
                path === '/export';
     }
 
+    function isOrgPro(org: { subscription_tier?: string } | null): boolean {
+        return org?.subscription_tier === 'pro';
+    }
+
     const publicRoutes = ['/login', '/register', '/check-email'];
     const fieldModeRoutes = ['/field'];
 
@@ -41,6 +45,8 @@
     const isFieldMode = $derived(fieldModeRoutes.some((r) => $page.url.pathname.startsWith(r)));
     const showNav = $derived(!isPublicRoute && !isFieldMode && isAuthenticated());
     const shouldShowChat = $derived(!shouldHideChatIcon($page.url.pathname));
+    const currentOrg = $derived(getCurrentOrg());
+    const canShowFab = $derived(isOrgPro(currentOrg));
     const isFullBleed = $derived(
         $page.url.pathname.startsWith('/protocols/') ||
         $page.url.pathname.startsWith('/export') ||
@@ -205,7 +211,7 @@
         closeButton={true}
         richColors={false}
     />
-    {#if showNav}
+    {#if showNav && canShowFab}
         <ChatPanel showFab={shouldShowChat} />
     {/if}
 {/if}
