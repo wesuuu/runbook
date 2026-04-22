@@ -89,7 +89,7 @@ async def _recover_stalled_jobs() -> None:
     """
     from app.models.jobs import BackgroundJob, JobStatus
     from app.models.library import Document, DocumentStatus
-    from app.services.document_processor import enrich_document
+    from app.services.documents.document_processor import enrich_document
 
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -234,7 +234,7 @@ async def _recover_stalled_documents() -> None:
         DocumentStatus,
         STALE_PROCESSING_SECONDS,
     )
-    from app.services.document_processor import process_document
+    from app.services.documents.document_processor import process_document
 
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)

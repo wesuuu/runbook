@@ -12,7 +12,7 @@ from fpdf import FPDF
 
 from app.services.file_storage import IMAGE_MIME_TYPES
 
-from app.services.pdf_base import (
+from app.services.documents.pdf_base import (
     _resolve_format,
     _fs,
     _rs,

@@ -679,7 +679,7 @@ async def retrieve_relevant_chunks(
     query_embedding = None
     try:
         from app.services.ai.embedding import embed_query
-        from app.services.document_processor import _pad_embedding
+        from app.services.documents.document_processor import _pad_embedding
 
         raw = await embed_query(query, db)
         query_embedding = _pad_embedding(raw)

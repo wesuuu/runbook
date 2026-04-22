@@ -9,7 +9,7 @@ for backward compatibility. All PDF generation logic lives in:
 
 from app.services.ai.sop_generator import generate_sop_pdf
 from app.services.batch_record_generator import generate_batch_record_pdf
-from app.services.pdf_base import _get_initials
+from app.services.documents.pdf_base import _get_initials
 
 __all__ = [
     "generate_sop_pdf",

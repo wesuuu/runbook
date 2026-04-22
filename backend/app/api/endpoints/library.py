@@ -56,7 +56,7 @@ from app.schemas.library import (
 )
 from app.services.audit import log_audit
 from app.services.file_storage import FileStorageService
-from app.services.document_processor import build_book, process_document
+from app.services.documents.document_processor import build_book, process_document
 from app.services.permissions import check_permission
 from app.services.task_runner import get_task_runner
 from app.services.url_importer import import_from_url
@@ -572,7 +572,7 @@ async def enrich_document_endpoint(
 
     Only works for PDF documents that are INDEXED or ENRICHED.
     """
-    from app.services.document_processor import enrich_document
+    from app.services.documents.document_processor import enrich_document
 
     org_id = await _get_user_org_id(current_user, db)
 
@@ -628,7 +628,7 @@ async def search_documents(
     query_embedding = None
     try:
         from app.services.ai.embedding import embed_query
-        from app.services.document_processor import _pad_embedding
+        from app.services.documents.document_processor import _pad_embedding
 
         raw = await embed_query(q, db)
         query_embedding = _pad_embedding(raw)
@@ -828,7 +828,7 @@ async def backfill_embeddings(
 
     try:
         from app.services.ai.embedding import embed_texts
-        from app.services.document_processor import _pad_embedding
+        from app.services.documents.document_processor import _pad_embedding
 
         texts = [c.content for c in chunks]
         embeddings = await embed_texts(texts, db)

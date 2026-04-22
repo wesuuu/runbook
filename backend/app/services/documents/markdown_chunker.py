@@ -14,7 +14,7 @@ from app.services.text_chunker import PageData, TextChunk, _get_page_number
 
 
 if TYPE_CHECKING:
-    from app.services.document_structure import (
+    from app.services.documents.document_structure import (
         DocumentStructure,
         PageHeading,
     )

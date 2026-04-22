@@ -34,7 +34,7 @@ class TestExtractPdfPages:
         return Path(tmp.name)
 
     def test_returns_page_data_list(self):
-        from app.services.document_processor import extract_pdf_pages
+        from app.services.documents.document_processor import extract_pdf_pages
 
         path = self._create_test_pdf([
             [("Hello World", 72, 72, 12)],
@@ -49,7 +49,7 @@ class TestExtractPdfPages:
             path.unlink()
 
     def test_multi_page_extraction(self):
-        from app.services.document_processor import extract_pdf_pages
+        from app.services.documents.document_processor import extract_pdf_pages
 
         path = self._create_test_pdf([
             [("Page One Content", 72, 72, 12)],
@@ -70,7 +70,7 @@ class TestExtractPdfPages:
 
     def test_page_text_is_independent(self):
         """Each page's text should only contain that page's content."""
-        from app.services.document_processor import extract_pdf_pages
+        from app.services.documents.document_processor import extract_pdf_pages
 
         path = self._create_test_pdf([
             [("ALPHA content", 72, 72, 12)],
@@ -85,7 +85,7 @@ class TestExtractPdfPages:
             path.unlink()
 
     def test_empty_pdf_returns_empty_page(self):
-        from app.services.document_processor import extract_pdf_pages
+        from app.services.documents.document_processor import extract_pdf_pages
 
         doc = pymupdf.open()
         doc.new_page()
@@ -104,7 +104,7 @@ class TestExtractPdfPages:
 
     def test_has_images_flag(self):
         """Pages with images should have has_images=True."""
-        from app.services.document_processor import extract_pdf_pages
+        from app.services.documents.document_processor import extract_pdf_pages
 
         doc = pymupdf.open()
         # Page 1: text only
@@ -152,7 +152,7 @@ class TestExtractPdfPages:
 
     def test_plain_text_extraction_preserves_content(self):
         """Plain pymupdf extraction preserves all text content."""
-        from app.services.document_processor import extract_pdf_pages
+        from app.services.documents.document_processor import extract_pdf_pages
 
         path = self._create_test_pdf([
             [

@@ -252,7 +252,7 @@ async def extract_batch_record_pages(
         (page_number, png_bytes) for vision analysis.
     """
     if mime_type == "application/pdf":
-        from app.services.document_processor import extract_pdf_pages
+        from app.services.documents.document_processor import extract_pdf_pages
 
         pages = await asyncio.to_thread(extract_pdf_pages, file_path, True)
         text = "\n\n".join(p.text for p in pages if p.text)

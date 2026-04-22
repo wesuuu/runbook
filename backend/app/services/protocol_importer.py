@@ -197,7 +197,7 @@ async def extract_text(
     - Images: vision LLM OCR
     """
     if mime_type == "application/pdf":
-        from app.services.document_processor import extract_pdf_pages
+        from app.services.documents.document_processor import extract_pdf_pages
 
         pages = await asyncio.to_thread(extract_pdf_pages, file_path, False)
         return "\n\n".join(p.text for p in pages if p.text)
@@ -205,7 +205,7 @@ async def extract_text(
     if mime_type in (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ):
-        from app.services.document_processor import extract_docx
+        from app.services.documents.document_processor import extract_docx
 
         return await asyncio.to_thread(extract_docx, file_path)
 

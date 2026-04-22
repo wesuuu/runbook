@@ -10,7 +10,7 @@ from typing import Any
 
 from fpdf import FPDF
 
-from app.services.pdf_base import (
+from app.services.documents.pdf_base import (
     _resolve_format,
     _fs,
     _rs,

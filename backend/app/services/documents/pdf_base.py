@@ -12,7 +12,7 @@ from typing import Any
 
 from fpdf import FPDF
 
-from app.services.fonts import FONTS_DIR
+from app.services.documents.fonts import FONTS_DIR
 
 
 # ── Default format options ──

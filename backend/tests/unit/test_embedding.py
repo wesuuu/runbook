@@ -11,7 +11,7 @@ from app.services.ai.embedding import (
     EmbeddingError,
     BATCH_SIZE,
 )
-from app.services.document_processor import _pad_embedding
+from app.services.documents.document_processor import _pad_embedding
 from app.models.library import EMBEDDING_DIMENSIONS
 
 

@@ -20,7 +20,7 @@ from app.models.library import (
     DocumentChunk,
     DocumentStatus,
 )
-from app.services.markdown_chunker import (
+from app.services.documents.markdown_chunker import (
     chunk_by_pages,
     chunk_markdown,
     rechunk_with_structure,
@@ -584,7 +584,7 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
     The document is already readable at this point (status=INDEXED).
     This just makes it better. If it fails, the document stays INDEXED.
     """
-    from app.services.document_structure import analyze_document_structure
+    from app.services.documents.document_structure import analyze_document_structure
 
     import app.db.base  # noqa: F401
 
@@ -793,7 +793,7 @@ def _build_toc_from_structure(
     Extracts all headings from page analyses and returns them
     as a list of dicts ready for JSON storage.
     """
-    from app.services.document_structure import DocumentStructure
+    from app.services.documents.document_structure import DocumentStructure
 
     toc: list[dict] = []
     for pa in structure.pages:
@@ -845,7 +845,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
     5. Generate embeddings
     """
     import app.db.base  # noqa: F401
-    from app.services.document_structure import (
+    from app.services.documents.document_structure import (
         DocumentStructure,
         analyze_document_structure,
     )
@@ -1004,7 +1004,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                     from app.services.ai.ai_config import (
                         get_full_config, get_model,
                     )
-                    from app.services.document_structure import (
+                    from app.services.documents.document_structure import (
                         _check_llm_available, _is_ollama_model,
                     )
 
@@ -1071,7 +1071,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                             0, 1,
                         )
                         try:
-                            from app.services.document_structure import (
+                            from app.services.documents.document_structure import (
                                 extract_toc,
                             )
                             toc = await extract_toc(
