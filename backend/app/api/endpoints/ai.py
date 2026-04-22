@@ -46,8 +46,8 @@ from app.core.deps import get_current_user
 from app.models.iam import Organization, User, OrganizationMember
 from app.services.ai.ai_provider_validation import validate_provider_credentials
 from app.services.ai.ai_vision import analyze_image, continue_conversation
-from app.services.audit import log_audit
-from app.services.file_storage import FileStorageService
+from app.services.core.audit import log_audit
+from app.services.core.file_storage import FileStorageService
 
 router = APIRouter()
 

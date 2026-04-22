@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.task_runner import (
+from app.services.core.task_runner import (
     TaskRunner,
     ThreadTaskRunner,
     get_task_runner,
@@ -87,13 +87,13 @@ class TestGetTaskRunner:
         runner = get_task_runner()
         assert isinstance(runner, ThreadTaskRunner)
 
-    @patch("app.services.task_runner.settings")
+    @patch("app.services.core.task_runner.settings")
     def test_thread_backend_explicit(self, mock_settings):
         mock_settings.task_runner_backend = "thread"
         runner = get_task_runner()
         assert isinstance(runner, ThreadTaskRunner)
 
-    @patch("app.services.task_runner.settings")
+    @patch("app.services.core.task_runner.settings")
     def test_unknown_backend_raises(self, mock_settings):
         mock_settings.task_runner_backend = "celery"
         with pytest.raises(ValueError, match="Unknown task runner"):

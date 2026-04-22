@@ -142,7 +142,7 @@ async def test_run(db_session: AsyncSession, test_project: Project) -> Run:
 
 @pytest.fixture
 def tmp_image_storage(tmp_path: Path):
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     original_init = FileStorageService.__init__
 

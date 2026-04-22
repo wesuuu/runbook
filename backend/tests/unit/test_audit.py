@@ -2,7 +2,7 @@ import uuid
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.services.audit import log_audit
+from app.services.core.audit import log_audit
 from app.models.execution import AuditLog
 
 @pytest.mark.asyncio

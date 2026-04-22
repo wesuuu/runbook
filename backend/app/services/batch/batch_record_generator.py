@@ -10,7 +10,7 @@ from typing import Any
 
 from fpdf import FPDF
 
-from app.services.file_storage import IMAGE_MIME_TYPES
+from app.services.core.file_storage import IMAGE_MIME_TYPES
 
 from app.services.documents.pdf_base import (
     _resolve_format,
@@ -890,7 +890,7 @@ def generate_batch_record_pdf(
         from io import BytesIO
         from pathlib import Path
 
-        from app.services.file_storage import FileStorageService
+        from app.services.core.file_storage import FileStorageService
 
         pdf.add_page()
         pdf.set_font(ff, "B", fs["section"])

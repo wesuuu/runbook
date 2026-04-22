@@ -42,7 +42,7 @@ from app.models.library import (
     validate_file_content,
 )
 from app.schemas.jobs import ProcessingProgress
-from app.services.background_jobs import BackgroundJobService
+from app.services.core.background_jobs import BackgroundJobService
 from app.schemas.library import (
     DocumentChunkResponse,
     DocumentDetailResponse,
@@ -54,11 +54,11 @@ from app.schemas.library import (
     SearchResultItem,
     TOCEntry,
 )
-from app.services.audit import log_audit
-from app.services.file_storage import FileStorageService
+from app.services.core.audit import log_audit
+from app.services.core.file_storage import FileStorageService
 from app.services.documents.document_processor import build_book, process_document
-from app.services.permissions import check_permission
-from app.services.task_runner import get_task_runner
+from app.services.core.permissions import check_permission
+from app.services.core.task_runner import get_task_runner
 from app.services.protocols.url_importer import import_from_url
 
 router = APIRouter()

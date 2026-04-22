@@ -27,7 +27,7 @@ from app.models.iam import (
     User,
     VerificationToken,
 )
-from app.services.file_storage import FileStorageService
+from app.services.core.file_storage import FileStorageService
 from app.schemas.auth import (
     LoginRequest,
     PasswordChange,
@@ -40,7 +40,7 @@ from app.schemas.auth import (
     UserResponse,
     VerificationTokenResponse,
 )
-from app.services.email_service import get_email_provider
+from app.services.core.email_service import get_email_provider
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

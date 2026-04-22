@@ -17,7 +17,7 @@ from app.schemas.offline import (
     SyncQueueRequest,
     SyncQueueResponse,
 )
-from app.services.audit import log_audit
+from app.services.core.audit import log_audit
 
 router = APIRouter()
 
@@ -172,7 +172,7 @@ async def _handle_image_upload(
 
     from fastapi import UploadFile as _UploadFile
 
-    from app.services.file_storage import FileStorageService, IMAGE_MIME_TYPES
+    from app.services.core.file_storage import FileStorageService, IMAGE_MIME_TYPES
 
     filename = action.image_filename or f"offline_{uuid.uuid4().hex[:8]}.jpg"
     mime_type = "image/png" if filename.endswith(".png") else "image/jpeg"

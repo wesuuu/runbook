@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import (
 
 from app.models.jobs import BackgroundJob, JobStatus
 from app.core.config import settings
-from app.services.background_jobs import BackgroundJobService
-from app.services.file_storage import FileStorageService
+from app.services.core.background_jobs import BackgroundJobService
+from app.services.core.file_storage import FileStorageService
 from app.models.library import (
     EMBEDDING_DIMENSIONS,
     Document,
@@ -25,7 +25,7 @@ from app.services.documents.markdown_chunker import (
     chunk_markdown,
     rechunk_with_structure,
 )
-from app.services.task_runner import get_task_runner
+from app.services.core.task_runner import get_task_runner
 from app.services.data.text_chunker import PageData, chunk_text
 
 logger = logging.getLogger(__name__)

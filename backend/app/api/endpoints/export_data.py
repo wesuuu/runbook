@@ -16,7 +16,7 @@ from app.schemas.export import (
     ExportDownloadRequest,
 )
 from app.services.documents.export import build_export_data, filter_columns, get_strategy
-from app.services.permissions import check_permission
+from app.services.core.permissions import check_permission
 
 logger = logging.getLogger(__name__)
 

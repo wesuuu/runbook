@@ -162,7 +162,7 @@ async def import_from_url(
 
     from fastapi import UploadFile as _UploadFile
 
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     md_bytes = extracted_md.encode("utf-8")
     fake_upload = _UploadFile(

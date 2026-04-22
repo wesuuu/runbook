@@ -41,8 +41,8 @@ from app.schemas.notifications import (
     DeliveryResponse,
     DeliveryListResponse,
 )
-from app.services.notifications.channels import get_channel
-from app.services.notifications.channels.base import (
+from app.services.core.notifications.channels import get_channel
+from app.services.core.notifications.channels.base import (
     TransientError, PermanentError,
 )
 

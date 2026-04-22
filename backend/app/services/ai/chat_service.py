@@ -424,7 +424,7 @@ async def create_protocol_tool(
         GeneratedStep,
         GeneratedProtocol,
     )
-    from app.services.permissions import check_permission
+    from app.services.core.permissions import check_permission
     from app.models.iam import ObjectType, PermissionLevel
 
     db = ctx.deps.db

@@ -14,7 +14,7 @@ from app.schemas.onboarding import (
     TourStateResponse,
     TourStateUpdate,
 )
-from app.services.onboarding import (
+from app.services.core.onboarding import (
     delete_sample_run,
     find_or_create_sample_project,
     find_or_create_sample_protocol,

@@ -14,7 +14,7 @@ from app.models.iam import (
     SubscriptionTier,
     TIER_RANK,
 )
-from app.services.permissions import check_permission
+from app.services.core.permissions import check_permission
 
 T = TypeVar("T")
 

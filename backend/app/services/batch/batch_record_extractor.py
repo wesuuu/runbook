@@ -32,7 +32,7 @@ from app.models.batch_record_import import (
 from app.models.jobs import BackgroundJob
 from app.models.science import Protocol
 from app.services.ai.ai_config import get_model, get_full_config
-from app.services.background_jobs import BackgroundJobService
+from app.services.core.background_jobs import BackgroundJobService
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 
 logger = logging.getLogger(__name__)
@@ -793,7 +793,7 @@ async def run_batch_record_extraction(
     Gets its own DB session, creates a BackgroundJob, extracts pages,
     runs LLM extraction + protocol mapping, and updates the import row.
     """
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     engine = create_async_engine(db_url, echo=False)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)

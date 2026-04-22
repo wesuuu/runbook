@@ -28,7 +28,7 @@ from pydantic_ai.messages import BinaryContent
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.services.file_storage import FileStorageService
+from app.services.core.file_storage import FileStorageService
 from app.services.protocols.template_engine import KNOWN_VARIABLES, get_mock_context
 
 logger = logging.getLogger(__name__)

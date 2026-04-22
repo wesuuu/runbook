@@ -50,7 +50,7 @@ from app.schemas.science import (
     EquipmentResponse,
     EquipmentUpdate,
 )
-from app.services.permissions import check_permission
+from app.services.core.permissions import check_permission
 from app.models.execution import AuditLog
 
 router = APIRouter()
@@ -510,7 +510,7 @@ async def create_invitation(
     await db.refresh(invitation)
 
     # Send invitation email (fire-and-forget)
-    from app.services.email_service import send_invitation_email
+    from app.services.core.email_service import send_invitation_email
 
     await send_invitation_email(
         to_email=body.email,
@@ -641,7 +641,7 @@ async def resend_invitation(
     await db.refresh(invitation)
 
     # Resend email
-    from app.services.email_service import send_invitation_email
+    from app.services.core.email_service import send_invitation_email
 
     await send_invitation_email(
         to_email=invitation.invited_email,

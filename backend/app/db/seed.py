@@ -506,7 +506,7 @@ async def seed_newbie_user(db: AsyncSession):
 
 async def seed_document_templates(db: AsyncSession):
     """Seed system-wide default document templates."""
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     # Copy template files to storage
     storage = FileStorageService()

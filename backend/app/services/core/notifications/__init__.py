@@ -1,7 +1,7 @@
 """Notification service — public API.
 
 Usage in endpoints:
-    from app.services.notifications import send_notification
+    from app.services.core.notifications import send_notification
 
     background_tasks.add_task(
         send_notification, db, event_type, org_id, entity_type,
@@ -15,9 +15,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notifications import Notification
-from app.services.notifications.channels.base import FormattedMessage
-from app.services.notifications.dispatcher import dispatch_event
-from app.services.notifications.templates import TEMPLATES
+from app.services.core.notifications.channels.base import FormattedMessage
+from app.services.core.notifications.dispatcher import dispatch_event
+from app.services.core.notifications.templates import TEMPLATES
 
 logger = logging.getLogger("notifications")
 

@@ -99,7 +99,7 @@ async def active_run_with_completed_step(
 
 @pytest.fixture
 def tmp_image_storage(tmp_path: Path):
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     original_init = FileStorageService.__init__
 

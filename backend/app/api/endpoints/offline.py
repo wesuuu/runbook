@@ -20,8 +20,8 @@ from app.schemas.offline import (
     RevokeTokenRequest,
     RevokedTokenResponse,
 )
-from app.services.audit import log_audit
-from app.services.notifications import send_notification
+from app.services.core.audit import log_audit
+from app.services.core.notifications import send_notification
 
 router = APIRouter()
 

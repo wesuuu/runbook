@@ -33,7 +33,7 @@ from app.schemas.dashboard import (
     PendingAnalyses,
     RunSummary,
 )
-from app.services.permissions import get_visible_project_ids
+from app.services.core.permissions import get_visible_project_ids
 
 router = APIRouter()
 

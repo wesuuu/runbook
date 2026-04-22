@@ -13,7 +13,7 @@ from typing import Any
 from docxtpl import DocxTemplate, InlineImage, RichText
 from docx.shared import Mm, Pt
 
-from app.services.file_storage import IMAGE_MIME_TYPES, FileStorageService
+from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.documents.pdf_base import (
     _build_param_sentence,
     _format_value,

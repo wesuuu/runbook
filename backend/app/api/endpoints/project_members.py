@@ -18,7 +18,7 @@ from app.models.iam import (
 )
 from app.models.science import Project
 from app.schemas.iam import UserSearchResponse
-from app.services.permissions import check_permission
+from app.services.core.permissions import check_permission
 
 logger = logging.getLogger(__name__)
 

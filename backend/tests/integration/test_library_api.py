@@ -99,7 +99,7 @@ async def test_upload_sets_correct_response_fields(
 async def test_upload_writes_file_to_disk(
     client: AsyncClient, auth_headers: dict, test_org: Organization, tmp_path
 ):
-    from app.services.file_storage import FileStorageService
+    from app.services.core.file_storage import FileStorageService
 
     resp = await _make_upload(client, auth_headers, content=b"disk check")
     assert resp.status_code == 201

@@ -29,8 +29,8 @@ from app.schemas.project import (
     ApproverGrant,
     ApproverEntry,
 )
-from app.services.audit import log_audit
-from app.services.permissions import check_permission, get_visible_project_ids
+from app.services.core.audit import log_audit
+from app.services.core.permissions import check_permission, get_visible_project_ids
 
 router = APIRouter()
 

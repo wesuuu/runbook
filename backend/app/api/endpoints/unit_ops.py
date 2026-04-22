@@ -15,7 +15,7 @@ from app.schemas.science import (
     UnitOpDefinitionUpdate,
     UnitOpDefinitionResponse,
 )
-from app.services.permissions import check_permission
+from app.services.core.permissions import check_permission
 
 logger = logging.getLogger(__name__)
 

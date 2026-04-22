@@ -7,7 +7,7 @@ Requires Mailpit running on localhost:1025 (SMTP) and localhost:8025 (API).
 import httpx
 import pytest
 
-from app.services.email_service import SMTPProvider
+from app.services.core.email_service import SMTPProvider
 
 
 @pytest.mark.mailpit

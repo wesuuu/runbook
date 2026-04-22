@@ -44,11 +44,11 @@ from app.schemas.science import (
     RunAttachment,
     RunAttachmentListResponse,
 )
-from app.services.audit import log_audit
-from app.services.file_storage import FileStorageService, IMAGE_MIME_TYPES
+from app.services.core.audit import log_audit
+from app.services.core.file_storage import FileStorageService, IMAGE_MIME_TYPES
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
-from app.services.notifications import send_notification
-from app.services.permissions import check_permission
+from app.services.core.notifications import send_notification
+from app.services.core.permissions import check_permission
 from app.services.protocols.template_engine import build_context, render_to_pdf
 from app.api.endpoints.protocol_pdfs import _load_template, _resolve_template_path
 

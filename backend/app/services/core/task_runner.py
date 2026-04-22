@@ -7,7 +7,7 @@ Provides a strategy pattern so the app can swap between:
     subclassing TaskRunner and registering in get_task_runner().
 
 Usage in endpoints / services:
-    from app.services.task_runner import get_task_runner
+    from app.services.core.task_runner import get_task_runner
 
     runner = get_task_runner()
     runner.submit(process_document(doc.id, db_url))   # fire-and-forget

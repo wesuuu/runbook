@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.jobs import BackgroundJob, JobStatus
 from app.schemas.jobs import ProcessingProgress
-from app.services.background_jobs import BackgroundJobService
+from app.services.core.background_jobs import BackgroundJobService
 
 
 ENTITY_ID = uuid.uuid4()

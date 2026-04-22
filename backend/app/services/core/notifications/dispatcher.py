@@ -14,8 +14,8 @@ from app.models.notifications import (
     NotificationSubscription,
     DeliveryStatus,
 )
-from app.services.notifications.channels import get_channel
-from app.services.notifications.channels.base import (
+from app.services.core.notifications.channels import get_channel
+from app.services.core.notifications.channels.base import (
     FormattedMessage, TransientError, PermanentError,
 )
 

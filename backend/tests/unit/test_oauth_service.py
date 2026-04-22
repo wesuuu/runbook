@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 
-from app.services.oauth import OAuthService, UserInfo
+from app.services.core.oauth import OAuthService, UserInfo
 from app.models.iam import User
 from app.core.security import hash_password
 

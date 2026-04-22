@@ -4,7 +4,7 @@ from email.mime.multipart import MIMEMultipart
 
 import aiosmtplib
 
-from app.services.notifications.channels.base import (
+from app.services.core.notifications.channels.base import (
     BaseChannel, FormattedMessage, TransientError, PermanentError,
 )
 

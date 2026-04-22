@@ -26,8 +26,8 @@ from app.schemas.science import (
     ExperimentNoteListResponse,
     RunResponse,
 )
-from app.services.audit import log_audit
-from app.services.permissions import check_permission
+from app.services.core.audit import log_audit
+from app.services.core.permissions import check_permission
 
 logger = logging.getLogger(__name__)
 

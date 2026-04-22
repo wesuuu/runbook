@@ -28,7 +28,7 @@ from app.schemas.chat import (
 )
 from app.services.ai import chat_service
 from app.services.ai.ai_config import get_context_window, get_model_display_name
-from app.services.rate_limit import RateLimitService
+from app.services.core.rate_limit import RateLimitService
 
 logger = logging.getLogger(__name__)
 

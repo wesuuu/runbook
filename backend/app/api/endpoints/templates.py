@@ -30,8 +30,8 @@ from app.models.iam import (
 from app.models.science import Project
 from app.models.templates import DocumentTemplate
 from app.schemas.templates import DocumentTemplateResponse, DocumentTemplateUpdate
-from app.services.file_storage import FileStorageService
-from app.services.permissions import check_permission
+from app.services.core.file_storage import FileStorageService
+from app.services.core.permissions import check_permission
 from app.services.protocols.template_engine import (
     get_mock_context,
     parse_template,

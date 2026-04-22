@@ -14,9 +14,9 @@ from app.models.iam import User, ObjectType, PermissionLevel
 from app.models.science import Protocol, Project
 from app.models.templates import DocumentTemplate
 from app.schemas.science import GraphPayload
-from app.services.file_storage import FileStorageService
+from app.services.core.file_storage import FileStorageService
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
-from app.services.permissions import check_permission
+from app.services.core.permissions import check_permission
 from app.services.protocols.template_engine import build_context, render_to_pdf
 
 logger = logging.getLogger(__name__)
