@@ -353,9 +353,9 @@ async def health_check():
     return {"status": "ok", "service": "batchrite-backend"}
 
 
-from app.api.endpoints import (ai, auth, batch_record_import, chat, dashboard,
-                               experiments, export_data, iam, library,
-                               notifications, offline, onboarding,
+from app.api.endpoints import (ai, auth, batch_record_import, billing, chat,
+                               dashboard, experiments, export_data, iam,
+                               library, notifications, offline, onboarding,
                                project_members, projects, protocol_pdfs,
                                protocol_versions, protocols, runs, sync,
                                template_convert, templates, unit_ops)
@@ -382,6 +382,7 @@ app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(offline.router, tags=["offline"])
 app.include_router(sync.router, tags=["sync"])
 app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
+app.include_router(billing.router, prefix="/billing", tags=["billing"])
 
 # Dev-only endpoints (webhook echo, etc.)
 if settings.debug:

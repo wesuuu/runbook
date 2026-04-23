@@ -9,6 +9,7 @@ PUBLIC_PATHS = {
     "/auth/register",
     "/auth/verify-email",
     "/auth/accept-invite",
+    "/billing/webhook",
     "/docs",
     "/openapi.json",
     "/redoc",
