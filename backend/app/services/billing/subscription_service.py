@@ -78,3 +78,48 @@ def _ts_to_dt(ts: Optional[int]) -> Optional[datetime]:
     if ts is None:
         return None
     return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+async def create_portal_session(org: Organization, return_url: str) -> str:
+    """Create a Stripe Customer Portal session URL for this org's customer."""
+    if not org.stripe_customer_id:
+        raise ValueError(
+            f"Organization {org.id} has no Stripe customer; "
+            "cannot open a billing portal session."
+        )
+
+    stripe = stripe_client.get_stripe()
+    session = stripe.billing_portal.Session.create(
+        customer=org.stripe_customer_id,
+        return_url=return_url,
+    )
+    return session.url
+
+
+_LOCKED_OUT_STATUSES = {"canceled", "past_due", "unpaid"}
+
+
+def get_subscription_state(org: Organization) -> dict:
+    """Read-only projection of the org's current billing state.
+
+    Reads columns populated by the registration flow and webhook handler;
+    does not hit Stripe. Adds two derived fields:
+      - days_remaining_in_trial: int when status=trialing, else None
+      - is_locked_out: True when status in LOCKED_OUT_STATUSES
+    """
+    days_remaining: Optional[int] = None
+    if org.subscription_status == "trialing" and org.trial_end is not None:
+        now = datetime.now(timezone.utc)
+        delta = org.trial_end - now
+        days_remaining = max(0, (delta.days + (1 if delta.seconds > 0 else 0)))
+
+    return {
+        "tier": org.subscription_tier,
+        "status": org.subscription_status,
+        "trial_end": org.trial_end,
+        "days_remaining_in_trial": days_remaining,
+        "current_period_end": org.current_period_end,
+        "cancel_at_period_end": org.cancel_at_period_end,
+        "has_payment_method": org.has_payment_method,
+        "is_locked_out": org.subscription_status in _LOCKED_OUT_STATUSES,
+    }
