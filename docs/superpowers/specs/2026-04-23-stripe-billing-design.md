@@ -341,20 +341,149 @@ Contents:
 
 Also seed placeholders in `.env.example`.
 
+## Stripe Dashboard Setup (Manual — User Actions)
+
+These steps happen on https://dashboard.stripe.com and cannot be automated. The implementation plan will pause at each of these points. The user performs the step, copies the resulting value(s) back into the chat, and implementation proceeds.
+
+### Pause 1 — Verify the Stripe account & locate the Test-mode API keys
+
+**Why it pauses implementation:** the backend code cannot be wired up or tested without a real test-mode secret key.
+
+User actions:
+
+1. Log in at https://dashboard.stripe.com.
+2. Confirm the top-left toggle shows **"Test mode"** (orange pill labeled "Test mode"). If it shows "Live mode," click to switch — **everything in this task happens in test mode only**.
+3. Fill in the minimum required business profile details Stripe prompts for (business name, country). Full verification (bank account, tax ID) is **not** required for test mode — you can skip / defer any "Activate payments" prompts. Test mode works on an unverified account.
+4. In the left sidebar, click **Developers → API keys**.
+5. Copy the two keys shown:
+   - **Publishable key** — starts with `pk_test_...` (not used server-side; capture it so we can add to frontend config later if needed).
+   - **Secret key** — starts with `sk_test_...`. Click "Reveal test key" to see it. **Never commit this; never paste it in a Git-tracked file or PR.**
+
+Hand back: the `sk_test_...` value (or confirmation it's set in your local `.env` — see below). The `pk_test_...` is optional; we won't need it until frontend billing work, and only if we ever embed Stripe.js, which we are not.
+
+Where it goes: `backend/.env` (this file is gitignored):
+```
+BATCHRITE_STRIPE_SECRET_KEY=sk_test_...
+```
+
+### Pause 2 — Create Products and Prices (in Test mode)
+
+**Why it pauses implementation:** price IDs are required to create subscriptions. The code needs these IDs in config before registration integration can be wired up and tested.
+
+User actions:
+
+1. Still in Test mode: left sidebar → **Product catalog** → **Add product**.
+2. Create **Batchrite Essentials**:
+   - Name: `Batchrite Essentials`
+   - Description (optional): short blurb.
+   - Pricing → **Recurring** → **Monthly**. Amount: pick any test number (e.g. `$29.00 USD`) — this is test mode, pricing is just a placeholder until product decides real numbers.
+   - Click **Add product**.
+   - On the resulting product page, copy the **Price ID** under the price row. It looks like `price_1ABC...` (about 30 chars).
+3. Repeat for **Batchrite Pro**:
+   - Name: `Batchrite Pro`.
+   - Recurring / Monthly / e.g. `$99.00 USD`.
+   - Copy its Price ID.
+
+Hand back: the two Price IDs.
+
+Where they go: `backend/.env`:
+```
+BATCHRITE_STRIPE_ESSENTIALS_PRICE_ID=price_...
+BATCHRITE_STRIPE_PRO_PRICE_ID=price_...
+```
+
+### Pause 3 — Configure Customer Portal (in Test mode)
+
+**Why it pauses implementation:** the frontend's "Manage billing" / "Upgrade" / "Downgrade" buttons all launch the Portal. If Portal isn't configured with the two products and the right allowed actions, clicks will succeed at the API level but the UI the user sees on Stripe will be broken/empty.
+
+User actions:
+
+1. Left sidebar → **Settings** (gear icon, bottom-left) → **Billing** → **Customer portal**. (Direct link: https://dashboard.stripe.com/test/settings/billing/portal)
+2. Under **Functionality**, enable:
+   - ☑ **Customers can update their payment method**
+   - ☑ **Customers can view their invoice history**
+   - ☑ **Customers can cancel subscriptions** → choose **"At the end of the billing period"** (not "Immediately")
+   - ☑ **Customers can switch plans**
+3. Under **Products** (the "Plans customers can switch to" section):
+   - Add **Batchrite Essentials** (its monthly price).
+   - Add **Batchrite Pro** (its monthly price).
+4. Under **Business information**:
+   - Set a **support email** (your email is fine for now).
+   - Set **Terms of service** URL and **Privacy policy** URL if you have them; otherwise skip — Stripe won't block you.
+5. Click **Save changes**.
+
+Hand back: confirmation that you saved the Portal config. No value to copy; the Portal config is referenced automatically when we create Portal sessions with that Stripe account.
+
+### Pause 4 — Create Webhook Endpoint & Get Signing Secret (Test mode)
+
+**Why it pauses implementation:** the webhook handler's signature verification needs the signing secret. For local dev, you use the Stripe CLI which generates its own per-session secret; for staging/prod you use a dashboard-created endpoint.
+
+There are **two webhook setups** you'll do — one for local dev, one for staging/production.
+
+#### Pause 4a — Local dev (Stripe CLI)
+
+User actions:
+
+1. Install the Stripe CLI if not installed: https://stripe.com/docs/stripe-cli (Homebrew: `brew install stripe/stripe-cli/stripe`).
+2. Log in the CLI: `stripe login` — this opens a browser to authenticate. Confirm it.
+3. In a terminal that stays running while you develop:
+   ```
+   stripe listen --forward-to localhost:8000/billing/webhook
+   ```
+4. The first line of output prints the signing secret:
+   ```
+   Ready! Your webhook signing secret is whsec_1ABC...
+   ```
+
+Hand back: that `whsec_...` value.
+
+Where it goes: `backend/.env`:
+```
+BATCHRITE_STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+Note: this secret changes each time you start a new `stripe listen` session. Keep the CLI running while developing; restart it if you kill the terminal, and update `.env` with the new secret.
+
+#### Pause 4b — Staging / Production (Dashboard webhook endpoint)
+
+Skipped for this task — this is part of the production rollout runbook (out of scope). For now, local dev uses `stripe listen`; when staging/prod are being stood up, the user follows this procedure at that time:
+
+1. Developers → **Webhooks** → **Add endpoint**.
+2. URL: `https://<staging-or-prod-host>/billing/webhook`.
+3. Select events: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`, `checkout.session.completed`.
+4. Click Add endpoint. Copy the signing secret (starts `whsec_...`). Paste into the environment's secret store.
+
+### Summary of values to collect
+
+By the end of Pauses 1-4a, the user will have:
+
+| Value                                 | Shape           | Env var                                 |
+|---------------------------------------|-----------------|-----------------------------------------|
+| Test secret key                       | `sk_test_...`   | `BATCHRITE_STRIPE_SECRET_KEY`           |
+| Essentials price ID                   | `price_...`     | `BATCHRITE_STRIPE_ESSENTIALS_PRICE_ID`  |
+| Pro price ID                          | `price_...`     | `BATCHRITE_STRIPE_PRO_PRICE_ID`         |
+| CLI webhook signing secret            | `whsec_...`     | `BATCHRITE_STRIPE_WEBHOOK_SECRET`       |
+
+All four go in `backend/.env` (already gitignored). `.env.example` will be updated with placeholder stub values so new devs know what to populate.
+
 ## Rollout Order Within This Task
 
 Brainstorming determined F-0019a (Pro plumbing) and F-0019b (Essentials trial + beta mode) ship together. Within this task, implementation order is:
 
 1. Alembic migration (fields + StripeEvent table).
-2. Config additions.
-3. `stripe_client` + `subscription_service.create_trial_subscription`.
-4. `webhook_handler` + all event handlers.
-5. Registration (F-0035) integration.
-6. Endpoints (`GET /billing/subscription`, `POST /billing/portal-session`, `POST /billing/webhook`).
-7. Backend tests (unit + integration).
-8. Frontend Zod schema, API client methods, BillingTab component, settings route integration.
-9. Browser verification via qa-verify.
-10. Docs (`docs/stripe-setup.md`, `.env.example` updates).
+2. Config additions + `.env.example` placeholders.
+3. **PAUSE 1** — user completes Stripe Dashboard Setup **Pause 1** (fetch `sk_test_...`). Paste into `backend/.env`.
+4. **PAUSE 2** — user completes Stripe Dashboard Setup **Pause 2** (create Essentials + Pro products; fetch price IDs). Paste into `backend/.env`.
+5. `stripe_client` + `subscription_service.create_trial_subscription` + unit tests (can now run against real test-mode keys).
+6. `webhook_handler` + all event handlers + unit tests.
+7. Registration (F-0035) integration + integration test covering trial subscription creation.
+8. Endpoints (`GET /billing/subscription`, `POST /billing/portal-session`, `POST /billing/webhook`) + integration tests.
+9. **PAUSE 3** — user completes Stripe Dashboard Setup **Pause 3** (Customer Portal config). No code changes; prepares the Portal for the upcoming frontend work.
+10. **PAUSE 4a** — user completes Stripe Dashboard Setup **Pause 4a** (start `stripe listen`; fetch `whsec_...`). Paste into `backend/.env`. Webhook endpoint is now reachable from Stripe.
+11. Manual smoke test: create a new org locally, confirm trialing subscription appears in Stripe Dashboard and `organizations.stripe_subscription_id` is populated.
+12. Frontend Zod schema, API client methods, BillingTab component, settings route integration.
+13. Browser verification via qa-verify (using test cards from Environment Strategy section).
+14. Developer docs (`docs/stripe-setup.md` — a cleaned-up version of the four Pause sections for future devs).
 
 ## Open Questions / Decisions for the Plan
 
