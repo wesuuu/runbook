@@ -140,6 +140,92 @@ def require_tier(min_tier: SubscriptionTier):
     return _check
 
 
+def require_org_role(required_role: "OrgRole"):
+    """Factory that returns a dependency enforcing a minimum OrgRole.
+
+    Treats the three roles as a hierarchy: ADMIN >= BILLING >= MEMBER.
+    An ADMIN implicitly satisfies BILLING or MEMBER requirements.
+    """
+    from app.models.iam import OrganizationMember, OrgRole
+
+    _RANK = {
+        OrgRole.ADMIN: 2,
+        OrgRole.BILLING: 1,
+        OrgRole.MEMBER: 0,
+    }
+
+    async def _check(
+        user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        if user.selected_org_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No organization selected",
+            )
+        result = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.organization_id == user.selected_org_id,
+                OrganizationMember.archived == False,  # noqa: E712
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not a member of this organization",
+            )
+        user_rank = _RANK.get(OrgRole(member.role), -1)
+        required_rank = _RANK[required_role]
+        if user_rank < required_rank:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires {required_role.value} role or above",
+            )
+        return user
+
+    return _check
+
+
+_LOCKED_OUT_STATUSES = frozenset({"canceled", "past_due", "unpaid"})
+
+
+def require_active_subscription():
+    """Factory returning a dep that 402s if the user's org is locked out.
+
+    Layered after require_permission / require_org_role on write endpoints.
+    Reads org.subscription_status from the DB (not JWT, which is stale).
+    Orgs with NULL status (pre-billing, not yet provisioned) pass through.
+    """
+    from app.models.iam import Organization
+
+    async def _check(
+        user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        if user.selected_org_id is None:
+            return user
+        org = await db.get(Organization, user.selected_org_id)
+        if org is None:
+            return user
+        if org.subscription_status in _LOCKED_OUT_STATUSES:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code": "subscription_required",
+                    "message": (
+                        "Your subscription is not active. "
+                        "Add a payment method to continue."
+                    ),
+                    "status": org.subscription_status,
+                },
+            )
+        return user
+
+    return _check
+
+
 async def get_current_user_or_offline(
     request: Request,
     db: AsyncSession = Depends(get_db),
