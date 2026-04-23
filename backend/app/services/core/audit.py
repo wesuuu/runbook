@@ -5,6 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.execution import AuditLog
 
+# Well-known user referenced by audit entries created by system processes
+# (webhooks, scheduled jobs) that have no authenticated user. The row is
+# seeded at DB init; see backend/app/db/seed.py and the corresponding
+# Alembic migration.
+SYSTEM_ACTOR_ID: UUID = UUID("00000000-0000-0000-0000-000000000000")
+
 
 async def log_audit(
     db: AsyncSession,

@@ -27,6 +27,7 @@ from app.services.protocols.template_seeder import seed_system_templates
 ORG_ID = uuid.UUID("10000000-0000-0000-0000-000000000001")
 ORG_ID_2 = uuid.UUID("10000000-0000-0000-0000-000000000002")
 
+USER_SYSTEM = uuid.UUID("00000000-0000-0000-0000-000000000000")
 USER_ADMIN = uuid.UUID("20000000-0000-0000-0000-000000000001")
 USER_UPSTREAM_LEAD = uuid.UUID("20000000-0000-0000-0000-000000000002")
 USER_DOWNSTREAM_LEAD = uuid.UUID("20000000-0000-0000-0000-000000000003")
@@ -63,6 +64,18 @@ async def _upsert(db: AsyncSession, model, pk_id: uuid.UUID, **kwargs):
 
 
 async def seed_users(db: AsyncSession):
+    # System actor — referenced by audit entries from webhook/background code
+    # that has no authenticated user. Must exist so `audit_logs.actor_id` FK
+    # resolves; never intended to log in (hashed_password is unusable).
+    await _upsert(
+        db, User, USER_SYSTEM,
+        email="system@batchrite.internal",
+        hashed_password="!system-locked!",
+        full_name="System",
+        email_verified=True,
+        is_active=False,
+    )
+
     users = [
         (USER_ADMIN, "admin@bioprocess.com", "Admin User"),
         (USER_UPSTREAM_LEAD, "upstream.lead@bioprocess.com", "Upstream Lead"),
