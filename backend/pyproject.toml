@@ -28,6 +28,7 @@ trafilatura = "^2.0"
 pgvector = "^0.4"
 aiosmtplib = "^5.0"
 docxtpl = "^0.18"
+pyyaml = "^6.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
