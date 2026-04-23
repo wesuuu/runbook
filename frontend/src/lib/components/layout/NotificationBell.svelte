@@ -128,15 +128,29 @@
             class="relative text-muted-foreground hover:text-foreground"
             aria-label="Notifications"
         >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class={`size-5 ${unreadCount > 0 ? 'jingle' : ''}`}
+            >
                 <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
                 <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
             </svg>
             {#if unreadCount > 0}
-                <span
-                    class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center leading-none"
-                >
-                    {unreadCount > 99 ? '99+' : unreadCount}
+                <span class="absolute -top-1 -right-1 inline-flex items-center justify-center">
+                    <span
+                        class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"
+                    ></span>
+                    <span
+                        class="relative min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center leading-none"
+                    >
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
                 </span>
             {/if}
         </Button>
@@ -194,3 +208,27 @@
         </div>
     </DropdownMenu.Content>
 </DropdownMenu.Root>
+
+<style>
+    .jingle {
+        transform-origin: 50% 10%;
+        animation: jingle 2.4s ease-in-out infinite;
+    }
+
+    @keyframes jingle {
+        0%, 60%, 100% { transform: rotate(0); }
+        5%  { transform: rotate(-14deg); }
+        10% { transform: rotate(12deg); }
+        15% { transform: rotate(-10deg); }
+        20% { transform: rotate(8deg); }
+        25% { transform: rotate(-5deg); }
+        30% { transform: rotate(3deg); }
+        35% { transform: rotate(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .jingle {
+            animation: none;
+        }
+    }
+</style>
