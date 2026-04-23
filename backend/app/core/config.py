@@ -137,6 +137,20 @@ class Settings(BaseSettings):
     # Debug mode — enables dev-only endpoints (webhook echo, etc.)
     debug: bool = False
 
+    # Stripe billing (added F-0019a) -- all optional; endpoints return
+    # 503 with a clear message when any required field is unset.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_essentials_price_id: str = ""
+    stripe_pro_price_id: str = ""
+    essentials_trial_days: int = 30
+    stripe_portal_return_url: str = "/settings?tab=billing"
+
+    # Seat caps per tier (added F-0019a). Enterprise has no cap;
+    # handled in code by `get_seat_limit(tier)` returning None.
+    seat_limit_essentials: int = 5
+    seat_limit_pro: int = 25
+
     model_config = {
         "env_prefix": "BATCHRITE_",
         "env_file": ".env",
