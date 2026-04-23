@@ -17,7 +17,7 @@ from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import (ObjectType, Organization, OrganizationMember,
                             OrgRole, PermissionLevel, User)
@@ -193,6 +193,7 @@ async def preview_template(
     project_id: Optional[UUID] = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Upload a .docx, render against mock data, return PDF + variable report."""
     org_id = user.selected_org_id
@@ -237,6 +238,7 @@ async def create_template(
     set_as_default: bool = Form(False),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Upload and store a .docx template."""
     org_id = user.selected_org_id
@@ -454,6 +456,7 @@ async def update_template(
     body: DocumentTemplateUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Update template metadata, archive/unarchive, or set as default."""
     org_id = user.selected_org_id

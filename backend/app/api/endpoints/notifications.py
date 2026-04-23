@@ -16,7 +16,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import OrganizationMember, User
 from app.models.notifications import (ChannelType, DeliveryStatus,
@@ -110,6 +110,7 @@ async def create_org_channel(
     body: ChannelCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Create an org-level notification channel (admin only)."""
     _validate_channel_type(body.channel_type)
@@ -151,6 +152,7 @@ async def update_org_channel(
     body: ChannelUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Update an org-level channel (admin only)."""
     channel = await _get_channel_or_404(db, channel_id)
@@ -175,6 +177,7 @@ async def delete_org_channel(
     channel_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Delete an org-level channel (admin only)."""
     channel = await _get_channel_or_404(db, channel_id)
@@ -193,6 +196,7 @@ async def create_user_channel(
     body: ChannelCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Create a personal notification channel."""
     _validate_channel_type(body.channel_type)
@@ -231,6 +235,7 @@ async def update_user_channel(
     body: ChannelUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Update a personal channel."""
     channel = await _get_channel_or_404(db, channel_id)
@@ -254,6 +259,7 @@ async def delete_user_channel(
     channel_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Delete a personal channel."""
     channel = await _get_channel_or_404(db, channel_id)
@@ -273,6 +279,7 @@ async def test_channel(
     channel_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Send a test notification through a channel."""
     channel_model = await _get_channel_or_404(db, channel_id)
@@ -304,6 +311,7 @@ async def create_subscription(
     body: SubscriptionCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Subscribe a channel to an event type."""
     _validate_event_type(body.event_type)
@@ -373,6 +381,7 @@ async def delete_subscription(
     subscription_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Remove a subscription."""
     channel = await _get_channel_or_404(db, channel_id)
@@ -437,6 +446,7 @@ async def mark_read(
     notification_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Mark a notification as read."""
     notif = await db.get(Notification, notification_id)
@@ -453,6 +463,7 @@ async def mark_read(
 async def mark_all_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Mark all notifications as read."""
     from sqlalchemy import update

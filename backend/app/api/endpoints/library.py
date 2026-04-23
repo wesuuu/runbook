@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
 from app.core.config import settings
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
                             PermissionLevel, PrincipalType, User)
@@ -101,6 +101,7 @@ async def upload_document(
     tags: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     org_id = await _get_user_org_id(current_user, db)
 
@@ -444,6 +445,7 @@ async def delete_document(
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     org_id = await _get_user_org_id(current_user, db)
 
@@ -500,6 +502,7 @@ async def retry_processing(
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     org_id = await _get_user_org_id(current_user, db)
 
@@ -543,6 +546,7 @@ async def enrich_document_endpoint(
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Manually trigger LLM structure enrichment for a document.
 
@@ -783,6 +787,7 @@ async def backfill_embeddings(
     batch_size: int = Query(50, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Embed chunks that don't have embeddings yet. Idempotent."""
     org_id = await _get_user_org_id(current_user, db)
@@ -847,6 +852,7 @@ async def import_document_from_url(
     body: ImportUrlRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     org_id = await _get_user_org_id(current_user, db)
 

@@ -7,7 +7,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import get_current_user, get_or_404, require_permission
+from app.core.deps import (get_current_user, get_or_404, require_permission,
+                           require_active_subscription)
 from app.db.session import get_db
 from app.models.execution import AuditLog
 from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
@@ -28,6 +29,7 @@ async def create_project(
     project: ProjectCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     # Verify user is org member
     result = await db.execute(
@@ -137,6 +139,7 @@ async def update_project(
     update_data: ProjectUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     project = await get_or_404(db, Project, project_id)
 
@@ -187,6 +190,7 @@ async def delete_project(
     project_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     project = await get_or_404(db, Project, project_id)
 
@@ -502,6 +506,7 @@ async def add_approver(
     project_id: UUID,
     grant: ApproverGrant,
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     # Check if permission already exists
     result = await db.execute(
@@ -572,6 +577,7 @@ async def remove_approver(
     project_id: UUID,
     permission_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     result = await db.execute(
         select(ObjectPermission).where(
@@ -645,6 +651,7 @@ async def update_project_permission(
     body: dict,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Update permission level on a grant. Requires ADMIN."""
     has_perm = await check_permission(

@@ -15,7 +15,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.api.endpoints.protocol_pdfs import (_load_template,
                                              _resolve_template_path)
 from app.core.deps import (get_current_user, get_or_404,
-                           get_org_id_from_request, require_permission)
+                           get_org_id_from_request, require_permission,
+                           require_active_subscription)
 from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
@@ -53,6 +54,7 @@ async def create_run(
     run_in: RunCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROJECT,
@@ -154,6 +156,7 @@ async def update_run(
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.RUN,
@@ -731,6 +734,7 @@ async def create_run_role_assignment(
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Assign a user to a role in a run."""
     allowed = await check_permission(
@@ -854,6 +858,7 @@ async def delete_run_role_assignment(
     assignment_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Remove a user's role assignment."""
     allowed = await check_permission(
@@ -918,6 +923,7 @@ async def add_run_note(
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Add an append-only note to a run."""
     allowed = await check_permission(
@@ -996,6 +1002,7 @@ async def upload_attachment(
     step_id: Optional[str] = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Upload a file attachment to a run."""
     allowed = await check_permission(
@@ -1093,6 +1100,7 @@ async def soft_delete_attachment(
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Soft-delete an attachment (EDIT permission)."""
     allowed = await check_permission(
@@ -1145,6 +1153,7 @@ async def restore_attachment(
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Restore a soft-deleted attachment (ADMIN permission)."""
     allowed = await check_permission(

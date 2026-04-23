@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import Project, Protocol, ProtocolVersion
@@ -120,6 +120,7 @@ async def revert_protocol_version(
     version_number: int,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROTOCOL,
@@ -201,6 +202,7 @@ async def submit_protocol_for_approval(
     protocol_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROTOCOL,
@@ -251,6 +253,7 @@ async def approve_protocol(
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     # Require APPROVE permission on the parent project
     result = await db.execute(
@@ -331,6 +334,7 @@ async def reject_protocol(
     action: ProtocolApprovalAction,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     # Require APPROVE permission on the parent project
     result = await db.execute(
@@ -382,6 +386,7 @@ async def publish_draft_version(
     version_number: int = Query(...),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Publish a draft version: set is_draft=False and update main protocol."""
     allowed = await check_permission(

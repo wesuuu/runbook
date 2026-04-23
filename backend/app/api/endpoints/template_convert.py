@@ -20,7 +20,7 @@ from starlette.responses import StreamingResponse
 from ulid import ULID
 
 from app.core.config import settings
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import User
 from app.schemas.template_convert import (ConvertResponse,
@@ -106,6 +106,7 @@ async def convert_template(
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Upload a filled document and start async conversion.
 
@@ -208,6 +209,7 @@ async def refine_conversion(
     body: RefineRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Refine an existing conversion via natural language instruction."""
     org_id = _require_org(user)
@@ -239,6 +241,7 @@ async def reupload_template_file(
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Re-upload a manually edited template."""
     org_id = _require_org(user)
@@ -269,6 +272,7 @@ async def save_conversion(
     body: SaveRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Save the converted template to the document template library."""
     org_id = _require_org(user)

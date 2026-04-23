@@ -10,7 +10,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404
+from app.core.deps import get_current_user, get_or_404, require_active_subscription
 from app.core.security import generate_verification_token
 from app.db.session import get_db
 from app.models.execution import AuditLog
@@ -83,6 +83,7 @@ async def create_organization(
     body: OrganizationCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     org = Organization(name=body.name)
     db.add(org)
@@ -167,6 +168,7 @@ async def add_org_member(
     body: OrgMemberAdd,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     await _require_org_admin(db, user.id, org_id)
 
@@ -234,6 +236,7 @@ async def remove_org_member(
     user_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     await _require_org_admin(db, user.id, org_id)
 
@@ -285,6 +288,7 @@ async def update_org_member_role(
     body: OrgMemberUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     await _require_org_admin(db, user.id, org_id)
 
@@ -429,6 +433,7 @@ async def create_invitation(
     body: InvitationCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Invite a user to the organization by email. Admin only."""
     await _require_org_admin(db, user.id, org_id)
@@ -524,6 +529,7 @@ async def revoke_invitation(
     invitation_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Revoke a pending invitation. Must be admin of the invitation's org."""
     result = await db.execute(
@@ -560,6 +566,7 @@ async def decline_invitation(
     invitation_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Decline a pending invitation."""
     result = await db.execute(
@@ -592,6 +599,7 @@ async def resend_invitation(
     invitation_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Resend a pending invitation with a new token and reset expiry."""
     result = await db.execute(
@@ -641,6 +649,7 @@ async def create_team(
     body: TeamCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     await _require_org_admin(db, user.id, org_id)
 
@@ -675,6 +684,7 @@ async def delete_team(
     team_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     await _require_org_admin(db, user.id, org_id)
 
@@ -703,6 +713,7 @@ async def add_team_member(
     body: TeamMemberAdd,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     # Look up team to get org_id, then require org admin
     result = await db.execute(
@@ -794,6 +805,7 @@ async def remove_team_member(
     user_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     result = await db.execute(
         select(Team).where(Team.id == team_id)
@@ -832,6 +844,7 @@ async def grant_permission(
     body: PermissionGrant,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     # Caller must have ADMIN on the object
     obj_type = ObjectType(body.object_type)
@@ -878,6 +891,7 @@ async def revoke_permission(
     permission_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     result = await db.execute(
         select(ObjectPermission).where(
@@ -951,6 +965,7 @@ async def create_equipment(
     body: EquipmentCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Create equipment in an organization. Any org member can create."""
     await _require_org_member(db, user.id, org_id)
@@ -988,6 +1003,7 @@ async def update_equipment(
     body: EquipmentUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Update equipment. Any org member can update."""
     equipment = await get_or_404(db, Equipment, equipment_id)
@@ -1029,6 +1045,7 @@ async def delete_equipment(
     equipment_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Delete equipment. Any org member can delete."""
     equipment = await get_or_404(db, Equipment, equipment_id)

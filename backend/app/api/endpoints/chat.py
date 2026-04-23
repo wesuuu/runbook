@@ -8,7 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404, get_org_id_from_request
+from app.core.deps import (get_current_user, get_or_404, get_org_id_from_request,
+                           require_active_subscription)
 from app.db.session import get_db
 from app.models.chat import ChatNotification, ChatSession
 from app.models.iam import (TIER_RANK, Organization, OrganizationMember,
@@ -116,6 +117,7 @@ async def create_chat_session(
     body: ChatSessionCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     org_id, _ = await _get_user_org(current_user, db)
     session = await chat_service.create_session(
@@ -167,6 +169,7 @@ async def update_chat_session(
     body: ChatSessionUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     session = await get_or_404(db, ChatSession, session_id)
     if session.user_id != current_user.id:
@@ -186,6 +189,7 @@ async def delete_chat_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     session = await get_or_404(db, ChatSession, session_id)
     if session.user_id != current_user.id:
@@ -207,6 +211,7 @@ async def send_chat_message(
     body: ChatMessageCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     session = await chat_service.get_session(db, session_id)
     if session is None:
@@ -288,6 +293,7 @@ async def notify_admin(
     current_user: User = Depends(get_current_user),
     current_org_id: uuid.UUID | None = Depends(get_org_id_from_request),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Notify org admins that a non-Pro user needs AI configured.
 

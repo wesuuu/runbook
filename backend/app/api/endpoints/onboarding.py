@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import Organization, User
 from app.schemas.onboarding import (TourProjectStartResponse,
@@ -44,6 +44,7 @@ async def patch_tour_state(
     body: TourStateUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     state = dict(user.tour_state or {})
     completed = list(state.get("completed", []))
@@ -66,6 +67,7 @@ async def patch_tour_state(
 async def tour_project_start(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     org = await _get_current_org(db, user)
     project = await find_or_create_sample_project(db, user, org)
@@ -84,6 +86,7 @@ def _clear_segment_from_tour_state(user: User, segment: str) -> None:
 async def tour_protocol_start(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     org = await _get_current_org(db, user)
     protocol = await find_or_create_sample_protocol(db, user, org)
@@ -101,6 +104,7 @@ async def tour_protocol_start(
 async def tour_run_start(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     org = await _get_current_org(db, user)
     protocol = await find_or_create_sample_protocol(db, user, org)
@@ -116,6 +120,7 @@ async def tour_run_start(
 async def tour_run_end(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     await delete_sample_run(db, user)
     return {"ok": True}

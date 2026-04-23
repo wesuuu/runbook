@@ -9,7 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404
+from app.core.deps import get_current_user, get_or_404, require_active_subscription
 from app.db.session import get_db
 from app.models.batch_record_import import (BatchRecordImport,
                                             BatchRecordImportStatus)
@@ -58,6 +58,7 @@ async def upload_batch_record(
     protocol_id: UUID = Form(...),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Upload a paper batch record and start AI extraction."""
     # Permission: EDIT on project
@@ -194,6 +195,7 @@ async def finalize_batch_record_import(
     request: BatchRecordFinalizeRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Create a completed Run from reviewed batch record extraction."""
     import_row = await get_or_404(db, BatchRecordImport, import_id)

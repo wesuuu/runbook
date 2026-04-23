@@ -10,7 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import get_current_user, get_or_404, require_permission
+from app.core.deps import (get_current_user, get_or_404, require_permission,
+                           require_active_subscription)
 from app.db.session import get_db
 from app.models.iam import (ObjectType, OrganizationMember, PermissionLevel,
                             User)
@@ -39,6 +40,7 @@ async def create_protocol(
     protocol: ProtocolCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     # Validate scope: exactly one of project_id or organization_id
     if protocol.project_id and protocol.organization_id:
@@ -134,6 +136,7 @@ async def import_protocol(
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Upload a protocol document and get an AI-generated import proposal."""
     from app.models.science import UnitOpDefinition
@@ -196,6 +199,7 @@ async def refine_protocol_endpoint(
     request: ProtocolRefineRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Refine a protocol graph based on a natural language instruction.
 
@@ -229,6 +233,7 @@ async def finalize_protocol_import(
     request: ProtocolImportFinalizeRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Finalize a protocol import: create unit ops, roles, and protocol."""
     from app.services.protocols.protocol_importer import (StepProposal,
@@ -354,6 +359,7 @@ async def delete_or_archive_protocol(
     protocol_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Delete or archive a protocol.
 
@@ -439,6 +445,7 @@ async def unarchive_protocol(
     protocol_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Unarchive a protocol back to DRAFT. Requires ADMIN on project."""
     protocol = await get_or_404(
@@ -481,6 +488,7 @@ async def update_protocol(
     save_as_draft: bool = Query(False),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROTOCOL,
@@ -649,6 +657,7 @@ async def create_protocol_role(
     role: ProtocolRoleCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROTOCOL,
@@ -681,6 +690,7 @@ async def update_protocol_role(
     update_data: ProtocolRoleUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROTOCOL,
@@ -714,6 +724,7 @@ async def delete_protocol_role(
     role_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROTOCOL,

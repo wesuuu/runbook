@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import Protocol, Run
@@ -131,6 +131,7 @@ async def export_preview(
     body: ExportPreviewRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Preview export data as JSON rows."""
     runs = await _load_exportable_runs(body.run_ids, user, db)
@@ -150,6 +151,7 @@ async def export_download(
     body: ExportDownloadRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Download exported run data in the requested format."""
     runs = await _load_exportable_runs(body.run_ids, user, db)

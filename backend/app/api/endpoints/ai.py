@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404, get_org_id_from_request
+from app.core.deps import (get_current_user, get_or_404, get_org_id_from_request,
+                           require_active_subscription)
 from app.db.session import get_db
 from app.models.ai import (ALLOWED_IMAGE_TYPES, DEFAULT_CONFIGS,
                            MAX_IMAGE_SIZE_BYTES, SUPPORTED_CAPABILITIES,
@@ -86,6 +87,7 @@ async def upsert_ai_setting(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     org_id = get_org_id_from_request(request)
     if org_id is None:
@@ -149,6 +151,7 @@ async def test_ai_connection(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     org_id = get_org_id_from_request(request)
     if org_id is None:
@@ -207,6 +210,7 @@ async def delete_ai_setting(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Delete org-specific AI config, reverting to platform default (if Pro+)."""
     org_id = get_org_id_from_request(request)
@@ -245,6 +249,7 @@ async def upload_image(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     run = await _get_active_run(run_id, db)
     if run.status not in (RunStatus.ACTIVE, RunStatus.EDITED):
@@ -395,6 +400,7 @@ async def analyze_run_image(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     org_id = get_org_id_from_request(request)
     run, image = await _get_image_with_run(run_id, image_id, db)
@@ -487,6 +493,7 @@ async def converse_about_image(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     run, image = await _get_image_with_run(run_id, image_id, db)
 
@@ -584,6 +591,7 @@ async def confirm_image_values(
     body: ConfirmRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     run, image = await _get_image_with_run(run_id, image_id, db)
 
@@ -664,6 +672,7 @@ async def tag_image(
     image_id: uuid_mod.UUID,
     body: TagImageRequest,
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Set parameter tags on an image (which param_schema keys it relates to)."""
     result = await db.execute(
@@ -691,6 +700,7 @@ async def analyze_pending_images(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
 ):
     """Sequentially analyze all unanalyzed images in a run."""
     run = await _get_active_run(run_id, db)

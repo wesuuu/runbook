@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import get_current_user, get_db
+from app.core.deps import get_current_user, get_db, require_active_subscription
 from app.core.security import create_offline_token, verify_password
 from app.models.iam import User
 from app.models.offline import RevokedOfflineToken
@@ -26,6 +26,7 @@ async def create_offline_session(
     body: OfflineSessionRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Create a scoped offline JWT for field mode execution."""
     # Verify password
@@ -183,6 +184,7 @@ async def revoke_offline_token(
     body: RevokeTokenRequest = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Revoke an offline token by its JTI. Admin override."""
     # Check if already revoked

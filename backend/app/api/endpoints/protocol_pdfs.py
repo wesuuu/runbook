@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import Project, Protocol
@@ -164,6 +164,7 @@ async def preview_protocol_sop_pdf(
     template_id: Optional[UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Generate an SOP PDF from a graph payload (unsaved preview)."""
     allowed = await check_permission(
@@ -219,6 +220,7 @@ async def preview_protocol_batch_record_pdf(
     template_id: Optional[UUID] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     """Generate a batch record PDF from a graph payload (unsaved preview)."""
     allowed = await check_permission(

@@ -11,7 +11,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.deps import get_current_user, get_or_404
+from app.core.deps import get_current_user, get_or_404, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import Experiment, Protocol, Run
@@ -51,6 +51,7 @@ async def create_experiment(
     exp_in: ExperimentCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
         db, user.id, ObjectType.PROJECT,
@@ -143,6 +144,7 @@ async def update_experiment(
     update_data: ExperimentUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
 
@@ -190,6 +192,7 @@ async def archive_experiment(
     experiment_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
 
@@ -235,6 +238,7 @@ async def add_run_to_experiment(
     body: _ExperimentRunBody,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
 
@@ -304,6 +308,7 @@ async def unlink_run_from_experiment(
     run_id: UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
 
@@ -342,6 +347,7 @@ async def add_experiment_note(
     body: ExperimentNoteCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
 
