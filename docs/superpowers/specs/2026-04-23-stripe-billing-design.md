@@ -34,9 +34,9 @@ The ClickUp task for F-0019a was authored before this brainstorming session. The
 
 - **On-prem / self-hosted deployment of Batchrite.** This task targets the SaaS deployment only. Adapting the same codebase for on-prem Enterprise installs (runtime feature flags to disable billing/CRM/trial, signed license keys, Docker packaging, ops guide) is tracked under **F-0037 On-Prem Deployment Mode + Enterprise License Key System**. Nothing in this spec should gate or conditionally-enable code behind a deployment-mode flag — that's F-0037's responsibility.
 - Production rollout (live keys, canary-charge runbook, dunning emails, tax handling) — separate follow-up task.
-- **Email reminders for trial expiry** — tracked under **F-0019c Trial Expiry Email Reminders**. This task only delivers the in-app header banner countdown.
-- **In-app notification center entries for trial** — tracked under **F-0019d In-App Notification Center Entries for Trial Lifecycle**.
-- **CRM / lifecycle messaging integration** — tracked under **F-0019e Lifecycle Messaging / CRM Integration**. All lifecycle messaging in this task is app-native.
+- **Lifecycle messaging (email reminders, post-trial dunning, welcome sequences, etc.)** — tracked under **F-0019c Loops CRM Integration — Events, Contacts, & Email Lifecycle**. CRM vendor decided: Loops (loops.so). Our app emits events + contact properties; Loops owns timing/copy/delivery. No scheduler or cron in F-0019a. The in-app header banner (shipped in this task) is the only in-app nudge; email goes through Loops.
+- **Inbound webhook for Loops → in-app notification entries** — tracked under **F-0019d Inbound Webhook for Loops-Triggered In-App Notifications**. Optional / bidirectional integration where Loops workflows can trigger notifications in the NotificationBell via a signed webhook into our app.
+- **(F-0019e Lifecycle Messaging / CRM Integration)** — superseded; folded into F-0019c.
 - In-app invoice table. Portal handles invoice history.
 - In-app proration UI. Handled case-by-case through Stripe Dashboard.
 - Migrating existing (pre-F-0019a) orgs to have Stripe customers. They get provisioned lazily on first billing interaction. Retroactive backfill is a separate task if needed.
