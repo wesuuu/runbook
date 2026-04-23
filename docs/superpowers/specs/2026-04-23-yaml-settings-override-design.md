@@ -45,15 +45,42 @@ smtp_port: 587
 smtp_from: noreply@batchrite.com
 smtp_tls: true
 
+# Provider credentials
 openrouter:
   api_key: sk-or-...
   base_url: https://openrouter.ai/api/v1
+ollama:
+  base_url: http://localhost:11434
+
+# AI capability routing — route all LLM/vision work through openrouter
+# to benchmark frontier models. Embedding stays local on ollama.
+ai_vision_provider: openrouter
+ai_vision_model: anthropic/claude-opus-4
+
+ai_text_provider: openrouter
+ai_text_model: anthropic/claude-opus-4
+
+ai_doc_structure_provider: openrouter
+ai_doc_structure_model: anthropic/claude-opus-4
 
 ai_chat_provider: openrouter
-ai_chat_model: anthropic/claude-3.5-sonnet
+ai_chat_model: anthropic/claude-opus-4
+
+ai_protocol_generation_provider: openrouter
+ai_protocol_generation_model: anthropic/claude-opus-4
+
+ai_template_convert_provider: openrouter
+ai_template_convert_model: anthropic/claude-opus-4
+
+ai_embedding_provider: ollama
+ai_embedding_model: nomic-embed-text:latest
 
 task_runner_pool_size: 8
 ```
+
+Note: `ai_audio_*` fields exist on `Settings` as placeholders but no capability
+consumes them yet (`"audio"` is not in `SUPPORTED_CAPABILITIES` in
+`backend/app/models/ai.py`). Omitted from the example until the feature lands.
 
 Unknown keys are ignored (matches the existing `"extra": "ignore"` model config) so operators can leave comments/placeholders without breaking startup.
 
