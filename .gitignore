@@ -64,3 +64,6 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Operator-local settings override (do NOT commit; contains secrets)
+backend/settings.yaml
