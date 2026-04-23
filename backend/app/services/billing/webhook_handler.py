@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.billing import StripeEvent
 from app.models.iam import Organization
+from app.services.billing import stripe_client
 from app.services.core.audit import SYSTEM_ACTOR_ID, log_audit
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,24 @@ async def _apply_subscription_state(
     org.cancel_at_period_end = bool(
         subscription.get("cancel_at_period_end", False)
     )
+
+    # Refresh has_payment_method by checking the customer's default PM.
+    # If Stripe is unreachable here, log and keep the existing value
+    # rather than failing the webhook (avoids blocking status updates).
+    try:
+        stripe = stripe_client.get_stripe()
+        customer = stripe.Customer.retrieve(customer_id)
+        pm = getattr(
+            getattr(customer, "invoice_settings", None),
+            "default_payment_method",
+            None,
+        )
+        org.has_payment_method = pm is not None
+    except Exception:
+        logger.exception(
+            "Failed to refresh has_payment_method for customer %s",
+            customer_id,
+        )
 
     if changes:
         await log_audit(
