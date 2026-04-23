@@ -1,0 +1,18 @@
+{
+    "id": "evt_test_downgrade_001",
+    "object": "event",
+    "type": "customer.subscription.updated",
+    "created": 1714000001,
+    "data": {
+        "object": {
+            "id": "sub_test_456",
+            "object": "subscription",
+            "customer": "cus_test_123",
+            "status": "active",
+            "trial_end": null,
+            "current_period_end": 1716678400,
+            "cancel_at_period_end": true,
+            "items": {"data": [{"price": {"id": "price_pro", "object": "price"}}]}
+        }
+    }
+}

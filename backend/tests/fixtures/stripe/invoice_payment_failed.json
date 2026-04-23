@@ -1,0 +1,14 @@
+{
+    "id": "evt_test_payment_failed_001",
+    "object": "event",
+    "type": "invoice.payment_failed",
+    "created": 1714000003,
+    "data": {
+        "object": {
+            "id": "in_test_abc",
+            "object": "invoice",
+            "customer": "cus_test_123",
+            "subscription": "sub_test_456"
+        }
+    }
+}

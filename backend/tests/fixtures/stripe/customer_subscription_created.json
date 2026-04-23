@@ -1,0 +1,18 @@
+{
+    "id": "evt_test_created_001",
+    "object": "event",
+    "type": "customer.subscription.created",
+    "created": 1713999999,
+    "data": {
+        "object": {
+            "id": "sub_test_456",
+            "object": "subscription",
+            "customer": "cus_test_123",
+            "status": "trialing",
+            "trial_end": 1716592000,
+            "current_period_end": 1716678400,
+            "cancel_at_period_end": false,
+            "items": {"data": [{"price": {"id": "price_ess", "object": "price"}}]}
+        }
+    }
+}
