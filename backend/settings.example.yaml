@@ -1,0 +1,80 @@
+# Batchrite settings override.
+#
+# Copy this file to `backend/settings.yaml` and uncomment any fields you
+# want to override. Env vars (BATCHRITE_*) still win over anything set here.
+#
+# Precedence (highest to lowest):
+#   env vars > .env file > settings.yaml > field defaults in config.py
+#
+# You can also point at an alternate path:
+#   BATCHRITE_SETTINGS_FILE=/etc/batchrite/settings.yaml
+
+# --- Core ---
+# database_url: postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite
+# secret_key: change-me-in-production
+# jwt_algorithm: HS256
+# access_token_expire_minutes: 60
+# auth_enabled: true
+# debug: false
+
+# --- URLs ---
+# frontend_url: http://localhost:5173
+# backend_url: http://localhost:8000
+
+# --- OAuth ---
+# oauth_google_client_id: ""
+# oauth_google_client_secret: ""
+# oauth_microsoft_client_id: ""
+# oauth_microsoft_client_secret: ""
+# oauth_microsoft_tenant: common
+# oauth_callback_url: http://localhost:5173/auth/callback
+
+# --- SMTP ---
+# smtp_host: localhost
+# smtp_port: 1025
+# smtp_from: noreply@batchrite.local
+# smtp_user: ""
+# smtp_pass: ""
+# smtp_tls: false
+
+# --- Verification / invitations ---
+# verification_token_ttl_days: 7
+# verification_resend_limit: 3
+# verification_resend_window_minutes: 10
+# verification_temp_token_minutes: 60
+# invitation_ttl_days: 7
+
+# --- AI provider credentials ---
+# openrouter:
+#   api_key: sk-or-...
+#   base_url: https://openrouter.ai/api/v1
+# ollama:
+#   base_url: http://localhost:11434
+
+# --- AI capability routing ---
+# Route all LLM/vision capabilities through openrouter to benchmark frontier
+# models. Embedding stays on local ollama (openrouter doesn't serve embeddings
+# well). `ai_audio_*` is omitted -- audio transcription isn't implemented yet
+# (see SUPPORTED_CAPABILITIES in backend/app/models/ai.py).
+# ai_vision_provider: openrouter
+# ai_vision_model: anthropic/claude-opus-4
+# ai_text_provider: openrouter
+# ai_text_model: anthropic/claude-opus-4
+# ai_doc_structure_provider: openrouter
+# ai_doc_structure_model: anthropic/claude-opus-4
+# ai_chat_provider: openrouter
+# ai_chat_model: anthropic/claude-opus-4
+# ai_protocol_generation_provider: openrouter
+# ai_protocol_generation_model: anthropic/claude-opus-4
+# ai_template_convert_provider: openrouter
+# ai_template_convert_model: anthropic/claude-opus-4
+# ai_embedding_provider: ollama
+# ai_embedding_model: nomic-embed-text:latest
+
+# --- Task runner / misc ---
+# task_runner_backend: thread
+# task_runner_pool_size: 4
+# skills_dir: skills
+# max_message_length: 10000
+# compaction_threshold: 0.6
+# template_convert_max_tool_calls: 25
