@@ -4,6 +4,7 @@ os.environ["BATCHRITE_AUTH_ENABLED"] = "true"
 
 import pytest
 import pytest_asyncio
+from app.services.billing import stripe_client as _stripe_client
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
@@ -34,6 +35,30 @@ from app.models.templates import DocumentTemplate  # noqa: F401
 TEST_DATABASE_URL = (
     "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite_test"
 )
+
+
+@pytest.fixture(autouse=True)
+def _disable_stripe_globally(monkeypatch):
+    """Ensure Stripe is unconfigured for all tests by default.
+
+    Tests that need Stripe (e.g. billing integration tests) opt-in by
+    injecting their own fake via stripe_client.set_fake_client() and
+    monkeypatching the settings keys — see configured_fake_stripe.
+    This fixture prevents real Stripe API calls caused by keys present
+    in local .env / settings.yaml.
+    """
+    for key in (
+        "stripe_secret_key",
+        "stripe_webhook_secret",
+        "stripe_essentials_price_id",
+        "stripe_pro_price_id",
+    ):
+        monkeypatch.setattr(
+            f"app.services.billing.stripe_client.settings.{key}", ""
+        )
+    _stripe_client._reset_cache()
+    yield
+    _stripe_client._reset_cache()
 
 
 @pytest_asyncio.fixture(scope="session")

@@ -164,6 +164,13 @@ async def register(
         role="ADMIN",
     ))
 
+    # Create Stripe trialing Essentials subscription (F-0019a).
+    # No-op if Stripe is unconfigured (logs a warning); safe to call before commit.
+    from app.services.billing.subscription_service import (
+        create_trial_subscription,
+    )
+    await create_trial_subscription(db, org, user)
+
     # Seed "My First Project" for onboarding (F-0015)
     from app.models.science import Project
 
