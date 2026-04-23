@@ -1,3 +1,7 @@
+import hashlib
+import hmac
+import json
+import time
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -148,3 +152,95 @@ async def test_endpoints_return_503_when_unconfigured(
         "/billing/portal-session", json={}, headers=headers
     )
     assert resp.status_code == 503
+
+
+def _sign_stripe_event(payload: bytes, secret: str, ts: int = None) -> str:
+    """Construct a Stripe-style signature header for a test payload."""
+    ts = ts or int(time.time())
+    signed_payload = f"{ts}.{payload.decode()}".encode()
+    signature = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+    return f"t={ts},v1={signature}"
+
+
+@pytest.mark.asyncio
+async def test_webhook_accepts_valid_signature(
+    client: AsyncClient, db_session, monkeypatch
+):
+    secret = "whsec_test_signing_secret"
+    for key, val in [
+        ("stripe_secret_key", "sk_test_x"),
+        ("stripe_webhook_secret", secret),
+        ("stripe_essentials_price_id", "price_ess"),
+        ("stripe_pro_price_id", "price_pro"),
+    ]:
+        monkeypatch.setattr(
+            f"app.services.billing.stripe_client.settings.{key}", val
+        )
+        monkeypatch.setattr(
+            f"app.api.endpoints.billing.settings.{key}", val
+        )
+    stripe_client._reset_cache()
+
+    # Pre-create the org so the event has a matching customer
+    org = Organization(
+        name="WebhookTest",
+        stripe_customer_id="cus_test_123",
+        stripe_subscription_id="sub_test_456",
+        subscription_tier="essentials",
+        subscription_status="trialing",
+    )
+    db_session.add(org)
+    await db_session.flush()
+
+    # Prime the real stripe module (not the injected fake) for construct_event
+    stripe_client._reset_cache()
+    from app.services.billing.stripe_client import get_stripe
+    _ = get_stripe()
+
+    payload = json.dumps({
+        "id": "evt_sig_test_001",
+        "object": "event",
+        "type": "customer.subscription.updated",
+        "created": 1714000000,
+        "data": {"object": {
+            "id": "sub_test_456",
+            "object": "subscription",
+            "customer": "cus_test_123",
+            "status": "active",
+            "trial_end": None,
+            "current_period_end": 1716678400,
+            "cancel_at_period_end": False,
+            "items": {"data": [{"price": {"id": "price_pro"}}]},
+        }},
+    }).encode()
+    sig = _sign_stripe_event(payload, secret)
+
+    resp = await client.post(
+        "/billing/webhook",
+        content=payload,
+        headers={"stripe-signature": sig, "content-type": "application/json"},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_webhook_rejects_invalid_signature(
+    client: AsyncClient, monkeypatch
+):
+    for key, val in [
+        ("stripe_secret_key", "sk_test_x"),
+        ("stripe_webhook_secret", "whsec_signing"),
+        ("stripe_essentials_price_id", "price_ess"),
+        ("stripe_pro_price_id", "price_pro"),
+    ]:
+        monkeypatch.setattr(
+            f"app.services.billing.stripe_client.settings.{key}", val
+        )
+    stripe_client._reset_cache()
+
+    resp = await client.post(
+        "/billing/webhook",
+        content=b'{"id": "evt_bogus"}',
+        headers={"stripe-signature": "t=1,v1=badsig", "content-type": "application/json"},
+    )
+    assert resp.status_code == 400
