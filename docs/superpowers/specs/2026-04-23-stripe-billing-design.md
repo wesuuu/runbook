@@ -16,8 +16,7 @@ Self-serve subscription billing for Batchrite orgs using Stripe. Two paid tiers 
 - No credit card required to start a trial; no charge if user never adds one (Stripe handles both).
 - Smallest possible code surface area — defer plan changes, card management, cancellation, and invoice history to the Stripe Customer Portal (approach A from brainstorming).
 - Environment-agnostic code: dev and staging use Stripe test mode; production uses live mode; behavior differs only by config.
-- **In-app trial countdown** — persistent header banner shown at ≤14 days remaining, escalating copy at 7/3/1/0 days.
-- **Write-lockout enforcement** — when a subscription is `canceled` / `past_due` / `unpaid`, all write endpoints return 402 and the frontend blocks writes with an explanatory modal. Read and data export remain fully functional for compliance reasons.
+- **Write-lockout enforcement** — when a subscription is `canceled` / `past_due` / `unpaid`, all write endpoints return 402 and the frontend blocks writes with an explanatory modal (triggered by the 402 response itself — not a proactive notification). Read and data export remain fully functional for compliance reasons.
 
 ## Deviations from the Original Task Description
 
@@ -34,8 +33,8 @@ The ClickUp task for F-0019a was authored before this brainstorming session. The
 
 - **On-prem / self-hosted deployment of Batchrite.** This task targets the SaaS deployment only. Adapting the same codebase for on-prem Enterprise installs (runtime feature flags to disable billing/CRM/trial, signed license keys, Docker packaging, ops guide) is tracked under **F-0037 On-Prem Deployment Mode + Enterprise License Key System**. Nothing in this spec should gate or conditionally-enable code behind a deployment-mode flag — that's F-0037's responsibility.
 - Production rollout (live keys, canary-charge runbook, dunning emails, tax handling) — separate follow-up task.
-- **Lifecycle messaging (email reminders, post-trial dunning, welcome sequences, etc.)** — tracked under **F-0019c Loops CRM Integration — Events, Contacts, & Email Lifecycle**. CRM vendor decided: Loops (loops.so). Our app emits events + contact properties; Loops owns timing/copy/delivery. No scheduler or cron in F-0019a. The in-app header banner (shipped in this task) is the only in-app nudge; email goes through Loops.
-- **Inbound webhook for Loops → in-app notification entries** — tracked under **F-0019d Inbound Webhook for Loops-Triggered In-App Notifications**. Optional / bidirectional integration where Loops workflows can trigger notifications in the NotificationBell via a signed webhook into our app.
+- **Lifecycle messaging (email reminders, post-trial dunning, welcome sequences, etc.)** — tracked under **F-0019c Loops CRM Integration — Events, Contacts, & Email Lifecycle**. CRM vendor decided: Loops (loops.so). Our app emits events + contact properties; Loops owns timing/copy/delivery. No scheduler, cron, or proactive in-app nudge in F-0019a. The only user-facing subscription UI shipped in this task lives inside the Billing tab itself (visible only when the user opens it).
+- **All proactive in-app lifecycle surfacing** — tracked under **F-0019d In-App Lifecycle Surfacing — Loops-Triggered Notifications + Trial Countdown Banner**. Scope: (a) inbound webhook from Loops that inserts NotificationBell entries, (b) global trial-countdown / cancel-at-period-end / locked-out banner in the app header layout. Deliberately separate from F-0019a so this task stays focused on Stripe + enforcement + Billing tab and avoids adding lifecycle UI that duplicates Loops' email channel.
 - **(F-0019e Lifecycle Messaging / CRM Integration)** — superseded; folded into F-0019c.
 - In-app invoice table. Portal handles invoice history.
 - In-app proration UI. Handled case-by-case through Stripe Dashboard.
@@ -245,9 +244,9 @@ billing: {
 ### BillingTab layout
 
 - **Header card** — current plan name + status badge (Trialing / Active / Past Due / Canceled / Essentials-no-sub).
-- **Trial countdown summary** inside the tab (when `status=trialing`) — "X days left in your trial. Add a payment method to keep your subscription active." CTA launches Portal. (Same data as the global header banner; the tab shows it prominently rather than suppressing it.)
-- **Cancel-at-period-end banner** (when `cancel_at_period_end=true`) — "Your subscription will end on [date]. You can reactivate from the billing portal."
-- **Locked-out banner** (when `is_locked_out=true`) — "Your subscription is not active. [Re-subscribe]."
+- **Trial countdown text** inside the header card (when `status=trialing`) — "X days left in your trial. Add a payment method to keep your subscription active." CTA launches Portal. This is tab content shown only when a user opens the Billing tab — not a global banner or notification.
+- **Cancel-at-period-end text** inside the header card (when `cancel_at_period_end=true`) — "Your subscription will end on [date]. You can reactivate from the billing portal."
+- **Locked-out text** inside the header card (when `is_locked_out=true`) — "Your subscription is not active. [Re-subscribe]."
 - **Plan rows**:
   - Essentials — marked "Your plan" if tier=essentials, otherwise "Downgrade" CTA (launches Portal).
   - Pro — marked "Your plan" if tier=pro, otherwise "Upgrade" CTA (launches Portal).
@@ -312,18 +311,9 @@ def require_active_subscription():
 
 ### Frontend
 
-- New Svelte rune in `frontend/src/lib/stores/subscription.svelte.ts` holding the subscription state from `GET /billing/subscription`. Fetched on app mount and after any billing action.
-- Global header component shows:
-  - **Trial countdown banner** when `days_remaining_in_trial != null && days_remaining_in_trial <= 14`. Copy adjusts:
-    - 14–8 days: "Your trial ends in {N} days. Add a payment method to keep access."
-    - 7–4 days: "Only {N} days left in your trial. Add a payment method to avoid interruption."
-    - 3 days or fewer: "Your trial ends {today|tomorrow|in {N} days}. Add a payment method now."
-    - 0 days: "Your trial ends today."
-    - CTA button: "Add payment method" → opens Stripe Customer Portal.
-  - **Locked-out banner** when `is_locked_out === true`. Copy: "Your subscription is not active. Reads and exports remain available, but new changes are blocked. [Re-subscribe]" → Portal.
-  - **Cancel-at-period-end banner** (existing in the earlier spec) when `cancel_at_period_end === true` and not yet canceled.
-- When the backend returns 402 on a write (safety net for stale frontend state), the API client intercepts and displays a blocking modal: "Your subscription is not active. Reads remain available, but new changes are blocked." with [Add payment method] / [Dismiss and continue reading] options.
-- No disabling of individual write buttons — keep the frontend simple and rely on the banner + 402 modal.
+- New Svelte rune in `frontend/src/lib/stores/subscription.svelte.ts` holding the subscription state from `GET /billing/subscription`. Fetched on app mount and after any billing action. Consumed by the Billing tab and the 402-response modal; **not rendered as any global header banner, notification bell entry, or toast in this task** (proactive lifecycle surfacing is owned by Loops + F-0019d).
+- When the backend returns 402 on a write, the API client intercepts and displays a blocking modal: "Your subscription is not active. Reads remain available, but new changes are blocked." with [Add payment method] / [Dismiss and continue reading] options. This is a reaction to a user-initiated action, not a proactive notification.
+- No disabling of individual write buttons — the 402 modal is the single point of enforcement on the frontend.
 
 ### Tests
 
@@ -331,7 +321,7 @@ def require_active_subscription():
 - Integration: hit a read endpoint when status is `canceled` → 200 (no block).
 - Integration: hit an exempt write endpoint (e.g., `/billing/portal-session`) when `canceled` → 200.
 - Unit: `days_remaining_in_trial` computation (various `trial_end` values relative to fixed `now`).
-- Frontend: the banner renders with correct copy at each threshold (component test with mocked store).
+- Frontend: the 402 blocking modal renders on a mocked write failure.
 
 ## Audit Logging
 
@@ -552,9 +542,9 @@ Brainstorming determined F-0019a (Pro plumbing) and F-0019b (Essentials trial + 
 10. **PAUSE 4a** — user completes Stripe Dashboard Setup **Pause 4a** (start `stripe listen`; fetch `whsec_...`). Paste into `backend/.env`. Webhook endpoint is now reachable from Stripe.
 11. Manual smoke test: create a new org locally, confirm trialing subscription appears in Stripe Dashboard and `organizations.stripe_subscription_id` is populated.
 12. `require_active_subscription` dep + sweep across write endpoints to apply it (with the documented exemptions) + lockout/exemption tests.
-13. Frontend Zod schema, API client methods, subscription store, global header banner (trial countdown + locked-out + cancel-at-period-end), BillingTab component, settings route integration.
+13. Frontend Zod schema, API client methods, subscription store, BillingTab component, settings route integration.
 14. Frontend 402-response interceptor + blocking modal for stale-state writes.
-15. Browser verification via qa-verify (using test cards from Environment Strategy section, covering happy path + trial-countdown + lockout).
+15. Browser verification via qa-verify (using test cards from Environment Strategy section, covering happy path + lockout).
 16. Developer docs (`docs/stripe-setup.md` — a cleaned-up version of the four Pause sections for future devs).
 
 ## Open Questions / Decisions for the Plan
