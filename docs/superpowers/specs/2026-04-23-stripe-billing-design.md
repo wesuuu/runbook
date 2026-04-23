@@ -17,6 +17,7 @@ Self-serve subscription billing for Batchrite orgs using Stripe. Two paid tiers 
 - Smallest possible code surface area — defer plan changes, card management, cancellation, and invoice history to the Stripe Customer Portal (approach A from brainstorming).
 - Environment-agnostic code: dev and staging use Stripe test mode; production uses live mode; behavior differs only by config.
 - **Write-lockout enforcement** — when a subscription is `canceled` / `past_due` / `unpaid`, all write endpoints return 402 and the frontend blocks writes with an explanatory modal (triggered by the 402 response itself — not a proactive notification). Read and data export remain fully functional for compliance reasons.
+- **Per-tier seat caps** — each tier limits how many members an org can have (Essentials 5, Pro 25, Enterprise unlimited). Adds blocked at the member-add endpoint with a 403 when full; downgrades that would violate the cap are allowed through (Stripe Portal has no plan-change hook) but surfaced in-app as a banner directing the admin to remove members or re-upgrade.
 
 ## Deviations from the Original Task Description
 
@@ -125,6 +126,9 @@ stripe_essentials_price_id: str = ""
 stripe_pro_price_id: str = ""
 essentials_trial_days: int = 30
 stripe_portal_return_url: str = "/settings?tab=billing"
+seat_limit_essentials: int = 5
+seat_limit_pro: int = 25
+# Enterprise has no cap; handled in code (None).
 ```
 
 Env prefix remains `BATCHRITE_`. All stripe_* fields optional — billing endpoints return **503 with a clear configuration message** when any required key is unset. App boots either way. Registration's `create_trial_subscription` is a no-op when Stripe is unconfigured (logs a warning; org gets billing plumbing on first interaction instead).
@@ -171,6 +175,9 @@ class SubscriptionStateResponse(BaseModel):
     cancel_at_period_end: bool
     has_payment_method: bool                # derived from Stripe customer default_payment_method; cached on the org
     is_locked_out: bool                     # computed: status in {canceled, past_due, unpaid}
+    seat_count: int                         # non-archived OrganizationMember rows for the org
+    seat_limit: int | None                  # from config per tier; None for enterprise
+    seat_limit_exceeded: bool               # computed: seat_limit is not None and seat_count > seat_limit
 ```
 
 503 if Stripe unconfigured.
@@ -218,6 +225,9 @@ export const SubscriptionStateSchema = z.object({
     cancel_at_period_end: z.boolean(),
     has_payment_method: z.boolean(),
     is_locked_out: z.boolean(),
+    seat_count: z.number().int(),
+    seat_limit: z.number().int().nullable(),
+    seat_limit_exceeded: z.boolean(),
 }).passthrough();
 
 export type SubscriptionState = z.infer<typeof SubscriptionStateSchema>;
@@ -247,6 +257,7 @@ billing: {
 - **Trial countdown text** inside the header card (when `status=trialing`) — "X days left in your trial. Add a payment method to keep your subscription active." CTA launches Portal. This is tab content shown only when a user opens the Billing tab — not a global banner or notification.
 - **Cancel-at-period-end text** inside the header card (when `cancel_at_period_end=true`) — "Your subscription will end on [date]. You can reactivate from the billing portal."
 - **Locked-out text** inside the header card (when `is_locked_out=true`) — "Your subscription is not active. [Re-subscribe]."
+- **Seat usage line** inside the header card — "X of Y members used" (or "X members" for Enterprise). When `seat_limit_exceeded=true`, render a banner inside the tab: "Your organization has {seat_count} members but the {tier} plan allows {seat_limit}. Remove {seat_count - seat_limit} members or upgrade to Pro to clear this warning." CTA links to the Members tab.
 - **Plan rows**:
   - Essentials — marked "Your plan" if tier=essentials, otherwise "Downgrade" CTA (launches Portal).
   - Pro — marked "Your plan" if tier=pro, otherwise "Upgrade" CTA (launches Portal).
@@ -322,6 +333,84 @@ def require_active_subscription():
 - Integration: hit an exempt write endpoint (e.g., `/billing/portal-session`) when `canceled` → 200.
 - Unit: `days_remaining_in_trial` computation (various `trial_end` values relative to fixed `now`).
 - Frontend: the 402 blocking modal renders on a mocked write failure.
+
+## Seat Caps
+
+Each paid tier caps the number of members an org can have. Caps are enforced at the member-add endpoint; downgrades that would violate a cap are allowed through Stripe (the Portal has no pre-change validation hook) and surfaced in-app as a banner.
+
+### Limits
+
+| Tier        | Seat cap                          |
+|-------------|-----------------------------------|
+| Essentials  | 5                                 |
+| Pro         | 25                                |
+| Enterprise  | unlimited (internally `None`)     |
+
+Caps are config values (`seat_limit_essentials`, `seat_limit_pro`) so they can be tuned per environment and per launch experiment without a code change.
+
+### What counts as a seat
+
+Every non-archived `OrganizationMember` row counts, regardless of role (ADMIN, BILLING, MEMBER all count). Archived members are free. There is no separate invitation table in the current codebase, so "pending invitations" are not tracked; when invitation tracking lands (F-0035 follow-up), it updates this rule.
+
+### Service
+
+`backend/app/services/billing/seat_limits.py`:
+
+```python
+SEAT_LIMITS: dict[SubscriptionTier, int | None] = {
+    SubscriptionTier.ESSENTIALS: settings.seat_limit_essentials,
+    SubscriptionTier.PRO: settings.seat_limit_pro,
+    SubscriptionTier.ENTERPRISE: None,
+}
+
+async def get_seat_count(db: AsyncSession, org_id: UUID) -> int:
+    """Count non-archived members for an org."""
+
+async def get_seat_limit(tier: SubscriptionTier) -> int | None:
+    """Return the cap for a tier, or None for unlimited."""
+
+async def check_seat_capacity(db: AsyncSession, org: Organization) -> None:
+    """Raise HTTPException(403, seat_limit_reached) if org is at or above its cap.
+    Callers should invoke this before inserting a new OrganizationMember row."""
+```
+
+### Enforcement: adding a member
+
+Hook `check_seat_capacity` into `POST /iam/organizations/{org_id}/members` just before the `OrganizationMember` is inserted (after the "existing member" and ADMIN-cap checks; archived reactivations skip the check since the count doesn't change). Response shape on violation:
+
+```json
+{
+    "code": "seat_limit_reached",
+    "message": "Your Essentials plan allows up to 5 members. Upgrade to Pro to add more.",
+    "tier": "essentials",
+    "limit": 5,
+    "current": 5
+}
+```
+
+HTTP status is **403**, not 402 — this is a plan-limit issue, not a payment-state issue, and the UX copy differs.
+
+### Enforcement: downgrades
+
+The Stripe Customer Portal does not support validation hooks for plan changes — once the user confirms a downgrade, Stripe commits the subscription update before we see the webhook. Blocking the webhook would leave Stripe's state diverged from ours.
+
+Accepted behavior:
+
+- The webhook applies the tier change as usual.
+- `GET /billing/subscription` returns `seat_limit_exceeded=true` because `seat_count > seat_limit` for the new tier.
+- The Billing tab renders the banner described under **BillingTab layout** above.
+- Write operations are **not** blocked — seat overage is a nudge, not a lockout. (Lockout remains tied strictly to `subscription_status`.)
+- No proactive notification is emitted in this task (consistent with F-0019a's "no in-app nudges" rule). F-0019c (Loops) can decide independently whether to emit a "your org is over its seat cap" email.
+
+### Tests
+
+- Unit: `get_seat_limit(tier)` returns the expected value for each tier (Essentials, Pro, Enterprise).
+- Unit: `get_seat_count(db, org_id)` counts only non-archived rows.
+- Unit: `check_seat_capacity` raises on a full org, passes when under cap, passes for Enterprise regardless of count.
+- Integration: POST to `/iam/organizations/{org_id}/members` on a full Essentials org returns 403 with the contract shape above.
+- Integration: POST on the same org at cap-1 succeeds; the next POST returns 403.
+- Integration: reactivating an archived member on a full org succeeds (doesn't change the count).
+- Integration: `GET /billing/subscription` after a downgrade webhook that triggers overage returns `seat_limit_exceeded=true` and the correct counts.
 
 ## Audit Logging
 
@@ -542,7 +631,10 @@ Brainstorming determined F-0019a (Pro plumbing) and F-0019b (Essentials trial + 
 10. **PAUSE 4a** — user completes Stripe Dashboard Setup **Pause 4a** (start `stripe listen`; fetch `whsec_...`). Paste into `backend/.env`. Webhook endpoint is now reachable from Stripe.
 11. Manual smoke test: create a new org locally, confirm trialing subscription appears in Stripe Dashboard and `organizations.stripe_subscription_id` is populated.
 12. `require_active_subscription` dep + sweep across write endpoints to apply it (with the documented exemptions) + lockout/exemption tests.
-13. Frontend Zod schema, API client methods, subscription store, BillingTab component, settings route integration.
+12a. Seat cap config + `seat_limits.py` service + unit tests.
+12b. Enforce `check_seat_capacity` in `add_org_member` endpoint + integration tests.
+12c. Extend `GET /billing/subscription` response to include `seat_count` / `seat_limit` / `seat_limit_exceeded` + tests.
+13. Frontend Zod schema, API client methods, subscription store, BillingTab component (including seat usage + overage banner), settings route integration.
 14. Frontend 402-response interceptor + blocking modal for stale-state writes.
 15. Browser verification via qa-verify (using test cards from Environment Strategy section, covering happy path + lockout).
 16. Developer docs (`docs/stripe-setup.md` — a cleaned-up version of the four Pause sections for future devs).

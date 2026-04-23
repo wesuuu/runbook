@@ -28,6 +28,7 @@
 - `backend/app/services/billing/constants.py` — `STRIPE_SYSTEM_ACTOR_ID` UUID, price-ID-to-tier mapping helper
 - `backend/app/services/billing/stripe_client.py` — module wrapping `stripe.*`; injectable for tests
 - `backend/app/services/billing/subscription_service.py` — `create_trial_subscription`, `create_portal_session`, `get_subscription_state`
+- `backend/app/services/billing/seat_limits.py` — `get_seat_count`, `get_seat_limit`, `check_seat_capacity`
 - `backend/app/services/billing/webhook_handler.py` — `handle_event(db, event)` dispatcher
 - `backend/app/api/endpoints/billing.py` — router: `GET /subscription`, `POST /portal-session`, `POST /webhook`
 - `backend/app/schemas/billing.py` — `SubscriptionStateResponse`, `PortalSessionRequest`, `PortalSessionResponse`
@@ -36,6 +37,8 @@
 - `backend/tests/unit/services/test_stripe_client.py`
 - `backend/tests/unit/services/test_subscription_service.py`
 - `backend/tests/unit/services/test_webhook_handler.py`
+- `backend/tests/unit/services/test_seat_limits.py`
+- `backend/tests/integration/test_seat_caps.py`
 - `backend/tests/integration/test_billing_endpoints.py`
 - `backend/tests/integration/test_billing_lockout.py`
 - `backend/tests/integration/test_registration_billing.py`
@@ -49,10 +52,12 @@
 
 **Modify:**
 - `backend/pyproject.toml` — add `stripe` to `[tool.poetry.dependencies]`
-- `backend/app/core/config.py` — add six Stripe-related `Settings` fields
+- `backend/app/core/config.py` — add six Stripe-related `Settings` fields plus `seat_limit_essentials` / `seat_limit_pro`
 - `backend/app/core/deps.py` — add `require_org_role`, `require_active_subscription`
 - `backend/app/models/iam.py` — add stripe fields to `Organization`
 - `backend/app/api/endpoints/auth.py` (lines 161-189) — call `create_trial_subscription` after org creation
+- `backend/app/api/endpoints/iam.py` (lines 161-228, `add_org_member`) — call `check_seat_capacity` before inserting a new `OrganizationMember`
+- `backend/app/schemas/billing.py` — add `seat_count` / `seat_limit` / `seat_limit_exceeded` to `SubscriptionStateResponse`
 - `backend/app/main.py` (line 356-361 area) — import + mount `billing.router`
 - Write endpoints across many routers — apply `require_active_subscription` dep (see Task 16 for file list)
 
@@ -431,6 +436,11 @@ Edit `backend/app/core/config.py`. Find the Settings class. Before `model_config
     stripe_pro_price_id: str = ""
     essentials_trial_days: int = 30
     stripe_portal_return_url: str = "/settings?tab=billing"
+
+    # Seat caps per tier (added F-0019a). Enterprise has no cap;
+    # handled in code by `get_seat_limit(tier)` returning None.
+    seat_limit_essentials: int = 5
+    seat_limit_pro: int = 25
 ```
 
 - [ ] **Step 2: Verify config loads**
@@ -470,6 +480,9 @@ BATCHRITE_STRIPE_PRO_PRICE_ID=price_placeholder_replace_me
 # Trial length in days for new Essentials subscriptions.
 # Default: 30. Set to 180 during the launch beta (3-6 month free period).
 BATCHRITE_ESSENTIALS_TRIAL_DAYS=30
+# Per-tier seat caps. Adjust per environment if desired.
+BATCHRITE_SEAT_LIMIT_ESSENTIALS=5
+BATCHRITE_SEAT_LIMIT_PRO=25
 ```
 
 - [ ] **Step 4: Confirm `.env.example` is tracked and `backend/.env` is ignored**
@@ -2312,6 +2325,213 @@ git commit -m "feat(deps): add require_active_subscription for write-lockout enf
 
 ---
 
+### Task 11b: seat_limits service + unit tests
+
+**Files:**
+- Create: `backend/app/services/billing/seat_limits.py`
+- Create: `backend/tests/unit/services/test_seat_limits.py`
+
+The `GET /billing/subscription` handler in Task 13 will consume `get_seat_count` and `get_seat_limit` from this service. Ship it before the endpoint so the handler can import it cleanly.
+
+- [ ] **Step 1: Write failing unit tests**
+
+Create `backend/tests/unit/services/test_seat_limits.py`:
+
+```python
+from uuid import uuid4
+
+import pytest
+from httpx import HTTPError
+from fastapi import HTTPException
+
+from app.models.iam import (
+    Organization,
+    OrganizationMember,
+    SubscriptionTier,
+    User,
+)
+from app.services.billing import seat_limits
+
+
+@pytest.mark.asyncio
+async def test_get_seat_limit_per_tier():
+    # Config defaults from Settings: essentials=5, pro=25, enterprise=None
+    assert seat_limits.get_seat_limit(SubscriptionTier.ESSENTIALS) == 5
+    assert seat_limits.get_seat_limit(SubscriptionTier.PRO) == 25
+    assert seat_limits.get_seat_limit(SubscriptionTier.ENTERPRISE) is None
+
+
+@pytest.mark.asyncio
+async def test_get_seat_count_counts_only_active(db_session, test_org):
+    active_user = User(email="a@x.com", hashed_password="x")
+    archived_user = User(email="b@x.com", hashed_password="x")
+    db_session.add_all([active_user, archived_user])
+    await db_session.flush()
+    db_session.add_all([
+        OrganizationMember(user_id=active_user.id, organization_id=test_org.id, role="MEMBER", archived=False),
+        OrganizationMember(user_id=archived_user.id, organization_id=test_org.id, role="MEMBER", archived=True),
+    ])
+    await db_session.flush()
+    # test_org's creating user was already added as ADMIN in the fixture (1 seat).
+    # Plus our 1 new active = 2 active total. Archived doesn't count.
+    count = await seat_limits.get_seat_count(db_session, test_org.id)
+    assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_check_seat_capacity_allows_when_under_cap(db_session, test_org):
+    # test_org has 1 member (creator); Essentials cap is 5.
+    test_org.subscription_tier = SubscriptionTier.ESSENTIALS
+    db_session.add(test_org)
+    await db_session.flush()
+    # Should not raise.
+    await seat_limits.check_seat_capacity(db_session, test_org)
+
+
+@pytest.mark.asyncio
+async def test_check_seat_capacity_blocks_when_at_cap(db_session, test_org):
+    test_org.subscription_tier = SubscriptionTier.ESSENTIALS
+    db_session.add(test_org)
+    # Fill to the cap (5 total active members). test_org already has 1 from fixture; add 4 more.
+    for i in range(4):
+        u = User(email=f"fill{i}@x.com", hashed_password="x")
+        db_session.add(u)
+        await db_session.flush()
+        db_session.add(OrganizationMember(user_id=u.id, organization_id=test_org.id, role="MEMBER", archived=False))
+    await db_session.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        await seat_limits.check_seat_capacity(db_session, test_org)
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "seat_limit_reached"
+    assert exc.value.detail["tier"] == "essentials"
+    assert exc.value.detail["limit"] == 5
+    assert exc.value.detail["current"] == 5
+
+
+@pytest.mark.asyncio
+async def test_check_seat_capacity_allows_enterprise_at_any_count(db_session, test_org):
+    test_org.subscription_tier = SubscriptionTier.ENTERPRISE
+    db_session.add(test_org)
+    # Add 30 members — well over any numeric cap.
+    for i in range(30):
+        u = User(email=f"big{i}@x.com", hashed_password="x")
+        db_session.add(u)
+        await db_session.flush()
+        db_session.add(OrganizationMember(user_id=u.id, organization_id=test_org.id, role="MEMBER", archived=False))
+    await db_session.flush()
+    # Enterprise has no cap — should not raise.
+    await seat_limits.check_seat_capacity(db_session, test_org)
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+```bash
+cd backend && source .venv/bin/activate && pytest tests/unit/services/test_seat_limits.py -v 2>&1 | tail -10
+```
+
+Expected: failures about missing `app.services.billing.seat_limits` module.
+
+- [ ] **Step 3: Write the service**
+
+Create `backend/app/services/billing/seat_limits.py`:
+
+```python
+"""Per-tier seat caps.
+
+Policy:
+  - Essentials: `settings.seat_limit_essentials` (default 5).
+  - Pro: `settings.seat_limit_pro` (default 25).
+  - Enterprise: unlimited (None).
+
+Enforcement:
+  - `check_seat_capacity` raises HTTPException(403) if the org has already hit its cap.
+    Callers invoke this immediately before inserting a new non-archived OrganizationMember.
+  - Downgrades (via Stripe Portal) are NOT blocked here — they flow through the webhook
+    handler unchanged. The resulting overage is surfaced via `seat_limit_exceeded` in
+    `GET /billing/subscription`.
+"""
+
+from uuid import UUID
+
+from fastapi import HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.models.iam import Organization, OrganizationMember, SubscriptionTier
+
+
+def get_seat_limit(tier: SubscriptionTier | str | None) -> int | None:
+    """Return the seat cap for a tier, or None for unlimited / unknown tiers."""
+    if tier == SubscriptionTier.ESSENTIALS or tier == "essentials":
+        return settings.seat_limit_essentials
+    if tier == SubscriptionTier.PRO or tier == "pro":
+        return settings.seat_limit_pro
+    if tier == SubscriptionTier.ENTERPRISE or tier == "enterprise":
+        return None
+    return None
+
+
+async def get_seat_count(db: AsyncSession, org_id: UUID) -> int:
+    """Count non-archived memberships for an org."""
+    result = await db.execute(
+        select(func.count()).where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.archived == False,  # noqa: E712
+        )
+    )
+    return int(result.scalar() or 0)
+
+
+async def check_seat_capacity(db: AsyncSession, org: Organization) -> None:
+    """Raise HTTPException(403, seat_limit_reached) if adding a member would exceed the cap.
+
+    Call BEFORE inserting a new OrganizationMember row. Callers that reactivate
+    an existing archived member should skip this check — the count doesn't change.
+    """
+    limit = get_seat_limit(org.subscription_tier)
+    if limit is None:
+        return  # Enterprise / unlimited
+    current = await get_seat_count(db, org.id)
+    if current >= limit:
+        tier_str = (
+            org.subscription_tier.value
+            if hasattr(org.subscription_tier, "value")
+            else str(org.subscription_tier)
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "seat_limit_reached",
+                "message": (
+                    f"Your {tier_str.capitalize()} plan allows up to {limit} "
+                    "members. Upgrade to Pro to add more."
+                ),
+                "tier": tier_str,
+                "limit": limit,
+                "current": current,
+            },
+        )
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+cd backend && source .venv/bin/activate && pytest tests/unit/services/test_seat_limits.py -v 2>&1 | tail -15
+```
+
+Expected: all 5 tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/app/services/billing/seat_limits.py backend/tests/unit/services/test_seat_limits.py
+git commit -m "feat(billing): seat_limits service — per-tier cap enforcement primitives"
+```
+
+---
+
 ## Phase 6 — Billing Endpoints
 
 ### Task 12: Pydantic schemas for billing
@@ -2339,6 +2559,9 @@ class SubscriptionStateResponse(BaseModel):
     cancel_at_period_end: bool
     has_payment_method: bool
     is_locked_out: bool
+    seat_count: int
+    seat_limit: Optional[int]  # None for Enterprise (unlimited)
+    seat_limit_exceeded: bool
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -2578,6 +2801,7 @@ from app.schemas.billing import (
     SubscriptionStateResponse,
 )
 from app.services.billing import (
+    seat_limits,
     stripe_client,
     subscription_service,
     webhook_handler,
@@ -2608,6 +2832,13 @@ async def get_subscription(
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
     state = subscription_service.get_subscription_state(org)
+    seat_count = await seat_limits.get_seat_count(db, org.id)
+    seat_limit = seat_limits.get_seat_limit(org.subscription_tier)
+    state["seat_count"] = seat_count
+    state["seat_limit"] = seat_limit
+    state["seat_limit_exceeded"] = (
+        seat_limit is not None and seat_count > seat_limit
+    )
     return SubscriptionStateResponse(**state)
 
 
@@ -3378,6 +3609,233 @@ git commit -m "feat(billing): cache has_payment_method on subscription state rec
 
 ---
 
+### Task 17b: Enforce seat cap in `add_org_member` + integration tests
+
+**Files:**
+- Modify: `backend/app/api/endpoints/iam.py` — `add_org_member` handler (current lines 161-228)
+- Create: `backend/tests/integration/test_seat_caps.py`
+
+- [ ] **Step 1: Write failing integration tests**
+
+Create `backend/tests/integration/test_seat_caps.py`:
+
+```python
+"""Integration tests for per-tier seat caps on POST /iam/organizations/{org_id}/members."""
+from uuid import uuid4
+
+import pytest
+from httpx import AsyncClient
+
+from app.models.iam import (
+    Organization,
+    OrganizationMember,
+    SubscriptionTier,
+    User,
+)
+
+
+async def _fill_org_to(db_session, org_id, target_count, start_count=1):
+    """Add (target_count - start_count) active members to org."""
+    for i in range(target_count - start_count):
+        u = User(email=f"fill_{uuid4().hex[:6]}@x.com", hashed_password="x")
+        db_session.add(u)
+        await db_session.flush()
+        db_session.add(
+            OrganizationMember(
+                user_id=u.id, organization_id=org_id, role="MEMBER", archived=False,
+            )
+        )
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_add_member_blocked_when_essentials_cap_reached(
+    client: AsyncClient, db_session, test_org, auth_headers,
+):
+    # Fill test_org (tier=essentials by default) to the cap of 5.
+    test_org.subscription_tier = SubscriptionTier.ESSENTIALS
+    db_session.add(test_org)
+    await db_session.commit()
+    await _fill_org_to(db_session, test_org.id, target_count=5)
+
+    # Attempt to add a 6th member.
+    new_user = User(email="overflow@x.com", hashed_password="x")
+    db_session.add(new_user)
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/iam/organizations/{test_org.id}/members",
+        json={"user_id": str(new_user.id), "role": "MEMBER"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403
+    body = resp.json()["detail"]
+    assert body["code"] == "seat_limit_reached"
+    assert body["tier"] == "essentials"
+    assert body["limit"] == 5
+    assert body["current"] == 5
+
+
+@pytest.mark.asyncio
+async def test_add_member_succeeds_at_cap_minus_one(
+    client: AsyncClient, db_session, test_org, auth_headers,
+):
+    test_org.subscription_tier = SubscriptionTier.ESSENTIALS
+    db_session.add(test_org)
+    await db_session.commit()
+    await _fill_org_to(db_session, test_org.id, target_count=4)
+
+    new_user = User(email="ok@x.com", hashed_password="x")
+    db_session.add(new_user)
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/iam/organizations/{test_org.id}/members",
+        json={"user_id": str(new_user.id), "role": "MEMBER"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_reactivate_archived_member_bypasses_cap(
+    client: AsyncClient, db_session, test_org, auth_headers,
+):
+    """Reactivating an archived member doesn't change the non-archived count,
+    so it should succeed even when the org is at its cap."""
+    test_org.subscription_tier = SubscriptionTier.ESSENTIALS
+    db_session.add(test_org)
+    await db_session.commit()
+    await _fill_org_to(db_session, test_org.id, target_count=5)
+
+    # Archive one member to make room.
+    archived_user = User(email="comeback@x.com", hashed_password="x")
+    db_session.add(archived_user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=archived_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+            archived=True,
+        )
+    )
+    await db_session.commit()
+    # Org is still at 5 active members; archived user doesn't count.
+    # Reactivation request should succeed.
+    resp = await client.post(
+        f"/iam/organizations/{test_org.id}/members",
+        json={"user_id": str(archived_user.id), "role": "MEMBER"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_enterprise_has_no_cap(
+    client: AsyncClient, db_session, test_org, auth_headers,
+):
+    test_org.subscription_tier = SubscriptionTier.ENTERPRISE
+    db_session.add(test_org)
+    await db_session.commit()
+    # Fill well beyond any numeric cap.
+    await _fill_org_to(db_session, test_org.id, target_count=30)
+
+    new_user = User(email="yetanother@x.com", hashed_password="x")
+    db_session.add(new_user)
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/iam/organizations/{test_org.id}/members",
+        json={"user_id": str(new_user.id), "role": "MEMBER"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+```bash
+cd backend && source .venv/bin/activate && pytest tests/integration/test_seat_caps.py -v 2>&1 | tail -20
+```
+
+Expected: `test_add_member_blocked_when_essentials_cap_reached` fails (6th member currently succeeds — no cap enforced yet). Reactivation / enterprise / cap-minus-one tests may already pass.
+
+- [ ] **Step 3: Hook `check_seat_capacity` into `add_org_member`**
+
+Edit `backend/app/api/endpoints/iam.py`. Find the `add_org_member` function (currently around line 165). Add the seat-capacity check in the branch that creates a new (non-reactivated) membership.
+
+Add the import near the top with other `app.services.*` imports:
+
+```python
+from app.services.billing import seat_limits
+```
+
+Then, in the `else` branch (new membership), after the ADMIN-cap check and before the `OrganizationMember(...)` construction, add the seat-capacity check. The structure becomes:
+
+```python
+    if existing is not None:
+        if not existing.archived:
+            raise HTTPException(status_code=409, detail="User is already a member")
+        # Reactivating archived member — count doesn't change, no seat check needed.
+        existing.archived = False
+        existing.role = body.role
+        membership = existing
+    else:
+        # Existing ADMIN cap check stays.
+        if body.role == "ADMIN":
+            admin_count = await db.execute(
+                select(func.count()).where(
+                    OrganizationMember.organization_id == org_id,
+                    OrganizationMember.role == "ADMIN",
+                    OrganizationMember.archived == False,
+                )
+            )
+            if (admin_count.scalar() or 0) >= 3:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Maximum of 3 admins per organization",
+                )
+
+        # NEW: per-tier seat cap check.
+        org = await db.get(Organization, org_id)
+        if org is None:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        await seat_limits.check_seat_capacity(db, org)
+
+        membership = OrganizationMember(
+            user_id=body.user_id,
+            organization_id=org_id,
+            role=body.role,
+        )
+        db.add(membership)
+```
+
+- [ ] **Step 4: Run the integration tests to verify they pass**
+
+```bash
+cd backend && source .venv/bin/activate && pytest tests/integration/test_seat_caps.py -v 2>&1 | tail -20
+```
+
+Expected: all 4 tests pass.
+
+- [ ] **Step 5: Run the broader iam test suite to confirm no regressions**
+
+```bash
+cd backend && source .venv/bin/activate && pytest tests/integration/test_iam.py -v 2>&1 | tail -20
+```
+
+Expected: all previously-green tests still pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/app/api/endpoints/iam.py backend/tests/integration/test_seat_caps.py
+git commit -m "feat(billing): enforce per-tier seat caps in add_org_member"
+```
+
+---
+
 ## Phase 10 — Frontend
 
 ### Task 18: Zod schema for billing
@@ -3402,6 +3860,9 @@ export const SubscriptionStateSchema = z.object({
     cancel_at_period_end: z.boolean(),
     has_payment_method: z.boolean(),
     is_locked_out: z.boolean(),
+    seat_count: z.number().int(),
+    seat_limit: z.number().int().nullable(),
+    seat_limit_exceeded: z.boolean(),
 }).passthrough();
 
 export type SubscriptionState = z.infer<typeof SubscriptionStateSchema>;
@@ -3681,6 +4142,27 @@ Create `frontend/src/lib/components/settings/BillingTab.svelte`:
                     <Button onclick={() => openPortal()}>Re-subscribe</Button>
                 {:else if s.status === 'active' && s.current_period_end}
                     <p>Next billing date: {formatDate(s.current_period_end)}.</p>
+                {/if}
+
+                <!-- Seat usage -->
+                <p class="text-muted-foreground">
+                    {#if s.seat_limit == null}
+                        {s.seat_count} {s.seat_count === 1 ? 'member' : 'members'}
+                    {:else}
+                        {s.seat_count} of {s.seat_limit} {s.seat_limit === 1 ? 'seat' : 'seats'} used
+                    {/if}
+                </p>
+
+                {#if s.seat_limit_exceeded && s.seat_limit != null}
+                    <div class="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 text-sm">
+                        Your organization has {s.seat_count} members but the {planLabel(s.tier)} plan allows {s.seat_limit}.
+                        Remove {s.seat_count - s.seat_limit} {s.seat_count - s.seat_limit === 1 ? 'member' : 'members'}
+                        or upgrade to clear this warning.
+                        <div class="mt-2 flex gap-2">
+                            <Button size="sm" onclick={() => openPortal()}>Upgrade</Button>
+                            <a href="/settings?tab=members" class="text-sm underline underline-offset-4 self-center">Manage members</a>
+                        </div>
+                    </div>
                 {/if}
             </CardContent>
         </Card>
@@ -4005,6 +4487,8 @@ Dispatch the `qa-verify` agent with the following context:
 > **Edge cases to test:**
 > - Browser back button on a locked-out state: reads still work; try creating something and the modal shows.
 > - The Billing tab should NOT appear for a non-ADMIN user (create a second user, add them as MEMBER to the first org; the tab should render an empty state or hide entirely).
+> - **Seat caps:** the Billing tab shows an "X of 5 seats used" line under the header. Add members via `/settings?tab=members` up to 5; the sixth member add should fail with a toast/error "Your Essentials plan allows up to 5 members." Then in the Stripe Portal upgrade to Pro; return to Billing — the line should now read "6 of 25 seats used" and a 7th member add succeeds.
+> - **Seat overage after downgrade:** starting from Pro with 6 members, use Portal to downgrade to Essentials (at period end is fine — force the effective change by firing `customer.subscription.updated` via `stripe trigger` or manual SQL on `subscription_tier`). The Billing tab should render an amber banner "Your organization has 6 members but the Essentials plan allows 5. Remove 1 member or upgrade to clear this warning." Writes should still work (overage is a nudge, not a lockout).
 >
 > **UI/UX quality audit:**
 > - Status badge colors match semantic meanings (green for active, red for canceled, amber for past_due, blue for trialing).
