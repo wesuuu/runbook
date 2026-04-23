@@ -92,3 +92,72 @@ def test_resolve_path_returns_none_when_default_missing(monkeypatch):
         Path("/nonexistent/batchrite/settings.yaml"),
     )
     assert _resolve_yaml_path() is None
+
+
+# --- Integration tests: Settings() with the YAML source wired in ---
+
+from app.core.config import Settings
+
+
+def _isolate_env(monkeypatch):
+    """Clear BATCHRITE_* env vars that could leak in from the host."""
+    for key in list(os.environ):
+        if key.startswith("BATCHRITE_"):
+            monkeypatch.delenv(key, raising=False)
+
+
+def test_yaml_overrides_defaults(tmp_path, monkeypatch):
+    _isolate_env(monkeypatch)
+    f = tmp_path / "s.yaml"
+    f.write_text(
+        "database_url: postgresql+asyncpg://u:p@host:5432/db\n" "auth_enabled: false\n"
+    )
+    monkeypatch.setenv("BATCHRITE_SETTINGS_FILE", str(f))
+    s = Settings(_env_file=None)
+    assert s.database_url == "postgresql+asyncpg://u:p@host:5432/db"
+    assert s.auth_enabled is False
+
+
+def test_env_vars_override_yaml(tmp_path, monkeypatch):
+    _isolate_env(monkeypatch)
+    f = tmp_path / "s.yaml"
+    f.write_text("auth_enabled: false\n")
+    monkeypatch.setenv("BATCHRITE_SETTINGS_FILE", str(f))
+    monkeypatch.setenv("BATCHRITE_AUTH_ENABLED", "true")
+    s = Settings(_env_file=None)
+    assert s.auth_enabled is True
+
+
+def test_yaml_loads_nested_provider_config(tmp_path, monkeypatch):
+    _isolate_env(monkeypatch)
+    f = tmp_path / "s.yaml"
+    f.write_text(
+        "openrouter:\n"
+        "  api_key: sk-or-xyz\n"
+        "  base_url: https://openrouter.ai/api/v1\n"
+    )
+    monkeypatch.setenv("BATCHRITE_SETTINGS_FILE", str(f))
+    s = Settings(_env_file=None)
+    assert s.openrouter.api_key == "sk-or-xyz"
+    assert s.openrouter.base_url == "https://openrouter.ai/api/v1"
+
+
+def test_no_yaml_falls_through_to_defaults(monkeypatch):
+    _isolate_env(monkeypatch)
+    monkeypatch.setattr(
+        "app.core.yaml_source._DEFAULT_YAML_PATH",
+        Path("/nonexistent/batchrite/settings.yaml"),
+    )
+    s = Settings(_env_file=None)
+    assert s.jwt_algorithm == "HS256"
+    assert s.auth_enabled is True
+
+
+def test_unknown_yaml_keys_are_ignored(tmp_path, monkeypatch):
+    _isolate_env(monkeypatch)
+    f = tmp_path / "s.yaml"
+    f.write_text("not_a_real_field: 42\nauth_enabled: false\n")
+    monkeypatch.setenv("BATCHRITE_SETTINGS_FILE", str(f))
+    s = Settings(_env_file=None)
+    assert s.auth_enabled is False
+    assert not hasattr(s, "not_a_real_field")

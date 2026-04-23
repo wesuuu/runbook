@@ -1,7 +1,9 @@
 import warnings
 
 from pydantic import BaseModel, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+
+from app.core.yaml_source import YamlConfigSettingsSource
 
 
 class ProviderConfig(BaseModel):
@@ -63,7 +65,6 @@ class Settings(BaseSettings):
                     stacklevel=1,
                 )
         return self
-
 
     # AI env var fallbacks (used only before DB is configured)
     ai_vision_provider: str = ""
@@ -143,6 +144,23 @@ class Settings(BaseSettings):
         "extra": "ignore",
         "env_nested_delimiter": "__",
     }
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            YamlConfigSettingsSource(settings_cls),
+            file_secret_settings,
+        )
 
 
 settings = Settings()
