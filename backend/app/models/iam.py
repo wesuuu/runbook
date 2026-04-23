@@ -88,6 +88,29 @@ class Organization(Base, UUIDMixin, TimestampMixin):
         nullable=True,
     )
 
+    # Stripe billing (added F-0019a — nullable; existing orgs default to null)
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, index=True
+    )
+    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
+    subscription_status: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
+    current_period_end: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    trial_end: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancel_at_period_end: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    has_payment_method: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+
     # Relationships
     teams: Mapped[List["Team"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"

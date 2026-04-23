@@ -2,6 +2,7 @@
 from app.models.ai import AiProviderConfig, ImageConversation, RunImage
 from app.models.base import Base
 from app.models.batch_record_import import BatchRecordImport
+from app.models.billing import StripeEvent  # noqa: F401
 from app.models.chat import ChatMessage, ChatSession
 from app.models.execution import AuditLog
 # Import all models for Side Effects (so they register with Base)
