@@ -70,6 +70,13 @@ async def create_portal_session(
     org = await db.get(Organization, user.selected_org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
+    # Lazy-provision for orgs that predate F-0019a (seeded orgs or orgs
+    # whose registration ran before Stripe was configured). Idempotent —
+    # returns the org unchanged if a subscription_id is already set.
+    if not org.stripe_customer_id:
+        await subscription_service.create_trial_subscription(db, org, user)
+        await db.commit()
+        await db.refresh(org)
     return_url = body.return_url or settings.stripe_portal_return_url
     try:
         url = await subscription_service.create_portal_session(org, return_url)
