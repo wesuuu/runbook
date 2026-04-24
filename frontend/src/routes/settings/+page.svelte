@@ -23,8 +23,20 @@
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
+    import { page } from '$app/stores';
+    import { goto } from '$app/navigation';
 
-    let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates' | 'billing'>('organization');
+    type TabName = 'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates' | 'billing';
+    const VALID_TABS: TabName[] = ['organization', 'teams', 'profile', 'notifications', 'ai', 'templates', 'billing'];
+
+    const activeTab = $derived.by<TabName>(() => {
+        const t = $page.url.searchParams.get('tab');
+        return VALID_TABS.includes(t as TabName) ? (t as TabName) : 'organization';
+    });
+
+    function setTab(tab: TabName) {
+        goto(`?tab=${tab}`, { replaceState: false, keepFocus: true, noScroll: true });
+    }
 
     // Notifications
     let channels = $state<any[]>([]);
@@ -592,6 +604,13 @@
         loadInvitations();
         loadTeams();
     });
+
+    // Auto-load notifications channel list when navigating to notifications tab via URL.
+    $effect(() => {
+        if (activeTab === 'notifications' && channels.length === 0 && !channelsLoading) {
+            loadChannels();
+        }
+    });
 </script>
 
 <div class="max-w-4xl mx-auto space-y-8">
@@ -605,7 +624,7 @@
         <Button
             variant="tab"
             data-active={activeTab === 'organization'}
-            onclick={() => (activeTab = 'organization')}
+            onclick={() => setTab('organization')}
             class="py-2.5 min-h-11"
         >
             Organization
@@ -613,7 +632,7 @@
         <Button
             variant="tab"
             data-active={activeTab === 'teams'}
-            onclick={() => (activeTab = 'teams')}
+            onclick={() => setTab('teams')}
             class="py-2.5 min-h-11"
         >
             Teams
@@ -621,7 +640,7 @@
         <Button
             variant="tab"
             data-active={activeTab === 'profile'}
-            onclick={() => (activeTab = 'profile')}
+            onclick={() => setTab('profile')}
             class="py-2.5 min-h-11"
         >
             Profile
@@ -629,7 +648,7 @@
         <Button
             variant="tab"
             data-active={activeTab === 'notifications'}
-            onclick={() => { activeTab = 'notifications'; if (channels.length === 0 && !channelsLoading) loadChannels(); }}
+            onclick={() => { setTab('notifications'); if (channels.length === 0 && !channelsLoading) loadChannels(); }}
             class="py-2.5 min-h-11"
         >
             Notifications
@@ -637,7 +656,7 @@
         <Button
             variant="tab"
             data-active={activeTab === 'ai'}
-            onclick={() => (activeTab = 'ai')}
+            onclick={() => setTab('ai')}
             class="py-2.5 min-h-11"
         >
             AI Models
@@ -645,7 +664,7 @@
         <Button
             variant="tab"
             data-active={activeTab === 'templates'}
-            onclick={() => (activeTab = 'templates')}
+            onclick={() => setTab('templates')}
             class="py-2.5 min-h-11"
         >
             Templates
@@ -653,7 +672,7 @@
         <Button
             variant="tab"
             data-active={activeTab === 'billing'}
-            onclick={() => (activeTab = 'billing')}
+            onclick={() => setTab('billing')}
             class="py-2.5 min-h-11"
         >
             Billing
