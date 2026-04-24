@@ -2,6 +2,12 @@ import { goto } from '$app/navigation';
 import { getToken, logout } from '$lib/auth.svelte';
 import { API_BASE } from '$lib/config';
 import { _validateResponse, type RequestOptions } from '$lib/apiValidation';
+import {
+    SubscriptionStateSchema,
+    PortalSessionResponseSchema,
+    type SubscriptionState,
+    type PortalSessionResponse,
+} from '$lib/schemas/billing';
 
 export class ApiError extends Error {
     status: number;
@@ -205,4 +211,12 @@ export const api = {
     postBlobUrl,
     postDownloadBlob,
     connectSSE,
+};
+
+export const billingApi = {
+    getSubscription: (): Promise<SubscriptionState> =>
+        api.get<SubscriptionState>('/billing/subscription', { schema: SubscriptionStateSchema }),
+
+    createPortalSession: (returnUrl?: string): Promise<PortalSessionResponse> =>
+        api.post<PortalSessionResponse>('/billing/portal-session', { return_url: returnUrl }, { schema: PortalSessionResponseSchema }),
 };
