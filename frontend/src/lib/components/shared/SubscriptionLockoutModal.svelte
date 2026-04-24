@@ -2,7 +2,7 @@
     import * as Dialog from '$lib/components/ui/dialog';
     import { Button } from '$lib/components/ui/button';
     import { lockoutModal, dismissLockout } from '$lib/stores/lockoutModal.svelte';
-    import { openPortal } from '$lib/stores/subscription.svelte';
+    import { openPortal, subscription } from '$lib/stores/subscription.svelte';
 
     const open = $derived(lockoutModal.open);
 </script>
@@ -17,7 +17,14 @@
             <Button variant="outline" onclick={dismissLockout}>
                 Dismiss and continue reading
             </Button>
-            <Button onclick={() => openPortal()}>Add payment method</Button>
+            <Button disabled={subscription.portalLoading} onclick={() => openPortal()}>
+                {#if subscription.portalLoading}
+                    <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                    Opening portal…
+                {:else}
+                    Add payment method
+                {/if}
+            </Button>
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>

@@ -87,17 +87,38 @@
                         {s.days_remaining_in_trial} day{s.days_remaining_in_trial === 1 ? '' : 's'} left in your trial.
                         Add a payment method to keep your subscription active.
                     </p>
-                    <Button onclick={() => openPortal()}>Add payment method</Button>
+                    <Button disabled={subscription.portalLoading} onclick={() => openPortal()}>
+                        {#if subscription.portalLoading}
+                            <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                            Opening portal…
+                        {:else}
+                            Add payment method
+                        {/if}
+                    </Button>
                 {:else if s.cancel_at_period_end && s.current_period_end}
                     <p>
                         Your subscription will end on {formatDate(s.current_period_end)}. You can reactivate from the billing portal.
                     </p>
-                    <Button variant="outline" onclick={() => openPortal()}>Manage billing</Button>
+                    <Button variant="outline" disabled={subscription.portalLoading} onclick={() => openPortal()}>
+                        {#if subscription.portalLoading}
+                            <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                            Opening portal…
+                        {:else}
+                            Manage billing
+                        {/if}
+                    </Button>
                 {:else if s.is_locked_out}
                     <p class="text-destructive">
                         Your subscription is not active. Reads and exports remain available, but new changes are blocked.
                     </p>
-                    <Button onclick={() => openPortal()}>Re-subscribe</Button>
+                    <Button disabled={subscription.portalLoading} onclick={() => openPortal()}>
+                        {#if subscription.portalLoading}
+                            <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                            Opening portal…
+                        {:else}
+                            Re-subscribe
+                        {/if}
+                    </Button>
                 {:else if s.status === 'active' && s.current_period_end}
                     <p>Next billing date: {formatDate(s.current_period_end)}.</p>
                 {/if}
@@ -117,7 +138,13 @@
                         Remove {s.seat_count - s.seat_limit} {s.seat_count - s.seat_limit === 1 ? 'member' : 'members'}
                         or upgrade to clear this warning.
                         <div class="mt-2 flex gap-2">
-                            <Button size="sm" onclick={() => openPortal()}>Upgrade</Button>
+                            <Button size="sm" disabled={subscription.portalLoading} onclick={() => openPortal()}>
+                                {#if subscription.portalLoading}
+                                    <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                                {:else}
+                                    Upgrade
+                                {/if}
+                            </Button>
                             <a href="/settings?tab=members" class="text-sm underline underline-offset-4 self-center">Manage members</a>
                         </div>
                     </div>
@@ -139,7 +166,13 @@
                     {#if s.tier === 'essentials'}
                         <span class="text-xs text-muted-foreground">Your plan</span>
                     {:else}
-                        <Button variant="outline" size="sm" onclick={() => openPortal()}>Downgrade</Button>
+                        <Button variant="outline" size="sm" disabled={subscription.portalLoading} onclick={() => openPortal()}>
+                            {#if subscription.portalLoading}
+                                <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                            {:else}
+                                Downgrade
+                            {/if}
+                        </Button>
                     {/if}
                 </div>
                 <div class="py-4 flex items-center justify-between">
@@ -150,7 +183,13 @@
                     {#if s.tier === 'pro'}
                         <span class="text-xs text-muted-foreground">Your plan</span>
                     {:else}
-                        <Button size="sm" onclick={() => openPortal()}>Upgrade</Button>
+                        <Button size="sm" disabled={subscription.portalLoading} onclick={() => openPortal()}>
+                            {#if subscription.portalLoading}
+                                <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                            {:else}
+                                Upgrade
+                            {/if}
+                        </Button>
                     {/if}
                 </div>
                 <div class="py-4 flex items-center justify-between">
@@ -170,7 +209,14 @@
                     <p class="font-medium">Manage billing</p>
                     <p class="text-sm text-muted-foreground">Update payment method, view invoice history, or cancel.</p>
                 </div>
-                <Button variant="outline" onclick={() => openPortal()}>Open billing portal</Button>
+                <Button variant="outline" disabled={subscription.portalLoading} onclick={() => openPortal()}>
+                    {#if subscription.portalLoading}
+                        <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                        Opening portal…
+                    {:else}
+                        Open billing portal
+                    {/if}
+                </Button>
             </CardContent>
         </Card>
     </div>
