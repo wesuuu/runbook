@@ -19,11 +19,12 @@
     import { formatDate } from '$lib/components/project/projectUtils';
     import AiSettingsTab from '$lib/components/settings/AiSettingsTab.svelte';
     import TemplatesTab from '$lib/components/settings/TemplatesTab.svelte';
+    import BillingTab from '$lib/components/settings/BillingTab.svelte';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
 
-    let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates'>('organization');
+    let activeTab = $state<'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates' | 'billing'>('organization');
 
     // Notifications
     let channels = $state<any[]>([]);
@@ -649,6 +650,14 @@
         >
             Templates
         </Button>
+        <Button
+            variant="tab"
+            data-active={activeTab === 'billing'}
+            onclick={() => (activeTab = 'billing')}
+            class="py-2.5 min-h-11"
+        >
+            Billing
+        </Button>
     </div>
 
     <!-- Organization Tab -->
@@ -1197,5 +1206,7 @@
 
     {:else if activeTab === 'templates'}
         <TemplatesTab isAdmin={isOrgAdmin} />
+    {:else if activeTab === 'billing'}
+        <BillingTab />
     {/if}
 </div>
