@@ -27,6 +27,7 @@ from app.schemas.iam import (InvitationCreate, InvitationResponse,
                              UserSearchResponse)
 from app.schemas.science import (EquipmentCreate, EquipmentResponse,
                                  EquipmentUpdate)
+from app.services.billing import seat_limits
 from app.services.core.permissions import check_permission
 
 router = APIRouter()
@@ -213,6 +214,15 @@ async def add_org_member(
                     status_code=400,
                     detail="Maximum of 3 admins per organization",
                 )
+
+        # Per-tier seat cap (F-0019a): refuse at cap; reactivation path above
+        # is intentionally exempt since non-archived count doesn't change.
+        org = await db.get(Organization, org_id)
+        if org is None:
+            raise HTTPException(
+                status_code=404, detail="Organization not found"
+            )
+        await seat_limits.check_seat_capacity(db, org)
 
         membership = OrganizationMember(
             user_id=body.user_id,
