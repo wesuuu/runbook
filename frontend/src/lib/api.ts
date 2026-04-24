@@ -40,6 +40,23 @@ async function _handleErrorResponse(response: Response, fallbackMessage: string)
         throw new ApiError(401, 'Session expired');
     }
 
+    if (response.status === 402) {
+        let detail: unknown = null;
+        try {
+            detail = await response.json();
+        } catch {
+            // Body wasn't JSON
+        }
+        // Dynamic import to avoid circular dep on module-load order
+        import('$lib/stores/lockoutModal.svelte').then(({ showLockout }) => {
+            const msg =
+                (detail as { detail?: { message?: string } } | null)?.detail?.message ||
+                'Your subscription is not active. Add a payment method to continue.';
+            showLockout(msg);
+        });
+        throw new ApiError(402, 'subscription_required', detail);
+    }
+
     let errorMessage = fallbackMessage;
     let errorData = null;
     try {

@@ -11,6 +11,7 @@
     import ProjectsDropdown from '$lib/components/layout/ProjectsDropdown.svelte';
     import NotificationBell from '$lib/components/layout/NotificationBell.svelte';
     import ConnectivityBanner from '$lib/components/shared/ConnectivityBanner.svelte';
+    import SubscriptionLockoutModal from '$lib/components/shared/SubscriptionLockoutModal.svelte';
     import MobileNav from '$lib/components/layout/MobileNav.svelte';
     import { Toaster } from '$lib/components/ui/sonner';
     import { Button } from '$lib/components/ui/button';
@@ -214,4 +215,5 @@
     {#if showNav && canShowFab}
         <ChatPanel showFab={shouldShowChat} />
     {/if}
+    <SubscriptionLockoutModal />
 {/if}
