@@ -17,9 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.billing import StripeEvent
-from app.models.iam import Organization
+from app.models.iam import Organization, OrganizationMember, OrgRole, User
 from app.services.billing import stripe_client
 from app.services.core.audit import SYSTEM_ACTOR_ID, log_audit
+from app.services.lifecycle import events as lifecycle_events
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +92,7 @@ async def _apply_subscription_state(
     org.stripe_subscription_id = subscription["id"]
     org.trial_end = _ts_to_dt(subscription.get("trial_end"))
     org.current_period_end = _ts_to_dt(subscription.get("current_period_end"))
-    org.cancel_at_period_end = bool(
-        subscription.get("cancel_at_period_end", False)
-    )
+    org.cancel_at_period_end = bool(subscription.get("cancel_at_period_end", False))
 
     # Refresh has_payment_method by checking the customer's default PM.
     # If Stripe is unreachable here, log and keep the existing value
@@ -122,6 +121,22 @@ async def _apply_subscription_state(
             entity_id=org.id,
             changes=changes,
         )
+        # Notify Loops on tier or status change (F-0019c).
+        user = await _primary_user(db, org)
+        if user is not None:
+            before = {
+                "tier": changes.get("subscription_tier", [org.subscription_tier])[0],
+                "status": changes.get("subscription_status", [org.subscription_status])[
+                    0
+                ],
+            }
+            after = {
+                "tier": org.subscription_tier,
+                "status": org.subscription_status,
+            }
+            lifecycle_events.emit_subscription_changed(
+                user, org, before=before, after=after
+            )
 
 
 async def _apply_subscription_deleted(
@@ -157,6 +172,12 @@ async def _apply_subscription_deleted(
             changes=changes,
         )
 
+    # Fire trial_expired for the org's primary user regardless of whether
+    # the status flip was net-new (Stripe may retry with no changes).
+    user = await _primary_user(db, org)
+    if user is not None:
+        lifecycle_events.emit_trial_expired(user, org)
+
 
 async def _apply_invoice_payment_failed(
     db: AsyncSession, invoice: dict[str, Any]
@@ -177,9 +198,7 @@ async def _apply_invoice_payment_failed(
             action="UPDATE",
             entity_type="Organization",
             entity_id=org.id,
-            changes={
-                "subscription_status": [org.subscription_status, "past_due"]
-            },
+            changes={"subscription_status": [org.subscription_status, "past_due"]},
         )
         org.subscription_status = "past_due"
 
@@ -201,11 +220,45 @@ async def _org_by_customer(
     db: AsyncSession, customer_id: str
 ) -> Optional[Organization]:
     result = await db.execute(
-        select(Organization).where(
-            Organization.stripe_customer_id == customer_id
-        )
+        select(Organization).where(Organization.stripe_customer_id == customer_id)
     )
     return result.scalar_one_or_none()
+
+
+async def _primary_user(db: AsyncSession, org: Organization) -> Optional[User]:
+    """Resolve the org's billing contact for lifecycle events.
+
+    Uses the earliest-joined ADMIN (the registrant who created the org
+    in the standard flow); falls back to the earliest active member.
+    Returns None when the org has no resolvable users -- lifecycle emit
+    is skipped in that case (no-op, logged upstream in loops_client).
+    """
+    stmt = (
+        select(User)
+        .join(OrganizationMember, OrganizationMember.user_id == User.id)
+        .where(
+            OrganizationMember.organization_id == org.id,
+            OrganizationMember.archived == False,  # noqa: E712
+            OrganizationMember.role == OrgRole.ADMIN,
+        )
+        .order_by(OrganizationMember.created_at.asc())
+        .limit(1)
+    )
+    user = (await db.execute(stmt)).scalar_one_or_none()
+    if user is not None:
+        return user
+
+    fallback = (
+        select(User)
+        .join(OrganizationMember, OrganizationMember.user_id == User.id)
+        .where(
+            OrganizationMember.organization_id == org.id,
+            OrganizationMember.archived == False,  # noqa: E712
+        )
+        .order_by(OrganizationMember.created_at.asc())
+        .limit(1)
+    )
+    return (await db.execute(fallback)).scalar_one_or_none()
 
 
 def _price_id(subscription: dict[str, Any]) -> Optional[str]:
