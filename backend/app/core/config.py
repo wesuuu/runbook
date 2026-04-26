@@ -152,6 +152,11 @@ class Settings(BaseSettings):
     seat_limit_essentials: int = 5
     seat_limit_pro: int = 25
 
+    # Loops CRM (added F-0019c). Empty means lifecycle emissions no-op.
+    loops_api_key: str = ""
+    loops_base_url: str = "https://app.loops.so/api/v1"
+    loops_request_timeout_seconds: float = 5.0
+
     model_config = {
         "env_prefix": "BATCHRITE_",
         "env_file": ".env",

@@ -55,8 +55,7 @@ def _user_response(user: User) -> UserResponse:
 async def _send_verification_email(email: str, token: str) -> None:
     """Send verification email. Fire-and-forget — logs errors."""
     verify_url = (
-        f"{settings.backend_url}/auth/verify-email"
-        f"?token={token}&email={email}"
+        f"{settings.backend_url}/auth/verify-email" f"?token={token}&email={email}"
     )
     html_body = f"""<div style="font-family: sans-serif; max-width: 600px;">
   <h2 style="color: #1a1a1a;">Verify your email</h2>
@@ -114,9 +113,7 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(User).where(User.email == body.email)
-    )
+    result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -124,9 +121,7 @@ async def register(
         )
 
     org_name = (
-        f"{body.full_name}'s Organization"
-        if body.full_name
-        else "My Organization"
+        f"{body.full_name}'s Organization" if body.full_name else "My Organization"
     )
     org = Organization(name=org_name)
     db.add(org)
@@ -158,38 +153,51 @@ async def register(
     db.add(user)
     await db.flush()
 
-    db.add(OrganizationMember(
-        user_id=user.id,
-        organization_id=org.id,
-        role="ADMIN",
-    ))
+    db.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=org.id,
+            role="ADMIN",
+        )
+    )
 
     # Create Stripe trialing Essentials subscription (F-0019a).
     # No-op if Stripe is unconfigured (logs a warning); safe to call before commit.
-    from app.services.billing.subscription_service import (
-        create_trial_subscription,
-    )
+    from app.services.billing.subscription_service import \
+        create_trial_subscription
+
     await create_trial_subscription(db, org, user)
+
+    # Sync contact + lifecycle events to Loops (F-0019c).
+    # No-op if Loops is unconfigured; failures are swallowed inside events.*
+    from app.services.lifecycle import events as lifecycle_events
+
+    lifecycle_events.emit_signup(user, org)
+    lifecycle_events.emit_trial_started(user, org)
 
     # Seed "My First Project" for onboarding (F-0015)
     from app.models.science import Project
 
-    db.add(Project(
-        name="My First Project",
-        description="Created for you — rename or delete as you like.",
-        organization_id=org.id,
-    ))
+    db.add(
+        Project(
+            name="My First Project",
+            description="Created for you — rename or delete as you like.",
+            organization_id=org.id,
+        )
+    )
 
     # Create verification token
     token_str = generate_verification_token()
-    db.add(VerificationToken(
-        user_id=user.id,
-        org_id=org.id,
-        token=token_str,
-        purpose="email_verification",
-        expires_at=datetime.now(timezone.utc)
-        + timedelta(days=settings.verification_token_ttl_days),
-    ))
+    db.add(
+        VerificationToken(
+            user_id=user.id,
+            org_id=org.id,
+            token=token_str,
+            purpose="email_verification",
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(days=settings.verification_token_ttl_days),
+        )
+    )
 
     await db.commit()
     await db.refresh(user)
@@ -285,16 +293,16 @@ async def resend_verification(
     db: AsyncSession = Depends(get_db),
 ):
     if user.email_verified:
-        raise HTTPException(
-            status_code=400, detail="Email already verified"
-        )
+        raise HTTPException(status_code=400, detail="Email already verified")
 
     # Rate limit: count tokens in window
     window_start = datetime.now(timezone.utc) - timedelta(
         minutes=settings.verification_resend_window_minutes
     )
     result = await db.execute(
-        select(func.count()).select_from(VerificationToken).where(
+        select(func.count())
+        .select_from(VerificationToken)
+        .where(
             VerificationToken.user_id == user.id,
             VerificationToken.purpose == "email_verification",
             VerificationToken.created_at >= window_start,
@@ -309,14 +317,16 @@ async def resend_verification(
 
     # Generate new token
     token_str = generate_verification_token()
-    db.add(VerificationToken(
-        user_id=user.id,
-        org_id=user.selected_org_id,
-        token=token_str,
-        purpose="email_verification",
-        expires_at=datetime.now(timezone.utc)
-        + timedelta(days=settings.verification_token_ttl_days),
-    ))
+    db.add(
+        VerificationToken(
+            user_id=user.id,
+            org_id=user.selected_org_id,
+            token=token_str,
+            purpose="email_verification",
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(days=settings.verification_token_ttl_days),
+        )
+    )
     await db.commit()
 
     await _send_verification_email(user.email, token_str)
@@ -332,9 +342,7 @@ async def login(
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(User).where(User.email == body.email)
-    )
+    result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
     if not settings.auth_enabled:
@@ -474,8 +482,7 @@ async def accept_invite(
     if invited_user is None:
         # No account — redirect to registration with invite token
         redirect_url = (
-            f"{settings.frontend_url}/#/register"
-            f"?invite={invitation.token}"
+            f"{settings.frontend_url}/#/register" f"?invite={invitation.token}"
         )
         return RedirectResponse(url=redirect_url, status_code=302)
 
@@ -495,11 +502,13 @@ async def accept_invite(
             existing.role = invitation.role
         # else: already active member — no-op
     else:
-        db.add(OrganizationMember(
-            user_id=invited_user.id,
-            organization_id=invitation.organization_id,
-            role=invitation.role,
-        ))
+        db.add(
+            OrganizationMember(
+                user_id=invited_user.id,
+                organization_id=invitation.organization_id,
+                role=invitation.role,
+            )
+        )
 
     # Set selected_org_id if user doesn't have one (AC #2, #6)
     if invited_user.selected_org_id is None:
@@ -662,7 +671,12 @@ async def get_avatar(
 
     # Determine media type from extension
     ext = full_path.suffix.lower()
-    media_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+    media_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
     media_type = media_types.get(ext, "image/jpeg")
 
     return FileResponse(
