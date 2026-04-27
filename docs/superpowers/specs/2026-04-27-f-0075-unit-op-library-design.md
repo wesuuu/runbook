@@ -1,9 +1,16 @@
 # F-0075 — Unit Operation Library Abstraction
 
 **Date:** 2026-04-27
-**Scope:** Backend
-**Effort:** L (4-8h)
+**Scope:** Backend + Frontend
+**Effort:** L+ (~8-12h, two phases)
 **Status:** Approved — moving to implementation plan
+
+## Phasing
+
+- **Phase 1 (Backend):** library JSON catalog, registry service, schema migration, endpoint rewrites, seed updates, backfill script, tests. Frontend response shape gains `library_slug`.
+- **Phase 2 (Frontend):** protocol editor sidebar restructured to group ops by library → category → op, with custom org/project ops under a "Custom" group.
+
+Phase 2 is self-contained and depends only on Phase 1's response shape change.
 
 ## Goal
 
@@ -172,7 +179,7 @@ async def list_unit_ops(project_id, user, db):
     return list(result_by_id.values())
 ```
 
-Response shape unchanged. JSON ops materialize with `organization_id=None`, `project_id=None`, `scope="global"` (computed). Override rows have `organization_id` set, `scope="organization"`.
+Response shape gains one new field: `library_slug` (Optional[str]). Set for JSON ops and override rows; null for custom org/project ops. The frontend uses this to group ops by library. JSON ops materialize with `organization_id=None`, `project_id=None`, `scope="global"` (computed). Override rows have `organization_id` set, `scope="organization"`.
 
 ### `PUT /science/unit-ops/{id}` — copy-on-write
 
@@ -336,15 +343,114 @@ Existing `test_unit_ops_scoping.py` updates:
 - `test_update_global_op_forbidden` reframed as `test_put_on_library_op_creates_override` — expects 200 and an override row.
 - All other org/project tests untouched (logic for those scopes is unchanged).
 
-## File Inventory
+## Phase 2 — Frontend (Protocol Editor Sidebar)
+
+### Goal
+
+Restructure the unit-ops list in the protocol editor sidebar to surface library context. Today the sidebar groups ops by category only. With multiple libraries shipping over time, users need to see which library an op comes from, and the layout has to keep working as the catalog grows.
+
+### Chosen pattern: 3-level accordion (Library → Category → Op)
+
+```
+[ Search ops... ]
+
+▼ PROCESS
+  ▶ Process Start
+
+▼ Core
+  ▼ Preparation (4)
+    Solution Preparation     ●
+    Weigh Solid              ●
+    Dispense Liquid          ●
+    Aliquot / Transfer       ●
+  ▼ Process (5)
+    Mixing                   ●
+    pH Adjustment            ●
+    ...
+  ▶ Analytics (1)
+  ▶ QC (1)
+  ▶ Logistics (1)
+
+▶ Custom (My Org)         ← only shown when org/project custom ops exist
+```
+
+Both library and category levels are independently collapsible. Default state on first load: all expanded. Collapse state is local to the component instance (no persistence in this task).
+
+Ops keep their existing visual treatment (icon by category, scope dot, drag handle).
+
+### Data shape
+
+`UnitOpDefinitionResponse` from the backend now carries `library_slug`:
+- Library ops: `library_slug = "core"` etc.
+- Override rows: `library_slug = "core"` (still grouped under the library, since they override a library op).
+- Custom org ops: `library_slug = null`, `organization_id` set.
+- Custom project ops: `library_slug = null`, `project_id` set.
+
+The frontend Zod schema in `lib/schemas/science.ts` adds the field as `library_slug: z.string().nullable().optional()`.
+
+### Sidebar grouping logic
+
+In `ProtocolSidebar.svelte`, replace the current `categories` derived map (flat: category → ops) with a two-level structure:
+
+```ts
+type LibraryGroup = {
+  slug: string | "_custom";
+  displayName: string;     // "Core", "Cell Biology", "Custom (My Org)"
+  categories: Map<string, UnitOp[]>;  // existing per-category grouping inside
+};
+
+const groups: LibraryGroup[] = $derived(...);
+```
+
+Library display names come from a small lookup (one-time hardcoded map in the frontend, or fetched once from a future endpoint — fetched is YAGNI for now). Initial map:
+
+```ts
+const LIBRARY_DISPLAY_NAMES: Record<string, string> = {
+  core: "Core",
+};
+// Fallback: title-case the slug.
+```
+
+Custom ops with `library_slug=null` collapse into a single virtual `"_custom"` group titled "Custom (My Org)". Project ops also fall into this group when `project_id` matches the current protocol's project — they don't need a separate visual section per the existing behavior.
+
+Search continues to filter across all libraries and categories (no library-specific search).
+
+Empty libraries (e.g., a library with all ops filtered out by search) are hidden, same as the current empty-category behavior.
+
+### Files Touched (Phase 2)
+
+| File | Action |
+|------|--------|
+| `frontend/src/lib/schemas/science.ts` | add `library_slug` field |
+| `frontend/src/lib/components/protocol/ProtocolSidebar.svelte` | restructure grouping + add library accordion level |
+| `frontend/src/lib/categoryColors.ts` | (optional) add library badge color helper |
+
+No changes to `UnitOpNode.svelte`, `Inspector.svelte`, drag-drop, or any other surface — the existing op object shape stays the same; only the sidebar's grouping logic changes.
+
+### Frontend Tests
+
+- Existing sidebar Vitest tests (if any) updated.
+- Manual browser verification (qa-verify) covers: library expand/collapse, drag op into canvas, search filters across libraries, custom ops appear in Custom group, override op appears under its library.
+
+### YAGNI for Phase 2
+
+- No persisted collapse state.
+- No library-level search filter (search hits everything).
+- No library badges on op tiles.
+- No subscription management UI.
+- No reordering libraries.
+
+## File Inventory (consolidated)
+
+### Phase 1 — Backend
 
 | File | Action |
 |------|--------|
 | `backend/app/data/unit_op_libraries/core.json` | new |
 | `backend/app/services/science/__init__.py` | new |
 | `backend/app/services/science/library_registry.py` | new |
-| `backend/app/models/science.py` | add columns + `UnitOpLibrarySubscription` model |
-| `backend/app/schemas/science.py` | (optional) add `UnitOpLibrarySubscriptionResponse` |
+| `backend/app/models/science.py` | add `library_slug` + `source_op_slug` columns + `UnitOpLibrarySubscription` model |
+| `backend/app/schemas/science.py` | add `library_slug` to `UnitOpDefinitionResponse` |
 | `backend/app/api/endpoints/unit_ops.py` | rewrite list + put |
 | `backend/app/api/endpoints/auth.py` | call subscribe_default_libraries on register |
 | `backend/app/api/endpoints/iam.py` | call subscribe_default_libraries on create_organization |
@@ -355,9 +461,15 @@ Existing `test_unit_ops_scoping.py` updates:
 | `backend/tests/integration/test_unit_op_libraries.py` | new |
 | `backend/tests/integration/test_unit_ops_scoping.py` | update fixtures + 1 test |
 
+### Phase 2 — Frontend
+
+| File | Action |
+|------|--------|
+| `frontend/src/lib/schemas/science.ts` | add `library_slug` field |
+| `frontend/src/lib/components/protocol/ProtocolSidebar.svelte` | restructure grouping into 3-level accordion |
+
 ## Out of Scope (YAGNI)
 
-- Frontend changes — none. GET response shape unchanged.
 - Admin UI for subscriptions (F-0062).
 - Library version negotiation / upgrade flow.
 - Any second domain library (cell_biology, analytical_chemistry, etc.).
@@ -366,4 +478,6 @@ Existing `test_unit_ops_scoping.py` updates:
 
 ## Follow-up Tasks (Out of Scope)
 
-- **Protocol editor sidebar UX for large libraries.** Today the sidebar lists every unit op flat. With multiple libraries × dozens of ops each, the current layout will not scale. Needs a separate frontend task — likely grouping by library + collapsible categories, or a tabbed/dropdown switcher. File when this becomes felt.
+- Library subscription management UI (covered by F-0062).
+- Per-user persisted collapse state on the sidebar.
+- Library badges / icons on op tiles for at-a-glance attribution.
