@@ -21,7 +21,6 @@
         { id: 'lab-glass',  title: 'Lab Glass',  blurb: 'Cold, clinical white-blue. The default.' },
         { id: 'blueprint',  title: 'Blueprint',  blurb: 'Drafted paper-blue with ochre accents.' },
         { id: 'apothecary', title: 'Apothecary', blurb: 'Botanical: parchment, moss, tannin rust.' },
-        { id: 'instrument', title: 'Instrument', blurb: 'Dark equipment panel with phosphor accents.' },
     ];
 
     const selected = $derived<Theme>(getTheme());
@@ -54,7 +53,7 @@
         </CardDescription>
     </CardHeader>
     <CardContent>
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid gap-4 sm:grid-cols-3">
             {#each OPTIONS as opt (opt.id)}
                 <button
                     type="button"

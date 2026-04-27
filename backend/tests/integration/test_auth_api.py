@@ -537,9 +537,9 @@ async def test_update_preferences_does_not_clobber_other_keys(
     )
     await client.put(
         "/auth/me/preferences",
-        json={"theme": "instrument"},
+        json={"theme": "apothecary"},
         headers=auth_headers,
     )
     await db_session.refresh(test_user)
     assert test_user.preferences.get("font_size") == "large"
-    assert test_user.preferences.get("theme") == "instrument"
+    assert test_user.preferences.get("theme") == "apothecary"

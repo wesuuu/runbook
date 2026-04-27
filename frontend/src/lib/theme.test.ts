@@ -14,14 +14,15 @@ describe('theme', () => {
         document.documentElement.removeAttribute('data-theme');
     });
 
-    it('exposes the four theme ids', () => {
-        expect(THEMES).toEqual(['lab-glass', 'blueprint', 'apothecary', 'instrument']);
+    it('exposes the three theme ids', () => {
+        expect(THEMES).toEqual(['lab-glass', 'blueprint', 'apothecary']);
         expect(DEFAULT_THEME).toBe('lab-glass');
     });
 
     it('isTheme accepts only known ids', () => {
         expect(isTheme('lab-glass')).toBe(true);
-        expect(isTheme('instrument')).toBe(true);
+        expect(isTheme('apothecary')).toBe(true);
+        expect(isTheme('instrument')).toBe(false);
         expect(isTheme('nope')).toBe(false);
         expect(isTheme(null)).toBe(false);
     });

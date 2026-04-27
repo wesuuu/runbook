@@ -102,23 +102,6 @@
     --grid-dot:     hsl(150 25% 50% / 0.22);
 }
 
-[data-theme="instrument"] {
-    --bg:           hsl(220 18% 9%);
-    --fg:           hsl(210 20% 92%);
-    --card:         hsl(220 15% 13%);
-    --card-fg:      hsl(210 20% 92%);
-    --muted:        hsl(220 14% 17%);
-    --muted-fg:     hsl(210 12% 62%);
-    --primary:      hsl(165 75% 50%);
-    --primary-fg:   hsl(165 80% 8%);
-    --accent:       hsl(40 95% 60%);
-    --accent-fg:    hsl(40 80% 10%);
-    --destructive:  hsl(355 75% 60%);
-    --border:       hsl(220 12% 22%);
-    --ring:         hsl(165 75% 50%);
-    --grid-dot:     hsl(165 40% 60% / 0.18);
-}
-
 @layer base {
     * { @apply border-border; }
     a[href] { cursor: pointer; }

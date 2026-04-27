@@ -1,4 +1,4 @@
-export const THEMES = ['lab-glass', 'blueprint', 'apothecary', 'instrument'] as const;
+export const THEMES = ['lab-glass', 'blueprint', 'apothecary'] as const;
 export type Theme = typeof THEMES[number];
 export const DEFAULT_THEME: Theme = 'lab-glass';
 

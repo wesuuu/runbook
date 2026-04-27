@@ -707,10 +707,10 @@ async def update_preferences(
             raise HTTPException(400, "density must be compact or comfortable")
         prefs["density"] = body.density
     if body.theme is not None:
-        if body.theme not in ("lab-glass", "blueprint", "apothecary", "instrument"):
+        if body.theme not in ("lab-glass", "blueprint", "apothecary"):
             raise HTTPException(
                 400,
-                "theme must be lab-glass, blueprint, apothecary, or instrument",
+                "theme must be lab-glass, blueprint, or apothecary",
             )
         prefs["theme"] = body.theme
     user.preferences = prefs
