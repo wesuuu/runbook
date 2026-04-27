@@ -21,7 +21,7 @@
 			(function () {
 				try {
 					var t = localStorage.getItem('batchrite.theme');
-					var allowed = ['lab-glass', 'blueprint', 'apothecary', 'instrument'];
+					var allowed = ['lab-glass', 'blueprint', 'apothecary'];
 					document.documentElement.dataset.theme = allowed.indexOf(t) >= 0 ? t : 'lab-glass';
 				} catch (e) {
 					document.documentElement.dataset.theme = 'lab-glass';
