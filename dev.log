@@ -1,0 +1,31 @@
+nohup: ignoring input
+backend pid=1124829  frontend pid=1124830
+INFO:     Will watch for changes in these directories: ['/home/wesuuu/Code/trellisbio/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [1124829] using WatchFiles
+
+> frontend@0.0.0 dev:tailscale
+> VITE_API_HOST=100.120.2.59 vite dev --port 5174
+
+/home/wesuuu/Code/trellisbio/backend/app/core/config.py:56: UserWarning: BATCHRITE_SECRET_KEY is using the default dev key. Set a secure secret via BATCHRITE_SECRET_KEY env var.
+  warnings.warn(
+/home/wesuuu/Code/trellisbio/backend/app/core/config.py:62: UserWarning: BATCHRITE_DATABASE_URL is using default local credentials. Set an explicit database URL via BATCHRITE_DATABASE_URL env var.
+  warnings.warn(
+
+  VITE v5.4.21  ready in 502 ms
+
+  ➜  Network: http://100.120.2.59:5174/
+INFO:     Started server process [1124843]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+11:05:53 AM [vite-plugin-svelte] src/lib/components/ui/loading-spinner.svelte:22:26 This reference only captures the initial value of `fullPage`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+INFO:     100.95.27.121:55694 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55694 - "GET /auth/me HTTP/1.1" 401 Unauthorized
+./scripts/dev.sh: line 39: 1124830 Hangup                  ( cd "$ROOT/frontend"; exec npm run dev:tailscale )
+frontend exited; shutting down backend
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1124843]
+INFO:     Stopping reloader process [1124829]

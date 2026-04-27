@@ -1,0 +1,116 @@
+backend pid=2673065  frontend pid=2673066
+
+> frontend@0.0.0 dev:tailscale
+> VITE_API_HOST=100.120.2.59 vite dev --port 5174
+
+
+  VITE v5.4.21  ready in 495 ms
+
+  ➜  Network: http://100.120.2.59:5174/
+9:19:24 AM [vite-plugin-svelte] src/lib/components/ui/loading-spinner.svelte:22:26 This reference only captures the initial value of `fullPage`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+INFO:     100.95.27.121:54852 - "OPTIONS /auth/login HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "OPTIONS /iam/organizations HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "GET /iam/organizations HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "OPTIONS /onboarding/state HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "GET /onboarding/state HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "OPTIONS /dashboard?org_id=10000000-0000-4000-8000-000000000001&trend_days=7 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "OPTIONS /projects?organization_id=10000000-0000-4000-8000-000000000001 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54853 - "OPTIONS /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "GET /projects?organization_id=10000000-0000-4000-8000-000000000001 HTTP/1.1" 307 Temporary Redirect
+INFO:     100.95.27.121:54852 - "OPTIONS /projects/?organization_id=10000000-0000-4000-8000-000000000001 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /dashboard?org_id=10000000-0000-4000-8000-000000000001&trend_days=7 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54853 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54852 - "GET /projects/?organization_id=10000000-0000-4000-8000-000000000001 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /dashboard?org_id=10000000-0000-4000-8000-000000000001&trend_days=7 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "OPTIONS /library/documents?limit=50 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /library/documents?limit=50 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /library/documents?limit=50 HTTP/1.1" 200 OK
+9:19:41 AM [vite-plugin-svelte] src/lib/components/modals/ProtocolImportModal.svelte:50:43 This reference only captures the initial value of `preselectedProjectId`. Did you mean to reference it inside a derived instead?
+https://svelte.dev/e/state_referenced_locally
+9:19:41 AM [vite-plugin-svelte] src/lib/components/modals/ProtocolImportModal.svelte:62:8 `editorComponent` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+9:19:41 AM [vite-plugin-svelte] src/routes/protocols/[id]/+page.svelte:1018:4 `<div>` with a drop or dragover handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+9:19:41 AM [vite-plugin-svelte] src/lib/components/protocol/ProtocolSidebar.svelte:196:16 Avoid using autofocus
+https://svelte.dev/e/a11y_autofocus
+9:19:41 AM [vite-plugin-svelte] src/lib/components/protocol/ProtocolSidebar.svelte:233:20 Avoid using autofocus
+https://svelte.dev/e/a11y_autofocus
+9:19:41 AM [vite-plugin-svelte] src/lib/components/protocol/Inspector.svelte:330:12 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+9:19:41 AM [vite-plugin-svelte] src/lib/components/protocol/Inspector.svelte:352:16 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+9:19:41 AM [vite-plugin-svelte] src/lib/components/protocol/Inspector.svelte:384:16 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+9:19:41 AM [vite-plugin-svelte] src/lib/components/protocol/Inspector.svelte:430:16 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+9:19:41 AM [vite-plugin-svelte] src/lib/components/media/PdfPreviewDrawer.svelte:206:0 Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+INFO:     100.95.27.121:54854 - "OPTIONS /chat/sessions?limit=100 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54868 - "OPTIONS /chat/skills HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "OPTIONS /chat/config HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54868 - "GET /chat/config HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /chat/sessions?limit=100 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54869 - "GET /chat/skills HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54869 - "GET /chat/skills HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54868 - "GET /chat/config HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /chat/sessions?limit=100 HTTP/1.1" 200 OK
+9:19:44 AM [vite-plugin-svelte] src/lib/components/analytics/AuditTimeline.svelte:53:8 `container` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+INFO:     100.95.27.121:54854 - "OPTIONS /projects/40000000-0000-4000-8000-000000000001 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54869 - "OPTIONS /science/projects/40000000-0000-4000-8000-000000000001/protocols HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54868 - "OPTIONS /science/projects/40000000-0000-4000-8000-000000000001/runs HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "OPTIONS /science/projects/40000000-0000-4000-8000-000000000001/experiments HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54871 - "GET /science/projects/40000000-0000-4000-8000-000000000001/runs HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54869 - "GET /projects/40000000-0000-4000-8000-000000000001 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54868 - "GET /science/projects/40000000-0000-4000-8000-000000000001/protocols HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /science/projects/40000000-0000-4000-8000-000000000001/experiments HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54868 - "GET /projects/40000000-0000-4000-8000-000000000001 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54871 - "GET /science/projects/40000000-0000-4000-8000-000000000001/runs HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54869 - "GET /science/projects/40000000-0000-4000-8000-000000000001/protocols HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /science/projects/40000000-0000-4000-8000-000000000001/experiments HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /science/projects/40000000-0000-4000-8000-000000000001/protocols HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /auth/me HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "OPTIONS /iam/organizations HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /iam/organizations HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "OPTIONS /onboarding/state HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /onboarding/state HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /projects/40000000-0000-4000-8000-000000000001 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54869 - "GET /science/projects/40000000-0000-4000-8000-000000000001/experiments HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54868 - "GET /science/projects/40000000-0000-4000-8000-000000000001/runs HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54871 - "GET /science/projects/40000000-0000-4000-8000-000000000001/protocols HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54874 - "GET /chat/skills HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54873 - "GET /chat/sessions?limit=100 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54869 - "OPTIONS /projects?organization_id=10000000-0000-4000-8000-000000000002 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54871 - "OPTIONS /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /chat/config HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54868 - "GET /projects?organization_id=10000000-0000-4000-8000-000000000002 HTTP/1.1" 307 Temporary Redirect
+INFO:     100.95.27.121:54854 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /science/projects/40000000-0000-4000-8000-000000000001/protocols HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54871 - "OPTIONS /projects/?organization_id=10000000-0000-4000-8000-000000000002 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54854 - "GET /projects/?organization_id=10000000-0000-4000-8000-000000000002 HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54928 - "OPTIONS /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54928 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54939 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54958 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54969 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54978 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:54990 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55015 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55036 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55063 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55072 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55087 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55099 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55113 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55126 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55135 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55147 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55177 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55199 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55226 - "GET /notifications/unread-count HTTP/1.1" 200 OK
+INFO:     100.95.27.121:55239 - "GET /notifications/unread-count HTTP/1.1" 200 OK
