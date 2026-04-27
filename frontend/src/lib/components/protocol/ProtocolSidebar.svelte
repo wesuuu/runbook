@@ -213,6 +213,22 @@
         event.dataTransfer.effectAllowed = "move";
     }
 
+    // --- Search helpers ---
+    function escapeHtml(s: string): string {
+        return s.replace(/[&<>"']/g, (c) => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        } as Record<string, string>)[c]);
+    }
+
+    function highlightMatch(text: string, query: string): string {
+        if (!query.trim()) return escapeHtml(text);
+        const q = query.toLowerCase();
+        const lower = text.toLowerCase();
+        const idx = lower.indexOf(q);
+        if (idx < 0) return escapeHtml(text);
+        return `${escapeHtml(text.slice(0, idx))}<mark>${escapeHtml(text.slice(idx, idx + q.length))}</mark>${escapeHtml(text.slice(idx + q.length))}`;
+    }
+
     // --- Derived state ---
     const filteredOps = $derived(() => {
         if (!searchQuery.trim()) return unitOps;
@@ -220,7 +236,9 @@
         return unitOps.filter(
             (op: any) =>
                 op.name.toLowerCase().includes(q) ||
-                op.category.toLowerCase().includes(q),
+                op.category.toLowerCase().includes(q) ||
+                (op.library_slug ?? "").toLowerCase().includes(q) ||
+                libraryDisplayName(op.library_slug ?? "").toLowerCase().includes(q)
         );
     });
 
@@ -392,7 +410,7 @@
                         class="library-header"
                         onclick={() => toggleGroup(group.key)}
                     >
-                        <span class="lib-name">{group.displayName}</span>
+                        <span class="lib-name">{@html highlightMatch(group.displayName, searchQuery)}</span>
                         <span
                             class="cat-chevron"
                             class:collapsed={effectiveCollapse.has(group.key)}
@@ -408,7 +426,7 @@
                                     onclick={() => toggleGroup(`${group.key}:${category}`)}
                                 >
                                     <span class="cat-dot" style:background={getCategoryColor(category)}></span>
-                                    <span class="cat-name">{category}</span>
+                                    <span class="cat-name">{@html highlightMatch(category, searchQuery)}</span>
                                     <span
                                         class="cat-chevron"
                                         class:collapsed={effectiveCollapse.has(`${group.key}:${category}`)}
@@ -436,7 +454,7 @@
                                                 <span class="op-icon">{getCategoryIcon(op.category)}</span>
                                                 <div class="op-info">
                                                     <span class="op-name">
-                                                        {op.name}
+                                                        {@html highlightMatch(op.name, searchQuery)}
                                                         {#if op.scope === 'organization'}
                                                             <span class="scope-dot scope-org" title="Organization"></span>
                                                         {:else if op.scope === 'project'}
@@ -937,8 +955,11 @@
         flex-shrink: 0;
     }
 
-    .scope-global {
-        background-color: #94a3b8;
+    :global(.ops-list mark) {
+        background: hsla(40, 95%, 60%, 0.4);
+        color: inherit;
+        padding: 0 1px;
+        border-radius: 2px;
     }
 
     .scope-org {
