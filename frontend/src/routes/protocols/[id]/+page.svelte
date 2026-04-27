@@ -433,10 +433,16 @@
                 if (protocol.graph && protocol.graph.nodes) {
                     applyGraphState(protocol.graph);
                     detectEquipmentConflicts();
+                } else {
+                    // Brand-new protocol that came back from POST without
+                    // a saved graph yet — seed a Process Start so the
+                    // user has an anchor to wire up to.
+                    nodes = [createProcessStartNode({ x: 80, y: 80 }, undefined)];
                 }
             } else {
                 // New protocol — load global + org ops only
                 unitOps = await api.get("/science/unit-ops");
+                nodes = [createProcessStartNode({ x: 80, y: 80 }, undefined)];
             }
             // Apply timeline sizing if loaded with timeline enabled
             if (timeEnabled) {
