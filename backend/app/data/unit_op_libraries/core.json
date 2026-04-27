@@ -1,0 +1,194 @@
+{
+  "slug": "core",
+  "name": "Core",
+  "domain": "general",
+  "description": "Cross-domain unit operations applicable to any wet lab.",
+  "is_default": true,
+  "version": "1.0.0",
+  "unit_ops": [
+    {
+      "slug": "solution_preparation",
+      "name": "Solution Preparation",
+      "category": "Preparation",
+      "description": "Prepare {{volume_L}}L of {{solution_name}} by dissolving {{components}} in {{solvent}}. Adjust to pH {{pH_target}} (+/- {{pH_tolerance}}) using {{pH_agent}}. Store at {{storage_temp_c}}°C.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "solution_name": {"type": "string", "title": "Solution Name", "default": "PBS"},
+          "volume_L": {"type": "number", "title": "Final Volume (L)", "default": 10},
+          "components": {"type": "string", "title": "Components", "default": "NaCl, KCl, Na2HPO4, KH2PO4"},
+          "concentration_mM": {"type": "number", "title": "Target Concentration (mM)", "default": 137},
+          "pH_target": {"type": "number", "title": "Target pH", "default": 7.4},
+          "pH_tolerance": {"type": "number", "title": "pH Tolerance (+/-)", "default": 0.1},
+          "pH_agent": {"type": "string", "title": "pH Adjustment Agent", "default": "NaOH / HCl"},
+          "solvent": {"type": "string", "title": "Solvent", "default": "Water"},
+          "storage_temp_c": {"type": "number", "title": "Storage Temperature (C)", "default": 4}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "weigh_solid",
+      "name": "Weigh Solid",
+      "category": "Preparation",
+      "description": "Weigh {{target_mass_g}}g of {{material}} using balance {{balance_id}}.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "material": {"type": "string", "title": "Material"},
+          "target_mass_g": {"type": "number", "title": "Target Mass (g)"},
+          "balance_id": {"type": "string", "title": "Balance ID"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "dispense_liquid",
+      "name": "Dispense Liquid",
+      "category": "Preparation",
+      "description": "Dispense {{volume_ml}}mL of {{liquid}} using {{instrument}}.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "liquid": {"type": "string", "title": "Liquid"},
+          "volume_ml": {"type": "number", "title": "Volume (mL)"},
+          "instrument": {"type": "string", "title": "Instrument"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "aliquot_transfer",
+      "name": "Aliquot / Transfer",
+      "category": "Preparation",
+      "description": "Transfer {{volume_ml}}mL from {{source_vessel}} into {{destination_vessel}}.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "source_vessel": {"type": "string", "title": "Source Vessel"},
+          "destination_vessel": {"type": "string", "title": "Destination Vessel"},
+          "volume_ml": {"type": "number", "title": "Volume (mL)"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "mixing",
+      "name": "Mixing",
+      "category": "Process",
+      "description": "Mix at {{speed_rpm}} RPM for {{duration_min}} minutes at {{temperature_C}}°C.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "speed_rpm": {"type": "number"},
+          "duration_min": {"type": "number"},
+          "temperature_C": {"type": "number"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "ph_adjustment",
+      "name": "pH Adjustment",
+      "category": "Process",
+      "description": "Adjust solution to pH {{target_pH}} using {{acid_or_base}}.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "target_pH": {"type": "number"},
+          "acid_or_base": {"type": "string"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "centrifugation",
+      "name": "Centrifugation",
+      "category": "Process",
+      "description": "Centrifuge at {{rcf_g}}xg for {{duration_min}} minutes at {{temperature_C}}°C.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "rcf_g": {"type": "number"},
+          "duration_min": {"type": "number"},
+          "temperature_C": {"type": "number"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "filtration",
+      "name": "Filtration",
+      "category": "Process",
+      "description": "Filter {{volume_L}}L through {{filter_type}} membrane ({{filter_size_um}}um pore size).",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "filter_size_um": {"type": "number"},
+          "filter_type": {"type": "string"},
+          "volume_L": {"type": "number"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "temperature_hold",
+      "name": "Temperature Hold",
+      "category": "Process",
+      "description": "Hold {{vessel}} at {{temperature_C}}°C for {{duration_min}} minutes.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "temperature_C": {"type": "number", "title": "Temperature (C)"},
+          "duration_min": {"type": "number", "title": "Duration (min)"},
+          "vessel": {"type": "string", "title": "Vessel"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "sample_collection",
+      "name": "Sample Collection",
+      "category": "Analytics",
+      "description": "Collect {{volume_mL}}mL sample into {{container_type}}, store at {{storage_temp_C}}°C.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "volume_mL": {"type": "number"},
+          "container_type": {"type": "string"},
+          "storage_temp_C": {"type": "number"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "visual_inspection",
+      "name": "Visual Inspection",
+      "category": "QC",
+      "description": "Perform {{inspection_type}} visual inspection. Acceptance criteria: {{acceptance_criteria}}.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "inspection_type": {"type": "string"},
+          "acceptance_criteria": {"type": "string"}
+        }
+      },
+      "result_schema": {}
+    },
+    {
+      "slug": "storage",
+      "name": "Storage",
+      "category": "Logistics",
+      "description": "Store {{material}} in {{container}} at {{storage_temp_C}}°C.",
+      "param_schema": {
+        "type": "object",
+        "properties": {
+          "material": {"type": "string", "title": "Material"},
+          "storage_temp_C": {"type": "number", "title": "Storage Temperature (C)"},
+          "container": {"type": "string", "title": "Container"}
+        }
+      },
+      "result_schema": {}
+    }
+  ]
+}
