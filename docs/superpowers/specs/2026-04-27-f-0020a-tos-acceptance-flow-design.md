@@ -7,7 +7,7 @@
 
 ## Summary
 
-Add a clickwrap Terms of Service / Privacy Policy acceptance flow that gates app usage on first authenticated load and on subsequent ToS version changes. Includes drafted ToS and Privacy Policy content with Research Use Only (RUO) designation and HIPAA-aligned PHI prohibition, durable consent records via the existing `audit_logs` table, and public/auth-gated routes for viewing and accepting the documents.
+Add a clickwrap Terms of Service / Privacy Policy acceptance flow that gates app usage on first authenticated load and on subsequent ToS version changes. Versioned ToS and Privacy Policy content lives in the backend (`backend/app/legal/versions/<date>/{terms,privacy}.md`) and is served via public endpoints. The User row records the version and timestamp accepted; durable history goes to the existing `audit_logs` table. Two bypass knobs accommodate enterprise/on-prem deployments: a deployment-level env var and an organization-level override flag.
 
 ## Goals
 
@@ -15,15 +15,18 @@ Add a clickwrap Terms of Service / Privacy Policy acceptance flow that gates app
 - Re-prompt for acceptance whenever the ToS version changes (deploy-controlled).
 - Maintain a durable record of every acceptance event suitable for clickwrap defensibility.
 - Provide publicly viewable ToS and Privacy Policy pages so prospective users have notice before signing up.
+- Make versioned content easy to add and review in PRs (one directory per version, markdown files inside).
+- Support enterprise/on-prem deployments where a separately-negotiated agreement supersedes the click-through.
 - Keep the implementation consistent with existing auth gates (`email_verified`) and existing audit infrastructure.
 
 ## Non-goals
 
 - Backend enforcement of ToS state on API endpoints. Only the frontend layout enforces the gate. Documented as a known limitation; revisit if/when API-direct usage by external customers begins.
 - A dedicated `tos_acceptances` table. We reuse `audit_logs`. Migrate later if a lawyer asks for it.
-- Admin UI for editing ToS content. Versions are bumped via code/markdown changes in the repo.
+- Admin UI for editing ToS content or for toggling `Organization.legal_terms_overridden`. Versions are bumped via code/markdown changes in the repo; the override flag is set via DB write or a future admin tool.
 - Legal review by counsel. Documents are drafted in good faith but flagged in source for counsel review before signing first paid contract or accepting any regulated data.
 - E2E (Playwright) test for the gate flow. Component + layout vitest coverage is sufficient; mirror existing email-verification gating coverage.
+- A cloud SaaS path that lets a user re-accept the previous version (downgrade). Re-acceptance always lands on `get_current_version()`.
 
 ## Architecture
 
@@ -40,41 +43,77 @@ class User(Base, UUIDMixin, TimestampMixin):
     tos_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 ```
 
-**New module** `backend/app/core/legal.py`:
+**Versioned content (single source of truth, backend-served):**
 
-```python
-CURRENT_TOS_VERSION = "2026-04-27"
+```
+backend/app/legal/
+├── __init__.py
+├── service.py          # get_current_version(), get_document(version, doc), list_versions()
+└── versions/
+    ├── __init__.py     # VERSIONS = ["2026-04-27", ...]  (chronological order)
+    └── 2026-04-27/
+        ├── terms.md
+        └── privacy.md
 ```
 
-Single source of truth for the version string. Bumping requires a code change reviewed in PR/diff alongside the markdown content edits.
+`get_current_version()` returns `VERSIONS[-1]`. Bumping the version = drop a new dated directory with `terms.md` and `privacy.md`, append the version string to `VERSIONS`. Reviewed atomically in one PR with the new content.
 
-**Endpoint** `POST /auth/accept-tos` (added to `backend/app/api/endpoints/auth.py`):
+`get_document(version, doc)` reads the file at module load time (cached) and returns `{ markdown: str, version: str, effective_date: str }`. `doc ∈ {"terms", "privacy"}`. Raises 404 if either the version directory or the file is missing.
 
-- Auth required (`Depends(get_current_user)`).
-- No request body. Reads `request.client.host` for `ip_address` and `request.headers.get("user-agent")` for `user_agent`.
-- Sets `current_user.tos_accepted_at = func.now()`, `current_user.tos_version = CURRENT_TOS_VERSION`.
-- Writes one `AuditLog` row:
-  - `entity_type = "user"`
-  - `entity_id = current_user.id`
-  - `actor_id = current_user.id`
-  - `action = "ACCEPT_TOS"`
-  - `changes = {"version": CURRENT_TOS_VERSION, "ip_address": ..., "user_agent": ...}`
-- Commits and returns the updated user (same shape as `GET /auth/me`).
-- Idempotent: accepting twice rewrites the timestamp and writes a second AuditLog row.
+**Configuration** (`backend/app/core/config.py`):
+
+```python
+legal_gate_enabled: bool = True  # env: BATCHRITE_LEGAL_GATE_ENABLED
+```
+
+When `false`, the gate is bypassed globally — `tos_current` always returns `true`. Intended for fully on-prem deployments where every user is covered by a separately-negotiated MSA.
+
+**Org-level override** (`backend/app/models/iam.py`):
+
+```python
+class Organization(Base, UUIDMixin, TimestampMixin):
+    # ... existing fields ...
+    legal_terms_overridden: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+```
+
+When `true` for the user's `selected_organization`, the gate is bypassed for that user — `tos_current` returns `true` regardless of `tos_version`. Intended for enterprise customers governed by a signed MSA. No admin UI in this task; set via DB or a follow-up admin tool.
+
+**Endpoints:**
+
+- `GET /legal/current` — public; returns `{ version, effective_date }`.
+- `GET /legal/versions/{version}/terms` — public; returns `{ markdown, version, effective_date }`. 404 if version unknown.
+- `GET /legal/versions/{version}/privacy` — public; same shape.
+- `POST /auth/accept-tos` — auth required:
+  - No request body. Reads `request.client.host` for `ip_address` and `request.headers.get("user-agent")` for `user_agent`.
+  - Sets `current_user.tos_accepted_at = func.now()`, `current_user.tos_version = get_current_version()`.
+  - Writes one `AuditLog` row: `entity_type="user"`, `entity_id=current_user.id`, `actor_id=current_user.id`, `action="ACCEPT_TOS"`, `changes={"version": ..., "ip_address": ..., "user_agent": ...}`.
+  - Commits and returns the updated user (same shape as `GET /auth/me`).
+  - Idempotent: accepting twice rewrites the timestamp and writes a second AuditLog row.
 
 **`/auth/me` response** gains:
 
 - `tos_accepted_at: datetime | null`
 - `tos_version: str | null`
-- `tos_current: bool` (computed as `tos_version == CURRENT_TOS_VERSION`)
+- `tos_current: bool` — computed in the schema layer as:
+  ```
+  tos_current = (
+      not settings.legal_gate_enabled
+      or (selected_organization and selected_organization.legal_terms_overridden)
+      or tos_version == get_current_version()
+  )
+  ```
 
-`UserResponse` schema in `backend/app/schemas/iam.py` updated; `tos_current` is a `@computed_field`.
+`UserResponse` schema in `backend/app/schemas/iam.py` updated; `tos_current` is a `@computed_field` that takes the gate flag and current version into account.
 
 **Migration** (Alembic, autogenerated then reviewed):
 
-- Adds `tos_accepted_at` (TIMESTAMP WITH TIME ZONE, nullable).
-- Adds `tos_version` (VARCHAR, nullable).
-- Existing rows get `NULL` for both. On next login they hit `tos_current = false` and get gated. Correct behavior.
+- `users.tos_accepted_at` (TIMESTAMP WITH TIME ZONE, nullable, default `null`).
+- `users.tos_version` (VARCHAR, nullable, default `null`).
+- `organizations.legal_terms_overridden` (BOOLEAN, NOT NULL, default `false`, server_default `'false'`).
+- Existing user rows get `NULL` for both ToS columns. On next login they hit `tos_current = false` and get gated. Correct behavior.
+- Existing org rows get `false` for the override (no surprise bypasses).
 
 ### Frontend
 
@@ -89,17 +128,14 @@ Single source of truth for the version string. Bumping requires a code change re
 - `LegalDocument.svelte` — props: `{ title: string; markdown: string; version: string; effectiveDate: string }`. Renders markdown by reusing whichever markdown rendering approach is already used in the chat panel (e.g., `marked` + sanitization). Implementation note: identify the existing renderer during the first task; if no shared component exists yet, either extract one from chat into `lib/components/shared/` or render inline within `LegalDocument.svelte` using the same library chat uses. Do not add a new markdown dependency. Top of the document shows title, version, and effective date.
 - `AcceptForm.svelte` — two checkboxes ("I have read and agree to the Terms of Service" / "...Privacy Policy"), Accept button (disabled until both checked), error display, calls `acceptTos()` from `auth.svelte.ts` on submit. Reuses `Button`, `Checkbox` from `lib/components/ui/`.
 
-**Markdown content** (under `frontend/src/lib/legal/`):
+**Markdown content lives in the backend** (see "Versioned content" above). The frontend has no markdown files and no version constant — it fetches everything from the backend on demand.
 
-- `terms-2026-04-27.md`
-- `privacy-2026-04-27.md`
-
-Each begins with an HTML comment:
+Each markdown file begins with an HTML comment:
 ```
 <!-- TODO: Have counsel review before signing first paid contract or accepting any regulated data. Last drafted: 2026-04-27 by Wesley + Claude. -->
 ```
 
-The version string used at runtime comes from a constant in the same directory (e.g., `frontend/src/lib/legal/version.ts` exporting `CURRENT_TOS_VERSION = "2026-04-27"`). The two routes import the matching markdown by version. (Frontend doesn't read backend's `CURRENT_TOS_VERSION` directly; the two are kept in sync by deploy convention. The backend is the authority for whether a given user's recorded version is current — frontend just renders the latest one.)
+`/legal/terms`, `/legal/privacy`, and `/legal/accept` each call `GET /legal/current` to discover the current version, then `GET /legal/versions/{version}/terms` and `/privacy` for the content. The settings-page "you accepted version X" link uses the same endpoints to render the *historical* version the user accepted, which may differ from current.
 
 **Auth state** (`frontend/src/lib/auth.svelte.ts`):
 
@@ -144,10 +180,11 @@ The version string used at runtime comes from a constant in the same directory (
 6. Frontend updates auth state, navigates to `/`.
 
 **Re-acceptance after version bump:**
-1. Deploy bumps `CURRENT_TOS_VERSION` in `app/core/legal.py` and `frontend/src/lib/legal/version.ts`, plus new dated markdown files.
-2. Next `/auth/me` returns `tos_current: false` for users with stale versions.
+1. Deploy includes a new directory under `backend/app/legal/versions/` (e.g., `2026-08-01/terms.md`, `privacy.md`) and appends `"2026-08-01"` to `versions/__init__.py::VERSIONS`.
+2. Next `/auth/me` returns `tos_current: false` for users with stale versions (unless their org has `legal_terms_overridden=true` or `legal_gate_enabled=false`).
 3. Layout redirects to `/legal/accept`.
-4. New AuditLog row records the re-acceptance; old row is preserved.
+4. Frontend fetches `GET /legal/current` then the new version's markdown and renders it.
+5. New AuditLog row records the re-acceptance; old row is preserved.
 
 **Public viewing:**
 - Anyone (logged out, logged in, mid-acceptance) can read `/legal/terms` and `/legal/privacy`. Logged-in users see the standard nav; others see a minimal layout.
@@ -203,24 +240,44 @@ The version string used at runtime comes from a constant in the same directory (
 
 ### Backend (pytest, TDD)
 
-`tests/unit/test_legal.py`:
-- `CURRENT_TOS_VERSION` is a non-empty string.
+`tests/unit/test_legal_service.py`:
+- `get_current_version()` returns the last entry in `VERSIONS`.
+- `get_document(current, "terms")` returns markdown content + version + effective_date.
+- `get_document(current, "privacy")` returns markdown content + version + effective_date.
+- `get_document("does-not-exist", "terms")` raises a 404-equivalent error.
+- `get_document(current, "bogus-doc")` raises a 404-equivalent error.
+
+`tests/integration/test_legal_endpoints.py`:
+- `GET /legal/current` returns `{ version, effective_date }` (no auth required).
+- `GET /legal/versions/{version}/terms` returns markdown for known version (no auth required).
+- `GET /legal/versions/{version}/privacy` returns markdown for known version (no auth required).
+- `GET /legal/versions/unknown-version/terms` returns 404.
 
 `tests/integration/test_auth_tos.py`:
 - `POST /auth/accept-tos` requires authentication (401 without token).
-- `POST /auth/accept-tos` sets `tos_accepted_at` to ~now and `tos_version` to `CURRENT_TOS_VERSION` on the calling user.
+- `POST /auth/accept-tos` sets `tos_accepted_at` to ~now and `tos_version` to `get_current_version()` on the calling user.
 - `POST /auth/accept-tos` writes one `AuditLog` row with the documented `entity_type`, `entity_id`, `action`, and `changes` fields including `version`, `ip_address`, `user_agent`.
 - Calling twice writes two AuditLog rows but only one user record (idempotent overwrite).
 - `GET /auth/me` returns `tos_accepted_at`, `tos_version`, `tos_current` correctly across the three states: never accepted, accepted current, accepted older version.
 
+Gate-bypass tests (`tests/integration/test_auth_tos_bypass.py`):
+- When `settings.legal_gate_enabled = false`, `tos_current` returns `true` for a user with `tos_version = null`.
+- When the user's `selected_organization.legal_terms_overridden = true`, `tos_current` returns `true` for a user with `tos_version = null`.
+- When the user has no `selected_organization`, the org-override path is a no-op and the version comparison still applies.
+
 Migration:
-- Apply on a DB seeded with users → both columns exist, are nullable, default `null`.
+- Apply on a DB seeded with users → `users` has `tos_accepted_at` and `tos_version` columns, both nullable, default `null`. `organizations` has `legal_terms_overridden` column, default `false`.
 
 ### Frontend (vitest)
 
 `auth.svelte.test.ts`:
 - `isTosCurrent()` returns `true` when user payload has `tos_current: true`, `false` otherwise.
 - `acceptTos()` posts to `/auth/accept-tos` and refreshes user state on success.
+
+`legal-api.test.ts`:
+- `fetchCurrentLegalVersion()` calls `GET /legal/current` and returns `{ version, effective_date }`.
+- `fetchLegalDocument(version, "terms")` calls `GET /legal/versions/{version}/terms`.
+- `fetchLegalDocument(version, "privacy")` calls `GET /legal/versions/{version}/privacy`.
 
 `LegalDocument.svelte` test:
 - Renders provided markdown; shows title, version, effective date.
@@ -233,6 +290,7 @@ Layout gating test (mocking auth state):
 - When authenticated + email verified + `!tos_current` + pathname not `/legal/accept` → redirect to `/legal/accept`.
 - Public routes `/legal/terms` and `/legal/privacy` accessible without auth.
 - Already-accepted user visiting `/legal/accept` is redirected to `/`.
+- When `tos_current` is `true` because the gate is disabled or the org has overridden, the user is *not* redirected.
 
 ### E2E
 
@@ -243,6 +301,9 @@ Skipped. Component + layout vitest coverage is sufficient.
 - **Backend ToS enforcement on API:** Out of scope. The clickwrap is enforced via the frontend layout only. Acceptable for current product stage (no external API customers). Revisit before opening API access.
 - **Mid-session staleness on version bump:** Users who are mid-session when a deploy bumps the version don't get gated until next layout init. Acceptable; we don't poll.
 - **Counsel review:** Documents are drafted as best-effort and flagged in source. Trigger for actual review: first paid contract, first regulated-data customer, first enterprise MSA, or priced funding round — whichever comes first.
+- **On-prem deployments:** Pure on-prem instances should set `BATCHRITE_LEGAL_GATE_ENABLED=false`; the entire instance is one customer governed by a separately-negotiated agreement, and the click-through is redundant. Updates to the on-prem agreement happen via contract renewal, not in-app prompts.
+- **Enterprise customers on cloud:** Set `Organization.legal_terms_overridden = true` (manual DB write or a future admin tool) when an org signs an MSA. All members of that org bypass the click-through. No admin UI for this in this task.
+- **Multi-org users with mixed override status:** A user whose `selected_organization` has `legal_terms_overridden=true` will bypass the gate — but if they switch to an org that doesn't have it, the gate kicks back in on next page load. Acceptable; the bypass is per-current-org, which matches the legal reality (the agreement covers them only while acting in that org's context).
 
 ## Acceptance criteria (mapping back to ClickUp task)
 
@@ -252,3 +313,6 @@ Skipped. Component + layout vitest coverage is sufficient.
 - [x] Privacy Policy.
 - [x] Consent record keeping (via `audit_logs`).
 - [x] Re-acceptance on version change.
+- [x] Versioned content directory `backend/app/legal/versions/<date>/` (single source of truth).
+- [x] Deployment-level bypass via `BATCHRITE_LEGAL_GATE_ENABLED`.
+- [x] Org-level bypass via `Organization.legal_terms_overridden`.
