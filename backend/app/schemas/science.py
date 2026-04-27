@@ -14,8 +14,10 @@ class UnitOpDefinitionBase(BaseModel):
     param_schema: Dict[str, Any] = Field(default_factory=dict)
     result_schema: Dict[str, Any] = Field(default_factory=dict)
 
+
 class UnitOpDefinitionCreate(UnitOpDefinitionBase):
     project_id: Optional[UUID] = None
+
 
 class UnitOpDefinitionUpdate(BaseModel):
     name: Optional[str] = None
@@ -23,6 +25,7 @@ class UnitOpDefinitionUpdate(BaseModel):
     description: Optional[str] = None
     param_schema: Optional[Dict[str, Any]] = None
     result_schema: Optional[Dict[str, Any]] = None
+
 
 class UnitOpDefinitionResponse(UnitOpDefinitionBase):
     id: UUID
@@ -44,19 +47,23 @@ class UnitOpDefinitionResponse(UnitOpDefinitionBase):
     class Config:
         from_attributes = True
 
+
 # ProtocolRole Schemas
 class ProtocolRoleBase(BaseModel):
     name: str
     color: str = "#94a3b8"
     sort_order: int = 0
 
+
 class ProtocolRoleCreate(ProtocolRoleBase):
     pass
+
 
 class ProtocolRoleUpdate(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
     sort_order: Optional[int] = None
+
 
 class ProtocolRoleResponse(ProtocolRoleBase):
     id: UUID
@@ -67,11 +74,13 @@ class ProtocolRoleResponse(ProtocolRoleBase):
     class Config:
         from_attributes = True
 
+
 # Protocol Schemas
 class ProtocolBase(BaseModel):
     name: str
     description: Optional[str] = None
     graph: Dict[str, Any] = Field(default_factory=dict)
+
 
 class ProtocolCreate(ProtocolBase):
     project_id: Optional[UUID] = None
@@ -80,10 +89,12 @@ class ProtocolCreate(ProtocolBase):
     class Config:
         from_attributes = True
 
+
 class ProtocolUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     graph: Optional[Dict[str, Any]] = None
+
 
 class ProtocolResponse(ProtocolBase):
     id: UUID
@@ -127,6 +138,7 @@ class ProtocolVersionResponse(ProtocolVersionListItem):
 # Protocol Approval Schemas
 class ProtocolApprovalAction(BaseModel):
     comment: Optional[str] = None
+
 
 # Experiment Schemas
 class ExperimentStatus(str, Enum):
@@ -193,6 +205,7 @@ class RunStatus(str, Enum):
     EDITED = "EDITED"
     ARCHIVED = "ARCHIVED"
 
+
 # --- Run Notes & Attachments ---
 
 ALLOWED_NOTE_FLAGS = {"anomaly"}
@@ -221,9 +234,7 @@ class RunNoteCreate(BaseModel):
     def validate_flags(cls, v: list[str]) -> list[str]:
         invalid = set(v) - ALLOWED_NOTE_FLAGS
         if invalid:
-            raise ValueError(
-                f"Invalid flags: {invalid}. Allowed: {ALLOWED_NOTE_FLAGS}"
-            )
+            raise ValueError(f"Invalid flags: {invalid}. Allowed: {ALLOWED_NOTE_FLAGS}")
         return v
 
 
@@ -252,11 +263,13 @@ class RunAttachmentListResponse(BaseModel):
 
 # --- Run ---
 
+
 class RunBase(BaseModel):
     name: str
     status: RunStatus = RunStatus.PLANNED
     graph: Dict[str, Any] = Field(default_factory=dict)
     execution_data: Dict[str, Any] = Field(default_factory=dict)
+
 
 class RunCreate(BaseModel):
     name: str
@@ -264,11 +277,13 @@ class RunCreate(BaseModel):
     protocol_id: Optional[UUID] = None
     experiment_id: Optional[UUID] = None
 
+
 class RunUpdate(BaseModel):
     name: Optional[str] = None
     status: Optional[RunStatus] = None
     graph: Optional[Dict[str, Any]] = None
     execution_data: Optional[Dict[str, Any]] = None
+
 
 class RunResponse(RunBase):
     id: UUID
@@ -283,6 +298,7 @@ class RunResponse(RunBase):
 
     class Config:
         from_attributes = True
+
 
 class ExperimentResponse(BaseModel):
     id: UUID
@@ -307,8 +323,10 @@ class RunRoleAssignmentBase(BaseModel):
     role_name: str
     user_id: UUID
 
+
 class RunRoleAssignmentCreate(RunRoleAssignmentBase):
     pass
+
 
 class RunRoleAssignmentResponse(RunRoleAssignmentBase):
     id: UUID
@@ -319,8 +337,10 @@ class RunRoleAssignmentResponse(RunRoleAssignmentBase):
     class Config:
         from_attributes = True
 
+
 class RunRoleAssignmentListResponse(BaseModel):
     items: List[RunRoleAssignmentResponse] = []
+
 
 # Equipment Schemas
 class EquipmentBase(BaseModel):
@@ -329,8 +349,10 @@ class EquipmentBase(BaseModel):
     equipment_type: Optional[str] = None
     location: Optional[str] = None
 
+
 class EquipmentCreate(EquipmentBase):
     pass
+
 
 class EquipmentUpdate(BaseModel):
     name: Optional[str] = None
@@ -338,8 +360,10 @@ class EquipmentUpdate(BaseModel):
     equipment_type: Optional[str] = None
     location: Optional[str] = None
 
+
 class GraphPayload(BaseModel):
     graph: Dict[str, Any] = Field(default_factory=dict)
+
 
 class EquipmentResponse(EquipmentBase):
     id: UUID

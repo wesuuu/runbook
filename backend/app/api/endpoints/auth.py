@@ -145,6 +145,7 @@ async def register(
 
     # F-0075: subscribe new org to default unit op libraries
     from app.services.science import library_registry
+
     await library_registry.subscribe_default_libraries(db, org.id)
 
     user = User(

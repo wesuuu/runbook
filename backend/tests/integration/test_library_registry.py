@@ -1,4 +1,5 @@
 """Tests for the unit op library registry (F-0075)."""
+
 import uuid
 from pathlib import Path
 
@@ -20,7 +21,9 @@ async def _reset_registry():
     )
     await lr.reload_libraries()
     yield
-    lr._reset_for_tests()
+    # No teardown reset: leaving the registry seeded with bundled core
+    # avoids wiping state that subsequent test files (e.g. scoping tests)
+    # rely on. Setup re-seeds cleanly anyway.
 
 
 @pytest.mark.asyncio
@@ -33,7 +36,9 @@ async def test_synthetic_uuid_is_deterministic():
 
 @pytest.mark.asyncio
 async def test_synthetic_uuid_differs_per_op():
-    assert lr.synthetic_uuid("core", "mixing") != lr.synthetic_uuid("core", "centrifugation")
+    assert lr.synthetic_uuid("core", "mixing") != lr.synthetic_uuid(
+        "core", "centrifugation"
+    )
     assert lr.synthetic_uuid("core", "mixing") != lr.synthetic_uuid("other", "mixing")
 
 
@@ -58,18 +63,28 @@ async def test_bundled_source_loads_core_library():
 @pytest.mark.asyncio
 async def test_register_and_reload_populates_cache():
     lr._reset_for_tests()
-    fake = _FakeSource([
-        lr.Library(
-            slug="alpha", name="Alpha", domain="general",
-            description="", is_default=True, version="1.0.0",
-            unit_ops=[
-                lr.UnitOp(
-                    slug="op_one", name="Op One", category="Cat",
-                    description="", param_schema={}, result_schema={},
-                ),
-            ],
-        ),
-    ])
+    fake = _FakeSource(
+        [
+            lr.Library(
+                slug="alpha",
+                name="Alpha",
+                domain="general",
+                description="",
+                is_default=True,
+                version="1.0.0",
+                unit_ops=[
+                    lr.UnitOp(
+                        slug="op_one",
+                        name="Op One",
+                        category="Cat",
+                        description="",
+                        param_schema={},
+                        result_schema={},
+                    ),
+                ],
+            ),
+        ]
+    )
     lr.register_source(fake)
     await lr.reload_libraries()
 
@@ -83,11 +98,19 @@ async def test_register_and_reload_populates_cache():
 @pytest.mark.asyncio
 async def test_reload_is_atomic_on_source_failure():
     lr._reset_for_tests()
-    fake_ok = _FakeSource([
-        lr.Library(slug="good", name="Good", domain="general",
-                   description="", is_default=False, version="1",
-                   unit_ops=[]),
-    ])
+    fake_ok = _FakeSource(
+        [
+            lr.Library(
+                slug="good",
+                name="Good",
+                domain="general",
+                description="",
+                is_default=False,
+                version="1",
+                unit_ops=[],
+            ),
+        ]
+    )
     lr.register_source(fake_ok)
     await lr.reload_libraries()
     assert lr.get_library("good") is not None
@@ -103,16 +126,32 @@ async def test_reload_is_atomic_on_source_failure():
 @pytest.mark.asyncio
 async def test_last_source_wins_on_slug_collision():
     lr._reset_for_tests()
-    earlier = _FakeSource([
-        lr.Library(slug="x", name="Earlier", domain="general",
-                   description="", is_default=False, version="1",
-                   unit_ops=[]),
-    ])
-    later = _FakeSource([
-        lr.Library(slug="x", name="Later", domain="general",
-                   description="", is_default=False, version="2",
-                   unit_ops=[]),
-    ])
+    earlier = _FakeSource(
+        [
+            lr.Library(
+                slug="x",
+                name="Earlier",
+                domain="general",
+                description="",
+                is_default=False,
+                version="1",
+                unit_ops=[],
+            ),
+        ]
+    )
+    later = _FakeSource(
+        [
+            lr.Library(
+                slug="x",
+                name="Later",
+                domain="general",
+                description="",
+                is_default=False,
+                version="2",
+                unit_ops=[],
+            ),
+        ]
+    )
     lr.register_source(earlier)
     lr.register_source(later)
     await lr.reload_libraries()
@@ -121,18 +160,22 @@ async def test_last_source_wins_on_slug_collision():
 
 @pytest.mark.asyncio
 async def test_subscribe_default_libraries_idempotent(
-    db_session, test_org,
+    db_session,
+    test_org,
 ):
     """subscribe_default_libraries can be called repeatedly without error."""
+    from sqlalchemy import func, select
+
     from app.models.science import UnitOpLibrarySubscription
-    from sqlalchemy import select, func
 
     # test_org fixture already subscribed once. Calling again does nothing.
     await lr.subscribe_default_libraries(db_session, test_org.id)
     await lr.subscribe_default_libraries(db_session, test_org.id)
 
     count = await db_session.execute(
-        select(func.count()).select_from(UnitOpLibrarySubscription).where(
+        select(func.count())
+        .select_from(UnitOpLibrarySubscription)
+        .where(
             UnitOpLibrarySubscription.organization_id == test_org.id,
         )
     )
@@ -145,6 +188,7 @@ async def test_subscribe_default_libraries_idempotent(
 class _FakeSource:
     def __init__(self, libs: list):
         self._libs = libs
+
     async def load(self):
         return self._libs
 
@@ -156,18 +200,23 @@ class _FailingSource:
 
 @pytest.mark.asyncio
 async def test_register_endpoint_subscribes_new_org_to_core(
-    client, db_session,
+    client,
+    db_session,
 ):
     """A user signing up gets a new org auto-subscribed to 'core'."""
-    from app.models.iam import Organization
-    from app.models.science import UnitOpLibrarySubscription
     from sqlalchemy import select
 
-    resp = await client.post("/auth/register", json={
-        "email": "newuser@example.com",
-        "password": "testpass123",
-        "full_name": "New User",
-    })
+    from app.models.iam import Organization
+    from app.models.science import UnitOpLibrarySubscription
+
+    resp = await client.post(
+        "/auth/register",
+        json={
+            "email": "newuser@example.com",
+            "password": "testpass123",
+            "full_name": "New User",
+        },
+    )
     assert resp.status_code in (200, 201), resp.text
 
     # Find the org that was just created
@@ -186,15 +235,19 @@ async def test_register_endpoint_subscribes_new_org_to_core(
 
 @pytest.mark.asyncio
 async def test_create_org_endpoint_subscribes_to_core(
-    client, auth_headers, db_session,
+    client,
+    auth_headers,
+    db_session,
 ):
     """POST /iam/organizations subscribes the new org to defaults."""
-    from app.models.iam import Organization
-    from app.models.science import UnitOpLibrarySubscription
     from sqlalchemy import select
 
+    from app.models.iam import Organization
+    from app.models.science import UnitOpLibrarySubscription
+
     resp = await client.post(
-        "/iam/organizations", json={"name": "Second Workspace"},
+        "/iam/organizations",
+        json={"name": "Second Workspace"},
         headers=auth_headers,
     )
     assert resp.status_code == 201, resp.text
@@ -210,10 +263,12 @@ async def test_create_org_endpoint_subscribes_to_core(
 
 @pytest.mark.asyncio
 async def test_admin_reload_endpoint_as_org_admin(
-    client, auth_headers,
+    client,
+    auth_headers,
 ):
     resp = await client.post(
-        "/admin/libraries/reload", headers=auth_headers,
+        "/admin/libraries/reload",
+        headers=auth_headers,
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -227,10 +282,12 @@ async def test_admin_reload_endpoint_as_org_admin(
 
 @pytest.mark.asyncio
 async def test_admin_reload_endpoint_as_member_forbidden(
-    client, db_session, test_org,
+    client,
+    db_session,
+    test_org,
 ):
-    from app.core.security import hash_password, create_access_token
-    from app.models.iam import User, OrganizationMember
+    from app.core.security import create_access_token, hash_password
+    from app.models.iam import OrganizationMember, User
 
     member = User(
         email="member-reload@example.com",
@@ -241,12 +298,17 @@ async def test_admin_reload_endpoint_as_member_forbidden(
     )
     db_session.add(member)
     await db_session.flush()
-    db_session.add(OrganizationMember(
-        user_id=member.id, organization_id=test_org.id, role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=member.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
     await db_session.flush()
     token = create_access_token(
-        member.id, org_id=test_org.id,
+        member.id,
+        org_id=test_org.id,
         subscription_tier=test_org.subscription_tier,
         email_verified=True,
     )

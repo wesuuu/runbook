@@ -2,22 +2,16 @@
 
 Covers: global/org/project scoping, permission checks, and union queries.
 """
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    User,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            User)
 from app.models.science import Project, UnitOpDefinition
-
 
 # --- Fixtures ---
 
@@ -53,7 +47,8 @@ def project_op_payload(test_project: Project):
 
 @pytest_asyncio.fixture
 async def org_unit_op(
-    db_session: AsyncSession, test_org: Organization,
+    db_session: AsyncSession,
+    test_org: Organization,
 ) -> UnitOpDefinition:
     """An org-scoped unit op."""
     op = UnitOpDefinition(
@@ -70,7 +65,9 @@ async def org_unit_op(
 
 @pytest_asyncio.fixture
 async def project_unit_op(
-    db_session: AsyncSession, test_org: Organization, test_project: Project,
+    db_session: AsyncSession,
+    test_org: Organization,
+    test_project: Project,
 ) -> UnitOpDefinition:
     """A project-scoped unit op."""
     op = UnitOpDefinition(
@@ -87,7 +84,8 @@ async def project_unit_op(
 
 @pytest_asyncio.fixture
 async def other_org_unit_op(
-    db_session: AsyncSession, second_org: Organization,
+    db_session: AsyncSession,
+    second_org: Organization,
 ) -> UnitOpDefinition:
     """An org-scoped unit op belonging to a different org."""
     op = UnitOpDefinition(
@@ -235,7 +233,7 @@ async def test_create_org_scoped_op_as_member_forbidden(
     test_org: Organization,
 ):
     """Non-admin org members cannot create org-scoped ops."""
-    from app.core.security import hash_password, create_access_token
+    from app.core.security import create_access_token, hash_password
 
     member = User(
         email="member@example.com",
@@ -365,7 +363,8 @@ async def test_update_project_op_with_permission(
 
 @pytest.mark.asyncio
 async def test_list_returns_subscribed_library_ops(
-    client: AsyncClient, auth_headers: dict,
+    client: AsyncClient,
+    auth_headers: dict,
 ):
     """An org subscribed to 'core' sees all 12 core ops."""
     resp = await client.get("/science/unit-ops", headers=auth_headers)
@@ -382,13 +381,16 @@ async def test_list_returns_subscribed_library_ops(
 
 @pytest.mark.asyncio
 async def test_list_excludes_unsubscribed_library_ops(
-    client: AsyncClient, db_session, second_org,
+    client: AsyncClient,
+    db_session,
+    second_org,
 ):
     """An org NOT subscribed to a library doesn't see its ops.
     second_org's subscription is provided by the fixture; remove it."""
-    from app.models.science import UnitOpLibrarySubscription
     from sqlalchemy import delete
+
     from app.core.security import create_access_token
+    from app.models.science import UnitOpLibrarySubscription
 
     await db_session.execute(
         delete(UnitOpLibrarySubscription).where(
@@ -398,8 +400,9 @@ async def test_list_excludes_unsubscribed_library_ops(
     await db_session.flush()
 
     # Create a user attached to second_org with no library subscription
-    from app.models.iam import User, OrganizationMember
     from app.core.security import hash_password
+    from app.models.iam import OrganizationMember, User
+
     user = User(
         email="lonely@example.com",
         hashed_password=hash_password("testpass"),
@@ -409,13 +412,18 @@ async def test_list_excludes_unsubscribed_library_ops(
     )
     db_session.add(user)
     await db_session.flush()
-    db_session.add(OrganizationMember(
-        user_id=user.id, organization_id=second_org.id, role="ADMIN",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=second_org.id,
+            role="ADMIN",
+        )
+    )
     await db_session.flush()
 
     token = create_access_token(
-        user.id, org_id=second_org.id,
+        user.id,
+        org_id=second_org.id,
         subscription_tier=second_org.subscription_tier,
         email_verified=True,
     )
@@ -431,11 +439,14 @@ async def test_list_excludes_unsubscribed_library_ops(
 
 @pytest.mark.asyncio
 async def test_put_on_library_op_creates_override(
-    client: AsyncClient, auth_headers, db_session, test_org,
+    client: AsyncClient,
+    auth_headers,
+    db_session,
+    test_org,
 ):
     """PUT on a JSON op id inserts an override row in this org."""
-    from app.services.science import library_registry
     from app.models.science import UnitOpDefinition
+    from app.services.science import library_registry
 
     synth_id = library_registry.synthetic_uuid("core", "mixing")
 
@@ -461,11 +472,14 @@ async def test_put_on_library_op_creates_override(
 
 @pytest.mark.asyncio
 async def test_second_put_updates_existing_override(
-    client: AsyncClient, auth_headers, db_session,
+    client: AsyncClient,
+    auth_headers,
+    db_session,
 ):
-    from app.services.science import library_registry
+    from sqlalchemy import func, select
+
     from app.models.science import UnitOpDefinition
-    from sqlalchemy import select, func
+    from app.services.science import library_registry
 
     synth_id = library_registry.synthetic_uuid("core", "mixing")
 
@@ -481,7 +495,9 @@ async def test_second_put_updates_existing_override(
     )
 
     count_q = await db_session.execute(
-        select(func.count()).select_from(UnitOpDefinition).where(
+        select(func.count())
+        .select_from(UnitOpDefinition)
+        .where(
             UnitOpDefinition.id == synth_id,
         )
     )
@@ -493,7 +509,9 @@ async def test_second_put_updates_existing_override(
 
 @pytest.mark.asyncio
 async def test_override_isolated_per_org(
-    client: AsyncClient, auth_headers, second_auth_headers,
+    client: AsyncClient,
+    auth_headers,
+    second_auth_headers,
 ):
     """An override in org A doesn't leak into org B's listing."""
     from app.services.science import library_registry
@@ -515,9 +533,11 @@ async def test_override_isolated_per_org(
 
 @pytest.mark.asyncio
 async def test_put_on_unknown_uuid_returns_404(
-    client: AsyncClient, auth_headers,
+    client: AsyncClient,
+    auth_headers,
 ):
     import uuid as _uuid
+
     bogus = _uuid.uuid4()
     resp = await client.put(
         f"/science/unit-ops/{bogus}",

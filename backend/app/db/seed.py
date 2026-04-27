@@ -51,9 +51,7 @@ DEFAULT_PASSWORD = hash_password("password123")
 
 async def _upsert(db: AsyncSession, model, pk_id: uuid.UUID, **kwargs):
     """Insert if not exists (by PK). Returns the object."""
-    result = await db.execute(
-        select(model).where(model.id == pk_id)
-    )
+    result = await db.execute(select(model).where(model.id == pk_id))
     existing = result.scalar_one_or_none()
     if existing is not None:
         return existing
@@ -68,7 +66,9 @@ async def seed_users(db: AsyncSession):
     # that has no authenticated user. Must exist so `audit_logs.actor_id` FK
     # resolves; never intended to log in (hashed_password is unusable).
     await _upsert(
-        db, User, USER_SYSTEM,
+        db,
+        User,
+        USER_SYSTEM,
         email="system@batchrite.internal",
         hashed_password="!system-locked!",
         full_name="System",
@@ -86,7 +86,9 @@ async def seed_users(db: AsyncSession):
     ]
     for uid, email, name in users:
         user = await _upsert(
-            db, User, uid,
+            db,
+            User,
+            uid,
             email=email,
             hashed_password=DEFAULT_PASSWORD,
             full_name=name,
@@ -123,11 +125,13 @@ async def seed_org(db: AsyncSession):
             )
         )
         if result.scalar_one_or_none() is None:
-            db.add(OrganizationMember(
-                user_id=uid,
-                organization_id=org_id,
-                role=role,
-            ))
+            db.add(
+                OrganizationMember(
+                    user_id=uid,
+                    organization_id=org_id,
+                    role=role,
+                )
+            )
     await db.flush()
 
 
@@ -162,7 +166,9 @@ async def seed_teams(db: AsyncSession):
 
 async def seed_projects(db: AsyncSession):
     await _upsert(
-        db, Project, PROJECT_MAB,
+        db,
+        Project,
+        PROJECT_MAB,
         name="mAb Production v2",
         description="Monoclonal antibody production optimization",
         organization_id=ORG_ID,
@@ -170,7 +176,9 @@ async def seed_projects(db: AsyncSession):
         owner_id=TEAM_UPSTREAM,
     )
     await _upsert(
-        db, Project, PROJECT_VACCINE,
+        db,
+        Project,
+        PROJECT_VACCINE,
         name="Vaccine Formulation Study",
         description="Novel vaccine formulation research",
         organization_id=ORG_ID,
@@ -183,16 +191,52 @@ async def seed_permissions(db: AsyncSession):
     """Seed object-level permissions."""
     perms = [
         # Upstream Team → ADMIN on mAb
-        (PrincipalType.TEAM, TEAM_UPSTREAM, ObjectType.PROJECT, PROJECT_MAB, PermissionLevel.ADMIN),
+        (
+            PrincipalType.TEAM,
+            TEAM_UPSTREAM,
+            ObjectType.PROJECT,
+            PROJECT_MAB,
+            PermissionLevel.ADMIN,
+        ),
         # Downstream Team → VIEW on mAb
-        (PrincipalType.TEAM, TEAM_DOWNSTREAM, ObjectType.PROJECT, PROJECT_MAB, PermissionLevel.VIEW),
+        (
+            PrincipalType.TEAM,
+            TEAM_DOWNSTREAM,
+            ObjectType.PROJECT,
+            PROJECT_MAB,
+            PermissionLevel.VIEW,
+        ),
         # QA → VIEW on both
-        (PrincipalType.TEAM, TEAM_QA, ObjectType.PROJECT, PROJECT_MAB, PermissionLevel.VIEW),
-        (PrincipalType.TEAM, TEAM_QA, ObjectType.PROJECT, PROJECT_VACCINE, PermissionLevel.VIEW),
+        (
+            PrincipalType.TEAM,
+            TEAM_QA,
+            ObjectType.PROJECT,
+            PROJECT_MAB,
+            PermissionLevel.VIEW,
+        ),
+        (
+            PrincipalType.TEAM,
+            TEAM_QA,
+            ObjectType.PROJECT,
+            PROJECT_VACCINE,
+            PermissionLevel.VIEW,
+        ),
         # Lead2 → ADMIN on Vaccine
-        (PrincipalType.USER, USER_DOWNSTREAM_LEAD, ObjectType.PROJECT, PROJECT_VACCINE, PermissionLevel.ADMIN),
+        (
+            PrincipalType.USER,
+            USER_DOWNSTREAM_LEAD,
+            ObjectType.PROJECT,
+            PROJECT_VACCINE,
+            PermissionLevel.ADMIN,
+        ),
         # Scientist2 → EDIT on Vaccine
-        (PrincipalType.USER, USER_SCIENTIST2, ObjectType.PROJECT, PROJECT_VACCINE, PermissionLevel.EDIT),
+        (
+            PrincipalType.USER,
+            USER_SCIENTIST2,
+            ObjectType.PROJECT,
+            PROJECT_VACCINE,
+            PermissionLevel.EDIT,
+        ),
     ]
     for pt, pid, ot, oid, level in perms:
         result = await db.execute(
@@ -204,13 +248,15 @@ async def seed_permissions(db: AsyncSession):
             )
         )
         if result.scalar_one_or_none() is None:
-            db.add(ObjectPermission(
-                principal_type=pt.value,
-                principal_id=pid,
-                object_type=ot.value,
-                object_id=oid,
-                permission_level=level.value,
-            ))
+            db.add(
+                ObjectPermission(
+                    principal_type=pt.value,
+                    principal_id=pid,
+                    object_type=ot.value,
+                    object_id=oid,
+                    permission_level=level.value,
+                )
+            )
     await db.flush()
 
 
@@ -245,12 +291,12 @@ async def seed_newbie_user(db: AsyncSession):
     new signup looks like, so the welcome modal auto-opens on login.
     """
     # Fresh org just for this user
-    await _upsert(
-        db, Organization, ORG_ID_NEWBIE, name="Newbie's Organization"
-    )
+    await _upsert(db, Organization, ORG_ID_NEWBIE, name="Newbie's Organization")
 
     user = await _upsert(
-        db, User, USER_NEWBIE,
+        db,
+        User,
+        USER_NEWBIE,
         email="newbie@bioprocess.com",
         hashed_password=DEFAULT_PASSWORD,
         full_name="Newbie Tester",
@@ -268,15 +314,19 @@ async def seed_newbie_user(db: AsyncSession):
         )
     )
     if result.scalar_one_or_none() is None:
-        db.add(OrganizationMember(
-            user_id=USER_NEWBIE,
-            organization_id=ORG_ID_NEWBIE,
-            role="ADMIN",
-        ))
+        db.add(
+            OrganizationMember(
+                user_id=USER_NEWBIE,
+                organization_id=ORG_ID_NEWBIE,
+                role="ADMIN",
+            )
+        )
 
     # Seed a single starter project (mirrors what auth/register does)
     await _upsert(
-        db, Project, PROJECT_NEWBIE,
+        db,
+        Project,
+        PROJECT_NEWBIE,
         name="My First Project",
         description="Created for you — rename or delete as you like.",
         organization_id=ORG_ID_NEWBIE,

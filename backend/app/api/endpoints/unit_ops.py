@@ -27,7 +27,9 @@ router = APIRouter()
 
 
 async def _require_org_admin(
-    db: AsyncSession, user_id: UUID, org_id: UUID,
+    db: AsyncSession,
+    user_id: UUID,
+    org_id: UUID,
 ) -> None:
     """Raise 403 if user is not ADMIN in the given org."""
     result = await db.execute(
@@ -99,7 +101,11 @@ async def list_unit_ops(
     # 3. Project-scoped ops if requested
     if project_id is not None:
         allowed = await check_permission(
-            db, user.id, ObjectType.PROJECT, project_id, PermissionLevel.VIEW,
+            db,
+            user.id,
+            ObjectType.PROJECT,
+            project_id,
+            PermissionLevel.VIEW,
         )
         if allowed:
             proj_q = await db.execute(
@@ -143,7 +149,8 @@ async def create_unit_op(
     org_id = user.selected_org_id
     if org_id is None:
         raise HTTPException(
-            status_code=400, detail="No organization selected",
+            status_code=400,
+            detail="No organization selected",
         )
 
     if unit_op.project_id is not None:
@@ -161,7 +168,10 @@ async def create_unit_op(
             )
 
         allowed = await check_permission(
-            db, user.id, ObjectType.PROJECT, unit_op.project_id,
+            db,
+            user.id,
+            ObjectType.PROJECT,
+            unit_op.project_id,
             PermissionLevel.EDIT,
         )
         if not allowed:
@@ -239,7 +249,10 @@ async def update_unit_op(
     # 3. Existing DB row — permission depends on scope
     if unit_op.project_id is not None:
         allowed = await check_permission(
-            db, user.id, ObjectType.PROJECT, unit_op.project_id,
+            db,
+            user.id,
+            ObjectType.PROJECT,
+            unit_op.project_id,
             PermissionLevel.EDIT,
         )
         if not allowed:
@@ -260,7 +273,9 @@ async def update_unit_op(
 
 
 async def _find_subscribed_json_op(
-    db: AsyncSession, org_id: UUID, target_id: UUID,
+    db: AsyncSession,
+    org_id: UUID,
+    target_id: UUID,
 ):
     """Walk every subscribed library; return (slug, op) if its synthetic
     UUID equals target_id, else None."""

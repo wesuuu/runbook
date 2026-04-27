@@ -4,33 +4,22 @@ os.environ["BATCHRITE_AUTH_ENABLED"] = "true"
 
 import pytest
 import pytest_asyncio
-from app.services.billing import stripe_client as _stripe_client
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    AsyncSession,
-    async_sessionmaker,
-)
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
 from sqlalchemy.pool import NullPool
 
-from app.main import app
+from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.session import get_db
-from app.core.security import hash_password, create_access_token
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    Team,
-    TeamMember,
-    User,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-)
+from app.main import app
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            Team, TeamMember, User)
 from app.models.science import Project
 from app.models.templates import DocumentTemplate  # noqa: F401
+from app.services.billing import stripe_client as _stripe_client
 
 TEST_DATABASE_URL = (
     "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite_test"
@@ -46,7 +35,9 @@ async def _seed_library_registry():
     register their own (then re-register/reload to restore).
     """
     from pathlib import Path
+
     from app.services.science import library_registry as lr
+
     lr._reset_for_tests()
     lr.register_source(
         lr.BundledJSONSource(
@@ -73,9 +64,7 @@ def _disable_stripe_globally(monkeypatch):
         "stripe_essentials_price_id",
         "stripe_pro_price_id",
     ):
-        monkeypatch.setattr(
-            f"app.services.billing.stripe_client.settings.{key}", ""
-        )
+        monkeypatch.setattr(f"app.services.billing.stripe_client.settings.{key}", "")
     _stripe_client._reset_cache()
     yield
     _stripe_client._reset_cache()
@@ -164,6 +153,7 @@ async def client(db_session):
 
 # --- Auth fixtures ---
 
+
 @pytest_asyncio.fixture
 async def test_org(db_session) -> Organization:
     org = Organization(name="Test Org")
@@ -171,6 +161,7 @@ async def test_org(db_session) -> Organization:
     await db_session.flush()
     # Mirror production: every org auto-subscribes to default libraries.
     from app.services.science import library_registry
+
     if library_registry.list_libraries():  # registry seeded by app startup
         await library_registry.subscribe_default_libraries(db_session, org.id)
     return org
@@ -216,6 +207,7 @@ async def second_org(db_session) -> Organization:
     db_session.add(org)
     await db_session.flush()
     from app.services.science import library_registry
+
     if library_registry.list_libraries():
         await library_registry.subscribe_default_libraries(db_session, org.id)
     return org

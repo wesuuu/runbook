@@ -4,6 +4,7 @@ Operations gated on org-admin of the caller's selected org. Today this
 covers manual reload of the unit op library cache. As more system-level
 operator actions accrete here, consider splitting per concern.
 """
+
 import logging
 from uuid import UUID
 
@@ -22,7 +23,9 @@ router = APIRouter()
 
 
 async def _require_org_admin(
-    db: AsyncSession, user_id: UUID, org_id: UUID,
+    db: AsyncSession,
+    user_id: UUID,
+    org_id: UUID,
 ) -> None:
     result = await db.execute(
         select(OrganizationMember).where(

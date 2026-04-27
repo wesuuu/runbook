@@ -4,6 +4,7 @@ Loads versioned JSON catalogs of unit operations and serves them to the
 rest of the app. Designed so that adding new sources (e.g. a remote
 catalog for on-prem deployments) is plumbing rather than architecture.
 """
+
 from __future__ import annotations
 
 import json
@@ -121,10 +122,12 @@ def default_library_slugs() -> list[str]:
 
 
 async def subscribe_default_libraries(
-    db: "AsyncSession", org_id: uuid.UUID,
+    db: "AsyncSession",
+    org_id: uuid.UUID,
 ) -> None:
     """Insert subscription rows for every default library. Idempotent."""
     from sqlalchemy import select
+
     from app.models.science import UnitOpLibrarySubscription  # noqa: WPS433
 
     existing_q = await db.execute(
@@ -136,13 +139,17 @@ async def subscribe_default_libraries(
     for slug in default_library_slugs():
         if slug in existing:
             continue
-        db.add(UnitOpLibrarySubscription(
-            organization_id=org_id, library_slug=slug,
-        ))
+        db.add(
+            UnitOpLibrarySubscription(
+                organization_id=org_id,
+                library_slug=slug,
+            )
+        )
     await db.flush()
 
 
 # --- Test helpers ---
+
 
 def _reset_for_tests() -> None:
     """Clear sources and cache. Tests only."""

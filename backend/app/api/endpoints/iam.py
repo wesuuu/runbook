@@ -10,7 +10,8 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404, require_active_subscription
+from app.core.deps import (get_current_user, get_or_404,
+                           require_active_subscription)
 from app.core.security import generate_verification_token
 from app.db.session import get_db
 from app.models.execution import AuditLog
@@ -34,6 +35,7 @@ router = APIRouter()
 
 
 # --- Helpers ---
+
 
 async def _require_org_admin(
     db: AsyncSession, user_id: UUID, org_id: UUID
@@ -75,6 +77,7 @@ async def _require_org_member(
 
 # --- Organizations ---
 
+
 @router.post(
     "/organizations",
     response_model=OrganizationResponse,
@@ -108,11 +111,14 @@ async def create_organization(
 
     # F-0075: subscribe new org to default unit op libraries
     from app.services.science import library_registry
+
     await library_registry.subscribe_default_libraries(db, org.id)
 
     # Caller auto-becomes admin
     membership = OrganizationMember(
-        user_id=user.id, organization_id=org.id, role="ADMIN",
+        user_id=user.id,
+        organization_id=org.id,
+        role="ADMIN",
     )
     db.add(membership)
     await db.commit()
@@ -139,9 +145,7 @@ async def list_organizations(
     return result.scalars().all()
 
 
-@router.get(
-    "/organizations/{org_id}", response_model=OrganizationResponse
-)
+@router.get("/organizations/{org_id}", response_model=OrganizationResponse)
 async def get_organization(
     org_id: UUID,
     user: User = Depends(get_current_user),
@@ -164,6 +168,7 @@ async def get_organization(
 
 # --- Organization Members ---
 
+
 @router.post(
     "/organizations/{org_id}/members",
     response_model=OrgMemberResponse,
@@ -178,9 +183,7 @@ async def add_org_member(
     await _require_org_admin(db, user.id, org_id)
 
     # Check target user exists
-    result = await db.execute(
-        select(User).where(User.id == body.user_id)
-    )
+    result = await db.execute(select(User).where(User.id == body.user_id))
     target_user = result.scalar_one_or_none()
     if target_user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -196,9 +199,7 @@ async def add_org_member(
 
     if existing is not None:
         if not existing.archived:
-            raise HTTPException(
-                status_code=409, detail="User is already a member"
-            )
+            raise HTTPException(status_code=409, detail="User is already a member")
         # Reactivate archived membership
         existing.archived = False
         existing.role = body.role
@@ -223,9 +224,7 @@ async def add_org_member(
         # is intentionally exempt since non-archived count doesn't change.
         org = await db.get(Organization, org_id)
         if org is None:
-            raise HTTPException(
-                status_code=404, detail="Organization not found"
-            )
+            raise HTTPException(status_code=404, detail="Organization not found")
         await seat_limits.check_seat_capacity(db, org)
 
         membership = OrganizationMember(
@@ -270,9 +269,7 @@ async def remove_org_member(
     await db.flush()
 
     # Cascade selected_org_id if this was the user's selected org
-    target_user = await db.execute(
-        select(User).where(User.id == user_id)
-    )
+    target_user = await db.execute(select(User).where(User.id == user_id))
     target = target_user.scalar_one_or_none()
     if target is not None and target.selected_org_id == org_id:
         # Find the earliest remaining active membership
@@ -368,24 +365,25 @@ async def list_org_members(
     # Enrich with user details
     enriched = []
     for m in memberships:
-        user_result = await db.execute(
-            select(User).where(User.id == m.user_id)
-        )
+        user_result = await db.execute(select(User).where(User.id == m.user_id))
         u = user_result.scalar_one_or_none()
-        enriched.append(OrgMemberResponse(
-            id=m.id,
-            user_id=m.user_id,
-            organization_id=m.organization_id,
-            role=m.role,
-            email=u.email if u else None,
-            full_name=u.full_name if u else None,
-            created_at=m.created_at,
-            updated_at=m.updated_at,
-        ))
+        enriched.append(
+            OrgMemberResponse(
+                id=m.id,
+                user_id=m.user_id,
+                organization_id=m.organization_id,
+                role=m.role,
+                email=u.email if u else None,
+                full_name=u.full_name if u else None,
+                created_at=m.created_at,
+                updated_at=m.updated_at,
+            )
+        )
     return enriched
 
 
 # --- Users ---
+
 
 @router.get("/users", response_model=List[UserSearchResponse])
 async def search_users(
@@ -428,7 +426,10 @@ async def search_users(
         logger.warning(
             "Cross-org user search detected: user_id=%s email=%s "
             "search_term=%r excluded_count=%d",
-            user.id, user.email, email, excluded_count,
+            user.id,
+            user.email,
+            email,
+            excluded_count,
         )
 
     return scoped_users
@@ -456,9 +457,7 @@ async def create_invitation(
     org = await get_or_404(db, Organization, org_id)
 
     # Check if email is already an active member
-    user_result = await db.execute(
-        select(User).where(User.email == body.email)
-    )
+    user_result = await db.execute(select(User).where(User.email == body.email))
     existing_user = user_result.scalar_one_or_none()
 
     if existing_user is not None:
@@ -546,9 +545,7 @@ async def revoke_invitation(
     _: User = Depends(require_active_subscription()),
 ):
     """Revoke a pending invitation. Must be admin of the invitation's org."""
-    result = await db.execute(
-        select(Invitation).where(Invitation.id == invitation_id)
-    )
+    result = await db.execute(select(Invitation).where(Invitation.id == invitation_id))
     invitation = result.scalar_one_or_none()
     if invitation is None:
         raise HTTPException(status_code=404, detail="Invitation not found")
@@ -583,9 +580,7 @@ async def decline_invitation(
     _: User = Depends(require_active_subscription()),
 ):
     """Decline a pending invitation."""
-    result = await db.execute(
-        select(Invitation).where(Invitation.id == invitation_id)
-    )
+    result = await db.execute(select(Invitation).where(Invitation.id == invitation_id))
     invitation = result.scalar_one_or_none()
     if invitation is None:
         raise HTTPException(status_code=404, detail="Invitation not found")
@@ -616,9 +611,7 @@ async def resend_invitation(
     _: User = Depends(require_active_subscription()),
 ):
     """Resend a pending invitation with a new token and reset expiry."""
-    result = await db.execute(
-        select(Invitation).where(Invitation.id == invitation_id)
-    )
+    result = await db.execute(select(Invitation).where(Invitation.id == invitation_id))
     invitation = result.scalar_one_or_none()
     if invitation is None:
         raise HTTPException(status_code=404, detail="Invitation not found")
@@ -631,9 +624,8 @@ async def resend_invitation(
 
     # Regenerate token and reset expiry
     invitation.token = generate_verification_token()
-    invitation.expires_at = (
-        datetime.now(timezone.utc)
-        + timedelta(days=settings.invitation_ttl_days)
+    invitation.expires_at = datetime.now(timezone.utc) + timedelta(
+        days=settings.invitation_ttl_days
     )
     await db.commit()
     await db.refresh(invitation)
@@ -652,6 +644,7 @@ async def resend_invitation(
 
 
 # --- Teams ---
+
 
 @router.post(
     "/organizations/{org_id}/teams",
@@ -686,9 +679,7 @@ async def list_teams(
     # Must be active org member
     await _require_org_member(db, user.id, org_id)
 
-    result = await db.execute(
-        select(Team).where(Team.organization_id == org_id)
-    )
+    result = await db.execute(select(Team).where(Team.organization_id == org_id))
     return result.scalars().all()
 
 
@@ -703,9 +694,7 @@ async def delete_team(
     await _require_org_admin(db, user.id, org_id)
 
     result = await db.execute(
-        select(Team).where(
-            Team.id == team_id, Team.organization_id == org_id
-        )
+        select(Team).where(Team.id == team_id, Team.organization_id == org_id)
     )
     team = result.scalar_one_or_none()
     if team is None:
@@ -717,6 +706,7 @@ async def delete_team(
 
 
 # --- Team Members ---
+
 
 @router.post(
     "/teams/{team_id}/members",
@@ -730,9 +720,7 @@ async def add_team_member(
     _: User = Depends(require_active_subscription()),
 ):
     # Look up team to get org_id, then require org admin
-    result = await db.execute(
-        select(Team).where(Team.id == team_id)
-    )
+    result = await db.execute(select(Team).where(Team.id == team_id))
     team = result.scalar_one_or_none()
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
@@ -747,9 +735,7 @@ async def add_team_member(
         )
     )
     if result.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=409, detail="User already in team"
-        )
+        raise HTTPException(status_code=409, detail="User already in team")
 
     tm = TeamMember(
         user_id=body.user_id,
@@ -772,9 +758,7 @@ async def list_team_members(
     db: AsyncSession = Depends(get_db),
 ):
     # Look up team to get org_id, check caller is org member
-    result = await db.execute(
-        select(Team).where(Team.id == team_id)
-    )
+    result = await db.execute(select(Team).where(Team.id == team_id))
     team = result.scalar_one_or_none()
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
@@ -788,28 +772,26 @@ async def list_team_members(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=403, detail="Not an org member")
 
-    result = await db.execute(
-        select(TeamMember).where(TeamMember.team_id == team_id)
-    )
+    result = await db.execute(select(TeamMember).where(TeamMember.team_id == team_id))
     memberships = result.scalars().all()
 
     # Enrich with user details
     enriched = []
     for m in memberships:
-        user_result = await db.execute(
-            select(User).where(User.id == m.user_id)
-        )
+        user_result = await db.execute(select(User).where(User.id == m.user_id))
         u = user_result.scalar_one_or_none()
-        enriched.append(TeamMemberResponse(
-            id=m.id,
-            user_id=m.user_id,
-            team_id=m.team_id,
-            role=m.role,
-            email=u.email if u else None,
-            full_name=u.full_name if u else None,
-            created_at=m.created_at,
-            updated_at=m.updated_at,
-        ))
+        enriched.append(
+            TeamMemberResponse(
+                id=m.id,
+                user_id=m.user_id,
+                team_id=m.team_id,
+                role=m.role,
+                email=u.email if u else None,
+                full_name=u.full_name if u else None,
+                created_at=m.created_at,
+                updated_at=m.updated_at,
+            )
+        )
     return enriched
 
 
@@ -821,9 +803,7 @@ async def remove_team_member(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
-    result = await db.execute(
-        select(Team).where(Team.id == team_id)
-    )
+    result = await db.execute(select(Team).where(Team.id == team_id))
     team = result.scalar_one_or_none()
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
@@ -838,9 +818,7 @@ async def remove_team_member(
     )
     tm = result.scalar_one_or_none()
     if tm is None:
-        raise HTTPException(
-            status_code=404, detail="Team membership not found"
-        )
+        raise HTTPException(status_code=404, detail="Team membership not found")
 
     await db.delete(tm)
     await db.commit()
@@ -848,6 +826,7 @@ async def remove_team_member(
 
 
 # --- Permissions ---
+
 
 @router.post(
     "/permissions",
@@ -863,8 +842,11 @@ async def grant_permission(
     # Caller must have ADMIN on the object
     obj_type = ObjectType(body.object_type)
     allowed = await check_permission(
-        db, user.id, obj_type,
-        body.object_id, PermissionLevel.ADMIN,
+        db,
+        user.id,
+        obj_type,
+        body.object_id,
+        PermissionLevel.ADMIN,
     )
     if not allowed:
         raise HTTPException(
@@ -908,9 +890,7 @@ async def revoke_permission(
     _: User = Depends(require_active_subscription()),
 ):
     result = await db.execute(
-        select(ObjectPermission).where(
-            ObjectPermission.id == permission_id
-        )
+        select(ObjectPermission).where(ObjectPermission.id == permission_id)
     )
     perm = result.scalar_one_or_none()
     if perm is None:
@@ -919,13 +899,14 @@ async def revoke_permission(
     # Caller must have ADMIN on the object
     obj_type = ObjectType(perm.object_type)
     allowed = await check_permission(
-        db, user.id, obj_type,
-        perm.object_id, PermissionLevel.ADMIN,
+        db,
+        user.id,
+        obj_type,
+        perm.object_id,
+        PermissionLevel.ADMIN,
     )
     if not allowed:
-        raise HTTPException(
-            status_code=403, detail="ADMIN permission required"
-        )
+        raise HTTPException(status_code=403, detail="ADMIN permission required")
 
     await db.delete(perm)
     await db.commit()
