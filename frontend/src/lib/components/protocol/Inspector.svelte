@@ -1,5 +1,7 @@
 <script lang="ts">
     import { getContext, onMount } from "svelte";
+    import { slide } from "svelte/transition";
+    import { cubicOut } from "svelte/easing";
     import type { Node } from "@xyflow/svelte";
     import { X } from "lucide-svelte";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
@@ -504,7 +506,7 @@
             </Button>
 
             {#if showSchemaEditor}
-                <div class="schema-editor">
+                <div class="schema-editor" transition:slide={{ duration: 180, easing: cubicOut }}>
                     <!-- Column headers -->
                     <div class="schema-header-row">
                         <span class="col-label">Key</span>
