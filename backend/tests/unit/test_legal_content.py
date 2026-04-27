@@ -19,6 +19,11 @@ def test_terms_contains_required_sections():
         "Governing Law",
         "California",         # governing law state
         "legal@batchrite.com",
+        "do not use Customer Data to train",     # ToS Section 7 contractual no-training
+        "**not** a Business Associate",          # ToS Section 4 — bold emphasis is legally load-bearing
+        "US$100",                                # ToS Section 14 liability floor
+        "American Arbitration Association",      # ToS Section 16 forum
+        "San Francisco, California",             # ToS Section 16 seat
     ]
     for needle in required:
         assert needle in terms, f"Terms missing required section/phrase: {needle!r}"
@@ -34,6 +39,10 @@ def test_privacy_contains_required_sections():
         "Your Rights",
         "do not use customer data to train",  # AI training commitment
         "privacy@batchrite.com",
+        "OpenAI",                                  # Privacy Section 3 sub-processor
+        "Anthropic",                               # Privacy Section 3 sub-processor
+        "Stripe",                                  # Privacy Section 4 sub-processor
+        "do **not** sell personal information",   # Privacy Section 4 — bold emphasis is load-bearing
     ]
     for needle in required:
         assert needle in privacy, f"Privacy missing required section/phrase: {needle!r}"
