@@ -21,7 +21,7 @@ from app.schemas.auth import (LoginRequest, PasswordChange, PreferencesUpdate,
                               ProfileUpdate, RegisterRequest,
                               ResendVerificationResponse, SwitchOrgRequest,
                               TokenResponse, UserResponse,
-                              VerificationTokenResponse)
+                              VerificationTokenResponse, compute_tos_current)
 from app.services.core.email_service import get_email_provider
 from app.services.core.file_storage import FileStorageService
 
@@ -36,7 +36,7 @@ MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 def _user_response(user: User) -> UserResponse:
-    """Build UserResponse with computed avatar_url."""
+    """Build UserResponse with computed avatar_url and tos_current."""
     avatar_url = None
     if user.avatar_path:
         avatar_url = f"/auth/avatars/{user.id}"
@@ -49,6 +49,9 @@ def _user_response(user: User) -> UserResponse:
         preferences=user.preferences or {},
         is_active=user.is_active,
         email_verified=user.email_verified,
+        tos_accepted_at=user.tos_accepted_at,
+        tos_version=user.tos_version,
+        tos_current=compute_tos_current(user),
     )
 
 
