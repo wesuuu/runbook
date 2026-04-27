@@ -26,8 +26,8 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
 
-    type TabName = 'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates' | 'billing';
-    const VALID_TABS: TabName[] = ['organization', 'teams', 'profile', 'notifications', 'ai', 'templates', 'billing'];
+    type TabName = 'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates' | 'billing' | 'legal';
+    const VALID_TABS: TabName[] = ['organization', 'teams', 'profile', 'notifications', 'ai', 'templates', 'billing', 'legal'];
 
     const activeTab = $derived.by<TabName>(() => {
         const t = $page.url.searchParams.get('tab');
@@ -36,6 +36,17 @@
 
     function setTab(tab: TabName) {
         goto(`?tab=${tab}`, { replaceState: false, keepFocus: true, noScroll: true });
+    }
+
+    const currentUser = $derived(getUser());
+
+    function formatLegalDate(iso: string | null): string {
+        if (!iso) return '—';
+        return new Date(iso).toLocaleDateString(undefined, {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+        });
     }
 
     // Notifications
@@ -677,6 +688,14 @@
         >
             Billing
         </Button>
+        <Button
+            variant="tab"
+            data-active={activeTab === 'legal'}
+            onclick={() => setTab('legal')}
+            class="py-2.5 min-h-11"
+        >
+            Legal
+        </Button>
     </div>
 
     <!-- Organization Tab -->
@@ -1227,5 +1246,40 @@
         <TemplatesTab isAdmin={isOrgAdmin} />
     {:else if activeTab === 'billing'}
         <BillingTab />
+
+    <!-- Legal Tab -->
+    {:else if activeTab === 'legal'}
+        <Card>
+            <CardHeader>
+                <CardTitle>Legal</CardTitle>
+                <CardDescription>
+                    Terms of Service and Privacy Policy you have accepted.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                {#if currentUser?.tos_accepted_at && currentUser?.tos_version}
+                    <p class="text-sm text-muted-foreground mb-6">
+                        You accepted our Terms of Service version
+                        <strong class="text-foreground">{currentUser.tos_version}</strong>
+                        on
+                        <strong class="text-foreground">{formatLegalDate(currentUser.tos_accepted_at)}</strong>.
+                    </p>
+                {:else}
+                    <p class="text-sm text-muted-foreground mb-6">
+                        You have not yet accepted our Terms of Service.
+                    </p>
+                {/if}
+                <div class="flex flex-wrap gap-4 text-sm">
+                    <a
+                        href="/legal/terms"
+                        class="underline text-foreground hover:text-primary transition-all duration-150 cursor-pointer"
+                    >View Terms of Service</a>
+                    <a
+                        href="/legal/privacy"
+                        class="underline text-foreground hover:text-primary transition-all duration-150 cursor-pointer"
+                    >View Privacy Policy</a>
+                </div>
+            </CardContent>
+        </Card>
     {/if}
 </div>
