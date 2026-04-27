@@ -16,6 +16,7 @@ Add a clickwrap Terms of Service / Privacy Policy acceptance flow that gates app
 - Maintain a durable record of every acceptance event suitable for clickwrap defensibility.
 - Provide publicly viewable ToS and Privacy Policy pages so prospective users have notice before signing up.
 - Make versioned content easy to add and review in PRs (one directory per version, markdown files inside).
+- Make production version activations explicit and searchable in the commit log via a `CURRENT_VERSION` constant and a commit-message convention.
 - Support enterprise/on-prem deployments where a separately-negotiated agreement supersedes the click-through.
 - Keep the implementation consistent with existing auth gates (`email_verified`) and existing audit infrastructure.
 
@@ -50,15 +51,39 @@ backend/app/legal/
 ├── __init__.py
 ├── service.py          # get_current_version(), get_document(version, doc), list_versions()
 └── versions/
-    ├── __init__.py     # VERSIONS = ["2026-04-27", ...]  (chronological order)
+    ├── __init__.py     # CURRENT_VERSION = "2026-04-27"
+    │                   # ALL_VERSIONS = ["2026-04-27", ...]  (chronological order, must contain CURRENT_VERSION)
     └── 2026-04-27/
         ├── terms.md
         └── privacy.md
 ```
 
-`get_current_version()` returns `VERSIONS[-1]`. Bumping the version = drop a new dated directory with `terms.md` and `privacy.md`, append the version string to `VERSIONS`. Reviewed atomically in one PR with the new content.
+`get_current_version()` returns `CURRENT_VERSION`. The constant is the single, explicit lever that controls what version the app considers "live in production." Module load asserts `CURRENT_VERSION in ALL_VERSIONS` and that the corresponding directory and both markdown files exist — fails fast on misconfiguration.
 
 `get_document(version, doc)` reads the file at module load time (cached) and returns `{ markdown: str, version: str, effective_date: str }`. `doc ∈ {"terms", "privacy"}`. Raises 404 if either the version directory or the file is missing.
+
+**Production version activation — workflow:**
+
+Activating a new version is a deliberate, separately-reviewable change in the commit log. Two patterns supported:
+
+1. **One-step (typical case):** single commit adds the new version directory, appends to `ALL_VERSIONS`, and bumps `CURRENT_VERSION`. Used when content is final and ready to ship.
+2. **Two-step (when you want to land copy early and flip later):** first commit adds the directory and appends to `ALL_VERSIONS` only (new version is loadable but not "current"). Second commit bumps `CURRENT_VERSION` to activate it. Useful for staging a counsel-reviewed update before turning on re-acceptance.
+
+**Commit message convention** for activation (the commit that bumps `CURRENT_VERSION`, in either pattern):
+
+```
+feat(legal): activate ToS/Privacy version <date>
+```
+
+This makes activation history grep-able:
+
+```
+git log --grep="activate ToS/Privacy version"
+```
+
+…returns the full timeline of which version was active when, anchored to commits (and therefore to deploys).
+
+`ALL_VERSIONS` is preserved indefinitely so the audit trail (users with old `tos_version` strings) and the historical-content fetch (`GET /legal/versions/<old>/terms`) remain valid. Old version directories are never deleted from the repo.
 
 **Configuration** (`backend/app/core/config.py`):
 
@@ -180,8 +205,8 @@ Each markdown file begins with an HTML comment:
 6. Frontend updates auth state, navigates to `/`.
 
 **Re-acceptance after version bump:**
-1. Deploy includes a new directory under `backend/app/legal/versions/` (e.g., `2026-08-01/terms.md`, `privacy.md`) and appends `"2026-08-01"` to `versions/__init__.py::VERSIONS`.
-2. Next `/auth/me` returns `tos_current: false` for users with stale versions (unless their org has `legal_terms_overridden=true` or `legal_gate_enabled=false`).
+1. Deploy includes (a) a new directory under `backend/app/legal/versions/` (e.g., `2026-08-01/terms.md`, `privacy.md`), (b) `"2026-08-01"` appended to `ALL_VERSIONS`, and (c) `CURRENT_VERSION = "2026-08-01"` (the activation step). The activation commit uses the message convention `feat(legal): activate ToS/Privacy version 2026-08-01` so it's grep-able in the commit log.
+2. After deploy, next `/auth/me` returns `tos_current: false` for users with stale versions (unless their org has `legal_terms_overridden=true` or `legal_gate_enabled=false`).
 3. Layout redirects to `/legal/accept`.
 4. Frontend fetches `GET /legal/current` then the new version's markdown and renders it.
 5. New AuditLog row records the re-acceptance; old row is preserved.
@@ -241,11 +266,14 @@ Each markdown file begins with an HTML comment:
 ### Backend (pytest, TDD)
 
 `tests/unit/test_legal_service.py`:
-- `get_current_version()` returns the last entry in `VERSIONS`.
-- `get_document(current, "terms")` returns markdown content + version + effective_date.
-- `get_document(current, "privacy")` returns markdown content + version + effective_date.
+- `get_current_version()` returns `CURRENT_VERSION`.
+- `CURRENT_VERSION` is in `ALL_VERSIONS` (config sanity check).
+- The directory `versions/<CURRENT_VERSION>/` exists with both `terms.md` and `privacy.md`.
+- `get_document(CURRENT_VERSION, "terms")` returns markdown content + version + effective_date.
+- `get_document(CURRENT_VERSION, "privacy")` returns markdown content + version + effective_date.
 - `get_document("does-not-exist", "terms")` raises a 404-equivalent error.
-- `get_document(current, "bogus-doc")` raises a 404-equivalent error.
+- `get_document(CURRENT_VERSION, "bogus-doc")` raises a 404-equivalent error.
+- `list_versions()` returns the same content as `ALL_VERSIONS`.
 
 `tests/integration/test_legal_endpoints.py`:
 - `GET /legal/current` returns `{ version, effective_date }` (no auth required).
