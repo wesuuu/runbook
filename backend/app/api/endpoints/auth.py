@@ -15,6 +15,7 @@ from app.core.security import (create_access_token, create_verification_jwt,
                                generate_verification_token, hash_password,
                                verify_password)
 from app.db.session import get_db
+from app.legal.service import get_current_version
 from app.models.iam import (Invitation, InvitationStatus, Organization,
                             OrganizationMember, User, VerificationToken)
 from app.schemas.auth import (LoginRequest, PasswordChange, PreferencesUpdate,
@@ -22,6 +23,7 @@ from app.schemas.auth import (LoginRequest, PasswordChange, PreferencesUpdate,
                               ResendVerificationResponse, SwitchOrgRequest,
                               TokenResponse, UserResponse,
                               VerificationTokenResponse, compute_tos_current)
+from app.services.core.audit import log_audit
 from app.services.core.email_service import get_email_provider
 from app.services.core.file_storage import FileStorageService
 
@@ -530,6 +532,41 @@ async def accept_invite(
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)):
+    return _user_response(user)
+
+
+@router.post("/accept-tos", response_model=UserResponse)
+async def accept_tos(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record the calling user's acceptance of the current Terms of
+    Service and Privacy Policy version. Idempotent — repeated calls
+    rewrite the User row's timestamp and write additional AuditLog rows.
+    """
+    version = get_current_version()
+    user.tos_accepted_at = datetime.now(timezone.utc)
+    user.tos_version = version
+
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="ACCEPT_TOS",
+        entity_type="user",
+        entity_id=user.id,
+        changes={
+            "version": version,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+        },
+    )
+
+    await db.commit()
+    await db.refresh(user)
     return _user_response(user)
 
 
