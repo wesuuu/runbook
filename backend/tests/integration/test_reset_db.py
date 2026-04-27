@@ -27,7 +27,7 @@ from app.db.seed import (
 from app.models.execution import AuditLog
 from app.models.iam import Organization, Team, User
 from app.models.library import Document
-from app.models.science import Project, Protocol, Run, UnitOpDefinition
+from app.models.science import Project, Protocol, Run, UnitOpLibrarySubscription
 
 
 @pytest.mark.asyncio
@@ -102,9 +102,9 @@ async def test_reset_populates_seed_baseline(db_session):
     projects = (await db_session.execute(select(Project.id))).scalars().all()
     assert {PROJECT_MAB, PROJECT_VACCINE}.issubset(set(projects))
 
-    # Unit ops (at least one)
-    ops = (await db_session.execute(select(UnitOpDefinition))).scalars().all()
-    assert len(ops) >= 1
+    # Library subscriptions (at least one per seeded org)
+    subs = (await db_session.execute(select(UnitOpLibrarySubscription))).scalars().all()
+    assert len(subs) >= 1
 
 
 @pytest.mark.asyncio

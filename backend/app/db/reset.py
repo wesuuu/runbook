@@ -22,8 +22,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.db.seed import (seed_org, seed_permissions, seed_projects, seed_teams,
-                         seed_unit_ops, seed_users)
+from app.db.seed import (seed_library_subscriptions, seed_org, seed_permissions,
+                         seed_projects, seed_teams, seed_users)
 from app.db.session import AsyncSessionLocal
 
 # Ordered tuple (not frozenset) so ``confirm_reset`` prints the tables in a
@@ -154,7 +154,7 @@ async def reset_database(session: AsyncSession) -> None:
     await seed_teams(session)
     await seed_projects(session)
     await seed_permissions(session)
-    await seed_unit_ops(session)
+    await seed_library_subscriptions(session)
 
 
 def confirm_reset() -> bool:

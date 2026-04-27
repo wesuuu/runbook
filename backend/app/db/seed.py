@@ -19,7 +19,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             Team, TeamMember, TeamRole, User)
-from app.models.science import Project, UnitOpDefinition
+from app.models.science import Project
 from app.models.templates import DocumentTemplate, TemplateType
 from app.services.protocols.template_seeder import seed_system_templates
 
@@ -214,249 +214,27 @@ async def seed_permissions(db: AsyncSession):
     await db.flush()
 
 
-async def seed_unit_ops(db: AsyncSession):
-    """Seed the unit operation library."""
-    unit_ops = [
-        {
-            "name": "Buffer Preparation",
-            "category": "Media Prep",
-            "description": "Prepare {{volume_L}}L of {{buffer_name}} by dissolving {{components}} in {{solvent}}. Adjust to pH {{pH_target}} (+/- {{pH_tolerance}}) using {{pH_agent}}. Store at {{storage_temp_c}}°C.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "buffer_name": {"type": "string", "title": "Buffer Name", "default": "PBS"},
-                    "volume_L": {"type": "number", "title": "Final Volume (L)", "default": 10},
-                    "components": {"type": "string", "title": "Components", "default": "NaCl, KCl, Na2HPO4, KH2PO4"},
-                    "concentration_mM": {"type": "number", "title": "Target Concentration (mM)", "default": 137},
-                    "pH_target": {"type": "number", "title": "Target pH", "default": 7.4},
-                    "pH_tolerance": {"type": "number", "title": "pH Tolerance (+/-)", "default": 0.1},
-                    "pH_agent": {"type": "string", "title": "pH Adjustment Agent", "default": "NaOH / HCl"},
-                    "solvent": {"type": "string", "title": "Solvent", "default": "WFI (Water for Injection)"},
-                    "storage_temp_c": {"type": "number", "title": "Storage Temperature (C)", "default": 4},
-                },
-            },
-        },
-        {
-            "name": "Media Preparation",
-            "category": "Media Prep",
-            "description": "Reconstitute {{volume_L}}L of {{media_name}} using {{basal_medium}}. Add {{supplements}}, adjust to pH {{pH_target}}, verify osmolality at {{osmolality_mOsm}} mOsm/kg. Sterile filter: {{filter_after}}. Store at {{storage_temp_c}}°C.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "media_name": {"type": "string", "title": "Media Name", "default": "DMEM/F-12"},
-                    "volume_L": {"type": "number", "title": "Final Volume (L)", "default": 10},
-                    "basal_medium": {"type": "string", "title": "Basal Medium", "default": "DMEM/F-12 powder"},
-                    "supplements": {"type": "string", "title": "Supplements", "default": "10% FBS, 1% L-glutamine, 1% Pen/Strep"},
-                    "glucose_g_L": {"type": "number", "title": "Glucose Concentration (g/L)", "default": 4.5},
-                    "pH_target": {"type": "number", "title": "Target pH", "default": 7.2},
-                    "osmolality_mOsm": {"type": "number", "title": "Target Osmolality (mOsm/kg)", "default": 300},
-                    "filter_after": {"type": "boolean", "title": "Sterile Filter After Prep", "default": True},
-                    "storage_temp_c": {"type": "number", "title": "Storage Temperature (C)", "default": 4},
-                },
-            },
-        },
-        {
-            "name": "Seeding",
-            "category": "Cell Culture",
-            "description": "Seed cells at {{cell_density}} cells/mL into {{vessel_type}} with {{volume_mL}}mL working volume.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "cell_density": {"type": "number"},
-                    "vessel_type": {"type": "string"},
-                    "volume_mL": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Incubation",
-            "category": "Cell Culture",
-            "description": "Incubate at {{temperature_C}}°C with {{CO2_percent}}% CO2 at {{rpm}} RPM for {{duration_hours}} hours.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "temperature_C": {"type": "number"},
-                    "CO2_percent": {"type": "number"},
-                    "duration_hours": {"type": "number"},
-                    "rpm": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Cell Counting",
-            "category": "Cell Culture",
-            "description": "Count cells using {{method}} method with {{dilution_factor}}x dilution factor.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "method": {"type": "string"},
-                    "dilution_factor": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Transfection",
-            "category": "Cell Culture",
-            "description": "Transfect cells using {{reagent}} with {{dna_amount_ug}}ug DNA via {{method}} method.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "reagent": {"type": "string"},
-                    "dna_amount_ug": {"type": "number"},
-                    "method": {"type": "string"},
-                },
-            },
-        },
-        {
-            "name": "Harvest",
-            "category": "Cell Culture",
-            "description": "Harvest cells using {{method}} method, centrifuge at {{centrifuge_rcf}}xg.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "method": {"type": "string"},
-                    "centrifuge_rcf": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Centrifugation",
-            "category": "Purification",
-            "description": "Centrifuge at {{rcf_g}}xg for {{duration_min}} minutes at {{temperature_C}}°C.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "rcf_g": {"type": "number"},
-                    "duration_min": {"type": "number"},
-                    "temperature_C": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Filtration",
-            "category": "Purification",
-            "description": "Filter {{volume_L}}L through {{filter_type}} membrane ({{filter_size_um}}um pore size).",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "filter_size_um": {"type": "number"},
-                    "filter_type": {"type": "string"},
-                    "volume_L": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Chromatography",
-            "category": "Purification",
-            "description": "Purify using {{column_type}} column with {{resin}} resin at {{flow_rate_mL_min}} mL/min flow rate.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "column_type": {"type": "string"},
-                    "resin": {"type": "string"},
-                    "flow_rate_mL_min": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "pH Adjustment",
-            "category": "Reaction",
-            "description": "Adjust solution to pH {{target_pH}} using {{acid_or_base}}.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "target_pH": {"type": "number"},
-                    "acid_or_base": {"type": "string"},
-                },
-            },
-        },
-        {
-            "name": "Mixing",
-            "category": "Reaction",
-            "description": "Mix at {{speed_rpm}} RPM for {{duration_min}} minutes at {{temperature_C}}°C.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "speed_rpm": {"type": "number"},
-                    "duration_min": {"type": "number"},
-                    "temperature_C": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Sample Collection",
-            "category": "Analytics",
-            "description": "Collect {{volume_mL}}mL sample into {{container_type}}, store at {{storage_temp_C}}°C.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "volume_mL": {"type": "number"},
-                    "container_type": {"type": "string"},
-                    "storage_temp_C": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Assay",
-            "category": "Analytics",
-            "description": "Run {{assay_type}} assay using {{method}} method.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "assay_type": {"type": "string"},
-                    "method": {"type": "string"},
-                },
-            },
-        },
-        {
-            "name": "Fill",
-            "category": "Fill/Finish",
-            "description": "Fill {{fill_volume_mL}}mL into {{container_type}} at {{fill_speed}} speed.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "fill_volume_mL": {"type": "number"},
-                    "container_type": {"type": "string"},
-                    "fill_speed": {"type": "string"},
-                },
-            },
-        },
-        {
-            "name": "Lyophilization",
-            "category": "Fill/Finish",
-            "description": "Lyophilize at {{shelf_temp_C}}°C shelf temperature, {{chamber_pressure_mTorr}} mTorr chamber pressure for {{duration_hours}} hours.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "shelf_temp_C": {"type": "number"},
-                    "chamber_pressure_mTorr": {"type": "number"},
-                    "duration_hours": {"type": "number"},
-                },
-            },
-        },
-        {
-            "name": "Visual Inspection",
-            "category": "Quality Control",
-            "description": "Perform {{inspection_type}} visual inspection. Acceptance criteria: {{acceptance_criteria}}.",
-            "param_schema": {
-                "type": "object",
-                "properties": {
-                    "inspection_type": {"type": "string"},
-                    "acceptance_criteria": {"type": "string"},
-                },
-            },
-        },
-    ]
+async def seed_library_subscriptions(db: AsyncSession):
+    """Subscribe every existing organization to every default library."""
+    from pathlib import Path
 
-    for op_data in unit_ops:
-        result = await db.execute(
-            select(UnitOpDefinition).where(
-                UnitOpDefinition.name == op_data["name"]
+    from sqlalchemy import select
+
+    from app.models.iam import Organization
+    from app.services.science import library_registry
+
+    if not library_registry.list_libraries():
+        # Lifespan didn't run (we're called from a CLI script). Bootstrap.
+        library_registry.register_source(
+            library_registry.BundledJSONSource(
+                Path(__file__).resolve().parents[1] / "data/unit_op_libraries"
             )
         )
-        if result.scalar_one_or_none() is None:
-            db.add(UnitOpDefinition(**op_data))
-    await db.flush()
+        await library_registry.reload_libraries()
+
+    org_q = await db.execute(select(Organization))
+    for org in org_q.scalars():
+        await library_registry.subscribe_default_libraries(db, org.id)
 
 
 async def seed_newbie_user(db: AsyncSession):
@@ -583,8 +361,8 @@ async def run_seed():
         await seed_projects(db)
         print("Seeding permissions...")
         await seed_permissions(db)
-        print("Seeding unit operations...")
-        await seed_unit_ops(db)
+        print("Seeding library subscriptions...")
+        await seed_library_subscriptions(db)
         print("Seeding newbie user...")
         await seed_newbie_user(db)
 
