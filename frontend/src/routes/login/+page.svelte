@@ -126,6 +126,13 @@
                         Don't have an account?
                         <a href="/register" class="text-primary font-semibold hover:underline">Register</a>
                     </p>
+
+                    <p class="text-xs text-muted-foreground text-center mt-4">
+                        By continuing, you agree to our
+                        <a href="/legal/terms" class="underline hover:text-foreground transition-all duration-150">Terms of Service</a>
+                        and
+                        <a href="/legal/privacy" class="underline hover:text-foreground transition-all duration-150">Privacy Policy</a>.
+                    </p>
                 </CardContent>
             </Card>
         </div>
