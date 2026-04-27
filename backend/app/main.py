@@ -306,6 +306,12 @@ async def lifespan(app: FastAPI):
     from app.services.protocols.template_seeder import seed_system_templates
     seed_system_templates()
 
+    from app.services.lifecycle import loops_client
+    if loops_client.is_configured():
+        logger.info("Loops CRM integration: ENABLED")
+    else:
+        logger.info("Loops CRM integration: DISABLED (BATCHRITE_LOOPS_API_KEY unset)")
+
     # Start the heartbeat background task
     heartbeat_task = asyncio.create_task(_heartbeat_loop())
 
