@@ -181,7 +181,7 @@ async def test_register_endpoint_subscribes_new_org_to_core(
             UnitOpLibrarySubscription.organization_id == org.id,
         )
     )
-    assert "core" in {row[0] for row in sub_q.all()}
+    assert "core" in {row[0] for row in sub_q.all()}  # register endpoint check
 
 
 @pytest.mark.asyncio
@@ -206,3 +206,51 @@ async def test_create_org_endpoint_subscribes_to_core(
         )
     )
     assert "core" in {row[0] for row in sub_q.all()}
+
+
+@pytest.mark.asyncio
+async def test_admin_reload_endpoint_as_org_admin(
+    client, auth_headers,
+):
+    resp = await client.post(
+        "/admin/libraries/reload", headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "libraries" in body
+    slugs = {entry["slug"] for entry in body["libraries"]}
+    assert "core" in slugs
+    core = next(e for e in body["libraries"] if e["slug"] == "core")
+    assert core["op_count"] == 12
+    assert core["version"] == "1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_admin_reload_endpoint_as_member_forbidden(
+    client, db_session, test_org,
+):
+    from app.core.security import hash_password, create_access_token
+    from app.models.iam import User, OrganizationMember
+
+    member = User(
+        email="member-reload@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Member",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(member)
+    await db_session.flush()
+    db_session.add(OrganizationMember(
+        user_id=member.id, organization_id=test_org.id, role="MEMBER",
+    ))
+    await db_session.flush()
+    token = create_access_token(
+        member.id, org_id=test_org.id,
+        subscription_tier=test_org.subscription_tier,
+        email_verified=True,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await client.post("/admin/libraries/reload", headers=headers)
+    assert resp.status_code == 403
