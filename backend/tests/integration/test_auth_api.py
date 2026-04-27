@@ -486,3 +486,60 @@ async def test_existing_users_grandfathered(
     resp = await client.get("/auth/me", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["email_verified"] is True
+
+
+# ---------- preferences: theme ----------
+
+
+@pytest.mark.asyncio
+async def test_update_preferences_persists_theme(
+    client: AsyncClient,
+    test_user: User,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    resp = await client.put(
+        "/auth/me/preferences",
+        json={"theme": "blueprint"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["preferences"]["theme"] == "blueprint"
+
+    await db_session.refresh(test_user)
+    assert test_user.preferences.get("theme") == "blueprint"
+
+
+@pytest.mark.asyncio
+async def test_update_preferences_rejects_unknown_theme(
+    client: AsyncClient, auth_headers: dict,
+):
+    resp = await client.put(
+        "/auth/me/preferences",
+        json={"theme": "nope"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+    assert "theme" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_update_preferences_does_not_clobber_other_keys(
+    client: AsyncClient,
+    test_user: User,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    await client.put(
+        "/auth/me/preferences",
+        json={"font_size": "large"},
+        headers=auth_headers,
+    )
+    await client.put(
+        "/auth/me/preferences",
+        json={"theme": "instrument"},
+        headers=auth_headers,
+    )
+    await db_session.refresh(test_user)
+    assert test_user.preferences.get("font_size") == "large"
+    assert test_user.preferences.get("theme") == "instrument"
