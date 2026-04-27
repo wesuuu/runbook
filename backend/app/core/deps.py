@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.security import TokenPayload
 from app.db.session import get_db
@@ -50,7 +51,9 @@ async def get_current_user(
             detail="Not authenticated",
         )
     result = await db.execute(
-        select(User).where(User.id == payload.user_id, User.is_active == True)
+        select(User)
+        .options(selectinload(User.selected_organization))
+        .where(User.id == payload.user_id, User.is_active == True)
     )
     user = result.scalar_one_or_none()
     if user is None:
