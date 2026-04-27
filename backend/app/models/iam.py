@@ -110,6 +110,12 @@ class Organization(Base, UUIDMixin, TimestampMixin):
     has_payment_method: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false", default=False
     )
+    legal_terms_overridden: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
 
     # Relationships
     teams: Mapped[List["Team"]] = relationship(
@@ -166,6 +172,10 @@ class User(Base, UUIDMixin, TimestampMixin):
     oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     oauth_subject: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     oauth_email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    tos_accepted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    tos_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     selected_org_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("organizations.id"), nullable=True
     )
