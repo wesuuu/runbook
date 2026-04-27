@@ -110,14 +110,44 @@ When override fields are set, the row's `id` equals the synthetic UUID of the JS
 
 Module: `backend/app/services/science/library_registry.py`.
 
-State: a module-level `dict[str, Library]` cache populated once at startup.
+### Source abstraction
 
-API:
+Libraries can come from multiple sources. Today only one source ships (bundled JSON in the repo); future enterprise / on-prem deployments may add a remote-catalog source pulling from a hosted store. The registry is source-agnostic.
 
 ```python
-def load_libraries() -> None:
-    """Load and validate every *.json under app/data/unit_op_libraries/.
-    Called from FastAPI lifespan startup. Raises on validation failure."""
+class LibrarySource(Protocol):
+    async def load(self) -> list[Library]:
+        """Return all libraries this source provides."""
+        ...
+
+class BundledJSONSource:
+    """Reads *.json from app/data/unit_op_libraries/. Validates with Pydantic."""
+    def __init__(self, directory: Path): ...
+    async def load(self) -> list[Library]: ...
+
+# Future, NOT shipped now:
+# class RemoteCatalogSource:
+#     def __init__(self, base_url: str, api_key: str | None = None): ...
+#     async def load(self) -> list[Library]: ...
+```
+
+### Cache
+
+State: a module-level `dict[str, Library]` populated by reading every registered `LibrarySource` and merging the results. Last-source-wins on slug collision (so a future remote source could shadow a bundled one — useful for staged rollouts of library updates).
+
+After the initial load, the cache is read-only until `reload_libraries()` is called explicitly. That keeps the request-time path lock-free and zero-overhead in production.
+
+### API
+
+```python
+def register_source(source: LibrarySource) -> None:
+    """Register a source. Called during app startup, before reload_libraries()."""
+
+async def reload_libraries() -> None:
+    """Re-read every registered source and atomically replace the cache.
+    Called from FastAPI lifespan startup, the admin reload endpoint, and tests.
+    Atomic swap: builds the new dict, then assigns. Raises on validation failure
+    without disturbing the existing cache."""
 
 def list_libraries() -> list[Library]: ...
 def get_library(slug: str) -> Library | None: ...
@@ -133,7 +163,20 @@ async def subscribe_default_libraries(db: AsyncSession, org_id: UUID) -> None:
     (skips if a subscription already exists)."""
 ```
 
-`NAMESPACE` = a fixed `uuid.UUID` constant defined in this module — pinned in code so synthetic UUIDs are stable across deployments.
+### Invalidation strategy
+
+| Trigger | Mechanism |
+|---|---|
+| Process startup (cloud + on-prem) | `reload_libraries()` from lifespan startup |
+| New JSON shipped via deploy | Process restart on deploy → lifespan reload |
+| On-prem operator drops a JSON file at runtime | `POST /admin/libraries/reload` (admin endpoint) |
+| Dev edits a JSON file | uvicorn reload watches `*.json` (config-only) |
+
+Explicitly **not** in this task: periodic auto-refresh, file-system watchers, mtime/checksum probing per request. The reload endpoint is the deliberate trigger. Auto-refresh becomes meaningful only when a `RemoteCatalogSource` ships and is added in the same task as that source.
+
+### Other
+
+`NAMESPACE` = a fixed `uuid.UUID` constant defined in this module — pinned in code so synthetic UUIDs are stable across deployments and across sources.
 
 Pydantic models (`Library`, `UnitOp`) live in the same module since they're library-format-specific.
 
@@ -227,6 +270,36 @@ The "global rows are read-only" branch is removed (no global rows survive the mi
 ### `POST /science/unit-ops` — unchanged
 
 Custom org/project ops keep `source_library_slug = NULL`. Existing logic stands.
+
+### `POST /admin/libraries/reload` — new
+
+Admin-gated endpoint that re-runs every registered `LibrarySource` and atomically swaps the cache. Use case: on-prem operator drops a new/updated JSON file into the libraries directory and wants the running app to pick it up without restarting; cloud ops gets the same affordance.
+
+```python
+@router.post("/admin/libraries/reload", status_code=200)
+async def reload_libraries_endpoint(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    org_id = user.selected_org_id
+    if org_id is None:
+        raise HTTPException(400, "No organization selected")
+    await _require_org_admin(db, user.id, org_id)
+    await library_registry.reload_libraries()
+    return {
+        "libraries": [
+            {"slug": lib.slug, "name": lib.name, "version": lib.version,
+             "op_count": len(lib.unit_ops)}
+            for lib in library_registry.list_libraries()
+        ],
+    }
+```
+
+Notes:
+- **Permission model**: gated on org admin of the caller's selected org. Acceptable for both cloud (where this is rarely used) and on-prem (where the admin is the customer's own admin). When/if multi-tenant cloud needs a stricter "platform admin only" gate, that's a future tightening, not a blocker today.
+- **Failure semantics**: if any source's `load()` raises, the endpoint returns 5xx and the cache is left untouched (atomic swap means we don't half-replace).
+- **Audit**: log via existing audit pattern with `entity_type="library_reload"`.
+- **Where it's mounted**: `backend/app/api/endpoints/admin.py` (new file) or appended to an existing admin/system endpoint module if one exists. Decide during implementation; default to a new `admin.py`.
 
 ## Org Creation Hook
 
@@ -336,6 +409,10 @@ New file `backend/tests/integration/test_unit_op_libraries.py`:
 9. **Override second update**: PUT again on the same id → updates the existing row (no second insert).
 10. **Override scoped to one org**: org A's override does not affect org B's GET response.
 11. **PUT on unknown UUID** (not in DB, not a synthetic of any subscribed library): 404.
+12. **Source abstraction**: registering an in-memory fake source loads its libraries; cache contents reflect last-source-wins on slug collision.
+13. **`reload_libraries()` is atomic**: a source that raises during reload leaves the previous cache intact.
+14. **`POST /admin/libraries/reload` as org admin**: 200, response lists all libraries with op counts; cache reflects any new ops.
+15. **`POST /admin/libraries/reload` as non-admin**: 403.
 
 Existing `test_unit_ops_scoping.py` updates:
 
@@ -441,20 +518,38 @@ const groups = $derived.by(() => {
 
 When the query is empty the structure rebuilds against the full op list and `effectiveCollapse` falls back to `manualCollapse`.
 
-### Files Touched (Phase 2)
-
-| File | Action |
-|------|--------|
-| `frontend/src/lib/schemas/science.ts` | add `library_slug` field |
-| `frontend/src/lib/components/protocol/ProtocolSidebar.svelte` | restructure grouping + add library accordion level |
-| `frontend/src/lib/categoryColors.ts` | (optional) add library badge color helper |
-
 No changes to `UnitOpNode.svelte`, `Inspector.svelte`, drag-drop, or any other surface — the existing op object shape stays the same; only the sidebar's grouping logic changes.
 
 ### Frontend Tests
 
 - Existing sidebar Vitest tests (if any) updated.
 - Manual browser verification (qa-verify) covers: library expand/collapse, drag op into canvas, search filters across libraries, custom ops appear in Custom group, override op appears under its library.
+
+### Org settings — Reload Libraries button
+
+In `frontend/src/routes/settings/+page.svelte`, on the **Organization** tab, add a small administrative section:
+
+```
+Unit Operation Libraries
+────────────────────────
+Refresh the catalog of system unit operations after a deployment
+or library file update.
+
+[ Reload Libraries ]      Last reloaded: 2 minutes ago
+```
+
+Behavior:
+- Visible to org admins only (gate via existing role check that already lives on this tab).
+- On click: `POST /admin/libraries/reload`. Show inline spinner; on success, toast "Libraries reloaded — N libraries, M ops". On failure, toast the error.
+- "Last reloaded" timestamp is local UI state (when the user last clicked); doesn't need backend persistence in this task.
+
+### Files Touched (Phase 2)
+
+| File | Action |
+|------|--------|
+| `frontend/src/lib/schemas/science.ts` | add `library_slug` field |
+| `frontend/src/lib/components/protocol/ProtocolSidebar.svelte` | restructure grouping into 3-level accordion + auto-expand search |
+| `frontend/src/routes/settings/+page.svelte` | add "Reload Libraries" admin section to Organization tab |
 
 ### YAGNI for Phase 2
 
@@ -463,6 +558,7 @@ No changes to `UnitOpNode.svelte`, `Inspector.svelte`, drag-drop, or any other s
 - No library badges on op tiles.
 - No subscription management UI.
 - No reordering libraries.
+- No persisted "last reloaded" timestamp on the backend.
 
 ## File Inventory (consolidated)
 
@@ -476,6 +572,8 @@ No changes to `UnitOpNode.svelte`, `Inspector.svelte`, drag-drop, or any other s
 | `backend/app/models/science.py` | add `library_slug` + `source_op_slug` columns + `UnitOpLibrarySubscription` model |
 | `backend/app/schemas/science.py` | add `library_slug` to `UnitOpDefinitionResponse` |
 | `backend/app/api/endpoints/unit_ops.py` | rewrite list + put |
+| `backend/app/api/endpoints/admin.py` | new (POST /admin/libraries/reload) |
+| `backend/app/api/router.py` | mount admin router |
 | `backend/app/api/endpoints/auth.py` | call subscribe_default_libraries on register |
 | `backend/app/api/endpoints/iam.py` | call subscribe_default_libraries on create_organization |
 | `backend/app/db/seed.py` | drop seed_unit_ops, add seed_library_subscriptions |
@@ -490,7 +588,8 @@ No changes to `UnitOpNode.svelte`, `Inspector.svelte`, drag-drop, or any other s
 | File | Action |
 |------|--------|
 | `frontend/src/lib/schemas/science.ts` | add `library_slug` field |
-| `frontend/src/lib/components/protocol/ProtocolSidebar.svelte` | restructure grouping into 3-level accordion |
+| `frontend/src/lib/components/protocol/ProtocolSidebar.svelte` | restructure grouping into 3-level accordion + auto-expand search |
+| `frontend/src/routes/settings/+page.svelte` | add "Reload Libraries" admin section to Organization tab |
 
 ## Out of Scope (YAGNI)
 
