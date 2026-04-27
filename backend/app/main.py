@@ -290,6 +290,19 @@ async def _recover_stalled_documents() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: recover stalled work and start heartbeat."""
+    # F-0075: load unit op libraries
+    from app.services.science import library_registry
+    library_registry.register_source(
+        library_registry.BundledJSONSource(
+            Path(__file__).resolve().parent / "data/unit_op_libraries"
+        )
+    )
+    try:
+        await library_registry.reload_libraries()
+    except Exception:
+        logger.exception("Library registry initial load failed")
+        raise
+
     # Phase 1: mark abandoned RUNNING jobs as FAILED, reset doc statuses
     try:
         await _recover_stalled_jobs()
