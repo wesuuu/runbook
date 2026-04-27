@@ -199,33 +199,56 @@ async def update_unit_op(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
-    result = await db.execute(
+    org_id = user.selected_org_id
+    if org_id is None:
+        raise HTTPException(400, "No organization selected")
+
+    # 1. Try the DB
+    row = await db.execute(
         select(UnitOpDefinition).where(UnitOpDefinition.id == unit_op_id)
     )
-    unit_op = result.scalar_one_or_none()
-    if not unit_op:
-        raise HTTPException(status_code=404, detail="Unit op not found")
+    unit_op = row.scalar_one_or_none()
 
-    # Permission check based on scope
-    if unit_op.organization_id is None and unit_op.project_id is None:
-        # Global — read-only via API
-        raise HTTPException(
-            status_code=403,
-            detail="Global unit operations are read-only",
+    if unit_op is None:
+        # 2. Maybe it's a JSON op — find the (library, op) producing this UUID
+        op_match = await _find_subscribed_json_op(db, org_id, unit_op_id)
+        if op_match is None:
+            raise HTTPException(404, "Unit op not found")
+        # Copy-on-write: org admin only.
+        await _require_org_admin(db, user.id, org_id)
+        lib_slug, op = op_match
+        unit_op = UnitOpDefinition(
+            id=unit_op_id,
+            name=op.name,
+            category=op.category,
+            description=op.description,
+            param_schema=op.param_schema,
+            result_schema=op.result_schema,
+            organization_id=org_id,
+            project_id=None,
+            source_library_slug=lib_slug,
+            source_op_slug=op.slug,
         )
-    elif unit_op.project_id is not None:
-        # Project-scoped — require EDIT on the project
+        for key, value in update_data.model_dump(exclude_unset=True).items():
+            setattr(unit_op, key, value)
+        db.add(unit_op)
+        await db.commit()
+        await db.refresh(unit_op)
+        return _row_to_response_dict(unit_op)
+
+    # 3. Existing DB row — permission depends on scope
+    if unit_op.project_id is not None:
         allowed = await check_permission(
             db, user.id, ObjectType.PROJECT, unit_op.project_id,
             PermissionLevel.EDIT,
         )
         if not allowed:
-            raise HTTPException(
-                status_code=403, detail="Insufficient permissions",
-            )
-    else:
-        # Org-scoped — require org admin
+            raise HTTPException(403, "Insufficient permissions")
+    elif unit_op.organization_id is not None:
         await _require_org_admin(db, user.id, unit_op.organization_id)
+    else:
+        # No NULL/NULL rows should exist post-migration; defensive 403
+        raise HTTPException(403, "Read-only unit op")
 
     changes = update_data.model_dump(exclude_unset=True)
     for key, value in changes.items():
@@ -233,4 +256,27 @@ async def update_unit_op(
 
     await db.commit()
     await db.refresh(unit_op)
-    return unit_op
+    return _row_to_response_dict(unit_op)
+
+
+async def _find_subscribed_json_op(
+    db: AsyncSession, org_id: UUID, target_id: UUID,
+):
+    """Walk every subscribed library; return (slug, op) if its synthetic
+    UUID equals target_id, else None."""
+    from app.models.science import UnitOpLibrarySubscription
+    from app.services.science import library_registry
+
+    sub_q = await db.execute(
+        select(UnitOpLibrarySubscription.library_slug).where(
+            UnitOpLibrarySubscription.organization_id == org_id,
+        )
+    )
+    for (slug,) in sub_q.all():
+        lib = library_registry.get_library(slug)
+        if lib is None:
+            continue
+        for op in lib.unit_ops:
+            if library_registry.synthetic_uuid(slug, op.slug) == target_id:
+                return (slug, op)
+    return None

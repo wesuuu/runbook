@@ -469,3 +469,104 @@ async def test_list_excludes_unsubscribed_library_ops(
     resp = await client.get("/science/unit-ops", headers=headers)
     assert resp.status_code == 200
     assert resp.json() == []  # no library, no custom ops
+
+
+# --- F-0075 copy-on-write tests ---
+
+
+@pytest.mark.asyncio
+async def test_put_on_library_op_creates_override(
+    client: AsyncClient, auth_headers, db_session, test_org,
+):
+    """PUT on a JSON op id inserts an override row in this org."""
+    from app.services.science import library_registry
+    from app.models.science import UnitOpDefinition
+
+    synth_id = library_registry.synthetic_uuid("core", "mixing")
+
+    resp = await client.put(
+        f"/science/unit-ops/{synth_id}",
+        json={"name": "Custom Mixing"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "Custom Mixing"
+    assert body["library_slug"] == "core"
+    assert body["organization_id"] == str(test_org.id)
+    assert body["id"] == str(synth_id)
+
+    # DB has the override row with the same id as the synthetic UUID
+    row = await db_session.get(UnitOpDefinition, synth_id)
+    assert row is not None
+    assert row.source_library_slug == "core"
+    assert row.source_op_slug == "mixing"
+    assert row.organization_id == test_org.id
+
+
+@pytest.mark.asyncio
+async def test_second_put_updates_existing_override(
+    client: AsyncClient, auth_headers, db_session,
+):
+    from app.services.science import library_registry
+    from app.models.science import UnitOpDefinition
+    from sqlalchemy import select, func
+
+    synth_id = library_registry.synthetic_uuid("core", "mixing")
+
+    await client.put(
+        f"/science/unit-ops/{synth_id}",
+        json={"name": "First Rename"},
+        headers=auth_headers,
+    )
+    await client.put(
+        f"/science/unit-ops/{synth_id}",
+        json={"name": "Second Rename"},
+        headers=auth_headers,
+    )
+
+    count_q = await db_session.execute(
+        select(func.count()).select_from(UnitOpDefinition).where(
+            UnitOpDefinition.id == synth_id,
+        )
+    )
+    assert count_q.scalar() == 1
+
+    row = await db_session.get(UnitOpDefinition, synth_id)
+    assert row.name == "Second Rename"
+
+
+@pytest.mark.asyncio
+async def test_override_isolated_per_org(
+    client: AsyncClient, auth_headers, second_auth_headers,
+):
+    """An override in org A doesn't leak into org B's listing."""
+    from app.services.science import library_registry
+
+    synth_id = library_registry.synthetic_uuid("core", "mixing")
+
+    await client.put(
+        f"/science/unit-ops/{synth_id}",
+        json={"name": "Org-A Mixing"},
+        headers=auth_headers,
+    )
+
+    resp_b = await client.get("/science/unit-ops", headers=second_auth_headers)
+    assert resp_b.status_code == 200
+    by_id = {op["id"]: op for op in resp_b.json()}
+    # Org B still sees the original Mixing, not "Org-A Mixing"
+    assert by_id[str(synth_id)]["name"] == "Mixing"
+
+
+@pytest.mark.asyncio
+async def test_put_on_unknown_uuid_returns_404(
+    client: AsyncClient, auth_headers,
+):
+    import uuid as _uuid
+    bogus = _uuid.uuid4()
+    resp = await client.put(
+        f"/science/unit-ops/{bogus}",
+        json={"name": "Whatever"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
