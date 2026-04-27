@@ -331,14 +331,15 @@
 
     .param-row {
         display: flex;
-        justify-content: space-between;
-        align-items: center;
+        align-items: flex-start;
+        gap: 16px;
         padding: 2px 0;
     }
 
     .param-label {
         font-size: 11px;
         color: #64748b;
+        flex-shrink: 0;
     }
 
     .param-value {
@@ -346,6 +347,10 @@
         font-weight: 600;
         color: #334155;
         font-family: "JetBrains Mono", monospace;
+        margin-left: auto;
+        text-align: right;
+        word-break: break-word;
+        min-width: 0;
     }
 
     .node-duration {
