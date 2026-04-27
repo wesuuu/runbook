@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import (Boolean, CheckConstraint, Enum, ForeignKey, Index,
-                        Integer, String, desc)
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, Enum, ForeignKey,
+                        Index, Integer, String, UniqueConstraint, desc, func)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -230,12 +231,43 @@ class RunRoleAssignment(Base, UUIDMixin, TimestampMixin):
     user: Mapped["app.models.iam.User"] = relationship()
 
 
+class UnitOpLibrarySubscription(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "unit_op_library_subscriptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "library_slug",
+            name="uq_unit_op_lib_sub",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    library_slug: Mapped[str] = mapped_column(String, nullable=False)
+    subscribed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["app.models.iam.Organization"] = relationship(
+        "app.models.iam.Organization",
+        foreign_keys=[organization_id],
+    )
+
+
 class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "unit_op_definitions"
     __table_args__ = (
         CheckConstraint(
             "project_id IS NULL OR organization_id IS NOT NULL",
             name="ck_unit_op_scope_valid",
+        ),
+        CheckConstraint(
+            "(source_library_slug IS NULL AND source_op_slug IS NULL) OR "
+            "(source_library_slug IS NOT NULL AND source_op_slug IS NOT NULL)",
+            name="ck_unit_op_source_both_or_neither",
         ),
     )
 
@@ -261,6 +293,15 @@ class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
     )
     project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("projects.id"), nullable=True
+    )
+
+    # Library override pointers (F-0075). Set when this row overrides a
+    # JSON op; the row's id equals synthetic_uuid(slug, op_slug).
+    source_library_slug: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True,
+    )
+    source_op_slug: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True,
     )
 
     # Relationships

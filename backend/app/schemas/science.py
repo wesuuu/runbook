@@ -28,6 +28,7 @@ class UnitOpDefinitionResponse(UnitOpDefinitionBase):
     id: UUID
     organization_id: Optional[UUID] = None
     project_id: Optional[UUID] = None
+    library_slug: Optional[str] = None  # F-0075: identifies JSON library origin
     created_at: datetime
     updated_at: datetime
 
