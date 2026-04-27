@@ -143,6 +143,10 @@ async def register(
         )
         setattr(org, col, result.scalar_one_or_none())
 
+    # F-0075: subscribe new org to default unit op libraries
+    from app.services.science import library_registry
+    await library_registry.subscribe_default_libraries(db, org.id)
+
     user = User(
         email=body.email,
         hashed_password=hash_password(body.password),

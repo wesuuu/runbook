@@ -106,6 +106,10 @@ async def create_organization(
         )
         setattr(org, col, result.scalar_one_or_none())
 
+    # F-0075: subscribe new org to default unit op libraries
+    from app.services.science import library_registry
+    await library_registry.subscribe_default_libraries(db, org.id)
+
     # Caller auto-becomes admin
     membership = OrganizationMember(
         user_id=user.id, organization_id=org.id, role="ADMIN",

@@ -152,3 +152,57 @@ class _FakeSource:
 class _FailingSource:
     async def load(self):
         raise RuntimeError("boom")
+
+
+@pytest.mark.asyncio
+async def test_register_endpoint_subscribes_new_org_to_core(
+    client, db_session,
+):
+    """A user signing up gets a new org auto-subscribed to 'core'."""
+    from app.models.iam import Organization
+    from app.models.science import UnitOpLibrarySubscription
+    from sqlalchemy import select
+
+    resp = await client.post("/auth/register", json={
+        "email": "newuser@example.com",
+        "password": "testpass123",
+        "full_name": "New User",
+    })
+    assert resp.status_code in (200, 201), resp.text
+
+    # Find the org that was just created
+    org_q = await db_session.execute(
+        select(Organization).where(Organization.name.like("%New User%"))
+    )
+    org = org_q.scalar_one()
+
+    sub_q = await db_session.execute(
+        select(UnitOpLibrarySubscription.library_slug).where(
+            UnitOpLibrarySubscription.organization_id == org.id,
+        )
+    )
+    assert "core" in {row[0] for row in sub_q.all()}
+
+
+@pytest.mark.asyncio
+async def test_create_org_endpoint_subscribes_to_core(
+    client, auth_headers, db_session,
+):
+    """POST /iam/organizations subscribes the new org to defaults."""
+    from app.models.iam import Organization
+    from app.models.science import UnitOpLibrarySubscription
+    from sqlalchemy import select
+
+    resp = await client.post(
+        "/iam/organizations", json={"name": "Second Workspace"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    new_org_id = resp.json()["id"]
+
+    sub_q = await db_session.execute(
+        select(UnitOpLibrarySubscription.library_slug).where(
+            UnitOpLibrarySubscription.organization_id == new_org_id,
+        )
+    )
+    assert "core" in {row[0] for row in sub_q.all()}
