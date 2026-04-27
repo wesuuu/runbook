@@ -50,6 +50,7 @@ class ProfileUpdate(BaseModel):
 class PreferencesUpdate(BaseModel):
     font_size: Optional[str] = None    # "small" | "medium" | "large"
     density: Optional[str] = None      # "compact" | "comfortable"
+    theme: Optional[str] = None        # "lab-glass" | "blueprint" | "apothecary"
 
 
 class PasswordChange(BaseModel):

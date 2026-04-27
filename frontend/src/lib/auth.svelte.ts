@@ -1,4 +1,5 @@
 import { API_BASE } from '$lib/config';
+import { syncThemeFromServer } from '$lib/theme.svelte';
 
 interface User {
     id: string;
@@ -100,6 +101,7 @@ function cacheAuthData(): void {
     if (user) localStorage.setItem('cached_user', JSON.stringify(user));
     if (orgs.length > 0) localStorage.setItem('cached_orgs', JSON.stringify(orgs));
     if (currentOrg) localStorage.setItem('cached_current_org', JSON.stringify(currentOrg));
+    syncThemeFromServer(user?.preferences);
 }
 
 /** Load cached auth data from localStorage. Returns true if cache was found. */

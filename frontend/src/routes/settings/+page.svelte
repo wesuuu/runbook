@@ -20,14 +20,15 @@
     import AiSettingsTab from '$lib/components/settings/AiSettingsTab.svelte';
     import TemplatesTab from '$lib/components/settings/TemplatesTab.svelte';
     import BillingTab from '$lib/components/settings/BillingTab.svelte';
+    import AppearanceTab from '$lib/components/settings/AppearanceTab.svelte';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
 
-    type TabName = 'organization' | 'teams' | 'profile' | 'notifications' | 'ai' | 'templates' | 'billing';
-    const VALID_TABS: TabName[] = ['organization', 'teams', 'profile', 'notifications', 'ai', 'templates', 'billing'];
+    type TabName = 'organization' | 'teams' | 'profile' | 'appearance' | 'notifications' | 'ai' | 'templates' | 'billing';
+    const VALID_TABS: TabName[] = ['organization', 'teams', 'profile', 'appearance', 'notifications', 'ai', 'templates', 'billing'];
 
     const activeTab = $derived.by<TabName>(() => {
         const t = $page.url.searchParams.get('tab');
@@ -674,6 +675,14 @@
         </Button>
         <Button
             variant="tab"
+            data-active={activeTab === 'appearance'}
+            onclick={() => setTab('appearance')}
+            class="py-2.5 min-h-11"
+        >
+            Appearance
+        </Button>
+        <Button
+            variant="tab"
             data-active={activeTab === 'notifications'}
             onclick={() => { setTab('notifications'); if (channels.length === 0 && !channelsLoading) loadChannels(); }}
             class="py-2.5 min-h-11"
@@ -1115,6 +1124,10 @@
                 {/if}
             </CardContent>
         </Card>
+
+    <!-- Appearance Tab -->
+    {:else if activeTab === 'appearance'}
+        <AppearanceTab />
 
     <!-- Notifications Tab -->
     {:else if activeTab === 'notifications'}

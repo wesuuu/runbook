@@ -1,40 +1,42 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-/* Safelist button variant classes that tailwind-variants constructs at runtime.
-   Tailwind v4's scanner doesn't detect classes inside tv() config objects. */
+/* Safelist tailwind-variants runtime classes (Tailwind v4 scanner doesn't see tv() configs). */
 @source inline("bg-destructive bg-destructive/90 bg-destructive/60 bg-primary bg-primary/90 bg-secondary bg-secondary/80 bg-accent bg-accent/50 bg-accent/90 bg-background bg-input/30 bg-input/50 min-w-[420px] hover:bg-teal-600 hover:text-white hover:border-teal-600 hover:bg-destructive/90 hover:bg-accent/90 hover:bg-emerald-700 bg-emerald-600");
 
+/* ──────────────────────────────────────────────────────────
+   Tailwind utilities resolve against these stable token names.
+   Each [data-theme] block (below) redefines the underlying
+   --bg / --primary / etc. variables to swap palettes at runtime.
+   ────────────────────────────────────────────────────────── */
 @theme {
-    /* ── Deep Slate + Warm Copper ── */
-    --color-primary: hsl(220 60% 28%);
-    --color-primary-foreground: hsl(40 30% 97%);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-fg);
 
-    /* ── Warm Neutrals ── */
-    --color-background: hsl(40 25% 97%);
-    --color-foreground: hsl(220 25% 12%);
+    --color-background: var(--bg);
+    --color-foreground: var(--fg);
 
-    --color-card: hsl(40 20% 99%);
-    --color-card-foreground: hsl(220 25% 12%);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-fg);
 
-    --color-popover: hsl(40 20% 99%);
-    --color-popover-foreground: hsl(220 25% 12%);
+    --color-popover: var(--card);
+    --color-popover-foreground: var(--card-fg);
 
-    --color-secondary: hsl(40 15% 93%);
-    --color-secondary-foreground: hsl(220 20% 18%);
+    --color-secondary: var(--muted);
+    --color-secondary-foreground: var(--fg);
 
-    --color-muted: hsl(40 12% 93%);
-    --color-muted-foreground: hsl(220 10% 46%);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-fg);
 
-    --color-accent: hsl(25 80% 52%);
-    --color-accent-foreground: hsl(40 30% 97%);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-fg);
 
-    --color-destructive: hsl(0 72% 51%);
-    --color-destructive-foreground: hsl(40 30% 97%);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--primary-fg);
 
-    --color-border: hsl(30 15% 87%);
-    --color-input: hsl(30 15% 87%);
-    --color-ring: hsl(220 60% 28%);
+    --color-border: var(--border);
+    --color-input: var(--border);
+    --color-ring: var(--ring);
 
     --radius: 0.625rem;
     --radius-lg: 0.625rem;
@@ -45,15 +47,64 @@
     --font-mono: 'DM Mono', ui-monospace, monospace;
 }
 
+/* ──────────────────────────────────────────────────────────
+   Theme palettes — :root falls back to lab-glass.
+   ────────────────────────────────────────────────────────── */
+:root,
+[data-theme="lab-glass"] {
+    --bg:           hsl(200 25% 97%);
+    --fg:           hsl(215 40% 12%);
+    --card:         hsl(0 0% 100%);
+    --card-fg:      hsl(215 40% 12%);
+    --muted:        hsl(205 25% 94%);
+    --muted-fg:     hsl(215 15% 42%);
+    --primary:      hsl(195 85% 22%);
+    --primary-fg:   hsl(195 30% 98%);
+    --accent:       hsl(155 70% 38%);
+    --accent-fg:    hsl(155 30% 98%);
+    --destructive:  hsl(355 75% 50%);
+    --border:       hsl(205 22% 87%);
+    --ring:         hsl(195 85% 22%);
+    --grid-dot:     hsl(205 30% 70% / 0.25);
+}
+
+[data-theme="blueprint"] {
+    --bg:           hsl(210 32% 96%);
+    --fg:           hsl(218 55% 14%);
+    --card:         hsl(210 45% 99%);
+    --card-fg:      hsl(218 55% 14%);
+    --muted:        hsl(210 28% 92%);
+    --muted-fg:     hsl(218 18% 42%);
+    --primary:      hsl(218 70% 22%);
+    --primary-fg:   hsl(210 40% 98%);
+    --accent:       hsl(35 95% 55%);
+    --accent-fg:    hsl(35 80% 12%);
+    --destructive:  hsl(0 72% 50%);
+    --border:       hsl(210 28% 84%);
+    --ring:         hsl(218 70% 30%);
+    --grid-dot:     hsl(218 50% 45% / 0.22);
+}
+
+[data-theme="apothecary"] {
+    --bg:           hsl(60 20% 96%);
+    --fg:           hsl(150 28% 12%);
+    --card:         hsl(45 28% 98%);
+    --card-fg:      hsl(150 28% 12%);
+    --muted:        hsl(60 14% 92%);
+    --muted-fg:     hsl(150 12% 38%);
+    --primary:      hsl(155 45% 20%);
+    --primary-fg:   hsl(60 25% 97%);
+    --accent:       hsl(15 70% 45%);
+    --accent-fg:    hsl(60 25% 97%);
+    --destructive:  hsl(8 70% 42%);
+    --border:       hsl(60 14% 84%);
+    --ring:         hsl(155 45% 25%);
+    --grid-dot:     hsl(150 25% 50% / 0.22);
+}
+
 @layer base {
-    * {
-        @apply border-border;
-    }
-
-    a[href] {
-        cursor: pointer;
-    }
-
+    * { @apply border-border; }
+    a[href] { cursor: pointer; }
     body {
         @apply bg-background text-foreground font-sans antialiased;
         font-feature-settings: "cv11", "ss01";
@@ -62,7 +113,7 @@
     }
 }
 
-/* ── Grain overlay for texture ── */
+/* ── Grain overlay (preserved) ── */
 .grain::before {
     content: '';
     position: fixed;
@@ -75,19 +126,19 @@
     background-size: 256px 256px;
 }
 
-/* ── Subtle dot grid pattern ── */
+/* ── Dot grid (themed) ── */
 .dot-grid {
-    background-image: radial-gradient(circle, hsl(220 15% 72% / 0.25) 1px, transparent 1px);
+    background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
     background-size: 24px 24px;
 }
 
-/* ── Warm card style ── */
+/* ── Themed card ── */
 .card-warm {
-    background: hsl(40 20% 99%);
-    border: 1px solid hsl(30 15% 87%);
+    background: var(--card);
+    border: 1px solid var(--border);
     box-shadow:
-        0 1px 2px hsl(30 15% 80% / 0.08),
-        0 4px 12px hsl(30 15% 80% / 0.04);
+        0 1px 2px hsl(0 0% 0% / 0.06),
+        0 4px 12px hsl(0 0% 0% / 0.04);
 }
 
 /* ── Accent underline ── */
@@ -101,21 +152,21 @@
     left: 0;
     width: 100%;
     height: 2px;
-    background: linear-gradient(90deg, hsl(25 80% 52%), hsl(25 80% 52% / 0));
+    background: linear-gradient(90deg, var(--accent), transparent);
 }
 
-/* ── Status indicators ── */
+/* ── Status pulse ── */
 .status-pulse {
     animation: pulse-glow 2.5s ease-in-out infinite;
 }
 @keyframes pulse-glow {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    50%      { opacity: 0.5; }
 }
 
-/* ── Navigation active link ── */
+/* ── Active nav link ── */
 .nav-active {
-    color: hsl(220 60% 28%);
+    color: var(--primary);
     font-weight: 600;
     position: relative;
 }
@@ -126,6 +177,6 @@
     left: 0;
     right: 0;
     height: 2px;
-    background: hsl(25 80% 52%);
+    background: var(--accent);
     border-radius: 1px;
 }
