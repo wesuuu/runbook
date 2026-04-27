@@ -1,7 +1,7 @@
 """Dev DB reset: wipe user-generated data and re-seed the baseline.
 
 Run via: python -m app.db.reset (from backend/)
-Or: scripts/reset-db.sh (from repo root)
+Or: scripts/reset.sh (from repo root)
 
 Guarded to only run against localhost/batchrite to prevent accidental
 use against a staging or production database.

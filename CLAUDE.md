@@ -16,7 +16,7 @@ pytest                                               # all tests
 pytest tests/unit/ | tests/integration/              # by suite
 pytest --cov=app --cov-report=html                   # with coverage
 black app tests && isort app tests && mypy app       # lint
-../scripts/reset-db.sh                               # wipe user data, re-seed baseline (local only)
+../scripts/reset.sh                                  # wipe DB user data, re-seed, clear org uploads (local only)
 ```
 
 ### Frontend (from `frontend/`)
