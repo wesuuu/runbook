@@ -9,11 +9,12 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # Stable namespace for synthetic UUIDs. Pinned in code so that
 # `synthetic_uuid("core", "mixing")` returns the same value across
@@ -76,13 +77,19 @@ def register_source(source: LibrarySource) -> None:
 async def reload_libraries() -> None:
     """Re-read every registered source and atomically replace the cache.
 
-    Builds the new dict first; only swaps if every source loads OK.
+    Two phases:
+    1. Gather: call each source's load(). Any exception aborts here.
+    2. Commit: assign _cache. Reached only if every source succeeded.
+
     Last-source-wins on slug collisions.
     """
+    # ---- Phase 1: gather ----
     new_cache: dict[str, Library] = {}
     for source in _sources:
-        for lib in await source.load():
+        libs = await source.load()
+        for lib in libs:
             new_cache[lib.slug] = lib
+    # ---- Phase 2: commit (only reached if every source succeeded) ----
     global _cache
     _cache = new_cache
 
@@ -114,13 +121,10 @@ def default_library_slugs() -> list[str]:
 
 
 async def subscribe_default_libraries(
-    db: AsyncSession, org_id: uuid.UUID,
+    db: "AsyncSession", org_id: uuid.UUID,
 ) -> None:
-    """Insert subscription rows for every default library. Idempotent.
-
-    Imported lazily to avoid a circular import (model imports the
-    registry indirectly via the schemas module).
-    """
+    """Insert subscription rows for every default library. Idempotent."""
+    from sqlalchemy import select
     from app.models.science import UnitOpLibrarySubscription  # noqa: WPS433
 
     existing_q = await db.execute(

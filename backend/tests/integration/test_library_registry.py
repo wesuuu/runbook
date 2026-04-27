@@ -3,23 +3,14 @@ import uuid
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
 from app.services.science import library_registry as lr
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def _reset_registry():
-    """Each test starts with the seeded session-scope registry, plus a
-    chance to register additional sources. The test_subscribe test
-    relies on the seeded `core` library."""
+@pytest.fixture(autouse=True)
+def _reset_registry():
+    """Each test starts with an empty registry."""
     lr._reset_for_tests()
-    lr.register_source(
-        lr.BundledJSONSource(
-            Path(__file__).resolve().parents[2] / "app/data/unit_op_libraries"
-        )
-    )
-    await lr.reload_libraries()
     yield
     lr._reset_for_tests()
 
@@ -58,7 +49,6 @@ async def test_bundled_source_loads_core_library():
 
 @pytest.mark.asyncio
 async def test_register_and_reload_populates_cache():
-    lr._reset_for_tests()
     fake = _FakeSource([
         lr.Library(
             slug="alpha", name="Alpha", domain="general",
@@ -83,7 +73,6 @@ async def test_register_and_reload_populates_cache():
 
 @pytest.mark.asyncio
 async def test_reload_is_atomic_on_source_failure():
-    lr._reset_for_tests()
     fake_ok = _FakeSource([
         lr.Library(slug="good", name="Good", domain="general",
                    description="", is_default=False, version="1",
@@ -103,7 +92,6 @@ async def test_reload_is_atomic_on_source_failure():
 
 @pytest.mark.asyncio
 async def test_last_source_wins_on_slug_collision():
-    lr._reset_for_tests()
     earlier = _FakeSource([
         lr.Library(slug="x", name="Earlier", domain="general",
                    description="", is_default=False, version="1",
