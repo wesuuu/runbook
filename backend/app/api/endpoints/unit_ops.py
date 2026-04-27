@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -15,6 +16,10 @@ from app.schemas.science import (UnitOpDefinitionCreate,
                                  UnitOpDefinitionResponse,
                                  UnitOpDefinitionUpdate)
 from app.services.core.permissions import check_permission
+
+# Synthetic timestamp for JSON-only ops. They have no real created_at;
+# pin to epoch so the response shape is consistent.
+_LIB_TIMESTAMP = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 logger = logging.getLogger(__name__)
 
@@ -45,36 +50,83 @@ async def list_unit_ops(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.models.science import UnitOpLibrarySubscription
+    from app.services.science import library_registry
+
     org_id = user.selected_org_id
+    if org_id is None:
+        return []
 
-    # Always include global ops
-    conditions = [
-        and_(
-            UnitOpDefinition.organization_id.is_(None),
-            UnitOpDefinition.project_id.is_(None),
-        ),
-    ]
-
-    # Include org-scoped ops for user's selected org
-    if org_id is not None:
-        conditions.append(
-            and_(
-                UnitOpDefinition.organization_id == org_id,
-                UnitOpDefinition.project_id.is_(None),
-            )
+    # 1. JSON ops from subscribed libraries
+    sub_q = await db.execute(
+        select(UnitOpLibrarySubscription.library_slug).where(
+            UnitOpLibrarySubscription.organization_id == org_id,
         )
+    )
+    subscribed_slugs = {row[0] for row in sub_q.all()}
 
-    # Include project-scoped ops if project_id provided
+    by_id: dict[UUID, dict] = {}
+    for slug in subscribed_slugs:
+        lib = library_registry.get_library(slug)
+        if lib is None:
+            continue
+        for op in lib.unit_ops:
+            synth_id = library_registry.synthetic_uuid(slug, op.slug)
+            by_id[synth_id] = {
+                "id": synth_id,
+                "name": op.name,
+                "category": op.category,
+                "description": op.description,
+                "param_schema": op.param_schema,
+                "result_schema": op.result_schema,
+                "organization_id": None,
+                "project_id": None,
+                "library_slug": slug,
+                "created_at": _LIB_TIMESTAMP,
+                "updated_at": _LIB_TIMESTAMP,
+            }
+
+    # 2. DB rows for this org (overrides + custom org ops)
+    db_q = await db.execute(
+        select(UnitOpDefinition).where(
+            UnitOpDefinition.organization_id == org_id,
+            UnitOpDefinition.project_id.is_(None),
+        )
+    )
+    for row in db_q.scalars():
+        by_id[row.id] = _row_to_response_dict(row)
+
+    # 3. Project-scoped ops if requested
     if project_id is not None:
         allowed = await check_permission(
             db, user.id, ObjectType.PROJECT, project_id, PermissionLevel.VIEW,
         )
         if allowed:
-            conditions.append(UnitOpDefinition.project_id == project_id)
+            proj_q = await db.execute(
+                select(UnitOpDefinition).where(
+                    UnitOpDefinition.project_id == project_id,
+                )
+            )
+            for row in proj_q.scalars():
+                by_id[row.id] = _row_to_response_dict(row)
 
-    stmt = select(UnitOpDefinition).where(or_(*conditions))
-    result = await db.execute(stmt)
-    return result.scalars().all()
+    return list(by_id.values())
+
+
+def _row_to_response_dict(row: UnitOpDefinition) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "category": row.category,
+        "description": row.description,
+        "param_schema": row.param_schema,
+        "result_schema": row.result_schema,
+        "organization_id": row.organization_id,
+        "project_id": row.project_id,
+        "library_slug": row.source_library_slug,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
 
 
 @router.post(

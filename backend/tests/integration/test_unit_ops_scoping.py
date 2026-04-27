@@ -403,3 +403,69 @@ async def test_update_project_op_with_permission(
     )
     assert resp.status_code == 200
     assert resp.json()["description"] == "Updated description"
+
+
+# --- F-0075 union-assembly tests ---
+
+
+@pytest.mark.asyncio
+async def test_list_returns_subscribed_library_ops(
+    client: AsyncClient, auth_headers: dict,
+):
+    """An org subscribed to 'core' sees all 12 core ops."""
+    resp = await client.get("/science/unit-ops", headers=auth_headers)
+    assert resp.status_code == 200
+    ops = resp.json()
+    names = {op["name"] for op in ops}
+    assert "Solution Preparation" in names
+    assert "Mixing" in names
+    assert "Storage" in names
+    # All core ops carry library_slug
+    core_ops = [op for op in ops if op.get("library_slug") == "core"]
+    assert len(core_ops) == 12
+
+
+@pytest.mark.asyncio
+async def test_list_excludes_unsubscribed_library_ops(
+    client: AsyncClient, db_session, second_org,
+):
+    """An org NOT subscribed to a library doesn't see its ops.
+    second_org's subscription is provided by the fixture; remove it."""
+    from app.models.science import UnitOpLibrarySubscription
+    from sqlalchemy import delete
+    from app.core.security import create_access_token
+
+    await db_session.execute(
+        delete(UnitOpLibrarySubscription).where(
+            UnitOpLibrarySubscription.organization_id == second_org.id,
+        )
+    )
+    await db_session.flush()
+
+    # Create a user attached to second_org with no library subscription
+    from app.models.iam import User, OrganizationMember
+    from app.core.security import hash_password
+    user = User(
+        email="lonely@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Lonely User",
+        selected_org_id=second_org.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(OrganizationMember(
+        user_id=user.id, organization_id=second_org.id, role="ADMIN",
+    ))
+    await db_session.flush()
+
+    token = create_access_token(
+        user.id, org_id=second_org.id,
+        subscription_tier=second_org.subscription_tier,
+        email_verified=True,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await client.get("/science/unit-ops", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json() == []  # no library, no custom ops
