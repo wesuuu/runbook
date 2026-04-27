@@ -3,14 +3,22 @@ import uuid
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from app.services.science import library_registry as lr
 
 
-@pytest.fixture(autouse=True)
-def _reset_registry():
-    """Each test starts with an empty registry."""
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_registry():
+    """Each test starts with the bundled core source loaded.
+    Tests that need a clean slate can call lr._reset_for_tests() at the top."""
     lr._reset_for_tests()
+    lr.register_source(
+        lr.BundledJSONSource(
+            Path(__file__).resolve().parents[2] / "app/data/unit_op_libraries"
+        )
+    )
+    await lr.reload_libraries()
     yield
     lr._reset_for_tests()
 
@@ -49,6 +57,7 @@ async def test_bundled_source_loads_core_library():
 
 @pytest.mark.asyncio
 async def test_register_and_reload_populates_cache():
+    lr._reset_for_tests()
     fake = _FakeSource([
         lr.Library(
             slug="alpha", name="Alpha", domain="general",
@@ -73,6 +82,7 @@ async def test_register_and_reload_populates_cache():
 
 @pytest.mark.asyncio
 async def test_reload_is_atomic_on_source_failure():
+    lr._reset_for_tests()
     fake_ok = _FakeSource([
         lr.Library(slug="good", name="Good", domain="general",
                    description="", is_default=False, version="1",
@@ -92,6 +102,7 @@ async def test_reload_is_atomic_on_source_failure():
 
 @pytest.mark.asyncio
 async def test_last_source_wins_on_slug_collision():
+    lr._reset_for_tests()
     earlier = _FakeSource([
         lr.Library(slug="x", name="Earlier", domain="general",
                    description="", is_default=False, version="1",
@@ -106,6 +117,26 @@ async def test_last_source_wins_on_slug_collision():
     lr.register_source(later)
     await lr.reload_libraries()
     assert lr.get_library("x").name == "Later"
+
+
+@pytest.mark.asyncio
+async def test_subscribe_default_libraries_idempotent(
+    db_session, test_org,
+):
+    """subscribe_default_libraries can be called repeatedly without error."""
+    from app.models.science import UnitOpLibrarySubscription
+    from sqlalchemy import select, func
+
+    # test_org fixture already subscribed once. Calling again does nothing.
+    await lr.subscribe_default_libraries(db_session, test_org.id)
+    await lr.subscribe_default_libraries(db_session, test_org.id)
+
+    count = await db_session.execute(
+        select(func.count()).select_from(UnitOpLibrarySubscription).where(
+            UnitOpLibrarySubscription.organization_id == test_org.id,
+        )
+    )
+    assert count.scalar() == 1  # still just core
 
 
 # --- Helpers ---
