@@ -52,21 +52,6 @@ def project_op_payload(test_project: Project):
 
 
 @pytest_asyncio.fixture
-async def global_unit_op(db_session: AsyncSession) -> UnitOpDefinition:
-    """A global unit op (like seed data)."""
-    op = UnitOpDefinition(
-        name="Seeding",
-        category="Cell Culture",
-        param_schema={},
-        organization_id=None,
-        project_id=None,
-    )
-    db_session.add(op)
-    await db_session.flush()
-    return op
-
-
-@pytest_asyncio.fixture
 async def org_unit_op(
     db_session: AsyncSession, test_org: Organization,
 ) -> UnitOpDefinition:
@@ -118,19 +103,6 @@ async def other_org_unit_op(
 
 
 # --- GET /science/unit-ops (scoped listing) ---
-
-
-@pytest.mark.asyncio
-async def test_list_returns_global_ops(
-    client: AsyncClient,
-    auth_headers: dict,
-    global_unit_op: UnitOpDefinition,
-):
-    """Global ops should always be returned."""
-    resp = await client.get("/science/unit-ops", headers=auth_headers)
-    assert resp.status_code == 200
-    names = [op["name"] for op in resp.json()]
-    assert "Seeding" in names
 
 
 @pytest.mark.asyncio
@@ -193,23 +165,22 @@ async def test_list_excludes_project_ops_without_param(
 async def test_list_union_returns_all_scopes(
     client: AsyncClient,
     auth_headers: dict,
-    global_unit_op: UnitOpDefinition,
     org_unit_op: UnitOpDefinition,
     project_unit_op: UnitOpDefinition,
     other_org_unit_op: UnitOpDefinition,
     test_project: Project,
 ):
-    """With project_id param, should return global + org + project, not other orgs."""
+    """With project_id param, returns library ops + org + project, not other orgs."""
     resp = await client.get(
         f"/science/unit-ops?project_id={test_project.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
     names = [op["name"] for op in resp.json()]
-    assert "Seeding" in names  # global
-    assert "Org Wash Step" in names  # org
-    assert "Project Test Step" in names  # project
-    assert "Other Org Step" not in names  # other org
+    assert "Mixing" in names  # library op (replaces "Seeding")
+    assert "Org Wash Step" in names
+    assert "Project Test Step" in names
+    assert "Other Org Step" not in names
 
 
 # --- Response schema ---
@@ -219,7 +190,6 @@ async def test_list_union_returns_all_scopes(
 async def test_response_includes_scope_field(
     client: AsyncClient,
     auth_headers: dict,
-    global_unit_op: UnitOpDefinition,
     org_unit_op: UnitOpDefinition,
     project_unit_op: UnitOpDefinition,
     test_project: Project,
@@ -231,7 +201,7 @@ async def test_response_includes_scope_field(
     )
     assert resp.status_code == 200
     ops = {op["name"]: op for op in resp.json()}
-    assert ops["Seeding"]["scope"] == "global"
+    assert ops["Mixing"]["scope"] == "global"
     assert ops["Org Wash Step"]["scope"] == "organization"
     assert ops["Project Test Step"]["scope"] == "project"
 
@@ -341,21 +311,6 @@ async def test_create_global_op_forbidden(
 
 
 # --- PUT /science/unit-ops/{id} (edit with permissions) ---
-
-
-@pytest.mark.asyncio
-async def test_update_global_op_forbidden(
-    client: AsyncClient,
-    auth_headers: dict,
-    global_unit_op: UnitOpDefinition,
-):
-    """Global ops are read-only via API."""
-    resp = await client.put(
-        f"/science/unit-ops/{global_unit_op.id}",
-        json={"name": "Renamed"},
-        headers=auth_headers,
-    )
-    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
