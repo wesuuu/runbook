@@ -2,7 +2,7 @@
     import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
 
     interface Props {
-        title: string;
+        title?: string;
         markdown: string;
         version: string;
         effectiveDate: string;
@@ -13,7 +13,9 @@
 
 <article class="legal-document">
     <header class="mb-6">
-        <h1 class="text-2xl font-semibold text-foreground tracking-tight">{title}</h1>
+        {#if title}
+            <h1 class="text-2xl font-semibold text-foreground tracking-tight">{title}</h1>
+        {/if}
         <p class="text-sm text-muted-foreground mt-1">
             Version {version} · Effective {effectiveDate}
         </p>

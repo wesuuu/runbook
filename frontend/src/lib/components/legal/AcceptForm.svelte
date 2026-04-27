@@ -43,7 +43,7 @@
             aria-label="Terms of Service"
         />
         <span>
-            I have read and agree to the <strong>Terms of Service</strong>.
+            I have read and agree to the <span class="font-semibold">Terms of Service above</span>.
         </span>
     </label>
     <label class="flex items-start gap-3 cursor-pointer text-sm leading-relaxed">
@@ -54,7 +54,7 @@
             aria-label="Privacy Policy"
         />
         <span>
-            I have read and agree to the <strong>Privacy Policy</strong>.
+            I have read and agree to the <span class="font-semibold">Privacy Policy above</span>.
         </span>
     </label>
     {#if error}
