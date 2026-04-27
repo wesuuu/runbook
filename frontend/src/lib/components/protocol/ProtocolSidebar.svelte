@@ -54,7 +54,6 @@
     let editingDescription = $state(false);
     let descriptionInput = $state("");
     let searchQuery = $state("");
-    let collapsedCategories = $state<Set<string>>(new Set());
     let showRoleInput = $state(false);
     let newRoleName = $state("");
 
@@ -143,13 +142,66 @@
         }
     }
 
-    // --- Category accordion ---
-    function toggleCategory(cat: string) {
-        const s = new Set(collapsedCategories);
-        if (s.has(cat)) s.delete(cat);
-        else s.add(cat);
-        collapsedCategories = s;
+    // --- Library/category accordion ---
+    type LibraryGroup = {
+        key: string;            // "lib:core" or "_custom"
+        displayName: string;
+        categories: Map<string, any[]>;
+    };
+
+    const LIBRARY_DISPLAY_NAMES: Record<string, string> = {
+        core: "Core",
+    };
+
+    function libraryDisplayName(slug: string): string {
+        return LIBRARY_DISPLAY_NAMES[slug] ??
+            slug.split("_")
+                .map(s => s.charAt(0).toUpperCase() + s.slice(1))
+                .join(" ");
     }
+
+    let manualCollapse = $state<Set<string>>(new Set());
+
+    function toggleGroup(key: string) {
+        const s = new Set(manualCollapse);
+        if (s.has(key)) s.delete(key);
+        else s.add(key);
+        manualCollapse = s;
+    }
+
+    const effectiveCollapse = $derived(
+        searchQuery.trim() ? new Set<string>() : manualCollapse
+    );
+
+    const groups = $derived.by((): LibraryGroup[] => {
+        const ops = filteredOps();
+        const byLib: Map<string, Map<string, any[]>> = new Map();
+
+        for (const op of ops) {
+            const libKey = op.library_slug ? `lib:${op.library_slug}` : "_custom";
+            if (!byLib.has(libKey)) byLib.set(libKey, new Map());
+            const cats = byLib.get(libKey)!;
+            const cat = op.category || "Other";
+            if (!cats.has(cat)) cats.set(cat, []);
+            cats.get(cat)!.push(op);
+        }
+
+        const out: LibraryGroup[] = [];
+        for (const [libKey, cats] of byLib) {
+            if (cats.size === 0) continue;
+            const display = libKey === "_custom"
+                ? "Custom (My Org)"
+                : libraryDisplayName(libKey.slice(4));
+            out.push({ key: libKey, displayName: display, categories: cats });
+        }
+        // Custom always last; libraries alphabetical otherwise
+        out.sort((a, b) => {
+            if (a.key === "_custom") return 1;
+            if (b.key === "_custom") return -1;
+            return a.displayName.localeCompare(b.displayName);
+        });
+        return out;
+    });
 
     // --- Drag start ---
     function onDragStart(event: DragEvent, op: any) {
@@ -172,15 +224,6 @@
         );
     });
 
-    const categories = $derived(() => {
-        const map = new Map<string, any[]>();
-        for (const op of filteredOps()) {
-            const cat = op.category || "Other";
-            if (!map.has(cat)) map.set(cat, []);
-            map.get(cat)!.push(op);
-        }
-        return map;
-    });
 </script>
 
 <aside class="sidebar" data-tour="protocol-sidebar">
@@ -342,78 +385,74 @@
         {#if unitOps.length === 0}
             <p class="loading-text">Loading...</p>
         {:else}
-            {#each [...categories().entries()] as [category, ops]}
-                <div class="category-group">
+            {#each groups as group (group.key)}
+                <div class="library-group">
                     <Button
                         variant="ghost"
-                        class="category-header"
-                        onclick={() => toggleCategory(category)}
+                        class="library-header"
+                        onclick={() => toggleGroup(group.key)}
                     >
-                        <span
-                            class="cat-dot"
-                            style:background={getCategoryColor(category)}
-                        ></span>
-                        <span class="cat-name">{category}</span>
+                        <span class="lib-name">{group.displayName}</span>
                         <span
                             class="cat-chevron"
-                            class:collapsed={collapsedCategories.has(
-                                category,
-                            )}>&#9662;</span
-                        >
-                        <span
-                            class="cat-add-btn"
-                            role="button"
-                            tabindex="0"
-                            onclick={(e) => {
-                                e.stopPropagation();
-                                onOpenCreateModal(category);
-                            }}
-                            onkeydown={(e) => {
-                                if (e.key === "Enter") {
-                                    e.stopPropagation();
-                                    onOpenCreateModal(category);
-                                }
-                            }}
-                            title="Add unit op to {category}">+</span
-                        >
+                            class:collapsed={effectiveCollapse.has(group.key)}
+                        >&#9662;</span>
                     </Button>
 
-                    {#if !collapsedCategories.has(category)}
-                        <div class="cat-ops">
-                            {#each ops as op}
-                                <div
-                                    role="button"
-                                    tabindex="0"
-                                    class="op-item"
-                                    draggable="true"
-                                    ondragstart={(e) => onDragStart(e, op)}
+                    {#if !effectiveCollapse.has(group.key)}
+                        {#each [...group.categories.entries()] as [category, ops]}
+                            <div class="category-group">
+                                <Button
+                                    variant="ghost"
+                                    class="category-header"
+                                    onclick={() => toggleGroup(`${group.key}:${category}`)}
                                 >
-                                    <span class="op-icon"
-                                        >{getCategoryIcon(
-                                            op.category,
-                                        )}</span
-                                    >
-                                    <div class="op-info">
-                                        <span class="op-name">
-                                            {op.name}
-                                            {#if op.scope && op.scope !== 'global'}
-                                                <span
-                                                    class="scope-dot {op.scope === 'organization' ? 'scope-org' : 'scope-project'}"
-                                                    title="{op.scope === 'organization' ? 'Organization' : 'Project'}"
-                                                ></span>
-                                            {:else if op.scope === 'global'}
-                                                <span class="scope-dot scope-global" title="Global"></span>
-                                            {/if}
-                                        </span>
-                                        {#if op.description}
-                                            <span class="op-desc"
-                                                >{op.description}</span
+                                    <span class="cat-dot" style:background={getCategoryColor(category)}></span>
+                                    <span class="cat-name">{category}</span>
+                                    <span
+                                        class="cat-chevron"
+                                        class:collapsed={effectiveCollapse.has(`${group.key}:${category}`)}
+                                    >&#9662;</span>
+                                    <span
+                                        class="cat-add-btn"
+                                        role="button"
+                                        tabindex="0"
+                                        onclick={(e) => { e.stopPropagation(); onOpenCreateModal(category); }}
+                                        onkeydown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onOpenCreateModal(category); } }}
+                                        title="Add unit op to {category}"
+                                    >+</span>
+                                </Button>
+
+                                {#if !effectiveCollapse.has(`${group.key}:${category}`)}
+                                    <div class="cat-ops">
+                                        {#each ops as op}
+                                            <div
+                                                role="button"
+                                                tabindex="0"
+                                                class="op-item"
+                                                draggable="true"
+                                                ondragstart={(e) => onDragStart(e, op)}
                                             >
-                                        {/if}
+                                                <span class="op-icon">{getCategoryIcon(op.category)}</span>
+                                                <div class="op-info">
+                                                    <span class="op-name">
+                                                        {op.name}
+                                                        {#if op.scope === 'organization'}
+                                                            <span class="scope-dot scope-org" title="Organization"></span>
+                                                        {:else if op.scope === 'project'}
+                                                            <span class="scope-dot scope-project" title="Project"></span>
+                                                        {/if}
+                                                    </span>
+                                                    {#if op.description}
+                                                        <span class="op-desc">{op.description}</span>
+                                                    {/if}
+                                                </div>
+                                            </div>
+                                        {/each}
                                     </div>
-                                </div>
-                            {/each}
-                        </div>
+                                {/if}
+                            </div>
+                        {/each}
                     {/if}
                 </div>
             {/each}
@@ -735,6 +774,39 @@
         font-size: 12px;
         color: #94a3b8;
         font-style: italic;
+    }
+
+    .library-group {
+        margin-bottom: 12px;
+    }
+
+    :global(.library-header) {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        height: auto;
+        padding: 6px 4px;
+        background: transparent;
+        border: none;
+        font-family: inherit;
+        border-radius: 4px;
+        justify-content: flex-start;
+        font-weight: 600;
+    }
+
+    :global(.library-header:hover) {
+        background: #f8fafc;
+    }
+
+    .lib-name {
+        flex: 1;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0f172a;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
     }
 
     .category-group {
