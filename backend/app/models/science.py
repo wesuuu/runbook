@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import (Boolean, CheckConstraint, Enum, ForeignKey, Index,
-                        Integer, String, desc)
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, Enum, ForeignKey,
+                        Index, Integer, String, UniqueConstraint, desc, func)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,9 +55,7 @@ class Project(Base, UUIDMixin, TimestampMixin):
     runs: Mapped[List["Run"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
-    protocols: Mapped[List["Protocol"]] = relationship(
-        back_populates="project"
-    )
+    protocols: Mapped[List["Protocol"]] = relationship(back_populates="project")
     experiments: Mapped[List["Experiment"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
@@ -74,9 +73,7 @@ class Experiment(Base, UUIDMixin, TimestampMixin):
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id"), nullable=False
     )
-    notes: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, default=list
-    )
+    notes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="experiments")
@@ -130,9 +127,7 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     organization: Mapped[Optional["Organization"]] = relationship(
         "app.models.iam.Organization", foreign_keys=[organization_id]
     )
-    runs: Mapped[List["Run"]] = relationship(
-        back_populates="protocol"
-    )
+    runs: Mapped[List["Run"]] = relationship(back_populates="protocol")
     roles: Mapped[List["ProtocolRole"]] = relationship(
         back_populates="protocol",
         cascade="all, delete-orphan",
@@ -163,19 +158,13 @@ class Run(Base, UUIDMixin, TimestampMixin):
     graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Runtime data (logs, values, timestamps per node)
-    execution_data: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, default=dict
-    )
+    execution_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Run-level notes (append-only, authored, timestamped)
-    notes: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, default=list
-    )
+    notes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
     # File attachments (run-level or step-level, soft-deletable)
-    attachments: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, default=list
-    )
+    attachments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
     # User who started this run (used for locking role-less runs)
     started_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -193,9 +182,7 @@ class Run(Base, UUIDMixin, TimestampMixin):
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="runs")
     protocol: Mapped["Protocol"] = relationship(back_populates="runs")
-    experiment: Mapped[Optional["Experiment"]] = relationship(
-        back_populates="runs"
-    )
+    experiment: Mapped[Optional["Experiment"]] = relationship(back_populates="runs")
     started_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[started_by_id]
     )
@@ -212,6 +199,7 @@ class RunRoleAssignment(Base, UUIDMixin, TimestampMixin):
     e.g., "lane-{role_uuid}". This allows assignments to remain valid even if
     the source ProtocolRole is later deleted.
     """
+
     __tablename__ = "run_role_assignments"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -219,15 +207,38 @@ class RunRoleAssignment(Base, UUIDMixin, TimestampMixin):
     )
     lane_node_id: Mapped[str] = mapped_column(String, nullable=False)
     role_name: Mapped[str] = mapped_column(String, nullable=False)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
 
     # Relationships
-    run: Mapped["Run"] = relationship(
-        back_populates="role_assignments"
-    )
+    run: Mapped["Run"] = relationship(back_populates="role_assignments")
     user: Mapped["app.models.iam.User"] = relationship()
+
+
+class UnitOpLibrarySubscription(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "unit_op_library_subscriptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "library_slug",
+            name="uq_unit_op_lib_sub",
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    library_slug: Mapped[str] = mapped_column(String, nullable=False)
+    subscribed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["app.models.iam.Organization"] = relationship(
+        "app.models.iam.Organization",
+        foreign_keys=[organization_id],
+    )
 
 
 class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
@@ -237,18 +248,19 @@ class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
             "project_id IS NULL OR organization_id IS NOT NULL",
             name="ck_unit_op_scope_valid",
         ),
+        CheckConstraint(
+            "(source_library_slug IS NULL AND source_op_slug IS NULL) OR "
+            "(source_library_slug IS NOT NULL AND source_op_slug IS NOT NULL)",
+            name="ck_unit_op_source_both_or_neither",
+        ),
     )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
-    category: Mapped[str] = mapped_column(
-        String, nullable=False, default="General"
-    )
+    category: Mapped[str] = mapped_column(String, nullable=False, default="General")
     description: Mapped[Optional[str]] = mapped_column(String)
 
     # Configuration schema (JSONSchema) for this operation
-    param_schema: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, default=dict
-    )
+    param_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Result schema (JSONSchema) — what the scientist records during execution
     result_schema: Mapped[dict[str, Any]] = mapped_column(
@@ -263,13 +275,22 @@ class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
         ForeignKey("projects.id"), nullable=True
     )
 
+    # Library override pointers (F-0075). Set when this row overrides a
+    # JSON op; the row's id equals synthetic_uuid(slug, op_slug).
+    source_library_slug: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+    )
+    source_op_slug: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+    )
+
     # Relationships
     organization: Mapped[Optional["app.models.iam.Organization"]] = relationship(
         "app.models.iam.Organization", foreign_keys=[organization_id]
     )
-    project: Mapped[Optional["Project"]] = relationship(
-        foreign_keys=[project_id]
-    )
+    project: Mapped[Optional["Project"]] = relationship(foreign_keys=[project_id])
 
 
 class ProtocolRole(Base, UUIDMixin, TimestampMixin):
@@ -279,12 +300,8 @@ class ProtocolRole(Base, UUIDMixin, TimestampMixin):
         ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
-    color: Mapped[str] = mapped_column(
-        String, nullable=False, default="#94a3b8"
-    )
-    sort_order: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
+    color: Mapped[str] = mapped_column(String, nullable=False, default="#94a3b8")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Relationships
     protocol: Mapped["Protocol"] = relationship(back_populates="roles")

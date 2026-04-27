@@ -221,6 +221,33 @@
     let showInviteDialog = $state(false);
     let memberStatusFilter = $state<'all' | 'active' | 'pending'>('all');
 
+    // Library reload
+    let reloading = $state(false);
+    let lastReloadedAt = $state<Date | null>(null);
+
+    async function reloadLibraries() {
+        reloading = true;
+        try {
+            const res: any = await api.post('/admin/libraries/reload');
+            const libs = res?.libraries ?? [];
+            const opCount = libs.reduce((acc: number, l: any) => acc + (l.op_count ?? 0), 0);
+            toast.success('Libraries reloaded', `${libs.length} libraries, ${opCount} ops`);
+            lastReloadedAt = new Date();
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : 'Reload failed');
+        } finally {
+            reloading = false;
+        }
+    }
+
+    function formatRelative(d: Date): string {
+        const seconds = Math.round((Date.now() - d.getTime()) / 1000);
+        if (seconds < 60) return `${seconds}s ago`;
+        const minutes = Math.round(seconds / 60);
+        if (minutes < 60) return `${minutes}m ago`;
+        return `${Math.round(minutes / 60)}h ago`;
+    }
+
     type MemberRow = {
         type: 'member' | 'invitation';
         id: string;
@@ -847,6 +874,24 @@
                         <p class="text-[13px] text-slate-400">Invite someone to get started.</p>
                     {/snippet}
                 </ProjectDataTable>
+            {/if}
+
+            {#if isOrgAdmin}
+                <CardContent class="border-t pt-6">
+                    <h3 class="text-sm font-semibold mb-1">Unit Operation Libraries</h3>
+                    <p class="text-sm text-muted-foreground mb-3">
+                        Refresh the catalog of system unit operations after a deployment
+                        or library file update.
+                    </p>
+                    <div class="flex items-center gap-3">
+                        <Button onclick={reloadLibraries} disabled={reloading}>
+                            {reloading ? 'Reloading...' : 'Reload Libraries'}
+                        </Button>
+                        {#if lastReloadedAt}
+                            <span class="text-xs text-muted-foreground">Last reloaded: {formatRelative(lastReloadedAt)}</span>
+                        {/if}
+                    </div>
+                </CardContent>
             {/if}
         </Card>
 

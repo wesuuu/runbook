@@ -12,6 +12,7 @@ Exit codes:
     2 = DATABASE_URL rejected by the prod guard
     3 = unexpected error during wipe/re-seed (transaction rolled back)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,8 +23,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.db.seed import (seed_org, seed_permissions, seed_projects, seed_teams,
-                         seed_unit_ops, seed_users)
+from app.db.seed import (seed_library_subscriptions, seed_org,
+                         seed_permissions, seed_projects, seed_teams,
+                         seed_users)
 from app.db.session import AsyncSessionLocal
 
 # Ordered tuple (not frozenset) so ``confirm_reset`` prints the tables in a
@@ -106,7 +108,7 @@ def mask_database_url(url: str) -> str:
     last_at = url.rfind("@", first_colon + 1, search_region_end)
     if last_at < 0:
         return url
-    return url[:first_colon + 1] + "***" + url[last_at:]
+    return url[: first_colon + 1] + "***" + url[last_at:]
 
 
 def assert_local_dev_db(url: str) -> None:
@@ -154,7 +156,7 @@ async def reset_database(session: AsyncSession) -> None:
     await seed_teams(session)
     await seed_projects(session)
     await seed_permissions(session)
-    await seed_unit_ops(session)
+    await seed_library_subscriptions(session)
 
 
 def confirm_reset() -> bool:

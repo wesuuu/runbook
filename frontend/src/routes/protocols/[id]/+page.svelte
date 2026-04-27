@@ -58,6 +58,7 @@
     import ProcessStartNode from "$lib/components/protocol/ProcessStartNode.svelte";
     import Inspector from "$lib/components/protocol/Inspector.svelte";
     import ProcessStartInspector from "$lib/components/protocol/ProcessStartInspector.svelte";
+    import UnitOpPreview from "$lib/components/protocol/UnitOpPreview.svelte";
     import TimeAxis from "$lib/components/protocol/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/modals/CreateUnitOpModal.svelte";
     import VersionHistoryDrawer from "$lib/components/analytics/VersionHistoryDrawer.svelte";
@@ -311,10 +312,27 @@
 
     // Inspector — watch for node selection changes via SvelteFlow's built-in selection
     let selectedNodeId = $state<string | null>(null);
+    let previewedOp = $state<any | null>(null);
+
+    function handleOpPreview(op: any) {
+        // Mutual exclusion: previewing clears canvas selection by
+        // mutating SvelteFlow's `selected` flags. Without this, the
+        // node-selection effect below would re-sync selectedNodeId
+        // from the still-selected canvas node and clobber previewedOp.
+        if (nodes.some((n) => n.selected)) {
+            nodes = nodes.map((n) => (n.selected ? { ...n, selected: false } : n));
+        }
+        previewedOp = op;
+    }
+
+    function clearPreview() {
+        previewedOp = null;
+    }
 
     $effect(() => {
         const sel = nodes.find((n) => (n.type === "unitOp" || n.type === "processStart") && n.selected);
         selectedNodeId = sel ? sel.id : null;
+        if (selectedNodeId) previewedOp = null;
     });
 
     const selectedNode = $derived(
@@ -415,10 +433,16 @@
                 if (protocol.graph && protocol.graph.nodes) {
                     applyGraphState(protocol.graph);
                     detectEquipmentConflicts();
+                } else {
+                    // Brand-new protocol that came back from POST without
+                    // a saved graph yet — seed a Process Start so the
+                    // user has an anchor to wire up to.
+                    nodes = [createProcessStartNode({ x: 80, y: 80 }, undefined)];
                 }
             } else {
                 // New protocol — load global + org ops only
                 unitOps = await api.get("/science/unit-ops");
+                nodes = [createProcessStartNode({ x: 80, y: 80 }, undefined)];
             }
             // Apply timeline sizing if loaded with timeline enabled
             if (timeEnabled) {
@@ -1011,6 +1035,7 @@
         onSaveAndPublish={saveAndPublish}
         onDeleteOrArchive={deleteOrArchiveProtocol}
         onUnarchive={unarchiveProtocol}
+        onOpClick={handleOpPreview}
     />
     {/if}
 
@@ -1119,8 +1144,10 @@
         {/if}
     </div>
 
-    <!-- ============= INSPECTOR ============= -->
-    {#if selectedNode}
+    <!-- ============= INSPECTOR / PREVIEW ============= -->
+    {#if previewedOp}
+        <UnitOpPreview op={previewedOp} onClose={clearPreview} />
+    {:else if selectedNode}
         {#if selectedNode.type === "processStart"}
             <ProcessStartInspector
                 node={selectedNode}

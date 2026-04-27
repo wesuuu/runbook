@@ -7,6 +7,7 @@ export const UnitOpDefinitionSchema = z.object({
     description: z.string().nullable().optional(),
     param_schema: z.record(z.string(), z.unknown()).default({}),
     result_schema: z.record(z.string(), z.unknown()).default({}),
+    library_slug: z.string().nullable().optional(),  // F-0075: identifies JSON library origin
     created_at: z.string(),
     updated_at: z.string(),
 }).passthrough();
