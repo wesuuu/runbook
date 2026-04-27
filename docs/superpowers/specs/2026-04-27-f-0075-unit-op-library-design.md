@@ -413,9 +413,33 @@ const LIBRARY_DISPLAY_NAMES: Record<string, string> = {
 
 Custom ops with `library_slug=null` collapse into a single virtual `"_custom"` group titled "Custom (My Org)". Project ops also fall into this group when `project_id` matches the current protocol's project — they don't need a separate visual section per the existing behavior.
 
-Search continues to filter across all libraries and categories (no library-specific search).
+### Search behavior
 
-Empty libraries (e.g., a library with all ops filtered out by search) are hidden, same as the current empty-category behavior.
+Search filters across all libraries and categories. While a query is active:
+
+- **Match fields:** op `name`, `category`, library `display_name`, library `slug`. Op `description` is excluded (too long, creates noisy matches). Substring match, case-insensitive (same as today).
+- **Auto-expand:** any library and category containing at least one match auto-expands. The user's manual collapse state is preserved separately and restored when the query is cleared.
+- **Hide empties:** libraries and categories with zero matches are hidden, not shown collapsed-empty (consistent with current category-empty behavior).
+- **Highlight:** matched substring is wrapped in `<mark>` in the op name (and library/category headers when the match is on those fields). Cheap, accessible, no extra deps.
+
+Implementation sketch:
+
+```ts
+let searchQuery = $state('');
+let manualCollapse = $state<Set<string>>(new Set());  // user-toggled, e.g. "lib:core" or "cat:core/Process"
+
+const effectiveCollapse = $derived(
+  searchQuery.trim() ? new Set<string>() : manualCollapse  // search trumps manual
+);
+
+const groups = $derived.by(() => {
+  const q = searchQuery.trim().toLowerCase();
+  // Build the Library → Category → Op tree, dropping rows that don't match q.
+  // Drop empty categories. Drop empty libraries.
+});
+```
+
+When the query is empty the structure rebuilds against the full op list and `effectiveCollapse` falls back to `manualCollapse`.
 
 ### Files Touched (Phase 2)
 
