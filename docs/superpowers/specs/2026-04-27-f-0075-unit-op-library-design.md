@@ -224,10 +224,24 @@ Custom org/project ops keep `source_library_slug = NULL`. Existing logic stands.
 ## Org Creation Hook
 
 Two call sites currently create organizations:
-- `backend/app/api/endpoints/auth.py:126` (registration)
-- `backend/app/api/endpoints/iam.py:89` (create_organization)
+- `backend/app/api/endpoints/auth.py:126` (registration — first signup)
+- `backend/app/api/endpoints/iam.py:89` (create_organization — additional org by existing user)
 
-Both call `library_registry.subscribe_default_libraries(db, org.id)` after `db.flush()` and before commit.
+Both call `library_registry.subscribe_default_libraries(db, org.id)` after `db.flush()` and before commit. Going forward, every new org auto-subscribes to whichever libraries are flagged `is_default: true`.
+
+## Backfill Script
+
+`backend/scripts/subscribe_orgs_to_default_libraries.py` — one-shot CLI for retroactively enrolling existing orgs. Use case: a future PR adds a second `is_default: true` library; the migration ships only schema changes, and this script enrolls every existing org.
+
+Behavior:
+
+```python
+# Iterates every org, calls library_registry.subscribe_default_libraries(db, org.id).
+# subscribe_default_libraries is idempotent (skips orgs already subscribed),
+# so the script is safe to re-run after future default additions.
+```
+
+The migration delivered with this task also subscribes existing orgs to `core` inline (so we don't ship the script as a hard requirement to run). The script exists for *future* default additions where we don't want to ship a new migration.
 
 ## Seed Script
 
@@ -337,6 +351,7 @@ Existing `test_unit_ops_scoping.py` updates:
 | `backend/app/db/seed.py` | drop seed_unit_ops, add seed_library_subscriptions |
 | `backend/app/main.py` | call library_registry.load_libraries() in lifespan |
 | `backend/alembic/versions/<rev>_unit_op_library_abstraction.py` | new |
+| `backend/scripts/subscribe_orgs_to_default_libraries.py` | new (backfill CLI) |
 | `backend/tests/integration/test_unit_op_libraries.py` | new |
 | `backend/tests/integration/test_unit_ops_scoping.py` | update fixtures + 1 test |
 
@@ -347,4 +362,8 @@ Existing `test_unit_ops_scoping.py` updates:
 - Library version negotiation / upgrade flow.
 - Any second domain library (cell_biology, analytical_chemistry, etc.).
 - Endpoint to list available libraries.
-- `uuid_op_definitions` cleanup of stale orphan-id references inside protocol graphs.
+- `unit_op_definitions` cleanup of stale orphan-id references inside protocol graphs.
+
+## Follow-up Tasks (Out of Scope)
+
+- **Protocol editor sidebar UX for large libraries.** Today the sidebar lists every unit op flat. With multiple libraries × dozens of ops each, the current layout will not scale. Needs a separate frontend task — likely grouping by library + collapsible categories, or a tabbed/dropdown switcher. File when this becomes felt.
