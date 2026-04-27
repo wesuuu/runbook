@@ -58,6 +58,7 @@
     import ProcessStartNode from "$lib/components/protocol/ProcessStartNode.svelte";
     import Inspector from "$lib/components/protocol/Inspector.svelte";
     import ProcessStartInspector from "$lib/components/protocol/ProcessStartInspector.svelte";
+    import UnitOpPreview from "$lib/components/protocol/UnitOpPreview.svelte";
     import TimeAxis from "$lib/components/protocol/TimeAxis.svelte";
     import CreateUnitOpModal from "$lib/components/modals/CreateUnitOpModal.svelte";
     import VersionHistoryDrawer from "$lib/components/analytics/VersionHistoryDrawer.svelte";
@@ -311,10 +312,22 @@
 
     // Inspector — watch for node selection changes via SvelteFlow's built-in selection
     let selectedNodeId = $state<string | null>(null);
+    let previewedOp = $state<any | null>(null);
+
+    function handleOpPreview(op: any) {
+        // Mutual exclusion: previewing clears canvas selection
+        selectedNodeId = null;
+        previewedOp = op;
+    }
+
+    function clearPreview() {
+        previewedOp = null;
+    }
 
     $effect(() => {
         const sel = nodes.find((n) => (n.type === "unitOp" || n.type === "processStart") && n.selected);
         selectedNodeId = sel ? sel.id : null;
+        if (selectedNodeId) previewedOp = null;
     });
 
     const selectedNode = $derived(
@@ -1011,6 +1024,7 @@
         onSaveAndPublish={saveAndPublish}
         onDeleteOrArchive={deleteOrArchiveProtocol}
         onUnarchive={unarchiveProtocol}
+        onOpClick={handleOpPreview}
     />
     {/if}
 
@@ -1119,8 +1133,10 @@
         {/if}
     </div>
 
-    <!-- ============= INSPECTOR ============= -->
-    {#if selectedNode}
+    <!-- ============= INSPECTOR / PREVIEW ============= -->
+    {#if previewedOp}
+        <UnitOpPreview op={previewedOp} onClose={clearPreview} />
+    {:else if selectedNode}
         {#if selectedNode.type === "processStart"}
             <ProcessStartInspector
                 node={selectedNode}

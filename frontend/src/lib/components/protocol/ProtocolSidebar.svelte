@@ -3,6 +3,8 @@
     import { api } from "$lib/api";
     import { getNextRoleColor } from "$lib/components/protocol/protocolNodes";
     import { Button } from "$lib/components/ui/button";
+    import { slide } from "svelte/transition";
+    import { cubicOut } from "svelte/easing";
 
     interface Props {
         protocol: any;
@@ -24,6 +26,7 @@
         onSaveAndPublish: () => void;
         onDeleteOrArchive: () => void;
         onUnarchive: () => void;
+        onOpClick: (op: any) => void;
     }
 
     let {
@@ -46,6 +49,7 @@
         onSaveAndPublish,
         onDeleteOrArchive,
         onUnarchive,
+        onOpClick,
     }: Props = $props();
 
     // --- Internal state ---
@@ -418,6 +422,7 @@
                     </Button>
 
                     {#if !effectiveCollapse.has(group.key)}
+                        <div class="lib-content" transition:slide={{ duration: 180, easing: cubicOut }}>
                         {#each [...group.categories.entries()] as [category, ops]}
                             <div class="category-group">
                                 <Button
@@ -442,7 +447,7 @@
                                 </Button>
 
                                 {#if !effectiveCollapse.has(`${group.key}:${category}`)}
-                                    <div class="cat-ops">
+                                    <div class="cat-ops" transition:slide={{ duration: 180, easing: cubicOut }}>
                                         {#each ops as op}
                                             <div
                                                 role="button"
@@ -450,6 +455,8 @@
                                                 class="op-item"
                                                 draggable="true"
                                                 ondragstart={(e) => onDragStart(e, op)}
+                                                onclick={() => onOpClick(op)}
+                                                onkeydown={(e) => { if (e.key === "Enter") onOpClick(op); }}
                                             >
                                                 <span class="op-icon">{getCategoryIcon(op.category)}</span>
                                                 <div class="op-info">
@@ -471,6 +478,7 @@
                                 {/if}
                             </div>
                         {/each}
+                        </div>
                     {/if}
                 </div>
             {/each}
