@@ -315,8 +315,13 @@
     let previewedOp = $state<any | null>(null);
 
     function handleOpPreview(op: any) {
-        // Mutual exclusion: previewing clears canvas selection
-        selectedNodeId = null;
+        // Mutual exclusion: previewing clears canvas selection by
+        // mutating SvelteFlow's `selected` flags. Without this, the
+        // node-selection effect below would re-sync selectedNodeId
+        // from the still-selected canvas node and clobber previewedOp.
+        if (nodes.some((n) => n.selected)) {
+            nodes = nodes.map((n) => (n.selected ? { ...n, selected: false } : n));
+        }
         previewedOp = op;
     }
 
