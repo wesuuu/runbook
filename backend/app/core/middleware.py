@@ -32,7 +32,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in PUBLIC_PATHS or request.method == "OPTIONS":
+        if (
+            request.url.path in PUBLIC_PATHS
+            or request.url.path.startswith("/legal/")
+            or request.method == "OPTIONS"
+        ):
             return await call_next(request)
 
         token = self._extract_bearer(request)
