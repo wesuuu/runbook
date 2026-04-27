@@ -1,4 +1,5 @@
 import { API_BASE } from '$lib/config';
+import { acceptTos as apiAcceptTos } from './legal-api';
 
 interface User {
     id: string;
@@ -9,6 +10,9 @@ interface User {
     preferences: Record<string, string>;
     is_active: boolean;
     email_verified: boolean;
+    tos_accepted_at: string | null;
+    tos_version: string | null;
+    tos_current: boolean;
 }
 
 interface Org {
@@ -55,6 +59,17 @@ export function getUserPreferences(): Record<string, string> {
 
 export function isEmailVerified(): boolean {
     return user?.email_verified ?? false;
+}
+
+export function isTosCurrent(): boolean {
+    return user?.tos_current === true;
+}
+
+export async function acceptTos(): Promise<void> {
+    const response = (await apiAcceptTos()) as Partial<User>;
+    if (user) {
+        user = { ...user, ...response };
+    }
 }
 
 export async function refreshUser(): Promise<void> {
@@ -309,4 +324,9 @@ export async function initialize(): Promise<void> {
     } finally {
         initialized = true;
     }
+}
+
+// Test-only: allow tests to inject a user state. Not for production use.
+export function __setUserForTest(value: User | null): void {
+    user = value;
 }
