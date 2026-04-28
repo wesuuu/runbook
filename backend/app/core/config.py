@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     auth_enabled: bool = True
+    legal_gate_enabled: bool = True  # env: BATCHRITE_LEGAL_GATE_ENABLED
 
     # OAuth Configuration
     oauth_google_client_id: str = ""

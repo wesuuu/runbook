@@ -3,25 +3,52 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import (APIRouter, Depends, HTTPException, Query, Request,
-                     UploadFile, status)
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user
-from app.core.security import (create_access_token, create_verification_jwt,
-                               generate_verification_token, hash_password,
-                               verify_password)
+from app.core.security import (
+    create_access_token,
+    create_verification_jwt,
+    generate_verification_token,
+    hash_password,
+    verify_password,
+)
 from app.db.session import get_db
-from app.models.iam import (Invitation, InvitationStatus, Organization,
-                            OrganizationMember, User, VerificationToken)
-from app.schemas.auth import (LoginRequest, PasswordChange, PreferencesUpdate,
-                              ProfileUpdate, RegisterRequest,
-                              ResendVerificationResponse, SwitchOrgRequest,
-                              TokenResponse, UserResponse,
-                              VerificationTokenResponse)
+from app.legal.service import get_current_version
+from app.models.iam import (
+    Invitation,
+    InvitationStatus,
+    Organization,
+    OrganizationMember,
+    User,
+    VerificationToken,
+)
+from app.schemas.auth import (
+    LoginRequest,
+    PasswordChange,
+    PreferencesUpdate,
+    ProfileUpdate,
+    RegisterRequest,
+    ResendVerificationResponse,
+    SwitchOrgRequest,
+    TokenResponse,
+    UserResponse,
+    VerificationTokenResponse,
+    compute_tos_current,
+)
+from app.services.core.audit import log_audit
 from app.services.core.email_service import get_email_provider
 from app.services.core.file_storage import FileStorageService
 
@@ -36,7 +63,7 @@ MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 def _user_response(user: User) -> UserResponse:
-    """Build UserResponse with computed avatar_url."""
+    """Build UserResponse with computed avatar_url and tos_current."""
     avatar_url = None
     if user.avatar_path:
         avatar_url = f"/auth/avatars/{user.id}"
@@ -49,6 +76,9 @@ def _user_response(user: User) -> UserResponse:
         preferences=user.preferences or {},
         is_active=user.is_active,
         email_verified=user.email_verified,
+        tos_accepted_at=user.tos_accepted_at,
+        tos_version=user.tos_version,
+        tos_current=compute_tos_current(user),
     )
 
 
@@ -91,6 +121,14 @@ async def _send_verification_email(email: str, token: str) -> None:
             text_body=text_body,
         )
     except Exception:
+        # Dev/local SMTP is often unconfigured; surface the link at WARNING
+        # so a developer can verify without a working mail server. In prod
+        # this also gives ops a fallback to recover users when SMTP breaks.
+        logger.warning(
+            "Email send failed for %s; verification link: %s",
+            email,
+            verify_url,
+        )
         logger.exception("Failed to send verification email to %s", email)
 
 
@@ -168,8 +206,7 @@ async def register(
 
     # Create Stripe trialing Essentials subscription (F-0019a).
     # No-op if Stripe is unconfigured (logs a warning); safe to call before commit.
-    from app.services.billing.subscription_service import \
-        create_trial_subscription
+    from app.services.billing.subscription_service import create_trial_subscription
 
     await create_trial_subscription(db, org, user)
 
@@ -532,6 +569,41 @@ async def accept_invite(
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)):
+    return _user_response(user)
+
+
+@router.post("/accept-tos", response_model=UserResponse)
+async def accept_tos(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record the calling user's acceptance of the current Terms of
+    Service and Privacy Policy version. Idempotent — repeated calls
+    rewrite the User row's timestamp and write additional AuditLog rows.
+    """
+    version = get_current_version()
+    user.tos_accepted_at = datetime.now(timezone.utc)
+    user.tos_version = version
+
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="ACCEPT_TOS",
+        entity_type="user",
+        entity_id=user.id,
+        changes={
+            "version": version,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+        },
+    )
+
+    await db.commit()
+    await db.refresh(user)
     return _user_response(user)
 
 

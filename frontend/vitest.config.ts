@@ -11,6 +11,10 @@ export default defineConfig({
     resolve: {
         alias: {
             $lib: new URL('./src/lib', import.meta.url).pathname,
+            '$app/navigation': new URL(
+                './src/test-mocks/app-navigation.ts',
+                import.meta.url,
+            ).pathname,
         },
         conditions: ['browser'],
     },

@@ -9,3 +9,4 @@ export * from './chat';
 export * from './templates';
 export * from './batchRecordImport';
 export * from './billing';
+export * from './legal';

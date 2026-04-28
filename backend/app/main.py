@@ -354,10 +354,11 @@ async def health_check():
 
 from app.api.endpoints import (admin, ai, auth, batch_record_import, billing,
                                chat, dashboard, experiments, export_data, iam,
-                               library, notifications, offline, onboarding,
-                               project_members, projects, protocol_pdfs,
-                               protocol_versions, protocols, runs, sync,
-                               template_convert, templates, unit_ops)
+                               legal, library, notifications, offline,
+                               onboarding, project_members, projects,
+                               protocol_pdfs, protocol_versions, protocols,
+                               runs, sync, template_convert, templates,
+                               unit_ops)
 
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -387,6 +388,7 @@ app.include_router(offline.router, tags=["offline"])
 app.include_router(sync.router, tags=["sync"])
 app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 app.include_router(billing.router, prefix="/billing", tags=["billing"])
+app.include_router(legal.router, prefix="/legal", tags=["legal"])
 
 # Dev-only endpoints (webhook echo, etc.)
 if settings.debug:

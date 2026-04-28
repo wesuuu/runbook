@@ -3,7 +3,8 @@
     import { page } from '$app/stores';
     import { beforeNavigate } from '$app/navigation';
     import { goto } from '$app/navigation';
-    import { initialize, isAuthenticated, isEmailVerified, isInitialized, getCurrentOrg, getUserPreferences, handleVerificationCallback } from '$lib/auth.svelte';
+    import { initialize, isAuthenticated, isEmailVerified, isInitialized, isTosCurrent, getCurrentOrg, getUserPreferences, handleVerificationCallback } from '$lib/auth.svelte';
+    import { decideRedirect, PUBLIC_ROUTES } from '$lib/auth-gate';
     import { initConnectivity, destroyConnectivity } from '$lib/pwa.svelte';
     import { initFieldMode } from '$lib/field-mode.svelte';
     import { initSyncManager, destroySyncManager } from '$lib/sync-manager';
@@ -39,12 +40,13 @@
         return org?.subscription_tier === 'pro';
     }
 
-    const publicRoutes = ['/login', '/register', '/check-email'];
     const fieldModeRoutes = ['/field'];
 
-    const isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
+    const isPublicRoute = $derived(PUBLIC_ROUTES.includes($page.url.pathname));
     const isFieldMode = $derived(fieldModeRoutes.some((r) => $page.url.pathname.startsWith(r)));
-    const showNav = $derived(!isPublicRoute && !isFieldMode && isAuthenticated());
+    const showNav = $derived(
+        !isPublicRoute && !isFieldMode && isAuthenticated() && $page.url.pathname !== '/legal/accept'
+    );
     const shouldShowChat = $derived(!shouldHideChatIcon($page.url.pathname));
     const currentOrg = $derived(getCurrentOrg());
     const canShowFab = $derived(isOrgPro(currentOrg));
@@ -72,12 +74,18 @@
         await initFieldMode();
 
         // Initial redirect check
-        if (!isAuthenticated() && !publicRoutes.includes($page.url.pathname)) {
-            goto('/login');
-        } else if (isAuthenticated() && !isEmailVerified() && $page.url.pathname !== '/check-email') {
-            goto('/check-email');
-        } else if (isAuthenticated() && isEmailVerified() && publicRoutes.includes($page.url.pathname)) {
-            goto('/');
+        const decision = decideRedirect({
+            initialized: isInitialized(),
+            authenticated: isAuthenticated(),
+            emailVerified: isEmailVerified(),
+            tosCurrent: isTosCurrent(),
+            pathname: $page.url.pathname,
+        });
+        switch (decision.kind) {
+            case 'login': goto('/login'); break;
+            case 'accept-tos': goto('/legal/accept'); break;
+            case 'home': goto('/'); break;
+            case 'none': break;
         }
 
         // Initialize chat store (fire-and-forget, idempotent)
@@ -94,13 +102,18 @@
     beforeNavigate(({ to, cancel }) => {
         if (!isInitialized()) return;
         const path = to?.url.pathname ?? '/';
-
-        if (!isAuthenticated() && !publicRoutes.includes(path)) {
-            cancel();
-            goto('/login');
-        } else if (isAuthenticated() && !isEmailVerified() && path !== '/check-email' && !publicRoutes.includes(path)) {
-            cancel();
-            goto('/check-email');
+        const decision = decideRedirect({
+            initialized: true,
+            authenticated: isAuthenticated(),
+            emailVerified: isEmailVerified(),
+            tosCurrent: isTosCurrent(),
+            pathname: path,
+        });
+        switch (decision.kind) {
+            case 'login': cancel(); goto('/login'); break;
+            case 'accept-tos': cancel(); goto('/legal/accept'); break;
+            case 'home':
+            case 'none': break;
         }
     });
 
