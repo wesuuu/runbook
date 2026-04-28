@@ -3,26 +3,51 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import (APIRouter, Depends, HTTPException, Query, Request,
-                     UploadFile, status)
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user
-from app.core.security import (create_access_token, create_verification_jwt,
-                               generate_verification_token, hash_password,
-                               verify_password)
+from app.core.security import (
+    create_access_token,
+    create_verification_jwt,
+    generate_verification_token,
+    hash_password,
+    verify_password,
+)
 from app.db.session import get_db
 from app.legal.service import get_current_version
-from app.models.iam import (Invitation, InvitationStatus, Organization,
-                            OrganizationMember, User, VerificationToken)
-from app.schemas.auth import (LoginRequest, PasswordChange, PreferencesUpdate,
-                              ProfileUpdate, RegisterRequest,
-                              ResendVerificationResponse, SwitchOrgRequest,
-                              TokenResponse, UserResponse,
-                              VerificationTokenResponse, compute_tos_current)
+from app.models.iam import (
+    Invitation,
+    InvitationStatus,
+    Organization,
+    OrganizationMember,
+    User,
+    VerificationToken,
+)
+from app.schemas.auth import (
+    LoginRequest,
+    PasswordChange,
+    PreferencesUpdate,
+    ProfileUpdate,
+    RegisterRequest,
+    ResendVerificationResponse,
+    SwitchOrgRequest,
+    TokenResponse,
+    UserResponse,
+    VerificationTokenResponse,
+    compute_tos_current,
+)
 from app.services.core.audit import log_audit
 from app.services.core.email_service import get_email_provider
 from app.services.core.file_storage import FileStorageService
@@ -96,6 +121,14 @@ async def _send_verification_email(email: str, token: str) -> None:
             text_body=text_body,
         )
     except Exception:
+        # Dev/local SMTP is often unconfigured; surface the link at WARNING
+        # so a developer can verify without a working mail server. In prod
+        # this also gives ops a fallback to recover users when SMTP breaks.
+        logger.warning(
+            "Email send failed for %s; verification link: %s",
+            email,
+            verify_url,
+        )
         logger.exception("Failed to send verification email to %s", email)
 
 
@@ -168,8 +201,7 @@ async def register(
 
     # Create Stripe trialing Essentials subscription (F-0019a).
     # No-op if Stripe is unconfigured (logs a warning); safe to call before commit.
-    from app.services.billing.subscription_service import \
-        create_trial_subscription
+    from app.services.billing.subscription_service import create_trial_subscription
 
     await create_trial_subscription(db, org, user)
 
