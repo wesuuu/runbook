@@ -24,8 +24,12 @@ describe('decideRedirect', () => {
         expect(decideRedirect({ ...base, authenticated: false, pathname: '/legal/privacy' }).kind).toBe('none');
     });
 
-    it('redirects unverified users to check-email', () => {
-        expect(decideRedirect({ ...base, emailVerified: false, pathname: '/projects' }).kind).toBe('check-email');
+    it('does not force unverified users back to /check-email — backend gates API access', () => {
+        // Unverified user navigating to a private page is no longer pulled
+        // back to /check-email; they can move freely (the backend middleware
+        // restricts which API endpoints actually return data).
+        expect(decideRedirect({ ...base, emailVerified: false, pathname: '/projects' }).kind).toBe('none');
+        expect(decideRedirect({ ...base, emailVerified: false, pathname: '/settings' }).kind).toBe('none');
     });
 
     it('redirects authenticated email-verified users with stale ToS to /legal/accept', () => {

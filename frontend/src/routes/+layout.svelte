@@ -83,7 +83,6 @@
         });
         switch (decision.kind) {
             case 'login': goto('/login'); break;
-            case 'check-email': goto('/check-email'); break;
             case 'accept-tos': goto('/legal/accept'); break;
             case 'home': goto('/'); break;
             case 'none': break;
@@ -112,7 +111,6 @@
         });
         switch (decision.kind) {
             case 'login': cancel(); goto('/login'); break;
-            case 'check-email': cancel(); goto('/check-email'); break;
             case 'accept-tos': cancel(); goto('/legal/accept'); break;
             case 'home':
             case 'none': break;

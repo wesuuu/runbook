@@ -8,7 +8,6 @@ export interface GateState {
 
 export type GateRedirect =
     | { kind: 'login' }
-    | { kind: 'check-email' }
     | { kind: 'accept-tos' }
     | { kind: 'home' }
     | { kind: 'none' };
@@ -22,10 +21,6 @@ export function decideRedirect(state: GateState): GateRedirect {
     if (!state.authenticated) {
         if (isPublic) return { kind: 'none' };
         return { kind: 'login' };
-    }
-    if (!state.emailVerified) {
-        if (state.pathname === '/check-email') return { kind: 'none' };
-        return { kind: 'check-email' };
     }
     if (!state.tosCurrent) {
         if (state.pathname === '/legal/accept') return { kind: 'none' };
