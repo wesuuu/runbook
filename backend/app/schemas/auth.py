@@ -84,8 +84,8 @@ class ProfileUpdate(BaseModel):
 
 
 class PreferencesUpdate(BaseModel):
-    font_size: Optional[str] = None    # "small" | "medium" | "large"
-    density: Optional[str] = None      # "compact" | "comfortable"
+    font_size: Optional[str] = None  # "small" | "medium" | "large"
+    density: Optional[str] = None  # "compact" | "comfortable"
 
 
 class PasswordChange(BaseModel):

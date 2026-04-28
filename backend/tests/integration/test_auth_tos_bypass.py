@@ -1,6 +1,6 @@
 """End-to-end tests for the two ToS gate bypass mechanisms:
-    1. Settings.legal_gate_enabled = False  (deployment-level)
-    2. Organization.legal_terms_overridden = True  (per-org)
+1. Settings.legal_gate_enabled = False  (deployment-level)
+2. Organization.legal_terms_overridden = True  (per-org)
 """
 
 import pytest

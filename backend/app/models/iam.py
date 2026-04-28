@@ -92,12 +92,8 @@ class Organization(Base, UUIDMixin, TimestampMixin):
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(
         String, nullable=True, index=True
     )
-    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
-    subscription_status: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
+    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    subscription_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     current_period_end: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -138,9 +134,7 @@ class Team(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    organization: Mapped["Organization"] = relationship(
-        back_populates="teams"
-    )
+    organization: Mapped["Organization"] = relationship(back_populates="teams")
     members: Mapped[List["TeamMember"]] = relationship(
         back_populates="team", cascade="all, delete-orphan"
     )
@@ -149,12 +143,12 @@ class Team(Base, UUIDMixin, TimestampMixin):
 class User(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "users"
     __table_args__ = (
-        UniqueConstraint("oauth_provider", "oauth_subject", name="uq_oauth_provider_subject"),
+        UniqueConstraint(
+            "oauth_provider", "oauth_subject", name="uq_oauth_provider_subject"
+        ),
     )
 
-    email: Mapped[str] = mapped_column(
-        String, unique=True, index=True, nullable=False
-    )
+    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     hashed_password: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     full_name: Mapped[Optional[str]] = mapped_column(String)
     job_title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -171,7 +165,9 @@ class User(Base, UUIDMixin, TimestampMixin):
     )
     oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     oauth_subject: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    oauth_email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    oauth_email_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     tos_accepted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -181,9 +177,7 @@ class User(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    team_memberships: Mapped[List["TeamMember"]] = relationship(
-        back_populates="user"
-    )
+    team_memberships: Mapped[List["TeamMember"]] = relationship(back_populates="user")
     org_memberships: Mapped[List["OrganizationMember"]] = relationship(
         back_populates="user"
     )
@@ -195,15 +189,9 @@ class User(Base, UUIDMixin, TimestampMixin):
 class TeamMember(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "team_members"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
-    )
-    team_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("teams.id"), nullable=False
-    )
-    role: Mapped[str] = mapped_column(
-        String, default=TeamRole.MEMBER, nullable=False
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    role: Mapped[str] = mapped_column(String, default=TeamRole.MEMBER, nullable=False)
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="team_memberships")
@@ -213,45 +201,35 @@ class TeamMember(Base, UUIDMixin, TimestampMixin):
 class OrganizationMember(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "organization_members"
     __table_args__ = (
-        UniqueConstraint(
-            "user_id", "organization_id", name="uq_org_member"
-        ),
+        UniqueConstraint("user_id", "organization_id", name="uq_org_member"),
     )
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
     )
-    role: Mapped[str] = mapped_column(
-        String, default=OrgRole.MEMBER, nullable=False
-    )
+    role: Mapped[str] = mapped_column(String, default=OrgRole.MEMBER, nullable=False)
     archived: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="org_memberships")
-    organization: Mapped["Organization"] = relationship(
-        back_populates="members"
-    )
+    organization: Mapped["Organization"] = relationship(back_populates="members")
 
 
 class ObjectPermission(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "object_permissions"
     __table_args__ = (
         UniqueConstraint(
-            "principal_type", "principal_id",
-            "object_type", "object_id",
+            "principal_type",
+            "principal_id",
+            "object_type",
+            "object_id",
             name="uq_object_permission",
         ),
-        Index(
-            "ix_objperm_object", "object_type", "object_id"
-        ),
-        Index(
-            "ix_objperm_principal", "principal_type", "principal_id"
-        ),
+        Index("ix_objperm_object", "object_type", "object_id"),
+        Index("ix_objperm_principal", "principal_type", "principal_id"),
     )
 
     principal_type: Mapped[str] = mapped_column(String, nullable=False)
@@ -266,7 +244,8 @@ class Invitation(Base, UUIDMixin, TimestampMixin):
     __table_args__ = (
         Index(
             "ix_pending_invitation",
-            "organization_id", "invited_email",
+            "organization_id",
+            "invited_email",
             unique=True,
             postgresql_where="status = 'PENDING'",
         ),
@@ -280,33 +259,27 @@ class Invitation(Base, UUIDMixin, TimestampMixin):
     invited_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    role: Mapped[str] = mapped_column(
-        String, default=OrgRole.MEMBER, nullable=False
-    )
+    role: Mapped[str] = mapped_column(String, default=OrgRole.MEMBER, nullable=False)
     invited_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False
     )
     status: Mapped[str] = mapped_column(
-        String(16), default=InvitationStatus.PENDING, server_default="PENDING",
+        String(16),
+        default=InvitationStatus.PENDING,
+        server_default="PENDING",
         nullable=False,
     )
-    token: Mapped[str] = mapped_column(
-        String(64), nullable=False
-    )
+    token: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
 
     # Relationships
-    organization: Mapped["Organization"] = relationship(
-        foreign_keys=[organization_id]
-    )
+    organization: Mapped["Organization"] = relationship(foreign_keys=[organization_id])
     invited_user: Mapped[Optional["User"]] = relationship(
         foreign_keys=[invited_user_id]
     )
-    inviter: Mapped["User"] = relationship(
-        foreign_keys=[invited_by]
-    )
+    inviter: Mapped["User"] = relationship(foreign_keys=[invited_by])
 
 
 class VerificationToken(Base, UUIDMixin, TimestampMixin):
@@ -325,6 +298,4 @@ class VerificationToken(Base, UUIDMixin, TimestampMixin):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    used: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
+    used: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

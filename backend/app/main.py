@@ -117,9 +117,7 @@ async def _recover_stalled_jobs() -> None:
             logger.info(
                 "Found %d stalled job(s) to recover: %s",
                 len(stalled_jobs),
-                [
-                    f"{j.job_type}:{j.entity_id}" for j in stalled_jobs
-                ],
+                [f"{j.job_type}:{j.entity_id}" for j in stalled_jobs],
             )
 
             enrich_tasks: list[tuple] = []  # (doc_id, db_url)
@@ -127,9 +125,7 @@ async def _recover_stalled_jobs() -> None:
             for job in stalled_jobs:
                 job.status = JobStatus.FAILED.value
                 job.completed_at = datetime.now(timezone.utc)
-                job.error_message = (
-                    "Recovered: worker went away (no heartbeat)"
-                )
+                job.error_message = "Recovered: worker went away (no heartbeat)"
 
                 if job.entity_type != "document":
                     continue
@@ -140,8 +136,7 @@ async def _recover_stalled_jobs() -> None:
                     select(func.count(BackgroundJob.id)).where(
                         BackgroundJob.entity_id == job.entity_id,
                         BackgroundJob.job_type == job.job_type,
-                        BackgroundJob.status
-                        == JobStatus.FAILED.value,
+                        BackgroundJob.status == JobStatus.FAILED.value,
                     )
                 )
                 failed_count = count_result.scalar() or 0
@@ -155,18 +150,13 @@ async def _recover_stalled_jobs() -> None:
                         job.entity_id,
                     )
                     doc_result = await session.execute(
-                        select(Document).where(
-                            Document.id == job.entity_id
-                        )
+                        select(Document).where(Document.id == job.entity_id)
                     )
                     doc = doc_result.scalar_one_or_none()
-                    if doc and doc.status not in (
-                        DocumentStatus.FAILED.value,
-                    ):
+                    if doc and doc.status not in (DocumentStatus.FAILED.value,):
                         doc.status = DocumentStatus.FAILED.value
                         doc.error_message = (
-                            f"Failed after {failed_count} "
-                            "recovery attempts"
+                            f"Failed after {failed_count} " "recovery attempts"
                         )
                     continue
 
@@ -175,9 +165,7 @@ async def _recover_stalled_jobs() -> None:
                     # Reset doc → UPLOADED; _recover_stalled_documents
                     # (which runs next) will re-fire process_document.
                     doc_result = await session.execute(
-                        select(Document).where(
-                            Document.id == job.entity_id
-                        )
+                        select(Document).where(Document.id == job.entity_id)
                     )
                     doc = doc_result.scalar_one_or_none()
                     if doc and doc.status in (
@@ -191,27 +179,18 @@ async def _recover_stalled_jobs() -> None:
                     # Re-fire enrichment directly (no doc-status
                     # mechanism exists for enrichment recovery).
                     doc_result = await session.execute(
-                        select(Document).where(
-                            Document.id == job.entity_id
-                        )
+                        select(Document).where(Document.id == job.entity_id)
                     )
                     doc = doc_result.scalar_one_or_none()
-                    if (
-                        doc
-                        and doc.status == DocumentStatus.INDEXED.value
-                    ):
-                        enrich_tasks.append(
-                            (doc.id, settings.database_url)
-                        )
+                    if doc and doc.status == DocumentStatus.INDEXED.value:
+                        enrich_tasks.append((doc.id, settings.database_url))
 
             await session.commit()
 
             # Fire enrichment tasks after commit
             for doc_id, db_url in enrich_tasks:
                 asyncio.create_task(enrich_document(doc_id, db_url))
-                logger.info(
-                    "Re-fired enrichment for document %s", doc_id
-                )
+                logger.info("Re-fired enrichment for document %s", doc_id)
 
     finally:
         await engine.dispose()
@@ -280,9 +259,7 @@ async def _recover_stalled_documents() -> None:
 
             # Fire off processing tasks for each
             for doc in stalled_docs:
-                asyncio.create_task(
-                    process_document(doc.id, settings.database_url)
-                )
+                asyncio.create_task(process_document(doc.id, settings.database_url))
     finally:
         await engine.dispose()
 
@@ -304,9 +281,11 @@ async def lifespan(app: FastAPI):
 
     # Seed system document templates into file storage
     from app.services.protocols.template_seeder import seed_system_templates
+
     seed_system_templates()
 
     from app.services.lifecycle import loops_client
+
     if loops_client.is_configured():
         logger.info("Loops CRM integration: ENABLED")
     else:
@@ -360,12 +339,11 @@ async def health_check():
 
 
 from app.api.endpoints import (ai, auth, batch_record_import, billing, chat,
-                               dashboard, experiments, export_data, iam,
-                               legal, library, notifications, offline,
-                               onboarding, project_members, projects,
-                               protocol_pdfs, protocol_versions, protocols,
-                               runs, sync, template_convert, templates,
-                               unit_ops)
+                               dashboard, experiments, export_data, iam, legal,
+                               library, notifications, offline, onboarding,
+                               project_members, projects, protocol_pdfs,
+                               protocol_versions, protocols, runs, sync,
+                               template_convert, templates, unit_ops)
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])
@@ -381,10 +359,14 @@ app.include_router(export_data.router, prefix="/science", tags=["science"])
 app.include_router(project_members.router, prefix="/science", tags=["science"])
 app.include_router(ai.router, prefix="/ai", tags=["ai"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
-app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+app.include_router(
+    notifications.router, prefix="/notifications", tags=["notifications"]
+)
 app.include_router(library.router, prefix="/library", tags=["library"])
 app.include_router(templates.router, tags=["templates"])
-app.include_router(template_convert.router, prefix="/science", tags=["template-convert"])
+app.include_router(
+    template_convert.router, prefix="/science", tags=["template-convert"]
+)
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(offline.router, tags=["offline"])
 app.include_router(sync.router, tags=["sync"])
@@ -395,6 +377,7 @@ app.include_router(legal.router, prefix="/legal", tags=["legal"])
 # Dev-only endpoints (webhook echo, etc.)
 if settings.debug:
     from app.api.endpoints import dev
+
     app.include_router(dev.router, prefix="/dev", tags=["dev"])
 
 # Ensure uploads root directory exists
