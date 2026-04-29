@@ -22,7 +22,13 @@ from app.schemas.chat import (ChatCompletionResponse, ChatConfigResponse,
                               ChatSessionUpdate, ChatSkillListResponse,
                               ChatSkillResponse, ChatSourceReference,
                               NotifyAdminResponse)
-from app.services.ai import chat_service
+from app.services.ai import (
+    create_session,
+    delete_session,
+    get_session,
+    list_sessions,
+    send_message,
+)
 from app.services.ai.ai_config import (get_context_window,
                                        get_model_display_name)
 from app.services.core.rate_limit import RateLimitService
@@ -125,7 +131,7 @@ async def create_chat_session(
     _: User = Depends(require_active_subscription()),
 ):
     org_id, _ = await _get_user_org(current_user, db)
-    session = await chat_service.create_session(
+    session = await create_session(
         db,
         user_id=current_user.id,
         org_id=org_id,
@@ -145,7 +151,7 @@ async def list_chat_sessions(
     current_user: User = Depends(get_current_user),
 ):
     org_id, _ = await _get_user_org(current_user, db)
-    sessions, total = await chat_service.list_sessions(
+    sessions, total = await list_sessions(
         db, user_id=current_user.id, org_id=org_id, limit=limit, offset=offset
     )
     return ChatSessionListResponse(items=sessions, total=total)
@@ -157,7 +163,7 @@ async def get_chat_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await chat_service.get_session(db, session_id)
+    session = await get_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     if session.user_id != current_user.id:
@@ -199,7 +205,7 @@ async def delete_chat_session(
     session = await get_or_404(db, ChatSession, session_id)
     if session.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not your chat session")
-    await chat_service.delete_session(db, session)
+    await delete_session(db, session)
     await db.commit()
 
 
@@ -218,7 +224,7 @@ async def send_chat_message(
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_active_subscription()),
 ):
-    session = await chat_service.get_session(db, session_id)
+    session = await get_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     if session.user_id != current_user.id:
@@ -228,27 +234,13 @@ async def send_chat_message(
     _, org_role = await _get_user_org(current_user, db)
     is_org_admin = org_role == OrgRole.ADMIN
 
-    # Load skill content if button-triggered
-    skill_inject = None
-    if body.skill_id:
-        skill_path = Path(settings.skills_dir) / body.skill_id / "SKILL.md"
-        if skill_path.is_file():
-            text = skill_path.read_text()
-            if text.startswith("---"):
-                parts = text.split("---", 2)
-                if len(parts) >= 3:
-                    skill_inject = parts[2]
-            else:
-                skill_inject = text
-
     try:
-        user_msg, assistant_msg, sources = await chat_service.send_message(
+        user_msg, assistant_msg, sources = await send_message(
             db,
             session,
             body.content,
             user_id=current_user.id,
             is_org_admin=is_org_admin,
-            skill_inject=skill_inject,
         )
         await db.commit()
         await db.refresh(user_msg)
