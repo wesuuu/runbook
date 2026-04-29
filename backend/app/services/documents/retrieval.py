@@ -2,12 +2,17 @@
 
 Extracted from services/ai/chat_service.py during TD-0081 migration.
 """
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from app.services.ai.chat_service import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +34,7 @@ async def retrieve_relevant_chunks(
     top_k: int = RAG_TOP_K,
     max_chars: int = RAG_MAX_CONTEXT_CHARS,
     min_score: float = RAG_MIN_SCORE,
-) -> list:
+) -> list[RetrievedChunk]:
     """Hybrid semantic + keyword search over document chunks.
 
     Wraps _retrieve_once with a retry-with-shorter-query heuristic:
@@ -66,7 +71,7 @@ async def _retrieve_once(
     top_k: int,
     max_chars: int,
     min_score: float,
-) -> list:
+) -> list[RetrievedChunk]:
     """Single retrieval pass: pgvector hybrid search or keyword-only fallback.
 
     RetrievedChunk is imported lazily to avoid a circular import with
@@ -167,7 +172,7 @@ async def _retrieve_once(
     rows = result.fetchall()
 
     # Score, filter, and limit by character budget
-    chunks: list = []
+    chunks: list[RetrievedChunk] = []
     total_chars = 0
 
     for row in rows:
