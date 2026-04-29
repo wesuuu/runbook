@@ -14,7 +14,11 @@ SUPPORTED_PROVIDERS = (
     "together", "fireworks", "bedrock",
 )
 
-SUPPORTED_CAPABILITIES = ("vision", "text", "embedding", "doc_structure", "chat", "protocol_generation", "template_convert")
+SUPPORTED_CAPABILITIES = (
+    "vision", "text", "embedding", "doc_structure",
+    "chat", "chat_subagent", "chat_summary",
+    "protocol_generation", "template_convert",
+)
 # "audio" excluded — feature not yet implemented
 
 DEFAULT_CONFIGS = {
@@ -35,6 +39,14 @@ DEFAULT_CONFIGS = {
         "model_name": "llama3.2-vision:11b",
     },
     "chat": {
+        "provider": "ollama",
+        "model_name": "qwen3.5:27b",
+    },
+    "chat_subagent": {
+        "provider": "ollama",
+        "model_name": "qwen3.5:27b",
+    },
+    "chat_summary": {
         "provider": "ollama",
         "model_name": "qwen3.5:27b",
     },
