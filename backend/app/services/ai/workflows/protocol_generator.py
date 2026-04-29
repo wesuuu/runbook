@@ -1,4 +1,25 @@
-"""Service to generate a Protocol graph from a chat conversation via LLM."""
+"""One-shot protocol generation from a chat conversation.
+
+DORMANT SINCE TD-0081 (Apr 2026).
+
+This workflow is not currently invoked by any endpoint or background job.
+It is preserved because:
+  - The code is written and tested.
+  - It represents a legitimate alternate UX path ("explore in chat, then
+    formalize") that we may productize later.
+  - Deleting and rebuilding later is more work than keeping it dormant.
+
+Status: kept until we confirm the conversational `protocol_builder` subagent
+performs well in production. Once validated, this file may be deleted along
+with its unit test (tests/unit/test_protocol_generator.py).
+
+DO NOT add new callers without first promoting this to a real product
+feature with its own task and acceptance criteria.
+
+The graph-building helpers (build_graph, match_unit_op, extract_params) in
+this module ARE used by services/protocols/creation.py and must not be
+removed without replacing them.
+"""
 
 import logging
 from datetime import datetime, timezone

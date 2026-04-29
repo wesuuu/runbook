@@ -69,7 +69,7 @@ async def create_protocol_from_spec(
     # Reuse the existing graph-builder helpers (they will move to
     # workflows/protocol_generator.py in Task 21 — this import path
     # updates then).
-    from app.services.ai.protocol_generator import (
+    from app.services.ai.workflows.protocol_generator import (
         GeneratedProtocol, GeneratedStep, build_graph,
     )
 

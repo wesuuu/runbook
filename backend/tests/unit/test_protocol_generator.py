@@ -9,9 +9,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.ai.protocol_generator import (GeneratedProtocol,
-                                                GeneratedStep, build_graph,
-                                                extract_params, match_unit_op)
+from app.services.ai.workflows.protocol_generator import (GeneratedProtocol,
+                                                          GeneratedStep,
+                                                          build_graph,
+                                                          extract_params,
+                                                          match_unit_op)
 
 
 def _make_unit_op(
