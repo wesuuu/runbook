@@ -48,9 +48,12 @@ async def create_protocol_from_spec(
         raise ValueError("spec must include at least one step")
 
     result = await db.execute(
-        select(Project).where(Project.name.ilike(f"%{project_name}%"))
+        select(Project)
+        .where(Project.name.ilike(f"%{project_name}%"))
+        .order_by(Project.created_at.desc())
+        .limit(1)
     )
-    project = result.scalar_one_or_none()
+    project = result.scalars().first()
     if project is None:
         raise ValueError(f"Project '{project_name}' not found")
 
