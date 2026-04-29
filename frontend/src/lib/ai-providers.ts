@@ -125,6 +125,8 @@ export interface CapabilityDef {
 export const CAPABILITIES: CapabilityDef[] = [
     { id: 'vision', label: 'Vision', description: 'Lab instrument image analysis' },
     { id: 'chat', label: 'Chat', description: 'AI assistant conversations' },
+    { id: 'chat_subagent', label: 'Chat Subagent', description: 'Specialist subagents dispatched by the chat agent (research, protocol building, run planning).' },
+    { id: 'chat_summary', label: 'Chat Summary', description: 'Summarizes long chat histories when context limits are reached.' },
     { id: 'embedding', label: 'Embedding', description: 'Document search vectors' },
     { id: 'doc_structure', label: 'Document Analysis', description: 'PDF structure detection' },
     { id: 'protocol_generation', label: 'Protocol Generation', description: 'AI protocol creation' },
