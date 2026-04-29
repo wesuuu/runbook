@@ -1,6 +1,7 @@
 <script lang="ts">
     import { getUser } from "$lib/auth.svelte";
     import { Button } from "$lib/components/ui/button";
+    import { OFFLINE_ENABLED } from "$lib/feature-flags";
 
     interface Props {
         swimLaneNodes: any[];
@@ -92,7 +93,7 @@
         </div>
 
         <!-- Go Offline option for current user (role-based) -->
-        {#if getCurrentUserAssignment()}
+        {#if OFFLINE_ENABLED && getCurrentUserAssignment()}
             <div class="mt-6 pt-5 border-t border-border/60">
                 <Button
                     variant="outline"
@@ -166,7 +167,7 @@
         </div>
 
         <!-- Offline mode checkbox for role-less runs -->
-        {#if assignment?.user_id === getUser()?.id}
+        {#if OFFLINE_ENABLED && assignment?.user_id === getUser()?.id}
             <label class="mt-5 flex items-start gap-3 p-4 bg-background rounded-lg cursor-pointer group">
                 <input
                     type="checkbox"
