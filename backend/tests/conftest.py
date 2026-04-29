@@ -49,6 +49,14 @@ async def _seed_library_registry():
 
 
 @pytest.fixture(autouse=True)
+def _reset_chat_agent_cache():
+    from app.services.ai.chat_agent import _reset_cache_for_tests
+    _reset_cache_for_tests()
+    yield
+    _reset_cache_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _disable_stripe_globally(monkeypatch):
     """Ensure Stripe is unconfigured for all tests by default.
 
