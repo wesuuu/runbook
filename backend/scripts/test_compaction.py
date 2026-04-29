@@ -16,11 +16,24 @@ import uuid
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.services.ai.ai_config import get_context_window, get_model
-from app.services.ai.chat_service import (
-    compact_history,
-    estimate_messages_tokens,
-    estimate_tokens,
-)
+from app.services.ai.runtime.token_counting import tiktoken_counter
+
+# NOTE (TD-0081): compact_history, estimate_tokens, and estimate_messages_tokens
+# were removed when chat_service.py was deleted. Compaction is now handled
+# automatically by ContextManagerCapability inside build_chat_agent().
+# This script tests the new compaction by sending a real conversation via
+# send_message() rather than calling compact_history() directly.
+# The helpers below are local shims for display purposes only.
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimate token count using 4 chars/token heuristic (display only)."""
+    return len(text) // 4
+
+
+def estimate_messages_tokens(messages: list) -> int:
+    """Estimate total tokens across pydantic-ai messages using tiktoken."""
+    return tiktoken_counter(messages)
 
 
 def _build_synthetic_history(num_exchanges: int = 30) -> list:
@@ -163,35 +176,22 @@ async def main():
         db.add(session)
         await db.flush()
 
-        print(f"\n--- Running Compaction ---")
+        # NOTE (TD-0081): compact_history() was removed — compaction now happens
+        # automatically inside ContextManagerCapability during agent.run().
+        # To test compaction end-to-end, use test_chat_agent.py and watch for
+        # ChatMessage(role=SUMMARY) rows being written after long conversations.
+        # This script now only demonstrates the token estimation helpers.
+        print(f"\n--- Compaction API removed (TD-0081) ---")
+        print(f"Compaction is now handled automatically by ContextManagerCapability.")
+        print(f"Run test_chat_agent.py for end-to-end compaction testing.")
+
         try:
-            compacted, summary_text = await compact_history(
-                db=db,
-                session_id=session.id,
-                messages=messages,
-                token_budget=budget,
-                model=model,
-                org_id=org_id,
-            )
-
-            total_tokens_after = estimate_messages_tokens(compacted)
-
-            print(f"\n--- After Compaction ---")
-            print(f"Messages: {len(compacted)}")
-            print(f"Estimated tokens: {total_tokens_after:,}")
-            print(f"Reduction: {total_tokens_before - total_tokens_after:,} tokens "
-                  f"({(1 - total_tokens_after / total_tokens_before) * 100:.1f}%)")
-
-            if summary_text:
-                print(f"\n--- Summary ({estimate_tokens(summary_text):,} tokens) ---")
-                print(summary_text)
-            else:
-                print("\nNo summary generated (history was under budget).")
-
-        except Exception as e:
-            print(f"\nERROR: Compaction failed: {e}")
-            import traceback
-            traceback.print_exc()
+            # Still show token budget info for reference
+            print(f"\nToken budget info:")
+            print(f"  Synthetic history: {len(messages)} messages")
+            print(f"  Estimated tokens: {total_tokens_before:,}")
+            print(f"  Budget: {budget:,}")
+            print(f"  Would trigger: {total_tokens_before > budget}")
         finally:
             # Clean up — rollback the temp session
             await db.rollback()

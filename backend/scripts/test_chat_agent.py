@@ -22,11 +22,11 @@ from uuid import UUID
 sys.path.insert(0, ".")
 
 from app.db.session import AsyncSessionLocal
-from app.services.ai.chat_service import (
+from app.services.ai.sessions import (
     create_session,
-    send_message,
     get_session,
 )
+from app.services.ai.send_message import send_message
 
 ORG_ID = UUID("10000000-0000-0000-0000-000000000001")
 USER_ID = UUID("20000000-0000-0000-0000-000000000001")
@@ -155,7 +155,7 @@ async def run_test(attempt: int):
                 print(issue)
 
         # Cleanup
-        from app.services.ai.chat_service import delete_session
+        from app.services.ai.sessions import delete_session
         session = await get_session(db, session.id)
         if session:
             await delete_session(db, session)
