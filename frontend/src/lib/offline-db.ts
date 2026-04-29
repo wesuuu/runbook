@@ -9,6 +9,8 @@
  * are recoverable on next normal login.
  */
 
+import { OFFLINE_ENABLED } from '$lib/feature-flags';
+
 const DB_NAME = 'batchrite_offline';
 const DB_VERSION = 1;
 const SESSIONS_STORE = 'field-sessions';
@@ -51,6 +53,11 @@ export interface QueuedAction {
 }
 
 function openDb(): Promise<IDBDatabase> {
+    if (!OFFLINE_ENABLED) {
+        return Promise.reject(
+            new Error('Offline DB is disabled (VITE_OFFLINE_ENABLED=false)'),
+        );
+    }
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
         request.onerror = () => reject(request.error);

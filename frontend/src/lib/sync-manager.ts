@@ -10,6 +10,7 @@ import { getUnsynced, markSynced, markSyncError, getOrphanedActions } from '$lib
 import { getOfflineToken, refreshQueueCount, isFieldModeActive, getActiveRunId } from '$lib/field-mode.svelte';
 import { getToken } from '$lib/auth.svelte';
 import { API_BASE } from '$lib/config';
+import { OFFLINE_ENABLED } from '$lib/feature-flags';
 
 const SYNC_TAG = 'runbook-offline-sync';
 let syncing = false;
@@ -43,6 +44,7 @@ async function syncBatch(runId: string, actions: Array<Record<string, unknown>>)
 
 /** Drain all unsynced actions, grouped by run_id. */
 export async function drainQueue(): Promise<{ synced: number; failed: number }> {
+    if (!OFFLINE_ENABLED) return { synced: 0, failed: 0 };
     if (syncing) return { synced: 0, failed: 0 };
     syncing = true;
     let totalSynced = 0;
@@ -126,6 +128,7 @@ async function registerBackgroundSync(): Promise<void> {
 
 /** Initialize the sync manager. Call once on app startup. */
 export function initSyncManager(): void {
+    if (!OFFLINE_ENABLED) return;
     if (initialized) return;
     initialized = true;
 
@@ -155,5 +158,6 @@ export function isSyncing(): boolean {
 
 /** Manually trigger a sync (e.g., from "Sync Now" button). */
 export async function syncNow(): Promise<{ synced: number; failed: number }> {
+    if (!OFFLINE_ENABLED) return { synced: 0, failed: 0 };
     return drainQueue();
 }
