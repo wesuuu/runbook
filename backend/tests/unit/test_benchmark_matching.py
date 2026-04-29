@@ -60,7 +60,7 @@ def test_align_by_name_greedy_ambiguous():
     actual = [{"name": "Buffer Prep"}]
     aligned = align_by_name(expected, actual, "name", threshold=0.7)
     assert aligned[0][1] is not None  # first wins
-    assert aligned[1][1] is None      # second is missed
+    assert aligned[1][1] is None  # second is missed
 
 
 def test_f1_perfect():

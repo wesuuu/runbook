@@ -5,13 +5,8 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.security import create_access_token, hash_password
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    OrgRole,
-    SubscriptionTier,
-    User,
-)
+from app.models.iam import (Organization, OrganizationMember, OrgRole,
+                            SubscriptionTier, User)
 from app.models.science import Project
 
 
@@ -31,9 +26,11 @@ async def _setup_locked_out_org(db_session, status: str = "canceled"):
     )
     db_session.add(user)
     await db_session.flush()
-    db_session.add(OrganizationMember(
-        user_id=user.id, organization_id=org.id, role=OrgRole.ADMIN.value
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id, organization_id=org.id, role=OrgRole.ADMIN.value
+        )
+    )
     await db_session.flush()
     return user, org
 
@@ -67,9 +64,7 @@ async def test_write_endpoint_402s_when_subscription_canceled(
 
 
 @pytest.mark.asyncio
-async def test_write_endpoint_402s_when_past_due(
-    client: AsyncClient, db_session
-):
+async def test_write_endpoint_402s_when_past_due(client: AsyncClient, db_session):
     user, _ = await _setup_locked_out_org(db_session, status="past_due")
     resp = await client.post(
         "/projects/",
@@ -80,9 +75,7 @@ async def test_write_endpoint_402s_when_past_due(
 
 
 @pytest.mark.asyncio
-async def test_read_endpoint_succeeds_when_locked_out(
-    client: AsyncClient, db_session
-):
+async def test_read_endpoint_succeeds_when_locked_out(client: AsyncClient, db_session):
     user, org = await _setup_locked_out_org(db_session, status="canceled")
     db_session.add(Project(name="p1", organization_id=org.id))
     await db_session.flush()
@@ -100,25 +93,27 @@ async def test_billing_portal_session_accessible_when_locked_out(
     client: AsyncClient, db_session, monkeypatch
 ):
     from unittest.mock import MagicMock
+
     from app.services.billing import stripe_client
+
     fake = MagicMock()
     fake.billing_portal.Session.create.return_value = MagicMock(
         url="https://billing.stripe.com/session/abc"
     )
     stripe_client.set_fake_client(fake)
-    for key in ("stripe_secret_key", "stripe_webhook_secret",
-                "stripe_essentials_price_id", "stripe_pro_price_id"):
-        monkeypatch.setattr(
-            f"app.services.billing.stripe_client.settings.{key}", "x"
-        )
+    for key in (
+        "stripe_secret_key",
+        "stripe_webhook_secret",
+        "stripe_essentials_price_id",
+        "stripe_pro_price_id",
+    ):
+        monkeypatch.setattr(f"app.services.billing.stripe_client.settings.{key}", "x")
 
     user, org = await _setup_locked_out_org(db_session)
     org.stripe_customer_id = "cus_test_lockout"
     await db_session.flush()
 
-    resp = await client.post(
-        "/billing/portal-session", json={}, headers=_headers(user)
-    )
+    resp = await client.post("/billing/portal-session", json={}, headers=_headers(user))
     assert resp.status_code == 200
     stripe_client._reset_cache()
 

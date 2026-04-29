@@ -2,15 +2,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    User,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            User)
 from app.models.science import Project
 
 
@@ -55,7 +49,8 @@ async def test_create_project_non_org_member(
 
 @pytest.mark.asyncio
 async def test_create_project_unauthenticated(
-    client: AsyncClient, test_org: Organization,
+    client: AsyncClient,
+    test_org: Organization,
 ):
     resp = await client.post(
         "/projects/",
@@ -78,11 +73,13 @@ async def test_list_projects_sees_permitted_only(
     db_session: AsyncSession,
 ):
     # second_user is not in the org, should see nothing
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
     await db_session.flush()
 
     resp = await client.get(
@@ -167,18 +164,22 @@ async def test_update_project_view_only_forbidden(
     test_org: Organization,
 ):
     # Give second_user VIEW only
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=second_user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=test_project.id,
-        permission_level=PermissionLevel.VIEW.value,
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=second_user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=test_project.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
     await db_session.flush()
 
     resp = await client.put(
@@ -211,18 +212,22 @@ async def test_delete_project_edit_only_forbidden(
     db_session: AsyncSession,
     test_org: Organization,
 ):
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=second_user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=test_project.id,
-        permission_level=PermissionLevel.EDIT.value,
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=second_user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=test_project.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
     await db_session.flush()
 
     resp = await client.delete(

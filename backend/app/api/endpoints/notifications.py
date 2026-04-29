@@ -43,11 +43,14 @@ router = APIRouter()
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
+
 async def _get_user_org_id(db: AsyncSession, user_id: UUID) -> UUID:
     """Get the user's first org membership. Raises 400 if none."""
-    stmt = select(OrganizationMember.organization_id).where(
-        OrganizationMember.user_id == user_id
-    ).limit(1)
+    stmt = (
+        select(OrganizationMember.organization_id)
+        .where(OrganizationMember.user_id == user_id)
+        .limit(1)
+    )
     result = await db.execute(stmt)
     org_id = result.scalar_one_or_none()
     if not org_id:
@@ -55,9 +58,7 @@ async def _get_user_org_id(db: AsyncSession, user_id: UUID) -> UUID:
     return org_id
 
 
-async def _require_org_admin(
-    db: AsyncSession, user_id: UUID, org_id: UUID
-) -> None:
+async def _require_org_admin(db: AsyncSession, user_id: UUID, org_id: UUID) -> None:
     """Verify the user is an org admin. Raises 403 if not."""
     stmt = select(OrganizationMember).where(
         OrganizationMember.user_id == user_id,
@@ -69,9 +70,7 @@ async def _require_org_admin(
         raise HTTPException(403, "Organization admin access required")
 
 
-async def _require_org_member(
-    db: AsyncSession, user_id: UUID, org_id: UUID
-) -> None:
+async def _require_org_member(db: AsyncSession, user_id: UUID, org_id: UUID) -> None:
     """Verify the user belongs to the org (any role). Raises 403 if not."""
     stmt = select(OrganizationMember.id).where(
         OrganizationMember.user_id == user_id,
@@ -104,6 +103,7 @@ def _validate_event_type(event_type: str) -> None:
 
 
 # ── Org-Level Channel CRUD ───────────────────────────────────────────────
+
 
 @router.post("/channels", response_model=ChannelResponse, status_code=201)
 async def create_org_channel(
@@ -191,6 +191,7 @@ async def delete_org_channel(
 
 # ── User-Level Channel CRUD ─────────────────────────────────────────────
 
+
 @router.post("/channels/me", response_model=ChannelResponse, status_code=201)
 async def create_user_channel(
     body: ChannelCreate,
@@ -272,9 +273,8 @@ async def delete_user_channel(
 
 # ── Channel Test ─────────────────────────────────────────────────────────
 
-@router.post(
-    "/channels/{channel_id}/test", response_model=ChannelTestResult
-)
+
+@router.post("/channels/{channel_id}/test", response_model=ChannelTestResult)
 async def test_channel(
     channel_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -300,6 +300,7 @@ async def test_channel(
 
 
 # ── Subscriptions ────────────────────────────────────────────────────────
+
 
 @router.post(
     "/channels/{channel_id}/subscriptions",
@@ -400,6 +401,7 @@ async def delete_subscription(
 
 # ── User In-App Notifications ───────────────────────────────────────────
 
+
 @router.get("/", response_model=NotificationListResponse)
 async def list_notifications(
     limit: int = Query(20, ge=1, le=100),
@@ -408,19 +410,12 @@ async def list_notifications(
     current_user: User = Depends(get_current_user),
 ):
     """List the current user's in-app notifications."""
-    base = select(Notification).where(
-        Notification.user_id == current_user.id
-    )
+    base = select(Notification).where(Notification.user_id == current_user.id)
 
     count_stmt = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
 
-    stmt = (
-        base
-        .order_by(Notification.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
+    stmt = base.order_by(Notification.created_at.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)
     items = list(result.scalars().all())
 
@@ -467,6 +462,7 @@ async def mark_all_read(
 ):
     """Mark all notifications as read."""
     from sqlalchemy import update
+
     stmt = (
         update(Notification)
         .where(
@@ -480,6 +476,7 @@ async def mark_all_read(
 
 
 # ── Delivery Log (Admin) ────────────────────────────────────────────────
+
 
 @router.get("/deliveries", response_model=DeliveryListResponse)
 async def list_deliveries(
@@ -505,8 +502,7 @@ async def list_deliveries(
     total = (await db.execute(count_stmt)).scalar() or 0
 
     stmt = (
-        base
-        .order_by(NotificationDelivery.created_at.desc())
+        base.order_by(NotificationDelivery.created_at.desc())
         .offset(offset)
         .limit(limit)
     )

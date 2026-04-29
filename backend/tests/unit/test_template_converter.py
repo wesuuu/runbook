@@ -20,15 +20,8 @@ import pytest
 from docx import Document
 
 from app.services.protocols.template_converter import (
-    ConversionState,
-    EventStream,
-    _apply_substitutions_to_docx,
-    _extract_jinja_variables,
-    _try_render,
-    _to_pdf,
-    JINJA_PATTERN,
-)
-
+    JINJA_PATTERN, ConversionState, EventStream, _apply_substitutions_to_docx,
+    _extract_jinja_variables, _to_pdf, _try_render)
 
 # ── _extract_jinja_variables tests ──
 
@@ -101,9 +94,12 @@ class TestApplySubstitutions:
     def test_simple_substitution(self):
         """Should replace text in paragraphs."""
         docx = self._make_docx("Prepared by: Dr. Sarah Chen")
-        result, matched, unmatched = _apply_substitutions_to_docx(docx, [
-            {"find": "Dr. Sarah Chen", "replace": "{{ operator_name }}"},
-        ])
+        result, matched, unmatched = _apply_substitutions_to_docx(
+            docx,
+            [
+                {"find": "Dr. Sarah Chen", "replace": "{{ operator_name }}"},
+            ],
+        )
         doc = Document(BytesIO(result))
         assert "{{ operator_name }}" in doc.paragraphs[0].text
         assert len(matched) == 1
@@ -115,10 +111,13 @@ class TestApplySubstitutions:
             "Name: John Smith",
             "Date: 2026-01-15",
         )
-        result, matched, _ = _apply_substitutions_to_docx(docx, [
-            {"find": "John Smith", "replace": "{{ operator_name }}"},
-            {"find": "2026-01-15", "replace": "{{ effective_date }}"},
-        ])
+        result, matched, _ = _apply_substitutions_to_docx(
+            docx,
+            [
+                {"find": "John Smith", "replace": "{{ operator_name }}"},
+                {"find": "2026-01-15", "replace": "{{ effective_date }}"},
+            ],
+        )
         doc = Document(BytesIO(result))
         text = "\n".join(p.text for p in doc.paragraphs)
         assert "{{ operator_name }}" in text
@@ -128,10 +127,13 @@ class TestApplySubstitutions:
     def test_substitution_in_table_cells(self):
         """Should replace text inside table cells."""
         docx = self._make_docx_with_table()
-        result, matched, _ = _apply_substitutions_to_docx(docx, [
-            {"find": "Dr. Sarah Chen", "replace": "{{ operator_name }}"},
-            {"find": "2026-01-15", "replace": "{{ date }}"},
-        ])
+        result, matched, _ = _apply_substitutions_to_docx(
+            docx,
+            [
+                {"find": "Dr. Sarah Chen", "replace": "{{ operator_name }}"},
+                {"find": "2026-01-15", "replace": "{{ date }}"},
+            ],
+        )
         doc = Document(BytesIO(result))
         all_text = ""
         for table in doc.tables:
@@ -145,18 +147,24 @@ class TestApplySubstitutions:
     def test_preserves_unmatched_text(self):
         """Text that doesn't match should be unchanged."""
         docx = self._make_docx("Static label: some value")
-        result, _, _ = _apply_substitutions_to_docx(docx, [
-            {"find": "some value", "replace": "{{ var }}"},
-        ])
+        result, _, _ = _apply_substitutions_to_docx(
+            docx,
+            [
+                {"find": "some value", "replace": "{{ var }}"},
+            ],
+        )
         doc = Document(BytesIO(result))
         assert "Static label:" in doc.paragraphs[0].text
 
     def test_produces_valid_docx(self):
         """Output should always be a valid DOCX."""
         docx = self._make_docx("Test document")
-        result, _, _ = _apply_substitutions_to_docx(docx, [
-            {"find": "Test", "replace": "{{ test_var }}"},
-        ])
+        result, _, _ = _apply_substitutions_to_docx(
+            docx,
+            [
+                {"find": "Test", "replace": "{{ test_var }}"},
+            ],
+        )
         assert result[:2] == b"PK"
         doc = Document(BytesIO(result))
         assert len(doc.paragraphs) > 0
@@ -164,9 +172,12 @@ class TestApplySubstitutions:
     def test_no_match_reports_unmatched(self):
         """Unmatched finds should be reported."""
         docx = self._make_docx("Hello world")
-        result, matched, unmatched = _apply_substitutions_to_docx(docx, [
-            {"find": "nonexistent text", "replace": "{{ var }}"},
-        ])
+        result, matched, unmatched = _apply_substitutions_to_docx(
+            docx,
+            [
+                {"find": "nonexistent text", "replace": "{{ var }}"},
+            ],
+        )
         doc = Document(BytesIO(result))
         assert doc.paragraphs[0].text == "Hello world"
         assert len(matched) == 0
@@ -184,8 +195,7 @@ class TestConversionState:
             state = ConversionState(org_id, conv_id, storage_root=tmpdir)
             state.ensure_dir()
             expected_dir = (
-                Path(tmpdir) / str(org_id) / "tmp" / "conversions"
-                / str(conv_id)
+                Path(tmpdir) / str(org_id) / "tmp" / "conversions" / str(conv_id)
             )
             assert expected_dir.is_dir()
 

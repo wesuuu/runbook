@@ -134,9 +134,7 @@ async def test_upload_rejects_oversized_file(
     from app.models.library import MAX_DOCUMENT_SIZE_BYTES
 
     big_content = b"x" * (MAX_DOCUMENT_SIZE_BYTES + 1)
-    resp = await _make_upload(
-        client, auth_headers, content=big_content
-    )
+    resp = await _make_upload(client, auth_headers, content=big_content)
     assert resp.status_code == 413
 
 
@@ -154,9 +152,7 @@ async def test_upload_requires_authentication(client: AsyncClient):
 async def test_upload_title_from_form_field(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
-    resp = await _make_upload(
-        client, auth_headers, title="Custom Title"
-    )
+    resp = await _make_upload(client, auth_headers, title="Custom Title")
     assert resp.status_code == 201
     assert resp.json()["title"] == "Custom Title"
 
@@ -250,15 +246,11 @@ async def test_list_documents_filters_by_status(
 ):
     await _make_upload(client, auth_headers, title="Doc 1")
 
-    resp = await client.get(
-        "/library/documents?status=UPLOADED", headers=auth_headers
-    )
+    resp = await client.get("/library/documents?status=UPLOADED", headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] >= 1
-    assert all(
-        item["status"] == "UPLOADED" for item in body["items"]
-    )
+    assert all(item["status"] == "UPLOADED" for item in body["items"])
 
 
 @pytest.mark.asyncio
@@ -268,9 +260,7 @@ async def test_list_documents_pagination(
     for i in range(5):
         await _make_upload(client, auth_headers, title=f"Doc {i}")
 
-    resp = await client.get(
-        "/library/documents?limit=2&offset=0", headers=auth_headers
-    )
+    resp = await client.get("/library/documents?limit=2&offset=0", headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 5
@@ -304,11 +294,15 @@ async def test_list_documents_scoped_to_org(
 
     db_session.add(
         OrganizationMember(
-            user_id=(await db_session.execute(
-                __import__("sqlalchemy").select(User).where(
-                    User.email == "second@example.com"
+            user_id=(
+                await db_session.execute(
+                    __import__("sqlalchemy")
+                    .select(User)
+                    .where(User.email == "second@example.com")
                 )
-            )).scalar_one().id,
+            )
+            .scalar_one()
+            .id,
             organization_id=org2.id,
             role="ADMIN",
         )
@@ -316,9 +310,7 @@ async def test_list_documents_scoped_to_org(
     await db_session.flush()
 
     # List as second_user — should not see test_org's docs
-    resp = await client.get(
-        "/library/documents", headers=second_auth_headers
-    )
+    resp = await client.get("/library/documents", headers=second_auth_headers)
     assert resp.status_code == 200
     assert resp.json()["total"] == 0
 
@@ -333,9 +325,7 @@ async def test_get_document_detail_success(
     upload_resp = await _make_upload(client, auth_headers)
     doc_id = upload_resp.json()["id"]
 
-    resp = await client.get(
-        f"/library/documents/{doc_id}", headers=auth_headers
-    )
+    resp = await client.get(f"/library/documents/{doc_id}", headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["id"] == doc_id
@@ -351,9 +341,7 @@ async def test_get_document_not_found_returns_404(
     import uuid
 
     fake_id = str(uuid.uuid4())
-    resp = await client.get(
-        f"/library/documents/{fake_id}", headers=auth_headers
-    )
+    resp = await client.get(f"/library/documents/{fake_id}", headers=auth_headers)
     assert resp.status_code == 404
 
 
@@ -364,9 +352,7 @@ async def test_get_document_includes_chunk_count(
     upload_resp = await _make_upload(client, auth_headers)
     doc_id = upload_resp.json()["id"]
 
-    resp = await client.get(
-        f"/library/documents/{doc_id}", headers=auth_headers
-    )
+    resp = await client.get(f"/library/documents/{doc_id}", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["chunk_count"] == 0  # No processing yet (mocked)
 
@@ -381,9 +367,7 @@ async def test_delete_document_returns_204(
     upload_resp = await _make_upload(client, auth_headers)
     doc_id = upload_resp.json()["id"]
 
-    resp = await client.delete(
-        f"/library/documents/{doc_id}", headers=auth_headers
-    )
+    resp = await client.delete(f"/library/documents/{doc_id}", headers=auth_headers)
     assert resp.status_code == 204
 
 
@@ -400,9 +384,7 @@ async def test_delete_document_removes_file(
 
     assert os.path.exists(file_path)
 
-    resp = await client.delete(
-        f"/library/documents/{doc_id}", headers=auth_headers
-    )
+    resp = await client.delete(f"/library/documents/{doc_id}", headers=auth_headers)
     assert resp.status_code == 204
     assert not os.path.exists(file_path)
 
@@ -414,9 +396,7 @@ async def test_delete_nonexistent_returns_404(
     import uuid
 
     fake_id = str(uuid.uuid4())
-    resp = await client.delete(
-        f"/library/documents/{fake_id}", headers=auth_headers
-    )
+    resp = await client.delete(f"/library/documents/{fake_id}", headers=auth_headers)
     assert resp.status_code == 404
 
 
@@ -446,9 +426,7 @@ async def test_retry_failed_document_resets_status(
     )
     await db_session.flush()
 
-    resp = await client.post(
-        f"/library/documents/{doc_id}/retry", headers=auth_headers
-    )
+    resp = await client.post(f"/library/documents/{doc_id}/retry", headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "UPLOADED"
@@ -462,9 +440,7 @@ async def test_retry_non_failed_document_returns_409(
     upload_resp = await _make_upload(client, auth_headers)
     doc_id = upload_resp.json()["id"]
 
-    resp = await client.post(
-        f"/library/documents/{doc_id}/retry", headers=auth_headers
-    )
+    resp = await client.post(f"/library/documents/{doc_id}/retry", headers=auth_headers)
     assert resp.status_code == 409
 
 
@@ -513,7 +489,9 @@ async def test_import_from_url_success(
 ):
     mock_response = AsyncMock()
     mock_response.status_code = 200
-    mock_response.text = "<html><title>Test Page</title><body><p>Hello world content</p></body></html>"
+    mock_response.text = (
+        "<html><title>Test Page</title><body><p>Hello world content</p></body></html>"
+    )
     mock_response.content = mock_response.text.encode()
     mock_response.raise_for_status = lambda: None
 
@@ -553,9 +531,7 @@ async def test_import_from_url_success(
 async def test_import_from_url_rejects_private_ip(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
-    with patch(
-        "app.services.protocols.url_importer.is_private_ip", return_value=True
-    ):
+    with patch("app.services.protocols.url_importer.is_private_ip", return_value=True):
         resp = await client.post(
             "/library/documents/from-url",
             json={"url": "http://127.0.0.1/secret"},
@@ -580,9 +556,7 @@ async def test_import_from_url_rejects_non_http_scheme(
 async def test_import_from_url_respects_robots_txt(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
-    with patch(
-        "app.services.protocols.url_importer.is_private_ip", return_value=False
-    ):
+    with patch("app.services.protocols.url_importer.is_private_ip", return_value=False):
         with patch(
             "app.services.protocols.url_importer.check_robots_txt",
             return_value=False,

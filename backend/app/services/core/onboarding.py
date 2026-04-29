@@ -4,6 +4,7 @@ Find-or-create sample projects, protocols, and runs used during the guided
 tour. Sample protocol/run are flagged with is_tour_sample=True; sample
 project is a normal project that the user can rename or delete freely.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -124,11 +125,7 @@ async def find_or_create_sample_project(
     db: AsyncSession, user: User, org: Organization
 ) -> Project:
     """Return any existing project for the org; create 'My First Project' if none."""
-    stmt = (
-        select(Project)
-        .where(Project.organization_id == org.id)
-        .limit(1)
-    )
+    stmt = select(Project).where(Project.organization_id == org.id).limit(1)
     result = await db.execute(stmt)
     project = result.scalar_one_or_none()
     if project is not None:
@@ -204,12 +201,9 @@ async def find_or_create_sample_run(
 
 async def delete_sample_run(db: AsyncSession, user: User) -> None:
     """Delete this user's sample run, if any. Idempotent."""
-    stmt = (
-        select(Run)
-        .where(
-            Run.is_tour_sample.is_(True),
-            Run.started_by_id == user.id,
-        )
+    stmt = select(Run).where(
+        Run.is_tour_sample.is_(True),
+        Run.started_by_id == user.id,
     )
     result = await db.execute(stmt)
     for run in result.scalars().all():

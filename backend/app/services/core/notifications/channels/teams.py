@@ -27,34 +27,40 @@ class TeamsChannel(BaseChannel):
         # Teams Adaptive Card format
         payload = {
             "type": "message",
-            "attachments": [{
-                "contentType":
-                    "application/vnd.microsoft.card.adaptive",
-                "content": {
-                    "$schema":
-                        "http://adaptivecards.io/schemas/adaptive-card.json",
-                    "type": "AdaptiveCard",
-                    "version": "1.4",
-                    "body": [
-                        {
-                            "type": "TextBlock",
-                            "text": message.title,
-                            "weight": "Bolder",
-                            "size": "Medium",
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": message.body,
-                            "wrap": True,
-                        },
-                    ],
-                    "actions": ([{
-                        "type": "Action.OpenUrl",
-                        "title": "View in Batchrite",
-                        "url": message.url,
-                    }] if message.url else []),
-                },
-            }],
+            "attachments": [
+                {
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": {
+                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                        "type": "AdaptiveCard",
+                        "version": "1.4",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "text": message.title,
+                                "weight": "Bolder",
+                                "size": "Medium",
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": message.body,
+                                "wrap": True,
+                            },
+                        ],
+                        "actions": (
+                            [
+                                {
+                                    "type": "Action.OpenUrl",
+                                    "title": "View in Batchrite",
+                                    "url": message.url,
+                                }
+                            ]
+                            if message.url
+                            else []
+                        ),
+                    },
+                }
+            ],
         }
 
         try:
@@ -68,9 +74,7 @@ class TeamsChannel(BaseChannel):
             if resp.status_code == 404:
                 raise PermanentError("Teams webhook URL not found (404)")
             if resp.status_code >= 400:
-                raise PermanentError(
-                    f"Teams {resp.status_code}: {resp.text[:200]}"
-                )
+                raise PermanentError(f"Teams {resp.status_code}: {resp.text[:200]}")
 
             return f"{resp.status_code} OK"
 

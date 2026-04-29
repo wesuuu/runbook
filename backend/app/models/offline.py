@@ -17,21 +17,31 @@ class RevokedOfflineToken(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "revoked_offline_tokens"
 
     jti: Mapped[str] = mapped_column(
-        String(36), unique=True, index=True, nullable=False,
+        String(36),
+        unique=True,
+        index=True,
+        nullable=False,
         comment="JWT ID (jti) claim from the offline token",
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
     )
     run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("runs.id"), nullable=True,
+        UUID(as_uuid=True),
+        ForeignKey("runs.id"),
+        nullable=True,
     )
     revoked_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
         comment="Admin user who revoked the token",
     )
     reason: Mapped[Optional[str]] = mapped_column(
-        Text, nullable=True,
+        Text,
+        nullable=True,
     )
 
     user = relationship("User", foreign_keys=[user_id])

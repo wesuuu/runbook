@@ -9,15 +9,32 @@ from app.models.base import Base
 from app.models.mixins import TimestampMixin, UUIDMixin
 
 SUPPORTED_PROVIDERS = (
-    "ollama", "anthropic", "openai", "google", "groq", "mistral",
-    "cohere", "openrouter", "xai", "cerebras", "deepseek",
-    "together", "fireworks", "bedrock",
+    "ollama",
+    "anthropic",
+    "openai",
+    "google",
+    "groq",
+    "mistral",
+    "cohere",
+    "openrouter",
+    "xai",
+    "cerebras",
+    "deepseek",
+    "together",
+    "fireworks",
+    "bedrock",
 )
 
 SUPPORTED_CAPABILITIES = (
-    "vision", "text", "embedding", "doc_structure",
-    "chat", "chat_subagent", "chat_summary",
-    "protocol_generation", "template_convert",
+    "vision",
+    "text",
+    "embedding",
+    "doc_structure",
+    "chat",
+    "chat_subagent",
+    "chat_summary",
+    "protocol_generation",
+    "template_convert",
 )
 # "audio" excluded — feature not yet implemented
 
@@ -70,29 +87,17 @@ class AiProviderConfig(Base, UUIDMixin, TimestampMixin):
     org_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
     )
-    capability: Mapped[str] = mapped_column(
-        String, nullable=False
-    )
-    provider: Mapped[str] = mapped_column(
-        String, nullable=False
-    )
-    model_name: Mapped[str] = mapped_column(
-        String, nullable=False
-    )
-    credentials: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
-    )
-    is_enabled: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False
-    )
+    capability: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    model_name: Mapped[str] = mapped_column(String, nullable=False)
+    credentials: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     context_window: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, default=None
     )
 
     # Relationships
-    organization: Mapped["Organization"] = relationship(
-        "app.models.iam.Organization"
-    )
+    organization: Mapped["Organization"] = relationship("app.models.iam.Organization")
 
 
 ALLOWED_IMAGE_TYPES = (

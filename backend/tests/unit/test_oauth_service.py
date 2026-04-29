@@ -1,10 +1,10 @@
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.core.oauth import OAuthService, UserInfo
-from app.models.iam import User
 from app.core.security import hash_password
+from app.models.iam import User
+from app.services.core.oauth import OAuthService, UserInfo
 
 
 @pytest.fixture

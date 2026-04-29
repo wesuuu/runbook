@@ -8,7 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import (get_current_user, get_or_404, get_org_id_from_request,
+from app.core.deps import (get_current_user, get_or_404,
+                           get_org_id_from_request,
                            require_active_subscription)
 from app.db.session import get_db
 from app.models.chat import ChatNotification, ChatSession
@@ -32,7 +33,9 @@ router = APIRouter()
 
 
 async def _get_user_org(
-    user: User, db: AsyncSession, org_id: uuid.UUID | None = None,
+    user: User,
+    db: AsyncSession,
+    org_id: uuid.UUID | None = None,
 ) -> tuple[uuid.UUID, str]:
     """Return (org_id, org_role) for the user's current org (from JWT).
 
@@ -76,11 +79,13 @@ async def list_skills(
                     if len(parts) >= 3:
                         meta = yaml.safe_load(parts[1])
                         if meta:
-                            result.append(ChatSkillResponse(
-                                name=meta.get("name", skill_dir.name),
-                                description=meta.get("description", ""),
-                                icon=meta.get("icon", "sparkles"),
-                            ))
+                            result.append(
+                                ChatSkillResponse(
+                                    name=meta.get("name", skill_dir.name),
+                                    description=meta.get("description", ""),
+                                    icon=meta.get("icon", "sparkles"),
+                                )
+                            )
     return ChatSkillListResponse(skills=result)
 
 
@@ -311,7 +316,10 @@ async def notify_admin(
         select(Organization.subscription_tier).where(Organization.id == org_id)
     )
     tier = result.scalar_one_or_none()
-    if tier and TIER_RANK.get(SubscriptionTier(tier), 0) >= TIER_RANK[SubscriptionTier.PRO]:
+    if (
+        tier
+        and TIER_RANK.get(SubscriptionTier(tier), 0) >= TIER_RANK[SubscriptionTier.PRO]
+    ):
         raise HTTPException(
             status_code=403,
             detail="Your organization has Pro subscription. AI is available by default.",

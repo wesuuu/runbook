@@ -1,17 +1,16 @@
 """Unit tests for app.services.core.onboarding."""
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization, User
 from app.models.science import Project, Protocol, Run
-from app.services.core.onboarding import (
-    delete_sample_run,
-    find_or_create_sample_project,
-    find_or_create_sample_protocol,
-    find_or_create_sample_run,
-    get_sample_protocol_graph,
-)
+from app.services.core.onboarding import (delete_sample_run,
+                                          find_or_create_sample_project,
+                                          find_or_create_sample_protocol,
+                                          find_or_create_sample_run,
+                                          get_sample_protocol_graph)
 
 
 @pytest_asyncio.fixture
@@ -40,7 +39,9 @@ async def test_get_sample_protocol_graph_returns_prepopulated_nodes():
 
 
 @pytest.mark.asyncio
-async def test_find_or_create_sample_project_creates_when_none(db_session, org_and_user):
+async def test_find_or_create_sample_project_creates_when_none(
+    db_session, org_and_user
+):
     org, user = org_and_user
     project = await find_or_create_sample_project(db_session, user, org)
     assert project.id is not None
@@ -48,7 +49,9 @@ async def test_find_or_create_sample_project_creates_when_none(db_session, org_a
 
 
 @pytest.mark.asyncio
-async def test_find_or_create_sample_project_reuses_existing_active(db_session, org_and_user):
+async def test_find_or_create_sample_project_reuses_existing_active(
+    db_session, org_and_user
+):
     org, user = org_and_user
     existing = Project(name="Existing", organization_id=org.id)
     db_session.add(existing)

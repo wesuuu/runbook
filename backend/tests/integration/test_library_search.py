@@ -21,15 +21,11 @@ def mock_processor():
         yield
 
 
-async def _upload_and_index(
-    client, auth_headers, db_session, title, content_text
-):
+async def _upload_and_index(client, auth_headers, db_session, title, content_text):
     """Upload a document and manually create indexed chunks for testing."""
     resp = await client.post(
         "/library/documents",
-        files={
-            "file": ("test.txt", io.BytesIO(content_text.encode()), "text/plain")
-        },
+        files={"file": ("test.txt", io.BytesIO(content_text.encode()), "text/plain")},
         data={"title": title},
         headers=auth_headers,
     )
@@ -121,9 +117,7 @@ class TestKeywordSearch:
     async def test_keyword_search_no_results(
         self, client: AsyncClient, auth_headers, test_org, db_session
     ):
-        await _upload_and_index(
-            client, auth_headers, db_session, "Doc", "hello world"
-        )
+        await _upload_and_index(client, auth_headers, db_session, "Doc", "hello world")
 
         with patch(
             "app.services.ai.embedding.embed_query",
@@ -229,17 +223,13 @@ class TestSearchModes:
     async def test_keyword_mode_when_embedding_unavailable(
         self, client: AsyncClient, auth_headers, test_org, db_session
     ):
-        await _upload_and_index(
-            client, auth_headers, db_session, "Doc", "test content"
-        )
+        await _upload_and_index(client, auth_headers, db_session, "Doc", "test content")
 
         with patch(
             "app.services.ai.embedding.embed_query",
             side_effect=Exception("offline"),
         ):
-            resp = await client.get(
-                "/library/search?q=test", headers=auth_headers
-            )
+            resp = await client.get("/library/search?q=test", headers=auth_headers)
 
         assert resp.json()["search_mode"] == "keyword"
 
@@ -252,7 +242,5 @@ class TestSearchModes:
     async def test_search_requires_query(
         self, client: AsyncClient, auth_headers, test_org
     ):
-        resp = await client.get(
-            "/library/search?q=", headers=auth_headers
-        )
+        resp = await client.get("/library/search?q=", headers=auth_headers)
         assert resp.status_code == 422

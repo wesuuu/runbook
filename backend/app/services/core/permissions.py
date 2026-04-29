@@ -11,12 +11,8 @@ from app.models.library import Document
 from app.models.science import Project, Protocol, Run
 
 
-def _meets_level(
-    actual: str, required: PermissionLevel
-) -> bool:
-    return PERMISSION_RANK.get(
-        PermissionLevel(actual), 0
-    ) >= PERMISSION_RANK[required]
+def _meets_level(actual: str, required: PermissionLevel) -> bool:
+    return PERMISSION_RANK.get(PermissionLevel(actual), 0) >= PERMISSION_RANK[required]
 
 
 async def _get_org_id_for_object(
@@ -27,9 +23,7 @@ async def _get_org_id_for_object(
     """Resolve the organization_id for any object."""
     if object_type == ObjectType.PROJECT:
         result = await db.execute(
-            select(Project.organization_id).where(
-                Project.id == object_id
-            )
+            select(Project.organization_id).where(Project.id == object_id)
         )
         return result.scalar_one_or_none()
 
@@ -66,38 +60,26 @@ async def _get_parent_project_id(
     """Get the parent project_id for a protocol or run."""
     if object_type == ObjectType.PROTOCOL:
         result = await db.execute(
-            select(Protocol.project_id).where(
-                Protocol.id == object_id
-            )
+            select(Protocol.project_id).where(Protocol.id == object_id)
         )
         return result.scalar_one_or_none()
 
     if object_type == ObjectType.RUN:
-        result = await db.execute(
-            select(Run.project_id).where(
-                Run.id == object_id
-            )
-        )
+        result = await db.execute(select(Run.project_id).where(Run.id == object_id))
         return result.scalar_one_or_none()
 
     if object_type == ObjectType.DOCUMENT:
         result = await db.execute(
-            select(Document.project_id).where(
-                Document.id == object_id
-            )
+            select(Document.project_id).where(Document.id == object_id)
         )
         return result.scalar_one_or_none()
 
     return None
 
 
-async def _get_user_team_ids(
-    db: AsyncSession, user_id: UUID
-) -> list[UUID]:
+async def _get_user_team_ids(db: AsyncSession, user_id: UUID) -> list[UUID]:
     result = await db.execute(
-        select(TeamMember.team_id).where(
-            TeamMember.user_id == user_id
-        )
+        select(TeamMember.team_id).where(TeamMember.user_id == user_id)
     )
     return list(result.scalars().all())
 
@@ -147,16 +129,16 @@ async def check_permission(
         if object_type == ObjectType.PROJECT:
             project_id_to_check = object_id
         elif object_type in (
-            ObjectType.PROTOCOL, ObjectType.RUN, ObjectType.DOCUMENT,
+            ObjectType.PROTOCOL,
+            ObjectType.RUN,
+            ObjectType.DOCUMENT,
         ):
             project_id_to_check = await _get_parent_project_id(
                 db, object_type, object_id
             )
         if project_id_to_check is not None:
             result = await db.execute(
-                select(Project.settings).where(
-                    Project.id == project_id_to_check
-                )
+                select(Project.settings).where(Project.id == project_id_to_check)
             )
             proj_settings = result.scalar_one_or_none()
             if proj_settings is not None:
@@ -197,13 +179,14 @@ async def check_permission(
 
     # 5. Inherit from parent project for protocols/runs/documents
     if object_type in (ObjectType.PROTOCOL, ObjectType.RUN, ObjectType.DOCUMENT):
-        project_id = await _get_parent_project_id(
-            db, object_type, object_id
-        )
+        project_id = await _get_parent_project_id(db, object_type, object_id)
         if project_id:
             return await check_permission(
-                db, user_id, ObjectType.PROJECT,
-                project_id, required_level,
+                db,
+                user_id,
+                ObjectType.PROJECT,
+                project_id,
+                required_level,
             )
 
     # 6. Deny
@@ -230,9 +213,7 @@ async def get_visible_project_ids(
         return []
     if membership.role == "ADMIN":
         result = await db.execute(
-            select(Project.id).where(
-                Project.organization_id == org_id
-            )
+            select(Project.id).where(Project.organization_id == org_id)
         )
         return list(result.scalars().all())
 
@@ -241,12 +222,8 @@ async def get_visible_project_ids(
         select(Project.id).where(
             Project.organization_id == org_id,
             or_(
-                not_(
-                    Project.settings["permissions_enabled"].as_boolean()
-                ),
-                not_(
-                    Project.settings.has_key("permissions_enabled")
-                ),
+                not_(Project.settings["permissions_enabled"].as_boolean()),
+                not_(Project.settings.has_key("permissions_enabled")),
             ),
         )
     )

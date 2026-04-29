@@ -101,9 +101,7 @@ class CsvExportStrategy(ExportStrategy):
 class ExcelExportStrategy(ExportStrategy):
     @property
     def media_type(self) -> str:
-        return (
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
     @property
     def file_extension(self) -> str:
@@ -219,9 +217,7 @@ def _extract_ordered_steps(graph: dict) -> list[dict]:
         [n for n in nodes if n.get("type") == "unitOp"],
         key=lambda n: n.get("position", {}).get("x", 0),
     )
-    swim_lanes = {
-        n["id"]: n for n in nodes if n.get("type") == "swimLane"
-    }
+    swim_lanes = {n["id"]: n for n in nodes if n.get("type") == "swimLane"}
 
     steps = []
     for i, node in enumerate(unit_ops, 1):
@@ -231,15 +227,17 @@ def _extract_ordered_steps(graph: dict) -> list[dict]:
         if parent_id and parent_id in swim_lanes:
             role = swim_lanes[parent_id].get("data", {}).get("label", "")
 
-        steps.append({
-            "step_number": i,
-            "step_id": node["id"],
-            "step_name": data.get("label", "Unnamed"),
-            "category": data.get("category", ""),
-            "role": role,
-            "description": data.get("description", ""),
-            "duration_min": data.get("duration_min"),
-        })
+        steps.append(
+            {
+                "step_number": i,
+                "step_id": node["id"],
+                "step_name": data.get("label", "Unnamed"),
+                "category": data.get("category", ""),
+                "role": role,
+                "description": data.get("description", ""),
+                "duration_min": data.get("duration_min"),
+            }
+        )
     return steps
 
 
@@ -280,9 +278,7 @@ def _build_step_base(
         "role": step["role"],
         "description": step["description"],
         "duration_min": step["duration_min"] or "",
-        "completed_by": user_map.get(
-            step_exec.get("completed_by_user_id", ""), ""
-        ),
+        "completed_by": user_map.get(step_exec.get("completed_by_user_id", ""), ""),
         "completed_at": step_exec.get("completed_at", ""),
     }
 
@@ -309,22 +305,17 @@ def _build_long_format(
 
             original_results = step_exec.get("original_results", {})
             edited = bool(original_results)
-            edited_by = user_map.get(
-                step_exec.get("edited_by_user_id", ""), ""
-            )
+            edited_by = user_map.get(step_exec.get("edited_by_user_id", ""), "")
             edited_at = step_exec.get("edited_at", "")
 
             if results:
                 for param_name, param_value in results.items():
                     row = dict(base)
                     row["param_name"] = param_name
-                    row["param_value"] = (
-                        param_value if param_value is not None else ""
-                    )
+                    row["param_value"] = param_value if param_value is not None else ""
                     row["edited"] = edited
                     row["original_value"] = (
-                        original_results.get(param_name, "")
-                        if edited else ""
+                        original_results.get(param_name, "") if edited else ""
                     )
                     row["edited_by"] = edited_by if edited else ""
                     row["edited_at"] = edited_at if edited else ""
@@ -383,8 +374,7 @@ def _build_wide_format(
 
     # Build column list with dynamic param columns in the middle
     param_columns = [
-        {"key": f"param__{p}", "label": p, "group": "data"}
-        for p in all_param_names
+        {"key": f"param__{p}", "label": p, "group": "data"} for p in all_param_names
     ]
     columns = WIDE_BASE_COLUMNS + param_columns + WIDE_AUDIT_COLUMNS
 
@@ -406,9 +396,7 @@ def _build_wide_format(
 
             original_results = step_exec.get("original_results", {})
             edited = bool(original_results)
-            edited_by = user_map.get(
-                step_exec.get("edited_by_user_id", ""), ""
-            )
+            edited_by = user_map.get(step_exec.get("edited_by_user_id", ""), "")
             edited_at = step_exec.get("edited_at", "")
 
             row = dict(base)
@@ -443,8 +431,5 @@ def filter_columns(
 
     key_set = set(selected_keys)
     filtered_cols = [c for c in columns if c["key"] in key_set]
-    filtered_rows = [
-        {k: v for k, v in row.items() if k in key_set}
-        for row in rows
-    ]
+    filtered_rows = [{k: v for k, v in row.items() if k in key_set} for row in rows]
     return filtered_cols, filtered_rows

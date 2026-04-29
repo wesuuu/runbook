@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 ALLOWED_INPUT_TYPES = {
-    "application/vnd.openxmlformats-officedocument"
-    ".wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument" ".wordprocessingml.document",
 }
 MAX_INPUT_SIZE = 20 * 1024 * 1024  # 20 MB
 
@@ -46,15 +45,11 @@ MAX_INPUT_SIZE = 20 * 1024 * 1024  # 20 MB
 def _require_org(user: User) -> UUID:
     """Extract org_id from user, raise 400 if missing."""
     if not user.selected_org_id:
-        raise HTTPException(
-            status_code=400, detail="No organization selected"
-        )
+        raise HTTPException(status_code=400, detail="No organization selected")
     return user.selected_org_id
 
 
-async def _preflight_ai_check(
-    db: AsyncSession, org_id: UUID
-) -> None:
+async def _preflight_ai_check(db: AsyncSession, org_id: UUID) -> None:
     """Validate the template_convert AI capability is configured."""
     from app.services.ai.ai_config import get_model
 
@@ -72,12 +67,8 @@ async def _run_conversion_background(
     conversion_id: str,
 ) -> None:
     """Run the conversion in a background task with its own DB session."""
-    engine = create_async_engine(
-        settings.database_url, poolclass=NullPool
-    )
-    session_factory = async_sessionmaker(
-        engine, expire_on_commit=False
-    )
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     try:
         async with session_factory() as db:
@@ -130,9 +121,7 @@ async def convert_template(
 
     file_bytes = await file.read()
     if len(file_bytes) > MAX_INPUT_SIZE:
-        raise HTTPException(
-            status_code=413, detail="File exceeds 20MB limit"
-        )
+        raise HTTPException(status_code=413, detail="File exceeds 20MB limit")
 
     await _preflight_ai_check(db, org_id)
 
@@ -177,10 +166,7 @@ async def conversion_events(
 
         stream = _active_streams.get(stream_key)
         if stream is None:
-            yield (
-                'event: error\n'
-                'data: {"message": "Conversion not found"}\n\n'
-            )
+            yield ("event: error\n" 'data: {"message": "Conversion not found"}\n\n')
             return
 
         async for event_type, data_json in stream.iter_events():
@@ -215,19 +201,13 @@ async def refine_conversion(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(
-            status_code=404, detail="Conversion not found"
-        )
+        raise HTTPException(status_code=404, detail="Conversion not found")
 
     try:
-        result = await refine_template(
-            db, org_id, state, body.instruction
-        )
+        result = await refine_template(db, org_id, state, body.instruction)
     except Exception:
         logger.exception("Template refinement failed")
-        raise HTTPException(
-            status_code=500, detail="Template refinement failed"
-        )
+        raise HTTPException(status_code=500, detail="Template refinement failed")
 
     return result
 
@@ -247,21 +227,15 @@ async def reupload_template_file(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(
-            status_code=404, detail="Conversion not found"
-        )
+        raise HTTPException(status_code=404, detail="Conversion not found")
 
     file_bytes = await file.read()
 
     try:
-        result = await reupload_template(
-            db, org_id, state, file_bytes
-        )
+        result = await reupload_template(db, org_id, state, file_bytes)
     except Exception:
         logger.exception("Template reupload failed")
-        raise HTTPException(
-            status_code=500, detail="Template reupload failed"
-        )
+        raise HTTPException(status_code=500, detail="Template reupload failed")
 
     return result
 
@@ -278,9 +252,7 @@ async def save_conversion(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(
-            status_code=404, detail="Conversion not found"
-        )
+        raise HTTPException(status_code=404, detail="Conversion not found")
 
     if body.template_type not in ("SOP", "BATCH_RECORD"):
         raise HTTPException(
@@ -320,9 +292,7 @@ async def get_original_pdf(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("original.pdf"):
-        raise HTTPException(
-            status_code=404, detail="Original not found"
-        )
+        raise HTTPException(status_code=404, detail="Original not found")
     return FileResponse(
         state._resolve("original.pdf"),
         media_type="application/pdf",
@@ -338,9 +308,7 @@ async def get_preview(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("preview.pdf"):
-        raise HTTPException(
-            status_code=404, detail="Preview not found"
-        )
+        raise HTTPException(status_code=404, detail="Preview not found")
     return FileResponse(
         state._resolve("preview.pdf"),
         media_type="application/pdf",
@@ -356,9 +324,7 @@ async def get_template_pdf(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(
-            status_code=404, detail="Template not found"
-        )
+        raise HTTPException(status_code=404, detail="Template not found")
 
     from app.services.protocols.template_converter import _to_pdf
 
@@ -380,14 +346,11 @@ async def get_template_file(
     org_id = _require_org(user)
     state = ConversionState(org_id, conversion_id)
     if not state.exists("template.docx"):
-        raise HTTPException(
-            status_code=404, detail="Template not found"
-        )
+        raise HTTPException(status_code=404, detail="Template not found")
     return FileResponse(
         state._resolve("template.docx"),
         media_type=(
-            "application/vnd.openxmlformats-officedocument"
-            ".wordprocessingml.document"
+            "application/vnd.openxmlformats-officedocument" ".wordprocessingml.document"
         ),
         filename="template.docx",
     )

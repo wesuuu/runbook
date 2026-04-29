@@ -1,24 +1,17 @@
-import pytest
 from uuid import UUID
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    Team,
-    TeamMember,
-    User,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-)
-from app.models.science import Project
 from app.core.security import hash_password
-
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            Team, TeamMember, User)
+from app.models.science import Project
 
 # --- Organizations ---
+
 
 @pytest.mark.asyncio
 async def test_create_org(client: AsyncClient, auth_headers: dict):
@@ -35,7 +28,9 @@ async def test_create_org(client: AsyncClient, auth_headers: dict):
 
 @pytest.mark.asyncio
 async def test_list_orgs(
-    client: AsyncClient, auth_headers: dict, test_org: Organization,
+    client: AsyncClient,
+    auth_headers: dict,
+    test_org: Organization,
 ):
     resp = await client.get("/iam/organizations", headers=auth_headers)
     assert resp.status_code == 200
@@ -47,16 +42,20 @@ async def test_list_orgs(
 
 @pytest.mark.asyncio
 async def test_get_org(
-    client: AsyncClient, auth_headers: dict, test_org: Organization,
+    client: AsyncClient,
+    auth_headers: dict,
+    test_org: Organization,
 ):
     resp = await client.get(
-        f"/iam/organizations/{test_org.id}", headers=auth_headers,
+        f"/iam/organizations/{test_org.id}",
+        headers=auth_headers,
     )
     assert resp.status_code == 200
     assert resp.json()["name"] == "Test Org"
 
 
 # --- Organization Members ---
+
 
 @pytest.mark.asyncio
 async def test_add_org_member(
@@ -103,11 +102,13 @@ async def test_list_org_members_as_non_admin(
     db_session: AsyncSession,
 ):
     """Non-admin org members should be able to list all org members."""
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
     await db_session.flush()
 
     resp = await client.get(
@@ -145,11 +146,13 @@ async def test_remove_org_member(
     db_session: AsyncSession,
 ):
     # Add second_user first
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
     await db_session.flush()
 
     resp = await client.delete(
@@ -167,11 +170,13 @@ async def test_toggle_org_admin(
     second_user: User,
     db_session: AsyncSession,
 ):
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
     await db_session.flush()
 
     resp = await client.patch(
@@ -185,9 +190,12 @@ async def test_toggle_org_admin(
 
 # --- Teams ---
 
+
 @pytest.mark.asyncio
 async def test_create_team(
-    client: AsyncClient, auth_headers: dict, test_org: Organization,
+    client: AsyncClient,
+    auth_headers: dict,
+    test_org: Organization,
 ):
     resp = await client.post(
         f"/iam/organizations/{test_org.id}/teams",
@@ -245,6 +253,7 @@ async def test_delete_team(
 
 # --- Team Members ---
 
+
 @pytest.mark.asyncio
 async def test_add_team_member(
     client: AsyncClient,
@@ -255,11 +264,13 @@ async def test_add_team_member(
     test_org: Organization,
 ):
     # Second user must be org member first
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
     await db_session.flush()
 
     resp = await client.post(
@@ -280,16 +291,20 @@ async def test_remove_team_member(
     db_session: AsyncSession,
     test_org: Organization,
 ):
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
-    db_session.add(TeamMember(
-        user_id=second_user.id,
-        team_id=test_team.id,
-        role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
+    db_session.add(
+        TeamMember(
+            user_id=second_user.id,
+            team_id=test_team.id,
+            role="MEMBER",
+        )
+    )
     await db_session.flush()
 
     resp = await client.delete(
@@ -300,6 +315,7 @@ async def test_remove_team_member(
 
 
 # --- Permissions ---
+
 
 @pytest.mark.asyncio
 async def test_grant_permission(
@@ -406,6 +422,7 @@ async def test_list_permissions_unauthenticated(client: AsyncClient):
 
 # --- User Search (Cross-Org Isolation) ---
 
+
 @pytest.mark.asyncio
 async def test_search_users_returns_same_org_only(
     client: AsyncClient,
@@ -438,11 +455,13 @@ async def test_search_users_returns_shared_org_member(
 ):
     """User search returns users who share an org with the caller."""
     # Add second_user to test_org so they share an org
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
     await db_session.flush()
 
     resp = await client.get(
@@ -466,6 +485,7 @@ async def test_search_users_logs_cross_org_attempt(
 ):
     """A cross-org search attempt should log a warning to stdout."""
     import logging
+
     with caplog.at_level(logging.WARNING, logger="app.api.endpoints.iam"):
         resp = await client.get(
             "/iam/users",

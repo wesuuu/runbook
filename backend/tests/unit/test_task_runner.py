@@ -5,12 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.core.task_runner import (
-    TaskRunner,
-    ThreadTaskRunner,
-    get_task_runner,
-    reset_task_runner,
-)
+from app.services.core.task_runner import (TaskRunner, ThreadTaskRunner,
+                                           get_task_runner, reset_task_runner)
 
 
 @pytest.fixture(autouse=True)
@@ -55,9 +51,7 @@ class TestThreadTaskRunner:
             flag.set()
 
         async def run_both():
-            task = asyncio.create_task(
-                runner.run_sync(lambda: time.sleep(0.2))
-            )
+            task = asyncio.create_task(runner.run_sync(lambda: time.sleep(0.2)))
             # other_work should be able to run while sync is in thread
             await asyncio.sleep(0.05)
             await other_work()

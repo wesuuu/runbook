@@ -1,21 +1,17 @@
 import os
 from pathlib import Path
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.services.ai.ai_vision import (
-    ImageAnalysisResult,
-    ExtractedValue,
-    analyze_image,
-    continue_conversation,
-    build_system_prompt,
-    build_conversation_prompt,
-    create_vision_agent,
-    _guess_mime,
-    _format_history,
-)
+from app.services.ai.ai_vision import (ExtractedValue, ImageAnalysisResult,
+                                       _format_history, _guess_mime,
+                                       analyze_image,
+                                       build_conversation_prompt,
+                                       build_system_prompt,
+                                       continue_conversation,
+                                       create_vision_agent)
 
 SAMPLE_PARAM_SCHEMA = {
     "type": "object",
@@ -157,9 +153,7 @@ class TestAnalyzeImage:
         return str(img_path)
 
     @pytest.mark.asyncio
-    async def test_returns_extracted_values(
-        self, test_image: str, db_session
-    ):
+    async def test_returns_extracted_values(self, test_image: str, db_session):
         mock_output = {
             "message": "I can see a cell counting display showing viable cell density of 2.4 million cells per mL and viability of 96.2%.",
             "extracted_values": [
@@ -260,9 +254,7 @@ class TestContinueConversation:
         return str(img_path)
 
     @pytest.mark.asyncio
-    async def test_uses_conversation_history(
-        self, test_image: str, db_session
-    ):
+    async def test_uses_conversation_history(self, test_image: str, db_session):
         prev_messages = [
             {
                 "role": "assistant",
@@ -300,9 +292,7 @@ class TestContinueConversation:
         assert result.extracted_values[0].field_key == "viable_cell_density"
 
     @pytest.mark.asyncio
-    async def test_multi_turn_refinement(
-        self, test_image: str, db_session
-    ):
+    async def test_multi_turn_refinement(self, test_image: str, db_session):
         prev_messages = [
             {"role": "assistant", "content": "I see two values: 2.4M and 96.2%."},
             {"role": "user", "content": "The 2.4M is viable cell density"},

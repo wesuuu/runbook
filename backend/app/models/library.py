@@ -31,7 +31,7 @@ ALLOWED_DOCUMENT_TYPES = {
 }
 
 MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
-MAX_URL_RESPONSE_BYTES = 10 * 1024 * 1024   # 10 MB
+MAX_URL_RESPONSE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 # Map MIME types to expected file extensions
 MIME_EXTENSION_MAP = {
@@ -60,8 +60,8 @@ class DocumentStatus(str, enum.Enum):
     UPLOADED = "UPLOADED"
     QUEUED = "QUEUED"
     PROCESSING = "PROCESSING"
-    INDEXED = "INDEXED"      # Legacy — treated as READY
-    ENRICHED = "ENRICHED"    # Legacy — treated as READY
+    INDEXED = "INDEXED"  # Legacy — treated as READY
+    ENRICHED = "ENRICHED"  # Legacy — treated as READY
     READY = "READY"
     FAILED = "FAILED"
 
@@ -86,8 +86,7 @@ def validate_file_content(content: bytes, claimed_mime: str) -> bool:
         return content.startswith(MAGIC_BYTES[claimed_mime])
 
     if claimed_mime == (
-        "application/vnd.openxmlformats-officedocument"
-        ".wordprocessingml.document"
+        "application/vnd.openxmlformats-officedocument" ".wordprocessingml.document"
     ):
         # DOCX files are ZIP archives starting with PK signature
         return content[:2] == b"PK"
@@ -117,8 +116,10 @@ class Document(Base, UUIDMixin, TimestampMixin):
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(
-        String, default=DocumentStatus.UPLOADED.value,
-        server_default="UPLOADED", nullable=False,
+        String,
+        default=DocumentStatus.UPLOADED.value,
+        server_default="UPLOADED",
+        nullable=False,
     )
     page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     tags: Mapped[list[Any]] = mapped_column(
@@ -127,12 +128,8 @@ class Document(Base, UUIDMixin, TimestampMixin):
     doc_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, default=dict, server_default="{}", nullable=False
     )
-    error_message: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
-    source_url: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
+    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    source_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     processing_started_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -172,15 +169,11 @@ class DocumentChunk(Base, UUIDMixin, TimestampMixin):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    page_number: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True
-    )
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     chunk_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, default=dict, server_default="{}", nullable=False
     )
-    embedding = mapped_column(
-        Vector(EMBEDDING_DIMENSIONS), nullable=True
-    )
+    embedding = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship(back_populates="chunks")

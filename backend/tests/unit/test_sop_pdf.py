@@ -1,6 +1,7 @@
 """Tests for SOP PDF generation."""
 
 import pytest
+
 from app.services.documents.pdf import generate_sop_pdf
 
 
@@ -270,7 +271,7 @@ class TestGenerateSopPdf:
             {
                 "name": f"Step {i}",
                 "description": f"Detailed description for step {i} "
-                               f"with enough text to take up space.",
+                f"with enough text to take up space.",
                 "params": None,
                 "param_schema": None,
                 "duration_min": 5,

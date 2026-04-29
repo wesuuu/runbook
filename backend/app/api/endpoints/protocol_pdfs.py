@@ -26,7 +26,9 @@ router = APIRouter()
 storage = FileStorageService()
 
 
-async def _load_template(db: AsyncSession, template_id: UUID | None) -> DocumentTemplate | None:
+async def _load_template(
+    db: AsyncSession, template_id: UUID | None
+) -> DocumentTemplate | None:
     """Load a DocumentTemplate by ID."""
     if not template_id:
         return None
@@ -43,6 +45,7 @@ def _resolve_template_path(template: DocumentTemplate) -> str:
 
 # --- Protocol PDF ---
 
+
 @router.get("/protocols/{protocol_id}/pdf/sop")
 async def get_protocol_sop_pdf(
     protocol_id: UUID,
@@ -53,15 +56,16 @@ async def get_protocol_sop_pdf(
 ):
     """Generate an SOP PDF preview from a protocol's graph."""
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Protocol).where(Protocol.id == protocol_id)
-    )
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
     protocol = result.scalar_one_or_none()
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
@@ -79,8 +83,7 @@ async def get_protocol_sop_pdf(
         protocol_description=protocol.description or "",
         version_number=protocol.version_number,
         created_at=(
-            protocol.updated_at.strftime("%B %d, %Y")
-            if protocol.updated_at else ""
+            protocol.updated_at.strftime("%B %d, %Y") if protocol.updated_at else ""
         ),
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
@@ -107,24 +110,25 @@ async def get_protocol_batch_record_pdf(
 ):
     """Generate a batch record PDF preview from a protocol's graph."""
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Protocol).where(Protocol.id == protocol_id)
-    )
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
     protocol = result.scalar_one_or_none()
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    template = await _load_template(db, template_id or protocol.batch_record_template_id)
+    template = await _load_template(
+        db, template_id or protocol.batch_record_template_id
+    )
     if not template:
-        raise HTTPException(
-            status_code=404, detail="Batch record template not found"
-        )
+        raise HTTPException(status_code=404, detail="Batch record template not found")
 
     template_path = _resolve_template_path(template)
     graph = protocol.graph or {}
@@ -136,8 +140,7 @@ async def get_protocol_batch_record_pdf(
         run_name="Preview",
         version_number=protocol.version_number,
         created_at=(
-            protocol.updated_at.strftime("%B %d, %Y")
-            if protocol.updated_at else ""
+            protocol.updated_at.strftime("%B %d, %Y") if protocol.updated_at else ""
         ),
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
@@ -156,6 +159,7 @@ async def get_protocol_batch_record_pdf(
 
 # --- Protocol PDF Preview from graph payload ---
 
+
 @router.post("/protocols/{protocol_id}/pdf/sop")
 async def preview_protocol_sop_pdf(
     protocol_id: UUID,
@@ -168,15 +172,16 @@ async def preview_protocol_sop_pdf(
 ):
     """Generate an SOP PDF from a graph payload (unsaved preview)."""
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Protocol).where(Protocol.id == protocol_id)
-    )
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
     protocol = result.scalar_one_or_none()
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
@@ -194,8 +199,7 @@ async def preview_protocol_sop_pdf(
         protocol_description=protocol.description or "",
         version_number=protocol.version_number,
         created_at=(
-            protocol.updated_at.strftime("%B %d, %Y")
-            if protocol.updated_at else ""
+            protocol.updated_at.strftime("%B %d, %Y") if protocol.updated_at else ""
         ),
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
@@ -224,24 +228,25 @@ async def preview_protocol_batch_record_pdf(
 ):
     """Generate a batch record PDF from a graph payload (unsaved preview)."""
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(
-        select(Protocol).where(Protocol.id == protocol_id)
-    )
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
     protocol = result.scalar_one_or_none()
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    template = await _load_template(db, template_id or protocol.batch_record_template_id)
+    template = await _load_template(
+        db, template_id or protocol.batch_record_template_id
+    )
     if not template:
-        raise HTTPException(
-            status_code=404, detail="Batch record template not found"
-        )
+        raise HTTPException(status_code=404, detail="Batch record template not found")
 
     template_path = _resolve_template_path(template)
     graph = body.graph
@@ -253,8 +258,7 @@ async def preview_protocol_batch_record_pdf(
         run_name="Preview",
         version_number=protocol.version_number,
         created_at=(
-            protocol.updated_at.strftime("%B %d, %Y")
-            if protocol.updated_at else ""
+            protocol.updated_at.strftime("%B %d, %Y") if protocol.updated_at else ""
         ),
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,

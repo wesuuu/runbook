@@ -25,6 +25,7 @@ router = APIRouter()
 
 # --- Protocol Version History ---
 
+
 @router.get(
     "/protocols/{protocol_id}/versions",
     response_model=List[ProtocolVersionListItem],
@@ -35,8 +36,11 @@ async def list_protocol_versions(
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -56,8 +60,7 @@ async def list_protocol_versions(
             name=v.name,
             change_summary=v.change_summary,
             created_by_name=(
-                v.created_by.full_name or v.created_by.email
-                if v.created_by else None
+                v.created_by.full_name or v.created_by.email if v.created_by else None
             ),
             created_at=v.created_at,
         )
@@ -76,8 +79,11 @@ async def get_protocol_version(
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -105,7 +111,8 @@ async def get_protocol_version(
         created_by_id=version.created_by_id,
         created_by_name=(
             version.created_by.full_name or version.created_by.email
-            if version.created_by else None
+            if version.created_by
+            else None
         ),
         created_at=version.created_at,
     )
@@ -123,8 +130,11 @@ async def revert_protocol_version(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -175,7 +185,11 @@ async def revert_protocol_version(
         protocol.status = "DRAFT"
 
     await log_audit(
-        db, user.id, "UPDATE", "Protocol", protocol.id,
+        db,
+        user.id,
+        "UPDATE",
+        "Protocol",
+        protocol.id,
         {
             "reverted_to_version": version_number,
             "version_number": protocol.version_number,
@@ -194,6 +208,7 @@ async def revert_protocol_version(
 
 # --- Protocol Approval ---
 
+
 @router.post(
     "/protocols/{protocol_id}/submit-for-approval",
     response_model=ProtocolResponse,
@@ -205,8 +220,11 @@ async def submit_protocol_for_approval(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -229,7 +247,11 @@ async def submit_protocol_for_approval(
     protocol.status = "PENDING_APPROVAL"
 
     await log_audit(
-        db, user.id, "UPDATE", "Protocol", protocol.id,
+        db,
+        user.id,
+        "UPDATE",
+        "Protocol",
+        protocol.id,
         {"status": "PENDING_APPROVAL"},
     )
 
@@ -256,16 +278,17 @@ async def approve_protocol(
     _: User = Depends(require_active_subscription()),
 ):
     # Require APPROVE permission on the parent project
-    result = await db.execute(
-        select(Protocol).where(Protocol.id == protocol_id)
-    )
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
     protocol_obj = result.scalar_one_or_none()
     if not protocol_obj:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        protocol_obj.project_id, PermissionLevel.APPROVE,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        protocol_obj.project_id,
+        PermissionLevel.APPROVE,
     )
     if not allowed:
         raise HTTPException(
@@ -282,7 +305,11 @@ async def approve_protocol(
     protocol_obj.status = "APPROVED"
 
     await log_audit(
-        db, user.id, "UPDATE", "Protocol", protocol_obj.id,
+        db,
+        user.id,
+        "UPDATE",
+        "Protocol",
+        protocol_obj.id,
         {"status": "APPROVED", "comment": action.comment},
     )
 
@@ -337,16 +364,17 @@ async def reject_protocol(
     _: User = Depends(require_active_subscription()),
 ):
     # Require APPROVE permission on the parent project
-    result = await db.execute(
-        select(Protocol).where(Protocol.id == protocol_id)
-    )
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
     protocol_obj = result.scalar_one_or_none()
     if not protocol_obj:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        protocol_obj.project_id, PermissionLevel.APPROVE,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        protocol_obj.project_id,
+        PermissionLevel.APPROVE,
     )
     if not allowed:
         raise HTTPException(
@@ -363,7 +391,11 @@ async def reject_protocol(
     protocol_obj.status = "DRAFT"
 
     await log_audit(
-        db, user.id, "UPDATE", "Protocol", protocol_obj.id,
+        db,
+        user.id,
+        "UPDATE",
+        "Protocol",
+        protocol_obj.id,
         {"status": "DRAFT", "action": "rejected", "comment": action.comment},
     )
 
@@ -390,8 +422,11 @@ async def publish_draft_version(
 ):
     """Publish a draft version: set is_draft=False and update main protocol."""
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -407,8 +442,7 @@ async def publish_draft_version(
 
     # Find the draft version
     version_result = await db.execute(
-        select(ProtocolVersion)
-        .where(
+        select(ProtocolVersion).where(
             (ProtocolVersion.protocol_id == protocol_id)
             & (ProtocolVersion.version_number == version_number)
             & (ProtocolVersion.is_draft == True)
@@ -424,7 +458,11 @@ async def publish_draft_version(
     protocol.version_number = version_number
 
     await log_audit(
-        db, user.id, "UPDATE", "Protocol", protocol.id,
+        db,
+        user.id,
+        "UPDATE",
+        "Protocol",
+        protocol.id,
         {"action": "published_draft", "version_number": version_number},
     )
 

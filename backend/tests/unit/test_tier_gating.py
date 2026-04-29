@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from app.models.iam import SubscriptionTier, TIER_RANK
+from app.models.iam import TIER_RANK, SubscriptionTier
 
 
 class TestSubscriptionTierEnum:
@@ -46,7 +46,9 @@ class TestTokenPayloadWithTier:
         org_id = uuid.uuid4()
 
         for tier in SubscriptionTier:
-            token = create_access_token(uid, org_id=org_id, subscription_tier=tier.value)
+            token = create_access_token(
+                uid, org_id=org_id, subscription_tier=tier.value
+            )
             decoded = decode_access_token(token)
             assert decoded is not None
             assert decoded.subscription_tier == tier.value

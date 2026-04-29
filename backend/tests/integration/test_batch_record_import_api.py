@@ -4,37 +4,26 @@ import io
 import json
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.batch_record_import import (
-    BatchRecordImport,
-    BatchRecordImportStatus,
-)
+from app.models.batch_record_import import (BatchRecordImport,
+                                            BatchRecordImportStatus)
 from app.models.execution import AuditLog
-from app.models.iam import (
-    ObjectPermission,
-    ObjectType,
-    Organization,
-    PermissionLevel,
-    PrincipalType,
-    User,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            PermissionLevel, PrincipalType, User)
 from app.models.jobs import BackgroundJob, JobStatus
 from app.models.science import Project, Protocol, Run
+from app.services.batch.batch_record_extractor import (BatchRecordExtraction,
+                                                       ParamMapping,
+                                                       StepMapping)
 from app.services.core.background_jobs import BackgroundJobService
-from fastapi import HTTPException
-from app.services.batch.batch_record_extractor import (
-    BatchRecordExtraction,
-    StepMapping,
-    ParamMapping,
-)
-
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -87,7 +76,9 @@ def mock_file_storage():
 
 @pytest_asyncio.fixture
 async def protocol(
-    db_session: AsyncSession, test_project: Project, test_org: Organization,
+    db_session: AsyncSession,
+    test_project: Project,
+    test_org: Organization,
 ) -> Protocol:
     """Create a protocol with a graph containing 3 unitOp nodes."""
     p = Protocol(
@@ -106,7 +97,10 @@ async def protocol(
                             "type": "object",
                             "properties": {
                                 "ph_value": {"type": "number", "title": "pH Value"},
-                                "temperature_c": {"type": "number", "title": "Temperature (°C)"},
+                                "temperature_c": {
+                                    "type": "number",
+                                    "title": "Temperature (°C)",
+                                },
                                 "volume_ml": {"type": "number", "title": "Volume (mL)"},
                             },
                         },
@@ -122,8 +116,14 @@ async def protocol(
                             "type": "object",
                             "properties": {
                                 "speed_g": {"type": "number", "title": "Speed (g)"},
-                                "duration_min": {"type": "number", "title": "Duration (min)"},
-                                "temp_c": {"type": "number", "title": "Temperature (°C)"},
+                                "duration_min": {
+                                    "type": "number",
+                                    "title": "Duration (min)",
+                                },
+                                "temp_c": {
+                                    "type": "number",
+                                    "title": "Temperature (°C)",
+                                },
                             },
                         },
                     },
@@ -137,7 +137,10 @@ async def protocol(
                         "paramSchema": {
                             "type": "object",
                             "properties": {
-                                "filter_size_um": {"type": "number", "title": "Filter Size (μm)"},
+                                "filter_size_um": {
+                                    "type": "number",
+                                    "title": "Filter Size (μm)",
+                                },
                             },
                         },
                     },
@@ -350,11 +353,19 @@ async def test_get_progress_while_extracting(
 
     # Create a BackgroundJob with progress
     job = await BackgroundJobService.create(
-        db_session, "batch_record_extract", "batch_record_import", row.id,
+        db_session,
+        "batch_record_extract",
+        "batch_record_import",
+        row.id,
     )
     await db_session.flush()
     await BackgroundJobService.update_progress(
-        db_session, job, "extracting", "Extracting page 3 of 12", 3, 12,
+        db_session,
+        job,
+        "extracting",
+        "Extracting page 3 of 12",
+        3,
+        12,
     )
 
     resp = await client.get(
@@ -573,22 +584,34 @@ async def test_finalize_with_user_resolved_mapping(
                 {
                     "protocol_step_id": "node-buf",
                     "values": [
-                        {"schema_field_key": "ph_value", "value": 7.2,
-                         "accepted": True, "original_confidence": 0.95},
+                        {
+                            "schema_field_key": "ph_value",
+                            "value": 7.2,
+                            "accepted": True,
+                            "original_confidence": 0.95,
+                        },
                     ],
                 },
                 {
                     "protocol_step_id": "node-cent",
                     "values": [
-                        {"schema_field_key": "speed_g", "value": 3000,
-                         "accepted": True, "original_confidence": 0.94},
+                        {
+                            "schema_field_key": "speed_g",
+                            "value": 3000,
+                            "accepted": True,
+                            "original_confidence": 0.94,
+                        },
                     ],
                 },
                 {
                     "protocol_step_id": "node-filter",
                     "values": [
-                        {"schema_field_key": "filter_size_um", "value": 0.22,
-                         "accepted": True, "original_confidence": 0.0},
+                        {
+                            "schema_field_key": "filter_size_um",
+                            "value": 0.22,
+                            "accepted": True,
+                            "original_confidence": 0.0,
+                        },
                     ],
                 },
             ],
@@ -619,8 +642,12 @@ async def test_finalize_with_na_step(
                 {
                     "protocol_step_id": "node-buf",
                     "values": [
-                        {"schema_field_key": "ph_value", "value": 7.2,
-                         "accepted": True, "original_confidence": 0.95},
+                        {
+                            "schema_field_key": "ph_value",
+                            "value": 7.2,
+                            "accepted": True,
+                            "original_confidence": 0.95,
+                        },
                     ],
                 },
                 {
@@ -662,8 +689,12 @@ async def test_finalize_links_source_document(
                 {
                     "protocol_step_id": "node-buf",
                     "values": [
-                        {"schema_field_key": "ph_value", "value": 7.2,
-                         "accepted": True, "original_confidence": 0.95},
+                        {
+                            "schema_field_key": "ph_value",
+                            "value": 7.2,
+                            "accepted": True,
+                            "original_confidence": 0.95,
+                        },
                     ],
                 },
             ],
@@ -699,18 +730,31 @@ async def test_finalize_creates_audit_log(
                 {
                     "protocol_step_id": "node-buf",
                     "values": [
-                        {"schema_field_key": "ph_value", "value": 7.2,
-                         "accepted": True, "original_confidence": 0.95},
-                        {"schema_field_key": "temperature_c", "value": 26.0,
-                         "accepted": True, "edited": True,
-                         "original_value": 25.0, "original_confidence": 0.93},
+                        {
+                            "schema_field_key": "ph_value",
+                            "value": 7.2,
+                            "accepted": True,
+                            "original_confidence": 0.95,
+                        },
+                        {
+                            "schema_field_key": "temperature_c",
+                            "value": 26.0,
+                            "accepted": True,
+                            "edited": True,
+                            "original_value": 25.0,
+                            "original_confidence": 0.93,
+                        },
                     ],
                 },
                 {
                     "protocol_step_id": "node-cent",
                     "values": [
-                        {"schema_field_key": "speed_g", "value": 3000,
-                         "accepted": False, "original_confidence": 0.4},
+                        {
+                            "schema_field_key": "speed_g",
+                            "value": 3000,
+                            "accepted": False,
+                            "original_confidence": 0.4,
+                        },
                     ],
                 },
             ],

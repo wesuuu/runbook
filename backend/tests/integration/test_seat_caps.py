@@ -1,15 +1,12 @@
 """Integration tests for per-tier seat caps on POST /iam/organizations/{org_id}/members."""
+
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
 
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    SubscriptionTier,
-    User,
-)
+from app.models.iam import (Organization, OrganizationMember, SubscriptionTier,
+                            User)
 
 
 async def _fill_org_to(db_session, org_id, target_count, start_count=1):
@@ -20,7 +17,10 @@ async def _fill_org_to(db_session, org_id, target_count, start_count=1):
         await db_session.flush()
         db_session.add(
             OrganizationMember(
-                user_id=u.id, organization_id=org_id, role="MEMBER", archived=False,
+                user_id=u.id,
+                organization_id=org_id,
+                role="MEMBER",
+                archived=False,
             )
         )
     await db_session.commit()
@@ -28,7 +28,11 @@ async def _fill_org_to(db_session, org_id, target_count, start_count=1):
 
 @pytest.mark.asyncio
 async def test_add_member_blocked_when_essentials_cap_reached(
-    client: AsyncClient, db_session, test_org, test_user, auth_headers,
+    client: AsyncClient,
+    db_session,
+    test_org,
+    test_user,
+    auth_headers,
 ):
     test_org.subscription_tier = SubscriptionTier.ESSENTIALS
     db_session.add(test_org)
@@ -54,7 +58,11 @@ async def test_add_member_blocked_when_essentials_cap_reached(
 
 @pytest.mark.asyncio
 async def test_add_member_succeeds_at_cap_minus_one(
-    client: AsyncClient, db_session, test_org, test_user, auth_headers,
+    client: AsyncClient,
+    db_session,
+    test_org,
+    test_user,
+    auth_headers,
 ):
     test_org.subscription_tier = SubscriptionTier.ESSENTIALS
     db_session.add(test_org)
@@ -75,7 +83,11 @@ async def test_add_member_succeeds_at_cap_minus_one(
 
 @pytest.mark.asyncio
 async def test_reactivate_archived_member_bypasses_cap(
-    client: AsyncClient, db_session, test_org, test_user, auth_headers,
+    client: AsyncClient,
+    db_session,
+    test_org,
+    test_user,
+    auth_headers,
 ):
     test_org.subscription_tier = SubscriptionTier.ESSENTIALS
     db_session.add(test_org)
@@ -104,7 +116,11 @@ async def test_reactivate_archived_member_bypasses_cap(
 
 @pytest.mark.asyncio
 async def test_enterprise_has_no_cap(
-    client: AsyncClient, db_session, test_org, test_user, auth_headers,
+    client: AsyncClient,
+    db_session,
+    test_org,
+    test_user,
+    auth_headers,
 ):
     test_org.subscription_tier = SubscriptionTier.ENTERPRISE
     db_session.add(test_org)

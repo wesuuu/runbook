@@ -112,9 +112,7 @@ class TestListChatSessions:
         for i in range(5):
             await _create_session(client, auth_headers, f"Chat {i}")
 
-        resp = await client.get(
-            "/chat/sessions?limit=2&offset=0", headers=auth_headers
-        )
+        resp = await client.get("/chat/sessions?limit=2&offset=0", headers=auth_headers)
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] == 5
@@ -145,9 +143,7 @@ class TestGetChatSession:
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.status_code == 200
         body = resp.json()
         assert body["id"] == session_id
@@ -158,9 +154,7 @@ class TestGetChatSession:
         self, client: AsyncClient, auth_headers: dict, test_org: Organization
     ):
         fake_id = str(uuid.uuid4())
-        resp = await client.get(
-            f"/chat/sessions/{fake_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{fake_id}", headers=auth_headers)
         assert resp.status_code == 404
 
 
@@ -189,15 +183,11 @@ class TestDeleteChatSession:
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
-        resp = await client.delete(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.status_code == 204
 
         # Verify it's gone
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -205,9 +195,7 @@ class TestDeleteChatSession:
         self, client: AsyncClient, auth_headers: dict, test_org: Organization
     ):
         fake_id = str(uuid.uuid4())
-        resp = await client.delete(
-            f"/chat/sessions/{fake_id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/chat/sessions/{fake_id}", headers=auth_headers)
         assert resp.status_code == 404
 
 
@@ -254,9 +242,7 @@ class TestSendChatMessage:
         )
 
         # Check that title was updated
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.json()["title"] == "Tell me about CHO cells"
 
     @pytest.mark.asyncio
@@ -305,9 +291,7 @@ class TestSendChatMessage:
         )
 
         # Get session — should have 4 messages (2 user + 2 assistant)
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.status_code == 200
         messages = resp.json()["messages"]
         assert len(messages) == 4
@@ -332,7 +316,9 @@ class TestSendChatMessageWithRAG:
                 score=0.85,
             ),
         ]
-        fake_tool_calls = [{"tool": "search_documents", "query": "buffer prep", "results": 1}]
+        fake_tool_calls = [
+            {"tool": "search_documents", "query": "buffer prep", "results": 1}
+        ]
         with patch(
             "app.services.ai.chat_service._call_llm",
             new_callable=AsyncMock,
@@ -382,9 +368,7 @@ class TestSendChatMessageWithRAG:
         )
 
         # Get session and check assistant message metadata
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         messages = resp.json()["messages"]
         assistant_msg = [m for m in messages if m["role"] == "assistant"][0]
         assert assistant_msg["metadata_"] is not None

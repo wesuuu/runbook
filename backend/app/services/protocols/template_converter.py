@@ -136,9 +136,7 @@ class ConversionState:
         self.org_id = org_id
         self.conversion_id = conversion_id
         self.storage_root = Path(storage_root)
-        self.base_path = (
-            Path(str(org_id)) / "tmp" / "conversions" / str(conversion_id)
-        )
+        self.base_path = Path(str(org_id)) / "tmp" / "conversions" / str(conversion_id)
 
     def _resolve(self, filename: str) -> Path:
         """Resolve a filename to full path under the conversion directory."""
@@ -171,17 +169,11 @@ class ConversionState:
 
     @property
     def preview_url(self) -> str:
-        return (
-            f"/science/templates/conversions/"
-            f"{self.conversion_id}/preview.pdf"
-        )
+        return f"/science/templates/conversions/" f"{self.conversion_id}/preview.pdf"
 
     @property
     def template_url(self) -> str:
-        return (
-            f"/science/templates/conversions/"
-            f"{self.conversion_id}/template.docx"
-        )
+        return f"/science/templates/conversions/" f"{self.conversion_id}/template.docx"
 
 
 # ── Helper Functions ──
@@ -190,9 +182,7 @@ class ConversionState:
 def _extract_jinja_variables(text: str) -> set[str]:
     """Extract Jinja2 variable names from template text."""
     var_pattern = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
-    loop_pattern = re.compile(
-        r"\{%\s*(?:tr\s+)?for\s+(\w+)\s+in\s+(\w+)\s*%\}"
-    )
+    loop_pattern = re.compile(r"\{%\s*(?:tr\s+)?for\s+(\w+)\s+in\s+(\w+)\s*%\}")
     variables: set[str] = set()
 
     for match in var_pattern.finditer(text):
@@ -218,18 +208,14 @@ def _try_render(template_bytes: bytes, template_type: str) -> RenderResult:
     detected = _extract_jinja_variables(all_text)
 
     loop_collections: set[str] = set()
-    loop_pat = re.compile(
-        r"\{%\s*(?:tr\s+)?for\s+\w+\s+in\s+(\w+)\s*%\}"
-    )
+    loop_pat = re.compile(r"\{%\s*(?:tr\s+)?for\s+\w+\s+in\s+(\w+)\s*%\}")
     for match in loop_pat.finditer(all_text):
         loop_collections.add(match.group(1))
 
     for var in detected:
         if var not in mock_ctx:
             mock_ctx[var] = f"[{var}]"
-        elif var not in loop_collections and isinstance(
-            mock_ctx[var], (list, dict)
-        ):
+        elif var not in loop_collections and isinstance(mock_ctx[var], (list, dict)):
             mock_ctx[var] = f"[{var}]"
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -299,19 +285,11 @@ def _extract_text_from_docx(file_bytes: bytes) -> str:
     parts: list[str] = []
 
     for element in doc.element.body:
-        tag = (
-            element.tag.split("}")[-1]
-            if "}" in element.tag
-            else element.tag
-        )
+        tag = element.tag.split("}")[-1] if "}" in element.tag else element.tag
         if tag == "p":
             runs_text = ""
             for run in element.iter():
-                run_tag = (
-                    run.tag.split("}")[-1]
-                    if "}" in run.tag
-                    else run.tag
-                )
+                run_tag = run.tag.split("}")[-1] if "}" in run.tag else run.tag
                 if run_tag == "t" and run.text:
                     runs_text += run.text
             if runs_text.strip():
@@ -319,27 +297,17 @@ def _extract_text_from_docx(file_bytes: bytes) -> str:
         elif tag == "tbl":
             parts.append("[TABLE]")
             for row in element.iter():
-                row_tag = (
-                    row.tag.split("}")[-1]
-                    if "}" in row.tag
-                    else row.tag
-                )
+                row_tag = row.tag.split("}")[-1] if "}" in row.tag else row.tag
                 if row_tag == "tr":
                     cells: list[str] = []
                     for cell in row.iter():
                         cell_tag = (
-                            cell.tag.split("}")[-1]
-                            if "}" in cell.tag
-                            else cell.tag
+                            cell.tag.split("}")[-1] if "}" in cell.tag else cell.tag
                         )
                         if cell_tag == "tc":
                             cell_text = ""
                             for t in cell.iter():
-                                t_tag = (
-                                    t.tag.split("}")[-1]
-                                    if "}" in t.tag
-                                    else t.tag
-                                )
+                                t_tag = t.tag.split("}")[-1] if "}" in t.tag else t.tag
                                 if t_tag == "t" and t.text:
                                     cell_text += t.text
                             cells.append(cell_text.strip())
@@ -462,8 +430,8 @@ def _replace_in_paragraph(paragraph: Any, find: str, replace: str) -> bool:
     prefix = full_text[first_run_start:match_start]
     suffix = full_text[match_end:last_run_end]
 
-    first_run.text = prefix + replace + (
-        suffix if first_run_idx == last_run_idx else ""
+    first_run.text = (
+        prefix + replace + (suffix if first_run_idx == last_run_idx else "")
     )
 
     # Clear intermediate and last runs that were part of the match
@@ -471,7 +439,7 @@ def _replace_in_paragraph(paragraph: Any, find: str, replace: str) -> bool:
         if idx == last_run_idx and first_run_idx != last_run_idx:
             # Last run keeps its suffix (text after the match)
             run_start = run_boundaries[idx][0]
-            runs[idx].text = full_text[match_end:run_boundaries[idx][1]]
+            runs[idx].text = full_text[match_end : run_boundaries[idx][1]]
         else:
             runs[idx].text = ""
 
@@ -494,9 +462,7 @@ def _apply_substitutions_to_docx(
     def process_paragraphs(paragraphs: Any) -> None:
         for paragraph in paragraphs:
             for sub in substitutions:
-                if _replace_in_paragraph(
-                    paragraph, sub["find"], sub["replace"]
-                ):
+                if _replace_in_paragraph(paragraph, sub["find"], sub["replace"]):
                     matched.add(sub["find"])
 
     process_paragraphs(doc.paragraphs)
@@ -556,7 +522,9 @@ def _add_table_loop_to_docx(
     # Separate header rows from data rows
     # Filter to only <w:tr> elements
     nsmap = tbl_elem.nsmap
-    w_ns = nsmap.get("w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+    w_ns = nsmap.get(
+        "w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    )
     tr_tag = f"{{{w_ns}}}tr"
     tc_tag = f"{{{w_ns}}}tc"
     p_tag = f"{{{w_ns}}}p"
@@ -567,8 +535,7 @@ def _add_table_loop_to_docx(
 
     if header_rows >= len(tr_elements):
         raise ValueError(
-            f"header_rows={header_rows} but table only has "
-            f"{len(tr_elements)} rows"
+            f"header_rows={header_rows} but table only has " f"{len(tr_elements)} rows"
         )
 
     if len(columns) == 0:
@@ -714,7 +681,7 @@ def _remove_section_from_docx(
                 if ppr_tag == "pStyle":
                     style = ppr.get(
                         "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val",
-                        ""
+                        "",
                     )
 
             # Get paragraph text
@@ -750,7 +717,7 @@ def _remove_section_from_docx(
             if ppr_tag == "pStyle":
                 style = ppr.get(
                     "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val",
-                    ""
+                    "",
                 )
         if not style or not style.startswith("Heading"):
             continue
@@ -760,6 +727,7 @@ def _remove_section_from_docx(
             t_tag = t_elem.tag.split("}")[-1] if "}" in t_elem.tag else t_elem.tag
             if t_tag == "t" and t_elem.text:
                 import re as _re
+
                 match = _re.match(r"^\d+\.\s+", t_elem.text)
                 if match:
                     t_elem.text = _re.sub(
@@ -906,15 +874,17 @@ def _trace_tool(
     duration_ms: int,
 ) -> None:
     """Append a tool call entry to the trace log."""
-    deps.trace_entries.append({
-        "sequence": seq,
-        "tool": tool,
-        "status": status,
-        "input": tool_input,
-        "output": output[:1000],
-        "duration_ms": duration_ms,
-        "timestamp": time.time(),
-    })
+    deps.trace_entries.append(
+        {
+            "sequence": seq,
+            "tool": tool,
+            "status": status,
+            "input": tool_input,
+            "output": output[:1000],
+            "duration_ms": duration_ms,
+            "timestamp": time.time(),
+        }
+    )
 
 
 async def apply_substitutions_tool(
@@ -952,11 +922,7 @@ async def apply_substitutions_tool(
     try:
         # Read from template.docx if it exists (preserves prior
         # modifications like table loops), otherwise from original
-        source = (
-            "template.docx"
-            if deps.state.exists("template.docx")
-            else "original"
-        )
+        source = "template.docx" if deps.state.exists("template.docx") else "original"
         source_bytes = deps.state.read(source)
         result_bytes, matched, unmatched = _apply_substitutions_to_docx(
             source_bytes, substitutions
@@ -977,8 +943,7 @@ async def apply_substitutions_tool(
         elif n_unmatched > 0:
             status = "success"
             summary = (
-                f"{n_matched} of {n_total} matched. "
-                f"Unmatched: {unmatched[:5]}"
+                f"{n_matched} of {n_total} matched. " f"Unmatched: {unmatched[:5]}"
             )
         else:
             status = "success"
@@ -1000,19 +965,30 @@ async def apply_substitutions_tool(
                 f"\n\nWARNING: {n_unmatched} substitutions did NOT "
                 f"match any text in the document. These 'find' values "
                 f"were not found (check for exact spelling, spacing, "
-                f"and punctuation):\n"
-                + "\n".join(f'  - "{u}"' for u in unmatched[:10])
+                f"and punctuation):\n" + "\n".join(f'  - "{u}"' for u in unmatched[:10])
             )
         result_msg += "\nfile_id=template.docx"
-        _trace_tool(deps, "apply_substitutions", seq, status,
-                     tool_input, result_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "apply_substitutions",
+            seq,
+            status,
+            tool_input,
+            result_msg,
+            int((time.time() - t0) * 1000),
+        )
         return result_msg
     except Exception as e:
         err_msg = f"Error applying substitutions: {e}"
-        _trace_tool(deps, "apply_substitutions", seq, "error",
-                     tool_input, err_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "apply_substitutions",
+            seq,
+            "error",
+            tool_input,
+            err_msg,
+            int((time.time() - t0) * 1000),
+        )
         deps.event_stream.push(
             "tool_result",
             {
@@ -1052,8 +1028,10 @@ async def add_table_loop_tool(
     seq = deps.tool_call_count + 1
     t0 = time.time()
     tool_input = {
-        "table_index": table_index, "header_rows": header_rows,
-        "loop_var": loop_var, "collection": collection,
+        "table_index": table_index,
+        "header_rows": header_rows,
+        "loop_var": loop_var,
+        "collection": collection,
         "columns": columns,
     }
 
@@ -1071,11 +1049,7 @@ async def add_table_loop_tool(
     )
 
     try:
-        source = (
-            "template.docx"
-            if deps.state.exists("template.docx")
-            else "original"
-        )
+        source = "template.docx" if deps.state.exists("template.docx") else "original"
         source_bytes = deps.state.read(source)
         result_bytes = _add_table_loop_to_docx(
             source_bytes,
@@ -1105,15 +1079,27 @@ async def add_table_loop_tool(
             f"{{% for {loop_var} in {collection} %}}. "
             f"file_id=template.docx"
         )
-        _trace_tool(deps, "add_table_loop", seq, "success",
-                     tool_input, result_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "add_table_loop",
+            seq,
+            "success",
+            tool_input,
+            result_msg,
+            int((time.time() - t0) * 1000),
+        )
         return result_msg
     except Exception as e:
         err_msg = f"Error adding table loop: {e}"
-        _trace_tool(deps, "add_table_loop", seq, "error",
-                     tool_input, err_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "add_table_loop",
+            seq,
+            "error",
+            tool_input,
+            err_msg,
+            int((time.time() - t0) * 1000),
+        )
         deps.event_stream.push(
             "tool_result",
             {
@@ -1165,11 +1151,7 @@ async def modify_table_tool(
     )
 
     try:
-        source = (
-            "template.docx"
-            if deps.state.exists("template.docx")
-            else "original"
-        )
+        source = "template.docx" if deps.state.exists("template.docx") else "original"
         source_bytes = deps.state.read(source)
         result_bytes = _modify_table_in_docx(
             source_bytes,
@@ -1186,9 +1168,7 @@ async def modify_table_tool(
         if remove_columns:
             parts.append(f"removed columns {remove_columns}")
         if rename_headers:
-            parts.append(
-                f"renamed {len(rename_headers)} header(s)"
-            )
+            parts.append(f"renamed {len(rename_headers)} header(s)")
         summary = f"Table {table_index}: {', '.join(parts)}"
 
         deps.event_stream.push(
@@ -1201,15 +1181,27 @@ async def modify_table_tool(
             },
         )
         result_msg = f"Success. {summary}. file_id=template.docx"
-        _trace_tool(deps, "modify_table", seq, "success",
-                     tool_input, result_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "modify_table",
+            seq,
+            "success",
+            tool_input,
+            result_msg,
+            int((time.time() - t0) * 1000),
+        )
         return result_msg
     except Exception as e:
         err_msg = f"Error modifying table: {e}"
-        _trace_tool(deps, "modify_table", seq, "error",
-                     tool_input, err_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "modify_table",
+            seq,
+            "error",
+            tool_input,
+            err_msg,
+            int((time.time() - t0) * 1000),
+        )
         deps.event_stream.push(
             "tool_result",
             {
@@ -1256,20 +1248,12 @@ async def remove_section_tool(
     )
 
     try:
-        source = (
-            "template.docx"
-            if deps.state.exists("template.docx")
-            else "original"
-        )
+        source = "template.docx" if deps.state.exists("template.docx") else "original"
         source_bytes = deps.state.read(source)
-        result_bytes = _remove_section_from_docx(
-            source_bytes, heading_text
-        )
+        result_bytes = _remove_section_from_docx(source_bytes, heading_text)
         deps.state.write("template.docx", result_bytes)
 
-        summary = (
-            f"Removed section '{heading_text}' and renumbered"
-        )
+        summary = f"Removed section '{heading_text}' and renumbered"
         deps.event_stream.push(
             "tool_result",
             {
@@ -1280,15 +1264,27 @@ async def remove_section_tool(
             },
         )
         result_msg = f"Success. {summary}. file_id=template.docx"
-        _trace_tool(deps, "remove_section", seq, "success",
-                     tool_input, result_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "remove_section",
+            seq,
+            "success",
+            tool_input,
+            result_msg,
+            int((time.time() - t0) * 1000),
+        )
         return result_msg
     except Exception as e:
         err_msg = f"Error removing section: {e}"
-        _trace_tool(deps, "remove_section", seq, "error",
-                     tool_input, err_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "remove_section",
+            seq,
+            "error",
+            tool_input,
+            err_msg,
+            int((time.time() - t0) * 1000),
+        )
         deps.event_stream.push(
             "tool_result",
             {
@@ -1351,21 +1347,14 @@ async def add_content_tool(
     )
 
     try:
-        source = (
-            "template.docx"
-            if deps.state.exists("template.docx")
-            else "original"
-        )
+        source = "template.docx" if deps.state.exists("template.docx") else "original"
         source_bytes = deps.state.read(source)
         result_bytes = _add_content_after_heading(
             source_bytes, after_heading, paragraphs
         )
         deps.state.write("template.docx", result_bytes)
 
-        summary = (
-            f"Added {len(paragraphs)} paragraph(s) after "
-            f"'{after_heading}'"
-        )
+        summary = f"Added {len(paragraphs)} paragraph(s) after " f"'{after_heading}'"
         deps.event_stream.push(
             "tool_result",
             {
@@ -1376,15 +1365,27 @@ async def add_content_tool(
             },
         )
         result_msg = f"Success. {summary}. file_id=template.docx"
-        _trace_tool(deps, "add_content", seq, "success",
-                     tool_input, result_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "add_content",
+            seq,
+            "success",
+            tool_input,
+            result_msg,
+            int((time.time() - t0) * 1000),
+        )
         return result_msg
     except Exception as e:
         err_msg = f"Error adding content: {e}"
-        _trace_tool(deps, "add_content", seq, "error",
-                     tool_input, err_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "add_content",
+            seq,
+            "error",
+            tool_input,
+            err_msg,
+            int((time.time() - t0) * 1000),
+        )
         deps.event_stream.push(
             "tool_result",
             {
@@ -1397,9 +1398,7 @@ async def add_content_tool(
         return err_msg
 
 
-async def validate_tool(
-    ctx: RunContext[ConversionDeps], file_id: str
-) -> str:
+async def validate_tool(ctx: RunContext[ConversionDeps], file_id: str) -> str:
     """Validate the template DOCX and check Jinja2 syntax.
 
     Renders the template with mock data, checks for render errors and
@@ -1432,15 +1431,22 @@ async def validate_tool(
 
         # Known loop variables and their collections
         known_loop_vars = {
-            "step", "role", "note", "figure",
+            "step",
+            "role",
+            "note",
+            "figure",
             "non_image_attachment",
         }
         known_collections = {
-            "steps", "roles", "notes", "figures",
+            "steps",
+            "roles",
+            "notes",
+            "figures",
             "non_image_attachments",
         }
         unknown_vars = sorted(
-            v for v in detected_vars
+            v
+            for v in detected_vars
             if v not in KNOWN_VARIABLES
             and v not in known_loop_vars
             and v not in known_collections
@@ -1462,16 +1468,17 @@ async def validate_tool(
         invalid_attrs = sorted(set(invalid_attrs))
 
         # QA: check that a steps loop exists
-        has_steps_loop = "{% for step in steps %}" in all_text or \
-            "{%tr for step in steps %}" in all_text
+        has_steps_loop = (
+            "{% for step in steps %}" in all_text
+            or "{%tr for step in steps %}" in all_text
+        )
 
         issues = []
         if render_result.render_error:
             issues.append(f"Render error: {render_result.render_error}")
         if render_result.jinja_remnants:
             issues.append(
-                f"Jinja remnants after render: "
-                f"{render_result.jinja_remnants}"
+                f"Jinja remnants after render: " f"{render_result.jinja_remnants}"
             )
         if unknown_vars:
             issues.append(
@@ -1522,19 +1529,29 @@ async def validate_tool(
         if issues:
             result_parts.append(f"Issues: {'; '.join(issues)}")
         else:
-            result_parts.append(
-                "No issues found. Template renders cleanly."
-            )
+            result_parts.append("No issues found. Template renders cleanly.")
         result_msg = "\n".join(result_parts)
-        _trace_tool(deps, "validate", seq, status_str,
-                     tool_input, result_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "validate",
+            seq,
+            status_str,
+            tool_input,
+            result_msg,
+            int((time.time() - t0) * 1000),
+        )
         return result_msg
     except Exception as e:
         err_msg = f"Error validating: {e}"
-        _trace_tool(deps, "validate", seq, "error",
-                     tool_input, err_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "validate",
+            seq,
+            "error",
+            tool_input,
+            err_msg,
+            int((time.time() - t0) * 1000),
+        )
         deps.event_stream.push(
             "tool_result",
             {
@@ -1591,10 +1608,7 @@ async def compare_to_original_tool(
                     ),
                 },
             )
-            return (
-                f"Cannot compare: render failed "
-                f"({render_result.render_error})"
-            )
+            return f"Cannot compare: render failed " f"({render_result.render_error})"
 
         deps.state.write("preview.pdf", render_result.pdf_bytes)
 
@@ -1625,9 +1639,7 @@ async def compare_to_original_tool(
         )
 
         user_content: list[Any] = [
-            BinaryContent(
-                data=original_bytes, media_type=original_mime
-            ),
+            BinaryContent(data=original_bytes, media_type=original_mime),
             BinaryContent(
                 data=render_result.pdf_bytes,
                 media_type="application/pdf",
@@ -1650,15 +1662,27 @@ async def compare_to_original_tool(
                 "summary": assessment[:200],
             },
         )
-        _trace_tool(deps, "compare_to_original", seq, "success",
-                     tool_input, assessment,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "compare_to_original",
+            seq,
+            "success",
+            tool_input,
+            assessment,
+            int((time.time() - t0) * 1000),
+        )
         return assessment
     except Exception as e:
         err_msg = f"Comparison failed: {e}"
-        _trace_tool(deps, "compare_to_original", seq, "error",
-                     tool_input, err_msg,
-                     int((time.time() - t0) * 1000))
+        _trace_tool(
+            deps,
+            "compare_to_original",
+            seq,
+            "error",
+            tool_input,
+            err_msg,
+            int((time.time() - t0) * 1000),
+        )
         deps.event_stream.push(
             "tool_result",
             {
@@ -1796,7 +1820,9 @@ Leave them as-is.
 
 You have a limited number of tool calls. If a tool tells you the limit \
 is reached, stop immediately and report what you have so far.
-""".format(known_vars=", ".join(sorted(KNOWN_VARIABLES)))
+""".format(
+    known_vars=", ".join(sorted(KNOWN_VARIABLES))
+)
 
 
 def _save_trace(
@@ -1878,8 +1904,7 @@ async def convert_document(
         ext = Path(filename).suffix.lower()
         if ext != ".docx":
             raise ValueError(
-                "Only DOCX files are supported for template conversion. "
-                f"Got: {ext}"
+                "Only DOCX files are supported for template conversion. " f"Got: {ext}"
             )
 
         doc_text = _extract_text_from_docx(file_bytes)
@@ -1942,35 +1967,38 @@ async def convert_document(
 
         # Critical variables that MUST be present
         critical_vars = {"steps"}
-        missing_critical = sorted(
-            v for v in critical_vars if v not in detected_vars
-        )
+        missing_critical = sorted(v for v in critical_vars if v not in detected_vars)
 
         warnings: list[dict[str, str]] = []
         for var in missing_critical:
-            warnings.append({
-                "type": "critical_missing",
-                "variable": var,
-                "description": (
-                    f"CRITICAL: Template is missing '{var}' loop. "
-                    "Every SOP/batch record template must have a "
-                    "procedure steps loop."
-                ),
-            })
+            warnings.append(
+                {
+                    "type": "critical_missing",
+                    "variable": var,
+                    "description": (
+                        f"CRITICAL: Template is missing '{var}' loop. "
+                        "Every SOP/batch record template must have a "
+                        "procedure steps loop."
+                    ),
+                }
+            )
 
         missing = sorted(
-            v for v in KNOWN_VARIABLES
+            v
+            for v in KNOWN_VARIABLES
             if v not in detected_vars and v not in critical_vars
         )
         for var in missing:
-            warnings.append({
-                "type": "missing_variable",
-                "variable": var,
-                "description": (
-                    f"Template does not use '{var}' — this data "
-                    "won't appear in the rendered output"
-                ),
-            })
+            warnings.append(
+                {
+                    "type": "missing_variable",
+                    "variable": var,
+                    "description": (
+                        f"Template does not use '{var}' — this data "
+                        "won't appear in the rendered output"
+                    ),
+                }
+            )
 
         result_data = {
             "conversion_id": str(conversion_id),
@@ -1983,20 +2011,24 @@ async def convert_document(
         state.write_json("result.json", result_data)
 
         _save_trace(
-            deps, "convert", filename, str(model),
+            deps,
+            "convert",
+            filename,
+            str(model),
             "success",
         )
 
-        event_stream.push("complete", {
-            "template_url": state.template_url,
-            "preview_url": (
-                state.preview_url
-                if state.exists("preview.pdf")
-                else None
-            ),
-            "variables": sorted(detected_vars),
-            "warnings": warnings,
-        })
+        event_stream.push(
+            "complete",
+            {
+                "template_url": state.template_url,
+                "preview_url": (
+                    state.preview_url if state.exists("preview.pdf") else None
+                ),
+                "variables": sorted(detected_vars),
+                "warnings": warnings,
+            },
+        )
 
         return result_data
 
@@ -2004,8 +2036,12 @@ async def convert_document(
         logger.exception("Template conversion failed")
         if deps:
             _save_trace(
-                deps, "convert", filename, str(model),
-                "error", error_msg=str(e),
+                deps,
+                "convert",
+                filename,
+                str(model),
+                "error",
+                error_msg=str(e),
             )
         event_stream.push("error", {"message": str(e)})
         raise
@@ -2033,9 +2069,7 @@ async def refine_template(
         model = await get_model("template_convert", db, org_id=org_id)
 
         original_pdf = (
-            state.read("original.pdf")
-            if state.exists("original.pdf")
-            else b""
+            state.read("original.pdf") if state.exists("original.pdf") else b""
         )
 
         deps = ConversionDeps(
@@ -2070,12 +2104,11 @@ async def refine_template(
             current_text = _extract_docx_text(template_bytes)
 
             from docx import Document as _Doc
+
             doc = _Doc(BytesIO(template_bytes))
             table_lines = []
             for ti, table in enumerate(doc.tables):
-                headers = [
-                    c.text[:30] for c in table.rows[0].cells
-                ]
+                headers = [c.text[:30] for c in table.rows[0].cells]
                 table_lines.append(
                     f"  Table {ti}: {len(table.rows)} rows, "
                     f"{len(table.columns)} cols — "
@@ -2136,35 +2169,38 @@ async def refine_template(
             detected_vars = _extract_jinja_variables(all_text)
 
         critical_vars = {"steps"}
-        missing_critical = sorted(
-            v for v in critical_vars if v not in detected_vars
-        )
+        missing_critical = sorted(v for v in critical_vars if v not in detected_vars)
 
         warnings: list[dict[str, str]] = []
         for var in missing_critical:
-            warnings.append({
-                "type": "critical_missing",
-                "variable": var,
-                "description": (
-                    f"CRITICAL: Template is missing '{var}' loop. "
-                    "Every SOP/batch record template must have a "
-                    "procedure steps loop."
-                ),
-            })
+            warnings.append(
+                {
+                    "type": "critical_missing",
+                    "variable": var,
+                    "description": (
+                        f"CRITICAL: Template is missing '{var}' loop. "
+                        "Every SOP/batch record template must have a "
+                        "procedure steps loop."
+                    ),
+                }
+            )
 
         missing = sorted(
-            v for v in KNOWN_VARIABLES
+            v
+            for v in KNOWN_VARIABLES
             if v not in detected_vars and v not in critical_vars
         )
         for var in missing:
-            warnings.append({
-                "type": "missing_variable",
-                "variable": var,
-                "description": (
-                    f"Template does not use '{var}' — this data "
-                    "won't appear in the rendered output"
-                ),
-            })
+            warnings.append(
+                {
+                    "type": "missing_variable",
+                    "variable": var,
+                    "description": (
+                        f"Template does not use '{var}' — this data "
+                        "won't appear in the rendered output"
+                    ),
+                }
+            )
 
         result_data = {
             "conversion_id": str(state.conversion_id),
@@ -2175,20 +2211,24 @@ async def refine_template(
         }
 
         _save_trace(
-            deps, "refine", instruction[:100], str(model),
+            deps,
+            "refine",
+            instruction[:100],
+            str(model),
             "success",
         )
 
-        event_stream.push("complete", {
-            "template_url": state.template_url,
-            "preview_url": (
-                state.preview_url
-                if state.exists("preview.pdf")
-                else None
-            ),
-            "variables": sorted(detected_vars),
-            "warnings": warnings,
-        })
+        event_stream.push(
+            "complete",
+            {
+                "template_url": state.template_url,
+                "preview_url": (
+                    state.preview_url if state.exists("preview.pdf") else None
+                ),
+                "variables": sorted(detected_vars),
+                "warnings": warnings,
+            },
+        )
 
         return result_data
 
@@ -2196,8 +2236,12 @@ async def refine_template(
         logger.exception("Template refinement failed")
         if deps:
             _save_trace(
-                deps, "refine", instruction[:100], str(model),
-                "error", error_msg=str(e),
+                deps,
+                "refine",
+                instruction[:100],
+                str(model),
+                "error",
+                error_msg=str(e),
             )
         event_stream.push("error", {"message": str(e)})
         raise
@@ -2224,31 +2268,37 @@ async def reupload_template(
 
     warnings: list[dict[str, str]] = []
     if render_result.render_error:
-        warnings.append({
-            "type": "render_error",
-            "variable": "",
-            "description": render_result.render_error,
-        })
+        warnings.append(
+            {
+                "type": "render_error",
+                "variable": "",
+                "description": render_result.render_error,
+            }
+        )
     if render_result.jinja_remnants:
-        warnings.append({
-            "type": "jinja_remnants",
-            "variable": "",
-            "description": (
-                f"Raw Jinja2 syntax survived rendering: "
-                f"{render_result.jinja_remnants}"
-            ),
-        })
+        warnings.append(
+            {
+                "type": "jinja_remnants",
+                "variable": "",
+                "description": (
+                    f"Raw Jinja2 syntax survived rendering: "
+                    f"{render_result.jinja_remnants}"
+                ),
+            }
+        )
 
     missing = sorted(v for v in KNOWN_VARIABLES if v not in detected_vars)
     for var in missing:
-        warnings.append({
-            "type": "missing_variable",
-            "variable": var,
-            "description": (
-                f"Template does not use '{var}' — this data won't appear "
-                "in the rendered output"
-            ),
-        })
+        warnings.append(
+            {
+                "type": "missing_variable",
+                "variable": var,
+                "description": (
+                    f"Template does not use '{var}' — this data won't appear "
+                    "in the rendered output"
+                ),
+            }
+        )
 
     state.write_json("detected_vars.json", sorted(detected_vars))
 
@@ -2298,8 +2348,7 @@ async def save_to_library(
         file_path=relative_path,
         original_filename=filename,
         mime_type=(
-            "application/vnd.openxmlformats-officedocument"
-            ".wordprocessingml.document"
+            "application/vnd.openxmlformats-officedocument" ".wordprocessingml.document"
         ),
         file_size_bytes=len(template_bytes),
         variables={

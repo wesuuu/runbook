@@ -46,9 +46,7 @@ async def dispatch_event(
     deliveries: list[NotificationDelivery] = []
 
     # 1. Org-level channels subscribed to this event
-    org_channels = await _get_subscribed_channels(
-        db, event_type, org_id=org_id
-    )
+    org_channels = await _get_subscribed_channels(db, event_type, org_id=org_id)
     for channel_model in org_channels:
         delivery = await _dispatch_to_channel(
             db, channel_model, message_broadcast, event_type
@@ -57,9 +55,7 @@ async def dispatch_event(
 
     # 2. User-level channels for each recipient
     for user_id in recipients:
-        user_channels = await _get_subscribed_channels(
-            db, event_type, user_id=user_id
-        )
+        user_channels = await _get_subscribed_channels(db, event_type, user_id=user_id)
         for channel_model in user_channels:
             msg = FormattedMessage(
                 event_type=message_personal.event_type,
@@ -68,9 +64,7 @@ async def dispatch_event(
                 recipient=message_personal.recipient,
                 url=message_personal.url,
             )
-            delivery = await _dispatch_to_channel(
-                db, channel_model, msg, event_type
-            )
+            delivery = await _dispatch_to_channel(db, channel_model, msg, event_type)
             deliveries.append(delivery)
 
     return deliveries
@@ -176,27 +170,33 @@ async def _execute_send(
     except TransientError as e:
         logger.warning(
             "Transient error on delivery %s (attempt %d): %s",
-            delivery.id, delivery.attempts, e,
+            delivery.id,
+            delivery.attempts,
+            e,
         )
         if delivery.attempts < MAX_RETRIES:
             backoff = RETRY_BACKOFF[delivery.attempts - 1]
             delivery.status = DeliveryStatus.RETRYING
             delivery.status_detail = str(e)
-            delivery.next_retry_at = (
-                datetime.now(timezone.utc) + timedelta(seconds=backoff)
+            delivery.next_retry_at = datetime.now(timezone.utc) + timedelta(
+                seconds=backoff
             )
         else:
             delivery.status = DeliveryStatus.FAILED
             delivery.status_detail = f"Max retries exceeded: {e}"
     except PermanentError as e:
         logger.error(
-            "Permanent error on delivery %s: %s", delivery.id, e,
+            "Permanent error on delivery %s: %s",
+            delivery.id,
+            e,
         )
         delivery.status = DeliveryStatus.FAILED
         delivery.status_detail = str(e)
     except Exception as e:
         logger.exception(
-            "Unexpected error on delivery %s: %s", delivery.id, e,
+            "Unexpected error on delivery %s: %s",
+            delivery.id,
+            e,
         )
         delivery.status = DeliveryStatus.FAILED
         delivery.status_detail = f"Unexpected: {e}"

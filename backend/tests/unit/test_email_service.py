@@ -8,7 +8,9 @@ from app.services.core.email_service import SMTPProvider, get_email_provider
 @pytest.mark.asyncio
 async def test_smtp_provider_sends_email():
     """SMTPProvider constructs correct MIME message and calls aiosmtplib."""
-    with patch("app.services.core.email_service.aiosmtplib.send", new_callable=AsyncMock) as mock_send:
+    with patch(
+        "app.services.core.email_service.aiosmtplib.send", new_callable=AsyncMock
+    ) as mock_send:
         mock_send.return_value = ({}, "OK")
         provider = SMTPProvider(
             host="localhost", port=1025, from_addr="noreply@test.com"
@@ -29,7 +31,9 @@ async def test_smtp_provider_sends_email():
 @pytest.mark.asyncio
 async def test_smtp_provider_passes_credentials():
     """SMTPProvider passes user/password/tls to aiosmtplib."""
-    with patch("app.services.core.email_service.aiosmtplib.send", new_callable=AsyncMock) as mock_send:
+    with patch(
+        "app.services.core.email_service.aiosmtplib.send", new_callable=AsyncMock
+    ) as mock_send:
         mock_send.return_value = ({}, "OK")
         provider = SMTPProvider(
             host="smtp.example.com",

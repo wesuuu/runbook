@@ -38,9 +38,7 @@ PROVIDER_CLASSES: dict = {
 }
 
 
-def validate_provider_credentials(
-    provider: str, credentials: dict | None
-) -> None:
+def validate_provider_credentials(provider: str, credentials: dict | None) -> None:
     """Try to instantiate the pydantic-ai provider to validate credentials.
 
     Raises HTTPException(422) with a generic message on failure.
@@ -53,9 +51,7 @@ def validate_provider_credentials(
     try:
         cls(**(credentials or {}))
     except Exception as e:
-        logger.warning(
-            "AI provider validation failed for %s: %s", provider, e
-        )
+        logger.warning("AI provider validation failed for %s: %s", provider, e)
         raise HTTPException(
             status_code=422,
             detail=f"Configuration error for {provider}. "

@@ -11,14 +11,16 @@ from app.models.jobs import BackgroundJob, JobStatus
 from app.schemas.jobs import ProcessingProgress
 from app.services.core.background_jobs import BackgroundJobService
 
-
 ENTITY_ID = uuid.uuid4()
 
 
 class TestCreate:
     async def test_creates_running_job(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
 
@@ -33,7 +35,10 @@ class TestCreate:
 
     async def test_stores_input_data(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
             input_data={"mime_type": "application/pdf"},
         )
         await db_session.commit()
@@ -42,7 +47,10 @@ class TestCreate:
 
     async def test_defaults_empty_input_data(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
 
@@ -52,12 +60,20 @@ class TestCreate:
 class TestUpdateProgress:
     async def test_updates_output_data(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
 
         await BackgroundJobService.update_progress(
-            db_session, job, "extracting", "Extracting text", 3, 12,
+            db_session,
+            job,
+            "extracting",
+            "Extracting text",
+            3,
+            12,
         )
 
         assert job.output_data["stage"] == "extracting"
@@ -68,25 +84,41 @@ class TestUpdateProgress:
 
     async def test_refreshes_heartbeat(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
         old_heartbeat = job.heartbeat_at
 
         await BackgroundJobService.update_progress(
-            db_session, job, "chunking", "Chunking", 1, 10,
+            db_session,
+            job,
+            "chunking",
+            "Chunking",
+            1,
+            10,
         )
 
         assert job.heartbeat_at >= old_heartbeat
 
     async def test_percent_zero_when_total_zero(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
 
         await BackgroundJobService.update_progress(
-            db_session, job, "init", "Starting", 0, 0,
+            db_session,
+            job,
+            "init",
+            "Starting",
+            0,
+            0,
         )
 
         assert job.output_data["percent"] == 0
@@ -95,12 +127,17 @@ class TestUpdateProgress:
 class TestComplete:
     async def test_marks_completed(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
 
         await BackgroundJobService.complete(
-            db_session, job, output_data={"page_count": 5},
+            db_session,
+            job,
+            output_data={"page_count": 5},
         )
         await db_session.commit()
 
@@ -110,13 +147,21 @@ class TestComplete:
 
     async def test_complete_without_output_data(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
 
         # Set some progress first
         await BackgroundJobService.update_progress(
-            db_session, job, "working", "Working", 5, 10,
+            db_session,
+            job,
+            "working",
+            "Working",
+            5,
+            10,
         )
 
         await BackgroundJobService.complete(db_session, job)
@@ -130,12 +175,17 @@ class TestComplete:
 class TestFail:
     async def test_marks_failed(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
 
         await BackgroundJobService.fail(
-            db_session, job, "Something went wrong",
+            db_session,
+            job,
+            "Something went wrong",
         )
         await db_session.commit()
 
@@ -145,7 +195,10 @@ class TestFail:
 
     async def test_truncates_long_error_message(self, db_session: AsyncSession):
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", ENTITY_ID,
+            db_session,
+            "test_job",
+            "test_entity",
+            ENTITY_ID,
         )
         await db_session.commit()
 
@@ -158,19 +211,30 @@ class TestFail:
 
 class TestGetProgress:
     async def test_returns_progress_for_running_job(
-        self, db_session: AsyncSession,
+        self,
+        db_session: AsyncSession,
     ):
         entity_id = uuid.uuid4()
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", entity_id,
+            db_session,
+            "test_job",
+            "test_entity",
+            entity_id,
         )
         await db_session.commit()
         await BackgroundJobService.update_progress(
-            db_session, job, "extracting", "Extracting text", 5, 10,
+            db_session,
+            job,
+            "extracting",
+            "Extracting text",
+            5,
+            10,
         )
 
         progress = await BackgroundJobService.get_progress(
-            db_session, "test_entity", entity_id,
+            db_session,
+            "test_entity",
+            entity_id,
         )
 
         assert progress is not None
@@ -182,43 +246,64 @@ class TestGetProgress:
         assert progress.status == JobStatus.RUNNING.value
 
     async def test_returns_none_when_no_running_job(
-        self, db_session: AsyncSession,
+        self,
+        db_session: AsyncSession,
     ):
         progress = await BackgroundJobService.get_progress(
-            db_session, "test_entity", uuid.uuid4(),
+            db_session,
+            "test_entity",
+            uuid.uuid4(),
         )
         assert progress is None
 
     async def test_returns_none_when_job_has_no_output(
-        self, db_session: AsyncSession,
+        self,
+        db_session: AsyncSession,
     ):
         entity_id = uuid.uuid4()
         await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", entity_id,
+            db_session,
+            "test_job",
+            "test_entity",
+            entity_id,
         )
         await db_session.commit()
 
         progress = await BackgroundJobService.get_progress(
-            db_session, "test_entity", entity_id,
+            db_session,
+            "test_entity",
+            entity_id,
         )
         assert progress is None
 
     async def test_ignores_completed_jobs(self, db_session: AsyncSession):
         entity_id = uuid.uuid4()
         job = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", entity_id,
+            db_session,
+            "test_job",
+            "test_entity",
+            entity_id,
         )
         await db_session.commit()
         await BackgroundJobService.update_progress(
-            db_session, job, "done", "Done", 10, 10,
+            db_session,
+            job,
+            "done",
+            "Done",
+            10,
+            10,
         )
         await BackgroundJobService.complete(
-            db_session, job, output_data={"result": "ok"},
+            db_session,
+            job,
+            output_data={"result": "ok"},
         )
         await db_session.commit()
 
         progress = await BackgroundJobService.get_progress(
-            db_session, "test_entity", entity_id,
+            db_session,
+            "test_entity",
+            entity_id,
         )
         assert progress is None
 
@@ -227,19 +312,27 @@ class TestGetLatestJob:
     async def test_returns_latest_job(self, db_session: AsyncSession):
         entity_id = uuid.uuid4()
         job1 = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", entity_id,
+            db_session,
+            "test_job",
+            "test_entity",
+            entity_id,
         )
         await db_session.commit()
         await BackgroundJobService.complete(db_session, job1)
         await db_session.commit()
 
         job2 = await BackgroundJobService.create(
-            db_session, "test_job", "test_entity", entity_id,
+            db_session,
+            "test_job",
+            "test_entity",
+            entity_id,
         )
         await db_session.commit()
 
         latest = await BackgroundJobService.get_latest_job(
-            db_session, "test_entity", entity_id,
+            db_session,
+            "test_entity",
+            entity_id,
         )
 
         assert latest is not None
@@ -247,6 +340,8 @@ class TestGetLatestJob:
 
     async def test_returns_none_when_no_jobs(self, db_session: AsyncSession):
         latest = await BackgroundJobService.get_latest_job(
-            db_session, "test_entity", uuid.uuid4(),
+            db_session,
+            "test_entity",
+            uuid.uuid4(),
         )
         assert latest is None

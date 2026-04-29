@@ -96,10 +96,7 @@ def _draw_multi_param_row(
     param_sub_heights: list[float] = []
     for key, _prop in params:
         is_edited = (
-            orig
-            and key in orig
-            and results
-            and results.get(key) != orig.get(key)
+            orig and key in orig and results and results.get(key) != orig.get(key)
         )
         if is_edited:
             # label + strikethrough original + new value = 3 content lines
@@ -118,10 +115,15 @@ def _draw_multi_param_row(
             lines = _wrap_text(pdf, val, col_widths[i] - pad * 2)
             wrapped.append(lines)
 
-    text_h = max(
-        (len(lines) * line_h + pad * 2) for i, lines in enumerate(wrapped)
-        if i != value_col_idx and lines
-    ) if any(lines for i, lines in enumerate(wrapped) if i != value_col_idx) else min_h
+    text_h = (
+        max(
+            (len(lines) * line_h + pad * 2)
+            for i, lines in enumerate(wrapped)
+            if i != value_col_idx and lines
+        )
+        if any(lines for i, lines in enumerate(wrapped) if i != value_col_idx)
+        else min_h
+    )
 
     row_h = max(min_h, text_h, total_value_h)
 
@@ -173,11 +175,7 @@ def _draw_multi_param_row(
         if unit:
             label = f"{label} ({unit})"
 
-        is_edited = (
-            orig
-            and key in orig
-            and results.get(key) != orig.get(key)
-        )
+        is_edited = orig and key in orig and results.get(key) != orig.get(key)
 
         # Internal horizontal divider (skip for first sub-row)
         if p_idx > 0:
@@ -207,11 +205,12 @@ def _draw_multi_param_row(
             # Editor initials + date in normal (non-struck) style
             if annotation:
                 pdf.set_font(saved_family, "I", max(saved_size - 1, 6))
-                pdf.cell(inner_w - struck_w, line_h, annotation,
-                         border=0, align="L")
+                pdf.cell(inner_w - struck_w, line_h, annotation, border=0, align="L")
 
             # New value on third line in normal style
-            new_val = _format_value(results[key]) if results.get(key) is not None else ""
+            new_val = (
+                _format_value(results[key]) if results.get(key) is not None else ""
+            )
             pdf.set_xy(value_x + pad, sub_y + pad + line_h * 2)
             pdf.set_text_color(51, 65, 85)
             pdf.set_font(saved_family, "", saved_size)
@@ -334,26 +333,24 @@ def generate_batch_record_pdf(
     # Build columns dynamically — omit Role if no roles
     if has_roles:
         col_widths = [
-            w * 0.05,   # #
-            w * 0.13,   # Role
-            w * 0.17,   # Step Name
-            w * 0.30,   # Description
-            w * 0.20,   # Value/Result
-            w * 0.15,   # Initials
+            w * 0.05,  # #
+            w * 0.13,  # Role
+            w * 0.17,  # Step Name
+            w * 0.30,  # Description
+            w * 0.20,  # Value/Result
+            w * 0.15,  # Initials
         ]
-        headers = ["#", "Role", "Step", "Description", "Value / Result",
-                   "Initials"]
+        headers = ["#", "Role", "Step", "Description", "Value / Result", "Initials"]
         header_aligns = ["C"] * 6
     else:
         col_widths = [
-            w * 0.05,   # #
-            w * 0.20,   # Step Name
-            w * 0.40,   # Description
-            w * 0.20,   # Value/Result
-            w * 0.15,   # Initials
+            w * 0.05,  # #
+            w * 0.20,  # Step Name
+            w * 0.40,  # Description
+            w * 0.20,  # Value/Result
+            w * 0.15,  # Initials
         ]
-        headers = ["#", "Step", "Description", "Value / Result",
-                   "Initials"]
+        headers = ["#", "Step", "Description", "Value / Result", "Initials"]
         header_aligns = ["C"] * 5
 
     table_line_h = rs["line_h"]
@@ -404,6 +401,7 @@ def generate_batch_record_pdf(
             return ""
         try:
             from datetime import datetime as _dt
+
             dt = _dt.fromisoformat(raw.replace("Z", "+00:00"))
             return dt.strftime("%m/%d/%y")
         except (ValueError, AttributeError):
@@ -413,8 +411,12 @@ def generate_batch_record_pdf(
 
     # Pre-assign figure numbers to image attachments
     active_atts = [a for a in (attachments or []) if not a.get("deleted")]
-    image_atts = [a for a in active_atts if a.get("content_type", "") in IMAGE_MIME_TYPES]
-    non_image_atts = [a for a in active_atts if a.get("content_type", "") not in IMAGE_MIME_TYPES]
+    image_atts = [
+        a for a in active_atts if a.get("content_type", "") in IMAGE_MIME_TYPES
+    ]
+    non_image_atts = [
+        a for a in active_atts if a.get("content_type", "") not in IMAGE_MIME_TYPES
+    ]
 
     # figure_map: step_id → [figure_number, ...]
     figure_map: dict[str, list[int]] = {}
@@ -525,8 +527,9 @@ def generate_batch_record_pdf(
                 draw_batch_fields()
 
             process_name = (
-                process_entry.get("process_name") or
-                process_entry.get("role_name") or ""
+                process_entry.get("process_name")
+                or process_entry.get("role_name")
+                or ""
             )
             if process_name:
                 # Print process title above table
@@ -540,9 +543,13 @@ def generate_batch_record_pdf(
             pdf.set_text_color(255, 255, 255)
             pdf.set_font(ff, "B", fs["table"])
             _draw_table_row(
-                pdf, col_widths, headers,
-                line_h=table_line_h, min_h=table_min_h,
-                aligns=header_aligns, fill=True,
+                pdf,
+                col_widths,
+                headers,
+                line_h=table_line_h,
+                min_h=table_min_h,
+                aligns=header_aligns,
+                fill=True,
             )
 
             # Draw rows for this process
@@ -566,7 +573,8 @@ def generate_batch_record_pdf(
                     full_desc = desc or "--"
                 else:
                     param_summary = _build_param_sentence(
-                        step.get("params"), step.get("param_schema"),
+                        step.get("params"),
+                        step.get("param_schema"),
                     )
                     if desc and param_summary:
                         full_desc = f"{desc} {param_summary}"
@@ -606,11 +614,14 @@ def generate_batch_record_pdf(
                 y_before = pdf.get_y()
                 if use_multi:
                     _draw_multi_param_row(
-                        pdf, col_widths, row_vals,
+                        pdf,
+                        col_widths,
+                        row_vals,
                         value_col_idx=value_col,
                         params=editable,
                         results=results,
-                        line_h=table_line_h, min_h=table_min_h,
+                        line_h=table_line_h,
+                        min_h=table_min_h,
                         aligns=aligns,
                         original_results=orig_results,
                         editor_initials=editor_initials,
@@ -618,8 +629,12 @@ def generate_batch_record_pdf(
                     )
                 else:
                     _draw_table_row(
-                        pdf, col_widths, row_vals,
-                        line_h=table_line_h, min_h=table_min_h, aligns=aligns,
+                        pdf,
+                        col_widths,
+                        row_vals,
+                        line_h=table_line_h,
+                        min_h=table_min_h,
+                        aligns=aligns,
                     )
                 y_after = pdf.get_y()
 
@@ -628,8 +643,12 @@ def generate_batch_record_pdf(
                 if initials:
                     ix = pdf.l_margin + sum(col_widths[:initials_col])
                     _draw_cursive_initials(
-                        pdf, initials, ix, y_before,
-                        col_widths[initials_col], y_after - y_before,
+                        pdf,
+                        initials,
+                        ix,
+                        y_before,
+                        col_widths[initials_col],
+                        y_after - y_before,
                     )
                     pdf.set_xy(pdf.l_margin, y_after)
 
@@ -643,9 +662,13 @@ def generate_batch_record_pdf(
         pdf.set_font(ff, "B", fs["table"])
 
         _draw_table_row(
-            pdf, col_widths, headers,
-            line_h=table_line_h, min_h=table_min_h,
-            aligns=header_aligns, fill=True,
+            pdf,
+            col_widths,
+            headers,
+            line_h=table_line_h,
+            min_h=table_min_h,
+            aligns=header_aligns,
+            fill=True,
         )
 
         # Table rows
@@ -654,9 +677,7 @@ def generate_batch_record_pdf(
         pdf.set_draw_color(200, 200, 200)
 
         # Detect process sections for per-section numbering
-        has_process_sections = any(
-            rd.get("process_name") for rd in rws
-        )
+        has_process_sections = any(rd.get("process_name") for rd in rws)
 
         # Build a map from step ID to its process section info
         step_section_map: dict[str, dict[str, str]] = {}
@@ -701,9 +722,13 @@ def generate_batch_record_pdf(
                     )
                     pdf.set_text_color(*hc)
                     _draw_table_row(
-                        pdf, [w], [section_label],
-                        line_h=table_line_h, min_h=table_min_h,
-                        aligns=["L"], fill=True,
+                        pdf,
+                        [w],
+                        [section_label],
+                        line_h=table_line_h,
+                        min_h=table_min_h,
+                        aligns=["L"],
+                        fill=True,
                     )
                     pdf.set_text_color(51, 65, 85)
                     pdf.set_font(ff, "", fs["table"])
@@ -720,7 +745,8 @@ def generate_batch_record_pdf(
                 full_desc = desc or "--"
             else:
                 param_summary = _build_param_sentence(
-                    step.get("params"), step.get("param_schema"),
+                    step.get("params"),
+                    step.get("param_schema"),
                 )
                 if desc and param_summary:
                     full_desc = f"{desc} {param_summary}"
@@ -760,11 +786,14 @@ def generate_batch_record_pdf(
             y_before = pdf.get_y()
             if use_multi:
                 _draw_multi_param_row(
-                    pdf, col_widths, row_vals,
+                    pdf,
+                    col_widths,
+                    row_vals,
                     value_col_idx=value_col,
                     params=editable,
                     results=results,
-                    line_h=table_line_h, min_h=table_min_h,
+                    line_h=table_line_h,
+                    min_h=table_min_h,
                     aligns=aligns,
                     original_results=orig_results,
                     editor_initials=editor_initials,
@@ -772,8 +801,12 @@ def generate_batch_record_pdf(
                 )
             else:
                 _draw_table_row(
-                    pdf, col_widths, row_vals,
-                    line_h=table_line_h, min_h=table_min_h, aligns=aligns,
+                    pdf,
+                    col_widths,
+                    row_vals,
+                    line_h=table_line_h,
+                    min_h=table_min_h,
+                    aligns=aligns,
                 )
             y_after = pdf.get_y()
 
@@ -782,8 +815,12 @@ def generate_batch_record_pdf(
             if initials:
                 ix = pdf.l_margin + sum(col_widths[:initials_col])
                 _draw_cursive_initials(
-                    pdf, initials, ix, y_before,
-                    col_widths[initials_col], y_after - y_before,
+                    pdf,
+                    initials,
+                    ix,
+                    y_before,
+                    col_widths[initials_col],
+                    y_after - y_before,
                 )
                 pdf.set_xy(pdf.l_margin, y_after)
 
@@ -849,9 +886,13 @@ def generate_batch_record_pdf(
         pdf.set_text_color(255, 255, 255)
         pdf.set_font(ff, "B", fs["table"])
         _draw_table_row(
-            pdf, ref_cols, ref_headers,
-            line_h=table_line_h, min_h=table_min_h,
-            aligns=["L", "L", "L", "L"], fill=True,
+            pdf,
+            ref_cols,
+            ref_headers,
+            line_h=table_line_h,
+            min_h=table_min_h,
+            aligns=["L", "L", "L", "L"],
+            fill=True,
         )
 
         pdf.set_text_color(51, 65, 85)
@@ -870,8 +911,11 @@ def generate_batch_record_pdf(
             ts = uploaded_at[:16].replace("T", " ") if uploaded_at else ""
 
             _draw_table_row(
-                pdf, ref_cols, [filename, ctype, scope, ts],
-                line_h=table_line_h, min_h=table_min_h,
+                pdf,
+                ref_cols,
+                [filename, ctype, scope, ts],
+                line_h=table_line_h,
+                min_h=table_min_h,
                 aligns=["L", "L", "L", "L"],
             )
 

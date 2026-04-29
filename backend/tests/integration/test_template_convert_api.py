@@ -11,10 +11,7 @@ from uuid import uuid4
 import pytest
 from docx import Document
 
-DOCX_MIME = (
-    "application/vnd.openxmlformats-officedocument"
-    ".wordprocessingml.document"
-)
+DOCX_MIME = "application/vnd.openxmlformats-officedocument" ".wordprocessingml.document"
 
 
 # ── Helpers ──
@@ -35,9 +32,7 @@ def _make_template_docx() -> bytes:
     """Create a minimal Jinja2 template .docx."""
     doc = Document()
     doc.add_heading("{{ protocol_name }}", level=1)
-    doc.add_paragraph(
-        "Prepared by: {{ operator_name }} on {{ completion_date }}"
-    )
+    doc.add_paragraph("Prepared by: {{ operator_name }} on {{ completion_date }}")
     buf = BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -55,31 +50,23 @@ class TestConvertEndpoint:
         resp = await client.post(
             "/science/templates/convert",
             data={"template_type": "SOP"},
-            files={
-                "file": ("test.docx", _make_filled_docx(), DOCX_MIME)
-            },
+            files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
         )
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_rejects_invalid_template_type(
-        self, client, auth_headers
-    ):
+    async def test_rejects_invalid_template_type(self, client, auth_headers):
         """Should return 422 for invalid template_type."""
         resp = await client.post(
             "/science/templates/convert",
             headers=auth_headers,
             data={"template_type": "INVALID"},
-            files={
-                "file": ("test.docx", _make_filled_docx(), DOCX_MIME)
-            },
+            files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
         )
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_rejects_unsupported_file_type(
-        self, client, auth_headers
-    ):
+    async def test_rejects_unsupported_file_type(self, client, auth_headers):
         """Should return 422 for unsupported MIME type."""
         resp = await client.post(
             "/science/templates/convert",
@@ -90,9 +77,7 @@ class TestConvertEndpoint:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_successful_convert_starts_async(
-        self, client, auth_headers
-    ):
+    async def test_successful_convert_starts_async(self, client, auth_headers):
         """Should return 202 with conversion_id for async processing."""
         with patch(
             "app.api.endpoints.template_convert._preflight_ai_check",
@@ -120,9 +105,7 @@ class TestEventsEndpoint:
     """GET /science/templates/conversions/{id}/events"""
 
     @pytest.mark.asyncio
-    async def test_returns_error_for_missing_conversion(
-        self, client, auth_headers
-    ):
+    async def test_returns_error_for_missing_conversion(self, client, auth_headers):
         """Should return an SSE error event for a nonexistent conversion."""
         fake_id = uuid4()
         resp = await client.get(
@@ -138,9 +121,7 @@ class TestRefineEndpoint:
     """POST /science/templates/conversions/{id}/refine"""
 
     @pytest.mark.asyncio
-    async def test_returns_404_for_missing_conversion(
-        self, client, auth_headers
-    ):
+    async def test_returns_404_for_missing_conversion(self, client, auth_headers):
         """Should return 404 if conversion_id doesn't exist."""
         fake_id = uuid4()
         resp = await client.post(
@@ -155,9 +136,7 @@ class TestReuploadEndpoint:
     """POST /science/templates/conversions/{id}/reupload"""
 
     @pytest.mark.asyncio
-    async def test_returns_404_for_missing_conversion(
-        self, client, auth_headers
-    ):
+    async def test_returns_404_for_missing_conversion(self, client, auth_headers):
         """Should return 404 if conversion_id doesn't exist."""
         fake_id = uuid4()
         resp = await client.post(
@@ -178,9 +157,7 @@ class TestSaveEndpoint:
     """POST /science/templates/conversions/{id}/save"""
 
     @pytest.mark.asyncio
-    async def test_returns_404_for_missing_conversion(
-        self, client, auth_headers
-    ):
+    async def test_returns_404_for_missing_conversion(self, client, auth_headers):
         """Should return 404 if conversion_id doesn't exist."""
         fake_id = uuid4()
         resp = await client.post(
@@ -194,9 +171,7 @@ class TestSaveEndpoint:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_rejects_invalid_template_type(
-        self, client, auth_headers, test_org
-    ):
+    async def test_rejects_invalid_template_type(self, client, auth_headers, test_org):
         """Should return 422 for invalid template_type on save."""
         from app.services.protocols.template_converter import ConversionState
 
@@ -240,9 +215,7 @@ class TestFileServingEndpoints:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_serves_template_docx(
-        self, client, auth_headers, test_org
-    ):
+    async def test_serves_template_docx(self, client, auth_headers, test_org):
         """Should serve the template file when it exists."""
         from app.services.protocols.template_converter import ConversionState
 
@@ -260,9 +233,7 @@ class TestFileServingEndpoints:
         assert len(resp.content) == len(template_bytes)
 
     @pytest.mark.asyncio
-    async def test_serves_preview_pdf(
-        self, client, auth_headers, test_org
-    ):
+    async def test_serves_preview_pdf(self, client, auth_headers, test_org):
         """Should serve the preview PDF when it exists."""
         from app.services.protocols.template_converter import ConversionState
 

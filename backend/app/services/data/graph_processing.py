@@ -113,14 +113,11 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict], b
         key=lambda n: n.get("position", {}).get("x", 0),
     )
     process_starts = [n for n in nodes if n.get("type") == "processStart"]
-    swim_lanes = {
-        n["id"]: n for n in nodes if n.get("type") == "swimLane"
-    }
+    swim_lanes = {n["id"]: n for n in nodes if n.get("type") == "swimLane"}
 
     # Check if any unitOps are parented to swimlanes
     any_parented = any(
-        n.get("parentId") and n["parentId"] in swim_lanes
-        for n in unit_ops
+        n.get("parentId") and n["parentId"] in swim_lanes for n in unit_ops
     )
 
     def _step_dict(node: dict, role_name: str) -> dict:
@@ -151,16 +148,11 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict], b
         # Group by swimlane
         for lane_id, lane in swim_lanes.items():
             lane_name = lane.get("data", {}).get("label", "Unknown Role")
-            lane_ops = [
-                n for n in unit_ops if n.get("parentId") == lane_id
-            ]
+            lane_ops = [n for n in unit_ops if n.get("parentId") == lane_id]
             lane_steps = [_step_dict(n, lane_name) for n in lane_ops]
 
             # Check for processStart parented to this lane
-            lane_ps = [
-                ps for ps in process_starts
-                if ps.get("parentId") == lane_id
-            ]
+            lane_ps = [ps for ps in process_starts if ps.get("parentId") == lane_id]
             process_name = ""
             process_description = ""
             if lane_ps:
@@ -181,15 +173,18 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict], b
 
         # Include orphaned steps (not parented to any lane)
         orphans = [
-            n for n in unit_ops
+            n
+            for n in unit_ops
             if not n.get("parentId") or n["parentId"] not in swim_lanes
         ]
         if orphans:
             orphan_steps = [_step_dict(n, "Unassigned") for n in orphans]
-            roles_with_steps.append({
-                "role_name": "Unassigned",
-                "steps": orphan_steps,
-            })
+            roles_with_steps.append(
+                {
+                    "role_name": "Unassigned",
+                    "steps": orphan_steps,
+                }
+            )
             flat_steps.extend(orphan_steps)
         return roles_with_steps, flat_steps, True  # is_role_based
     else:
@@ -200,12 +195,8 @@ def _parse_graph_roles_and_steps(graph: dict) -> tuple[list[dict], list[dict], b
 
         for comp_nodes in components:
             # Separate processStart from unitOps in this component
-            comp_unit_ops = [
-                n for n in comp_nodes if n.get("type") == "unitOp"
-            ]
-            comp_ps = [
-                n for n in comp_nodes if n.get("type") == "processStart"
-            ]
+            comp_unit_ops = [n for n in comp_nodes if n.get("type") == "unitOp"]
+            comp_ps = [n for n in comp_nodes if n.get("type") == "processStart"]
 
             # Skip components with no unit ops (orphaned processStart)
             if not comp_unit_ops:

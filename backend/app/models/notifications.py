@@ -45,6 +45,7 @@ class DeliveryStatus(str, Enum):
 
 class NotificationChannel(Base, UUIDMixin, TimestampMixin):
     """A configured delivery channel, owned by either an org or a user."""
+
     __tablename__ = "notification_channels"
     __table_args__ = (
         CheckConstraint(
@@ -75,9 +76,7 @@ class NotificationChannel(Base, UUIDMixin, TimestampMixin):
     organization: Mapped[Optional["Organization"]] = relationship(
         "app.models.iam.Organization"
     )
-    user: Mapped[Optional["User"]] = relationship(
-        "app.models.iam.User"
-    )
+    user: Mapped[Optional["User"]] = relationship("app.models.iam.User")
     subscriptions: Mapped[list["NotificationSubscription"]] = relationship(
         back_populates="channel", cascade="all, delete-orphan"
     )
@@ -85,11 +84,10 @@ class NotificationChannel(Base, UUIDMixin, TimestampMixin):
 
 class NotificationSubscription(Base, UUIDMixin, TimestampMixin):
     """Maps an event type to a channel — 'send RUN_STARTED to this Slack channel'."""
+
     __tablename__ = "notification_subscriptions"
     __table_args__ = (
-        Index(
-            "ix_notif_sub_lookup", "channel_id", "event_type", unique=True
-        ),
+        Index("ix_notif_sub_lookup", "channel_id", "event_type", unique=True),
     )
 
     channel_id: Mapped[uuid.UUID] = mapped_column(
@@ -109,6 +107,7 @@ class NotificationSubscription(Base, UUIDMixin, TimestampMixin):
 
 class Notification(Base, UUIDMixin, TimestampMixin):
     """In-app notification record for a specific user."""
+
     __tablename__ = "notifications"
     __table_args__ = (
         Index("ix_notif_user_created", "user_id", "created_at"),
@@ -120,9 +119,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     )
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     entity_type: Mapped[str] = mapped_column(String, nullable=False)
-    entity_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False
-    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     read_at: Mapped[Optional[Any]] = mapped_column(
@@ -135,6 +132,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
 
 class NotificationDelivery(Base, UUIDMixin, TimestampMixin):
     """Tracks every external dispatch attempt for observability and retries."""
+
     __tablename__ = "notification_deliveries"
     __table_args__ = (
         Index("ix_notif_del_status", "status", "next_retry_at"),
@@ -153,7 +151,9 @@ class NotificationDelivery(Base, UUIDMixin, TimestampMixin):
         JSONB, default=dict, server_default="{}", nullable=False
     )
     status: Mapped[str] = mapped_column(
-        String, default=DeliveryStatus.PENDING, server_default="PENDING",
+        String,
+        default=DeliveryStatus.PENDING,
+        server_default="PENDING",
         nullable=False,
     )
     status_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -1,10 +1,12 @@
 """Integration tests for run attachments endpoints."""
 
-import pytest
-import pytest_asyncio
 from io import BytesIO
 
-from app.models.iam import ObjectPermission, PrincipalType, ObjectType, PermissionLevel
+import pytest
+import pytest_asyncio
+
+from app.models.iam import (ObjectPermission, ObjectType, PermissionLevel,
+                            PrincipalType)
 from app.models.science import Run, RunRoleAssignment
 
 
@@ -48,6 +50,7 @@ async def active_run(db_session, test_project, test_user):
 
 
 # --- Upload Tests ---
+
 
 @pytest.mark.asyncio
 async def test_upload_pdf_attachment(client, auth_headers, active_run):
@@ -100,6 +103,7 @@ async def test_upload_csv(client, auth_headers, active_run):
 
 # --- List Tests ---
 
+
 @pytest.mark.asyncio
 async def test_list_attachments(client, auth_headers, active_run):
     # Upload two attachments
@@ -149,6 +153,7 @@ async def test_list_attachments_filter_by_step(client, auth_headers, active_run)
 
 # --- Soft Delete Tests ---
 
+
 @pytest.mark.asyncio
 async def test_soft_delete_attachment(client, auth_headers, active_run):
     # Upload
@@ -197,6 +202,7 @@ async def test_delete_already_deleted_returns_404(client, auth_headers, active_r
 
 # --- Restore Tests ---
 
+
 @pytest.mark.asyncio
 async def test_restore_attachment(client, auth_headers, active_run):
     # Upload + delete
@@ -230,6 +236,7 @@ async def test_restore_attachment(client, auth_headers, active_run):
 
 # --- Download Tests ---
 
+
 @pytest.mark.asyncio
 async def test_download_attachment(client, auth_headers, active_run):
     upload_resp = await client.post(
@@ -248,7 +255,9 @@ async def test_download_attachment(client, auth_headers, active_run):
 
 
 @pytest.mark.asyncio
-async def test_download_deleted_attachment_returns_404(client, auth_headers, active_run):
+async def test_download_deleted_attachment_returns_404(
+    client, auth_headers, active_run
+):
     upload_resp = await client.post(
         f"/science/runs/{active_run.id}/attachments",
         files={"file": ("x.txt", BytesIO(b"data"), "text/plain")},
@@ -276,6 +285,7 @@ async def test_unauthenticated_download_rejected(client, active_run):
 
 
 # --- Audit Log Tests ---
+
 
 @pytest.mark.asyncio
 async def test_attachment_operations_in_audit_log(client, auth_headers, active_run):
@@ -311,6 +321,7 @@ async def test_attachment_operations_in_audit_log(client, auth_headers, active_r
 
 
 # --- Attachment in RunResponse ---
+
 
 @pytest.mark.asyncio
 async def test_attachments_in_run_response(client, auth_headers, active_run):

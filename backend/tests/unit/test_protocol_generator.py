@@ -9,16 +9,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.ai.protocol_generator import (
-    GeneratedProtocol,
-    GeneratedStep,
-    build_graph,
-    extract_params,
-    match_unit_op,
-)
+from app.services.ai.protocol_generator import (GeneratedProtocol,
+                                                GeneratedStep, build_graph,
+                                                extract_params, match_unit_op)
 
 
-def _make_unit_op(name: str, category: str = "General", param_schema: dict | None = None):
+def _make_unit_op(
+    name: str, category: str = "General", param_schema: dict | None = None
+):
     """Create a mock UnitOpDefinition."""
     op = MagicMock()
     op.id = uuid.uuid4()
@@ -135,9 +133,7 @@ class TestBuildGraph:
             duration_min=60,
             params={"temperature": 42.0},
         )
-        generated = GeneratedProtocol(
-            name="P", description="", steps=[step]
-        )
+        generated = GeneratedProtocol(name="P", description="", steps=[step])
 
         graph = build_graph(generated, [op], uuid.uuid4(), uuid.uuid4())
 

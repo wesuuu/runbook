@@ -68,8 +68,6 @@ async def test_get_or_404_applies_options(mock_select, mock_db):
     fake_option = MagicMock()
     stmt = mock_select.return_value.where.return_value
 
-    got = await get_or_404(
-        mock_db, model, uuid.uuid4(), options=[fake_option]
-    )
+    got = await get_or_404(mock_db, model, uuid.uuid4(), options=[fake_option])
     assert got is record
     stmt.options.assert_called_once_with(fake_option)

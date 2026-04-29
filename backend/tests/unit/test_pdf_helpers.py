@@ -1,15 +1,13 @@
 """Tests for PDF helper functions in pdf_base.py."""
 
 import pytest
-from app.services.documents.pdf_base import (
-    _format_value,
-    _build_param_sentence,
-    _render_template,
-    _get_param_title,
-    _resolve_format,
-    _get_editable_params,
-    DEFAULT_FORMAT,
-)
+
+from app.services.documents.pdf_base import (DEFAULT_FORMAT,
+                                             _build_param_sentence,
+                                             _format_value,
+                                             _get_editable_params,
+                                             _get_param_title,
+                                             _render_template, _resolve_format)
 
 
 class TestFormatValue:

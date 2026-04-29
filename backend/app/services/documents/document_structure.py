@@ -299,12 +299,8 @@ async def _build_outline(
 
     try:
         if _is_ollama_model(model):
-            return await _outline_ollama(
-                sample_pages, sample_images, config
-            )
-        return await _outline_pydantic_ai(
-            sample_pages, sample_images, model
-        )
+            return await _outline_ollama(sample_pages, sample_images, config)
+        return await _outline_pydantic_ai(sample_pages, sample_images, model)
     except Exception:
         logger.exception("Failed to build document outline, using defaults")
         return DocumentOutline()
@@ -320,8 +316,7 @@ async def _outline_ollama(
     model_name = config.get("model_name", "llama3.2-vision")
 
     images_b64 = [
-        base64.b64encode(page_images[pn]).decode("utf-8")
-        for pn in page_numbers
+        base64.b64encode(page_images[pn]).decode("utf-8") for pn in page_numbers
     ]
 
     user_text = (
@@ -342,9 +337,7 @@ async def _outline_ollama(
         },
     ]
 
-    async with httpx.AsyncClient(
-        timeout=LLM_TIMEOUT_SECONDS
-    ) as client:
+    async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             f"{base_url.rstrip('/')}/api/chat",
             json={
@@ -376,11 +369,7 @@ async def _outline_pydantic_ai(
 
     user_content: list[Any] = []
     for pn in page_numbers:
-        user_content.append(
-            BinaryContent(
-                data=page_images[pn], media_type="image/png"
-            )
-        )
+        user_content.append(BinaryContent(data=page_images[pn], media_type="image/png"))
     user_content.append(
         f"These are {len(page_numbers)} sample pages from a PDF. "
         f"Page numbers: {page_numbers}. "
@@ -397,9 +386,7 @@ def _parse_outline_response(content: str) -> DocumentOutline:
         parsed = json.loads(content)
         return DocumentOutline.model_validate(parsed)
     except Exception:
-        logger.warning(
-            "Failed to parse outline JSON, using defaults"
-        )
+        logger.warning("Failed to parse outline JSON, using defaults")
         return DocumentOutline()
 
 
@@ -476,14 +463,9 @@ def _format_outline_context(outline: DocumentOutline) -> str:
         f"Heading pattern: {outline.heading_pattern}",
     ]
     if outline.front_matter_end_page:
-        parts.append(
-            f"Front matter ends: page {outline.front_matter_end_page}"
-        )
+        parts.append(f"Front matter ends: page {outline.front_matter_end_page}")
     if outline.toc_start_page and outline.toc_end_page:
-        parts.append(
-            f"TOC: pages {outline.toc_start_page}"
-            f"-{outline.toc_end_page}"
-        )
+        parts.append(f"TOC: pages {outline.toc_start_page}" f"-{outline.toc_end_page}")
     if outline.body_start_page:
         parts.append(f"Body starts: page {outline.body_start_page}")
     if outline.running_headers:
@@ -523,8 +505,7 @@ async def _batch_ollama(
     model_name = config.get("model_name", "llama3.2-vision")
 
     images_b64 = [
-        base64.b64encode(page_images[pn]).decode("utf-8")
-        for pn in page_numbers
+        base64.b64encode(page_images[pn]).decode("utf-8") for pn in page_numbers
     ]
 
     outline_ctx = _format_outline_context(outline)
@@ -547,9 +528,7 @@ async def _batch_ollama(
         },
     ]
 
-    async with httpx.AsyncClient(
-        timeout=LLM_TIMEOUT_SECONDS
-    ) as client:
+    async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             f"{base_url.rstrip('/')}/api/chat",
             json={
@@ -584,11 +563,7 @@ async def _batch_pydantic_ai(
     outline_ctx = _format_outline_context(outline)
     user_content: list[Any] = []
     for pn in page_numbers:
-        user_content.append(
-            BinaryContent(
-                data=page_images[pn], media_type="image/png"
-            )
-        )
+        user_content.append(BinaryContent(data=page_images[pn], media_type="image/png"))
     user_content.append(
         f"DOCUMENT OUTLINE:\n{outline_ctx}\n\n"
         f"HEADING TREE SO FAR:\n{outline_tree}\n\n"
@@ -603,27 +578,17 @@ async def _batch_pydantic_ai(
 # ── Response parsing ─────────────────────────────────────────────────
 
 
-def _parse_batch_response(
-    content: str, page_numbers: list[int]
-) -> list[PageAnalysis]:
+def _parse_batch_response(content: str, page_numbers: list[int]) -> list[PageAnalysis]:
     """Parse LLM JSON response into PageAnalysis objects."""
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
-        logger.warning(
-            "Failed to parse batch JSON, returning defaults"
-        )
+        logger.warning("Failed to parse batch JSON, returning defaults")
         return [PageAnalysis(page=pn) for pn in page_numbers]
 
-    raw_pages = (
-        parsed.get("pages", parsed)
-        if isinstance(parsed, dict)
-        else parsed
-    )
+    raw_pages = parsed.get("pages", parsed) if isinstance(parsed, dict) else parsed
     if not isinstance(raw_pages, list):
-        logger.warning(
-            "Unexpected batch format, returning defaults"
-        )
+        logger.warning("Unexpected batch format, returning defaults")
         return [PageAnalysis(page=pn) for pn in page_numbers]
 
     results: list[PageAnalysis] = []
@@ -637,9 +602,7 @@ def _parse_batch_response(
             results.append(pa)
             seen.add(pa.page)
         except Exception:
-            logger.debug(
-                "Skipping invalid page analysis: %s", item
-            )
+            logger.debug("Skipping invalid page analysis: %s", item)
 
     # Fill in any missing pages with defaults
     for pn in page_numbers:
@@ -652,26 +615,18 @@ def _parse_batch_response(
 # ── Health check ─────────────────────────────────────────────────────
 
 
-async def _check_llm_available(
-    model: ModelType, config: dict[str, Any]
-) -> bool:
+async def _check_llm_available(model: ModelType, config: dict[str, Any]) -> bool:
     """Quick health check to see if the LLM service is reachable."""
     try:
         if _is_ollama_model(model):
-            base_url = (
-                config.get("base_url") or "http://localhost:11434"
-            )
+            base_url = config.get("base_url") or "http://localhost:11434"
             async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(
-                    f"{base_url.rstrip('/')}/api/tags"
-                )
+                resp = await client.get(f"{base_url.rstrip('/')}/api/tags")
                 return resp.status_code == 200
         # For cloud providers, assume reachable
         return True
     except Exception:
-        logger.warning(
-            "LLM health check failed for doc_structure capability"
-        )
+        logger.warning("LLM health check failed for doc_structure capability")
         return False
 
 
@@ -764,23 +719,24 @@ async def extract_toc(
     # 1. Use outline's TOC page range
     if outline.toc_start_page and outline.toc_end_page:
         toc_page_nums = [
-            p for p in range(
-                outline.toc_start_page, outline.toc_end_page + 1
-            )
+            p
+            for p in range(outline.toc_start_page, outline.toc_end_page + 1)
             if p in page_images
         ]
 
     # 2. Fall back to pages classified as "toc" by the batch analysis
     if not toc_page_nums and structure.pages:
         toc_page_nums = [
-            pa.page for pa in structure.pages
+            pa.page
+            for pa in structure.pages
             if pa.role == "toc" and pa.page in page_images
         ]
 
     # 3. No TOC found — send sample body pages for LLM to generate one
     if not toc_page_nums:
         body_pages = [
-            pa.page for pa in structure.pages
+            pa.page
+            for pa in structure.pages
             if pa.role == "body" and pa.page in page_images
         ]
         toc_page_nums = _select_sample_pages(body_pages, max_samples=10)
@@ -809,8 +765,7 @@ async def _toc_ollama(
     model_name = config.get("model_name", "llama3.2-vision")
 
     images_b64 = [
-        base64.b64encode(page_images[pn]).decode("utf-8")
-        for pn in page_numbers
+        base64.b64encode(page_images[pn]).decode("utf-8") for pn in page_numbers
     ]
 
     user_text = (
@@ -830,9 +785,7 @@ async def _toc_ollama(
         },
     ]
 
-    async with httpx.AsyncClient(
-        timeout=LLM_TIMEOUT_SECONDS
-    ) as client:
+    async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
         resp = await client.post(
             f"{base_url.rstrip('/')}/api/chat",
             json={
@@ -864,11 +817,7 @@ async def _toc_pydantic_ai(
 
     user_content: list[Any] = []
     for pn in page_numbers:
-        user_content.append(
-            BinaryContent(
-                data=page_images[pn], media_type="image/png"
-            )
-        )
+        user_content.append(BinaryContent(data=page_images[pn], media_type="image/png"))
     user_content.append(
         f"These are {len(page_numbers)} pages from a document. "
         "Extract the table of contents entries."
@@ -886,11 +835,7 @@ def _parse_toc_response(content: str) -> list[dict]:
         logger.warning("Failed to parse TOC JSON")
         return []
 
-    raw_entries = (
-        parsed.get("entries", parsed)
-        if isinstance(parsed, dict)
-        else parsed
-    )
+    raw_entries = parsed.get("entries", parsed) if isinstance(parsed, dict) else parsed
     if not isinstance(raw_entries, list):
         return []
 

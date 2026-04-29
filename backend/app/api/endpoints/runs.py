@@ -15,8 +15,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.api.endpoints.protocol_pdfs import (_load_template,
                                              _resolve_template_path)
 from app.core.deps import (get_current_user, get_or_404,
-                           get_org_id_from_request, require_permission,
-                           require_active_subscription)
+                           get_org_id_from_request,
+                           require_active_subscription, require_permission)
 from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
 def _run_status_str(run_obj: Run) -> str:
     """Extract run status as a plain string."""
     s = run_obj.status
@@ -47,8 +48,11 @@ def _run_status_str(run_obj: Run) -> str:
 
 # --- Runs ---
 
+
 @router.post(
-    "/runs", response_model=RunResponse, status_code=201,
+    "/runs",
+    response_model=RunResponse,
+    status_code=201,
 )
 async def create_run(
     run_in: RunCreate,
@@ -57,8 +61,11 @@ async def create_run(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        run_in.project_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        run_in.project_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(
@@ -66,9 +73,7 @@ async def create_run(
             detail="EDIT permission required on project",
         )
 
-    result = await db.execute(
-        select(Project).where(Project.id == run_in.project_id)
-    )
+    result = await db.execute(select(Project).where(Project.id == run_in.project_id))
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -79,9 +84,7 @@ async def create_run(
         )
         protocol = result.scalar_one_or_none()
         if protocol is None:
-            raise HTTPException(
-                status_code=404, detail="Protocol not found"
-            )
+            raise HTTPException(status_code=404, detail="Protocol not found")
         if protocol.status == "ARCHIVED":
             raise HTTPException(
                 status_code=400,
@@ -101,8 +104,12 @@ async def create_run(
     await db.flush()
 
     await log_audit(
-        db, user.id, "CREATE", "Run",
-        run_obj.id, {"name": run_in.name},
+        db,
+        user.id,
+        "CREATE",
+        "Run",
+        run_obj.id,
+        {"name": run_in.name},
     )
 
     await db.commit()
@@ -117,8 +124,11 @@ async def get_run(
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -131,9 +141,7 @@ async def get_run(
     response_model=List[RunResponse],
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.VIEW
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.VIEW)
         )
     ],
 )
@@ -141,14 +149,13 @@ async def list_project_runs(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Run).where(Run.project_id == project_id)
-    )
+    result = await db.execute(select(Run).where(Run.project_id == project_id))
     return result.scalars().all()
 
 
 @router.put(
-    "/runs/{run_id}", response_model=RunResponse,
+    "/runs/{run_id}",
+    response_model=RunResponse,
 )
 async def update_run(
     run_id: UUID,
@@ -159,8 +166,11 @@ async def update_run(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -169,7 +179,9 @@ async def update_run(
 
     # Validate status transitions
     new_status = update_data.status.value if update_data.status else None
-    current_status = run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
+    current_status = (
+        run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
+    )
 
     if new_status and new_status != current_status:
         valid_transitions = {
@@ -188,8 +200,7 @@ async def update_run(
         if new_status == "ACTIVE":
             # Check that at least one person is assigned to the run
             result = await db.execute(
-                select(RunRoleAssignment)
-                .where(RunRoleAssignment.run_id == run_id)
+                select(RunRoleAssignment).where(RunRoleAssignment.run_id == run_id)
             )
             assignments = result.scalars().all()
 
@@ -225,7 +236,8 @@ async def update_run(
             unit_op_ids = [n["id"] for n in nodes if n.get("type") == "unitOp"]
 
             incomplete = [
-                sid for sid in unit_op_ids
+                sid
+                for sid in unit_op_ids
                 if exec_data.get(sid, {}).get("status") != "completed"
             ]
             if incomplete:
@@ -258,9 +270,8 @@ async def update_run(
 
                 node_data = _node_map.get(step_id, {})
                 step_name = node_data.get("label", step_id)
-                param_schema_props = (
-                    (node_data.get("paramSchema") or {})
-                    .get("properties", {})
+                param_schema_props = (node_data.get("paramSchema") or {}).get(
+                    "properties", {}
                 )
 
                 old_results = old_step.get("results", {})
@@ -274,9 +285,7 @@ async def update_run(
                 ):
                     new_step["original_results"] = old_results
                     new_step["edited_by_user_id"] = str(user.id)
-                    new_step["edited_at"] = (
-                        datetime.now(timezone.utc).isoformat()
-                    )
+                    new_step["edited_at"] = datetime.now(timezone.utc).isoformat()
 
                 # Audit each individual field change
                 if old_results and new_results:
@@ -286,11 +295,13 @@ async def update_run(
                         if old_val != new_val:
                             prop = param_schema_props.get(field_key, {})
                             field_label = (
-                                prop.get("title")
-                                or field_key.replace("_", " ").title()
+                                prop.get("title") or field_key.replace("_", " ").title()
                             )
                             await log_audit(
-                                db, user.id, "STEP_EDIT", "Run",
+                                db,
+                                user.id,
+                                "STEP_EDIT",
+                                "Run",
                                 run_obj.id,
                                 {
                                     "step_id": step_id,
@@ -312,11 +323,12 @@ async def update_run(
                 ):
                     new_step["original_value"] = old_value
                     new_step["edited_by_user_id"] = str(user.id)
-                    new_step["edited_at"] = (
-                        datetime.now(timezone.utc).isoformat()
-                    )
+                    new_step["edited_at"] = datetime.now(timezone.utc).isoformat()
                     await log_audit(
-                        db, user.id, "STEP_EDIT", "Run",
+                        db,
+                        user.id,
+                        "STEP_EDIT",
+                        "Run",
                         run_obj.id,
                         {
                             "step_id": step_id,
@@ -333,7 +345,10 @@ async def update_run(
                 new_notes = new_step.get("notes", "")
                 if old_notes != new_notes:
                     await log_audit(
-                        db, user.id, "STEP_EDIT", "Run",
+                        db,
+                        user.id,
+                        "STEP_EDIT",
+                        "Run",
                         run_obj.id,
                         {
                             "step_id": step_id,
@@ -350,7 +365,7 @@ async def update_run(
     if update_data.execution_data is not None:
         old_exec = run_obj.execution_data or {}
         new_exec = update_data.execution_data
-        target_status = (new_status or current_status)
+        target_status = new_status or current_status
 
         # Build step name lookup from graph
         _graph = run_obj.graph or {}
@@ -367,22 +382,40 @@ async def update_run(
             new_step_status = step_data.get("status")
             if new_step_status == "completed" and old_status != "completed":
                 await log_audit(
-                    db, user.id, "STEP_COMPLETE", "Run", run_obj.id,
-                    {"step_id": step_id, "step_name": _name_map.get(step_id, step_id), "results": step_data.get("results", {})}
+                    db,
+                    user.id,
+                    "STEP_COMPLETE",
+                    "Run",
+                    run_obj.id,
+                    {
+                        "step_id": step_id,
+                        "step_name": _name_map.get(step_id, step_id),
+                        "results": step_data.get("results", {}),
+                    },
                 )
             elif old_status == "completed" and new_step_status != "completed":
                 await log_audit(
-                    db, user.id, "STEP_UNCOMPLETE", "Run", run_obj.id,
-                    {"step_id": step_id, "step_name": _name_map.get(step_id, step_id)}
+                    db,
+                    user.id,
+                    "STEP_UNCOMPLETE",
+                    "Run",
+                    run_obj.id,
+                    {"step_id": step_id, "step_name": _name_map.get(step_id, step_id)},
                 )
 
             # Track step-level note changes (skip EDITED — handled above)
             if target_status != "EDITED":
-                old_notes = old_step.get("notes", "") if isinstance(old_step, dict) else ""
+                old_notes = (
+                    old_step.get("notes", "") if isinstance(old_step, dict) else ""
+                )
                 new_notes = step_data.get("notes", "")
                 if old_notes != new_notes:
                     await log_audit(
-                        db, user.id, "STEP_EDIT", "Run", run_obj.id,
+                        db,
+                        user.id,
+                        "STEP_EDIT",
+                        "Run",
+                        run_obj.id,
                         {
                             "step_id": step_id,
                             "step_name": _name_map.get(step_id, step_id),
@@ -402,7 +435,12 @@ async def update_run(
         changes["started_by_id"] = str(user.id)
 
     await log_audit(
-        db, user.id, "UPDATE", "Run", run_obj.id, changes,
+        db,
+        user.id,
+        "UPDATE",
+        "Run",
+        run_obj.id,
+        changes,
     )
 
     await db.commit()
@@ -418,8 +456,7 @@ async def update_run(
 
         # Get all assigned user IDs for this run
         assign_result = await db.execute(
-            select(RunRoleAssignment.user_id)
-            .where(RunRoleAssignment.run_id == run_id)
+            select(RunRoleAssignment.user_id).where(RunRoleAssignment.run_id == run_id)
         )
         assigned_user_ids = [row[0] for row in assign_result.all()]
 
@@ -455,9 +492,7 @@ async def update_run(
 
             # Check for unanalyzed images and create notification
             analyzed_ids = (
-                select(ImageConversation.image_id)
-                .distinct()
-                .scalar_subquery()
+                select(ImageConversation.image_id).distinct().scalar_subquery()
             )
             unanalyzed_result = await db.execute(
                 select(func.count(RunImage.id)).where(
@@ -468,9 +503,7 @@ async def update_run(
             unanalyzed_count = unanalyzed_result.scalar() or 0
             if unanalyzed_count > 0:
                 # Notify assigned users + the completing user
-                recipients = list(
-                    set(assigned_user_ids) | {user.id}
-                )
+                recipients = list(set(assigned_user_ids) | {user.id})
                 await send_notification(
                     db=db,
                     event_type="PENDING_IMAGE_ANALYSIS",
@@ -490,6 +523,7 @@ async def update_run(
 
 # --- Run PDFs ---
 
+
 @router.get("/runs/{run_id}/pdf/sop")
 async def get_run_sop_pdf(
     run_id: UUID,
@@ -500,8 +534,11 @@ async def get_run_sop_pdf(
 ):
     """Generate an SOP PDF from a run's snapshot graph."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -569,8 +606,11 @@ async def get_run_batch_record_pdf(
 ):
     """Generate a batch record PDF from a run's snapshot graph."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -592,15 +632,12 @@ async def get_run_batch_record_pdf(
             protocol_version = proto.version_number
             br_template_id = proto.batch_record_template_id
             protocol_modified = (
-                proto.updated_at.strftime("%B %d, %Y")
-                if proto.updated_at else None
+                proto.updated_at.strftime("%B %d, %Y") if proto.updated_at else None
             )
 
     template = await _load_template(db, template_id or br_template_id)
     if not template:
-        raise HTTPException(
-            status_code=404, detail="Batch record template not found"
-        )
+        raise HTTPException(status_code=404, detail="Batch record template not found")
 
     template_path = _resolve_template_path(template)
     graph = run_obj.graph or {}
@@ -623,9 +660,7 @@ async def get_run_batch_record_pdf(
             started_by_id_str = str(run_obj.started_by_id)
             user_ids.add(started_by_id_str)
         if user_ids:
-            result = await db.execute(
-                select(User).where(User.id.in_(user_ids))
-            )
+            result = await db.execute(select(User).where(User.id.in_(user_ids)))
             for u in result.scalars().all():
                 user_map[str(u.id)] = u.full_name or u.email
 
@@ -665,7 +700,7 @@ async def get_run_batch_record_pdf(
             pdf_name = f"BatchRecord_{safe_name}_{suffix}.pdf"
             zf.writestr(pdf_name, pdf_bytes)
 
-            for att in (run_obj.attachments or []):
+            for att in run_obj.attachments or []:
                 if att.get("deleted"):
                     continue
                 # Skip images already embedded in the PDF
@@ -698,6 +733,7 @@ async def get_run_batch_record_pdf(
 
 # --- Run Role Assignments ---
 
+
 @router.get(
     "/runs/{run_id}/role-assignments",
     response_model=RunRoleAssignmentListResponse,
@@ -709,15 +745,17 @@ async def get_run_role_assignments(
 ):
     """Get all role assignments for a run."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(RunRoleAssignment)
-        .where(RunRoleAssignment.run_id == run_id)
+        select(RunRoleAssignment).where(RunRoleAssignment.run_id == run_id)
     )
     assignments = result.scalars().all()
     return RunRoleAssignmentListResponse(items=assignments)
@@ -738,8 +776,11 @@ async def create_run_role_assignment(
 ):
     """Assign a user to a role in a run."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -751,11 +792,12 @@ async def create_run_role_assignment(
 
     # Check if assignment already exists for this lane
     result = await db.execute(
-        select(RunRoleAssignment)
-        .where(and_(
-            RunRoleAssignment.run_id == run_id,
-            RunRoleAssignment.lane_node_id == assignment.lane_node_id,
-        ))
+        select(RunRoleAssignment).where(
+            and_(
+                RunRoleAssignment.run_id == run_id,
+                RunRoleAssignment.lane_node_id == assignment.lane_node_id,
+            )
+        )
     )
     existing = result.scalar_one_or_none()
     if existing:
@@ -766,7 +808,11 @@ async def create_run_role_assignment(
         await db.commit()
         await db.refresh(existing)
         await log_audit(
-            db, user.id, "UPDATE", "RunRoleAssignment", existing.id,
+            db,
+            user.id,
+            "UPDATE",
+            "RunRoleAssignment",
+            existing.id,
             {
                 "old_user_id": str(old_user_id),
                 "new_user_id": str(assignment.user_id),
@@ -820,7 +866,11 @@ async def create_run_role_assignment(
     await db.commit()
     await db.refresh(new_assignment)
     await log_audit(
-        db, user.id, "CREATE", "RunRoleAssignment", new_assignment.id,
+        db,
+        user.id,
+        "CREATE",
+        "RunRoleAssignment",
+        new_assignment.id,
         {
             "run_id": str(run_id),
             "user_id": str(assignment.user_id),
@@ -830,9 +880,7 @@ async def create_run_role_assignment(
     )
 
     # Notify new role assignment
-    proj = await db.execute(
-        select(Project).where(Project.id == run_obj.project_id)
-    )
+    proj = await db.execute(select(Project).where(Project.id == run_obj.project_id))
     project = proj.scalar_one()
     background_tasks.add_task(
         send_notification,
@@ -862,18 +910,22 @@ async def delete_run_role_assignment(
 ):
     """Remove a user's role assignment."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(
-        select(RunRoleAssignment)
-        .where(and_(
-            RunRoleAssignment.id == assignment_id,
-            RunRoleAssignment.run_id == run_id,
-        ))
+        select(RunRoleAssignment).where(
+            and_(
+                RunRoleAssignment.id == assignment_id,
+                RunRoleAssignment.run_id == run_id,
+            )
+        )
     )
     assignment = result.scalar_one_or_none()
     if not assignment:
@@ -889,7 +941,11 @@ async def delete_run_role_assignment(
     await db.delete(assignment)
     await db.commit()
     await log_audit(
-        db, user.id, "DELETE", "RunRoleAssignment", assignment_id,
+        db,
+        user.id,
+        "DELETE",
+        "RunRoleAssignment",
+        assignment_id,
         assignment_data,
     )
     return {"ok": True}
@@ -912,6 +968,7 @@ MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25 MB
 
 # --- Run Notes ---
 
+
 @router.post(
     "/runs/{run_id}/notes",
     response_model=RunNote,
@@ -927,8 +984,11 @@ async def add_run_note(
 ):
     """Add an append-only note to a run."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -951,7 +1011,11 @@ async def add_run_note(
     flag_modified(run_obj, "notes")
 
     await log_audit(
-        db, user.id, "NOTE_ADDED", "Run", run_obj.id,
+        db,
+        user.id,
+        "NOTE_ADDED",
+        "Run",
+        run_obj.id,
         {
             "note_id": str(note.id),
             "content": note.content,
@@ -976,19 +1040,21 @@ async def list_run_notes(
 ):
     """List all run-level notes."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     run_obj = await get_or_404(db, Run, run_id)
-    return RunNoteListResponse(
-        items=[RunNote(**n) for n in (run_obj.notes or [])]
-    )
+    return RunNoteListResponse(items=[RunNote(**n) for n in (run_obj.notes or [])])
 
 
 # --- Run Attachments ---
+
 
 @router.post(
     "/runs/{run_id}/attachments",
@@ -1006,8 +1072,11 @@ async def upload_attachment(
 ):
     """Upload a file attachment to a run."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -1047,7 +1116,11 @@ async def upload_attachment(
     flag_modified(run_obj, "attachments")
 
     await log_audit(
-        db, user.id, "ATTACHMENT_UPLOADED", "Run", run_obj.id,
+        db,
+        user.id,
+        "ATTACHMENT_UPLOADED",
+        "Run",
+        run_obj.id,
         {
             "attachment_id": str(attachment.id),
             "filename": attachment.filename,
@@ -1075,8 +1148,11 @@ async def list_attachments(
 ):
     """List attachments for a run, optionally filtered by step."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -1085,9 +1161,7 @@ async def list_attachments(
     items = [a for a in (run_obj.attachments or []) if not a.get("deleted")]
     if step_id is not None:
         items = [a for a in items if a.get("step_id") == step_id]
-    return RunAttachmentListResponse(
-        items=[RunAttachment(**a) for a in items]
-    )
+    return RunAttachmentListResponse(items=[RunAttachment(**a) for a in items])
 
 
 @router.delete(
@@ -1104,8 +1178,11 @@ async def soft_delete_attachment(
 ):
     """Soft-delete an attachment (EDIT permission)."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -1116,7 +1193,7 @@ async def soft_delete_attachment(
 
     updated = []
     found = None
-    for att in (run_obj.attachments or []):
+    for att in run_obj.attachments or []:
         if att["id"] == attachment_id:
             if att.get("deleted"):
                 raise HTTPException(404, "Attachment already deleted")
@@ -1132,7 +1209,11 @@ async def soft_delete_attachment(
     flag_modified(run_obj, "attachments")
 
     await log_audit(
-        db, user.id, "ATTACHMENT_DELETED", "Run", run_obj.id,
+        db,
+        user.id,
+        "ATTACHMENT_DELETED",
+        "Run",
+        run_obj.id,
         {
             "attachment_id": attachment_id,
             "filename": found["filename"],
@@ -1157,8 +1238,11 @@ async def restore_attachment(
 ):
     """Restore a soft-deleted attachment (ADMIN permission)."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.ADMIN,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.ADMIN,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="ADMIN permission required")
@@ -1169,7 +1253,7 @@ async def restore_attachment(
 
     updated = []
     found = None
-    for att in (run_obj.attachments or []):
+    for att in run_obj.attachments or []:
         if att["id"] == attachment_id:
             if not att.get("deleted"):
                 raise HTTPException(409, "Attachment is not deleted")
@@ -1185,7 +1269,11 @@ async def restore_attachment(
     flag_modified(run_obj, "attachments")
 
     await log_audit(
-        db, user.id, "ATTACHMENT_RESTORED", "Run", run_obj.id,
+        db,
+        user.id,
+        "ATTACHMENT_RESTORED",
+        "Run",
+        run_obj.id,
         {
             "attachment_id": attachment_id,
             "filename": found["filename"],
@@ -1208,8 +1296,11 @@ async def download_attachment(
 ):
     """Download an attachment file (authenticated)."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -1217,8 +1308,11 @@ async def download_attachment(
     run_obj = await get_or_404(db, Run, run_id)
 
     att = next(
-        (a for a in (run_obj.attachments or [])
-         if a["id"] == attachment_id and not a.get("deleted")),
+        (
+            a
+            for a in (run_obj.attachments or [])
+            if a["id"] == attachment_id and not a.get("deleted")
+        ),
         None,
     )
     if not att:
@@ -1238,6 +1332,7 @@ async def download_attachment(
 
 # --- Run Audit Log ---
 
+
 @router.get("/runs/{run_id}/audit-log")
 async def get_run_audit_log(
     run_id: UUID,
@@ -1248,8 +1343,11 @@ async def get_run_audit_log(
 ):
     """Get the audit trail for a run with pagination (History tab)."""
     allowed = await check_permission(
-        db, user.id, ObjectType.RUN,
-        run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -1269,10 +1367,7 @@ async def get_run_audit_log(
 
     # Paginated results
     result = await db.execute(
-        base_query
-        .order_by(AuditLog.created_at.desc())
-        .offset(offset)
-        .limit(limit)
+        base_query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
     )
     entries = result.scalars().all()
 
@@ -1280,9 +1375,7 @@ async def get_run_audit_log(
     actor_ids = {e.actor_id for e in entries}
     user_map: dict[UUID, str] = {}
     if actor_ids:
-        user_result = await db.execute(
-            select(User).where(User.id.in_(actor_ids))
-        )
+        user_result = await db.execute(select(User).where(User.id.in_(actor_ids)))
         for u in user_result.scalars().all():
             user_map[u.id] = u.full_name or u.email
 

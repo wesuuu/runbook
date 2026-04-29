@@ -120,11 +120,10 @@ def score_proposal(
     details.steps_missed = [s["name"] for s in unmatched_expected]
 
     # Find extra actual steps (not matched to any expected)
-    matched_actual_names = {
-        act["name"] for _, act in step_matches if act is not None
-    }
+    matched_actual_names = {act["name"] for _, act in step_matches if act is not None}
     details.steps_extra = [
-        s.get("name", "?") for s in actual_steps
+        s.get("name", "?")
+        for s in actual_steps
         if s.get("name", "?") not in matched_actual_names
     ]
 
@@ -146,17 +145,21 @@ def score_proposal(
                 if act_match and act_match.lower() == exp_match.lower():
                     catalog_correct += 1
                 else:
-                    details.catalog_mismatches.append({
+                    details.catalog_mismatches.append(
+                        {
+                            "step": exp["name"],
+                            "expected": exp_match,
+                            "actual": act.get("matched_unit_op_name") if act else None,
+                        }
+                    )
+            else:
+                details.catalog_mismatches.append(
+                    {
                         "step": exp["name"],
                         "expected": exp_match,
-                        "actual": act.get("matched_unit_op_name") if act else None,
-                    })
-            else:
-                details.catalog_mismatches.append({
-                    "step": exp["name"],
-                    "expected": exp_match,
-                    "actual": None,
-                })
+                        "actual": None,
+                    }
+                )
 
     scores.catalog_matching = (
         catalog_correct / catalog_total if catalog_total > 0 else 1.0
@@ -173,11 +176,13 @@ def score_proposal(
             if exp_is_new == act_is_new:
                 is_new_correct += 1
             else:
-                details.is_new_mismatches.append({
-                    "step": exp["name"],
-                    "expected_is_new": exp_is_new,
-                    "actual_is_new": act_is_new,
-                })
+                details.is_new_mismatches.append(
+                    {
+                        "step": exp["name"],
+                        "expected_is_new": exp_is_new,
+                        "actual_is_new": act_is_new,
+                    }
+                )
 
     scores.new_unit_op_detection = (
         is_new_correct / is_new_total if is_new_total > 0 else 1.0
@@ -201,36 +206,34 @@ def score_proposal(
                     break
 
             if act_val is None:
-                details.params_missed.append({
-                    "step": exp["name"],
-                    "param": key,
-                    "expected": exp_val,
-                    "actual": None,
-                })
+                details.params_missed.append(
+                    {
+                        "step": exp["name"],
+                        "param": key,
+                        "expected": exp_val,
+                        "actual": None,
+                    }
+                )
                 continue
 
             # Compare values
             if _param_values_match(exp_val, act_val):
                 param_correct += 1
             else:
-                details.params_missed.append({
-                    "step": exp["name"],
-                    "param": key,
-                    "expected": exp_val,
-                    "actual": act_val,
-                })
+                details.params_missed.append(
+                    {
+                        "step": exp["name"],
+                        "param": key,
+                        "expected": exp_val,
+                        "actual": act_val,
+                    }
+                )
 
-    scores.param_extraction = (
-        param_correct / param_total if param_total > 0 else 1.0
-    )
+    scores.param_extraction = param_correct / param_total if param_total > 0 else 1.0
 
     # -- 5. Role Extraction --
     expected_roles = {r.lower() for r in expected.get("expected_roles", [])}
-    actual_roles = {
-        s.get("role", "").lower()
-        for s in actual_steps
-        if s.get("role")
-    }
+    actual_roles = {s.get("role", "").lower() for s in actual_steps if s.get("role")}
     if expected_roles or actual_roles:
         intersection = expected_roles & actual_roles
         union = expected_roles | actual_roles

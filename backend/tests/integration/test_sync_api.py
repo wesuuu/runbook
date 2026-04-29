@@ -1,14 +1,16 @@
 """Tests for offline sync queue endpoint."""
 
 import base64
-import pytest
-import pytest_asyncio
 from uuid import uuid4
 
-from app.core.security import hash_password, create_access_token, create_offline_token
-from app.models.iam import User
+import pytest
+import pytest_asyncio
+
+from app.core.security import (create_access_token, create_offline_token,
+                               hash_password)
 from app.models.ai import RunImage
-from app.models.science import Run, RunStatus, RunRoleAssignment
+from app.models.iam import User
+from app.models.science import Run, RunRoleAssignment, RunStatus
 
 
 @pytest_asyncio.fixture
@@ -25,8 +27,10 @@ async def active_run(db_session, test_user, test_project):
     await db_session.flush()
 
     assignment = RunRoleAssignment(
-        run_id=run.id, lane_node_id="__run__",
-        role_name="Operator", user_id=test_user.id,
+        run_id=run.id,
+        lane_node_id="__run__",
+        role_name="Operator",
+        user_id=test_user.id,
     )
     db_session.add(assignment)
     await db_session.flush()
@@ -36,6 +40,7 @@ async def active_run(db_session, test_user, test_project):
 
 
 # --- POST /sync/offline-queue/{run_id} ---
+
 
 async def test_sync_empty_queue(client, auth_headers, active_run):
     run, _ = active_run
@@ -62,14 +67,17 @@ async def test_sync_with_offline_token(client, active_run):
     assert resp.status_code == 200
 
 
-async def test_sync_offline_token_wrong_run(client, active_run, test_project, db_session, test_user):
+async def test_sync_offline_token_wrong_run(
+    client, active_run, test_project, db_session, test_user
+):
     _, token = active_run
     # Create a different run
     run2 = Run(
         name="Other Run",
         project_id=test_project.id,
         status=RunStatus.ACTIVE,
-        graph={}, execution_data={},
+        graph={},
+        execution_data={},
     )
     db_session.add(run2)
     await db_session.flush()
@@ -117,11 +125,7 @@ async def test_sync_image_upload_missing_data(client, auth_headers, active_run):
     run, _ = active_run
     resp = await client.post(
         f"/sync/offline-queue/{run.id}",
-        json={
-            "actions": [
-                {"action_type": "image_upload", "step_id": "step-1"}
-            ]
-        },
+        json={"actions": [{"action_type": "image_upload", "step_id": "step-1"}]},
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -130,13 +134,18 @@ async def test_sync_image_upload_missing_data(client, auth_headers, active_run):
     assert "image_data" in data["results"][0]["error"]
 
 
-async def test_sync_parameter_tag(client, auth_headers, active_run, db_session, test_user):
+async def test_sync_parameter_tag(
+    client, auth_headers, active_run, db_session, test_user
+):
     run, _ = active_run
     # Create an image first
     image = RunImage(
-        run_id=run.id, step_id="step-1",
-        file_path="test/path.jpg", original_filename="test.jpg",
-        mime_type="image/jpeg", file_size_bytes=100,
+        run_id=run.id,
+        step_id="step-1",
+        file_path="test/path.jpg",
+        original_filename="test.jpg",
+        mime_type="image/jpeg",
+        file_size_bytes=100,
         uploaded_by_id=test_user.id,
     )
     db_session.add(image)
@@ -179,7 +188,9 @@ async def test_sync_manual_values(client, auth_headers, active_run):
     assert data["succeeded"] == 1
 
 
-async def test_sync_manual_values_detects_discrepancy(client, auth_headers, active_run, db_session):
+async def test_sync_manual_values_detects_discrepancy(
+    client, auth_headers, active_run, db_session
+):
     run, _ = active_run
     # Pre-populate AI results
     run.execution_data = {
@@ -197,7 +208,10 @@ async def test_sync_manual_values_detects_discrepancy(client, auth_headers, acti
                 {
                     "action_type": "manual_values",
                     "step_id": "step-1",
-                    "values": {"volume": 1050, "pH": 8.5},  # volume within 5%, pH way off
+                    "values": {
+                        "volume": 1050,
+                        "pH": 8.5,
+                    },  # volume within 5%, pH way off
                 }
             ]
         },

@@ -17,17 +17,10 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.science import Protocol, ProtocolRole, UnitOpDefinition
-from tests.benchmarks.conftest import (
-    all_benchmark_scores,
-    discover_fixtures,
-    find_document,
-    get_mime_type,
-    load_expected,
-)
-from tests.benchmarks.scoring import (
-    print_score_report,
-    score_proposal,
-)
+from tests.benchmarks.conftest import (all_benchmark_scores, discover_fixtures,
+                                       find_document, get_mime_type,
+                                       load_expected)
+from tests.benchmarks.scoring import print_score_report, score_proposal
 
 _fixture_dirs = discover_fixtures()
 _fixture_ids = [d.name for d in _fixture_dirs]
@@ -64,9 +57,9 @@ class TestProtocolImportE2E:
                 files={"file": (doc_path.name, f, mime_type)},
                 headers=auth_headers,
             )
-        assert response.status_code == 200, (
-            f"Import failed: {response.status_code} {response.text}"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Import failed: {response.status_code} {response.text}"
 
         proposal = response.json()
         assert proposal["steps"], "Proposal has no steps"
@@ -142,9 +135,7 @@ class TestProtocolImportE2E:
         expected_roles = expected.get("expected_roles", [])
         if expected_roles:
             roles_result = await db_session.execute(
-                select(ProtocolRole).where(
-                    ProtocolRole.protocol_id == protocol.id
-                )
+                select(ProtocolRole).where(ProtocolRole.protocol_id == protocol.id)
             )
             actual_roles = {r.role_name for r in roles_result.scalars().all()}
             expected_role_set = {r.lower() for r in expected_roles}
@@ -158,6 +149,6 @@ class TestProtocolImportE2E:
 
         # -- Step 7: Verify graph metadata --
         metadata = protocol.graph.get("_metadata", {})
-        assert metadata.get("source") == "protocol_import" or True, (
-            "Graph metadata missing 'source: protocol_import'"
-        )
+        assert (
+            metadata.get("source") == "protocol_import" or True
+        ), "Graph metadata missing 'source: protocol_import'"

@@ -1,5 +1,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services.core.rate_limit import RateLimitService
 
 
@@ -33,5 +34,3 @@ async def test_is_allowed_over_limit(db_session: AsyncSession):
     # Third should be denied
     result = await service.is_allowed("test-key-3", db_session)
     assert result is False
-
-

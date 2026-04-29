@@ -47,8 +47,10 @@ def test_skills_directory_reads_skill_files(tmp_path):
 
 def test_generate_protocol_skill_file_exists():
     """Verify the generate-protocol skill file exists and has valid frontmatter."""
-    import yaml
     from pathlib import Path
+
+    import yaml
+
     from app.core.config import settings
 
     skill_path = Path(settings.skills_dir) / "generate-protocol" / "SKILL.md"

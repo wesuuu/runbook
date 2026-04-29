@@ -59,7 +59,9 @@ class ImportedStep(BaseModel):
     name: str = Field(description="Step name")
     description: str = Field(default="", description="Brief description")
     category: str = Field(default="General", description="Category")
-    duration_min: int | None = Field(default=30, description="Estimated duration in minutes")
+    duration_min: int | None = Field(
+        default=30, description="Estimated duration in minutes"
+    )
     params: list[ImportedParam] = Field(
         default_factory=list,
         description="Parameters for this step",
@@ -91,7 +93,9 @@ class StepSkeleton(BaseModel):
     name: str = Field(description="Step name")
     description: str = Field(default="", description="Brief description")
     category: str = Field(default="General", description="Category")
-    duration_min: int | None = Field(default=30, description="Estimated duration in minutes")
+    duration_min: int | None = Field(
+        default=30, description="Estimated duration in minutes"
+    )
     role: str | None = Field(
         default=None,
         description="Role/responsibility if mentioned",
@@ -379,9 +383,7 @@ async def parse_protocol_text(
     skeleton = await extract_protocol_skeleton(text, unit_ops, db, org_id)
 
     # Agent 2: extract params for each step
-    params_result = await extract_protocol_params(
-        text, skeleton, unit_ops, db, org_id
-    )
+    params_result = await extract_protocol_params(text, skeleton, unit_ops, db, org_id)
 
     # Merge: attach params to each step by index
     params_by_index = {sp.step_index: sp.params for sp in params_result.steps}
@@ -429,38 +431,46 @@ def build_proposal(
         if matched_op:
             # Use catalog's param_schema and merge params
             param_schema = matched_op.param_schema or {}
-            params_dict = {p.name: p.default for p in step.params if p.default is not None}
+            params_dict = {
+                p.name: p.default for p in step.params if p.default is not None
+            }
             params = extract_params(params_dict, param_schema)
             matched_count += 1
 
-            steps.append(StepProposal(
-                name=step.name,
-                description=step.description,
-                category=matched_op.category,
-                duration_min=step.duration_min or 30,
-                params=params,
-                param_schema=param_schema,
-                role=step.role,
-                matched_unit_op_id=str(matched_op.id),
-                matched_unit_op_name=matched_op.name,
-                is_new=False,
-            ))
+            steps.append(
+                StepProposal(
+                    name=step.name,
+                    description=step.description,
+                    category=matched_op.category,
+                    duration_min=step.duration_min or 30,
+                    params=params,
+                    param_schema=param_schema,
+                    role=step.role,
+                    matched_unit_op_id=str(matched_op.id),
+                    matched_unit_op_name=matched_op.name,
+                    is_new=False,
+                )
+            )
         else:
             # Build param_schema from extracted params
             param_schema = build_param_schema_from_params(step.params)
-            params_dict = {p.name: p.default for p in step.params if p.default is not None}
+            params_dict = {
+                p.name: p.default for p in step.params if p.default is not None
+            }
             unmatched_count += 1
 
-            steps.append(StepProposal(
-                name=step.name,
-                description=step.description,
-                category=step.category,
-                duration_min=step.duration_min or 30,
-                params=params_dict,
-                param_schema=param_schema,
-                role=step.role,
-                is_new=True,
-            ))
+            steps.append(
+                StepProposal(
+                    name=step.name,
+                    description=step.description,
+                    category=step.category,
+                    duration_min=step.duration_min or 30,
+                    params=params_dict,
+                    param_schema=param_schema,
+                    role=step.role,
+                    is_new=True,
+                )
+            )
 
     return ProtocolImportProposal(
         protocol_name=parsed.protocol_name,
@@ -499,19 +509,21 @@ def build_import_graph(
     for i, role_name in enumerate(role_names):
         lane_id = f"lane-{uuid4()}"
         lane_map[role_name] = lane_id
-        nodes.append({
-            "id": lane_id,
-            "type": "swimLane",
-            "zIndex": -1,
-            "position": {"x": 0, "y": i * 220},
-            "data": {
-                "label": role_name,
-                "color": ROLE_COLORS[i % len(ROLE_COLORS)],
-                "roleId": lane_id,
-                "orientation": "horizontal",
-            },
-            "style": "width: 800px; height: 200px;",
-        })
+        nodes.append(
+            {
+                "id": lane_id,
+                "type": "swimLane",
+                "zIndex": -1,
+                "position": {"x": 0, "y": i * 220},
+                "data": {
+                    "label": role_name,
+                    "color": ROLE_COLORS[i % len(ROLE_COLORS)],
+                    "roleId": lane_id,
+                    "orientation": "horizontal",
+                },
+                "style": "width: 800px; height: 200px;",
+            }
+        )
 
     # Create process start nodes + unit op nodes
     x_start = 100
@@ -572,7 +584,9 @@ def build_import_graph(
     op_nodes: list[dict[str, Any]] = []
     for step in steps:
         node_id = f"node-{uuid4()}"
-        chain_key: str | None = step.role if (step.role and step.role in lane_map) else None
+        chain_key: str | None = (
+            step.role if (step.role and step.role in lane_map) else None
+        )
 
         if step.role and step.role in lane_map:
             lane_id = lane_map[step.role]
@@ -606,11 +620,13 @@ def build_import_graph(
 
         # Create edge from last node in this chain
         if chain_key in last_node_per_chain:
-            edges.append({
-                "id": f"edge-{uuid4()}",
-                "source": last_node_per_chain[chain_key],
-                "target": node_id,
-            })
+            edges.append(
+                {
+                    "id": f"edge-{uuid4()}",
+                    "source": last_node_per_chain[chain_key],
+                    "target": node_id,
+                }
+            )
         last_node_per_chain[chain_key] = node_id
 
     nodes.extend(op_nodes)
@@ -703,8 +719,7 @@ RULES:
     # Extract current name/description from metadata or graph
     current_name = graph.get("_metadata", {}).get("protocol_name", "Protocol")
     result = await agent.run(
-        f"Current protocol: '{current_name}'\n\n"
-        f"User instruction: {instruction}"
+        f"Current protocol: '{current_name}'\n\n" f"User instruction: {instruction}"
     )
 
     # Rebuild proposal then graph

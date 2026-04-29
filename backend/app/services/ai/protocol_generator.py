@@ -23,17 +23,13 @@ class GeneratedStep(BaseModel):
     """A single step in a generated protocol."""
 
     name: str = Field(description="Display name for this step")
-    unit_op_name: str = Field(
-        description="Name of the unit operation from the catalog"
-    )
+    unit_op_name: str = Field(description="Name of the unit operation from the catalog")
     category: str = Field(
         default="General",
         description="Category (e.g. Media Prep, Cell Culture)",
     )
     description: str = Field(default="", description="Brief description")
-    duration_min: int = Field(
-        default=30, description="Estimated duration in minutes"
-    )
+    duration_min: int = Field(default=30, description="Estimated duration in minutes")
     params: dict[str, Any] = Field(
         default_factory=dict,
         description="Parameter values for this step",
@@ -45,9 +41,7 @@ class GeneratedProtocol(BaseModel):
 
     name: str = Field(description="Protocol name")
     description: str = Field(default="", description="Protocol description")
-    steps: list[GeneratedStep] = Field(
-        description="Ordered list of protocol steps"
-    )
+    steps: list[GeneratedStep] = Field(description="Ordered list of protocol steps")
 
 
 # --- Public API ---
@@ -112,10 +106,7 @@ async def generate_protocol_from_chat(
     sys_msg = ChatMessage(
         session_id=session.id,
         role=ChatMessageRole.SYSTEM,
-        content=(
-            f"Protocol '{generated.name}' generated as draft "
-            f"in project."
-        ),
+        content=(f"Protocol '{generated.name}' generated as draft " f"in project."),
     )
     db.add(sys_msg)
     await db.flush()

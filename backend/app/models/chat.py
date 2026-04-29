@@ -31,9 +31,7 @@ class ChatSession(Base, UUIDMixin, TimestampMixin):
     org_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
-    title: Mapped[str] = mapped_column(
-        String(255), default="New Chat", nullable=False
-    )
+    title: Mapped[str] = mapped_column(String(255), default="New Chat", nullable=False)
     status: Mapped[str] = mapped_column(
         String, default=ChatSessionStatus.ACTIVE, nullable=False
     )
@@ -77,9 +75,7 @@ class ChatRateLimitAttempt(Base):
         DateTime, nullable=False, default=datetime.utcnow
     )
 
-    __table_args__ = (
-        Index("idx_key_attempted_at", "key", "attempted_at"),
-    )
+    __table_args__ = (Index("idx_key_attempted_at", "key", "attempted_at"),)
 
 
 class ChatNotification(Base, UUIDMixin, TimestampMixin):

@@ -1,13 +1,13 @@
-import pytest
 from uuid import UUID
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import hash_password
+from app.models.execution import AuditLog
 from app.models.iam import Organization, OrganizationMember, User
 from app.models.science import Equipment
-from app.models.execution import AuditLog
-from app.core.security import hash_password
-
 
 # --- Equipment CRUD ---
 
@@ -80,6 +80,7 @@ async def test_create_equipment(
 
     # Verify audit log entry created
     from sqlalchemy import select
+
     result = await db_session.execute(
         select(AuditLog).where(
             AuditLog.entity_id == UUID(data["id"]),
@@ -115,11 +116,13 @@ async def test_create_equipment_not_member_forbidden(
     db_session.add(main_org)
     await db_session.flush()
 
-    db_session.add(OrganizationMember(
-        user_id=other_user.id,
-        organization_id=other_org.id,
-        role="MEMBER",
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=other_user.id,
+            organization_id=other_org.id,
+            role="MEMBER",
+        )
+    )
     await db_session.commit()
 
     # Try to add equipment to main_org (not a member)
@@ -160,6 +163,7 @@ async def test_update_equipment(
 
     # Verify audit log entry created
     from sqlalchemy import select
+
     result = await db_session.execute(
         select(AuditLog).where(
             AuditLog.entity_id == eq.id,
@@ -199,9 +203,8 @@ async def test_delete_equipment(
 
     # Verify deleted
     from sqlalchemy import select
-    result = await db_session.execute(
-        select(Equipment).where(Equipment.id == eq_id)
-    )
+
+    result = await db_session.execute(select(Equipment).where(Equipment.id == eq_id))
     assert result.scalar_one_or_none() is None
 
     # Verify audit log entry created

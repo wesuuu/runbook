@@ -1,17 +1,15 @@
 """Tests for the FileStorageService."""
 
-import pytest
 from io import BytesIO
 from uuid import uuid4
 
+import pytest
 from fastapi import HTTPException, UploadFile
 
 from app.services.core.file_storage import FileStorageService
 
 
-def _make_upload(
-    filename: str, content: bytes, content_type: str
-) -> UploadFile:
+def _make_upload(filename: str, content: bytes, content_type: str) -> UploadFile:
     return UploadFile(
         filename=filename,
         file=BytesIO(content),

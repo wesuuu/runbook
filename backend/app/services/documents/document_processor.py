@@ -25,8 +25,6 @@ logger = logging.getLogger(__name__)
 _PROGRESS_FLUSH_INTERVAL = 10
 
 
-
-
 async def process_document(document_id: UUID, db_url: str) -> None:
     """Background task to extract text, chunk, and store for a document.
 
@@ -64,7 +62,10 @@ async def process_document(document_id: UUID, db_url: str) -> None:
 
             # --- Create a BackgroundJob to track this work ---
             job = await BackgroundJobService.create(
-                session, "document_process", "document", document_id,
+                session,
+                "document_process",
+                "document",
+                document_id,
                 input_data={"mime_type": doc.mime_type},
             )
 
@@ -74,9 +75,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
 
             # --- Idempotent: delete any chunks from a prior attempt ---
             await session.execute(
-                delete(DocumentChunk).where(
-                    DocumentChunk.document_id == document_id
-                )
+                delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
             )
             await session.commit()
 
@@ -92,13 +91,14 @@ async def process_document(document_id: UUID, db_url: str) -> None:
             try:
                 if doc.mime_type == "application/pdf":
                     # Get page count first (fast)
-                    page_count = await runner.run_sync(
-                        _get_pdf_page_count, file_path
-                    )
+                    page_count = await runner.run_sync(_get_pdf_page_count, file_path)
                     await BackgroundJobService.update_progress(
-                        session, job,
-                        "extracting", "Extracting text",
-                        0, page_count,
+                        session,
+                        job,
+                        "extracting",
+                        "Extracting text",
+                        0,
+                        page_count,
                     )
 
                     # Extract in batches with progress updates
@@ -114,9 +114,12 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                         )
                         pages.extend(batch_pages)
                         await BackgroundJobService.update_progress(
-                            session, job,
-                            "extracting", "Extracting text",
-                            batch_end, page_count,
+                            session,
+                            job,
+                            "extracting",
+                            "Extracting text",
+                            batch_end,
+                            page_count,
                         )
                 elif doc.mime_type == (
                     "application/vnd.openxmlformats-officedocument"
@@ -129,29 +132,25 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                     "application/rtf",
                     "text/html",
                 ):
-                    text = await runner.run_sync(
-                        extract_text_file, file_path
-                    )
+                    text = await runner.run_sync(extract_text_file, file_path)
                 elif doc.mime_type.startswith("image/"):
                     doc.status = DocumentStatus.INDEXED.value
                     doc.page_count = 0
                     doc.processing_started_at = None
-                    await BackgroundJobService.complete(session, job, output_data={"page_count": 0, "chunk_count": 0})
+                    await BackgroundJobService.complete(
+                        session, job, output_data={"page_count": 0, "chunk_count": 0}
+                    )
                     await session.commit()
                     return
                 else:
                     doc.status = DocumentStatus.FAILED.value
-                    doc.error_message = (
-                        f"Unsupported MIME type: {doc.mime_type}"
-                    )
+                    doc.error_message = f"Unsupported MIME type: {doc.mime_type}"
                     doc.processing_started_at = None
                     await BackgroundJobService.fail(session, job, doc.error_message)
                     await session.commit()
                     return
             except Exception as exc:
-                logger.exception(
-                    "Extraction failed for document %s", document_id
-                )
+                logger.exception("Extraction failed for document %s", document_id)
                 doc.status = DocumentStatus.FAILED.value
                 doc.error_message = f"Extraction error: {str(exc)[:500]}"
                 doc.processing_started_at = None
@@ -161,9 +160,12 @@ async def process_document(document_id: UUID, db_url: str) -> None:
 
             # --- Chunk extracted content ---
             await BackgroundJobService.update_progress(
-                session, job,
-                "chunking", "Chunking content",
-                0, 1,
+                session,
+                job,
+                "chunking",
+                "Chunking content",
+                0,
+                1,
             )
 
             if pages:
@@ -174,9 +176,11 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                     doc.status = DocumentStatus.INDEXED.value
                     doc.page_count = page_count or 0
                     doc.processing_started_at = None
-                    await BackgroundJobService.complete(session, job, output_data={
-                        "page_count": page_count, "chunk_count": 0
-                    })
+                    await BackgroundJobService.complete(
+                        session,
+                        job,
+                        output_data={"page_count": page_count, "chunk_count": 0},
+                    )
                     await session.commit()
                     return
 
@@ -187,7 +191,9 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                     doc.status = DocumentStatus.INDEXED.value
                     doc.page_count = 0
                     doc.processing_started_at = None
-                    await BackgroundJobService.complete(session, job, output_data={"page_count": 0, "chunk_count": 0})
+                    await BackgroundJobService.complete(
+                        session, job, output_data={"page_count": 0, "chunk_count": 0}
+                    )
                     await session.commit()
                     return
 
@@ -198,15 +204,16 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                     )
                 else:
                     content_format = "plaintext"
-                    chunks = await runner.run_sync(
-                        chunk_text, text, 1000, 200, None
-                    )
+                    chunks = await runner.run_sync(chunk_text, text, 1000, 200, None)
 
             # Generate embeddings (best-effort — skip on failure)
             await BackgroundJobService.update_progress(
-                session, job,
-                "embedding", "Generating embeddings",
-                0, len(chunks),
+                session,
+                job,
+                "embedding",
+                "Generating embeddings",
+                0,
+                len(chunks),
             )
             embeddings: list[list[float]] = []
             try:
@@ -214,14 +221,19 @@ async def process_document(document_id: UUID, db_url: str) -> None:
 
                 async def _emb_progress(current: int, total: int) -> None:
                     await BackgroundJobService.update_progress(
-                        session, job,
-                        "embedding", "Generating embeddings",
-                        current, total,
+                        session,
+                        job,
+                        "embedding",
+                        "Generating embeddings",
+                        current,
+                        total,
                     )
 
                 chunk_texts = [c.content for c in chunks]
                 embeddings = await embed_texts(
-                    chunk_texts, session, on_progress=_emb_progress,
+                    chunk_texts,
+                    session,
+                    on_progress=_emb_progress,
                     org_id=doc.org_id,
                 )
             except Exception as emb_err:
@@ -256,9 +268,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
             # Extract PDF bookmarks for sidebar TOC
             if doc.mime_type == "application/pdf":
                 try:
-                    pdf_toc = await runner.run_sync(
-                        _extract_pdf_toc, file_path
-                    )
+                    pdf_toc = await runner.run_sync(_extract_pdf_toc, file_path)
                     if pdf_toc:
                         doc.structure_metadata = {
                             **(doc.structure_metadata or {}),
@@ -270,10 +280,14 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                         document_id,
                     )
 
-            await BackgroundJobService.complete(session, job, output_data={
-                "page_count": page_count,
-                "chunk_count": len(chunks),
-            })
+            await BackgroundJobService.complete(
+                session,
+                job,
+                output_data={
+                    "page_count": page_count,
+                    "chunk_count": len(chunks),
+                },
+            )
             await session.commit()
 
             # --- Submit async enrichment if LLM is configured ---
@@ -281,11 +295,11 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                 try:
                     from app.services.ai.ai_config import get_full_config
 
-                    cfg = await get_full_config("doc_structure", session, org_id=doc.org_id)
+                    cfg = await get_full_config(
+                        "doc_structure", session, org_id=doc.org_id
+                    )
                     if cfg.get("is_enabled", True):
-                        get_task_runner().submit(
-                            enrich_document(document_id, db_url)
-                        )
+                        get_task_runner().submit(enrich_document(document_id, db_url))
                         logger.info(
                             "Submitted enrichment job for document %s",
                             document_id,
@@ -297,9 +311,7 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                     )
 
         except Exception as exc:
-            logger.exception(
-                "Processing failed for document %s", document_id
-            )
+            logger.exception("Processing failed for document %s", document_id)
             try:
                 await session.rollback()
                 result = await session.execute(
@@ -313,18 +325,14 @@ async def process_document(document_id: UUID, db_url: str) -> None:
                 if job:
                     # Re-fetch job since we rolled back
                     job_result = await session.execute(
-                        select(BackgroundJob).where(
-                            BackgroundJob.id == job.id
-                        )
+                        select(BackgroundJob).where(BackgroundJob.id == job.id)
                     )
                     job = job_result.scalar_one_or_none()
                     if job:
                         await BackgroundJobService.fail(session, job, str(exc)[:500])
                 await session.commit()
             except Exception:
-                logger.exception(
-                    "Failed to update error status for %s", document_id
-                )
+                logger.exception("Failed to update error status for %s", document_id)
         finally:
             await engine.dispose()
 
@@ -431,9 +439,7 @@ def _extract_page_text(page) -> str:
     return "\n\n".join(block_texts) if block_texts else page.get_text()
 
 
-def _extract_pdf_page_range(
-    path: Path, start: int, end: int
-) -> list[PageData]:
+def _extract_pdf_page_range(path: Path, start: int, end: int) -> list[PageData]:
     """Extract a range of pages [start, end) from a PDF.
 
     Uses character-level positioning to reconstruct word spacing
@@ -474,9 +480,7 @@ def _extract_pdf_page_range(
 PAGE_IMAGE_DPI = 150  # Resolution for rendering page images for LLM
 
 
-def extract_pdf_pages(
-    path: Path, render_images: bool = True
-) -> list[PageData]:
+def extract_pdf_pages(path: Path, render_images: bool = True) -> list[PageData]:
     """Extract text from a PDF page-by-page using plain pymupdf.
 
     Uses ``page.get_text()`` for each page, which handles columns
@@ -506,9 +510,7 @@ def extract_pdf_pages(
                     pix = page.get_pixmap(dpi=PAGE_IMAGE_DPI)
                     image_bytes = pix.tobytes("png")
                 except Exception:
-                    logger.debug(
-                        "Failed to render page %d as image", i + 1
-                    )
+                    logger.debug("Failed to render page %d as image", i + 1)
 
             pages.append(
                 PageData(
@@ -554,9 +556,7 @@ def _pad_embedding(
     if len(embedding) == EMBEDDING_DIMENSIONS:
         return embedding
     if len(embedding) < EMBEDDING_DIMENSIONS:
-        return embedding + [0.0] * (
-            EMBEDDING_DIMENSIONS - len(embedding)
-        )
+        return embedding + [0.0] * (EMBEDDING_DIMENSIONS - len(embedding))
     return embedding[:EMBEDDING_DIMENSIONS]
 
 
@@ -606,7 +606,10 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
 
             # Create tracking job
             job = await BackgroundJobService.create(
-                session, "document_enrich", "document", document_id,
+                session,
+                "document_enrich",
+                "document",
+                document_id,
                 input_data={"mime_type": doc.mime_type},
             )
             await session.commit()
@@ -617,9 +620,12 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
 
             total_pages = doc.page_count or 0
             await BackgroundJobService.update_progress(
-                session, job,
-                "rendering", "Rendering page images",
-                0, total_pages,
+                session,
+                job,
+                "rendering",
+                "Rendering page images",
+                0,
+                total_pages,
             )
 
             pages: list[PageData] = []
@@ -634,9 +640,12 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
                 )
                 pages.extend(batch_pages)
                 await BackgroundJobService.update_progress(
-                    session, job,
-                    "rendering", "Rendering page images",
-                    batch_end, total_pages,
+                    session,
+                    job,
+                    "rendering",
+                    "Rendering page images",
+                    batch_end,
+                    total_pages,
                 )
 
             # Build page_images dict for LLM
@@ -647,35 +656,39 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
 
             if not page_images:
                 logger.warning(
-                    "No page images available for document %s, "
-                    "skipping enrichment",
+                    "No page images available for document %s, " "skipping enrichment",
                     document_id,
                 )
-                await BackgroundJobService.complete(session, job, output_data={
-                    "skipped": True, "reason": "no_images"
-                })
+                await BackgroundJobService.complete(
+                    session, job, output_data={"skipped": True, "reason": "no_images"}
+                )
                 await session.commit()
                 return
 
             # Step 1: Signal outline stage
             await BackgroundJobService.update_progress(
-                session, job,
-                "outline", "Building document outline",
-                0, 1,
+                session,
+                job,
+                "outline",
+                "Building document outline",
+                0,
+                1,
             )
 
             # Step 2: Analyze structure (outline + batched pages)
-            async def _analyze_progress(
-                current: int, total: int
-            ) -> None:
+            async def _analyze_progress(current: int, total: int) -> None:
                 await BackgroundJobService.update_progress(
-                    session, job,
-                    "analyzing", "Analyzing pages",
-                    current, total,
+                    session,
+                    job,
+                    "analyzing",
+                    "Analyzing pages",
+                    current,
+                    total,
                 )
 
             structure = await analyze_document_structure(
-                page_images, session,
+                page_images,
+                session,
                 on_progress=_analyze_progress,
                 org_id=doc.org_id,
             )
@@ -685,14 +698,15 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
 
             # Step 3: Re-chunk using structure metadata
             await BackgroundJobService.update_progress(
-                session, job,
-                "rechunking", "Re-chunking document",
-                0, 1,
+                session,
+                job,
+                "rechunking",
+                "Re-chunking document",
+                0,
+                1,
             )
 
-            new_chunks = await runner.run_sync(
-                rechunk_with_structure, pages, structure
-            )
+            new_chunks = await runner.run_sync(rechunk_with_structure, pages, structure)
 
             if new_chunks:
                 # Delete existing chunks and insert structure-aware ones
@@ -728,18 +742,16 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
 
             doc.status = DocumentStatus.ENRICHED.value
 
-            await BackgroundJobService.complete(session, job, output_data={
-                "pages_analyzed": len(structure.pages),
-                "chunks_created": (
-                    len(new_chunks) if new_chunks else 0
-                ),
-                "heading_levels": (
-                    structure.outline.heading_levels
-                ),
-                "roles": list(
-                    {p.role for p in structure.pages}
-                ),
-            })
+            await BackgroundJobService.complete(
+                session,
+                job,
+                output_data={
+                    "pages_analyzed": len(structure.pages),
+                    "chunks_created": (len(new_chunks) if new_chunks else 0),
+                    "heading_levels": (structure.outline.heading_levels),
+                    "roles": list({p.role for p in structure.pages}),
+                },
+            )
             await session.commit()
 
             logger.info(
@@ -751,16 +763,12 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
             )
 
         except Exception as exc:
-            logger.exception(
-                "Enrichment failed for document %s", document_id
-            )
+            logger.exception("Enrichment failed for document %s", document_id)
             try:
                 await session.rollback()
                 if job:
                     job_result = await session.execute(
-                        select(BackgroundJob).where(
-                            BackgroundJob.id == job.id
-                        )
+                        select(BackgroundJob).where(BackgroundJob.id == job.id)
                     )
                     job = job_result.scalar_one_or_none()
                     if job:
@@ -773,7 +781,6 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
                 )
         finally:
             await engine.dispose()
-
 
 
 def _build_toc_from_structure(
@@ -789,12 +796,14 @@ def _build_toc_from_structure(
     toc: list[dict] = []
     for pa in structure.pages:
         for h in pa.headings:
-            toc.append({
-                "level": h.level,
-                "text": h.text,
-                "page_number": pa.page,
-                "chunk_index": None,  # filled in after chunking
-            })
+            toc.append(
+                {
+                    "level": h.level,
+                    "text": h.text,
+                    "page_number": pa.page,
+                    "chunk_index": None,  # filled in after chunking
+                }
+            )
     return toc
 
 
@@ -862,7 +871,10 @@ async def build_book(document_id: UUID, db_url: str) -> None:
 
             # --- Create tracking job ---
             job = await BackgroundJobService.create(
-                session, "document_build_book", "document", document_id,
+                session,
+                "document_build_book",
+                "document",
+                document_id,
                 input_data={"mime_type": doc.mime_type},
             )
 
@@ -872,9 +884,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
 
             # --- Idempotent: delete prior chunks ---
             await session.execute(
-                delete(DocumentChunk).where(
-                    DocumentChunk.document_id == document_id
-                )
+                delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
             )
             await session.commit()
 
@@ -888,30 +898,33 @@ async def build_book(document_id: UUID, db_url: str) -> None:
 
             try:
                 if is_pdf:
-                    page_count = await runner.run_sync(
-                        _get_pdf_page_count, file_path
-                    )
+                    page_count = await runner.run_sync(_get_pdf_page_count, file_path)
                     await BackgroundJobService.update_progress(
-                        session, job,
-                        "extracting", "Extracting text & rendering pages",
-                        0, page_count,
+                        session,
+                        job,
+                        "extracting",
+                        "Extracting text & rendering pages",
+                        0,
+                        page_count,
                     )
 
                     batch_size = _PROGRESS_FLUSH_INTERVAL
                     for batch_start in range(0, page_count, batch_size):
-                        batch_end = min(
-                            batch_start + batch_size, page_count
-                        )
+                        batch_end = min(batch_start + batch_size, page_count)
                         batch_pages = await runner.run_sync(
                             _extract_pdf_page_range,
-                            file_path, batch_start, batch_end,
+                            file_path,
+                            batch_start,
+                            batch_end,
                         )
                         pages.extend(batch_pages)
                         await BackgroundJobService.update_progress(
-                            session, job,
+                            session,
+                            job,
                             "extracting",
                             "Extracting text & rendering pages",
-                            batch_end, page_count,
+                            batch_end,
+                            page_count,
                         )
 
                 elif doc.mime_type == (
@@ -920,38 +933,32 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                 ):
                     text = await runner.run_sync(extract_docx, file_path)
                 elif doc.mime_type in (
-                    "text/plain", "text/markdown",
-                    "application/rtf", "text/html",
+                    "text/plain",
+                    "text/markdown",
+                    "application/rtf",
+                    "text/html",
                 ):
-                    text = await runner.run_sync(
-                        extract_text_file, file_path
-                    )
+                    text = await runner.run_sync(extract_text_file, file_path)
                 elif doc.mime_type.startswith("image/"):
                     doc.status = DocumentStatus.READY.value
                     doc.page_count = 0
                     doc.processing_started_at = None
-                    await BackgroundJobService.complete(session, job, output_data={
-                        "page_count": 0, "chunk_count": 0
-                    })
+                    await BackgroundJobService.complete(
+                        session, job, output_data={"page_count": 0, "chunk_count": 0}
+                    )
                     await session.commit()
                     return
                 else:
                     doc.status = DocumentStatus.FAILED.value
-                    doc.error_message = (
-                        f"Unsupported MIME type: {doc.mime_type}"
-                    )
+                    doc.error_message = f"Unsupported MIME type: {doc.mime_type}"
                     doc.processing_started_at = None
                     await BackgroundJobService.fail(session, job, doc.error_message)
                     await session.commit()
                     return
             except Exception as exc:
-                logger.exception(
-                    "Extraction failed for document %s", document_id
-                )
+                logger.exception("Extraction failed for document %s", document_id)
                 doc.status = DocumentStatus.FAILED.value
-                doc.error_message = (
-                    f"Extraction error: {str(exc)[:500]}"
-                )
+                doc.error_message = f"Extraction error: {str(exc)[:500]}"
                 doc.processing_started_at = None
                 await BackgroundJobService.fail(session, job, doc.error_message)
                 await session.commit()
@@ -964,16 +971,20 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                     doc.status = DocumentStatus.READY.value
                     doc.page_count = page_count or 0
                     doc.processing_started_at = None
-                    await BackgroundJobService.complete(session, job, output_data={
-                        "page_count": page_count, "chunk_count": 0
-                    })
+                    await BackgroundJobService.complete(
+                        session,
+                        job,
+                        output_data={"page_count": page_count, "chunk_count": 0},
+                    )
                     await session.commit()
                     return
             elif not text.strip():
                 doc.status = DocumentStatus.READY.value
                 doc.page_count = 0
                 doc.processing_started_at = None
-                await BackgroundJobService.complete(session, job, output_data={"page_count": 0, "chunk_count": 0})
+                await BackgroundJobService.complete(
+                    session, job, output_data={"page_count": 0, "chunk_count": 0}
+                )
                 await session.commit()
                 return
 
@@ -996,7 +1007,9 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                         _check_llm_available, _is_ollama_model)
 
                     try:
-                        model = await get_model("doc_structure", session, org_id=doc.org_id)
+                        model = await get_model(
+                            "doc_structure", session, org_id=doc.org_id
+                        )
                         config = await get_full_config(
                             "doc_structure", session, org_id=doc.org_id
                         )
@@ -1013,53 +1026,67 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                         doc.status = DocumentStatus.QUEUED.value
                         doc.processing_started_at = None
                         doc.page_count = page_count
-                        await BackgroundJobService.complete(session, job, output_data={
-                            "queued": True,
-                            "reason": "llm_unavailable",
-                            "page_count": page_count,
-                        })
+                        await BackgroundJobService.complete(
+                            session,
+                            job,
+                            output_data={
+                                "queued": True,
+                                "reason": "llm_unavailable",
+                                "page_count": page_count,
+                            },
+                        )
                         await session.commit()
                         return
 
                     # LLM is available — run structure analysis
                     await BackgroundJobService.update_progress(
-                        session, job,
-                        "outline", "Building document outline",
-                        0, 1,
+                        session,
+                        job,
+                        "outline",
+                        "Building document outline",
+                        0,
+                        1,
                     )
 
-                    async def _analyze_progress(
-                        current: int, total: int
-                    ) -> None:
+                    async def _analyze_progress(current: int, total: int) -> None:
                         await BackgroundJobService.update_progress(
-                            session, job,
-                            "classifying", "Analyzing pages",
-                            current, total,
+                            session,
+                            job,
+                            "classifying",
+                            "Analyzing pages",
+                            current,
+                            total,
                         )
 
                     try:
                         structure = await analyze_document_structure(
-                            page_images, session,
+                            page_images,
+                            session,
                             on_progress=_analyze_progress,
                         )
                     except Exception as exc:
                         logger.warning(
                             "Structure analysis failed for %s, "
                             "continuing without: %s",
-                            document_id, str(exc)[:200],
+                            document_id,
+                            str(exc)[:200],
                         )
                         structure = None
 
                     # Extract TOC via LLM (separate, focused call)
                     if structure:
                         await BackgroundJobService.update_progress(
-                            session, job,
-                            "toc", "Extracting table of contents",
-                            0, 1,
+                            session,
+                            job,
+                            "toc",
+                            "Extracting table of contents",
+                            0,
+                            1,
                         )
                         try:
                             from app.services.documents.document_structure import \
                                 extract_toc
+
                             toc = await extract_toc(
                                 page_images,
                                 structure.outline,
@@ -1074,15 +1101,16 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                                 document_id,
                                 str(toc_exc)[:200],
                             )
-                            toc = _build_toc_from_structure(
-                                structure
-                            )
+                            toc = _build_toc_from_structure(structure)
 
             # ─── Stage 4: Assemble — chunk + build TOC ─────────────
             await BackgroundJobService.update_progress(
-                session, job,
-                "assembling", "Assembling document",
-                0, 1,
+                session,
+                job,
+                "assembling",
+                "Assembling document",
+                0,
+                1,
             )
 
             if is_pdf and structure and structure.pages:
@@ -1092,9 +1120,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                 )
 
                 if new_chunks:
-                    pa_map = {
-                        pa.page: pa for pa in structure.pages
-                    }
+                    pa_map = {pa.page: pa for pa in structure.pages}
                     chunk_meta_base = {"content_format": "markdown"}
 
                     for chunk in new_chunks:
@@ -1118,15 +1144,11 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                         session.add(db_chunk)
 
                     # Assign chunk indices to TOC entries
-                    toc = _assign_toc_chunk_indices(
-                        toc, new_chunks, pages
-                    )
+                    toc = _assign_toc_chunk_indices(toc, new_chunks, pages)
                     chunks_for_embed = new_chunks
                 else:
                     # Fallback to page-level chunking
-                    chunks_for_embed = await runner.run_sync(
-                        chunk_by_pages, pages
-                    )
+                    chunks_for_embed = await runner.run_sync(chunk_by_pages, pages)
                     for chunk in chunks_for_embed:
                         db_chunk = DocumentChunk(
                             document_id=document_id,
@@ -1134,16 +1156,12 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                             content=chunk.content,
                             token_count=chunk.token_count,
                             page_number=chunk.page_number,
-                            chunk_metadata={
-                                "content_format": "plaintext"
-                            },
+                            chunk_metadata={"content_format": "plaintext"},
                         )
                         session.add(db_chunk)
             elif is_pdf:
                 # PDF without structure — page-level chunking
-                chunks_for_embed = await runner.run_sync(
-                    chunk_by_pages, pages
-                )
+                chunks_for_embed = await runner.run_sync(chunk_by_pages, pages)
                 for chunk in chunks_for_embed:
                     db_chunk = DocumentChunk(
                         document_id=document_id,
@@ -1151,9 +1169,7 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                         content=chunk.content,
                         token_count=chunk.token_count,
                         page_number=chunk.page_number,
-                        chunk_metadata={
-                            "content_format": "plaintext"
-                        },
+                        chunk_metadata={"content_format": "plaintext"},
                     )
                     session.add(db_chunk)
             else:
@@ -1177,41 +1193,46 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                         content=chunk.content,
                         token_count=chunk.token_count,
                         page_number=chunk.page_number,
-                        chunk_metadata={
-                            "content_format": content_format
-                        },
+                        chunk_metadata={"content_format": content_format},
                     )
                     session.add(db_chunk)
 
             # ─── Stage 5: Generate embeddings ──────────────────────
             await BackgroundJobService.update_progress(
-                session, job,
-                "embedding", "Generating embeddings",
-                0, len(chunks_for_embed),
+                session,
+                job,
+                "embedding",
+                "Generating embeddings",
+                0,
+                len(chunks_for_embed),
             )
 
             embeddings: list[list[float]] = []
             try:
                 from app.services.ai.embedding import embed_texts
 
-                async def _emb_progress(
-                    current: int, total: int
-                ) -> None:
+                async def _emb_progress(current: int, total: int) -> None:
                     await BackgroundJobService.update_progress(
-                        session, job,
-                        "embedding", "Generating embeddings",
-                        current, total,
+                        session,
+                        job,
+                        "embedding",
+                        "Generating embeddings",
+                        current,
+                        total,
                     )
 
                 chunk_texts = [c.content for c in chunks_for_embed]
                 embeddings = await embed_texts(
-                    chunk_texts, session, on_progress=_emb_progress,
+                    chunk_texts,
+                    session,
+                    on_progress=_emb_progress,
                     org_id=doc.org_id,
                 )
             except Exception as emb_err:
                 logger.warning(
                     "Embedding generation failed for document %s: %s",
-                    document_id, str(emb_err)[:200],
+                    document_id,
+                    str(emb_err)[:200],
                 )
 
             # Apply embeddings to chunks already added to session
@@ -1221,17 +1242,13 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                 # Fetch chunks back to apply embeddings
                 chunk_result = await session.execute(
                     select(DocumentChunk)
-                    .where(
-                        DocumentChunk.document_id == document_id
-                    )
+                    .where(DocumentChunk.document_id == document_id)
                     .order_by(DocumentChunk.chunk_index)
                 )
                 db_chunks = list(chunk_result.scalars().all())
                 for i, db_chunk in enumerate(db_chunks):
                     if i < len(embeddings):
-                        db_chunk.embedding = _pad_embedding(
-                            embeddings[i]
-                        )
+                        db_chunk.embedding = _pad_embedding(embeddings[i])
 
             # ─── Finalize ──────────────────────────────────────────
             doc.status = DocumentStatus.READY.value
@@ -1246,45 +1263,40 @@ async def build_book(document_id: UUID, db_url: str) -> None:
             elif toc:
                 doc.structure_metadata = {"toc": toc}
 
-            await BackgroundJobService.complete(session, job, output_data={
-                "page_count": page_count,
-                "chunk_count": len(chunks_for_embed),
-                "has_toc": len(toc) > 0,
-                "has_structure": structure is not None,
-            })
+            await BackgroundJobService.complete(
+                session,
+                job,
+                output_data={
+                    "page_count": page_count,
+                    "chunk_count": len(chunks_for_embed),
+                    "has_toc": len(toc) > 0,
+                    "has_structure": structure is not None,
+                },
+            )
             await session.commit()
 
             logger.info(
-                "Book build complete for document %s: "
-                "%d chunks, %d TOC entries",
+                "Book build complete for document %s: " "%d chunks, %d TOC entries",
                 document_id,
                 len(chunks_for_embed),
                 len(toc),
             )
 
         except Exception as exc:
-            logger.exception(
-                "build_book failed for document %s", document_id
-            )
+            logger.exception("build_book failed for document %s", document_id)
             try:
                 await session.rollback()
                 result = await session.execute(
-                    select(Document).where(
-                        Document.id == document_id
-                    )
+                    select(Document).where(Document.id == document_id)
                 )
                 doc = result.scalar_one_or_none()
                 if doc:
                     doc.status = DocumentStatus.FAILED.value
-                    doc.error_message = (
-                        f"Processing error: {str(exc)[:500]}"
-                    )
+                    doc.error_message = f"Processing error: {str(exc)[:500]}"
                     doc.processing_started_at = None
                 if job:
                     job_result = await session.execute(
-                        select(BackgroundJob).where(
-                            BackgroundJob.id == job.id
-                        )
+                        select(BackgroundJob).where(BackgroundJob.id == job.id)
                     )
                     job = job_result.scalar_one_or_none()
                     if job:

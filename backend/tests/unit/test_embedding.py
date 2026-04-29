@@ -1,18 +1,14 @@
 """Tests for the embedding service."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.ai.embedding import (
-    embed_texts,
-    embed_query,
-    _embed_ollama,
-    _embed_openai_compatible,
-    EmbeddingError,
-    BATCH_SIZE,
-)
-from app.services.documents.document_processor import _pad_embedding
+import pytest
+
 from app.models.library import EMBEDDING_DIMENSIONS
+from app.services.ai.embedding import (BATCH_SIZE, EmbeddingError,
+                                       _embed_ollama, _embed_openai_compatible,
+                                       embed_query, embed_texts)
+from app.services.documents.document_processor import _pad_embedding
 
 
 class TestPadEmbedding:
@@ -55,9 +51,7 @@ class TestEmbedOllama:
             mock_client.post = AsyncMock(return_value=mock_response)
             mock_cls.return_value = mock_client
 
-            result = await _embed_ollama(
-                ["hello", "world"], "nomic-embed-text", None
-            )
+            result = await _embed_ollama(["hello", "world"], "nomic-embed-text", None)
 
         assert len(result) == 2
         assert result[0] == [0.1, 0.2, 0.3]
@@ -91,9 +85,7 @@ class TestEmbedOllama:
             mock_client.post = AsyncMock(return_value=mock_response)
             mock_cls.return_value = mock_client
 
-            await _embed_ollama(
-                ["test"], "model", "http://custom:11434"
-            )
+            await _embed_ollama(["test"], "model", "http://custom:11434")
 
             # Check the URL used
             call_args = mock_client.post.call_args
@@ -133,9 +125,7 @@ class TestEmbedOpenAICompatible:
     @pytest.mark.asyncio
     async def test_requires_api_key(self):
         with pytest.raises(EmbeddingError, match="API key required"):
-            await _embed_openai_compatible(
-                ["test"], "model", None, None, "openai"
-            )
+            await _embed_openai_compatible(["test"], "model", None, None, "openai")
 
     @pytest.mark.asyncio
     async def test_api_error_raises(self):

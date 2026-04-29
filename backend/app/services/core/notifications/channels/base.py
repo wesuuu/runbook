@@ -4,11 +4,13 @@ from dataclasses import dataclass
 
 class TransientError(Exception):
     """Retryable failure (timeouts, rate limits, 5xx)."""
+
     pass
 
 
 class PermanentError(Exception):
     """Non-retryable failure (bad credentials, invalid config)."""
+
     pass
 
 
@@ -18,7 +20,7 @@ class FormattedMessage:
     title: str
     body: str
     recipient: str  # email, channel name, webhook URL, etc.
-    url: str = ""   # deep link back into the app
+    url: str = ""  # deep link back into the app
 
 
 class BaseChannel(ABC):

@@ -6,28 +6,17 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.chat import (
-    ChatMessage,
-    ChatMessageRole,
-    ChatSession,
-    ChatSessionStatus,
-)
+from app.models.chat import (ChatMessage, ChatMessageRole, ChatSession,
+                             ChatSessionStatus)
 from app.models.iam import Organization, OrganizationMember, User
-from app.services.ai.chat_service import (
-    create_session,
-    delete_session,
-    get_session,
-    list_sessions,
-    estimate_tokens,
-    estimate_messages_tokens,
-    compact_history,
-    _build_conversation_text,
-    _truncate_to_fit,
-    ChatDeps,
-    RetrievedChunk,
-    SearchDocumentsResult,
-    search_documents_tool,
-)
+from app.services.ai.chat_service import (ChatDeps, RetrievedChunk,
+                                          SearchDocumentsResult,
+                                          _build_conversation_text,
+                                          _truncate_to_fit, compact_history,
+                                          create_session, delete_session,
+                                          estimate_messages_tokens,
+                                          estimate_tokens, get_session,
+                                          list_sessions, search_documents_tool)
 
 
 @pytest_asyncio.fixture
@@ -104,9 +93,7 @@ class TestGetSession:
         assert result.messages[0].content == "Hello"
 
     @pytest.mark.asyncio
-    async def test_returns_none_for_missing_session(
-        self, db_session: AsyncSession
-    ):
+    async def test_returns_none_for_missing_session(self, db_session: AsyncSession):
         result = await get_session(db_session, uuid.uuid4())
         assert result is None
 
@@ -135,9 +122,7 @@ class TestListSessions:
         await create_session(db_session, user_id, org_id, title="My Chat")
         await db_session.flush()
 
-        sessions, total = await list_sessions(
-            db_session, second_user.id, org_id
-        )
+        sessions, total = await list_sessions(db_session, second_user.id, org_id)
         assert total == 0
 
     @pytest.mark.asyncio
@@ -181,8 +166,10 @@ class TestSearchDocumentsToolResult:
 
     def test_chat_deps_accumulates_sources(self):
         deps = ChatDeps(
-            db=MagicMock(), org_id=uuid.uuid4(),
-            user_id=uuid.uuid4(), is_org_admin=False,
+            db=MagicMock(),
+            org_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            is_org_admin=False,
         )
         assert deps.sources == []
         assert deps.tool_calls == []
@@ -197,7 +184,9 @@ class TestSearchDocumentsToolResult:
             score=0.9,
         )
         deps.sources.append(chunk)
-        deps.tool_calls.append({"tool": "search_documents", "query": "test", "results": 1})
+        deps.tool_calls.append(
+            {"tool": "search_documents", "query": "test", "results": 1}
+        )
         assert len(deps.sources) == 1
         assert len(deps.tool_calls) == 1
 
@@ -258,15 +247,11 @@ class TestEstimateMessagesTokens:
         messages = [
             {
                 "kind": "request",
-                "parts": [
-                    {"part_kind": "user-prompt", "content": "a" * 100}
-                ],
+                "parts": [{"part_kind": "user-prompt", "content": "a" * 100}],
             },
             {
                 "kind": "response",
-                "parts": [
-                    {"part_kind": "text", "content": "b" * 200}
-                ],
+                "parts": [{"part_kind": "text", "content": "b" * 200}],
             },
         ]
         tokens = estimate_messages_tokens(messages)
@@ -311,7 +296,10 @@ class TestBuildConversationText:
             {
                 "kind": "response",
                 "parts": [
-                    {"part_kind": "text", "content": "CHO stands for Chinese Hamster Ovary."},
+                    {
+                        "part_kind": "text",
+                        "content": "CHO stands for Chinese Hamster Ovary.",
+                    },
                 ],
             },
         ]
@@ -348,9 +336,18 @@ class TestBuildConversationText:
 class TestTruncateToFit:
     def test_removes_oldest_messages_first(self):
         messages = [
-            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "a" * 400}]},
-            {"kind": "response", "parts": [{"part_kind": "text", "content": "b" * 400}]},
-            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "c" * 100}]},
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "user-prompt", "content": "a" * 400}],
+            },
+            {
+                "kind": "response",
+                "parts": [{"part_kind": "text", "content": "b" * 400}],
+            },
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "user-prompt", "content": "c" * 100}],
+            },
         ]
         # Set a tight budget that can only fit the last message
         result = _truncate_to_fit(messages, 50)
@@ -359,7 +356,10 @@ class TestTruncateToFit:
 
     def test_preserves_last_message(self):
         messages = [
-            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "a" * 10000}]},
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "user-prompt", "content": "a" * 10000}],
+            },
         ]
         result = _truncate_to_fit(messages, 10)
         # Should always keep at least one message
@@ -367,7 +367,10 @@ class TestTruncateToFit:
 
     def test_no_truncation_when_under_budget(self):
         messages = [
-            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "hi"}]},
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "user-prompt", "content": "hi"}],
+            },
         ]
         result = _truncate_to_fit(messages, 100000)
         assert len(result) == 1
@@ -383,7 +386,10 @@ class TestCompactHistory:
     ):
         # Small messages, big budget
         messages = [
-            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "hi"}]},
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "user-prompt", "content": "hi"}],
+            },
             {"kind": "response", "parts": [{"part_kind": "text", "content": "hello"}]},
         ]
         result, summary = await compact_history(
@@ -403,19 +409,37 @@ class TestCompactHistory:
     ):
         # Add some DB messages so the count query works
         for i in range(4):
-            db_session.add(ChatMessage(
-                session_id=chat_session.id,
-                role=ChatMessageRole.USER if i % 2 == 0 else ChatMessageRole.ASSISTANT,
-                content=f"Message {i}",
-            ))
+            db_session.add(
+                ChatMessage(
+                    session_id=chat_session.id,
+                    role=(
+                        ChatMessageRole.USER
+                        if i % 2 == 0
+                        else ChatMessageRole.ASSISTANT
+                    ),
+                    content=f"Message {i}",
+                )
+            )
         await db_session.flush()
 
         # Create pydantic-ai style messages that exceed the budget
         messages = [
-            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "a" * 2000}]},
-            {"kind": "response", "parts": [{"part_kind": "text", "content": "b" * 2000}]},
-            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "c" * 2000}]},
-            {"kind": "response", "parts": [{"part_kind": "text", "content": "d" * 100}]},
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "user-prompt", "content": "a" * 2000}],
+            },
+            {
+                "kind": "response",
+                "parts": [{"part_kind": "text", "content": "b" * 2000}],
+            },
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "user-prompt", "content": "c" * 2000}],
+            },
+            {
+                "kind": "response",
+                "parts": [{"part_kind": "text", "content": "d" * 100}],
+            },
         ]
 
         with patch(
@@ -441,16 +465,24 @@ class TestCompactHistory:
         self, db_session: AsyncSession, chat_session: ChatSession
     ):
         # Add DB messages
-        db_session.add(ChatMessage(
-            session_id=chat_session.id,
-            role=ChatMessageRole.USER,
-            content="Hello",
-        ))
+        db_session.add(
+            ChatMessage(
+                session_id=chat_session.id,
+                role=ChatMessageRole.USER,
+                content="Hello",
+            )
+        )
         await db_session.flush()
 
         messages = [
-            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "a" * 2000}]},
-            {"kind": "response", "parts": [{"part_kind": "text", "content": "b" * 100}]},
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "user-prompt", "content": "a" * 2000}],
+            },
+            {
+                "kind": "response",
+                "parts": [{"part_kind": "text", "content": "b" * 100}],
+            },
         ]
 
         with patch(
@@ -469,6 +501,7 @@ class TestCompactHistory:
 
         # Verify summary message was inserted
         from sqlalchemy import select
+
         result = await db_session.execute(
             select(ChatMessage).where(
                 ChatMessage.session_id == chat_session.id,

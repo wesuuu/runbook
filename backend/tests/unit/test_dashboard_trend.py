@@ -1,6 +1,6 @@
 """Unit tests for dashboard completion trend computation."""
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.api.endpoints.dashboard import _compute_completion_trend

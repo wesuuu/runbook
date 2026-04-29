@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import (get_current_user, get_or_404, get_org_id_from_request,
+from app.core.deps import (get_current_user, get_or_404,
+                           get_org_id_from_request,
                            require_active_subscription)
 from app.db.session import get_db
 from app.models.ai import (ALLOWED_IMAGE_TYPES, DEFAULT_CONFIGS,
@@ -66,9 +67,7 @@ async def list_ai_settings(
     )
     rows = result.scalars().all()
 
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
+    org_result = await db.execute(select(Organization).where(Organization.id == org_id))
     org = org_result.scalar_one_or_none()
 
     return AiSettingsListResponse(
@@ -166,6 +165,7 @@ async def test_ai_connection(
     try:
         if capability == "embedding":
             from app.services.ai.embedding import embed_texts
+
             result = await embed_texts(["hello"], db, org_id=org_id)
             if result and len(result) > 0:
                 return AiTestConnectionResponse(
@@ -303,11 +303,7 @@ async def list_run_images(
 
     if analyzed is not None:
         # Subquery: image IDs that have at least one conversation
-        analyzed_ids = (
-            select(ImageConversation.image_id)
-            .distinct()
-            .scalar_subquery()
-        )
+        analyzed_ids = select(ImageConversation.image_id).distinct().scalar_subquery()
         if analyzed:
             query = query.where(RunImage.id.in_(analyzed_ids))
         else:
@@ -350,9 +346,7 @@ async def get_run_image(
 
     resp = RunImageDetailResponse.model_validate(image)
     if conversation:
-        resp.conversation = ImageConversationResponse.model_validate(
-            conversation
-        )
+        resp.conversation = ImageConversationResponse.model_validate(conversation)
     return resp
 
 
@@ -439,9 +433,7 @@ async def analyze_run_image(
         )
 
     # Determine conversation status
-    conv_status = (
-        "needs_clarification" if ai_result.needs_clarification else "analyzed"
-    )
+    conv_status = "needs_clarification" if ai_result.needs_clarification else "analyzed"
 
     # Build extracted values dict for storage
     extracted_dict = {
@@ -557,9 +549,7 @@ async def converse_about_image(
         for ev in ai_result.extracted_values
     }
     conv.extracted_values = extracted_dict
-    conv.status = (
-        "needs_clarification" if ai_result.needs_clarification else "analyzed"
-    )
+    conv.status = "needs_clarification" if ai_result.needs_clarification else "analyzed"
 
     await db.commit()
     await db.refresh(conv)
@@ -633,8 +623,7 @@ async def confirm_image_values(
     # Mark conversation as confirmed
     conv.status = "confirmed"
     conv.extracted_values = {
-        k: {"value": v, "confirmed": True}
-        for k, v in body.values.items()
+        k: {"value": v, "confirmed": True} for k, v in body.values.items()
     }
 
     # Audit log
@@ -712,11 +701,7 @@ async def analyze_pending_images(
         )
 
     # Find images without any conversation
-    analyzed_ids = (
-        select(ImageConversation.image_id)
-        .distinct()
-        .scalar_subquery()
-    )
+    analyzed_ids = select(ImageConversation.image_id).distinct().scalar_subquery()
     result = await db.execute(
         select(RunImage)
         .where(
@@ -745,9 +730,7 @@ async def analyze_pending_images(
             )
 
             conv_status = (
-                "needs_clarification"
-                if ai_result.needs_clarification
-                else "analyzed"
+                "needs_clarification" if ai_result.needs_clarification else "analyzed"
             )
             extracted_dict = {
                 ev.field_key: {
@@ -760,9 +743,7 @@ async def analyze_pending_images(
             }
             conv = ImageConversation(
                 image_id=image.id,
-                messages=[
-                    {"role": "assistant", "content": ai_result.message}
-                ],
+                messages=[{"role": "assistant", "content": ai_result.message}],
                 extracted_values=extracted_dict,
                 status=conv_status,
             )
@@ -770,13 +751,13 @@ async def analyze_pending_images(
             await db.commit()
             succeeded += 1
         except Exception:
-            logger.warning("Batch analysis failed for image %s", image.id, exc_info=True)
+            logger.warning(
+                "Batch analysis failed for image %s", image.id, exc_info=True
+            )
             # Record failure but continue with remaining images
             conv = ImageConversation(
                 image_id=image.id,
-                messages=[
-                    {"role": "system", "content": "Batch analysis failed"}
-                ],
+                messages=[{"role": "system", "content": "Batch analysis failed"}],
                 extracted_values={},
                 status="failed",
             )

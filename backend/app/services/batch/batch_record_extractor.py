@@ -41,11 +41,10 @@ class ExtractedParameterValue(BaseModel):
 
     field_label: str = Field(description="Human label from the form")
     value: float | int | str = Field(description="The recorded value")
-    unit: Optional[str] = Field(
-        default=None, description="Unit of measurement"
-    )
+    unit: Optional[str] = Field(default=None, description="Unit of measurement")
     confidence: float = Field(
-        ge=0.0, le=1.0,
+        ge=0.0,
+        le=1.0,
         description="Confidence: 0.9+ typed, 0.5-0.8 handwritten, <0.5 illegible",
     )
     source_page: Optional[int] = Field(
@@ -65,9 +64,7 @@ class ExtractedSignature(BaseModel):
     """An operator signature/initials from a batch record."""
 
     initials_or_name: str
-    role: Optional[str] = Field(
-        default=None, description="e.g. Operator, QC"
-    )
+    role: Optional[str] = Field(default=None, description="e.g. Operator, QC")
     confidence: float = Field(ge=0.0, le=1.0)
 
 
@@ -75,9 +72,7 @@ class ExtractedDeviation(BaseModel):
     """A deviation or note from a batch record."""
 
     description: str
-    severity: Optional[str] = Field(
-        default=None, description="e.g. minor, major"
-    )
+    severity: Optional[str] = Field(default=None, description="e.g. minor, major")
     step_reference: Optional[str] = Field(
         default=None, description="Which step this deviation relates to"
     )
@@ -95,9 +90,7 @@ class ExtractedStep(BaseModel):
     signatures: list[ExtractedSignature] = []
     deviations: list[ExtractedDeviation] = []
     notes: str = ""
-    confidence: float = Field(
-        ge=0.0, le=1.0, description="Overall step confidence"
-    )
+    confidence: float = Field(ge=0.0, le=1.0, description="Overall step confidence")
     source_page: Optional[int] = None
 
 
@@ -109,9 +102,7 @@ class BatchRecordExtraction(BaseModel):
         default=None, description="Batch/lot number if found"
     )
     product_name: Optional[str] = None
-    date: Optional[str] = Field(
-        default=None, description="Execution date"
-    )
+    date: Optional[str] = Field(default=None, description="Execution date")
     steps: list[ExtractedStep] = []
     general_notes: list[str] = []
     overall_confidence: float = Field(ge=0.0, le=1.0)
@@ -189,10 +180,7 @@ def _build_mapping_prompt(
     for step in flat_steps:
         schema = step.get("param_schema") or {}
         props = schema.get("properties", {})
-        fields = ", ".join(
-            f"{k} ({v.get('title', k)})"
-            for k, v in props.items()
-        )
+        fields = ", ".join(f"{k} ({v.get('title', k)})" for k, v in props.items())
         protocol_lines.append(
             f"  \"{step['id']}\" \"{step['name']}\": {fields or '(no params)'}"
         )
@@ -251,11 +239,7 @@ async def extract_batch_record_pages(
 
         pages = await asyncio.to_thread(extract_pdf_pages, file_path, True)
         text = "\n\n".join(p.text for p in pages if p.text)
-        images = [
-            (p.page_number, p.image_bytes)
-            for p in pages
-            if p.image_bytes
-        ]
+        images = [(p.page_number, p.image_bytes) for p in pages if p.image_bytes]
         return text, images
 
     if mime_type.startswith("image/"):
@@ -288,9 +272,14 @@ async def extract_batch_record_data(
     except Exception as exc:
         error_msg = str(exc).lower()
         context_errors = (
-            "context length", "too many tokens", "token limit",
-            "max_tokens", "context_window", "context window",
-            "maximum context", "content too large",
+            "context length",
+            "too many tokens",
+            "token limit",
+            "max_tokens",
+            "context_window",
+            "context window",
+            "maximum context",
+            "content too large",
         )
         if any(err in error_msg for err in context_errors):
             logger.info(
@@ -319,7 +308,11 @@ async def _extract_single_call(
     # Ollama models don't support tool-calling — use native API
     if _is_ollama_model(model):
         return await _ollama_extract(
-            text, page_images, model, db, org_id,
+            text,
+            page_images,
+            model,
+            db,
+            org_id,
         )
 
     # Cloud providers: use pydantic-ai with structured output
@@ -335,9 +328,7 @@ async def _extract_single_call(
     if page_images:
         for page_num, img_bytes in page_images:
             user_parts.append(f"--- Page {page_num} ---")
-            user_parts.append(
-                BinaryContent(data=img_bytes, media_type="image/png")
-            )
+            user_parts.append(BinaryContent(data=img_bytes, media_type="image/png"))
 
     if not user_parts:
         return BatchRecordExtraction(overall_confidence=0.0)
@@ -362,7 +353,7 @@ async def _ollama_extract(
     model_name = _get_ollama_model_name(model)
 
     schema_hint = (
-        '\n\nReturn your response as JSON matching this structure:\n'
+        "\n\nReturn your response as JSON matching this structure:\n"
         '{"document_title": "", "batch_id": null, "product_name": null, '
         '"date": null, "steps": [{"step_name": "", "step_number": null, '
         '"parameters": [{"field_label": "", "value": 0, "unit": null, '
@@ -387,7 +378,11 @@ async def _ollama_extract(
     # Process each page separately and merge results.
     if page_images and len(page_images) > 1:
         return await _ollama_extract_per_page(
-            text, page_images, base_url, model_name, schema_hint,
+            text,
+            page_images,
+            base_url,
+            model_name,
+            schema_hint,
         )
 
     user_msg: dict[str, Any] = {
@@ -395,9 +390,7 @@ async def _ollama_extract(
         "content": user_content or "Please analyze the attached image.",
     }
     if page_images:
-        user_msg["images"] = [
-            base64.b64encode(page_images[0][1]).decode("utf-8")
-        ]
+        user_msg["images"] = [base64.b64encode(page_images[0][1]).decode("utf-8")]
     messages.append(user_msg)
 
     async with httpx.AsyncClient(timeout=300.0) as client:
@@ -415,7 +408,8 @@ async def _ollama_extract(
             error_body = resp.text[:200] if resp.text else "No details"
             logger.error(
                 "Ollama API returned %d for batch record extraction: %s",
-                resp.status_code, error_body,
+                resp.status_code,
+                error_body,
             )
             raise ValueError(
                 f"AI model error (status {resp.status_code}). "
@@ -485,7 +479,9 @@ async def _ollama_extract_per_page(
             end = int((idx + 1) / len(page_images) * len(text_lines))
             chunk_text = "\n\n".join(text_lines[start:end])
 
-        user_content = f"Page {page_num}:\n{chunk_text}" if chunk_text else f"Page {page_num}"
+        user_content = (
+            f"Page {page_num}:\n{chunk_text}" if chunk_text else f"Page {page_num}"
+        )
 
         async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(
@@ -500,9 +496,7 @@ async def _ollama_extract_per_page(
                         {
                             "role": "user",
                             "content": user_content,
-                            "images": [
-                                base64.b64encode(img_bytes).decode("utf-8")
-                            ],
+                            "images": [base64.b64encode(img_bytes).decode("utf-8")],
                         },
                     ],
                     "format": "json",
@@ -514,7 +508,8 @@ async def _ollama_extract_per_page(
         if resp.status_code != 200:
             logger.warning(
                 "Ollama returned %d for page %d, skipping",
-                resp.status_code, page_num,
+                resp.status_code,
+                page_num,
             )
             continue
 
@@ -530,9 +525,7 @@ async def _ollama_extract_per_page(
                 for raw_step in parsed.get("steps", []):
                     if isinstance(raw_step, dict):
                         try:
-                            all_steps.append(
-                                ExtractedStep.model_validate(raw_step)
-                            )
+                            all_steps.append(ExtractedStep.model_validate(raw_step))
                         except Exception:
                             pass
             except Exception:
@@ -552,10 +545,7 @@ async def _ollama_extract_per_page(
         if not date and page_result.date:
             date = page_result.date
 
-    avg_confidence = (
-        total_confidence / len(page_images)
-        if page_images else 0.0
-    )
+    avg_confidence = total_confidence / len(page_images) if page_images else 0.0
 
     return BatchRecordExtraction(
         document_title=doc_title,
@@ -603,7 +593,10 @@ async def _extract_chunked(
             chunk_text = "\n\n".join(text_lines[start_idx:end_idx])
 
         chunk_result = await _extract_single_call(
-            chunk_text, chunk_images, db, org_id,
+            chunk_text,
+            chunk_images,
+            db,
+            org_id,
         )
 
         all_steps.extend(chunk_result.steps)
@@ -621,9 +614,7 @@ async def _extract_chunked(
         if not date and chunk_result.date:
             date = chunk_result.date
 
-    avg_confidence = (
-        total_confidence / chunk_count if chunk_count > 0 else 0.0
-    )
+    avg_confidence = total_confidence / chunk_count if chunk_count > 0 else 0.0
 
     return BatchRecordExtraction(
         document_title=doc_title,
@@ -698,7 +689,8 @@ async def map_steps_to_protocol(
         if resp.status_code != 200:
             logger.error(
                 "Ollama API returned %d for protocol mapping: %s",
-                resp.status_code, resp.text[:200],
+                resp.status_code,
+                resp.text[:200],
             )
             return []
 
@@ -795,9 +787,7 @@ async def run_batch_record_extraction(
     async with session_factory() as session:
         # Load the import row
         result = await session.execute(
-            select(BatchRecordImport).where(
-                BatchRecordImport.id == import_id
-            )
+            select(BatchRecordImport).where(BatchRecordImport.id == import_id)
         )
         import_row = result.scalar_one_or_none()
         if not import_row:
@@ -806,7 +796,9 @@ async def run_batch_record_extraction(
 
         # Create tracking job
         job = await BackgroundJobService.create(
-            session, "batch_record_extract", "batch_record_import",
+            session,
+            "batch_record_extract",
+            "batch_record_import",
             import_id,
             input_data={"mime_type": import_row.mime_type},
         )
@@ -815,44 +807,69 @@ async def run_batch_record_extraction(
         try:
             # Stage 1: Extract pages
             await BackgroundJobService.update_progress(
-                session, job, "extracting", "Extracting document pages",
-                0, 1,
+                session,
+                job,
+                "extracting",
+                "Extracting document pages",
+                0,
+                1,
             )
             storage = FileStorageService()
             file_path = storage.resolve_path(import_row.file_path)
             text, page_images = await extract_batch_record_pages(
-                file_path, import_row.mime_type, session, org_id,
+                file_path,
+                import_row.mime_type,
+                session,
+                org_id,
             )
             import_row.page_count = len(page_images) or 1
             await session.commit()
 
             total_stages = 3  # extract, AI analysis, protocol mapping
             await BackgroundJobService.update_progress(
-                session, job, "extracting", "Extracting document pages",
-                1, total_stages,
+                session,
+                job,
+                "extracting",
+                "Extracting document pages",
+                1,
+                total_stages,
             )
 
             # Stage 2: AI extraction
             await BackgroundJobService.update_progress(
-                session, job, "analyzing", "AI analyzing batch record",
-                1, total_stages,
+                session,
+                job,
+                "analyzing",
+                "AI analyzing batch record",
+                1,
+                total_stages,
             )
             extraction = await extract_batch_record_data(
-                text, page_images, session, org_id,
+                text,
+                page_images,
+                session,
+                org_id,
             )
             import_row.extraction_result = extraction.model_dump()
             await session.commit()
 
             await BackgroundJobService.update_progress(
-                session, job, "analyzing", "AI analyzing batch record",
-                2, total_stages,
+                session,
+                job,
+                "analyzing",
+                "AI analyzing batch record",
+                2,
+                total_stages,
             )
 
             # Stage 3: Protocol mapping
             await BackgroundJobService.update_progress(
-                session, job, "mapping",
+                session,
+                job,
+                "mapping",
                 "Mapping to protocol",
-                2, total_stages,
+                2,
+                total_stages,
             )
             protocol_result = await session.execute(
                 select(Protocol).where(Protocol.id == protocol_id)
@@ -862,7 +879,10 @@ async def run_batch_record_extraction(
             step_mappings: list[StepMapping] = []
             if protocol and protocol.graph:
                 step_mappings = await map_steps_to_protocol(
-                    extraction, protocol.graph, session, org_id,
+                    extraction,
+                    protocol.graph,
+                    session,
+                    org_id,
                 )
 
             # Save results
@@ -873,7 +893,8 @@ async def run_batch_record_extraction(
             import_row.status = BatchRecordImportStatus.REVIEW.value
 
             await BackgroundJobService.complete(
-                session, job,
+                session,
+                job,
                 output_data={
                     "page_count": import_row.page_count,
                     "steps_extracted": len(extraction.steps),
@@ -898,9 +919,7 @@ async def run_batch_record_extraction(
             try:
                 import_row.status = BatchRecordImportStatus.FAILED.value
                 import_row.error_message = str(exc)[:500]
-                await BackgroundJobService.fail(
-                    session, job, str(exc)[:500]
-                )
+                await BackgroundJobService.fail(session, job, str(exc)[:500])
                 await session.commit()
             except Exception:
                 logger.exception("Failed to record error for import %s", import_id)

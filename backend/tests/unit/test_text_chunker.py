@@ -85,9 +85,7 @@ class TestPageBoundaries:
         text = page1 + page2 + page3
         boundaries = [len(page1), len(page1) + len(page2)]
 
-        result = chunk_text(
-            text, chunk_size=50, overlap=5, page_boundaries=boundaries
-        )
+        result = chunk_text(text, chunk_size=50, overlap=5, page_boundaries=boundaries)
         assert len(result) > 0
         # At least one chunk should have a page number assigned
         page_numbers = [c.page_number for c in result if c.page_number is not None]

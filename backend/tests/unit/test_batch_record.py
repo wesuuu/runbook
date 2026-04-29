@@ -1,8 +1,9 @@
 """Tests for batch record PDF generation and role parsing."""
 
 import pytest
+
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
-from app.services.documents.pdf import generate_batch_record_pdf, _get_initials
+from app.services.documents.pdf import _get_initials, generate_batch_record_pdf
 
 
 class TestParseGraphRolesAndSteps:
@@ -763,9 +764,7 @@ class TestEditedBatchRecord:
                 ],
             }
         ]
-        flat_steps = [
-            s for rws in roles_with_steps for s in rws.get("steps", [])
-        ]
+        flat_steps = [s for rws in roles_with_steps for s in rws.get("steps", [])]
         return roles_with_steps, flat_steps
 
     def test_edited_multi_param_strikethrough(self):
