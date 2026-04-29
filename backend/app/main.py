@@ -383,8 +383,16 @@ app.include_router(
     template_convert.router, prefix="/science", tags=["template-convert"]
 )
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
-app.include_router(offline.router, tags=["offline"])
-app.include_router(sync.router, tags=["sync"])
+
+
+def _register_offline_routers(target_app, current_settings):
+    """Register offline/PWA routers iff the feature flag is on (TD-0082)."""
+    if current_settings.features.offline_mode.enabled:
+        target_app.include_router(offline.router, tags=["offline"])
+        target_app.include_router(sync.router, tags=["sync"])
+
+
+_register_offline_routers(app, settings)
 app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 app.include_router(billing.router, prefix="/billing", tags=["billing"])
 
