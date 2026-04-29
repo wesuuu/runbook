@@ -55,6 +55,7 @@ LLM_MAX_TOKENS = 16384
 
 # ─── Data Classes ───
 
+
 @dataclass
 class RetrievedChunk:
     document_id: UUID
@@ -69,6 +70,7 @@ class RetrievedChunk:
 @dataclass
 class ChatDeps:
     """Dependencies injected into pydantic-ai tools via RunContext."""
+
     db: AsyncSession
     org_id: UUID
     user_id: UUID
@@ -78,6 +80,7 @@ class ChatDeps:
 
 
 # ─── Tool Return Models ───
+
 
 class DocumentChunkResult(BaseModel):
     document_id: str
@@ -145,25 +148,34 @@ class CreateProtocolResult(BaseModel):
 
 # ─── Document Tool Functions ───
 
+
 async def search_documents_tool(
     ctx: RunContext[ChatDeps], query: str, max_results: int = 5
 ) -> SearchDocumentsResult:
     """Search the organization's document library for relevant content."""
     chunks = await retrieve_relevant_chunks(
-        ctx.deps.db, query=query, org_id=ctx.deps.org_id, top_k=max_results,
+        ctx.deps.db,
+        query=query,
+        org_id=ctx.deps.org_id,
+        top_k=max_results,
     )
     # If no results, retry with shorter query (embeddings degrade on long queries)
     if not chunks and len(query.split()) > 3:
         short_query = " ".join(query.split()[:4])
         chunks = await retrieve_relevant_chunks(
-            ctx.deps.db, query=short_query, org_id=ctx.deps.org_id, top_k=max_results,
+            ctx.deps.db,
+            query=short_query,
+            org_id=ctx.deps.org_id,
+            top_k=max_results,
         )
     ctx.deps.sources.extend(chunks)
-    ctx.deps.tool_calls.append({
-        "tool": "search_documents",
-        "query": query,
-        "results": len(chunks),
-    })
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "search_documents",
+            "query": query,
+            "results": len(chunks),
+        }
+    )
 
     return SearchDocumentsResult(
         results=[
@@ -178,8 +190,11 @@ async def search_documents_tool(
             for c in chunks
         ],
         total=len(chunks),
-        message=f"Found {len(chunks)} results" if chunks
-        else "No matching documents found in the library",
+        message=(
+            f"Found {len(chunks)} results"
+            if chunks
+            else "No matching documents found in the library"
+        ),
     )
 
 
@@ -195,7 +210,8 @@ async def read_document_section_tool(
     and you need more surrounding context.
     """
     result = await ctx.deps.db.execute(
-        sa_text("""
+        sa_text(
+            """
             SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index,
                    dc.content, dc.page_number, d.title AS document_title
             FROM document_chunks dc
@@ -204,7 +220,8 @@ async def read_document_section_tool(
               AND d.org_id = :org_id
               AND dc.chunk_index BETWEEN :start AND :end
             ORDER BY dc.chunk_index
-        """),
+        """
+        ),
         {
             "doc_id": document_id,
             "org_id": str(ctx.deps.org_id),
@@ -223,23 +240,27 @@ async def read_document_section_tool(
 
     # Accumulate as sources
     for row in rows:
-        ctx.deps.sources.append(RetrievedChunk(
-            document_id=row.document_id,
-            document_title=row.document_title,
-            chunk_id=row.chunk_id,
-            chunk_index=row.chunk_index,
-            page_number=row.page_number,
-            content=row.content,
-            score=1.0,
-        ))
+        ctx.deps.sources.append(
+            RetrievedChunk(
+                document_id=row.document_id,
+                document_title=row.document_title,
+                chunk_id=row.chunk_id,
+                chunk_index=row.chunk_index,
+                page_number=row.page_number,
+                content=row.content,
+                score=1.0,
+            )
+        )
 
-    ctx.deps.tool_calls.append({
-        "tool": "read_document_section",
-        "document_id": document_id,
-        "chunk_index": chunk_index,
-        "window": window,
-        "results": len(rows),
-    })
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "read_document_section",
+            "document_id": document_id,
+            "chunk_index": chunk_index,
+            "window": window,
+            "results": len(rows),
+        }
+    )
 
     return DocumentSectionResult(
         document_id=document_id,
@@ -265,21 +286,25 @@ async def list_documents_tool(
     the library, or wants an inventory of uploaded materials.
     """
     result = await ctx.deps.db.execute(
-        sa_text("""
+        sa_text(
+            """
             SELECT id, title, status, page_count
             FROM documents
             WHERE org_id = :org_id
             ORDER BY created_at DESC
             LIMIT 50
-        """),
+        """
+        ),
         {"org_id": str(ctx.deps.org_id)},
     )
     rows = result.fetchall()
 
-    ctx.deps.tool_calls.append({
-        "tool": "list_documents",
-        "results": len(rows),
-    })
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "list_documents",
+            "results": len(rows),
+        }
+    )
 
     return ListDocumentsResult(
         documents=[
@@ -292,12 +317,16 @@ async def list_documents_tool(
             for row in rows
         ],
         total=len(rows),
-        message=f"{len(rows)} documents in the library" if rows
-        else "No documents have been uploaded to the library yet",
+        message=(
+            f"{len(rows)} documents in the library"
+            if rows
+            else "No documents have been uploaded to the library yet"
+        ),
     )
 
 
 # ─── Protocol Tool Functions ───
+
 
 async def list_unit_ops_tool(
     ctx: RunContext[ChatDeps],
@@ -321,10 +350,7 @@ async def list_unit_ops_tool(
     ctx.deps.tool_calls.append({"tool": "list_unit_ops", "results": len(ops)})
 
     return ListUnitOpsResult(
-        unit_ops=[
-            UnitOpInfo(name=op.name, category=op.category)
-            for op in ops
-        ],
+        unit_ops=[UnitOpInfo(name=op.name, category=op.category) for op in ops],
         total=len(ops),
         message="Use these names when proposing protocol steps. Do not show this list to the user.",
     )
@@ -389,11 +415,13 @@ async def create_unit_op_tool(
     db.add(unit_op)
     await db.flush()
 
-    ctx.deps.tool_calls.append({
-        "tool": "create_unit_op",
-        "unit_op_id": str(unit_op.id),
-        "name": name,
-    })
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "create_unit_op",
+            "unit_op_id": str(unit_op.id),
+            "name": name,
+        }
+    )
 
     return CreateUnitOpResult(
         id=str(unit_op.id),
@@ -461,11 +489,13 @@ async def create_protocol_tool(
                 duration = int(parts[2])
             except ValueError:
                 pass
-        parsed_steps.append(GeneratedStep(
-            name=step_name,
-            unit_op_name=unit_op_name,
-            duration_min=duration,
-        ))
+        parsed_steps.append(
+            GeneratedStep(
+                name=step_name,
+                unit_op_name=unit_op_name,
+                duration_min=duration,
+            )
+        )
 
     if not parsed_steps:
         raise ValueError("No steps provided")
@@ -492,11 +522,13 @@ async def create_protocol_tool(
     db.add(protocol)
     await db.flush()
 
-    ctx.deps.tool_calls.append({
-        "tool": "create_protocol",
-        "protocol_id": str(protocol.id),
-        "project_id": str(pid),
-    })
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "create_protocol",
+            "protocol_id": str(protocol.id),
+            "project_id": str(pid),
+        }
+    )
 
     return CreateProtocolResult(
         protocol_id=str(protocol.id),
@@ -506,6 +538,7 @@ async def create_protocol_tool(
 
 
 # ─── Session CRUD ───
+
 
 async def create_session(
     db: AsyncSession,
@@ -518,18 +551,16 @@ async def create_session(
         user_id=user_id,
         org_id=org_id,
         title=title or "New Chat",
-        context_document_ids=[str(did) for did in context_document_ids]
-        if context_document_ids
-        else None,
+        context_document_ids=(
+            [str(did) for did in context_document_ids] if context_document_ids else None
+        ),
     )
     db.add(session)
     await db.flush()
     return session
 
 
-async def get_session(
-    db: AsyncSession, session_id: UUID
-) -> Optional[ChatSession]:
+async def get_session(db: AsyncSession, session_id: UUID) -> Optional[ChatSession]:
     result = await db.execute(
         select(ChatSession)
         .where(ChatSession.id == session_id)
@@ -557,9 +588,7 @@ async def list_sessions(
     total = count_result.scalar_one()
 
     result = await db.execute(
-        base_query.order_by(ChatSession.updated_at.desc())
-        .offset(offset)
-        .limit(limit)
+        base_query.order_by(ChatSession.updated_at.desc()).offset(offset).limit(limit)
     )
     sessions = list(result.scalars().all())
     return sessions, total
@@ -571,6 +600,7 @@ async def delete_session(db: AsyncSession, session: ChatSession) -> None:
 
 
 # ─── Send Message (main entry point) ───
+
 
 async def send_message(
     db: AsyncSession,
@@ -661,6 +691,7 @@ async def send_message(
 
 # ─── RAG Search (used by tool) ───
 
+
 async def retrieve_relevant_chunks(
     db: AsyncSession,
     query: str,
@@ -691,12 +722,14 @@ async def retrieve_relevant_chunks(
     if query_embedding is not None:
         # Check if any chunks have embeddings
         has_embeddings = await db.execute(
-            sa_text("""
+            sa_text(
+                """
                 SELECT 1 FROM document_chunks dc
                 JOIN documents d ON d.id = dc.document_id
                 WHERE d.org_id = :org_id AND dc.embedding IS NOT NULL
                 LIMIT 1
-            """),
+            """
+            ),
             {"org_id": str(org_id)},
         )
 
@@ -714,7 +747,8 @@ async def retrieve_relevant_chunks(
                 params["doc_ids"] = [str(d) for d in document_ids]
 
             result = await db.execute(
-                sa_text(f"""
+                sa_text(
+                    f"""
                     SELECT
                         dc.id AS chunk_id,
                         dc.document_id,
@@ -749,7 +783,8 @@ async def retrieve_relevant_chunks(
                         END
                     ) DESC
                     LIMIT :limit
-                """),
+                """
+                ),
                 params,
             )
         else:
@@ -780,15 +815,17 @@ async def retrieve_relevant_chunks(
         if total_chars + len(content) > max_chars:
             break
 
-        chunks.append(RetrievedChunk(
-            document_id=row.document_id,
-            document_title=row.document_title,
-            chunk_id=row.chunk_id,
-            chunk_index=row.chunk_index,
-            page_number=row.page_number,
-            content=content,
-            score=score,
-        ))
+        chunks.append(
+            RetrievedChunk(
+                document_id=row.document_id,
+                document_title=row.document_title,
+                chunk_id=row.chunk_id,
+                chunk_index=row.chunk_index,
+                page_number=row.page_number,
+                content=content,
+                score=score,
+            )
+        )
         total_chars += len(content)
 
         if len(chunks) >= top_k:
@@ -815,7 +852,8 @@ async def _keyword_search_chunks(
         params["doc_ids"] = [str(d) for d in document_ids]
 
     return await db.execute(
-        sa_text(f"""
+        sa_text(
+            f"""
             SELECT
                 dc.id AS chunk_id,
                 dc.document_id,
@@ -832,7 +870,8 @@ async def _keyword_search_chunks(
               AND dc.search_vector @@ plainto_tsquery('english', :query)
             ORDER BY ts_rank(dc.search_vector, plainto_tsquery('english', :query)) DESC
             LIMIT :limit
-        """),
+        """
+        ),
         params,
     )
 
@@ -849,48 +888,16 @@ def _get_skills_toolset():
         from pydantic_ai_skills import SkillsToolset
 
         from app.core.config import settings
+
         _skills_toolset = SkillsToolset(directories=[settings.skills_dir])
     return _skills_toolset
 
 
 # ─── Output Sanitization ───
 
-_THINK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL)
-_THOUGHT_HEADER_PATTERN = re.compile(
-    r"\*{0,2}(?:Thought Process|Internal Reasoning|My Reasoning|Analysis|Planning)"
-    r"[:\*]*\s*\n.*?(?=\n---|\n\*{0,2}(?:Answer|Response)[:\*]|\Z)",
-    re.DOTALL | re.IGNORECASE,
-)
-_BARE_JSON_PATTERN = re.compile(
-    r"(?<!\`\`\`)([\{\[]\s*\".{20,}?[\}\]])", re.DOTALL
-)
-
-
-def _sanitize_output(text: str) -> str:
-    """Clean up LLM output: strip reasoning tags, wrap bare JSON in code fences."""
-    # Strip <think>...</think> blocks
-    cleaned = _THINK_PATTERN.sub("", text).strip()
-
-    # Strip bold "Thought Process:" / "Internal Reasoning:" sections
-    cleaned = _THOUGHT_HEADER_PATTERN.sub("", cleaned).strip()
-
-    # Strip leading "---" or "**Answer:**" wrappers left behind
-    cleaned = re.sub(r"^---\s*\n", "", cleaned)
-    cleaned = re.sub(r"^\*{0,2}Answer\*{0,2}[:\s]*\n?", "", cleaned, flags=re.IGNORECASE)
-    if not cleaned:
-        return text
-
-    # Wrap bare JSON blocks in code fences for readability
-    def _wrap_json(m: re.Match) -> str:
-        json_str = m.group(1)
-        # Skip if already inside a code fence
-        prefix = cleaned[:m.start()]
-        if prefix.count("```") % 2 == 1:
-            return m.group(0)
-        return f"\n```json\n{json_str}\n```\n"
-
-    cleaned = _BARE_JSON_PATTERN.sub(_wrap_json, cleaned)
-    return cleaned.strip()
+# Sanitization moved to runtime/sanitize.py during TD-0081 migration.
+# Shim kept here until chat_service.py is deleted (Task 20).
+from app.services.ai.runtime.sanitize import sanitize_output as _sanitize_output  # noqa: F401
 
 
 # ─── Token Estimation ───
@@ -915,7 +922,8 @@ def estimate_messages_tokens(messages: list) -> int:
             # Strip system prompt parts from requests
             if msg_copy.get("kind") == "request" and "parts" in msg_copy:
                 msg_copy["parts"] = [
-                    p for p in msg_copy["parts"]
+                    p
+                    for p in msg_copy["parts"]
                     if p.get("part_kind") != "system-prompt"
                 ]
         else:
@@ -957,7 +965,9 @@ async def compact_history(
 
     logger.info(
         "Compaction triggered for session %s: %d tokens > %d budget",
-        session_id, total_tokens, token_budget,
+        session_id,
+        total_tokens,
+        token_budget,
     )
 
     # Find the latest message (will be kept raw)
@@ -1015,16 +1025,20 @@ async def compact_history(
     await db.flush()
 
     # Build compacted pydantic-ai history: [summary as SystemPromptPart] + [latest]
-    summary_request = ModelRequest(parts=[
-        SystemPromptPart(
-            content=f"[CONVERSATION SUMMARY]\n{summary_text}\n[END SUMMARY]"
-        ),
-    ])
+    summary_request = ModelRequest(
+        parts=[
+            SystemPromptPart(
+                content=f"[CONVERSATION SUMMARY]\n{summary_text}\n[END SUMMARY]"
+            ),
+        ]
+    )
     compacted = [summary_request, latest_message]
 
     logger.info(
         "Compaction complete for session %s: %d tokens -> %d tokens",
-        session_id, total_tokens, estimate_messages_tokens(compacted),
+        session_id,
+        total_tokens,
+        estimate_messages_tokens(compacted),
     )
 
     return compacted, summary_text
@@ -1076,18 +1090,18 @@ def _build_conversation_text(
                     if pk == "text":
                         parts.append(f"Assistant: {part.get('content', '')}")
                     elif pk == "tool-call":
-                        parts.append(
-                            f"[Tool call: {part.get('tool_name', 'unknown')}]"
-                        )
+                        parts.append(f"[Tool call: {part.get('tool_name', 'unknown')}]")
         else:
             # Handle deserialized pydantic-ai message objects
             if hasattr(msg, "parts"):
                 for part in msg.parts:
                     if hasattr(part, "part_kind"):
                         if part.part_kind == "user-prompt":
-                            content = part.content if isinstance(
-                                part.content, str
-                            ) else str(part.content)
+                            content = (
+                                part.content
+                                if isinstance(part.content, str)
+                                else str(part.content)
+                            )
                             parts.append(f"User: {content}")
                         elif part.part_kind == "text":
                             parts.append(f"Assistant: {part.content}")
@@ -1097,9 +1111,7 @@ def _build_conversation_text(
                                 content = content[:200] + "..."
                             parts.append(f"[Tool {part.tool_name}]: {content}")
                         elif part.part_kind == "tool-call":
-                            parts.append(
-                                f"[Tool call: {part.tool_name}]"
-                            )
+                            parts.append(f"[Tool call: {part.tool_name}]")
 
     return "\n".join(parts)
 
@@ -1135,6 +1147,7 @@ def _truncate_to_fit(messages: list, max_tokens: int) -> list:
 
 # ─── LLM Call ───
 
+
 async def _call_llm(
     db: AsyncSession,
     session_id: UUID,
@@ -1164,9 +1177,7 @@ async def _call_llm(
     from pydantic_ai.messages import ModelMessagesTypeAdapter
 
     model = await get_model("chat", db, org_id=org_id)
-    deps = ChatDeps(
-        db=db, org_id=org_id, user_id=user_id, is_org_admin=is_org_admin
-    )
+    deps = ChatDeps(db=db, org_id=org_id, user_id=user_id, is_org_admin=is_org_admin)
 
     # Build system prompt — append user context and skill if button-triggered
     system = SYSTEM_PROMPT
@@ -1218,14 +1229,13 @@ async def _call_llm(
         )
 
         # Safety net: if still over the full context window, hard-truncate
-        serialized = ModelMessagesTypeAdapter.dump_python(
-            message_history, mode="json"
-        )
+        serialized = ModelMessagesTypeAdapter.dump_python(message_history, mode="json")
         total_tokens = estimate_messages_tokens(serialized)
         if total_tokens > context_window:
             logger.warning(
                 "History still %d tokens after compaction (limit %d), truncating",
-                total_tokens, context_window,
+                total_tokens,
+                context_window,
             )
             truncated = _truncate_to_fit(serialized, context_window)
             message_history = ModelMessagesTypeAdapter.validate_python(truncated)
