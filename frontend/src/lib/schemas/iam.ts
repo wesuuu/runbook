@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { uuidString } from '$lib/schemas/common';
 
 export const OrganizationSchema = z.object({
-    id: z.string().uuid(),
+    id: uuidString(),
     name: z.string(),
     subscription_tier: z.string().default('essentials'),
     created_at: z.string(),
@@ -11,9 +12,9 @@ export const OrganizationSchema = z.object({
 export type Organization = z.infer<typeof OrganizationSchema>;
 
 export const OrgMemberSchema = z.object({
-    id: z.string().uuid(),
-    user_id: z.string().uuid(),
-    organization_id: z.string().uuid(),
+    id: uuidString(),
+    user_id: uuidString(),
+    organization_id: uuidString(),
     role: z.string(),
     email: z.string().nullable().optional(),
     full_name: z.string().nullable().optional(),
@@ -24,9 +25,9 @@ export const OrgMemberSchema = z.object({
 export type OrgMember = z.infer<typeof OrgMemberSchema>;
 
 export const TeamSchema = z.object({
-    id: z.string().uuid(),
+    id: uuidString(),
     name: z.string(),
-    organization_id: z.string().uuid(),
+    organization_id: uuidString(),
     created_at: z.string(),
     updated_at: z.string(),
 }).passthrough();
@@ -34,9 +35,9 @@ export const TeamSchema = z.object({
 export type Team = z.infer<typeof TeamSchema>;
 
 export const TeamMemberSchema = z.object({
-    id: z.string().uuid(),
-    user_id: z.string().uuid(),
-    team_id: z.string().uuid(),
+    id: uuidString(),
+    user_id: uuidString(),
+    team_id: uuidString(),
     role: z.string(),
     email: z.string().nullable().optional(),
     full_name: z.string().nullable().optional(),
@@ -47,7 +48,7 @@ export const TeamMemberSchema = z.object({
 export type TeamMember = z.infer<typeof TeamMemberSchema>;
 
 export const UserSearchSchema = z.object({
-    id: z.string().uuid(),
+    id: uuidString(),
     email: z.string(),
     full_name: z.string().nullable().optional(),
 }).passthrough();
@@ -55,11 +56,11 @@ export const UserSearchSchema = z.object({
 export type UserSearch = z.infer<typeof UserSearchSchema>;
 
 export const PermissionSchema = z.object({
-    id: z.string().uuid(),
+    id: uuidString(),
     principal_type: z.string(),
-    principal_id: z.string().uuid(),
+    principal_id: uuidString(),
     object_type: z.string(),
-    object_id: z.string().uuid(),
+    object_id: uuidString(),
     permission_level: z.string(),
     created_at: z.string(),
     updated_at: z.string(),
