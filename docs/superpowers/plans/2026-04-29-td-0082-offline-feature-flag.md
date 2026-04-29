@@ -4,7 +4,7 @@
 
 **Goal:** Gate the entire offline/PWA stack (backend routers, frontend UI, frontend boot init) behind two env vars so the app can ship with offline disabled and re-enable later via config alone.
 
-**Architecture:** Backend `Settings.offline_enabled` (Pydantic) gates `include_router` calls in `app/main.py`. Frontend `feature-flags.ts` reads `VITE_OFFLINE_ENABLED` and exposes a typed `OFFLINE_ENABLED` constant; UI mounts wrap in `{#if OFFLINE_ENABLED}` and module init functions early-return when off.
+**Architecture:** Backend `Settings.features.offline_mode.enabled` (nested Pydantic, follows existing `ProviderConfig` pattern) gates `include_router` calls in `app/main.py`. Configurable via env var `BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED` or — preferred — via `settings.yaml`. Frontend `feature-flags.ts` reads `VITE_OFFLINE_ENABLED` and exposes a typed `OFFLINE_ENABLED` constant; UI mounts wrap in `{#if OFFLINE_ENABLED}` and module init functions early-return when off.
 
 **Tech Stack:** FastAPI, Pydantic-Settings, Svelte 5 (Runes), Vite, pytest, @xyflow/svelte (untouched).
 
@@ -39,20 +39,39 @@
 
 ---
 
-## Task 1: Backend — `Settings.offline_enabled`
+## Task 1: Backend — Nested `Settings.features.offline_mode.enabled`
 
 **Files:**
-- Modify: `backend/app/core/config.py:139` (debug field neighborhood)
+- Modify: `backend/app/core/config.py` (add nested config classes near `ProviderConfig` at line 9, add `features` field on `Settings`)
 
-- [ ] **Step 1: Add the setting**
+- [ ] **Step 1: Add nested config classes and the `features` field**
 
-In `backend/app/core/config.py`, find the field group near `debug: bool = False` and add directly under it:
+In `backend/app/core/config.py`, directly under the existing `ProviderConfig`
+class (line 9-11), add:
 
 ```python
-    # Offline / PWA feature flag (TD-0082).
-    # When False (default), offline + sync routers are not registered and the
-    # frontend should not attempt to use them.
-    offline_enabled: bool = False
+class OfflineModeFeatureConfig(BaseModel):
+    """Offline / PWA feature flag (TD-0082)."""
+
+    enabled: bool = False
+
+
+class FeaturesConfig(BaseModel):
+    """Top-level feature-flag namespace.
+
+    Configure via `settings.yaml` (preferred) or env vars using the
+    `BATCHRITE_FEATURES__<FEATURE>__<FIELD>` form.
+    """
+
+    offline_mode: OfflineModeFeatureConfig = OfflineModeFeatureConfig()
+```
+
+Then on `Settings`, near the `debug` field (around line 139), add:
+
+```python
+    # Feature flags (TD-0082). Nested so `settings.yaml` and env vars share
+    # the same shape: `BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED=true`.
+    features: FeaturesConfig = FeaturesConfig()
 ```
 
 - [ ] **Step 2: Verify the setting loads**
@@ -60,15 +79,15 @@ In `backend/app/core/config.py`, find the field group near `debug: bool = False`
 Run:
 
 ```bash
-cd backend && source .venv/bin/activate && python -c "from app.core.config import settings; print(settings.offline_enabled)"
+cd backend && source .venv/bin/activate && python -c "from app.core.config import settings; print(settings.features.offline_mode.enabled)"
 ```
 
 Expected: `False`
 
-Then verify env override:
+Then verify env override (note the double-underscore delimiter):
 
 ```bash
-BATCHRITE_OFFLINE_ENABLED=true python -c "from app.core.config import settings; print(settings.offline_enabled)"
+cd backend && source .venv/bin/activate && BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED=true python -c "from app.core.config import Settings; print(Settings().features.offline_mode.enabled)"
 ```
 
 Expected: `True`
@@ -77,7 +96,7 @@ Expected: `True`
 
 ```bash
 git add backend/app/core/config.py
-git commit -m "feat(td-0082): add offline_enabled setting"
+git commit -m "feat(td-0082): add features.offline_mode.enabled nested setting"
 ```
 
 ---
@@ -102,7 +121,7 @@ With:
 ```python
 def _register_offline_routers(target_app, current_settings):
     """Register offline/PWA routers iff the feature flag is on (TD-0082)."""
-    if current_settings.offline_enabled:
+    if current_settings.features.offline_mode.enabled:
         target_app.include_router(offline.router, tags=["offline"])
         target_app.include_router(sync.router, tags=["sync"])
 
@@ -115,12 +134,24 @@ _register_offline_routers(app, settings)
 Create `backend/tests/integration/test_offline_feature_flag.py`:
 
 ```python
-"""TD-0082: verify offline + sync routers are gated by Settings.offline_enabled."""
+"""TD-0082: verify offline + sync routers are gated by features.offline_mode.enabled."""
 
 from fastapi import FastAPI
 
-from app.core.config import Settings
+from app.core.config import (
+    FeaturesConfig,
+    OfflineModeFeatureConfig,
+    Settings,
+)
 from app.main import _register_offline_routers
+
+
+def _settings(*, offline_enabled: bool) -> Settings:
+    return Settings(
+        features=FeaturesConfig(
+            offline_mode=OfflineModeFeatureConfig(enabled=offline_enabled),
+        ),
+    )
 
 
 def _route_paths(app: FastAPI) -> set[str]:
@@ -129,7 +160,7 @@ def _route_paths(app: FastAPI) -> set[str]:
 
 def test_offline_routers_absent_when_flag_off():
     app = FastAPI()
-    _register_offline_routers(app, Settings(offline_enabled=False))
+    _register_offline_routers(app, _settings(offline_enabled=False))
     paths = _route_paths(app)
 
     assert "/offline/runs/{run_id}/prefetch" not in paths
@@ -140,7 +171,7 @@ def test_offline_routers_absent_when_flag_off():
 
 def test_offline_routers_present_when_flag_on():
     app = FastAPI()
-    _register_offline_routers(app, Settings(offline_enabled=True))
+    _register_offline_routers(app, _settings(offline_enabled=True))
     paths = _route_paths(app)
 
     assert "/offline/runs/{run_id}/prefetch" in paths
@@ -199,9 +230,10 @@ Append to `backend/.env.example` (after the existing `BATCHRITE_SEAT_LIMIT_PRO` 
 
 ```
 # --- Feature flags (TD-0082) ---
+# Preferred config channel is settings.yaml. These env vars are an override.
 # Offline/PWA stack (sync queue, IndexedDB cache, "Go Offline" flow).
 # Default: false. Flip to true to re-enable.
-BATCHRITE_OFFLINE_ENABLED=false
+BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED=false
 ```
 
 - [ ] **Step 2: Commit**
@@ -523,7 +555,7 @@ them on later without code changes.
 
 | Flag | Backend env | Frontend env | Default | Notes |
 | --- | --- | --- | --- | --- |
-| Offline / PWA | `BATCHRITE_OFFLINE_ENABLED` | `VITE_OFFLINE_ENABLED` | `false` | Offline field-mode session, IndexedDB cache, sync queue, "Go Offline" flow, PWA install. Flip both vars to `true` to re-enable. (TD-0082) |
+| Offline / PWA | `features.offline_mode.enabled` (yaml) or `BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED` (env) | `VITE_OFFLINE_ENABLED` | `false` | Offline field-mode session, IndexedDB cache, sync queue, "Go Offline" flow, PWA install. Flip both backend (yaml or env) and frontend env to enable. (TD-0082) |
 
 Flags must be set on **both** sides to take effect end-to-end. Flipping only
 the frontend leaves the UI live but the backend will 404 on `/offline/*` and
@@ -578,8 +610,8 @@ Launch the qa-verify agent (per implement-task skill). Brief:
 - [ ] **Step 4: Browser QA — flag ON**
 
 Set `VITE_OFFLINE_ENABLED=true` in `frontend/.env.local`,
-`BATCHRITE_OFFLINE_ENABLED=true` in `backend/.env`, restart both servers, and
-relaunch qa-verify with brief:
+`BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED=true` in `backend/.env`, restart
+both servers, and relaunch qa-verify with brief:
 
 - **Verify flag-on behavior:** All offline UI surfaces render; the "Go Offline"
   flow works end-to-end (open a run, enter field mode, go offline, see the

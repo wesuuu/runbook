@@ -21,21 +21,44 @@ no code edits required.
 
 ### Settings
 
-`backend/app/core/config.py` — add to `Settings`:
+`backend/app/core/config.py` — add nested feature-flag models, following the
+existing `ProviderConfig` pattern (env nested delimiter is already `__`):
 
 ```python
-offline_enabled: bool = False  # env: BATCHRITE_OFFLINE_ENABLED
+class OfflineModeFeatureConfig(BaseModel):
+    enabled: bool = False
+
+
+class FeaturesConfig(BaseModel):
+    offline_mode: OfflineModeFeatureConfig = OfflineModeFeatureConfig()
+
+
+# in Settings:
+features: FeaturesConfig = FeaturesConfig()
 ```
 
-Pydantic-Settings already prefixes `BATCHRITE_` and lowercases field names, so
-no extra config is needed.
+Access: `settings.features.offline_mode.enabled`.
+
+Env var: `BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED=false`.
+
+YAML: matches naturally via the existing `YamlConfigSettingsSource`:
+
+```yaml
+features:
+  offline_mode:
+    enabled: false
+```
+
+This deviates from the ClickUp spec's flat `BATCHRITE_OFFLINE_ENABLED` name —
+intentional, since the project already nests structured config (`ProviderConfig`)
+and the primary configuration channel will be `settings.yaml`.
 
 ### Router gating
 
 `backend/app/main.py` — wrap the existing registrations:
 
 ```python
-if settings.offline_enabled:
+if settings.features.offline_mode.enabled:
     app.include_router(offline.router, tags=["offline"])
     app.include_router(sync.router, tags=["sync"])
 ```
@@ -93,8 +116,9 @@ Wrap component mounts in `{#if OFFLINE_ENABLED}` in:
 
 ## Documentation
 
-- `backend/.env.example` — add `BATCHRITE_OFFLINE_ENABLED=false` with a one-line
-  comment.
+- `backend/.env.example` — add `BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED=false`
+  with a one-line comment, plus a note that `settings.yaml` is the preferred
+  configuration channel.
 - New `frontend/.env.example` — add `VITE_OFFLINE_ENABLED=false` with a
   one-line comment.
 - README — short "Feature flags" subsection naming both vars and noting that
@@ -106,13 +130,13 @@ Wrap component mounts in `{#if OFFLINE_ENABLED}` in:
 
 `backend/tests/integration/test_offline_feature_flag.py` (new):
 
-- With `BATCHRITE_OFFLINE_ENABLED=false`, build a fresh app and assert
-  `/offline/...` and `/sync/...` return 404.
-- With `BATCHRITE_OFFLINE_ENABLED=true`, assert those routes are registered
-  (status is anything except 404 — 401/422/200 all acceptable).
+- Build a fresh `FastAPI()`, call a `_register_offline_routers(app, settings)`
+  helper extracted from `main.py` with `Settings(features=FeaturesConfig(
+  offline_mode=OfflineModeFeatureConfig(enabled=False)))` and assert the
+  offline + sync route paths are absent.
+- Same helper with `enabled=True` — assert paths are present.
 
-The test uses a per-test app factory (or env-var monkeypatch + `importlib.reload`
-on `app.main`) so router registration runs under the desired flag state.
+This avoids env-var monkeypatching and `importlib.reload` on the main app.
 
 ### Frontend
 
