@@ -16,6 +16,7 @@ from app.schemas.science import (UnitOpDefinitionCreate,
                                  UnitOpDefinitionResponse,
                                  UnitOpDefinitionUpdate)
 from app.services.core.permissions import check_permission
+from app.services.protocols.unit_ops import create_unit_op_definition
 
 # Synthetic timestamp for JSON-only ops. They have no real created_at;
 # pin to epoch so the response shape is consistent.
@@ -190,7 +191,6 @@ async def create_unit_op(
             )
         scope = "org"
 
-    from app.services.protocols.unit_ops import create_unit_op_definition
     try:
         new_op = await create_unit_op_definition(
             db,
