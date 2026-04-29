@@ -25,6 +25,7 @@
     import FieldModeLockScreen from '$lib/components/field-mode/FieldModeLockScreen.svelte';
     import ExpiryWarningBanner from '$lib/components/shared/ExpiryWarningBanner.svelte';
     import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
+    import { OFFLINE_ENABLED } from '$lib/feature-flags';
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';
 
@@ -170,7 +171,9 @@
             onEndFieldMode={handleEndFieldMode}
             onLock={lockSession}
         />
-        <ExpiryWarningBanner />
+        {#if OFFLINE_ENABLED}
+            <ExpiryWarningBanner />
+        {/if}
 
         <div class="max-w-2xl mx-auto px-4 py-6">
             <!-- Run info -->

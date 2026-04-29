@@ -15,6 +15,7 @@ import {
     type FieldSession,
     type QueuedAction,
 } from '$lib/offline-db';
+import { OFFLINE_ENABLED } from '$lib/feature-flags';
 
 // --- Types ---
 
@@ -135,6 +136,9 @@ export async function activateFieldMode(
     userId: string,
     userEmail: string,
 ): Promise<void> {
+    if (!OFFLINE_ENABLED) {
+        throw new Error('Offline field mode is disabled (VITE_OFFLINE_ENABLED=false)');
+    }
     // Encrypt the snapshot with the user's password
     const encrypted = await encrypt(snapshot, password);
 
@@ -170,6 +174,7 @@ export async function activateFieldMode(
 
 /** Restore field mode from IndexedDB (e.g., on page reload). Returns true if restored. */
 export async function restoreFieldMode(runId: string, password: string): Promise<boolean> {
+    if (!OFFLINE_ENABLED) return false;
     const session = await getSession(runId);
     if (!session) return false;
 
@@ -346,6 +351,7 @@ export async function endFieldMode(wipeQueue = false): Promise<void> {
 // --- Initialization (call on app startup to detect existing sessions) ---
 
 export async function initFieldMode(): Promise<void> {
+    if (!OFFLINE_ENABLED) return;
     const existing = await hasActiveSession();
     if (existing) {
         // There's a session but we don't have the password — go to locked state

@@ -12,6 +12,7 @@
     import ProjectsDropdown from '$lib/components/layout/ProjectsDropdown.svelte';
     import NotificationBell from '$lib/components/layout/NotificationBell.svelte';
     import ConnectivityBanner from '$lib/components/shared/ConnectivityBanner.svelte';
+    import { OFFLINE_ENABLED } from '$lib/feature-flags';
     import SubscriptionLockoutModal from '$lib/components/shared/SubscriptionLockoutModal.svelte';
     import MobileNav from '$lib/components/layout/MobileNav.svelte';
     import { Toaster } from '$lib/components/ui/sonner';
@@ -200,7 +201,9 @@
                     <UserMenu />
                 </div>
             </nav>
-            <ConnectivityBanner />
+            {#if OFFLINE_ENABLED}
+                <ConnectivityBanner />
+            {/if}
         {/if}
 
         {#if isFullBleed || isPublicRoute}

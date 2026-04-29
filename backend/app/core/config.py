@@ -11,6 +11,22 @@ class ProviderConfig(BaseModel):
     base_url: str = ""
 
 
+class OfflineModeFeatureConfig(BaseModel):
+    """Offline / PWA feature flag (TD-0082)."""
+
+    enabled: bool = False
+
+
+class FeaturesConfig(BaseModel):
+    """Top-level feature-flag namespace.
+
+    Configure via `settings.yaml` (preferred) or env vars using the
+    `BATCHRITE_FEATURES__<FEATURE>__<FIELD>` form.
+    """
+
+    offline_mode: OfflineModeFeatureConfig = OfflineModeFeatureConfig()
+
+
 class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite"
@@ -138,6 +154,10 @@ class Settings(BaseSettings):
 
     # Debug mode — enables dev-only endpoints (webhook echo, etc.)
     debug: bool = False
+
+    # Feature flags (TD-0082). Nested so `settings.yaml` and env vars share
+    # the same shape: `BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED=true`.
+    features: FeaturesConfig = FeaturesConfig()
 
     # Stripe billing (added F-0019a) -- all optional; endpoints return
     # 503 with a clear message when any required field is unset.

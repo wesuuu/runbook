@@ -48,3 +48,13 @@ Detailed patterns are in `.claude/rules/` and load automatically when you touch 
 
 - **Python**: Google style — `snake_case`, 80-char lines, type annotations on public APIs. Formatted with `black` + `isort`.
 - **TypeScript**: Google style — `const`/`let` only, named exports, `lowerCamelCase` for variables/functions, `UpperCamelCase` for types/classes, avoid `any`, explicit semicolons, single quotes, triple-equals.
+
+## Feature flags
+
+Some features are gated by env vars so we can ship with them disabled and flip them on later without code changes.
+
+| Flag | Backend | Frontend | Default | Notes |
+| --- | --- | --- | --- | --- |
+| Offline / PWA | `features.offline_mode.enabled` (yaml) or `BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED` (env) | `VITE_OFFLINE_ENABLED` | `false` | Offline field-mode session, IndexedDB cache, sync queue, "Go Offline" flow. (TD-0082) |
+
+Flags must be set on **both** sides to take effect end-to-end. Flipping only the frontend leaves the UI live but the backend will 404 on `/offline/*` and `/sync/*`; flipping only the backend leaves the routes mounted but unreachable from the UI.

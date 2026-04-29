@@ -5,6 +5,7 @@
     import { goto } from '$app/navigation';
     import RoleWizard from "$lib/components/run/RoleWizard.svelte";
     import GoOfflineDialog from "$lib/components/shared/GoOfflineDialog.svelte";
+    import { OFFLINE_ENABLED } from "$lib/feature-flags";
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import * as Table from '$lib/components/ui/table';
@@ -578,19 +579,21 @@
                                 {/if}
                             </div>
                             <div class="flex items-center gap-2">
-                                <Button
-                                    onclick={() => (showGoOffline = true)}
-                                    variant="outline"
-                                    size="sm"
-                                    rounded="full"
-                                    class="gap-1.5 px-3 py-1 text-xs font-medium border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-700"
-                                    title="Enter offline field mode for this run"
-                                >
-                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
-                                    </svg>
-                                    Go Offline
-                                </Button>
+                                {#if OFFLINE_ENABLED}
+                                    <Button
+                                        onclick={() => (showGoOffline = true)}
+                                        variant="outline"
+                                        size="sm"
+                                        rounded="full"
+                                        class="gap-1.5 px-3 py-1 text-xs font-medium border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-700"
+                                        title="Enter offline field mode for this run"
+                                    >
+                                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
+                                        </svg>
+                                        Go Offline
+                                    </Button>
+                                {/if}
                                 <span class="inline-block text-xs font-semibold px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full">
                                     Running
                                 </span>
@@ -1006,12 +1009,14 @@
 
         {/if} <!-- end activeTab branches -->
 
-        <!-- Go Offline Dialog (available in PLANNED and ACTIVE states) -->
-        <GoOfflineDialog
-            bind:open={showGoOffline}
-            runId={run.id}
-            runName={run.name}
-        />
+        {#if OFFLINE_ENABLED}
+            <!-- Go Offline Dialog (available in PLANNED and ACTIVE states) -->
+            <GoOfflineDialog
+                bind:open={showGoOffline}
+                runId={run.id}
+                runName={run.name}
+            />
+        {/if}
     {/if}
 </div>
 
