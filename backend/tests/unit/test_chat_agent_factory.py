@@ -1,6 +1,6 @@
 """Tests for chat_agent.build_chat_agent — construction without LLM call."""
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
