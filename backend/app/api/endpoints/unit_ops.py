@@ -148,13 +148,10 @@ async def create_unit_op(
 ):
     org_id = user.selected_org_id
     if org_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="No organization selected",
-        )
+        raise HTTPException(status_code=400, detail="No organization selected")
 
+    # Per-endpoint guard: project (if any) must belong to user's org
     if unit_op.project_id is not None:
-        # Project-scoped: validate project belongs to user's org
         result = await db.execute(
             select(Project).where(
                 Project.id == unit_op.project_id,
@@ -168,31 +165,49 @@ async def create_unit_op(
             )
 
         allowed = await check_permission(
-            db,
-            user.id,
-            ObjectType.PROJECT,
-            unit_op.project_id,
-            PermissionLevel.EDIT,
+            db, user.id, ObjectType.PROJECT,
+            unit_op.project_id, PermissionLevel.EDIT,
         )
         if not allowed:
             raise HTTPException(
-                status_code=403,
-                detail="Project edit permission required",
+                status_code=403, detail="Project edit permission required"
             )
+        is_org_admin = False
+        scope = "project"
     else:
-        # Org-scoped: require org admin
-        await _require_org_admin(db, user.id, org_id)
+        admin_q = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.role == OrgRole.ADMIN,
+            )
+        )
+        is_org_admin = admin_q.scalar_one_or_none() is not None
+        if not is_org_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Org admin role required for org-scoped unit ops",
+            )
+        scope = "org"
 
-    new_op = UnitOpDefinition(
-        name=unit_op.name,
-        category=unit_op.category,
-        description=unit_op.description,
-        param_schema=unit_op.param_schema,
-        result_schema=unit_op.result_schema,
-        organization_id=org_id,
-        project_id=unit_op.project_id,
-    )
-    db.add(new_op)
+    from app.services.protocols.unit_ops import create_unit_op_definition
+    try:
+        new_op = await create_unit_op_definition(
+            db,
+            user_id=user.id,
+            org_id=org_id,
+            is_org_admin=is_org_admin,
+            scope=scope,
+            project_id=unit_op.project_id,
+            name=unit_op.name,
+            category=unit_op.category,
+            description=unit_op.description,
+            param_schema=unit_op.param_schema,
+            result_schema=unit_op.result_schema,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
     await db.commit()
     await db.refresh(new_op)
     return new_op
