@@ -4,9 +4,19 @@ import pytest
 import pytest_asyncio
 from uuid import uuid4
 
+from app.api.endpoints import offline as _offline_endpoints
+from app.api.endpoints import sync as _sync_endpoints
 from app.core.security import hash_password, create_access_token, create_offline_token
+from app.main import app as _app
 from app.models.iam import User
 from app.models.science import Run, RunStatus, RunRoleAssignment, Project, UnitOpDefinition
+
+# TD-0082: offline + sync routers are gated off by default. These tests need
+# them registered. Idempotent: only register if not already present.
+_paths = {getattr(r, "path", "") for r in _app.routes}
+if "/offline/runs/{run_id}/prefetch" not in _paths:
+    _app.include_router(_offline_endpoints.router, tags=["offline"])
+    _app.include_router(_sync_endpoints.router, tags=["sync"])
 
 
 @pytest_asyncio.fixture
