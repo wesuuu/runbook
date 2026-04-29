@@ -1,7 +1,6 @@
 import json
 import logging
 import re
-from dataclasses import dataclass, field
 from typing import Any, Optional
 from uuid import UUID
 
@@ -60,28 +59,8 @@ LLM_MAX_TOKENS = 16384
 
 # ─── Data Classes ───
 
-
-@dataclass
-class RetrievedChunk:
-    document_id: UUID
-    document_title: str
-    chunk_id: UUID
-    chunk_index: int
-    page_number: int | None
-    content: str
-    score: float
-
-
-@dataclass
-class ChatDeps:
-    """Dependencies injected into pydantic-ai tools via RunContext."""
-
-    db: AsyncSession
-    org_id: UUID
-    user_id: UUID
-    is_org_admin: bool
-    sources: list[RetrievedChunk] = field(default_factory=list)
-    tool_calls: list[dict] = field(default_factory=list)
+# Deps moved to deps.py during TD-0081 migration.
+from app.services.ai.deps import ChatDeps, RetrievedChunk  # noqa: F401
 
 
 # ─── Tool Return Models ───

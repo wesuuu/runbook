@@ -5,14 +5,13 @@ Extracted from services/ai/chat_service.py during TD-0081 migration.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-if TYPE_CHECKING:
-    from app.services.ai.chat_service import RetrievedChunk
+from app.services.ai.deps import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +71,7 @@ async def _retrieve_once(
     max_chars: int,
     min_score: float,
 ) -> list[RetrievedChunk]:
-    """Single retrieval pass: pgvector hybrid search or keyword-only fallback.
-
-    RetrievedChunk is imported lazily to avoid a circular import with
-    chat_service.py (Task 7 will move RetrievedChunk to services/ai/deps.py).
-    """
-    from app.services.ai.chat_service import RetrievedChunk  # lazy import to avoid cycle
-
+    """Single retrieval pass: pgvector hybrid search or keyword-only fallback."""
     # Try to get query embedding
     query_embedding = None
     try:
