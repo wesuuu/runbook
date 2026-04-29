@@ -5,6 +5,7 @@ We capture state via closures into a CompactionState, then the orchestrator
 inspects state after agent.run() returns and writes the audit
 ChatMessage(role=SUMMARY) row. Avoids scheduling coroutines from sync hooks.
 """
+
 from dataclasses import dataclass
 from typing import Any, Callable
 

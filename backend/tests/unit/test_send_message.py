@@ -1,4 +1,5 @@
 """Tests for send_message orchestration (Task 18 — TD-0081)."""
+
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,7 +8,6 @@ import pytest
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession
 from app.services.ai.deps import RetrievedChunk
 from app.services.ai.runtime.compaction import CompactionState
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -68,9 +68,7 @@ async def test_send_message_happy_path():
             "app.services.ai.send_message.CompactionState",
             return_value=fake_state,
         ),
-        patch(
-            "app.services.ai.send_message.ModelMessagesTypeAdapter"
-        ) as mock_adapter,
+        patch("app.services.ai.send_message.ModelMessagesTypeAdapter") as mock_adapter,
         patch(
             "app.services.ai.send_message.sanitize_output",
             return_value="Hello, world!",
@@ -222,7 +220,8 @@ async def test_writes_summary_row_when_compaction_triggered():
         )
 
     summary_rows = [
-        o for o in added_objects
+        o
+        for o in added_objects
         if isinstance(o, ChatMessage) and o.role == ChatMessageRole.SUMMARY
     ]
     assert len(summary_rows) == 1

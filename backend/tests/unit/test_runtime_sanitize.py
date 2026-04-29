@@ -1,4 +1,5 @@
 """Tests for the extracted output sanitization utility."""
+
 from app.services.ai.runtime.sanitize import sanitize_output
 
 

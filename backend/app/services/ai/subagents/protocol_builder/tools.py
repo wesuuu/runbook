@@ -4,6 +4,7 @@ Thin wrappers over the protocol creation and unit_ops services.
 No business logic lives here — only argument mapping, service delegation,
 and tool_calls audit.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,11 +15,9 @@ from uuid import UUID
 from pydantic_ai import RunContext
 
 from app.services.ai.deps import ChatDeps
-from app.services.protocols.creation import (
-    ProtocolSpec,
-    ProtocolStep,
-    create_protocol_from_spec as create_protocol_from_spec_service,
-)
+from app.services.protocols.creation import ProtocolSpec, ProtocolStep
+from app.services.protocols.creation import \
+    create_protocol_from_spec as create_protocol_from_spec_service
 from app.services.protocols.unit_ops import create_unit_op_definition
 
 logger = logging.getLogger(__name__)

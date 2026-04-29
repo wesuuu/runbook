@@ -1,4 +1,5 @@
 """Tests for protocol_builder subagent tools and config."""
+
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
@@ -7,15 +8,17 @@ from pydantic_ai import RunContext
 
 from app.services.ai.deps import ChatDeps
 from app.services.ai.subagents.protocol_builder import build
-from app.services.ai.subagents.protocol_builder.tools import (
-    create_protocol, create_unit_op, list_unit_ops,
-)
+from app.services.ai.subagents.protocol_builder.tools import (create_protocol,
+                                                              create_unit_op,
+                                                              list_unit_ops)
 
 
 def make_ctx() -> RunContext[ChatDeps]:
     deps = ChatDeps(
-        db=AsyncMock(), org_id=uuid.uuid4(),
-        user_id=uuid.uuid4(), is_org_admin=False,
+        db=AsyncMock(),
+        org_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        is_org_admin=False,
     )
     ctx = MagicMock(spec=RunContext)
     ctx.deps = deps
@@ -50,8 +53,12 @@ async def test_create_unit_op_delegates_to_service(monkeypatch):
         fake_service,
     )
     result = await create_unit_op(
-        ctx, name="X", category="C", description="D",
-        param_schema={}, scope="org",
+        ctx,
+        name="X",
+        category="C",
+        description="D",
+        param_schema={},
+        scope="org",
     )
     assert called["name"] == "X"
     assert called["scope"] == "org"
@@ -75,7 +82,9 @@ async def test_create_protocol_delegates_to_service(monkeypatch):
         fake_service,
     )
     result = await create_protocol(
-        ctx, project_name="proj", protocol_name="P",
+        ctx,
+        project_name="proj",
+        protocol_name="P",
         protocol_description="D",
         steps_text="Step1 | Op1 | 10",
     )

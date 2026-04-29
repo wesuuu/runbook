@@ -2,6 +2,7 @@
 
 Extracted from services/ai/chat_service.py during TD-0081 migration.
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,9 +50,7 @@ async def retrieve_relevant_chunks(
 
     if not chunks and len(query.split()) > 3:
         short_query = " ".join(query.split()[:4])
-        logger.debug(
-            "RAG retry with shorter query: %r -> %r", query, short_query
-        )
+        logger.debug("RAG retry with shorter query: %r -> %r", query, short_query)
         chunks = await _retrieve_once(
             db, short_query, org_id, document_ids, top_k, max_chars, min_score
         )

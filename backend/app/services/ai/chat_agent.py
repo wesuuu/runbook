@@ -4,6 +4,7 @@ Agents are cached per (chat_model, subagent_model, summary_model, context_window
 tuple. Per-request CompactionState is passed through a mutable _LiveState
 indirection so cached compaction hooks always read the current request's state.
 """
+
 from pathlib import Path
 from typing import Any, Callable
 from uuid import UUID
@@ -16,15 +17,10 @@ from subagents_pydantic_ai import SubAgentCapability
 from app.core.config import settings
 from app.services.ai.ai_config import get_context_window, get_model
 from app.services.ai.deps import ChatDeps
-from app.services.ai.runtime.compaction import (
-    CompactionState,
-)
+from app.services.ai.runtime.compaction import CompactionState
 from app.services.ai.runtime.token_counting import tiktoken_counter
-from app.services.ai.subagents import (
-    protocol_builder,
-    research_library,
-    run_planner,
-)
+from app.services.ai.subagents import (protocol_builder, research_library,
+                                       run_planner)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _CHAT_PROMPT = (_PROMPTS_DIR / "chat_agent.md").read_text()
@@ -58,7 +54,12 @@ def _cache_key(
     summary_model: Any,
     context_window: int,
 ) -> tuple[str, ...]:
-    return (str(chat_model), str(subagent_model), str(summary_model), str(context_window))
+    return (
+        str(chat_model),
+        str(subagent_model),
+        str(summary_model),
+        str(context_window),
+    )
 
 
 def _make_live_hooks(

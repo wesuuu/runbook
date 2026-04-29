@@ -1,9 +1,9 @@
 """Tests for runtime/compaction.py — CompactionState + capability hooks."""
+
 from pydantic_ai.messages import ModelRequest, SystemPromptPart
 
-from app.services.ai.runtime.compaction import (
-    CompactionState, make_compaction_hooks,
-)
+from app.services.ai.runtime.compaction import (CompactionState,
+                                                make_compaction_hooks)
 
 
 def test_initial_state_is_untriggered():
@@ -29,7 +29,9 @@ def test_on_before_marks_triggered_and_records_cutoff():
 def test_on_after_extracts_summary_from_first_message():
     s = CompactionState()
     _, on_after = make_compaction_hooks(s)
-    summary_msg = ModelRequest(parts=[SystemPromptPart(content="conversation summary text")])
+    summary_msg = ModelRequest(
+        parts=[SystemPromptPart(content="conversation summary text")]
+    )
     result = on_after([summary_msg, "next-real-message"])
     assert s.summary_text == "conversation summary text"
     assert result is None

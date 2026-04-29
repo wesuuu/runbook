@@ -1,4 +1,5 @@
 """LLM output sanitization: strip <think> blocks, wrap bare JSON, etc."""
+
 import re
 
 _THINK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL)

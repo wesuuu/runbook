@@ -1,23 +1,23 @@
 """Tests for services/protocols/creation.py — thin protocol creation service."""
+
 import uuid
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    ObjectPermission, ObjectType, Organization,
-    PermissionLevel, PrincipalType, User,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            PermissionLevel, PrincipalType, User)
 from app.models.science import Project
-from app.services.protocols.creation import (
-    ProtocolSpec, ProtocolStep, create_protocol_from_spec,
-)
+from app.services.protocols.creation import (ProtocolSpec, ProtocolStep,
+                                             create_protocol_from_spec)
 
 
 @pytest_asyncio.fixture
 async def project(
-    db_session: AsyncSession, test_org: Organization, test_user: User,
+    db_session: AsyncSession,
+    test_org: Organization,
+    test_user: User,
 ) -> Project:
     p = Project(name="test-proj", organization_id=test_org.id, owner_id=test_user.id)
     db_session.add(p)
@@ -36,18 +36,27 @@ async def project(
 
 @pytest.mark.asyncio
 async def test_creates_protocol_from_spec(
-    db_session: AsyncSession, test_user: User, project: Project,
+    db_session: AsyncSession,
+    test_user: User,
+    project: Project,
 ):
     spec = ProtocolSpec(
         name="My Protocol",
         description="Bench-scale mAb",
         steps=[
-            ProtocolStep(name="Buffer Mix", unit_op_name="Buffer Preparation", duration_min=15),
-            ProtocolStep(name="Inoculate", unit_op_name="Cell Seeding", duration_min=30),
+            ProtocolStep(
+                name="Buffer Mix", unit_op_name="Buffer Preparation", duration_min=15
+            ),
+            ProtocolStep(
+                name="Inoculate", unit_op_name="Cell Seeding", duration_min=30
+            ),
         ],
     )
     proto = await create_protocol_from_spec(
-        db_session, user_id=test_user.id, project_name=project.name, spec=spec,
+        db_session,
+        user_id=test_user.id,
+        project_name=project.name,
+        spec=spec,
     )
     assert proto.name == "My Protocol"
     assert proto.project_id == project.id
@@ -58,21 +67,29 @@ async def test_creates_protocol_from_spec(
 
 @pytest.mark.asyncio
 async def test_raises_when_project_not_found(
-    db_session: AsyncSession, test_user: User,
+    db_session: AsyncSession,
+    test_user: User,
 ):
-    spec = ProtocolSpec(name="X", description="", steps=[
-        ProtocolStep(name="s", unit_op_name="s", duration_min=10),
-    ])
+    spec = ProtocolSpec(
+        name="X",
+        description="",
+        steps=[
+            ProtocolStep(name="s", unit_op_name="s", duration_min=10),
+        ],
+    )
     with pytest.raises(ValueError, match="not found"):
         await create_protocol_from_spec(
-            db_session, user_id=test_user.id,
-            project_name="nonexistent", spec=spec,
+            db_session,
+            user_id=test_user.id,
+            project_name="nonexistent",
+            spec=spec,
         )
 
 
 @pytest.mark.asyncio
 async def test_raises_without_edit_permission(
-    db_session: AsyncSession, test_user: User,
+    db_session: AsyncSession,
+    test_user: User,
 ):
     # Create a separate org/project that test_user is not a member of.
     other_org = Organization(name="other-org", subscription_tier="ESSENTIALS")
@@ -86,23 +103,33 @@ async def test_raises_without_edit_permission(
     )
     db_session.add(p)
     await db_session.flush()
-    spec = ProtocolSpec(name="X", description="", steps=[
-        ProtocolStep(name="s", unit_op_name="s", duration_min=10),
-    ])
+    spec = ProtocolSpec(
+        name="X",
+        description="",
+        steps=[
+            ProtocolStep(name="s", unit_op_name="s", duration_min=10),
+        ],
+    )
     with pytest.raises(ValueError, match="permission"):
         await create_protocol_from_spec(
-            db_session, user_id=test_user.id,
-            project_name="restricted-proj", spec=spec,
+            db_session,
+            user_id=test_user.id,
+            project_name="restricted-proj",
+            spec=spec,
         )
 
 
 @pytest.mark.asyncio
 async def test_raises_when_spec_has_no_steps(
-    db_session: AsyncSession, test_user: User, project: Project,
+    db_session: AsyncSession,
+    test_user: User,
+    project: Project,
 ):
     spec = ProtocolSpec(name="X", description="", steps=[])
     with pytest.raises(ValueError, match="step"):
         await create_protocol_from_spec(
-            db_session, user_id=test_user.id,
-            project_name=project.name, spec=spec,
+            db_session,
+            user_id=test_user.id,
+            project_name=project.name,
+            spec=spec,
         )

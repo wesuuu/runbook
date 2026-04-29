@@ -1,4 +1,5 @@
 """run_planner SubAgentConfig builder (placeholder)."""
+
 from pathlib import Path
 from typing import Any
 

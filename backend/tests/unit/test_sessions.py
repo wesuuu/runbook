@@ -1,16 +1,13 @@
 """Tests for the extracted sessions module."""
+
 import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization, User
-from app.services.ai.sessions import (
-    create_session,
-    delete_session,
-    get_session,
-    list_sessions,
-)
+from app.services.ai.sessions import (create_session, delete_session,
+                                      get_session, list_sessions)
 
 
 @pytest.mark.asyncio
@@ -59,9 +56,7 @@ async def test_delete_removes_session(
     test_user: User,
     test_org: Organization,
 ):
-    session = await create_session(
-        db_session, user_id=test_user.id, org_id=test_org.id
-    )
+    session = await create_session(db_session, user_id=test_user.id, org_id=test_org.id)
     await delete_session(db_session, session)
     refetched = await get_session(db_session, session.id)
     assert refetched is None

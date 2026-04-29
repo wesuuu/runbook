@@ -1,4 +1,5 @@
 """Tests for runtime/token_counting.py — tiktoken-backed counter."""
+
 from app.services.ai.runtime.token_counting import tiktoken_counter
 
 
@@ -19,5 +20,7 @@ def test_grows_monotonically_with_text_length():
 
 
 def test_handles_dict_messages_via_str():
-    msgs = [{"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "hi"}]}]
+    msgs = [
+        {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "hi"}]}
+    ]
     assert tiktoken_counter(msgs) > 0

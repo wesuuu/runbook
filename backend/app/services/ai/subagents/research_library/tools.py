@@ -3,6 +3,7 @@
 Provides semantic + keyword document search, section reading,
 and document listing over the org's document library.
 """
+
 from __future__ import annotations
 
 import logging
@@ -212,7 +213,9 @@ async def read_section(
         RetrievedChunk(
             document_id=document_id,
             document_title=document_title,
-            chunk_id=UUID(int=0),  # section reads don't have a chunk UUID from the query
+            chunk_id=UUID(
+                int=0
+            ),  # section reads don't have a chunk UUID from the query
             chunk_index=row.chunk_index,
             page_number=row.page_number,
             content=row.content,

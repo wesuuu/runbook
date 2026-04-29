@@ -8,6 +8,7 @@ that could occur with the cache design, because the concern is that
 state from call N corrupts call N+1's deps, not that they overlap in
 wall-clock time.
 """
+
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -35,9 +36,7 @@ async def test_sequential_runs_do_not_share_sources(
     This test verifies that call N+1 sees its own fresh CompactionState and
     does not inherit sources accumulated during call N.
     """
-    sess1 = await create_session(
-        db_session, user_id=test_user.id, org_id=test_org.id
-    )
+    sess1 = await create_session(db_session, user_id=test_user.id, org_id=test_org.id)
     sess2 = await create_session(
         db_session, user_id=second_user.id, org_id=second_org.id
     )
@@ -112,9 +111,9 @@ async def test_sequential_runs_do_not_share_sources(
     sources2 = (msg2.metadata_ or {}).get("sources", [])
     titles1 = {s["document_title"] for s in sources1}
     titles2 = {s["document_title"] for s in sources2}
-    assert "A" in titles1 and "B" not in titles1, (
-        f"sess1 should only have source A, got {titles1}"
-    )
-    assert "B" in titles2 and "A" not in titles2, (
-        f"sess2 should only have source B, got {titles2}"
-    )
+    assert (
+        "A" in titles1 and "B" not in titles1
+    ), f"sess1 should only have source A, got {titles1}"
+    assert (
+        "B" in titles2 and "A" not in titles2
+    ), f"sess2 should only have source B, got {titles2}"

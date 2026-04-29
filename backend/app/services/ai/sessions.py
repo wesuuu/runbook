@@ -1,4 +1,5 @@
 """ChatSession CRUD — pure DB operations, no LLM."""
+
 from typing import Optional
 from uuid import UUID
 

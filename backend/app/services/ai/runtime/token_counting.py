@@ -4,6 +4,7 @@ Uses tiktoken's cl100k_base encoding (OpenAI/Anthropic-equivalent for
 counting purposes). Falls back to a 4-chars/token heuristic if tiktoken
 is unavailable or fails on a message shape.
 """
+
 import json
 from typing import Any
 

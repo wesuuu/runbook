@@ -1,4 +1,5 @@
 """Tests for ChatDeps shape and clone_for_subagent semantics."""
+
 import uuid
 from unittest.mock import MagicMock
 
@@ -40,15 +41,17 @@ def test_clone_at_max_depth_one_preserves_subagents():
 def test_clone_shares_sources_list_for_aggregation():
     deps = make_deps()
     cloned = deps.clone_for_subagent(max_depth=0)
-    cloned.sources.append(RetrievedChunk(
-        document_id=uuid.uuid4(),
-        document_title="t",
-        chunk_id=uuid.uuid4(),
-        chunk_index=0,
-        page_number=None,
-        content="c",
-        score=1.0,
-    ))
+    cloned.sources.append(
+        RetrievedChunk(
+            document_id=uuid.uuid4(),
+            document_title="t",
+            chunk_id=uuid.uuid4(),
+            chunk_index=0,
+            page_number=None,
+            content="c",
+            score=1.0,
+        )
+    )
     # Mutation in the clone shows up in the parent — that's the design
     assert len(deps.sources) == 1
 

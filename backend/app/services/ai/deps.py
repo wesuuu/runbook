@@ -3,6 +3,7 @@
 ChatDeps satisfies SubAgentDepsProtocol from subagents-pydantic-ai (structural
 typing — no inheritance).
 """
+
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID

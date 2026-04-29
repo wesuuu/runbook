@@ -1,4 +1,5 @@
 """Tests for chat_agent.build_chat_agent — construction without LLM call."""
+
 import os
 from unittest.mock import MagicMock, patch
 
@@ -31,8 +32,8 @@ async def test_build_chat_agent_returns_agent_with_capabilities():
     # SubAgentCapability and pydantic-ai Agent both eagerly resolve OpenAI
     # providers at construction time (before any LLM call). Supply a sentinel
     # key so the SDK does not raise "missing API key" during the unit test.
-    with patch("app.services.ai.chat_agent.get_model", fake_get_model), \
-         patch("app.services.ai.chat_agent.get_context_window", fake_get_context_window), \
-         patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-unit"}):
+    with patch("app.services.ai.chat_agent.get_model", fake_get_model), patch(
+        "app.services.ai.chat_agent.get_context_window", fake_get_context_window
+    ), patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-unit"}):
         agent = await build_chat_agent(db, org_id, state)
     assert agent is not None

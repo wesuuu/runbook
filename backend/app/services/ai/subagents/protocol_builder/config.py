@@ -1,15 +1,14 @@
 """Config builder for the protocol_builder subagent."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 from subagents_pydantic_ai import SubAgentConfig
 
-from app.services.ai.subagents.protocol_builder.tools import (
-    create_protocol,
-    create_unit_op,
-    list_unit_ops,
-)
+from app.services.ai.subagents.protocol_builder.tools import (create_protocol,
+                                                              create_unit_op,
+                                                              list_unit_ops)
 
 _PROMPT_PATH = Path(__file__).parent / "prompt.md"
 

@@ -4,6 +4,7 @@ Single canonical implementation called by:
   - api/endpoints/unit_ops.py::create_unit_op (HTTP — protocol editor button)
   - subagents/protocol_builder/tools.py::create_unit_op (chat tool)
 """
+
 from typing import Any
 from uuid import UUID
 

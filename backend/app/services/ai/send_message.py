@@ -3,6 +3,7 @@
 This module is the single entry-point for chat message handling and replaces the
 _call_llm + send_message pair in chat_service.py (see Task 19 for the cutover).
 """
+
 import logging
 from typing import Any
 from uuid import UUID

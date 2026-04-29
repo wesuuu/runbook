@@ -4,6 +4,7 @@ Owns project lookup, EDIT permission check, graph construction, persistence.
 Used by both the chat agent's protocol_builder subagent (via a thin tool
 wrapper) and any future direct REST endpoint or batch job.
 """
+
 from typing import Any
 from uuid import UUID
 
@@ -58,7 +59,11 @@ async def create_protocol_from_spec(
         raise ValueError(f"Project '{project_name}' not found")
 
     allowed = await check_permission(
-        db, user_id, ObjectType.PROJECT, project.id, PermissionLevel.EDIT,
+        db,
+        user_id,
+        ObjectType.PROJECT,
+        project.id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise ValueError("You don't have edit permission on this project")
@@ -70,8 +75,7 @@ async def create_protocol_from_spec(
     # workflows/protocol_generator.py in Task 21 — this import path
     # updates then).
     from app.services.ai.workflows.protocol_generator import (
-        GeneratedProtocol, GeneratedStep, build_graph,
-    )
+        GeneratedProtocol, GeneratedStep, build_graph)
 
     generated = GeneratedProtocol(
         name=spec.name,
