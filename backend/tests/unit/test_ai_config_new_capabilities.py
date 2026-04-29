@@ -1,6 +1,3 @@
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.ai import DEFAULT_CONFIGS, SUPPORTED_CAPABILITIES
 
 
@@ -17,6 +14,8 @@ def test_chat_subagent_default_config():
     cfg = DEFAULT_CONFIGS["chat_subagent"]
     assert "provider" in cfg
     assert "model_name" in cfg
+    assert cfg["provider"]
+    assert cfg["model_name"]
 
 
 def test_chat_summary_default_config():
@@ -24,3 +23,5 @@ def test_chat_summary_default_config():
     cfg = DEFAULT_CONFIGS["chat_summary"]
     assert "provider" in cfg
     assert "model_name" in cfg
+    assert cfg["provider"]
+    assert cfg["model_name"]
