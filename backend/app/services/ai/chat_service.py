@@ -47,9 +47,14 @@ Preserve: key decisions, user preferences, protocols/experiments discussed, spec
 Be concise (2-3 paragraphs). Write in third person ("The user discussed...").
 Do NOT include greetings, pleasantries, or meta-commentary about the summary itself."""
 
-RAG_TOP_K = 8
-RAG_MAX_CONTEXT_CHARS = 12000
-RAG_MIN_SCORE = 0.05
+# RAG retrieval moved to services/documents/retrieval.py during TD-0081 migration.
+from app.services.documents.retrieval import (  # noqa: F401
+    RAG_MAX_CONTEXT_CHARS,
+    RAG_MIN_SCORE,
+    RAG_TOP_K,
+    retrieve_relevant_chunks,
+)
+
 LLM_MAX_TOKENS = 16384
 
 
@@ -159,15 +164,6 @@ async def search_documents_tool(
         org_id=ctx.deps.org_id,
         top_k=max_results,
     )
-    # If no results, retry with shorter query (embeddings degrade on long queries)
-    if not chunks and len(query.split()) > 3:
-        short_query = " ".join(query.split()[:4])
-        chunks = await retrieve_relevant_chunks(
-            ctx.deps.db,
-            query=short_query,
-            org_id=ctx.deps.org_id,
-            top_k=max_results,
-        )
     ctx.deps.sources.extend(chunks)
     ctx.deps.tool_calls.append(
         {
@@ -687,193 +683,6 @@ async def send_message(
     await db.flush()
 
     return user_msg, assistant_msg, sources
-
-
-# ─── RAG Search (used by tool) ───
-
-
-async def retrieve_relevant_chunks(
-    db: AsyncSession,
-    query: str,
-    org_id: UUID,
-    document_ids: list[UUID] | None = None,
-    top_k: int = RAG_TOP_K,
-    max_chars: int = RAG_MAX_CONTEXT_CHARS,
-    min_score: float = RAG_MIN_SCORE,
-) -> list[RetrievedChunk]:
-    """Hybrid semantic + keyword search over document chunks.
-
-    Returns top-K chunks sorted by relevance, limited to max_chars total.
-    Falls back to keyword-only if embedding service is unavailable.
-    """
-    # Try to get query embedding
-    query_embedding = None
-    try:
-        from app.services.ai.embedding import embed_query
-        from app.services.documents.document_processor import _pad_embedding
-
-        raw = await embed_query(query, db)
-        query_embedding = _pad_embedding(raw)
-    except Exception:
-        logger.debug("Embedding unavailable for RAG, using keyword-only")
-
-    fetch_limit = top_k * 3  # Fetch extra for filtering
-
-    if query_embedding is not None:
-        # Check if any chunks have embeddings
-        has_embeddings = await db.execute(
-            sa_text(
-                """
-                SELECT 1 FROM document_chunks dc
-                JOIN documents d ON d.id = dc.document_id
-                WHERE d.org_id = :org_id AND dc.embedding IS NOT NULL
-                LIMIT 1
-            """
-            ),
-            {"org_id": str(org_id)},
-        )
-
-        if has_embeddings.fetchone() is not None:
-            # Hybrid search
-            doc_filter = ""
-            params: dict[str, Any] = {
-                "query_vec": str(query_embedding),
-                "query": query,
-                "org_id": str(org_id),
-                "limit": fetch_limit,
-            }
-            if document_ids:
-                doc_filter = "AND dc.document_id = ANY(:doc_ids)"
-                params["doc_ids"] = [str(d) for d in document_ids]
-
-            result = await db.execute(
-                sa_text(
-                    f"""
-                    SELECT
-                        dc.id AS chunk_id,
-                        dc.document_id,
-                        dc.chunk_index,
-                        dc.content,
-                        dc.page_number,
-                        d.title AS document_title,
-                        CASE WHEN dc.embedding IS NOT NULL
-                            THEN (1.0 - (dc.embedding <=> :query_vec))
-                            ELSE 0.0
-                        END AS vector_score,
-                        CASE WHEN dc.search_vector @@ plainto_tsquery('english', :query)
-                            THEN ts_rank(dc.search_vector, plainto_tsquery('english', :query))
-                            ELSE 0.0
-                        END AS keyword_score
-                    FROM document_chunks dc
-                    JOIN documents d ON d.id = dc.document_id
-                    WHERE d.org_id = :org_id
-                      {doc_filter}
-                      AND (
-                          dc.embedding IS NOT NULL
-                          OR dc.search_vector @@ plainto_tsquery('english', :query)
-                      )
-                    ORDER BY (
-                        0.7 * CASE WHEN dc.embedding IS NOT NULL
-                            THEN (1.0 - (dc.embedding <=> :query_vec))
-                            ELSE 0.0
-                        END
-                        + 0.3 * CASE WHEN dc.search_vector @@ plainto_tsquery('english', :query)
-                            THEN ts_rank(dc.search_vector, plainto_tsquery('english', :query))
-                            ELSE 0.0
-                        END
-                    ) DESC
-                    LIMIT :limit
-                """
-                ),
-                params,
-            )
-        else:
-            result = await _keyword_search_chunks(
-                db, query, org_id, document_ids, fetch_limit
-            )
-    else:
-        result = await _keyword_search_chunks(
-            db, query, org_id, document_ids, fetch_limit
-        )
-
-    rows = result.fetchall()
-
-    # Score, filter, and limit by character budget
-    chunks: list[RetrievedChunk] = []
-    total_chars = 0
-
-    for row in rows:
-        if hasattr(row, "vector_score"):
-            score = round(0.7 * row.vector_score + 0.3 * row.keyword_score, 4)
-        else:
-            score = round(float(row.keyword_score), 4)
-
-        if score < min_score:
-            continue
-
-        content = row.content
-        if total_chars + len(content) > max_chars:
-            break
-
-        chunks.append(
-            RetrievedChunk(
-                document_id=row.document_id,
-                document_title=row.document_title,
-                chunk_id=row.chunk_id,
-                chunk_index=row.chunk_index,
-                page_number=row.page_number,
-                content=content,
-                score=score,
-            )
-        )
-        total_chars += len(content)
-
-        if len(chunks) >= top_k:
-            break
-
-    return chunks
-
-
-async def _keyword_search_chunks(
-    db: AsyncSession,
-    query: str,
-    org_id: UUID,
-    document_ids: list[UUID] | None,
-    limit: int,
-):
-    doc_filter = ""
-    params: dict[str, Any] = {
-        "query": query,
-        "org_id": str(org_id),
-        "limit": limit,
-    }
-    if document_ids:
-        doc_filter = "AND dc.document_id = ANY(:doc_ids)"
-        params["doc_ids"] = [str(d) for d in document_ids]
-
-    return await db.execute(
-        sa_text(
-            f"""
-            SELECT
-                dc.id AS chunk_id,
-                dc.document_id,
-                dc.chunk_index,
-                dc.content,
-                dc.page_number,
-                d.title AS document_title,
-                ts_rank(dc.search_vector, plainto_tsquery('english', :query))
-                    AS keyword_score
-            FROM document_chunks dc
-            JOIN documents d ON d.id = dc.document_id
-            WHERE d.org_id = :org_id
-              {doc_filter}
-              AND dc.search_vector @@ plainto_tsquery('english', :query)
-            ORDER BY ts_rank(dc.search_vector, plainto_tsquery('english', :query)) DESC
-            LIMIT :limit
-        """
-        ),
-        params,
-    )
 
 
 # ─── Skills Toolset (lazy singleton) ───
