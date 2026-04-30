@@ -53,6 +53,37 @@ The data model and API are designed so a future "DOE batch" feature (generate N 
 
 - On transition to `ACTIVE`, the snapshot becomes immutable (existing behavior). `Overrides` section flips to read-only.
 
+## Reuse audit
+
+Before phasing details, an audit of the existing codebase against what this feature needs.
+
+### Already centralized — reuse directly, do not reimplement
+
+| Existing | Location | Use here |
+|---|---|---|
+| `renderTemplate(template, params)` | `frontend/src/lib/utils/template.ts` (tested in `template.test.ts`) | Wizard's instruction preview imports this. **No new template util.** |
+| `detectEquipmentConflicts(nodes, edges)` | `frontend/src/lib/components/protocol/protocolGraph.ts:117` | Wizard runs the same conflict detection on the run-snapshot graph to surface in-card warnings. |
+| `EquipmentPickerModal` | `frontend/src/lib/components/modals/EquipmentPickerModal.svelte` | Wizard's per-card "Swap" button opens this. |
+| `firstError`, `FieldErrors`, `flattenErrors` | `frontend/src/lib/validation.ts` | Wizard's per-field validation errors reuse this. |
+| `VersionHistoryDrawer` | `frontend/src/lib/components/analytics/VersionHistoryDrawer.svelte` | Wizard's Step 2 "Compare versions" disclosure reuses this for the version list and graph preview, instead of building a parallel UI. |
+| `RunHistory` audit-entry rendering | `frontend/src/lib/components/run/RunHistory.svelte` | New `OVERRIDE_SET` / `OVERRIDE_EDIT` actions get a render-time label entry — no new component. |
+
+### Live duplications this feature must consolidate
+
+| Pattern | Locations today | Resolution in F-0081 |
+|---|---|---|
+| `paramSchema`-driven input rendering (`prop["x-ref-type"] === "media_prep"` → media dropdown; `prop.enum` → enum dropdown; `prop.type === "number" \| "integer"` → number input; else text) | Inspector, `run/RoleWizard`, `field-mode/FieldModeRoleWizard`, `run/RunResultsSummary`, `modals/BatchRecordImportModal`, `protocol/UnitOpNode` — **6 files** | Extract a new shared `<ParamInput>` component (`lib/components/shared/ParamInput.svelte`) covering all four cases. Wizard's `RunCreatorParametersStep` uses it. **Migrating the existing 6 callsites is a separate tech-debt task** to keep this PR focused; new-code consumers must use `<ParamInput>` going forward. |
+| Schema-editor row UI (add/remove a parameter: key + label + type) | Inspector only (`addSchemaRow` / `removeSchemaRow` / `editSchemaRows`, lines 142–162, 518–562) | Extract a new shared `<SchemaEditor>` component (`lib/components/shared/SchemaEditor.svelte`) used by both Inspector and the wizard. Inspector's existing instance gets refactored to consume it (small, low-risk — it's the only callsite). |
+| Equipment-chip-list display with conflict marking | Inspector only (lines 388–402) | Extract `<EquipmentChipList>` (`lib/components/shared/EquipmentChipList.svelte`) used by Inspector and the wizard. Same Inspector refactor applies. |
+| Local `renderTemplate()` in `Inspector.svelte:231` | Inspector | Delete the local copy; import from `$lib/utils/template`. Drive-by fix in Phase 3. |
+
+These extractions live in `frontend/src/lib/components/shared/` (per `.claude/rules/conventions.md` — small cross-cutting presentational pieces).
+
+### Patterns we are not consolidating (yet)
+
+- **A generic Stepper shell.** Two wizard-like components exist (`RoleWizard`, `FieldModeRoleWizard`) but they are full feature surfaces, not reusable shells. The new `RunCreatorStepper` is its own thing. Future extraction to a generic `<Stepper>` is plausible once we have 3+ steppers; not worth doing for the second one.
+- **Migrating existing `paramSchema` consumers** to `<ParamInput>`. Six files, each with subtle variations (read-only vs. editable, with/without barcode scan, etc.). Out of scope; tracked as a follow-up tech-debt task.
+
 ## Phasing
 
 | Phase | What | Why first |
@@ -280,27 +311,36 @@ run/
   SaveAsNewVersionDialog.svelte  # the on-Continue prompt
 ```
 
-Shared UI:
-- `frontend/src/lib/utils/template.ts` — extract `renderTemplate(template, params)` from `Inspector.svelte:231`. Both Inspector and `RunCreatorUnitOpCard` use it.
-- `frontend/src/lib/utils/runOverrides.ts` — pure helpers: `computeEdits(originalGraph, currentGraph)`, `applyOverrides(graph, overrides)`, `hasStructuralChanges(edits)`.
+Shared UI extractions (per the Reuse audit; created in this task and consumed by both Inspector and the wizard):
+
+- `lib/components/shared/ParamInput.svelte` — paramSchema-driven input (`x-ref-type` media dropdown / enum dropdown / number / text). Replaces inline branches across the 6 existing files (only the wizard consumes it now; existing files migrate as a separate tech-debt ticket).
+- `lib/components/shared/SchemaEditor.svelte` — add/remove parameter rows (key + label + type). Inspector refactors to consume this in the same PR (only callsite, low risk).
+- `lib/components/shared/EquipmentChipList.svelte` — equipment chip list with conflict marking. Inspector refactors to consume this in the same PR.
+
+Reused as-is (from existing code):
+- `lib/utils/template.ts::renderTemplate` — already exists; wizard imports directly. Drive-by: delete the local duplicate at `Inspector.svelte:231` and replace with the import.
+- `lib/components/protocol/protocolGraph.ts::detectEquipmentConflicts` — already exists; wizard runs against the run-snapshot graph for in-card conflict warnings.
+- `lib/components/modals/EquipmentPickerModal` — already exists; per-card "Swap" button composes it.
+- `lib/validation.ts` — already exists; wizard reuses for inline error rendering.
+
+New (purely run-creator concerns, no existing equivalent):
+- `lib/utils/runOverrides.ts` — pure helpers: `computeEdits(originalGraph, currentGraph)`, `applyOverrides(graph, overrides)`, `hasStructuralChanges(edits)`. Used by both wizard and run-detail editor.
 
 ### Step 2 · Protocol + version (level-2 preview)
 
 - Protocol picker (existing `<select>` styling).
 - Version picker — defaults to "latest". `<select>` listing `vN — created date — author`.
 - Below: **Version summary card** showing `vN`, name + LATEST pill, stats line (`7 unit ops · 31 params · 4 equipment slots · created Apr 12 by Wesley`), description (or "No description").
-- Disclosure `↳ Compare versions` reveals:
-  - Version list: each row shows version_number + description + author + counts; clicking sets the picker.
-  - **Unit ops at-a-glance** detail card for the selected version: ordered list of unit ops with `UO-NN · Name · category · N params · M equipment`. Pure data, no SvelteFlow render.
-- (Future: a "View graph ↗" button could open a side sheet with read-only ProtocolEditor canvas. Not built in this task — listed in Phase 3 punts.)
+- Disclosure `↳ Compare versions` reveals **`VersionHistoryDrawer`** (existing component at `lib/components/analytics/VersionHistoryDrawer.svelte`). The drawer already lists versions with author/date/description and has graph-preview affordances; we reuse it instead of building a parallel UI. Selecting a row in the drawer sets the wizard's `protocol_version_number`.
+- Below the drawer (or alongside, depending on the drawer's existing layout): an **"Unit ops at-a-glance"** detail card — ordered list `UO-NN · Name · category · N params · M equipment`. Pure data, derived from the selected version's graph; no SvelteFlow render. (If `VersionHistoryDrawer` already shows enough detail per version, the at-a-glance card can be removed — TBD when consuming it.)
 
 ### Step 3 · Parameters
 
 - Each unit-op node in graph order renders as a `RunCreatorUnitOpCard`:
   - Header: UO num, name, category, badges (`N overridden`, `1 invalid`).
-  - **Equipment row** — chips for each `data.equipment[i]` with name + serial + `swap` button. Swap opens existing `EquipmentPickerModal`. Swapped chips get a mint border + ◆. If swapped, show "protocol used: …" reminder text.
-  - **Parameter table** (4 columns: Parameter, Default, Override for this run, Action). One row per `paramSchema.properties` key. Override input column varies by `prop.type` and `prop["x-ref-type"]` (mirroring Inspector at line 441-490).
-  - **`+ Add parameter`** button at table foot opens an inline schema-row form (key + label + type) — reuses logic from Inspector's schema editor (`Inspector.svelte:518-562`). Added rows get an amber `+ ADDED` chip.
+  - **Equipment row** — uses `<EquipmentChipList>` (extracted shared component) showing chips for each `data.equipment[i]` with name + serial + `swap` button; conflict markers come for free from the same component. Swap opens `EquipmentPickerModal`. Swapped chips get a mint border + ◆. If swapped, show "protocol used: …" reminder text.
+  - **Parameter table** (4 columns: Parameter, Default, Override for this run, Action). One row per `paramSchema.properties` key. Override input cell composes `<ParamInput>` (extracted shared component) so the type-dispatch (number / text / enum / media-ref) lives in one place.
+  - **`+ Add parameter`** button at table foot opens `<SchemaEditor>` (extracted shared component) for the inline key + label + type form. Added rows get an amber `+ ADDED` chip.
   - **Remove a row** (`✕`): marks the param as removed, shows struck-through with a `− REMOVED` chip. Removed rows stay visible (so the diff is readable). Restore via `↺`.
   - **Instructions** block: collapsed by default to keep the card calm. Default state shows the rendered template (with `<mark>` highlighting on overridden values, muted-toned `<mark>` for defaults) and a `✎ Edit instructions` link. Clicking expands an inline editor: textarea pre-filled with `node.data.description`, live-rendered preview underneath that updates as the user types, and a `↺ revert to protocol default` button. If the effective `description !== protocol_description`, the header shows a small `◆ modified` chip — the block stays collapsed regardless; the chip is the only signal. Uses the shared `renderTemplate()` util.
 - Aside (sticky 320px column): live counts (Value overrides / Equipment swaps / Structural changes / Inheriting / Validation errors), diff preview list.
