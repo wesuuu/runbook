@@ -11,6 +11,19 @@
     }
 
     let { open = $bindable(false), title, onClose, headerActions, children }: Props = $props();
+
+    // Lock body scroll while the modal is open so the underlying page's
+    // scrollbar doesn't sit alongside the modal's own scrollbar.
+    $effect(() => {
+        if (typeof document === 'undefined') return;
+        const prev = document.body.style.overflow;
+        if (open) {
+            document.body.style.overflow = 'hidden';
+            return () => {
+                document.body.style.overflow = prev;
+            };
+        }
+    });
 </script>
 
 {#if open}
