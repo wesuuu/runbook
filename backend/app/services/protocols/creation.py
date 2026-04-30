@@ -106,3 +106,70 @@ async def create_protocol_from_spec(
     db.add(protocol)
     await db.flush()
     return protocol
+
+
+async def update_protocol_step(
+    db: AsyncSession,
+    user_id: UUID,
+    protocol_id: UUID,
+    step_index: int,
+    *,
+    description: str | None = None,
+    category: str | None = None,
+    param_schema: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
+) -> Protocol:
+    """Patch a single unit-op step inside an existing Protocol's graph.
+
+    Used by the chat agent's auto-fix loop after `validate_protocol` flags
+    issues with a specific step. ``step_index`` is the 0-based index of
+    the unit-op node among unit-op nodes only (Process Start is excluded).
+
+    Only the kwargs supplied are written; ``None`` leaves the field alone.
+    Raises ValueError on missing protocol, missing edit permission, or
+    invalid ``step_index``.
+    """
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
+    protocol = result.scalar_one_or_none()
+    if protocol is None:
+        raise ValueError(f"Protocol {protocol_id} not found")
+
+    if protocol.project_id is not None:
+        allowed = await check_permission(
+            db,
+            user_id,
+            ObjectType.PROJECT,
+            protocol.project_id,
+            PermissionLevel.EDIT,
+        )
+        if not allowed:
+            raise ValueError("You don't have edit permission on this protocol")
+
+    graph = dict(protocol.graph or {})
+    nodes = list(graph.get("nodes", []))
+    unit_op_indices = [i for i, n in enumerate(nodes) if n.get("type") == "unitOp"]
+    if step_index < 0 or step_index >= len(unit_op_indices):
+        raise ValueError(
+            f"step_index {step_index} out of range "
+            f"(protocol has {len(unit_op_indices)} unit op steps)"
+        )
+
+    node_idx = unit_op_indices[step_index]
+    node = dict(nodes[node_idx])
+    data = dict(node.get("data") or {})
+
+    if description is not None:
+        data["description"] = description
+    if category is not None:
+        data["category"] = category
+    if param_schema is not None:
+        data["paramSchema"] = param_schema
+    if params is not None:
+        data["params"] = params
+
+    node["data"] = data
+    nodes[node_idx] = node
+    graph["nodes"] = nodes
+    protocol.graph = graph
+    await db.flush()
+    return protocol

@@ -61,8 +61,10 @@ async def test_creates_protocol_from_spec(
     assert proto.name == "My Protocol"
     assert proto.project_id == project.id
     assert proto.status == "DRAFT"
-    assert len(proto.graph["nodes"]) == 2
-    assert len(proto.graph["edges"]) == 1
+    # 1 processStart + 2 step nodes; 2 edges chaining them
+    assert len(proto.graph["nodes"]) == 3
+    assert len(proto.graph["edges"]) == 2
+    assert proto.graph["nodes"][0]["type"] == "processStart"
 
 
 @pytest.mark.asyncio

@@ -6,9 +6,9 @@ from pathlib import Path
 
 from subagents_pydantic_ai import SubAgentConfig
 
-from app.services.ai.subagents.protocol_builder.tools import (create_protocol,
-                                                              create_unit_op,
-                                                              list_unit_ops)
+from app.services.ai.subagents.protocol_builder.tools import (
+    create_protocol, create_unit_op, list_projects, list_unit_ops,
+    update_protocol_step, validate_protocol)
 
 _PROMPT_PATH = Path(__file__).parent / "prompt.md"
 
@@ -32,6 +32,13 @@ def build(model: str) -> SubAgentConfig:
         model=model,
         typically_needs_context=True,
         agent_kwargs={
-            "tools": [list_unit_ops, create_unit_op, create_protocol],
+            "tools": [
+                list_projects,
+                list_unit_ops,
+                create_unit_op,
+                create_protocol,
+                validate_protocol,
+                update_protocol_step,
+            ],
         },
     )

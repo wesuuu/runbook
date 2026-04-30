@@ -211,6 +211,25 @@ def build_graph(
     x_increment = 300
     y_position = 200
 
+    # Every protocol begins with a Process Start node — frontend
+    # `protocolValidation.computeProcessStartValidationErrors` flags a graph
+    # without one, and the renderer expects it as the chain root.
+    process_start_id = f"node-{uuid4()}"
+    nodes.append(
+        {
+            "id": process_start_id,
+            "type": "processStart",
+            "position": {"x": x_start - x_increment, "y": y_position},
+            "width": 220,
+            "data": {
+                "label": "Start of Protocol",
+                "description": (
+                    "Marks the beginning of the process. Every protocol has one."
+                ),
+            },
+        }
+    )
+
     for i, step in enumerate(generated.steps):
         node_id = f"node-{uuid4()}"
         matched_op = match_unit_op(step.unit_op_name, unit_ops)
@@ -243,14 +262,16 @@ def build_graph(
         }
         nodes.append(node)
 
-        # Create edge to previous node
-        if i > 0:
-            edge = {
+        # First unit op connects to the Process Start; subsequent steps
+        # chain to the previous unit op.
+        prev_id = process_start_id if i == 0 else nodes[-2]["id"]
+        edges.append(
+            {
                 "id": f"edge-{uuid4()}",
-                "source": nodes[i - 1]["id"],
+                "source": prev_id,
                 "target": node_id,
             }
-            edges.append(edge)
+        )
 
     return {
         "nodes": nodes,
