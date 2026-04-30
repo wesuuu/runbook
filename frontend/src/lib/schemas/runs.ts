@@ -76,3 +76,32 @@ export const RunRoleAssignmentListSchema = z.object({
 }).passthrough();
 
 export type RunRoleAssignmentList = z.infer<typeof RunRoleAssignmentListSchema>;
+
+export const NodeOverridesSchema = z.object({
+    params: z.record(z.string(), z.unknown()).optional(),
+    equipment: z.array(z.object({
+        equipment_id: z.string(),
+        shareable: z.boolean(),
+    })).optional(),
+    paramSchema: z.record(z.string(), z.unknown()).optional(),
+    description: z.string().optional(),
+});
+
+export type NodeOverrides = z.infer<typeof NodeOverridesSchema>;
+
+export const RunOverridesSchema = z.object({
+    nodes: z.record(z.string(), NodeOverridesSchema),
+});
+
+export type RunOverrides = z.infer<typeof RunOverridesSchema>;
+
+export const RunCreatePayloadSchema = z.object({
+    name: z.string().min(1),
+    project_id: z.string().uuid(),
+    protocol_id: z.string().uuid(),
+    protocol_version_number: z.number().int().positive().optional(),
+    experiment_id: z.string().uuid().optional(),
+    overrides: RunOverridesSchema.optional(),
+});
+
+export type RunCreatePayload = z.infer<typeof RunCreatePayloadSchema>;
