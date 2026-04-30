@@ -261,7 +261,7 @@
     </aside>
 </div>
 
-{#if swapNode && onCreateEquipment}
+{#if swapNode}
     <EquipmentPickerModal
         open={true}
         nodeId={swapNode.id}

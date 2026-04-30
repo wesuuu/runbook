@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { getCurrentOrg } from '$lib/auth.svelte';
     import { Button } from '$lib/components/ui/button';
     import FullScreenModal from '$lib/components/ui/FullScreenModal.svelte';
     import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
@@ -121,10 +122,13 @@
         if (open) {
             resetState();
             if (!loadedOrgEq) {
-                api.get<OrgEquipment[]>('/equipment').then((eq) => {
-                    orgEquipment = eq;
-                    loadedOrgEq = true;
-                }).catch(() => {});
+                const org = getCurrentOrg();
+                if (org) {
+                    api.get<OrgEquipment[]>(`/iam/organizations/${org.id}/equipment`).then((eq) => {
+                        orgEquipment = eq;
+                        loadedOrgEq = true;
+                    }).catch(() => {});
+                }
             }
         }
     });
@@ -164,9 +168,37 @@
             currentGraph = null;
             return;
         }
-        const cloned = JSON.parse(JSON.stringify(selectedVersion.graph ?? { nodes: [], edges: [] }));
-        originalGraph = JSON.parse(JSON.stringify(cloned));
-        currentGraph = cloned;
+        // The versions list endpoint omits graph for performance; fall back to the
+        // protocol's own graph when the user has not pinned a specific version
+        // (i.e. they're using "Latest", which always matches selectedProtocol.graph).
+        const sourceGraph =
+            isLatestVersion && selectedProtocol?.graph
+                ? selectedProtocol.graph
+                : selectedVersion.graph;
+        const raw = JSON.parse(JSON.stringify(sourceGraph ?? { nodes: [], edges: [] }));
+
+        // Stamp each unitOp node with protocol_* mirror fields so RunCreatorUnitOpCard
+        // can distinguish original vs edited values and show VALUE/REMOVED/ADDED diffs.
+        const stamped: Graph = {
+            ...raw,
+            nodes: (raw.nodes as GraphNode[]).map((n: GraphNode) => {
+                if (n.type !== 'unitOp') return n;
+                const d = (n.data ?? {}) as Record<string, unknown>;
+                return {
+                    ...n,
+                    data: {
+                        ...d,
+                        protocol_params: JSON.parse(JSON.stringify(d.params ?? {})),
+                        protocol_paramSchema: JSON.parse(JSON.stringify(d.paramSchema ?? {})),
+                        protocol_equipment: JSON.parse(JSON.stringify(d.equipment ?? [])),
+                        protocol_description: d.description ?? '',
+                    },
+                };
+            }),
+        };
+
+        originalGraph = JSON.parse(JSON.stringify(stamped));
+        currentGraph = stamped;
     });
 
     function jumpTo(step: 1 | 2 | 3 | 4) {
@@ -214,9 +246,28 @@
     }
 
     async function dialogSaveAsVersion(description: string) {
-        if (!protocolId) return;
+        if (!protocolId || !currentGraph) return;
         try {
             const nextVer = (selectedProtocol?.version_number ?? 0) + 1;
+
+            // Strip protocol_* mirror fields before sending graph to the backend —
+            // those are UI-only annotations used for diff rendering.
+            const cleanGraph = {
+                ...currentGraph,
+                nodes: currentGraph.nodes.map((n) => {
+                    if (n.type !== 'unitOp') return n;
+                    const { protocol_params, protocol_paramSchema, protocol_equipment, protocol_description, ...rest } = (n.data ?? {}) as Record<string, unknown>;
+                    void protocol_params; void protocol_paramSchema; void protocol_equipment; void protocol_description;
+                    return { ...n, data: rest };
+                }),
+            };
+
+            // Step 1: PUT the edited graph as a draft version (creates ProtocolVersion is_draft=True)
+            await api.put(`/science/protocols/${protocolId}?save_as_draft=true`, {
+                graph: cleanGraph,
+            });
+
+            // Step 2: Publish the draft — sets is_draft=False and updates the main protocol
             await api.post(
                 `/science/protocols/${protocolId}/publish-draft?version_number=${nextVer}`,
                 { description: description || undefined },

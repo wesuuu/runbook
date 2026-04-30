@@ -65,10 +65,26 @@
         drawerOpen = false;
     }
 
-    function unitOpStats(v: ProtocolVersion | null): string {
-        if (!v) return '';
-        const graph = v.graph as { nodes?: Array<{ type?: string; data?: { paramSchema?: { properties?: Record<string, unknown> }; equipment?: unknown[] } }> } | undefined;
-        const nodes = graph?.nodes ?? [];
+    // The versions list endpoint omits graph data for performance.
+    // For the "latest" case, use the protocol object's own graph (which is always current).
+    // For a pinned older version, we don't have the graph in the list — show a dash.
+    const versionCardStats = $derived.by((): string => {
+        if (!selectedVersion) return '';
+        type NodeLike = { type?: string; data?: { paramSchema?: { properties?: Record<string, unknown> }; equipment?: unknown[] } };
+        type GraphLike = { nodes?: NodeLike[] };
+
+        let graph: GraphLike | undefined;
+        if (isLatest && selectedProtocol?.graph) {
+            graph = selectedProtocol.graph as GraphLike;
+        } else {
+            // Versions list items have no graph; fall back to empty to avoid showing stale 0s
+            const vGraph = selectedVersion.graph as GraphLike | undefined;
+            const hasNodes = (vGraph?.nodes ?? []).length > 0;
+            graph = hasNodes ? vGraph : undefined;
+        }
+
+        if (!graph) return '—';
+        const nodes = graph.nodes ?? [];
         const unitOps = nodes.filter((n) => n.type === 'unitOp');
         let paramCount = 0;
         let eqCount = 0;
@@ -77,7 +93,7 @@
             eqCount += (n.data?.equipment ?? []).length;
         }
         return `${unitOps.length} unit ops · ${paramCount} params · ${eqCount} equipment slots`;
-    }
+    });
 </script>
 
 <section class="step-body">
@@ -131,7 +147,7 @@
                     <span class="latest-pill">LATEST</span>
                 {/if}
             </div>
-            <p class="version-stats">{unitOpStats(selectedVersion)}</p>
+            <p class="version-stats">{versionCardStats}</p>
             <p class="version-desc">
                 {selectedVersion.description || 'No description for this version.'}
             </p>
