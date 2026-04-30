@@ -298,6 +298,13 @@ async def lifespan(app: FastAPI):
 
     seed_system_templates()
 
+    # Make the cursive fallback font visible to LibreOffice for PDF
+    # rendering (F-0080)
+    from app.services.documents.font_setup import \
+        ensure_cursive_font_registered
+
+    ensure_cursive_font_registered()
+
     from app.services.lifecycle import loops_client
 
     if loops_client.is_configured():
