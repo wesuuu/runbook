@@ -7,6 +7,7 @@
         id: string;
         version_number: number;
         name: string;
+        description: string | null;
         change_summary: string | null;
         created_by_name: string | null;
         created_at: string;
@@ -59,6 +60,9 @@
                             {/if}
                         </div>
                         <div class="version-meta">
+                            {#if version.description}
+                                <p class="version-description">{version.description}</p>
+                            {/if}
                             {#if version.change_summary}
                                 <p class="change-summary">{version.change_summary}</p>
                             {/if}
@@ -207,6 +211,13 @@
 
     .version-meta {
         margin-bottom: 6px;
+    }
+
+    .version-description {
+        font-size: 12px;
+        color: #475569;
+        margin: 0 0 4px;
+        line-height: 1.4;
     }
 
     .change-summary {
