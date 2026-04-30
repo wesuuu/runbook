@@ -444,6 +444,17 @@ async def update_run(
                         },
                     )
 
+    # Diff incoming graph against current Run.graph and emit OVERRIDE_EDIT
+    # audit entries per changed unit-op field. (F-0081)
+    if update_data.graph is not None:
+        old_nodes = {n["id"]: n for n in iter_unit_op_nodes(run_obj.graph)}
+        new_nodes = {n["id"]: n for n in iter_unit_op_nodes(update_data.graph)}
+        for node_id in old_nodes.keys() & new_nodes.keys():
+            for diff in diff_unit_op_node(old_nodes[node_id], new_nodes[node_id]):
+                await log_audit(
+                    db, user.id, "OVERRIDE_EDIT", "Run", run_obj.id, diff,
+                )
+
     changes = update_data.model_dump(exclude_unset=True)
     for key, value in changes.items():
         setattr(run_obj, key, value)

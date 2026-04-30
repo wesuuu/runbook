@@ -417,3 +417,59 @@ async def test_update_run_graph_rejected_when_not_planned(
     )
     assert resp.status_code == 422
     assert "PLANNED" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_update_run_emits_override_edit_audit(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Editing override values on a PLANNED run writes one OVERRIDE_EDIT
+    entry per changed (node, field) tuple."""
+    protocol = await _seed_protocol(db_session, test_project)
+    create_resp = await client.post(
+        "/science/runs",
+        json={
+            "name": "Run",
+            "project_id": str(test_project.id),
+            "protocol_id": str(protocol.id),
+            "overrides": {
+                "nodes": {"n1": {"params": {"pH": 6.8}}}
+            },
+        },
+        headers=auth_headers,
+    )
+    run_id = create_resp.json()["id"]
+
+    # Flip pH to a third value and swap n2's equipment.
+    new_graph = copy.deepcopy(create_resp.json()["graph"])
+    n1 = next(n for n in new_graph["nodes"] if n["id"] == "n1")
+    n2 = next(n for n in new_graph["nodes"] if n["id"] == "n2")
+    n1["data"]["params"]["pH"] = 7.0
+    n2["data"]["equipment"] = [{"id": "cf-B", "name": "Centrifuge B"}]
+
+    resp = await client.put(
+        f"/science/runs/{run_id}",
+        json={"graph": new_graph},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    audit_q = await db_session.execute(
+        select(AuditLog).where(
+            (AuditLog.entity_type == "Run")
+            & (AuditLog.entity_id == run_id)
+            & (AuditLog.action == "OVERRIDE_EDIT")
+        ).order_by(AuditLog.created_at)
+    )
+    entries = audit_q.scalars().all()
+    fields = sorted((e.changes["step_id"], e.changes["field"]) for e in entries)
+    assert fields == [("n1", "pH"), ("n2", "equipment")]
+
+    # pH entry: old_value should be the previous override (6.8), not the
+    # protocol default (7.4) — this is the edit-time semantic.
+    ph_entry = next(e for e in entries if e.changes["field"] == "pH")
+    assert ph_entry.changes["old_value"] == 6.8
+    assert ph_entry.changes["new_value"] == 7.0
