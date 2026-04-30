@@ -489,6 +489,7 @@ def build_context(
         "notes": note_contexts,
         "figures": figure_contexts,
         "non_image_attachments": non_image_att_contexts,
+        "_user_signatures": sigmap,
     }
 
 
@@ -508,6 +509,30 @@ def render_to_docx(
                 fig["image"] = InlineImage(doc, str(fpath), width=Mm(150))
             else:
                 fig["image"] = f"[Image not found: {fpath.name}]"
+
+    # F-0080 — swap step.initials to an InlineImage of the user's drawn
+    # signature, or a cursive RichText fallback. Mirrors the figure
+    # handling above: build_context puts placeholders, render_to_docx
+    # finalizes them against the open DocxTemplate.
+    user_signatures = context.pop("_user_signatures", {}) or {}
+
+    def _swap(steps_list):
+        for step in steps_list or []:
+            uid = step.get("_initials_user_id")
+            name = step.get("_initials_name", "")
+            if not uid:
+                continue
+            step["initials"] = _resolve_initials(
+                user_id=uid,
+                name=name,
+                user_signatures=user_signatures,
+                docx=doc,
+            )
+
+    _swap(context.get("steps"))
+    for role in context.get("roles", []) or []:
+        _swap(role.get("steps"))
+        _swap(role.get("br_steps"))
 
     doc.render(context)
 
