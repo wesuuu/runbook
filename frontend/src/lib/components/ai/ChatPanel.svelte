@@ -3,7 +3,7 @@
     import { marked } from "marked";
     import DOMPurify from "dompurify";
     import ChatSkillButtons from "$lib/components/ai/ChatSkillButtons.svelte";
-    import { Button } from "$lib/components/ui/button";
+    import { Button, buttonVariants } from "$lib/components/ui/button";
     import { scale, fly } from "svelte/transition";
     import {
         getPanelState,
@@ -47,6 +47,38 @@
     const hasMessages = $derived(
         activeSession !== null && activeSession.messages.length > 0,
     );
+
+    type ProtocolCta = {
+        protocol_id: string;
+        protocol_name?: string;
+    };
+
+    function getProtocolCtas(msg: { metadata_?: unknown }): ProtocolCta[] {
+        const meta = msg.metadata_ as
+            | { tool_calls?: unknown }
+            | null
+            | undefined;
+        const calls = meta?.tool_calls;
+        if (!Array.isArray(calls)) return [];
+        const out: ProtocolCta[] = [];
+        for (const tc of calls) {
+            if (!tc || typeof tc !== "object") continue;
+            const obj = tc as Record<string, unknown>;
+            if (
+                obj.tool === "create_protocol" &&
+                typeof obj.protocol_id === "string"
+            ) {
+                out.push({
+                    protocol_id: obj.protocol_id,
+                    protocol_name:
+                        typeof obj.protocol_name === "string"
+                            ? obj.protocol_name
+                            : undefined,
+                });
+            }
+        }
+        return out;
+    }
 
     // Register scroll function with the store
     $effect(() => {
@@ -330,6 +362,37 @@
                                                         >p.{source.page_number}</span
                                                     >
                                                 {/if}
+                                            </a>
+                                        {/each}
+                                    </div>
+                                {/if}
+                                <!-- Action buttons for tool-created artifacts -->
+                                {#if getProtocolCtas(msg).length > 0}
+                                    <div class="flex flex-wrap gap-2 mt-2">
+                                        {#each getProtocolCtas(msg) as tc}
+                                            <a
+                                                href="/protocols/{tc.protocol_id}"
+                                                class={buttonVariants({
+                                                    variant: "default",
+                                                    size: "sm",
+                                                })}
+                                            >
+                                                <svg
+                                                    class="w-3.5 h-3.5 mr-1"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        d="M14 3h7v7m0-7L10 14m-4-4v10a2 2 0 0 0 2 2h10"
+                                                    />
+                                                </svg>
+                                                Open
+                                                {tc.protocol_name ||
+                                                    "protocol"}
                                             </a>
                                         {/each}
                                     </div>
