@@ -643,8 +643,11 @@ async def get_run_batch_record_pdf(
     graph = run_obj.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    # Build user_map for electronic initials on filled records
+    # Build user_map and user_signatures for electronic initials on
+    # filled records. user_signatures resolves to absolute paths so the
+    # render layer can build InlineImage objects (F-0080).
     user_map: dict[str, str] = {}
+    user_signatures: dict[str, str] = {}
     started_by_id_str: str | None = None
     if filled and run_obj.execution_data:
         user_ids = set()
@@ -660,9 +663,17 @@ async def get_run_batch_record_pdf(
             started_by_id_str = str(run_obj.started_by_id)
             user_ids.add(started_by_id_str)
         if user_ids:
+            sig_storage = FileStorageService()
             result = await db.execute(select(User).where(User.id.in_(user_ids)))
             for u in result.scalars().all():
                 user_map[str(u.id)] = u.full_name or u.email
+                if u.signature_initials_path:
+                    try:
+                        user_signatures[str(u.id)] = str(
+                            sig_storage.resolve_path(u.signature_initials_path)
+                        )
+                    except (ValueError, FileNotFoundError):
+                        pass
 
     run_status = _run_status_str(run_obj)
 
@@ -677,6 +688,7 @@ async def get_run_batch_record_pdf(
         is_role_based=is_role_based,
         execution_data=run_obj.execution_data if filled else None,
         user_map=user_map if filled else None,
+        user_signatures=user_signatures if filled else None,
         started_by_id=started_by_id_str,
         notes=run_obj.notes if filled else None,
         attachments=run_obj.attachments if filled else None,

@@ -3,51 +3,26 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    Query,
-    Request,
-    UploadFile,
-    status,
-)
+from fastapi import (APIRouter, Depends, HTTPException, Query, Request,
+                     UploadFile, status)
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user
-from app.core.security import (
-    create_access_token,
-    create_verification_jwt,
-    generate_verification_token,
-    hash_password,
-    verify_password,
-)
+from app.core.security import (create_access_token, create_verification_jwt,
+                               generate_verification_token, hash_password,
+                               verify_password)
 from app.db.session import get_db
 from app.legal.service import get_current_version
-from app.models.iam import (
-    Invitation,
-    InvitationStatus,
-    Organization,
-    OrganizationMember,
-    User,
-    VerificationToken,
-)
-from app.schemas.auth import (
-    LoginRequest,
-    PasswordChange,
-    PreferencesUpdate,
-    ProfileUpdate,
-    RegisterRequest,
-    ResendVerificationResponse,
-    SwitchOrgRequest,
-    TokenResponse,
-    UserResponse,
-    VerificationTokenResponse,
-    compute_tos_current,
-)
+from app.models.iam import (Invitation, InvitationStatus, Organization,
+                            OrganizationMember, User, VerificationToken)
+from app.schemas.auth import (LoginRequest, PasswordChange, PreferencesUpdate,
+                              ProfileUpdate, RegisterRequest,
+                              ResendVerificationResponse, SwitchOrgRequest,
+                              TokenResponse, UserResponse,
+                              VerificationTokenResponse, compute_tos_current)
 from app.services.core.audit import log_audit
 from app.services.core.email_service import get_email_provider
 from app.services.core.file_storage import FileStorageService
@@ -58,21 +33,37 @@ router = APIRouter()
 ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
 
+ALLOWED_SIGNATURE_TYPES = {"image/png"}
+MAX_SIGNATURE_SIZE = 500 * 1024  # 500 KB
+SIGNATURE_KINDS = {"initials", "full"}
+
+
+def _signature_path_attr(kind: str) -> str:
+    return "signature_initials_path" if kind == "initials" else "signature_full_path"
+
 
 # ---------- helpers ----------
 
 
 def _user_response(user: User) -> UserResponse:
-    """Build UserResponse with computed avatar_url and tos_current."""
+    """Build UserResponse with computed avatar/signature URLs and tos_current."""
     avatar_url = None
     if user.avatar_path:
         avatar_url = f"/auth/avatars/{user.id}"
+    signature_initials_url = None
+    if user.signature_initials_path:
+        signature_initials_url = f"/auth/signatures/{user.id}/initials"
+    signature_full_url = None
+    if user.signature_full_path:
+        signature_full_url = f"/auth/signatures/{user.id}/full"
     return UserResponse(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
         job_title=user.job_title,
         avatar_url=avatar_url,
+        signature_initials_url=signature_initials_url,
+        signature_full_url=signature_full_url,
         preferences=user.preferences or {},
         is_active=user.is_active,
         email_verified=user.email_verified,
@@ -206,7 +197,8 @@ async def register(
 
     # Create Stripe trialing Essentials subscription (F-0019a).
     # No-op if Stripe is unconfigured (logs a warning); safe to call before commit.
-    from app.services.billing.subscription_service import create_trial_subscription
+    from app.services.billing.subscription_service import \
+        create_trial_subscription
 
     await create_trial_subscription(db, org, user)
 
@@ -688,6 +680,97 @@ async def delete_avatar(
     return _user_response(user)
 
 
+@router.post("/me/signature/{kind}", response_model=UserResponse)
+async def upload_signature(
+    kind: str,
+    file: UploadFile,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if kind not in SIGNATURE_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown signature kind: {kind}",
+        )
+    if not user.selected_org_id:
+        raise HTTPException(status_code=400, detail="No organization selected")
+    if file.content_type not in ALLOWED_SIGNATURE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"File type {file.content_type} not allowed. "
+                "Use PNG with transparent background."
+            ),
+        )
+
+    content = await file.read()
+    if len(content) > MAX_SIGNATURE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail="Signature must be under 500 KB.",
+        )
+
+    storage = FileStorageService()
+    org_id = user.selected_org_id
+    attr = _signature_path_attr(kind)
+    relative_path = str(Path(str(org_id)) / "signatures" / f"{user.id}-{kind}.png")
+
+    previous = getattr(user, attr)
+    full_path = storage.storage_root / relative_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    full_path.write_bytes(content)
+
+    setattr(user, attr, relative_path)
+    await db.commit()
+    await db.refresh(user)
+
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action=("signature_replaced" if previous else "signature_created"),
+        entity_type="user_signature",
+        entity_id=user.id,
+        changes={"kind": kind},
+    )
+    await db.commit()
+
+    return _user_response(user)
+
+
+@router.delete("/me/signature/{kind}", response_model=UserResponse)
+async def delete_signature(
+    kind: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if kind not in SIGNATURE_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown signature kind: {kind}",
+        )
+    attr = _signature_path_attr(kind)
+    previous = getattr(user, attr)
+    if previous:
+        try:
+            FileStorageService().delete_file(previous)
+        except (OSError, ValueError):
+            pass
+        setattr(user, attr, None)
+        await db.commit()
+        await db.refresh(user)
+
+        await log_audit(
+            db,
+            actor_id=user.id,
+            action="signature_deleted",
+            entity_type="user_signature",
+            entity_id=user.id,
+            changes={"kind": kind},
+        )
+        await db.commit()
+    return _user_response(user)
+
+
 async def _get_user_for_file(
     request: Request,
     token: Optional[str] = Query(None),
@@ -761,6 +844,51 @@ async def get_avatar(
         media_type=media_type,
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+@router.get("/signatures/{user_id}/{kind}")
+async def get_signature(
+    user_id: str,
+    kind: str,
+    request: Request,
+    current_user: User = Depends(_get_user_for_file),
+    db: AsyncSession = Depends(get_db),
+):
+    if kind not in SIGNATURE_KINDS:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    if not current_user.selected_org_id:
+        raise HTTPException(status_code=400, detail="No organization selected")
+
+    target = (
+        await db.execute(select(User).where(User.id == user_id))
+    ).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    rel = getattr(target, _signature_path_attr(kind))
+    if not rel:
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    same_org = (
+        await db.execute(
+            select(OrganizationMember.id).where(
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.organization_id == current_user.selected_org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if same_org is None:
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    storage = FileStorageService()
+    try:
+        full_path = storage.resolve_path(rel)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    return FileResponse(full_path, media_type="image/png")
 
 
 @router.put("/me/preferences", response_model=UserResponse)
