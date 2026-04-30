@@ -293,10 +293,17 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Document recovery sweep failed on startup")
 
-    # Seed system document templates into file storage
-    from app.services.protocols.template_seeder import seed_system_templates
+    # Seed system document templates: copies bundled .docx files and
+    # ensures system-wide DocumentTemplate rows exist (idempotent).
+    try:
+        from app.db.seed import seed_document_templates
+        from app.db.session import AsyncSessionLocal
 
-    seed_system_templates()
+        async with AsyncSessionLocal() as session:
+            await seed_document_templates(session)
+            await session.commit()
+    except Exception:
+        logger.exception("System document template seeding failed on startup")
 
     # Make the cursive fallback font visible to LibreOffice for PDF
     # rendering (F-0080)
