@@ -83,7 +83,7 @@ async def process_document(document_id: UUID) -> None:
 
 ## Chat Service Dependencies
 
-The chat service uses pydantic-ai's `RunContext` for dependency injection into tools:
+The chat service uses pydantic-ai's `RunContext` for dependency injection into tools and subagents:
 
 ```python
 @dataclass
@@ -94,7 +94,18 @@ class ChatDeps:
     is_org_admin: bool
     sources: list[RetrievedChunk] = field(default_factory=list)
     tool_calls: list[dict] = field(default_factory=list)
+    subagents: dict[str, Any] = field(default_factory=dict)
+
+    def clone_for_subagent(self, max_depth: int = 0) -> "ChatDeps": ...
 
 # Tools receive context automatically
 async def search_documents_tool(ctx: RunContext[ChatDeps], query: str) -> SearchResult: ...
 ```
+
+For the broader chat-agent architecture (harness, capabilities, subagents, workflows), see `.claude/rules/backend-ai.md`.
+
+## AI Tools vs Domain Services
+
+Tools called by chat subagents (under `services/ai/subagents/<name>/tools.py`) must stay thin: argument mapping, domain-service delegation, and `tool_calls` audit logging. Pure business logic — graph validation, parameter checks, structural transforms — belongs in `services/<domain>/`, not in the AI package.
+
+Example: `services/protocols/validation.py` exposes `validate_protocol_graph(graph, unit_ops) -> ValidationResult` with no DB or LLM dependency. The chat tool `validate_protocol(ctx, protocol_id)` loads the row, calls the validator, returns the dataclass. This keeps the validator unit-testable without pydantic-ai and reusable from non-chat code paths.

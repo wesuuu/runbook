@@ -1,6 +1,8 @@
 backend/uploads/images/*
 backend/uploads/*
-.claude
+.claude/worktrees/
+.claude/*.json
+.claude/scheduled_tasks.lock
 
 # Benchmark fixture documents (generated, not committed)
 backend/tests/benchmarks/input-to-protocol/*/document.*

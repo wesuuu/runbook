@@ -1,0 +1,8 @@
+- [Stripe Billing F-0019a QA](project_billing_f0019a.md) — QA verified; lockout modal fixed (div→Dialog), settings tab state fixed (URL-driven); API tests confirmed; 2 portal-only criteria untested
+- [Dialog full-screen override pattern](project_dialog_fullscreen_pattern.md) — Dialog.Content has hard-coded centering style + sm:max-w-lg; both must be explicitly overridden for full-viewport use
+- [Filter pill vertical padding](feedback_pill_padding.md) — DM Sans needs py-1.5 on rounded-full pills; py-1 clips descenders visually at text-xs
+- [Button component patterns TD-0075](project_button_patterns.md) — variant map, semantic amber exceptions, canvas toolbar teal rationale, API endpoint notes for QA
+- [Worktree 2 CORS config](project_worktree_cors.md) — :5193 frontend needs CORS entry in backend :8000 main.py; worktree's own main.py has it but main workspace doesn't
+- [QA test accounts](project_qa_accounts.md) — qa-empty-1776464192@test.com is the clean empty-state test account (0 runs/projects/docs/chats)
+- [EmptyState component patterns](project_empty_state_component.md) — TD-0072 shared component locations, per-site padding values, icon/button rules, export URL param is ?runs= not ?runIds=
+- [F-0075 Unit Op Library QA](project_f0075_unit_op_library.md) — API endpoints, sidebar hierarchy specs, search logic, settings reload button, pre-existing 403 console error for non-admins
