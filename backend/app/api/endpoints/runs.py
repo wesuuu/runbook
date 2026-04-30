@@ -29,6 +29,7 @@ from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunUpdate)
 from app.services.core.audit import log_audit
+from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
@@ -220,9 +221,7 @@ async def update_run(
         elif new_status == "COMPLETED":
             # Validate all unit op steps are completed
             exec_data = update_data.execution_data or run_obj.execution_data or {}
-            graph = run_obj.graph or {}
-            nodes = graph.get("nodes", [])
-            unit_op_ids = [n["id"] for n in nodes if n.get("type") == "unitOp"]
+            unit_op_ids = [n["id"] for n in iter_unit_op_nodes(run_obj.graph)]
 
             incomplete = [
                 sid for sid in unit_op_ids
@@ -243,11 +242,10 @@ async def update_run(
             new_exec = update_data.execution_data
 
             # Build step name + param schema lookup from graph
-            graph = run_obj.graph or {}
-            _node_map: dict[str, dict] = {}
-            for n in graph.get("nodes", []):
-                if n.get("type") == "unitOp":
-                    _node_map[n["id"]] = n.get("data", {})
+            _node_map: dict[str, dict] = {
+                n["id"]: n.get("data", {})
+                for n in iter_unit_op_nodes(run_obj.graph)
+            }
 
             for step_id, new_step in new_exec.items():
                 if not isinstance(new_step, dict):
@@ -284,10 +282,8 @@ async def update_run(
                         old_val = old_results.get(field_key)
                         new_val = new_results.get(field_key)
                         if old_val != new_val:
-                            prop = param_schema_props.get(field_key, {})
-                            field_label = (
-                                prop.get("title")
-                                or field_key.replace("_", " ").title()
+                            field_label = derive_field_label(
+                                param_schema_props, field_key,
                             )
                             await log_audit(
                                 db, user.id, "STEP_EDIT", "Run",
@@ -353,11 +349,10 @@ async def update_run(
         target_status = (new_status or current_status)
 
         # Build step name lookup from graph
-        _graph = run_obj.graph or {}
-        _name_map: dict[str, str] = {}
-        for _n in _graph.get("nodes", []):
-            if _n.get("type") == "unitOp":
-                _name_map[_n["id"]] = _n.get("data", {}).get("label", _n["id"])
+        _name_map: dict[str, str] = {
+            n["id"]: n.get("data", {}).get("label", n["id"])
+            for n in iter_unit_op_nodes(run_obj.graph)
+        }
 
         for step_id, step_data in new_exec.items():
             old_step = old_exec.get(step_id, {})
