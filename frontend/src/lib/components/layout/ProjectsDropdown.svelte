@@ -4,6 +4,7 @@
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
     import { getCurrentOrg } from '$lib/auth.svelte';
+    import { getCurrentProjectId, setCurrentProjectId } from '$lib/project-context.svelte';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
     import { Button } from '$lib/components/ui/button';
     import { ChevronDown, Plus, FolderOpen } from 'lucide-svelte';
@@ -18,6 +19,24 @@
     let loading = $state(true);
 
     const isActive = $derived($page.url.pathname.startsWith('/projects'));
+    const routeProjectId = $derived.by(() => {
+        const match = $page.url.pathname.match(/^\/projects\/([^/]+)/);
+        const id = match ? match[1] : null;
+        return id && id !== 'new' ? id : null;
+    });
+
+    // Persist the project context whenever the URL exposes one. Sticky across
+    // navigation to non-project routes (protocols, runs, etc.).
+    $effect(() => {
+        if (routeProjectId && routeProjectId !== getCurrentProjectId()) {
+            setCurrentProjectId(routeProjectId);
+        }
+    });
+
+    const activeProjectId = $derived(routeProjectId ?? getCurrentProjectId());
+    const currentProject = $derived(
+        activeProjectId ? projects.find((p) => p.id === activeProjectId) ?? null : null
+    );
 
     async function loadProjects() {
         loading = true;
@@ -41,9 +60,16 @@
         <Button
             variant="ghost"
             size="sm"
-            class="h-auto px-0 py-0 gap-1 hover:bg-transparent hover:text-foreground {isActive ? 'text-foreground font-semibold' : 'text-muted-foreground'}"
+            class="h-auto px-0 py-0 gap-1.5 hover:bg-transparent hover:text-foreground {isActive ? 'text-foreground font-semibold' : 'text-muted-foreground'}"
         >
-            Projects
+            {#if currentProject}
+                <FolderOpen class="h-3.5 w-3.5 shrink-0" />
+                <span class="max-w-[16ch] truncate" title={currentProject.name}>
+                    {currentProject.name}
+                </span>
+            {:else}
+                Projects
+            {/if}
             <ChevronDown class="h-3.5 w-3.5 opacity-60" />
         </Button>
     </DropdownMenu.Trigger>
