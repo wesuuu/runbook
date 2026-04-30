@@ -138,6 +138,8 @@ async def build_chat_agent(
             capabilities=[
                 SubAgentCapability(
                     subagents=subagents,
+                    default_model=subagent_model,
+                    include_general_purpose=False,
                     max_nesting_depth=1,
                 ),
                 ContextManagerCapability(
