@@ -68,11 +68,19 @@ def _build_model_string(
         )
 
     # Inject API key into os.environ if provided via credentials
-    # (from DB config or BATCHRITE_<PROVIDER>__API_KEY env vars)
-    if credentials and credentials.get("api_key"):
+    # (from DB config or BATCHRITE_<PROVIDER>__API_KEY env vars).
+    # If the caller didn't pass credentials (e.g. DEFAULT_CONFIGS path),
+    # fall back to provider-level settings so the key still lands in env.
+    api_key = (credentials or {}).get("api_key")
+    if not api_key:
+        attr = _PROVIDER_SETTINGS_ATTRS.get(provider)
+        if attr is not None:
+            pc = getattr(settings, attr, None)
+            api_key = getattr(pc, "api_key", None) if pc else None
+    if api_key:
         env_key = _PROVIDER_ENV_KEYS.get(provider)
         if env_key and not os.environ.get(env_key):
-            os.environ[env_key] = credentials["api_key"]
+            os.environ[env_key] = api_key
 
     prefix_map = {
         "anthropic": "anthropic",

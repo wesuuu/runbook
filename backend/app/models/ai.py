@@ -56,16 +56,16 @@ DEFAULT_CONFIGS = {
         "model_name": "llama3.2-vision:11b",
     },
     "chat": {
-        "provider": "ollama",
-        "model_name": "qwen3.5:27b",
+        "provider": "openrouter",
+        "model_name": "anthropic/claude-sonnet-4",
     },
     "chat_subagent": {
-        "provider": "ollama",
-        "model_name": "qwen3.5:27b",
+        "provider": "openrouter",
+        "model_name": "anthropic/claude-sonnet-4",
     },
     "chat_summary": {
-        "provider": "ollama",
-        "model_name": "qwen3.5:27b",
+        "provider": "openrouter",
+        "model_name": "anthropic/claude-sonnet-4",
     },
     "protocol_generation": {
         "provider": "openrouter",
