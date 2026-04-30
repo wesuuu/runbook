@@ -54,7 +54,7 @@
 {#if schema['x-ref-type'] === 'media_prep'}
     <select
         {id}
-        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+        class="input-field"
         value={value ?? ''}
         onchange={handleSelect}
         disabled={readonly}
@@ -67,7 +67,7 @@
 {:else if schema.enum}
     <select
         {id}
-        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+        class="input-field"
         value={value ?? ''}
         onchange={handleSelect}
         disabled={readonly}
@@ -80,7 +80,7 @@
     <input
         {id}
         type="number"
-        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+        class="input-field"
         value={value ?? ''}
         oninput={handleNumber}
         step={schema.type === 'integer' ? 1 : 0.1}
@@ -91,10 +91,35 @@
     <input
         {id}
         type="text"
-        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+        class="input-field"
         value={value ?? ''}
         oninput={handleText}
         placeholder={placeholder ?? ''}
         disabled={readonly}
     />
 {/if}
+
+<style>
+    .input-field {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid rgb(209 213 219);
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        line-height: 1.25rem;
+        background-color: white;
+        color: inherit;
+    }
+
+    .input-field:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgb(20 184 166 / 0.5);
+        border-color: transparent;
+    }
+
+    .input-field:disabled {
+        background-color: rgb(243 244 246);
+        cursor: not-allowed;
+        color: rgb(107 114 128);
+    }
+</style>
