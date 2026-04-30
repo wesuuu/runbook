@@ -38,9 +38,7 @@ class SlackChannel(BaseChannel):
                 "Slack channel requires either webhook_url or bot_token"
             )
 
-    async def _send_webhook(
-        self, url: str, message: FormattedMessage
-    ) -> str:
+    async def _send_webhook(self, url: str, message: FormattedMessage) -> str:
         payload = {
             "text": f"*{message.title}*\n{message.body}",
             "blocks": [
@@ -54,20 +52,22 @@ class SlackChannel(BaseChannel):
             ],
         }
         if message.url:
-            payload["blocks"].append({
-                "type": "actions",
-                "elements": [{
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "View in Batchrite"},
-                    "url": message.url,
-                }],
-            })
+            payload["blocks"].append(
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "View in Batchrite"},
+                            "url": message.url,
+                        }
+                    ],
+                }
+            )
 
         return await self._post(url, payload)
 
-    async def _send_bot(
-        self, token: str, message: FormattedMessage
-    ) -> str:
+    async def _send_bot(self, token: str, message: FormattedMessage) -> str:
         channel = self.config.get("channel")
         if not channel:
             raise PermanentError("Bot token mode requires a channel ID")
@@ -86,47 +86,53 @@ class SlackChannel(BaseChannel):
             ],
         }
         if message.url:
-            payload["blocks"].append({
-                "type": "actions",
-                "elements": [{
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "View in Batchrite"},
-                    "url": message.url,
-                }],
-            })
+            payload["blocks"].append(
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "View in Batchrite"},
+                            "url": message.url,
+                        }
+                    ],
+                }
+            )
 
         headers = {"Authorization": f"Bearer {token}"}
         return await self._post(
             "https://slack.com/api/chat.postMessage", payload, headers
         )
 
-    async def _post(
-        self, url: str, payload: dict, headers: dict | None = None
-    ) -> str:
+    async def _post(self, url: str, payload: dict, headers: dict | None = None) -> str:
         req_headers = {"Content-Type": "application/json"}
         if headers:
             req_headers.update(headers)
 
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-                resp = await client.post(
-                    url, json=payload, headers=req_headers
-                )
+                resp = await client.post(url, json=payload, headers=req_headers)
 
             if resp.status_code == 429:
                 raise TransientError("Slack rate limited (429)")
             if resp.status_code >= 500:
                 raise TransientError(f"Slack {resp.status_code}")
 
-            body = resp.json() if resp.headers.get(
-                "content-type", ""
-            ).startswith("application/json") else {}
+            body = (
+                resp.json()
+                if resp.headers.get("content-type", "").startswith("application/json")
+                else {}
+            )
 
             # Slack API returns 200 with ok=false for errors
             if body.get("ok") is False:
                 error = body.get("error", "unknown")
-                if error in ("invalid_auth", "account_inactive",
-                             "channel_not_found", "not_in_channel"):
+                if error in (
+                    "invalid_auth",
+                    "account_inactive",
+                    "channel_not_found",
+                    "not_in_channel",
+                ):
                     raise PermanentError(f"Slack API error: {error}")
                 raise TransientError(f"Slack API error: {error}")
 

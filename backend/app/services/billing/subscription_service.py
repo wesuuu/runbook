@@ -54,9 +54,7 @@ async def create_trial_subscription(
         customer=customer.id,
         items=[{"price": settings.stripe_essentials_price_id}],
         trial_period_days=settings.essentials_trial_days,
-        trial_settings={
-            "end_behavior": {"missing_payment_method": "cancel"}
-        },
+        trial_settings={"end_behavior": {"missing_payment_method": "cancel"}},
         metadata={"org_id": str(org.id)},
     )
 

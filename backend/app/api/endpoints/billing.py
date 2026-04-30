@@ -13,17 +13,10 @@ from app.core.config import settings
 from app.core.deps import require_org_role
 from app.db.session import get_db
 from app.models.iam import Organization, OrgRole, User
-from app.schemas.billing import (
-    PortalSessionRequest,
-    PortalSessionResponse,
-    SubscriptionStateResponse,
-)
-from app.services.billing import (
-    seat_limits,
-    stripe_client,
-    subscription_service,
-    webhook_handler,
-)
+from app.schemas.billing import (PortalSessionRequest, PortalSessionResponse,
+                                 SubscriptionStateResponse)
+from app.services.billing import (seat_limits, stripe_client,
+                                  subscription_service, webhook_handler)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -54,9 +47,7 @@ async def get_subscription(
     seat_limit = seat_limits.get_seat_limit(org.subscription_tier)
     state["seat_count"] = seat_count
     state["seat_limit"] = seat_limit
-    state["seat_limit_exceeded"] = (
-        seat_limit is not None and seat_count > seat_limit
-    )
+    state["seat_limit_exceeded"] = seat_limit is not None and seat_count > seat_limit
     return SubscriptionStateResponse(**state)
 
 
@@ -110,9 +101,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         await db.commit()
     except Exception:
         event_id = event.get("id") if isinstance(event, dict) else event.id
-        logger.exception(
-            "Stripe webhook handling failed for event %s", event_id
-        )
+        logger.exception("Stripe webhook handling failed for event %s", event_id)
         await db.rollback()
         raise HTTPException(status_code=500, detail="Webhook handling failed")
 

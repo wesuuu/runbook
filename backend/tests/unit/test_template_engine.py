@@ -12,7 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from app.services.protocols.template_engine import build_context, render_to_docx, render_to_pdf
+from app.services.protocols.template_engine import (build_context,
+                                                    render_to_docx,
+                                                    render_to_pdf)
 
 ARTIFACTS_DIR = Path(__file__).parent.parent / "artifacts" / "templates"
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "images"
@@ -71,9 +73,7 @@ SIMPLE_FLAT_STEPS = [
         "description": "Prepare {{volume}} mL of PBS buffer.",
         "role_name": "",
         "params": {"volume": 500},
-        "param_schema": {
-            "properties": {"volume": {"title": "Volume", "unit": "mL"}}
-        },
+        "param_schema": {"properties": {"volume": {"title": "Volume", "unit": "mL"}}},
         "duration_min": 30,
     },
     {
@@ -83,9 +83,7 @@ SIMPLE_FLAT_STEPS = [
         "role_name": "",
         "params": {"density": 1e6},
         "param_schema": {
-            "properties": {
-                "density": {"title": "Seeding Density", "unit": "cells/mL"}
-            }
+            "properties": {"density": {"title": "Seeding Density", "unit": "cells/mL"}}
         },
         "duration_min": 15,
     },
@@ -128,9 +126,7 @@ ROLE_BASED_ROLES = [
                 "name": "Measure pH",
                 "description": "Measure and adjust pH.",
                 "params": {"target_ph": 7.4},
-                "param_schema": {
-                    "properties": {"target_ph": {"title": "Target pH"}}
-                },
+                "param_schema": {"properties": {"target_ph": {"title": "Target pH"}}},
                 "duration_min": 5,
             },
         ],
@@ -158,9 +154,7 @@ ROLE_BASED_FLAT = [
         "description": "Add to {{volume}} mL water and stir.",
         "role_name": "Media Prep",
         "params": {"volume": 1000},
-        "param_schema": {
-            "properties": {"volume": {"title": "Volume", "unit": "mL"}}
-        },
+        "param_schema": {"properties": {"volume": {"title": "Volume", "unit": "mL"}}},
         "duration_min": 15,
     },
     {
@@ -169,9 +163,7 @@ ROLE_BASED_FLAT = [
         "description": "Measure and adjust pH.",
         "role_name": "QC",
         "params": {"target_ph": 7.4},
-        "param_schema": {
-            "properties": {"target_ph": {"title": "Target pH"}}
-        },
+        "param_schema": {"properties": {"target_ph": {"title": "Target pH"}}},
         "duration_min": 5,
     },
 ]

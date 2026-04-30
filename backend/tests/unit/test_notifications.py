@@ -1,28 +1,30 @@
 """Unit tests for the notification service layer."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.services.core.notifications.channels.base import (
-    BaseChannel, FormattedMessage, TransientError, PermanentError,
-)
+import pytest
+
+from app.services.core.notifications.channels.base import (BaseChannel,
+                                                           FormattedMessage,
+                                                           PermanentError,
+                                                           TransientError)
 from app.services.core.notifications.channels.console import ConsoleChannel
 from app.services.core.notifications.channels.webhook import WebhookChannel
 from app.services.core.notifications.templates import TEMPLATES
 
-
 # ── Template Tests ───────────────────────────────────────────────────────
+
 
 class TestTemplates:
     def test_all_event_types_have_templates(self):
         from app.models.notifications import NotificationEventType
+
         for evt in NotificationEventType:
             assert evt.value in TEMPLATES, f"Missing template for {evt.value}"
 
     def test_role_assigned_personal(self):
         title, body = TEMPLATES["ROLE_ASSIGNED"](
-            {"run_name": "Run-1", "role_name": "Upstream Lead",
-             "assigned_by": "Alice"},
+            {"run_name": "Run-1", "role_name": "Upstream Lead", "assigned_by": "Alice"},
             personal=True,
         )
         assert "Run-1" in title
@@ -31,8 +33,12 @@ class TestTemplates:
 
     def test_role_assigned_broadcast(self):
         title, body = TEMPLATES["ROLE_ASSIGNED"](
-            {"run_name": "Run-1", "role_name": "Upstream Lead",
-             "assigned_by": "Alice", "assignee_name": "Bob"},
+            {
+                "run_name": "Run-1",
+                "role_name": "Upstream Lead",
+                "assigned_by": "Alice",
+                "assignee_name": "Bob",
+            },
             personal=False,
         )
         assert "Bob" in body
@@ -67,14 +73,14 @@ class TestTemplates:
 
     def test_step_deviation(self):
         title, body = TEMPLATES["STEP_DEVIATION"](
-            {"run_name": "Run-1", "step_name": "pH Adjustment",
-             "edited_by": "Alice"},
+            {"run_name": "Run-1", "step_name": "pH Adjustment", "edited_by": "Alice"},
         )
         assert "pH Adjustment" in body
         assert "post-completion" in body
 
 
 # ── Console Channel Tests ────────────────────────────────────────────────
+
 
 class TestConsoleChannel:
     @pytest.mark.asyncio
@@ -110,12 +116,16 @@ class TestConsoleChannel:
 
 # ── Webhook Channel Tests ────────────────────────────────────────────────
 
+
 class TestWebhookChannel:
     @pytest.mark.asyncio
     async def test_missing_url_raises_permanent(self):
         channel = WebhookChannel({})
         msg = FormattedMessage(
-            event_type="TEST", title="T", body="B", recipient="test",
+            event_type="TEST",
+            title="T",
+            body="B",
+            recipient="test",
         )
         with pytest.raises(PermanentError, match="URL not configured"):
             await channel.send(msg)
@@ -124,7 +134,10 @@ class TestWebhookChannel:
     async def test_successful_send(self):
         channel = WebhookChannel({"url": "http://localhost:8000/dev/webhook-echo"})
         msg = FormattedMessage(
-            event_type="TEST", title="T", body="B", recipient="test",
+            event_type="TEST",
+            title="T",
+            body="B",
+            recipient="test",
         )
 
         mock_response = AsyncMock()
@@ -139,7 +152,10 @@ class TestWebhookChannel:
     async def test_5xx_raises_transient(self):
         channel = WebhookChannel({"url": "http://example.com/hook"})
         msg = FormattedMessage(
-            event_type="TEST", title="T", body="B", recipient="test",
+            event_type="TEST",
+            title="T",
+            body="B",
+            recipient="test",
         )
 
         mock_response = AsyncMock()
@@ -154,7 +170,10 @@ class TestWebhookChannel:
     async def test_4xx_raises_permanent(self):
         channel = WebhookChannel({"url": "http://example.com/hook"})
         msg = FormattedMessage(
-            event_type="TEST", title="T", body="B", recipient="test",
+            event_type="TEST",
+            title="T",
+            body="B",
+            recipient="test",
         )
 
         mock_response = AsyncMock()
@@ -167,12 +186,17 @@ class TestWebhookChannel:
 
     @pytest.mark.asyncio
     async def test_hmac_signature_added(self):
-        channel = WebhookChannel({
-            "url": "http://example.com/hook",
-            "secret": "mysecret",
-        })
+        channel = WebhookChannel(
+            {
+                "url": "http://example.com/hook",
+                "secret": "mysecret",
+            }
+        )
         msg = FormattedMessage(
-            event_type="TEST", title="T", body="B", recipient="test",
+            event_type="TEST",
+            title="T",
+            body="B",
+            recipient="test",
         )
 
         mock_response = AsyncMock()
@@ -189,6 +213,7 @@ class TestWebhookChannel:
 
 
 # ── FakeChannel for Integration-Style Tests ──────────────────────────────
+
 
 class FakeChannel(BaseChannel):
     """In-memory channel for testing dispatch logic."""

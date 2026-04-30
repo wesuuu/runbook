@@ -11,15 +11,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.services.protocols.protocol_importer import (
-    ImportedParam,
-    ImportedStep,
-    ParsedProtocol,
-    StepProposal,
-    ProtocolImportProposal,
-    build_proposal,
-    build_param_schema_from_params,
-    build_import_graph,
-)
+    ImportedParam, ImportedStep, ParsedProtocol, ProtocolImportProposal,
+    StepProposal, build_import_graph, build_param_schema_from_params,
+    build_proposal)
 
 
 def _make_unit_op(
@@ -46,7 +40,9 @@ class TestBuildParamSchema:
         assert schema == {"type": "object", "properties": {}}
 
     def test_single_number_param(self):
-        params = [ImportedParam(name="temperature", type="number", unit="C", default=37.0)]
+        params = [
+            ImportedParam(name="temperature", type="number", unit="C", default=37.0)
+        ]
         schema = build_param_schema_from_params(params)
         assert "temperature" in schema["properties"]
         prop = schema["properties"]["temperature"]
@@ -77,16 +73,22 @@ class TestBuildParamSchema:
 
 class TestBuildProposal:
     def test_matched_step(self):
-        ops = [_make_unit_op("Buffer Mix", "Media Prep", {
-            "properties": {"volume_ml": {"type": "number", "default": 100}}
-        })]
+        ops = [
+            _make_unit_op(
+                "Buffer Mix",
+                "Media Prep",
+                {"properties": {"volume_ml": {"type": "number", "default": 100}}},
+            )
+        ]
         parsed = ParsedProtocol(
             protocol_name="Test",
-            steps=[ImportedStep(
-                name="Buffer Mix",
-                category="Media Prep",
-                matched_unit_op_name="Buffer Mix",
-            )],
+            steps=[
+                ImportedStep(
+                    name="Buffer Mix",
+                    category="Media Prep",
+                    matched_unit_op_name="Buffer Mix",
+                )
+            ],
         )
         proposal = build_proposal(parsed, ops, "test.pdf")
         assert proposal.matched_count == 1
@@ -99,11 +101,17 @@ class TestBuildProposal:
     def test_unmatched_step(self):
         parsed = ParsedProtocol(
             protocol_name="Test",
-            steps=[ImportedStep(
-                name="Custom Procedure",
-                category="General",
-                params=[ImportedParam(name="temp", type="number", unit="C", default=25.0)],
-            )],
+            steps=[
+                ImportedStep(
+                    name="Custom Procedure",
+                    category="General",
+                    params=[
+                        ImportedParam(
+                            name="temp", type="number", unit="C", default=25.0
+                        )
+                    ],
+                )
+            ],
         )
         proposal = build_proposal(parsed, [], "test.pdf")
         assert proposal.matched_count == 0
@@ -119,9 +127,13 @@ class TestBuildProposal:
         parsed = ParsedProtocol(
             protocol_name="Mixed Protocol",
             steps=[
-                ImportedStep(name="Centrifugation", matched_unit_op_name="Centrifugation"),
+                ImportedStep(
+                    name="Centrifugation", matched_unit_op_name="Centrifugation"
+                ),
                 ImportedStep(name="Novel Step", category="Custom"),
-                ImportedStep(name="Centrifugation Again", matched_unit_op_name="Centrifugation"),
+                ImportedStep(
+                    name="Centrifugation Again", matched_unit_op_name="Centrifugation"
+                ),
             ],
         )
         proposal = build_proposal(parsed, ops, "test.pdf")
@@ -147,7 +159,9 @@ class TestBuildProposal:
             protocol_description="A test protocol",
             steps=[],
         )
-        proposal = build_proposal(parsed, [], "my_sop.pdf", source_text="Hello world " * 100)
+        proposal = build_proposal(
+            parsed, [], "my_sop.pdf", source_text="Hello world " * 100
+        )
         assert proposal.source_filename == "my_sop.pdf"
         assert len(proposal.source_text_preview) <= 500
         assert proposal.protocol_name == "Test"
@@ -327,12 +341,14 @@ class TestBuildImportGraph:
         assert lanes[1]["position"]["y"] == 220
 
     def test_node_data_fields(self):
-        steps = [self._make_step_proposal(
-            "Centrifuge",
-            category="Separation",
-            duration_min=45,
-            unit_op_id=str(uuid.uuid4()),
-        )]
+        steps = [
+            self._make_step_proposal(
+                "Centrifuge",
+                category="Separation",
+                duration_min=45,
+                unit_op_id=str(uuid.uuid4()),
+            )
+        ]
         graph = build_import_graph(steps, uuid.uuid4(), "test.pdf")
         node = [n for n in graph["nodes"] if n["type"] == "unitOp"][0]
         assert node["data"]["label"] == "Centrifuge"

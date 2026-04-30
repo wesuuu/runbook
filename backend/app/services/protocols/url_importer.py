@@ -38,6 +38,7 @@ def is_private_ip(hostname: str) -> bool:
     except ValueError:
         # Not an IP literal — could be a domain. We'll resolve it.
         import socket
+
         try:
             infos = socket.getaddrinfo(hostname, None)
             for info in infos:
@@ -119,9 +120,7 @@ async def import_from_url(
     # Check robots.txt
     allowed = await check_robots_txt(str(url))
     if not allowed:
-        raise ValueError(
-            "This URL is disallowed by the site's robots.txt"
-        )
+        raise ValueError("This URL is disallowed by the site's robots.txt")
 
     # Fetch the URL
     async with httpx.AsyncClient(
@@ -149,9 +148,11 @@ async def import_from_url(
 
     # Determine title
     if not title:
-        title = _extract_title_from_html(resp.text) or parsed.path.split(
-            "/"
-        )[-1] or "Imported document"
+        title = (
+            _extract_title_from_html(resp.text)
+            or parsed.path.split("/")[-1]
+            or "Imported document"
+        )
 
     # Store as .md file via FileStorageService (org-scoped path)
     from io import BytesIO

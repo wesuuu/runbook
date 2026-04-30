@@ -5,24 +5,17 @@ org member removal with archived soft-delete, selected_org_id cascade,
 and seed script org membership.
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
-from app.models.iam import (
-    Invitation,
-    Organization,
-    OrganizationMember,
-    Team,
-    TeamMember,
-    User,
-)
-
+from app.models.iam import (Invitation, Organization, OrganizationMember, Team,
+                            TeamMember, User)
 
 # ---------- Fixtures ----------
 
@@ -31,6 +24,7 @@ from app.models.iam import (
 def _invitation_import():
     """Verify the Invitation model is importable."""
     from app.models.iam import Invitation
+
     return Invitation
 
 
@@ -54,11 +48,13 @@ class TestSwitchOrg:
         org2 = Organization(name="Second Org")
         db_session.add(org2)
         await db_session.flush()
-        db_session.add(OrganizationMember(
-            user_id=test_user.id,
-            organization_id=org2.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=test_user.id,
+                organization_id=org2.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         resp = await client.post(
@@ -106,11 +102,13 @@ class TestSwitchOrg:
         org2 = Organization(name="Pro Org", subscription_tier="pro")
         db_session.add(org2)
         await db_session.flush()
-        db_session.add(OrganizationMember(
-            user_id=test_user.id,
-            organization_id=org2.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=test_user.id,
+                organization_id=org2.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         resp = await client.post(
@@ -140,12 +138,14 @@ class TestSwitchOrg:
         org2 = Organization(name="Archived Org")
         db_session.add(org2)
         await db_session.flush()
-        db_session.add(OrganizationMember(
-            user_id=test_user.id,
-            organization_id=org2.id,
-            role="MEMBER",
-            archived=True,
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=test_user.id,
+                organization_id=org2.id,
+                role="MEMBER",
+                archived=True,
+            )
+        )
         await db_session.flush()
 
         resp = await client.post(
@@ -215,11 +215,13 @@ class TestInvitationCreate:
     ):
         """Inviting someone already a member returns 409."""
         # Add second_user to test_org
-        db_session.add(OrganizationMember(
-            user_id=second_user.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=second_user.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         resp = await client.post(
@@ -238,11 +240,13 @@ class TestInvitationCreate:
         db_session: AsyncSession,
     ):
         """Non-admin cannot create invitations."""
-        db_session.add(OrganizationMember(
-            user_id=second_user.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=second_user.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         token = create_access_token(
@@ -634,11 +638,13 @@ class TestDeclineInvitation:
         other_org = Organization(name="Intruder Org")
         db_session.add(other_org)
         await db_session.flush()
-        db_session.add(OrganizationMember(
-            user_id=other.id,
-            organization_id=other_org.id,
-            role="ADMIN",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=other.id,
+                organization_id=other_org.id,
+                role="ADMIN",
+            )
+        )
         await db_session.flush()
 
         token = create_access_token(other.id, org_id=other_org.id)
@@ -665,11 +671,13 @@ class TestRemoveOrgMember:
         db_session: AsyncSession,
     ):
         """Removing a member sets archived=True instead of deleting."""
-        db_session.add(OrganizationMember(
-            user_id=second_user.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=second_user.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         resp = await client.delete(
@@ -714,17 +722,21 @@ class TestRemoveOrgMember:
         await db_session.flush()
 
         # Membership in test_org (will be removed)
-        db_session.add(OrganizationMember(
-            user_id=user.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=user.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+            )
+        )
         # Membership in org2 (fallback)
-        db_session.add(OrganizationMember(
-            user_id=user.id,
-            organization_id=org2.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=user.id,
+                organization_id=org2.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         resp = await client.delete(
@@ -755,11 +767,13 @@ class TestRemoveOrgMember:
         db_session.add(user)
         await db_session.flush()
 
-        db_session.add(OrganizationMember(
-            user_id=user.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=user.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         resp = await client.delete(
@@ -781,11 +795,13 @@ class TestRemoveOrgMember:
         db_session: AsyncSession,
     ):
         """Archived members should not appear in GET /members."""
-        db_session.add(OrganizationMember(
-            user_id=second_user.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=second_user.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         # Remove (archive) the member
@@ -812,16 +828,20 @@ class TestRemoveOrgMember:
         db_session: AsyncSession,
     ):
         """Team memberships remain after org removal (for reinstatement)."""
-        db_session.add(OrganizationMember(
-            user_id=second_user.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-        ))
-        db_session.add(TeamMember(
-            user_id=second_user.id,
-            team_id=test_team.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=second_user.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+            )
+        )
+        db_session.add(
+            TeamMember(
+                user_id=second_user.id,
+                team_id=test_team.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         await client.delete(
@@ -854,12 +874,14 @@ class TestAddOrgMember:
         db_session: AsyncSession,
     ):
         """Re-adding an archived member reactivates them."""
-        db_session.add(OrganizationMember(
-            user_id=second_user.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-            archived=True,
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=second_user.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+                archived=True,
+            )
+        )
         await db_session.flush()
 
         resp = await client.post(
@@ -959,12 +981,14 @@ class TestArchivedFiltering:
         db_session.add(user)
         await db_session.flush()
 
-        db_session.add(OrganizationMember(
-            user_id=user.id,
-            organization_id=org.id,
-            role="ADMIN",
-            archived=True,
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=user.id,
+                organization_id=org.id,
+                role="ADMIN",
+                archived=True,
+            )
+        )
         await db_session.flush()
 
         token = create_access_token(user.id, org_id=org.id)
@@ -986,17 +1010,10 @@ class TestSeedOrgMembership:
     @pytest.mark.asyncio
     async def test_seed_users_have_selected_org(self):
         """Verify the seed script sets selected_org_id for all users."""
-        from app.db.seed import (
-            USER_ADMIN,
-            USER_UPSTREAM_LEAD,
-            USER_DOWNSTREAM_LEAD,
-            USER_SCIENTIST1,
-            USER_SCIENTIST2,
-            USER_VIEWER,
-            ORG_ID,
-            seed_users,
-            seed_org,
-        )
+        from app.db.seed import (ORG_ID, USER_ADMIN, USER_DOWNSTREAM_LEAD,
+                                 USER_SCIENTIST1, USER_SCIENTIST2,
+                                 USER_UPSTREAM_LEAD, USER_VIEWER, seed_org,
+                                 seed_users)
         from app.db.session import AsyncSessionLocal
 
         async with AsyncSessionLocal() as db:
@@ -1012,14 +1029,12 @@ class TestSeedOrgMembership:
                 USER_SCIENTIST2,
                 USER_VIEWER,
             ]:
-                result = await db.execute(
-                    select(User).where(User.id == user_id)
-                )
+                result = await db.execute(select(User).where(User.id == user_id))
                 user = result.scalar_one_or_none()
                 if user is not None:
-                    assert user.selected_org_id is not None, (
-                        f"Seed user {user_id} has no selected_org_id"
-                    )
+                    assert (
+                        user.selected_org_id is not None
+                    ), f"Seed user {user_id} has no selected_org_id"
 
 
 # ---------- Registration (Existing AC #1 — verify still works) ----------

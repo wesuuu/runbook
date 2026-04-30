@@ -46,13 +46,9 @@ class DiscordChannel(BaseChannel):
             if resp.status_code >= 500:
                 raise TransientError(f"Discord {resp.status_code}")
             if resp.status_code in (401, 403, 404):
-                raise PermanentError(
-                    f"Discord {resp.status_code}: invalid webhook"
-                )
+                raise PermanentError(f"Discord {resp.status_code}: invalid webhook")
             if resp.status_code >= 400:
-                raise PermanentError(
-                    f"Discord {resp.status_code}: {resp.text[:200]}"
-                )
+                raise PermanentError(f"Discord {resp.status_code}: {resp.text[:200]}")
 
             return f"{resp.status_code} OK"
 

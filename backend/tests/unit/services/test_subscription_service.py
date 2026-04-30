@@ -18,12 +18,8 @@ def reset_stripe_cache():
 def fake_stripe(monkeypatch):
     fake = MagicMock()
     fake.Customer.create.return_value = MagicMock(id="cus_test_123")
-    trial_end_ts = int(
-        datetime(2026, 5, 23, tzinfo=timezone.utc).timestamp()
-    )
-    period_end_ts = int(
-        datetime(2026, 6, 23, tzinfo=timezone.utc).timestamp()
-    )
+    trial_end_ts = int(datetime(2026, 5, 23, tzinfo=timezone.utc).timestamp())
+    period_end_ts = int(datetime(2026, 6, 23, tzinfo=timezone.utc).timestamp())
     fake.Subscription.create.return_value = MagicMock(
         id="sub_test_456",
         status="trialing",
@@ -71,9 +67,7 @@ async def test_create_trial_subscription_creates_customer_and_subscription(
     db_session.add(user)
     await db_session.flush()
 
-    result = await subscription_service.create_trial_subscription(
-        db_session, org, user
-    )
+    result = await subscription_service.create_trial_subscription(db_session, org, user)
 
     assert result.stripe_customer_id == "cus_test_123"
     assert result.stripe_subscription_id == "sub_test_456"
@@ -93,20 +87,14 @@ async def test_create_trial_subscription_creates_customer_and_subscription(
     assert sub_kwargs["items"] == [{"price": "price_ess"}]
     assert sub_kwargs["trial_period_days"] == 30
     assert (
-        sub_kwargs["trial_settings"]["end_behavior"][
-            "missing_payment_method"
-        ]
+        sub_kwargs["trial_settings"]["end_behavior"]["missing_payment_method"]
         == "cancel"
     )
 
 
 @pytest.mark.asyncio
-async def test_create_trial_subscription_is_idempotent(
-    db_session, fake_stripe
-):
-    org = Organization(
-        name="Test Co", stripe_subscription_id="sub_existing_789"
-    )
+async def test_create_trial_subscription_is_idempotent(db_session, fake_stripe):
+    org = Organization(name="Test Co", stripe_subscription_id="sub_existing_789")
     db_session.add(org)
     await db_session.flush()
     user = User(
@@ -118,9 +106,7 @@ async def test_create_trial_subscription_is_idempotent(
     db_session.add(user)
     await db_session.flush()
 
-    result = await subscription_service.create_trial_subscription(
-        db_session, org, user
-    )
+    result = await subscription_service.create_trial_subscription(db_session, org, user)
 
     assert result.stripe_subscription_id == "sub_existing_789"
     fake_stripe.Customer.create.assert_not_called()
@@ -186,13 +172,12 @@ async def test_create_portal_session_raises_when_no_customer(db_session):
     await db_session.flush()
 
     with pytest.raises(ValueError, match="no Stripe customer"):
-        await subscription_service.create_portal_session(
-            org, return_url="https://x"
-        )
+        await subscription_service.create_portal_session(org, return_url="https://x")
 
 
 def test_get_subscription_state_pro_trialing_with_card():
     from datetime import timedelta
+
     now = datetime.now(timezone.utc)
     trial_end = now + timedelta(days=5)
     period_end = now + timedelta(days=5)
@@ -252,6 +237,7 @@ def test_get_subscription_state_past_due_is_locked_out():
 
 def test_get_subscription_state_active_not_trialing_no_days_remaining():
     from datetime import timedelta
+
     org = Organization(
         name="X",
         subscription_tier="pro",

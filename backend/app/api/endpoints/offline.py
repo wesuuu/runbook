@@ -84,6 +84,7 @@ async def create_offline_session(
         select(Run.project_id).where(Run.id == body.run_id)
     )
     from app.models.science import Project
+
     proj_result = await db.execute(
         select(Project.organization_id).where(Project.id == run_obj.project_id)
     )
@@ -121,7 +122,9 @@ async def prefetch_run_data(
     # Load run with role assignments
     result = await db.execute(
         select(Run)
-        .options(selectinload(Run.role_assignments).selectinload(RunRoleAssignment.user))
+        .options(
+            selectinload(Run.role_assignments).selectinload(RunRoleAssignment.user)
+        )
         .where(Run.id == run_id)
     )
     run = result.scalar_one_or_none()
@@ -156,9 +159,7 @@ async def prefetch_run_data(
 
     if unit_op_ids:
         defs_result = await db.execute(
-            select(UnitOpDefinition).where(
-                UnitOpDefinition.id.in_(unit_op_ids)
-            )
+            select(UnitOpDefinition).where(UnitOpDefinition.id.in_(unit_op_ids))
         )
         for uod in defs_result.scalars():
             unit_op_defs[str(uod.id)] = {
@@ -170,7 +171,9 @@ async def prefetch_run_data(
     return RunPrefetchResponse(
         run_id=run.id,
         run_name=run.name,
-        run_status=run.status.value if hasattr(run.status, "value") else str(run.status),
+        run_status=(
+            run.status.value if hasattr(run.status, "value") else str(run.status)
+        ),
         graph=graph,
         execution_data=run.execution_data or {},
         role_assignments=assignments,

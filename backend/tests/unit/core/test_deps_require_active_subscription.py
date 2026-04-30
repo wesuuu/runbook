@@ -27,9 +27,7 @@ async def test_trialing_status_passes(db_session, test_org, test_user):
 
 
 @pytest.mark.asyncio
-async def test_null_status_passes_for_pre_billing_orgs(
-    db_session, test_org, test_user
-):
+async def test_null_status_passes_for_pre_billing_orgs(db_session, test_org, test_user):
     test_org.subscription_status = None
     await db_session.flush()
     test_user.selected_org_id = test_org.id

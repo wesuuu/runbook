@@ -11,7 +11,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.deps import get_current_user, get_or_404, require_active_subscription
+from app.core.deps import (get_current_user, get_or_404,
+                           require_active_subscription)
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import Experiment, Protocol, Run
@@ -54,8 +55,11 @@ async def create_experiment(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        exp_in.project_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp_in.project_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
@@ -69,15 +73,20 @@ async def create_experiment(
     await db.flush()
 
     await log_audit(
-        db, actor_id=user.id, action="CREATE",
-        entity_type="Experiment", entity_id=experiment.id,
+        db,
+        actor_id=user.id,
+        action="CREATE",
+        entity_type="Experiment",
+        entity_id=experiment.id,
         changes={"name": exp_in.name},
     )
     await db.commit()
     await db.refresh(experiment)
 
     return ExperimentResponse(
-        **_experiment_dict(experiment), runs=[], run_count=0,
+        **_experiment_dict(experiment),
+        runs=[],
+        run_count=0,
     )
 
 
@@ -88,8 +97,11 @@ async def list_experiments(
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        project_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        project_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
@@ -105,7 +117,9 @@ async def list_experiments(
 
     return [
         ExperimentResponse(
-            **_experiment_dict(exp), runs=[], run_count=cnt,
+            **_experiment_dict(exp),
+            runs=[],
+            run_count=cnt,
         )
         for exp, cnt in rows
     ]
@@ -120,15 +134,16 @@ async def get_experiment(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        exp.project_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
 
-    run_result = await db.execute(
-        select(Run).where(Run.experiment_id == experiment_id)
-    )
+    run_result = await db.execute(select(Run).where(Run.experiment_id == experiment_id))
     runs = list(run_result.scalars().all())
 
     return ExperimentResponse(
@@ -149,8 +164,11 @@ async def update_experiment(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        exp.project_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
@@ -168,8 +186,11 @@ async def update_experiment(
 
     if changes:
         await log_audit(
-            db, actor_id=user.id, action="UPDATE",
-            entity_type="Experiment", entity_id=exp.id,
+            db,
+            actor_id=user.id,
+            action="UPDATE",
+            entity_type="Experiment",
+            entity_id=exp.id,
             changes=changes,
         )
 
@@ -183,7 +204,9 @@ async def update_experiment(
     run_count = count_result.scalar() or 0
 
     return ExperimentResponse(
-        **_experiment_dict(exp), runs=[], run_count=run_count,
+        **_experiment_dict(exp),
+        runs=[],
+        run_count=run_count,
     )
 
 
@@ -197,8 +220,11 @@ async def archive_experiment(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        exp.project_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
@@ -213,8 +239,11 @@ async def archive_experiment(
     )
 
     await log_audit(
-        db, actor_id=user.id, action="ARCHIVE",
-        entity_type="Experiment", entity_id=exp.id,
+        db,
+        actor_id=user.id,
+        action="ARCHIVE",
+        entity_type="Experiment",
+        entity_id=exp.id,
         changes={"status": "ARCHIVED"},
     )
     await db.commit()
@@ -226,6 +255,7 @@ async def archive_experiment(
 
 class _ExperimentRunBody(PydanticBaseModel):
     """Either link an existing run (run_id) or create a new one (name + protocol_id)."""
+
     run_id: Optional[UUID] = None
     name: Optional[str] = None
     project_id: Optional[UUID] = None
@@ -243,8 +273,11 @@ async def add_run_to_experiment(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        exp.project_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
@@ -255,14 +288,15 @@ async def add_run_to_experiment(
         if run.project_id != exp.project_id:
             raise HTTPException(400, "Run must be in the same project")
         if run.experiment_id is not None:
-            raise HTTPException(
-                409, "Run already belongs to another experiment"
-            )
+            raise HTTPException(409, "Run already belongs to another experiment")
         run.experiment_id = experiment_id
 
         await log_audit(
-            db, actor_id=user.id, action="UPDATE",
-            entity_type="Run", entity_id=run.id,
+            db,
+            actor_id=user.id,
+            action="UPDATE",
+            entity_type="Run",
+            entity_id=run.id,
             changes={"experiment_id": str(experiment_id)},
         )
         await db.commit()
@@ -290,8 +324,11 @@ async def add_run_to_experiment(
         await db.flush()
 
         await log_audit(
-            db, actor_id=user.id, action="CREATE",
-            entity_type="Run", entity_id=run.id,
+            db,
+            actor_id=user.id,
+            action="CREATE",
+            entity_type="Run",
+            entity_id=run.id,
             changes={
                 "name": body.name,
                 "experiment_id": str(experiment_id),
@@ -313,8 +350,11 @@ async def unlink_run_from_experiment(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        exp.project_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
@@ -326,8 +366,11 @@ async def unlink_run_from_experiment(
     run.experiment_id = None
 
     await log_audit(
-        db, actor_id=user.id, action="UPDATE",
-        entity_type="Run", entity_id=run.id,
+        db,
+        actor_id=user.id,
+        action="UPDATE",
+        entity_type="Run",
+        entity_id=run.id,
         changes={"experiment_id": None},
     )
     await db.commit()
@@ -352,8 +395,11 @@ async def add_experiment_note(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        exp.project_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
@@ -373,8 +419,11 @@ async def add_experiment_note(
     flag_modified(exp, "notes")
 
     await log_audit(
-        db, actor_id=user.id, action="NOTE_ADDED",
-        entity_type="Experiment", entity_id=exp.id,
+        db,
+        actor_id=user.id,
+        action="NOTE_ADDED",
+        entity_type="Experiment",
+        entity_id=exp.id,
         changes={"note_id": note["id"]},
     )
     await db.commit()
@@ -393,8 +442,11 @@ async def list_experiment_notes(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        exp.project_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")

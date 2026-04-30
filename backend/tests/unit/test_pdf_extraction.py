@@ -36,9 +36,11 @@ class TestExtractPdfPages:
     def test_returns_page_data_list(self):
         from app.services.documents.document_processor import extract_pdf_pages
 
-        path = self._create_test_pdf([
-            [("Hello World", 72, 72, 12)],
-        ])
+        path = self._create_test_pdf(
+            [
+                [("Hello World", 72, 72, 12)],
+            ]
+        )
         try:
             pages = extract_pdf_pages(path)
             assert len(pages) == 1
@@ -51,11 +53,13 @@ class TestExtractPdfPages:
     def test_multi_page_extraction(self):
         from app.services.documents.document_processor import extract_pdf_pages
 
-        path = self._create_test_pdf([
-            [("Page One Content", 72, 72, 12)],
-            [("Page Two Content", 72, 72, 12)],
-            [("Page Three Content", 72, 72, 12)],
-        ])
+        path = self._create_test_pdf(
+            [
+                [("Page One Content", 72, 72, 12)],
+                [("Page Two Content", 72, 72, 12)],
+                [("Page Three Content", 72, 72, 12)],
+            ]
+        )
         try:
             pages = extract_pdf_pages(path)
             assert len(pages) == 3
@@ -72,10 +76,12 @@ class TestExtractPdfPages:
         """Each page's text should only contain that page's content."""
         from app.services.documents.document_processor import extract_pdf_pages
 
-        path = self._create_test_pdf([
-            [("ALPHA content", 72, 72, 12)],
-            [("BETA content", 72, 72, 12)],
-        ])
+        path = self._create_test_pdf(
+            [
+                [("ALPHA content", 72, 72, 12)],
+                [("BETA content", 72, 72, 12)],
+            ]
+        )
         try:
             pages = extract_pdf_pages(path)
             # Page 1 should NOT contain page 2's text
@@ -125,7 +131,11 @@ class TestExtractPdfPages:
 
             def _chunk(ctype, data):
                 c = ctype + data
-                return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+                return (
+                    struct.pack(">I", len(data))
+                    + c
+                    + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+                )
 
             return (
                 b"\x89PNG\r\n\x1a\n"
@@ -154,12 +164,14 @@ class TestExtractPdfPages:
         """Plain pymupdf extraction preserves all text content."""
         from app.services.documents.document_processor import extract_pdf_pages
 
-        path = self._create_test_pdf([
+        path = self._create_test_pdf(
             [
-                ("Title Text", 72, 72, 24),
-                ("Body paragraph with details.", 72, 120, 12),
-            ],
-        ])
+                [
+                    ("Title Text", 72, 72, 24),
+                    ("Body paragraph with details.", 72, 120, 12),
+                ],
+            ]
+        )
         try:
             pages = extract_pdf_pages(path)
             assert len(pages) == 1

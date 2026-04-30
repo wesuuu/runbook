@@ -9,7 +9,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404, require_active_subscription
+from app.core.deps import (get_current_user, get_or_404,
+                           require_active_subscription)
 from app.db.session import get_db
 from app.models.batch_record_import import (BatchRecordImport,
                                             BatchRecordImportStatus)
@@ -63,7 +64,11 @@ async def upload_batch_record(
     """Upload a paper batch record and start AI extraction."""
     # Permission: EDIT on project
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT, project_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        project_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(403, "Insufficient permissions on project")
@@ -73,17 +78,13 @@ async def upload_batch_record(
     if not protocol:
         raise HTTPException(404, "Protocol not found")
     if protocol.status == "ARCHIVED":
-        raise HTTPException(
-            422, "Cannot import against an archived protocol"
-        )
+        raise HTTPException(422, "Cannot import against an archived protocol")
     # Protocol must be scoped to this project or the user's org
     if (
         protocol.project_id != project_id
         and protocol.organization_id != user.selected_org_id
     ):
-        raise HTTPException(
-            403, "Protocol is not accessible from this project"
-        )
+        raise HTTPException(403, "Protocol is not accessible from this project")
 
     # Store file
     storage = FileStorageService()
@@ -166,7 +167,9 @@ async def get_batch_record_import(
     if import_row.status == BatchRecordImportStatus.EXTRACTING.value:
         # Return progress from background job
         response.progress = await BackgroundJobService.get_progress(
-            db, "batch_record_import", import_row.id,
+            db,
+            "batch_record_import",
+            import_row.id,
         )
 
     elif import_row.status == BatchRecordImportStatus.REVIEW.value:
@@ -262,30 +265,17 @@ async def finalize_batch_record_import(
             "import_id": str(import_row.id),
             "source_document": import_row.original_filename,
             "protocol_id": str(request.protocol_id),
-            "overall_confidence": extraction_result.get(
-                "overall_confidence"
-            ),
+            "overall_confidence": extraction_result.get("overall_confidence"),
             "values_accepted": sum(
-                1
-                for m in request.step_mappings
-                for v in m.values
-                if v.accepted
+                1 for m in request.step_mappings for v in m.values if v.accepted
             ),
             "values_rejected": sum(
-                1
-                for m in request.step_mappings
-                for v in m.values
-                if not v.accepted
+                1 for m in request.step_mappings for v in m.values if not v.accepted
             ),
             "values_edited": sum(
-                1
-                for m in request.step_mappings
-                for v in m.values
-                if v.edited
+                1 for m in request.step_mappings for v in m.values if v.edited
             ),
-            "steps_na": sum(
-                1 for m in request.step_mappings if m.na
-            ),
+            "steps_na": sum(1 for m in request.step_mappings if m.na),
         },
     )
 

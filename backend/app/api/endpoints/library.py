@@ -45,13 +45,15 @@ async def _can_delete_document(
 ) -> bool:
     """Check if user has EDIT permission on a document (required for delete)."""
     return await check_permission(
-        db, user_id, ObjectType.DOCUMENT, document_id, PermissionLevel.EDIT,
+        db,
+        user_id,
+        ObjectType.DOCUMENT,
+        document_id,
+        PermissionLevel.EDIT,
     )
 
 
-async def _get_user_org_id(
-    user: User, db: AsyncSession
-) -> uuid.UUID:
+async def _get_user_org_id(user: User, db: AsyncSession) -> uuid.UUID:
     """Resolve the user's organization ID from their membership."""
     result = await db.execute(
         select(OrganizationMember.organization_id)
@@ -80,9 +82,7 @@ def _sanitize_filename(filename: str) -> str:
     return clean or "unnamed"
 
 
-def _validate_extension_matches_mime(
-    filename: str, mime_type: str
-) -> bool:
+def _validate_extension_matches_mime(filename: str, mime_type: str) -> bool:
     """Validate that the file extension matches the claimed MIME type."""
     ext = os.path.splitext(filename)[1].lower()
     if not ext:
@@ -188,20 +188,20 @@ async def upload_document(
     await db.flush()
 
     # Auto-grant uploader ADMIN permission on the document
-    db.add(ObjectPermission(
-        principal_type=PrincipalType.USER.value,
-        principal_id=current_user.id,
-        object_type=ObjectType.DOCUMENT.value,
-        object_id=doc.id,
-        permission_level=PermissionLevel.ADMIN.value,
-    ))
+    db.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER.value,
+            principal_id=current_user.id,
+            object_type=ObjectType.DOCUMENT.value,
+            object_id=doc.id,
+            permission_level=PermissionLevel.ADMIN.value,
+        )
+    )
     await db.commit()
     await db.refresh(doc)
 
     # Trigger background processing via task runner
-    get_task_runner().submit(
-        build_book(doc.id, settings.database_url)
-    )
+    get_task_runner().submit(build_book(doc.id, settings.database_url))
 
     resp = DocumentResponse.model_validate(doc)
     resp.can_delete = True  # Uploader always has ADMIN
@@ -227,9 +227,7 @@ async def list_documents(
         query = query.where(Document.status == status)
 
     # Count total
-    count_query = select(func.count()).select_from(
-        query.subquery()
-    )
+    count_query = select(func.count()).select_from(query.subquery())
     count_result = await db.execute(count_query)
     total = count_result.scalar_one()
 
@@ -243,9 +241,7 @@ async def list_documents(
     items = []
     for doc in documents:
         resp = DocumentResponse.model_validate(doc)
-        resp.can_delete = await _can_delete_document(
-            db, current_user.id, doc.id
-        )
+        resp.can_delete = await _can_delete_document(db, current_user.id, doc.id)
         items.append(resp)
 
     return DocumentListResponse(items=items, total=total)
@@ -264,9 +260,7 @@ async def get_document(
 
     # Load document without eagerly loading all chunks
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -291,7 +285,9 @@ async def get_document(
     chunks_preview = list(preview_result.scalars().all())
 
     can_delete = await _can_delete_document(
-        db, current_user.id, document_id,
+        db,
+        current_user.id,
+        document_id,
     )
 
     # Fetch latest running job's progress (if any)
@@ -301,7 +297,9 @@ async def get_document(
         DocumentStatus.INDEXED.value,
     ):
         progress = await BackgroundJobService.get_progress(
-            db, "document", document_id,
+            db,
+            "document",
+            document_id,
         )
 
     # Build TOC from structure_metadata if available
@@ -352,9 +350,7 @@ async def get_document_chunks(
 
     # Verify document exists and belongs to user's org
     doc_result = await db.execute(
-        select(Document.id).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document.id).where(Document.id == document_id, Document.org_id == org_id)
     )
     if doc_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -383,17 +379,13 @@ async def _get_user_for_download(
     if payload is None and token:
         payload = decode_access_token(token)
     if payload is None:
-        raise HTTPException(
-            status_code=401, detail="Not authenticated"
-        )
+        raise HTTPException(status_code=401, detail="Not authenticated")
     result = await db.execute(
         select(User).where(User.id == payload.user_id, User.is_active == True)
     )
     user = result.scalar_one_or_none()
     if user is None:
-        raise HTTPException(
-            status_code=401, detail="Not authenticated"
-        )
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 
 
@@ -408,9 +400,7 @@ async def download_document(
     org_id = await _get_user_org_id(current_user, db)
 
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -427,8 +417,11 @@ async def download_document(
 
     # Inline for PDFs and images (browser rendering), attachment for others
     inline_types = {
-        "application/pdf", "image/jpeg", "image/png",
-        "image/webp", "image/tiff",
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/tiff",
     }
     disposition = "inline" if doc.mime_type in inline_types else "attachment"
 
@@ -450,9 +443,7 @@ async def delete_document(
     org_id = await _get_user_org_id(current_user, db)
 
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -460,14 +451,14 @@ async def delete_document(
 
     # Permission check: require EDIT on the document
     allowed = await check_permission(
-        db, current_user.id,
-        ObjectType.DOCUMENT, document_id,
+        db,
+        current_user.id,
+        ObjectType.DOCUMENT,
+        document_id,
         PermissionLevel.EDIT,
     )
     if not allowed:
-        raise HTTPException(
-            status_code=403, detail="Insufficient permissions"
-        )
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     # Audit log before deletion
     await log_audit(
@@ -507,17 +498,13 @@ async def retry_processing(
     org_id = await _get_user_org_id(current_user, db)
 
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if doc.status in (
-        DocumentStatus.PROCESSING.value,
-    ):
+    if doc.status in (DocumentStatus.PROCESSING.value,):
         raise HTTPException(
             status_code=409,
             detail="Document is currently processing",
@@ -531,9 +518,7 @@ async def retry_processing(
     await db.refresh(doc)
 
     # Re-trigger processing via task runner
-    get_task_runner().submit(
-        build_book(doc.id, settings.database_url)
-    )
+    get_task_runner().submit(build_book(doc.id, settings.database_url))
 
     return doc
 
@@ -557,9 +542,7 @@ async def enrich_document_endpoint(
     org_id = await _get_user_org_id(current_user, db)
 
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -580,9 +563,7 @@ async def enrich_document_endpoint(
             detail="Document must be indexed before enrichment",
         )
 
-    get_task_runner().submit(
-        enrich_document(doc.id, settings.database_url)
-    )
+    get_task_runner().submit(enrich_document(doc.id, settings.database_url))
 
     return doc
 
@@ -613,7 +594,9 @@ async def search_documents(
         raw = await embed_query(q, db)
         query_embedding = _pad_embedding(raw)
     except Exception:
-        logger.warning("Embedding search failed, falling back to keyword-only", exc_info=True)
+        logger.warning(
+            "Embedding search failed, falling back to keyword-only", exc_info=True
+        )
 
     # Determine search mode and build query
     # We fetch extra rows (limit * 3) to have enough for grouping
@@ -622,12 +605,14 @@ async def search_documents(
     if query_embedding is not None:
         # Check if any chunks have embeddings
         has_embeddings = await db.execute(
-            sa_text("""
+            sa_text(
+                """
                 SELECT 1 FROM document_chunks dc
                 JOIN documents d ON d.id = dc.document_id
                 WHERE d.org_id = :org_id AND dc.embedding IS NOT NULL
                 LIMIT 1
-            """),
+            """
+            ),
             {"org_id": str(org_id)},
         )
 
@@ -635,7 +620,8 @@ async def search_documents(
             # Hybrid: vector + keyword
             search_mode = "hybrid"
             result = await db.execute(
-                sa_text("""
+                sa_text(
+                    """
                     SELECT
                         dc.id AS chunk_id,
                         dc.document_id,
@@ -674,7 +660,8 @@ async def search_documents(
                         END
                     ) DESC
                     LIMIT :limit
-                """),
+                """
+                ),
                 {
                     "query_vec": str(query_embedding),
                     "query": q,
@@ -685,9 +672,7 @@ async def search_documents(
         else:
             # Have embedding but no chunks are embedded yet — keyword only
             search_mode = "keyword"
-            result = await _keyword_search(
-                db, q, org_id, fetch_limit
-            )
+            result = await _keyword_search(db, q, org_id, fetch_limit)
     else:
         # No embedding available — keyword only
         search_mode = "keyword"
@@ -701,9 +686,7 @@ async def search_documents(
         doc_id = str(row.document_id)
 
         if search_mode == "hybrid":
-            score = round(
-                0.7 * row.vector_score + 0.3 * row.keyword_score, 4
-            )
+            score = round(0.7 * row.vector_score + 0.3 * row.keyword_score, 4)
             highlighted = row.highlighted
         else:
             score = round(float(row.keyword_score), 4)
@@ -735,9 +718,9 @@ async def search_documents(
                 groups[doc_id].best_chunk = item
 
     # Sort groups by best score and take top N
-    sorted_groups = sorted(
-        groups.values(), key=lambda g: g.best_score, reverse=True
-    )[:limit]
+    sorted_groups = sorted(groups.values(), key=lambda g: g.best_score, reverse=True)[
+        :limit
+    ]
 
     return SearchResponse(
         query=q,
@@ -752,7 +735,8 @@ async def _keyword_search(db, query, org_id, limit):
     from sqlalchemy import text as sa_text
 
     return await db.execute(
-        sa_text("""
+        sa_text(
+            """
             SELECT
                 dc.id AS chunk_id,
                 dc.document_id,
@@ -773,7 +757,8 @@ async def _keyword_search(db, query, org_id, limit):
               AND dc.search_vector @@ plainto_tsquery('english', :query)
             ORDER BY ts_rank(dc.search_vector, plainto_tsquery('english', :query)) DESC
             LIMIT :limit
-        """),
+        """
+        ),
         {
             "query": query,
             "org_id": str(org_id),
@@ -876,8 +861,6 @@ async def import_document_from_url(
     await db.refresh(doc)
 
     # Trigger background processing via task runner
-    get_task_runner().submit(
-        build_book(doc.id, settings.database_url)
-    )
+    get_task_runner().submit(build_book(doc.id, settings.database_url))
 
     return doc

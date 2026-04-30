@@ -136,12 +136,16 @@ async def _handle_image_upload(
     """Save a base64-encoded image to disk and create RunImage record."""
     if not action.image_data:
         return SyncActionResult(
-            index=index, action_type="image_upload", success=False,
+            index=index,
+            action_type="image_upload",
+            success=False,
             error="Missing image_data",
         )
     if not action.step_id:
         return SyncActionResult(
-            index=index, action_type="image_upload", success=False,
+            index=index,
+            action_type="image_upload",
+            success=False,
             error="Missing step_id",
         )
 
@@ -150,7 +154,9 @@ async def _handle_image_upload(
         image_bytes = base64.b64decode(action.image_data)
     except Exception:
         return SyncActionResult(
-            index=index, action_type="image_upload", success=False,
+            index=index,
+            action_type="image_upload",
+            success=False,
             error="Invalid base64 image data",
         )
 
@@ -158,9 +164,7 @@ async def _handle_image_upload(
     from app.models.science import Project
 
     proj_result = await db.execute(
-        select(Project.organization_id).where(
-            Project.id == run.project_id
-        )
+        select(Project.organization_id).where(Project.id == run.project_id)
     )
     org_id = proj_result.scalar_one()
 
@@ -204,7 +208,9 @@ async def _handle_image_upload(
     await db.flush()
 
     return SyncActionResult(
-        index=index, action_type="image_upload", success=True,
+        index=index,
+        action_type="image_upload",
+        success=True,
         image_id=image.id,
     )
 
@@ -217,17 +223,19 @@ async def _handle_parameter_tag(
     """Update parameter tags on an existing image."""
     if not action.image_id:
         return SyncActionResult(
-            index=index, action_type="parameter_tag", success=False,
+            index=index,
+            action_type="parameter_tag",
+            success=False,
             error="Missing image_id",
         )
 
-    result = await db.execute(
-        select(RunImage).where(RunImage.id == action.image_id)
-    )
+    result = await db.execute(select(RunImage).where(RunImage.id == action.image_id))
     image = result.scalar_one_or_none()
     if image is None:
         return SyncActionResult(
-            index=index, action_type="parameter_tag", success=False,
+            index=index,
+            action_type="parameter_tag",
+            success=False,
             error="Image not found",
         )
 
@@ -235,7 +243,9 @@ async def _handle_parameter_tag(
     await db.flush()
 
     return SyncActionResult(
-        index=index, action_type="parameter_tag", success=True,
+        index=index,
+        action_type="parameter_tag",
+        success=True,
         image_id=image.id,
     )
 
@@ -250,7 +260,9 @@ async def _handle_manual_values(
     """Store manual values for a step. Flags discrepancies if AI values exist."""
     if not action.step_id or not action.values:
         return SyncActionResult(
-            index=index, action_type="manual_values", success=False,
+            index=index,
+            action_type="manual_values",
+            success=False,
             error="Missing step_id or values",
         )
 
@@ -268,11 +280,13 @@ async def _handle_manual_values(
         # Check against existing AI-confirmed values
         ai_val = existing_results.get(key)
         if ai_val is not None and not values_match(manual_val, ai_val):
-            discrepancies.append({
-                "field": key,
-                "manual": manual_val,
-                "ai": ai_val,
-            })
+            discrepancies.append(
+                {
+                    "field": key,
+                    "manual": manual_val,
+                    "ai": ai_val,
+                }
+            )
 
     step_data["manual_results"] = manual_results
     step_data["offline_sync_user_id"] = str(user.id)
@@ -286,5 +300,7 @@ async def _handle_manual_values(
     await db.flush()
 
     return SyncActionResult(
-        index=index, action_type="manual_values", success=True,
+        index=index,
+        action_type="manual_values",
+        success=True,
     )

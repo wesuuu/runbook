@@ -15,6 +15,7 @@ def test_get_stripe_returns_stripe_module_when_configured(monkeypatch):
     client = stripe_client.get_stripe()
 
     import stripe as real_stripe
+
     assert client is real_stripe
     assert real_stripe.api_key == "sk_test_fake"
 

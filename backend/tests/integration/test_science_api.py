@@ -3,23 +3,18 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    User,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            User)
 from app.models.science import Project, Protocol, Run
-
 
 # --- Unit Ops ---
 
+
 @pytest.mark.asyncio
 async def test_list_unit_ops_authenticated(
-    client: AsyncClient, auth_headers: dict,
+    client: AsyncClient,
+    auth_headers: dict,
 ):
     resp = await client.get("/science/unit-ops", headers=auth_headers)
     assert resp.status_code == 200
@@ -34,7 +29,8 @@ async def test_list_unit_ops_unauthenticated(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_create_unit_op(
-    client: AsyncClient, auth_headers: dict,
+    client: AsyncClient,
+    auth_headers: dict,
 ):
     resp = await client.post(
         "/science/unit-ops",
@@ -51,6 +47,7 @@ async def test_create_unit_op(
 
 
 # --- Protocols ---
+
 
 @pytest.mark.asyncio
 async def test_create_protocol(
@@ -170,18 +167,22 @@ async def test_update_protocol_view_only_forbidden(
     test_org: Organization,
 ):
     # Give second_user VIEW only on the project
-    db_session.add(OrganizationMember(
-        user_id=second_user.id,
-        organization_id=test_org.id,
-        role="MEMBER",
-    ))
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=second_user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=test_project.id,
-        permission_level=PermissionLevel.VIEW.value,
-    ))
+    db_session.add(
+        OrganizationMember(
+            user_id=second_user.id,
+            organization_id=test_org.id,
+            role="MEMBER",
+        )
+    )
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=second_user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=test_project.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
     await db_session.flush()
 
     protocol = Protocol(
@@ -225,6 +226,7 @@ async def test_list_protocols_for_project(
 
 
 # --- Protocol Roles ---
+
 
 @pytest.mark.asyncio
 async def test_list_protocol_roles(
@@ -342,6 +344,7 @@ async def test_delete_protocol_role(
 
 
 # --- Runs ---
+
 
 @pytest.mark.asyncio
 async def test_create_run(
@@ -478,6 +481,7 @@ async def test_list_runs_for_project(
 
 # --- Project Members ---
 
+
 @pytest.mark.asyncio
 async def test_get_project_members(
     client: AsyncClient,
@@ -514,6 +518,7 @@ async def test_get_project_members_no_perm(
 
 
 # --- Run Role Assignments ---
+
 
 @pytest.mark.asyncio
 async def test_create_role_assignment(
@@ -1001,6 +1006,7 @@ async def test_start_run_with_swimlanes_requires_all_assigned(
 
     # Assign only one role
     from app.models.science import RunRoleAssignment
+
     assignment = RunRoleAssignment(
         run_id=run_obj.id,
         lane_node_id="lane-role-1",
@@ -1039,6 +1045,7 @@ async def test_start_run_succeeds_with_one_assignment_no_swimlanes(
     await db_session.flush()
 
     from app.models.science import RunRoleAssignment
+
     assignment = RunRoleAssignment(
         run_id=run_obj.id,
         lane_node_id="general",
@@ -1090,6 +1097,7 @@ async def test_start_run_succeeds_with_all_swimlanes_assigned(
     await db_session.flush()
 
     from app.models.science import RunRoleAssignment
+
     assignment1 = RunRoleAssignment(
         run_id=run_obj.id,
         lane_node_id="lane-role-1",
@@ -1134,6 +1142,7 @@ async def test_started_by_id_set_on_active_transition(
     await db_session.flush()
 
     from app.models.science import RunRoleAssignment
+
     # Assign at least one person
     assignment = RunRoleAssignment(
         run_id=run_obj.id,
@@ -1168,6 +1177,7 @@ async def test_assignment_operations_audit_logged(
 ):
     """Test that assignment CREATE, UPDATE, and DELETE operations are audited."""
     from uuid import UUID
+
     from app.models.execution import AuditLog
 
     run_obj = Run(
@@ -1194,8 +1204,7 @@ async def test_assignment_operations_audit_logged(
 
     # Verify CREATE audit log
     result = await db_session.execute(
-        select(AuditLog)
-        .where(
+        select(AuditLog).where(
             (AuditLog.entity_type == "RunRoleAssignment")
             & (AuditLog.entity_id == assignment_id)
             & (AuditLog.action == "CREATE")
@@ -1222,8 +1231,7 @@ async def test_assignment_operations_audit_logged(
 
     # Verify UPDATE audit log
     result = await db_session.execute(
-        select(AuditLog)
-        .where(
+        select(AuditLog).where(
             (AuditLog.entity_type == "RunRoleAssignment")
             & (AuditLog.entity_id == assignment_id)
             & (AuditLog.action == "UPDATE")
@@ -1242,8 +1250,7 @@ async def test_assignment_operations_audit_logged(
 
     # Verify DELETE audit log
     result = await db_session.execute(
-        select(AuditLog)
-        .where(
+        select(AuditLog).where(
             (AuditLog.entity_type == "RunRoleAssignment")
             & (AuditLog.entity_id == assignment_id)
             & (AuditLog.action == "DELETE")

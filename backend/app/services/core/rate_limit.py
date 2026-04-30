@@ -32,10 +32,11 @@ class RateLimitService:
 
         # Count attempts within the window
         result = await db.execute(
-            select(func.count()).select_from(ChatRateLimitAttempt)
+            select(func.count())
+            .select_from(ChatRateLimitAttempt)
             .where(
                 ChatRateLimitAttempt.key == key,
-                ChatRateLimitAttempt.attempted_at >= cutoff
+                ChatRateLimitAttempt.attempted_at >= cutoff,
             )
         )
         count = result.scalar() or 0

@@ -36,9 +36,7 @@ class SMTPProvider(EmailProvider):
         self.password = password
         self.use_tls = use_tls
 
-    async def send(
-        self, to: str, subject: str, html_body: str, text_body: str
-    ) -> None:
+    async def send(self, to: str, subject: str, html_body: str, text_body: str) -> None:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = self.from_addr

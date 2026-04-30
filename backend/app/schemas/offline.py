@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 # --- Offline session ---
 
+
 class OfflineSessionRequest(BaseModel):
     run_id: UUID = Field(description="Run to create offline session for")
     password: str = Field(description="User's password for verification")
@@ -21,6 +22,7 @@ class OfflineSessionResponse(BaseModel):
 
 # --- Prefetch ---
 
+
 class RoleAssignmentPrefetch(BaseModel):
     id: UUID
     lane_node_id: str
@@ -31,6 +33,7 @@ class RoleAssignmentPrefetch(BaseModel):
 
 class RunPrefetchResponse(BaseModel):
     """Everything needed for offline run execution."""
+
     run_id: UUID
     run_name: str
     run_status: str
@@ -44,6 +47,7 @@ class RunPrefetchResponse(BaseModel):
 
 
 # --- Sync queue ---
+
 
 class SyncAction(BaseModel):
     action_type: str = Field(
@@ -83,6 +87,7 @@ class SyncQueueResponse(BaseModel):
 
 
 # --- Token revocation ---
+
 
 class RevokeTokenRequest(BaseModel):
     reason: Optional[str] = Field(default=None, description="Reason for revocation")

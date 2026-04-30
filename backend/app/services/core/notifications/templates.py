@@ -72,17 +72,16 @@ def run_started(ctx: dict, personal: bool = True) -> tuple[str, str]:
 def run_completed(ctx: dict, personal: bool = True) -> tuple[str, str]:
     """ctx: run_name, completed_by"""
     title = f"Run completed: {ctx['run_name']}"
-    body = f"Run {ctx['run_name']} has been marked as completed by {ctx['completed_by']}."
+    body = (
+        f"Run {ctx['run_name']} has been marked as completed by {ctx['completed_by']}."
+    )
     return title, body
 
 
 def invite_sent(ctx: dict, personal: bool = True) -> tuple[str, str]:
     """ctx: org_name, invited_by"""
     title = f"Invitation to {ctx['org_name']}"
-    body = (
-        f"You've been invited to join {ctx['org_name']} "
-        f"by {ctx['invited_by']}."
-    )
+    body = f"You've been invited to join {ctx['org_name']} " f"by {ctx['invited_by']}."
     return title, body
 
 

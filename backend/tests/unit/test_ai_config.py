@@ -5,16 +5,12 @@ import pytest_asyncio
 from pydantic_ai.models.openai import OpenAIChatModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import ProviderConfig, settings
+from app.core.security import hash_password
 from app.models.ai import AiProviderConfig
 from app.models.iam import Organization, OrganizationMember, User
-from app.core.security import hash_password
-from app.core.config import ProviderConfig, settings
-from app.services.ai.ai_config import (
-    _build_model_string,
-    _get_env_fallback,
-    get_model,
-    get_full_config,
-)
+from app.services.ai.ai_config import (_build_model_string, _get_env_fallback,
+                                       get_full_config, get_model)
 
 
 class TestBuildModelString:
@@ -24,14 +20,22 @@ class TestBuildModelString:
         assert result.model_name == "llama3.2-vision"
 
     def test_ollama_with_base_url(self):
-        result = _build_model_string("ollama", "llama3.2-vision", credentials={"base_url": "http://myhost:11434"})
+        result = _build_model_string(
+            "ollama", "llama3.2-vision", credentials={"base_url": "http://myhost:11434"}
+        )
         assert isinstance(result, OpenAIChatModel)
 
     def test_anthropic(self):
-        assert _build_model_string("anthropic", "claude-sonnet-4-20250514") == "anthropic:claude-sonnet-4-20250514"
+        assert (
+            _build_model_string("anthropic", "claude-sonnet-4-20250514")
+            == "anthropic:claude-sonnet-4-20250514"
+        )
 
     def test_google(self):
-        assert _build_model_string("google", "gemini-2.0-flash") == "google-gla:gemini-2.0-flash"
+        assert (
+            _build_model_string("google", "gemini-2.0-flash")
+            == "google-gla:gemini-2.0-flash"
+        )
 
     def test_openai(self):
         assert _build_model_string("openai", "gpt-4o") == "openai:gpt-4o"

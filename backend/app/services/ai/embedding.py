@@ -69,17 +69,13 @@ async def embed_texts(
         batch = texts[i : i + BATCH_SIZE]
 
         if provider == "ollama":
-            embeddings = await _embed_ollama(
-                batch, model_name, base_url
-            )
+            embeddings = await _embed_ollama(batch, model_name, base_url)
         elif provider in ("openai", "anthropic", "google"):
             embeddings = await _embed_openai_compatible(
                 batch, model_name, api_key, base_url, provider
             )
         else:
-            raise EmbeddingError(
-                f"Unsupported embedding provider: {provider}"
-            )
+            raise EmbeddingError(f"Unsupported embedding provider: {provider}")
 
         all_embeddings.extend(embeddings)
 
@@ -116,8 +112,7 @@ async def _embed_ollama(
         )
         if resp.status_code != 200:
             raise EmbeddingError(
-                f"Ollama embedding failed ({resp.status_code}): "
-                f"{resp.text[:200]}"
+                f"Ollama embedding failed ({resp.status_code}): " f"{resp.text[:200]}"
             )
 
         data = resp.json()

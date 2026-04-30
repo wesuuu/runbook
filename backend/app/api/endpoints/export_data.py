@@ -23,15 +23,14 @@ router = APIRouter()
 
 # --- Data Export ---
 
+
 async def _load_exportable_runs(
     run_ids: list[UUID],
     user: User,
     db: AsyncSession,
 ) -> list[dict]:
     """Load runs by IDs, validate permissions and status, resolve user names."""
-    result = await db.execute(
-        select(Run).where(Run.id.in_(run_ids))
-    )
+    result = await db.execute(select(Run).where(Run.id.in_(run_ids)))
     run_objs = result.scalars().all()
 
     if len(run_objs) != len(run_ids):
@@ -46,8 +45,11 @@ async def _load_exportable_runs(
     exportable_statuses = {"COMPLETED", "EDITED"}
     for run_obj in run_objs:
         allowed = await check_permission(
-            db, user.id, ObjectType.RUN,
-            run_obj.id, PermissionLevel.VIEW,
+            db,
+            user.id,
+            ObjectType.RUN,
+            run_obj.id,
+            PermissionLevel.VIEW,
         )
         if not allowed:
             raise HTTPException(
@@ -55,8 +57,7 @@ async def _load_exportable_runs(
                 detail=f"No VIEW permission on run {run_obj.id}",
             )
         status_str = (
-            run_obj.status if isinstance(run_obj.status, str)
-            else run_obj.status.value
+            run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
         )
         if status_str not in exportable_statuses:
             raise HTTPException(
@@ -84,21 +85,15 @@ async def _load_exportable_runs(
 
     user_map: dict[str, str] = {}
     if user_ids:
-        result = await db.execute(
-            select(User).where(User.id.in_(user_ids))
-        )
+        result = await db.execute(select(User).where(User.id.in_(user_ids)))
         for u in result.scalars().all():
             user_map[str(u.id)] = u.full_name or u.email
 
     # Resolve protocol names
-    protocol_ids = {
-        run_obj.protocol_id for run_obj in run_objs if run_obj.protocol_id
-    }
+    protocol_ids = {run_obj.protocol_id for run_obj in run_objs if run_obj.protocol_id}
     proto_map: dict[str, str] = {}
     if protocol_ids:
-        result = await db.execute(
-            select(Protocol).where(Protocol.id.in_(protocol_ids))
-        )
+        result = await db.execute(select(Protocol).where(Protocol.id.in_(protocol_ids)))
         for p in result.scalars().all():
             proto_map[str(p.id)] = p.name
 
@@ -106,22 +101,25 @@ async def _load_exportable_runs(
     runs = []
     for run_obj in run_objs:
         status_str = (
-            run_obj.status if isinstance(run_obj.status, str)
-            else run_obj.status.value
+            run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
         )
-        runs.append({
-            "id": str(run_obj.id),
-            "name": run_obj.name,
-            "status": status_str,
-            "graph": run_obj.graph or {},
-            "execution_data": run_obj.execution_data or {},
-            "user_map": user_map,
-            "protocol_name": proto_map.get(
-                str(run_obj.protocol_id), ""
-            ) if run_obj.protocol_id else "",
-            "created_at": str(run_obj.created_at) if run_obj.created_at else "",
-            "updated_at": str(run_obj.updated_at) if run_obj.updated_at else "",
-        })
+        runs.append(
+            {
+                "id": str(run_obj.id),
+                "name": run_obj.name,
+                "status": status_str,
+                "graph": run_obj.graph or {},
+                "execution_data": run_obj.execution_data or {},
+                "user_map": user_map,
+                "protocol_name": (
+                    proto_map.get(str(run_obj.protocol_id), "")
+                    if run_obj.protocol_id
+                    else ""
+                ),
+                "created_at": str(run_obj.created_at) if run_obj.created_at else "",
+                "updated_at": str(run_obj.updated_at) if run_obj.updated_at else "",
+            }
+        )
 
     return runs
 
@@ -138,8 +136,7 @@ async def export_preview(
     columns, rows = build_export_data(runs, body.layout.value)
     return ExportPreviewResponse(
         columns=[
-            {"key": c["key"], "label": c["label"], "group": c["group"]}
-            for c in columns
+            {"key": c["key"], "label": c["label"], "group": c["group"]} for c in columns
         ],
         rows=rows,
         run_count=len(runs),

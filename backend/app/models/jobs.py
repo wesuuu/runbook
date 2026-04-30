@@ -56,12 +56,8 @@ class BackgroundJob(Base, UUIDMixin, TimestampMixin):
         JSONB, nullable=False, default=dict, server_default="{}"
     )
     # Results written back by the worker on completion
-    output_data: Mapped[Optional[dict[str, Any]]] = mapped_column(
-        JSONB, nullable=True
-    )
-    error_message: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
+    output_data: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     started_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -74,7 +70,8 @@ class BackgroundJob(Base, UUIDMixin, TimestampMixin):
     )
 
     heartbeat_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
         doc="Updated every ~15s by the owning worker; stale = worker died",
     )
 

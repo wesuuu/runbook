@@ -1,4 +1,5 @@
 """Pydantic schemas for the onboarding tour."""
+
 from typing import Literal
 from uuid import UUID
 

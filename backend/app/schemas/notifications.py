@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # --- Channel Schemas ---
 
+
 class ChannelCreate(BaseModel):
     name: str
     channel_type: str  # EMAIL, SLACK, TEAMS, DISCORD, WEBHOOK, CONSOLE
@@ -40,6 +41,7 @@ class ChannelTestResult(BaseModel):
 
 # --- Subscription Schemas ---
 
+
 class SubscriptionCreate(BaseModel):
     event_type: str
     enabled: bool = True
@@ -57,6 +59,7 @@ class SubscriptionResponse(BaseModel):
 
 
 # --- In-App Notification Schemas ---
+
 
 class NotificationResponse(BaseModel):
     id: UUID
@@ -83,6 +86,7 @@ class UnreadCountResponse(BaseModel):
 
 # --- Delivery Schemas ---
 
+
 class DeliveryResponse(BaseModel):
     id: UUID
     notification_id: Optional[UUID] = None
@@ -105,6 +109,7 @@ class DeliveryListResponse(BaseModel):
 
 
 # --- User Notification Preferences ---
+
 
 class NotificationPreferences(BaseModel):
     in_app: bool = True

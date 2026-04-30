@@ -50,17 +50,13 @@ class BatchRecordImport(Base, UUIDMixin, TimestampMixin):
     mime_type: Mapped[str] = mapped_column(String, nullable=False)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    page_count: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True
-    )
+    page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # AI extraction output
     extraction_result: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSONB, nullable=True
     )
-    extraction_model: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
+    extraction_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Protocol mapping (user-selected at upload time)
     protocol_id: Mapped[uuid.UUID] = mapped_column(
@@ -76,6 +72,4 @@ class BatchRecordImport(Base, UUIDMixin, TimestampMixin):
     created_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("runs.id"), nullable=True
     )
-    error_message: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
+    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)

@@ -12,7 +12,6 @@ from app.models.iam import Organization, OrganizationMember, User
 from app.models.science import Project, Protocol
 from app.models.templates import DocumentTemplate
 
-
 # ── Helpers ──
 
 
@@ -26,10 +25,7 @@ def _make_test_docx() -> bytes:
     return buf.getvalue()
 
 
-DOCX_MIME = (
-    "application/vnd.openxmlformats-officedocument"
-    ".wordprocessingml.document"
-)
+DOCX_MIME = "application/vnd.openxmlformats-officedocument" ".wordprocessingml.document"
 
 
 # ── Fixtures ──
@@ -298,9 +294,7 @@ async def test_list_filters_by_type(client, auth_headers):
 async def test_list_includes_system_templates(client, auth_headers, system_templates):
     resp = await client.get("/templates", headers=auth_headers)
     assert resp.status_code == 200
-    system_names = [
-        t["name"] for t in resp.json() if t["is_system"]
-    ]
+    system_names = [t["name"] for t in resp.json() if t["is_system"]]
     assert len(system_names) >= 1
 
 
@@ -428,9 +422,7 @@ async def test_protocol_creation_stamps_defaults(
     from sqlalchemy import select
 
     result = await db_session.execute(
-        select(Organization).where(
-            Organization.id == test_project.organization_id
-        )
+        select(Organization).where(Organization.id == test_project.organization_id)
     )
     org = result.scalar_one()
     org.default_sop_template_id = system_templates["SOP"]
@@ -450,9 +442,7 @@ async def test_protocol_creation_stamps_defaults(
 
     # Verify template IDs were stamped
     proto_id = resp.json()["id"]
-    result = await db_session.execute(
-        select(Protocol).where(Protocol.id == proto_id)
-    )
+    result = await db_session.execute(select(Protocol).where(Protocol.id == proto_id))
     proto = result.scalar_one()
     assert proto.sop_template_id == system_templates["SOP"]
     assert proto.batch_record_template_id == system_templates["BATCH_RECORD"]

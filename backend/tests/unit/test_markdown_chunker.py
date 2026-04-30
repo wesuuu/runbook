@@ -1,21 +1,17 @@
 import pytest
 
-from app.services.documents.markdown_chunker import (
-    chunk_by_pages,
-    chunk_markdown,
-    rechunk_with_structure,
-    _inject_headings,
-    _segment_into_blocks,
-    _split_at_headings,
-    _strip_skip_lines,
-)
-from app.services.documents.document_structure import (
-    DocumentOutline,
-    DocumentStructure,
-    PageAnalysis,
-    PageHeading,
-)
 from app.services.data.text_chunker import PageData
+from app.services.documents.document_structure import (DocumentOutline,
+                                                       DocumentStructure,
+                                                       PageAnalysis,
+                                                       PageHeading)
+from app.services.documents.markdown_chunker import (_inject_headings,
+                                                     _segment_into_blocks,
+                                                     _split_at_headings,
+                                                     _strip_skip_lines,
+                                                     chunk_by_pages,
+                                                     chunk_markdown,
+                                                     rechunk_with_structure)
 
 
 class TestEmptyAndShortTexts:
@@ -161,7 +157,10 @@ class TestChunkProperties:
 
 class TestOverlap:
     def test_overlap_between_chunks(self):
-        sections = [f"## Section {i}\n\n" + " ".join([f"word{i}_{j}" for j in range(80)]) for i in range(5)]
+        sections = [
+            f"## Section {i}\n\n" + " ".join([f"word{i}_{j}" for j in range(80)])
+            for i in range(5)
+        ]
         text = "\n\n".join(sections)
         result = chunk_markdown(text, chunk_size=100, overlap=20)
         assert len(result) > 1
@@ -178,8 +177,7 @@ class TestLargeMarkdown:
         sections = []
         for i in range(50):
             sections.append(
-                f"## Section {i}\n\n"
-                + " ".join([f"word{j}" for j in range(200)])
+                f"## Section {i}\n\n" + " ".join([f"word{j}" for j in range(200)])
             )
         text = "\n\n".join(sections)
         result = chunk_markdown(text, chunk_size=1000, overlap=200)
@@ -273,10 +271,7 @@ class TestChunkByPagesMergeShort:
 class TestChunkByPagesSplitLong:
     def test_long_page_is_split(self):
         """A page with many tokens should be split into multiple chunks."""
-        long_text = "\n\n".join(
-            f"## Section {i}\n\n" + "word " * 500
-            for i in range(5)
-        )
+        long_text = "\n\n".join(f"## Section {i}\n\n" + "word " * 500 for i in range(5))
         pages = [PageData(page_number=1, text=long_text)]
         result = chunk_by_pages(pages, split_long=800)
         assert len(result) > 1
@@ -287,8 +282,7 @@ class TestChunkByPagesSplitLong:
     def test_sequential_indices(self):
         """All chunks should have sequential 0-based indices."""
         long_text = "\n\n".join(
-            f"## Heading {i}\n\n" + "content " * 300
-            for i in range(4)
+            f"## Heading {i}\n\n" + "content " * 300 for i in range(4)
         )
         pages = [
             PageData(page_number=1, text=long_text),
@@ -405,9 +399,7 @@ class TestSplitAtHeadings:
 
 
 class TestRechunkWithStructure:
-    def _make_structure(
-        self, page_analyses: list[PageAnalysis]
-    ) -> DocumentStructure:
+    def _make_structure(self, page_analyses: list[PageAnalysis]) -> DocumentStructure:
         return DocumentStructure(
             outline=DocumentOutline(heading_levels=2),
             pages=page_analyses,
@@ -423,10 +415,12 @@ class TestRechunkWithStructure:
             PageData(page_number=1, text="Body text " * 50),
             PageData(page_number=2, text="More body " * 50),
         ]
-        structure = self._make_structure([
-            PageAnalysis(page=1),
-            PageAnalysis(page=2),
-        ])
+        structure = self._make_structure(
+            [
+                PageAnalysis(page=1),
+                PageAnalysis(page=2),
+            ]
+        )
         result = rechunk_with_structure(pages, structure)
         # Should fall back to chunk_by_pages
         assert len(result) == 2
@@ -438,14 +432,16 @@ class TestRechunkWithStructure:
                 text="HEADER\nBody content here.\n42",
             ),
         ]
-        structure = self._make_structure([
-            PageAnalysis(
-                page=1,
-                role="body",
-                skip_lines=["HEADER", "42"],
-                headings=[PageHeading(level=1, text="Body content here.")],
-            ),
-        ])
+        structure = self._make_structure(
+            [
+                PageAnalysis(
+                    page=1,
+                    role="body",
+                    skip_lines=["HEADER", "42"],
+                    headings=[PageHeading(level=1, text="Body content here.")],
+                ),
+            ]
+        )
         result = rechunk_with_structure(pages, structure)
         assert len(result) >= 1
         assert "HEADER" not in result[0].content
@@ -458,16 +454,18 @@ class TestRechunkWithStructure:
                 text="Chapter 1\nBody content.\n1.1 Methods\nMore text.",
             ),
         ]
-        structure = self._make_structure([
-            PageAnalysis(
-                page=1,
-                role="body",
-                headings=[
-                    PageHeading(level=1, text="Chapter 1"),
-                    PageHeading(level=2, text="1.1 Methods"),
-                ],
-            ),
-        ])
+        structure = self._make_structure(
+            [
+                PageAnalysis(
+                    page=1,
+                    role="body",
+                    headings=[
+                        PageHeading(level=1, text="Chapter 1"),
+                        PageHeading(level=2, text="1.1 Methods"),
+                    ],
+                ),
+            ]
+        )
         result = rechunk_with_structure(pages, structure)
         all_content = " ".join(c.content for c in result)
         assert "# Chapter 1" in all_content
@@ -479,14 +477,17 @@ class TestRechunkWithStructure:
             PageData(page_number=2, text="Copyright " * 20),
             PageData(page_number=3, text="Body content " * 50),
         ]
-        structure = self._make_structure([
-            PageAnalysis(page=1, role="front_matter",
-                         skip_lines=["dummy"]),
-            PageAnalysis(page=2, role="front_matter",
-                         skip_lines=["dummy"]),
-            PageAnalysis(page=3, role="body",
-                         headings=[PageHeading(level=1, text="Body content")]),
-        ])
+        structure = self._make_structure(
+            [
+                PageAnalysis(page=1, role="front_matter", skip_lines=["dummy"]),
+                PageAnalysis(page=2, role="front_matter", skip_lines=["dummy"]),
+                PageAnalysis(
+                    page=3,
+                    role="body",
+                    headings=[PageHeading(level=1, text="Body content")],
+                ),
+            ]
+        )
         result = rechunk_with_structure(pages, structure)
         # Front matter pages should be merged into one chunk
         roles_seen = []
@@ -499,15 +500,17 @@ class TestRechunkWithStructure:
         assert roles_seen.count("front_matter") <= 1
 
     def test_sequential_chunk_indices(self):
-        pages = [
-            PageData(page_number=i, text=f"Page {i} " * 50)
-            for i in range(1, 4)
-        ]
-        structure = self._make_structure([
-            PageAnalysis(page=i, role="body",
-                         headings=[PageHeading(level=1, text=f"Page {i}")])
-            for i in range(1, 4)
-        ])
+        pages = [PageData(page_number=i, text=f"Page {i} " * 50) for i in range(1, 4)]
+        structure = self._make_structure(
+            [
+                PageAnalysis(
+                    page=i,
+                    role="body",
+                    headings=[PageHeading(level=1, text=f"Page {i}")],
+                )
+                for i in range(1, 4)
+            ]
+        )
         result = rechunk_with_structure(pages, structure)
         for i, chunk in enumerate(result):
             assert chunk.chunk_index == i

@@ -49,6 +49,14 @@ async def _seed_library_registry():
 
 
 @pytest.fixture(autouse=True)
+def _reset_chat_agent_cache():
+    from app.services.ai.chat_agent import _reset_cache_for_tests
+    _reset_cache_for_tests()
+    yield
+    _reset_cache_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _disable_stripe_globally(monkeypatch):
     """Ensure Stripe is unconfigured for all tests by default.
 
@@ -82,26 +90,38 @@ async def test_engine():
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
         # Add tsvector generated column (not managed by SQLAlchemy ORM)
-        await conn.execute(text("""
+        await conn.execute(
+            text(
+                """
             ALTER TABLE document_chunks
             ADD COLUMN IF NOT EXISTS search_vector tsvector
             GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
-        """))
-        await conn.execute(text("""
+        """
+            )
+        )
+        await conn.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS ix_chunk_search_vector
             ON document_chunks USING gin (search_vector)
-        """))
+        """
+            )
+        )
         # System user referenced by webhook/background audit entries.
         # Mirrors backend/app/db/seed.py::USER_SYSTEM; required here because
         # the test DB is built via create_all, not Alembic migrations.
-        await conn.execute(text("""
+        await conn.execute(
+            text(
+                """
             INSERT INTO users (id, email, full_name, hashed_password,
                                email_verified, is_active, created_at, updated_at)
             VALUES ('00000000-0000-0000-0000-000000000000',
                     'system@batchrite.internal', 'System',
                     '!system-locked!', true, false, now(), now())
             ON CONFLICT (id) DO NOTHING
-        """))
+        """
+            )
+        )
     yield engine
     async with engine.begin() as conn:
         await conn.execute(text("DROP SCHEMA public CASCADE"))

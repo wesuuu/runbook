@@ -15,10 +15,10 @@ SYSTEM_ACTOR_ID: UUID = UUID("00000000-0000-0000-0000-000000000000")
 async def log_audit(
     db: AsyncSession,
     actor_id: UUID,  # User ID performing the action
-    action: str,     # CREATE, UPDATE, DELETE, ARCHIVE
+    action: str,  # CREATE, UPDATE, DELETE, ARCHIVE
     entity_type: str,
     entity_id: UUID,
-    changes: Dict[str, Any] | None = None
+    changes: Dict[str, Any] | None = None,
 ):
     """
     Logs an audit event to the database.
@@ -38,7 +38,7 @@ async def log_audit(
         entity_id=entity_id,
         actor_id=actor_id,
         action=action,
-        changes=serialized_changes
+        changes=serialized_changes,
     )
     db.add(audit_entry)
     # Note: We do not commit here, letting the caller handle the transaction scope.

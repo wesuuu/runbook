@@ -64,7 +64,9 @@ def chunk_text(
         page_num = None
         if page_boundaries:
             # Find the character offset of this chunk in the original text
-            char_offset = text.find(stripped[:50]) if len(stripped) >= 50 else text.find(stripped)
+            char_offset = (
+                text.find(stripped[:50]) if len(stripped) >= 50 else text.find(stripped)
+            )
             if char_offset >= 0:
                 page_num = _get_page_number(char_offset, page_boundaries)
         result.append(
@@ -78,9 +80,7 @@ def chunk_text(
     return result
 
 
-def _recursive_split(
-    text: str, chunk_size: int, overlap: int
-) -> list[str]:
+def _recursive_split(text: str, chunk_size: int, overlap: int) -> list[str]:
     """Recursively split text, trying separators from most to least ideal."""
     separators = ["\n\n", "\n", ". ", " "]
     return _split_with_separators(text, chunk_size, overlap, separators)
@@ -102,17 +102,13 @@ def _split_with_separators(
 
     if len(parts) <= 1:
         # This separator doesn't help, try next
-        return _split_with_separators(
-            text, chunk_size, overlap, separators[1:]
-        )
+        return _split_with_separators(text, chunk_size, overlap, separators[1:])
 
     chunks: list[str] = []
     current_chunk = ""
 
     for part in parts:
-        candidate = (
-            current_chunk + sep + part if current_chunk else part
-        )
+        candidate = current_chunk + sep + part if current_chunk else part
         if len(candidate.split()) > chunk_size and current_chunk:
             chunks.append(current_chunk)
             # Add overlap from end of previous chunk
@@ -138,9 +134,7 @@ def _split_with_separators(
     return result
 
 
-def _split_by_words(
-    text: str, chunk_size: int, overlap: int
-) -> list[str]:
+def _split_by_words(text: str, chunk_size: int, overlap: int) -> list[str]:
     """Split text by word count as a last resort."""
     words = text.split()
     chunks: list[str] = []
@@ -165,9 +159,7 @@ def _get_overlap_text(text: str, overlap_tokens: int) -> str:
     return " ".join(words[-overlap_tokens:])
 
 
-def _get_page_number(
-    char_offset: int, page_boundaries: list[int]
-) -> int:
+def _get_page_number(char_offset: int, page_boundaries: list[int]) -> int:
     """Determine the page number for a given character offset."""
     page = 1
     for boundary in sorted(page_boundaries):

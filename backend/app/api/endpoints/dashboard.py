@@ -26,9 +26,7 @@ router = APIRouter()
 
 def _count_steps(graph: dict) -> int:
     """Count unitOp nodes in a graph."""
-    return sum(
-        1 for n in graph.get("nodes", []) if n.get("type") == "unitOp"
-    )
+    return sum(1 for n in graph.get("nodes", []) if n.get("type") == "unitOp")
 
 
 def _count_completed_steps(execution_data: dict) -> int:
@@ -104,9 +102,7 @@ async def _resolve_names(
     proto_map: dict[UUID, str] = {}
     if protocol_ids:
         result = await db.execute(
-            select(Protocol.id, Protocol.name).where(
-                Protocol.id.in_(protocol_ids)
-            )
+            select(Protocol.id, Protocol.name).where(Protocol.id.in_(protocol_ids))
         )
         for pid, name in result.all():
             proto_map[pid] = name
@@ -114,9 +110,7 @@ async def _resolve_names(
     return project_map, proto_map
 
 
-def _compute_completion_trend(
-    runs: list, days: int = 7
-) -> list[CompletionTrendItem]:
+def _compute_completion_trend(runs: list, days: int = 7) -> list[CompletionTrendItem]:
     """Build a per-day completion count for the last N days."""
     now = datetime.now(timezone.utc)
     # Build date buckets (oldest first)
@@ -135,15 +129,15 @@ def _compute_completion_trend(
         if day_key in buckets:
             buckets[day_key] += 1
 
-    return [
-        CompletionTrendItem(date=d, count=c) for d, c in buckets.items()
-    ]
+    return [CompletionTrendItem(date=d, count=c) for d, c in buckets.items()]
 
 
 @router.get("", response_model=DashboardResponse)
 async def get_dashboard(
     org_id: UUID = Query(..., description="Current organization ID"),
-    trend_days: int = Query(7, ge=7, le=14, description="Days for completion trend (7 or 14)"),
+    trend_days: int = Query(
+        7, ge=7, le=14, description="Days for completion trend (7 or 14)"
+    ),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -187,16 +181,12 @@ async def get_dashboard(
             )
         )
         for assignment in result.scalars().all():
-            user_assignments.setdefault(assignment.run_id, []).append(
-                assignment
-            )
+            user_assignments.setdefault(assignment.run_id, []).append(assignment)
 
     # Batch-resolve project/protocol names
     project_ids_set = {r.project_id for r in all_runs}
     protocol_ids_set = {r.protocol_id for r in all_runs if r.protocol_id}
-    project_map, proto_map = await _resolve_names(
-        db, project_ids_set, protocol_ids_set
-    )
+    project_map, proto_map = await _resolve_names(db, project_ids_set, protocol_ids_set)
 
     # ── Classify runs into My Work buckets ──
     needs_action: list[RunSummary] = []
@@ -218,9 +208,7 @@ async def get_dashboard(
 
         if status == "ACTIVE":
             if user_involved:
-                summary = _build_run_summary(
-                    run, proj_name, proto_name, role_name
-                )
+                summary = _build_run_summary(run, proj_name, proto_name, role_name)
                 # Check if user's lanes have incomplete steps
                 lane_ids = {a.lane_node_id for a in assignments}
                 graph = run.graph or {}
@@ -263,16 +251,21 @@ async def get_dashboard(
     start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
 
     active_count = sum(
-        1 for r in all_runs
+        1
+        for r in all_runs
         if (r.status if isinstance(r.status, str) else r.status.value) == "ACTIVE"
     )
     completed_this_week = sum(
-        1 for r in all_runs
-        if (r.status if isinstance(r.status, str) else r.status.value) in ("COMPLETED", "EDITED")
-        and r.updated_at and r.updated_at >= start_of_week
+        1
+        for r in all_runs
+        if (r.status if isinstance(r.status, str) else r.status.value)
+        in ("COMPLETED", "EDITED")
+        and r.updated_at
+        and r.updated_at >= start_of_week
     )
     planned_count = sum(
-        1 for r in all_runs
+        1
+        for r in all_runs
         if (r.status if isinstance(r.status, str) else r.status.value) == "PLANNED"
     )
 
@@ -306,11 +299,7 @@ async def get_dashboard(
     # ── Pending image analyses ──
     pending_analyses = None
     if run_ids:
-        analyzed_ids = (
-            select(ImageConversation.image_id)
-            .distinct()
-            .scalar_subquery()
-        )
+        analyzed_ids = select(ImageConversation.image_id).distinct().scalar_subquery()
         pa_result = await db.execute(
             select(
                 func.count(RunImage.id),
@@ -352,9 +341,7 @@ async def _fetch_activity(
     )
     protocol_ids = list(proto_result.scalars().all())
 
-    run_result = await db.execute(
-        select(Run.id).where(Run.project_id.in_(project_ids))
-    )
+    run_result = await db.execute(select(Run.id).where(Run.project_id.in_(project_ids)))
     run_ids = list(run_result.scalars().all())
 
     # Build OR conditions
@@ -445,9 +432,7 @@ async def _resolve_entity_names(
     # Projects
     if project_ids:
         result = await db.execute(
-            select(Project.id, Project.name).where(
-                Project.id.in_(project_ids)
-            )
+            select(Project.id, Project.name).where(Project.id.in_(project_ids))
         )
         for pid, name in result.all():
             names[("Project", pid)] = name
@@ -455,18 +440,14 @@ async def _resolve_entity_names(
     # Protocols
     if protocol_ids:
         result = await db.execute(
-            select(Protocol.id, Protocol.name).where(
-                Protocol.id.in_(protocol_ids)
-            )
+            select(Protocol.id, Protocol.name).where(Protocol.id.in_(protocol_ids))
         )
         for pid, name in result.all():
             names[("Protocol", pid)] = name
 
     # Runs
     if run_ids:
-        result = await db.execute(
-            select(Run.id, Run.name).where(Run.id.in_(run_ids))
-        )
+        result = await db.execute(select(Run.id, Run.name).where(Run.id.in_(run_ids)))
         for rid, name in result.all():
             names[("Run", rid)] = name
             # RunRoleAssignment entity_id is the run_id
@@ -484,21 +465,15 @@ async def get_dashboard_activity(
     db: AsyncSession = Depends(get_db),
 ):
     """Paginated activity feed for the dashboard."""
-    visible_project_ids = await get_visible_project_ids(
-        db, user.id, org_id
-    )
+    visible_project_ids = await get_visible_project_ids(db, user.id, org_id)
     if not visible_project_ids:
         return ActivityPage(items=[], total=0, offset=offset, limit=limit)
 
-    items = await _fetch_activity(
-        db, visible_project_ids, limit=limit, offset=offset
-    )
+    items = await _fetch_activity(db, visible_project_ids, limit=limit, offset=offset)
 
     # Count total
     proto_result = await db.execute(
-        select(Protocol.id).where(
-            Protocol.project_id.in_(visible_project_ids)
-        )
+        select(Protocol.id).where(Protocol.project_id.in_(visible_project_ids))
     )
     protocol_ids = list(proto_result.scalars().all())
     run_result = await db.execute(
@@ -532,6 +507,4 @@ async def get_dashboard_activity(
     )
     total = count_result.scalar() or 0
 
-    return ActivityPage(
-        items=items, total=total, offset=offset, limit=limit
-    )
+    return ActivityPage(items=items, total=total, offset=offset, limit=limit)

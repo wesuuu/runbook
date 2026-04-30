@@ -10,8 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import (get_current_user, get_or_404, require_permission,
-                           require_active_subscription)
+from app.core.deps import (get_current_user, get_or_404,
+                           require_active_subscription, require_permission)
 from app.db.session import get_db
 from app.models.iam import (ObjectType, OrganizationMember, PermissionLevel,
                             User)
@@ -33,8 +33,11 @@ router = APIRouter()
 
 # --- Protocols ---
 
+
 @router.post(
-    "/protocols", response_model=ProtocolResponse, status_code=201,
+    "/protocols",
+    response_model=ProtocolResponse,
+    status_code=201,
 )
 async def create_protocol(
     protocol: ProtocolCreate,
@@ -51,8 +54,11 @@ async def create_protocol(
 
     if protocol.project_id:
         allowed = await check_permission(
-            db, user.id, ObjectType.PROJECT,
-            protocol.project_id, PermissionLevel.EDIT,
+            db,
+            user.id,
+            ObjectType.PROJECT,
+            protocol.project_id,
+            PermissionLevel.EDIT,
         )
         if not allowed:
             raise HTTPException(403, "EDIT permission required on project")
@@ -110,7 +116,10 @@ async def create_protocol(
     await db.flush()
 
     await log_audit(
-        db, user.id, "CREATE", "Protocol",
+        db,
+        user.id,
+        "CREATE",
+        "Protocol",
         new_protocol.id,
         {"name": protocol.name, "version_number": new_protocol.version_number},
     )
@@ -162,7 +171,9 @@ async def import_protocol(
     org_id = user.selected_org_id
 
     # Save to temp file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename or "doc").suffix) as tmp:
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=Path(file.filename or "doc").suffix
+    ) as tmp:
         content = await file.read()
         tmp.write(content)
         tmp_path = Path(tmp.name)
@@ -186,7 +197,9 @@ async def import_protocol(
 
         # Build proposal
         proposal = build_proposal(
-            parsed, unit_ops, file.filename or "uploaded_document",
+            parsed,
+            unit_ops,
+            file.filename or "uploaded_document",
             source_text=text,
         )
         return proposal
@@ -215,7 +228,11 @@ async def refine_protocol_endpoint(
 
     try:
         updated_graph = await refine_protocol(
-            request.graph, request.instruction, unit_ops, db, org_id,
+            request.graph,
+            request.instruction,
+            unit_ops,
+            db,
+            org_id,
         )
     except Exception as e:
         logger.exception("Protocol refinement failed")
@@ -247,8 +264,11 @@ async def finalize_protocol_import(
 
     if request.project_id:
         allowed = await check_permission(
-            db, user.id, ObjectType.PROJECT,
-            request.project_id, PermissionLevel.EDIT,
+            db,
+            user.id,
+            ObjectType.PROJECT,
+            request.project_id,
+            PermissionLevel.EDIT,
         )
         if not allowed:
             raise HTTPException(403, "EDIT permission required on project")
@@ -293,7 +313,10 @@ async def finalize_protocol_import(
     )
 
     await log_audit(
-        db, user.id, "CREATE", "Protocol",
+        db,
+        user.id,
+        "CREATE",
+        "Protocol",
         protocol.id,
         {"name": protocol.name, "source": "protocol_import"},
     )
@@ -315,14 +338,19 @@ async def get_protocol(
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     return await get_or_404(
-        db, Protocol, protocol_id,
+        db,
+        Protocol,
+        protocol_id,
         options=[selectinload(Protocol.roles)],
     )
 
@@ -332,9 +360,7 @@ async def get_protocol(
     response_model=List[ProtocolResponse],
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.VIEW
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.VIEW)
         )
     ],
 )
@@ -368,21 +394,29 @@ async def delete_or_archive_protocol(
     - Otherwise → archive (set status=ARCHIVED)
     """
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="EDIT permission required")
 
     protocol = await get_or_404(
-        db, Protocol, protocol_id,
+        db,
+        Protocol,
+        protocol_id,
         options=[selectinload(Protocol.roles)],
     )
 
     # Sample/tour protocols always hard-delete, bypassing status guards.
     if protocol.is_tour_sample:
         await log_audit(
-            db, user.id, "DELETE", "Protocol",
+            db,
+            user.id,
+            "DELETE",
+            "Protocol",
             protocol.id,
             {"name": protocol.name, "action": "hard_delete_sample"},
         )
@@ -398,7 +432,8 @@ async def delete_or_archive_protocol(
 
     if protocol.status == "ARCHIVED":
         raise HTTPException(
-            status_code=400, detail="Protocol is already archived",
+            status_code=400,
+            detail="Protocol is already archived",
         )
 
     # Check if runs exist for this protocol
@@ -415,7 +450,10 @@ async def delete_or_archive_protocol(
     if protocol.status == "DRAFT" and graph_is_empty and run_count == 0:
         # Hard delete
         await log_audit(
-            db, user.id, "DELETE", "Protocol",
+            db,
+            user.id,
+            "DELETE",
+            "Protocol",
             protocol.id,
             {"name": protocol.name, "action": "hard_delete"},
         )
@@ -427,7 +465,10 @@ async def delete_or_archive_protocol(
         old_status = protocol.status
         protocol.status = "ARCHIVED"
         await log_audit(
-            db, user.id, "ARCHIVE", "Protocol",
+            db,
+            user.id,
+            "ARCHIVE",
+            "Protocol",
             protocol.id,
             {
                 "name": protocol.name,
@@ -449,19 +490,25 @@ async def unarchive_protocol(
 ):
     """Unarchive a protocol back to DRAFT. Requires ADMIN on project."""
     protocol = await get_or_404(
-        db, Protocol, protocol_id,
+        db,
+        Protocol,
+        protocol_id,
         options=[selectinload(Protocol.roles)],
     )
 
     if protocol.status != "ARCHIVED":
         raise HTTPException(
-            status_code=400, detail="Protocol is not archived",
+            status_code=400,
+            detail="Protocol is not archived",
         )
 
     # Require ADMIN on the parent project (or org admin)
     allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT,
-        protocol.project_id, PermissionLevel.ADMIN,
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        protocol.project_id,
+        PermissionLevel.ADMIN,
     )
     if not allowed:
         raise HTTPException(
@@ -471,7 +518,10 @@ async def unarchive_protocol(
 
     protocol.status = "DRAFT"
     await log_audit(
-        db, user.id, "UNARCHIVE", "Protocol",
+        db,
+        user.id,
+        "UNARCHIVE",
+        "Protocol",
         protocol.id,
         {"name": protocol.name, "restored_to": "DRAFT"},
     )
@@ -491,14 +541,19 @@ async def update_protocol(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     protocol = await get_or_404(
-        db, Protocol, protocol_id,
+        db,
+        Protocol,
+        protocol_id,
         options=[selectinload(Protocol.roles)],
     )
 
@@ -580,10 +635,7 @@ async def update_protocol(
                         OrganizationMember.role == "ADMIN",
                     )
                 )
-                admin_ids = [
-                    row[0] for row in admin_result.all()
-                    if row[0] != user.id
-                ]
+                admin_ids = [row[0] for row in admin_result.all() if row[0] != user.id]
                 if admin_ids:
                     background_tasks.add_task(
                         send_notification,
@@ -608,7 +660,12 @@ async def update_protocol(
             audit_changes["version_number"] = protocol.version_number
 
     await log_audit(
-        db, user.id, "UPDATE", "Protocol", protocol.id, audit_changes,
+        db,
+        user.id,
+        "UPDATE",
+        "Protocol",
+        protocol.id,
+        audit_changes,
     )
 
     await db.commit()
@@ -623,6 +680,7 @@ async def update_protocol(
 
 # --- Protocol Roles (inherit project perms) ---
 
+
 @router.get(
     "/protocols/{protocol_id}/roles",
     response_model=List[ProtocolRoleResponse],
@@ -633,8 +691,11 @@ async def list_protocol_roles(
     db: AsyncSession = Depends(get_db),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -660,8 +721,11 @@ async def create_protocol_role(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -693,8 +757,11 @@ async def update_protocol_role(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -727,8 +794,11 @@ async def delete_protocol_role(
     _: User = Depends(require_active_subscription()),
 ):
     allowed = await check_permission(
-        db, user.id, ObjectType.PROTOCOL,
-        protocol_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.EDIT,
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")

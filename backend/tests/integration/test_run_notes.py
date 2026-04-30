@@ -1,10 +1,12 @@
 """Integration tests for run notes endpoints."""
 
-import pytest
-import pytest_asyncio
 from uuid import uuid4
 
-from app.models.iam import ObjectPermission, PrincipalType, ObjectType, PermissionLevel
+import pytest
+import pytest_asyncio
+
+from app.models.iam import (ObjectPermission, ObjectType, PermissionLevel,
+                            PrincipalType)
 from app.models.science import Run, RunRoleAssignment
 
 
@@ -107,6 +109,7 @@ async def completed_run(db_session, test_project, test_user):
 
 
 # --- Add Note Tests ---
+
 
 @pytest.mark.asyncio
 async def test_add_note_to_planned_run(client, auth_headers, test_run):

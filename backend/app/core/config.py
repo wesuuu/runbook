@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     ai_doc_structure_model: str = ""
     ai_chat_provider: str = ""
     ai_chat_model: str = ""
+    ai_chat_subagent_provider: str = ""
+    ai_chat_subagent_model: str = ""
+    ai_chat_summary_provider: str = ""
+    ai_chat_summary_model: str = ""
     ai_protocol_generation_provider: str = ""
     ai_protocol_generation_model: str = ""
     ai_template_convert_provider: str = ""
@@ -142,6 +146,16 @@ class Settings(BaseSettings):
         "claude-3-5-haiku": 200000,
         "claude-3-opus": 200000,
         "claude-4": 200000,
+        # Claude 4 family + OpenRouter-style anthropic/ prefixes
+        "claude-sonnet-4": 200000,
+        "claude-opus-4": 200000,
+        "claude-haiku-4": 200000,
+        "anthropic/claude-sonnet-4": 200000,
+        "anthropic/claude-opus-4": 200000,
+        "anthropic/claude-haiku-4": 200000,
+        "anthropic/claude-3-5-sonnet": 200000,
+        "anthropic/claude-3-5-haiku": 200000,
+        "anthropic/claude-3-opus": 200000,
         "gpt-4o": 128000,
         "gpt-4o-mini": 128000,
         "gpt-4-turbo": 128000,

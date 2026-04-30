@@ -49,9 +49,7 @@ def chunk_markdown(
 
     tokens = text.split()
     if len(tokens) <= chunk_size:
-        page_num = (
-            _get_page_number(0, page_boundaries) if page_boundaries else None
-        )
+        page_num = _get_page_number(0, page_boundaries) if page_boundaries else None
         return [
             TextChunk(
                 content=text.strip(),
@@ -165,9 +163,7 @@ def _merge_blocks(
             chunks.append("\n\n".join(current_parts))
 
             # Create overlap from the end of the current chunk
-            overlap_text = _get_overlap_from_parts(
-                current_parts, overlap
-            )
+            overlap_text = _get_overlap_from_parts(current_parts, overlap)
             current_parts = []
             current_tokens = 0
             if overlap_text:
@@ -183,9 +179,7 @@ def _merge_blocks(
     return chunks
 
 
-def _get_overlap_from_parts(
-    parts: list[str], overlap_tokens: int
-) -> str:
+def _get_overlap_from_parts(parts: list[str], overlap_tokens: int) -> str:
     """Extract the last N tokens from the combined parts for overlap."""
     if overlap_tokens <= 0:
         return ""
@@ -294,9 +288,7 @@ def chunk_by_pages(
     return result
 
 
-def _split_long_page(
-    text: str, page_number: int, max_tokens: int
-) -> list[str]:
+def _split_long_page(text: str, page_number: int, max_tokens: int) -> list[str]:
     """Split a long page's text at heading boundaries.
 
     Falls back to paragraph boundaries if there are no headings.
@@ -357,8 +349,7 @@ def rechunk_with_structure(
 
     # Detect useless classification (all body, no headings, no skip_lines)
     has_useful = any(
-        pa.role != "body" or pa.headings or pa.skip_lines
-        for pa in structure.pages
+        pa.role != "body" or pa.headings or pa.skip_lines for pa in structure.pages
     )
     if not has_useful:
         return chunk_by_pages(pages)
@@ -389,9 +380,7 @@ def rechunk_with_structure(
         nonlocal pending_texts
         if not pending_texts:
             return
-        combined = "\n\n".join(
-            t for t in pending_texts if t.strip()
-        ).strip()
+        combined = "\n\n".join(t for t in pending_texts if t.strip()).strip()
         pending_texts = []
         if not combined:
             return
@@ -402,9 +391,7 @@ def rechunk_with_structure(
 
         if pending_role == "body":
             # Split body content at heading boundaries
-            for sub in _split_at_headings(
-                combined, max_section_tokens
-            ):
+            for sub in _split_at_headings(combined, max_section_tokens):
                 sub = sub.strip()
                 if sub:
                     result.append(
@@ -419,9 +406,7 @@ def rechunk_with_structure(
             # Non-body: emit as single chunk (split if too large)
             tokens = len(combined.split())
             if tokens > max_section_tokens:
-                for sub in _split_long_page(
-                    combined, pending_page, max_section_tokens
-                ):
+                for sub in _split_long_page(combined, pending_page, max_section_tokens):
                     sub = sub.strip()
                     if sub:
                         result.append(
@@ -473,16 +458,11 @@ def _strip_skip_lines(text: str, skip_lines: list[str]) -> str:
     if not skip_set:
         return text
     lines = text.split("\n")
-    filtered = [
-        line for line in lines
-        if line.strip().lower() not in skip_set
-    ]
+    filtered = [line for line in lines if line.strip().lower() not in skip_set]
     return "\n".join(filtered)
 
 
-def _inject_headings(
-    text: str, headings: list["PageHeading"]
-) -> str:
+def _inject_headings(text: str, headings: list["PageHeading"]) -> str:
     """Inject markdown heading prefixes into extracted text.
 
     Finds lines containing the heading text and prefixes them
@@ -512,18 +492,16 @@ def _inject_headings(
             if s_lower == h_lower:
                 lines[i] = prefix + stripped
                 break
-            if (
-                h_lower in s_lower or s_lower in h_lower
-            ) and len(stripped) < len(h_text) * 2:
+            if (h_lower in s_lower or s_lower in h_lower) and len(stripped) < len(
+                h_text
+            ) * 2:
                 lines[i] = prefix + stripped
                 break
 
     return "\n".join(lines)
 
 
-def _split_at_headings(
-    text: str, max_tokens: int
-) -> list[str]:
+def _split_at_headings(text: str, max_tokens: int) -> list[str]:
     """Split text at markdown heading boundaries.
 
     Each heading (line starting with ``#``) starts a new chunk.

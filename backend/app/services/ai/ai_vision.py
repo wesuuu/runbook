@@ -26,9 +26,7 @@ class ExtractedValue(BaseModel):
     unit: Optional[str] = Field(
         default=None, description="Unit of measurement if applicable"
     )
-    confidence: float = Field(
-        ge=0.0, le=1.0, description="Confidence score 0.0 to 1.0"
-    )
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence score 0.0 to 1.0")
 
 
 class ImageAnalysisResult(BaseModel):
@@ -64,7 +62,9 @@ def build_system_prompt(
         unit_str = f" ({unit})" if unit else ""
         fields_desc.append(f"  - {key}: {label}{unit_str} [{field_type}]")
 
-    fields_section = "\n".join(fields_desc) if fields_desc else "  (no specific fields defined)"
+    fields_section = (
+        "\n".join(fields_desc) if fields_desc else "  (no specific fields defined)"
+    )
 
     return f"""You are a lab assistant helping a scientist record measurements during a biotech experiment.
 You read images of lab instruments and extract values.
@@ -124,7 +124,9 @@ def build_conversation_prompt(
         unit_str = f" ({unit})" if unit else ""
         fields_desc.append(f"  - {key}: {label}{unit_str}")
 
-    fields_section = "\n".join(fields_desc) if fields_desc else "  (no specific fields defined)"
+    fields_section = (
+        "\n".join(fields_desc) if fields_desc else "  (no specific fields defined)"
+    )
 
     return f"""You are a lab assistant in a follow-up conversation about a measurement image.
 
@@ -163,6 +165,7 @@ def _is_ollama_model(model: "ModelType | str") -> bool:
     """Check if the model is an Ollama model."""
     if isinstance(model, OpenAIChatModel):
         from pydantic_ai.providers.ollama import OllamaProvider
+
         return isinstance(model._provider, OllamaProvider)
     if isinstance(model, str) and model.startswith("ollama:"):
         return True
@@ -224,7 +227,9 @@ async def _ollama_chat(
     try:
         return ImageAnalysisResult.model_validate(parsed)
     except Exception as e:
-        logger.warning("Full ImageAnalysisResult validation failed, extracting best-effort: %s", e)
+        logger.warning(
+            "Full ImageAnalysisResult validation failed, extracting best-effort: %s", e
+        )
         # Validation failed — extract what we can from the parsed JSON
         message = parsed.get("message", "")
         if not isinstance(message, str):
@@ -243,7 +248,8 @@ async def _ollama_chat(
                     logger.debug("Skipping invalid extracted value: %s", rv)
 
         return ImageAnalysisResult(
-            message=message or "I analyzed the image but had trouble formatting the results.",
+            message=message
+            or "I analyzed the image but had trouble formatting the results.",
             extracted_values=extracted,
             needs_clarification=parsed.get("needs_clarification", True),
         )

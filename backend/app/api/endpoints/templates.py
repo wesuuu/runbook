@@ -46,7 +46,9 @@ TEMPLATE_BASE_DIR = "document_templates"
 
 
 async def _require_org_admin(
-    db: AsyncSession, user_id: UUID, org_id: UUID,
+    db: AsyncSession,
+    user_id: UUID,
+    org_id: UUID,
 ) -> None:
     """Raise 403 if user is not ADMIN in the given org."""
     result = await db.execute(
@@ -69,12 +71,14 @@ async def _require_template_admin(
     """Require org admin (org-scoped) or project admin (project-scoped)."""
     if project_id:
         allowed = await check_permission(
-            db, user_id, ObjectType.PROJECT, project_id, PermissionLevel.ADMIN,
+            db,
+            user_id,
+            ObjectType.PROJECT,
+            project_id,
+            PermissionLevel.ADMIN,
         )
         if not allowed:
-            raise HTTPException(
-                status_code=403, detail="Project admin role required"
-            )
+            raise HTTPException(status_code=403, detail="Project admin role required")
     else:
         await _require_org_admin(db, user_id, org_id)
 
@@ -98,14 +102,10 @@ def _validate_template_type(template_type: str) -> None:
 async def _validate_upload(file: UploadFile) -> bytes:
     """Validate and read an uploaded .docx file. Returns file content."""
     if file.content_type not in ALLOWED_TEMPLATE_MIME:
-        raise HTTPException(
-            status_code=422, detail="Only .docx files are allowed"
-        )
+        raise HTTPException(status_code=422, detail="Only .docx files are allowed")
     content = await file.read()
     if len(content) > MAX_TEMPLATE_SIZE:
-        raise HTTPException(
-            status_code=413, detail="File exceeds 10MB limit"
-        )
+        raise HTTPException(status_code=413, detail="File exceeds 10MB limit")
     return content
 
 
@@ -144,16 +144,12 @@ async def _set_template_as_default(
     # Clear is_default on the previous default
     prev_id = None
     if project_id:
-        result = await db.execute(
-            select(Project).where(Project.id == project_id)
-        )
+        result = await db.execute(select(Project).where(Project.id == project_id))
         proj = result.scalar_one()
         prev_id = getattr(proj, col_name, None)
         setattr(proj, col_name, template.id)
     else:
-        result = await db.execute(
-            select(Organization).where(Organization.id == org_id)
-        )
+        result = await db.execute(select(Organization).where(Organization.id == org_id))
         org = result.scalar_one()
         prev_id = getattr(org, col_name, None)
         setattr(org, col_name, template.id)
@@ -211,9 +207,7 @@ async def preview_template(
         try:
             recognized, unrecognized = parse_template(tmp_path)
         except Exception:
-            raise HTTPException(
-                status_code=422, detail="Invalid .docx template"
-            )
+            raise HTTPException(status_code=422, detail="Invalid .docx template")
 
         mock_ctx = get_mock_context()
         pdf_bytes = await asyncio.to_thread(render_to_pdf, tmp_path, mock_ctx)
@@ -271,9 +265,7 @@ async def create_template(
         try:
             recognized, unrecognized = parse_template(tmp_path)
         except Exception:
-            raise HTTPException(
-                status_code=422, detail="Invalid .docx template"
-            )
+            raise HTTPException(status_code=422, detail="Invalid .docx template")
 
     # Store file
     storage = FileStorageService()
@@ -343,22 +335,16 @@ async def list_templates(
             )
         )
 
-    result = await db.execute(
-        query.order_by(DocumentTemplate.created_at.desc())
-    )
+    result = await db.execute(query.order_by(DocumentTemplate.created_at.desc()))
     templates = result.scalars().all()
 
     # Fetch current defaults
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
+    org_result = await db.execute(select(Organization).where(Organization.id == org_id))
     org = org_result.scalar_one()
     default_ids = _get_default_ids(org)
 
     if project_id:
-        proj_result = await db.execute(
-            select(Project).where(Project.id == project_id)
-        )
+        proj_result = await db.execute(select(Project).where(Project.id == project_id))
         proj = proj_result.scalar_one_or_none()
         if proj:
             default_ids = _get_default_ids(org, proj)
@@ -379,42 +365,115 @@ async def get_template_variables(
     """Return the full variable reference for template authors."""
     return {
         "protocol": [
-            {"name": "protocol_name", "description": "Protocol name", "example": "Buffer Preparation"},
-            {"name": "protocol_description", "description": "Protocol description", "example": "Prepare PBS buffer..."},
+            {
+                "name": "protocol_name",
+                "description": "Protocol name",
+                "example": "Buffer Preparation",
+            },
+            {
+                "name": "protocol_description",
+                "description": "Protocol description",
+                "example": "Prepare PBS buffer...",
+            },
             {"name": "version_number", "description": "Version number", "example": 3},
-            {"name": "created_at", "description": "Last modified date", "example": "January 15, 2026"},
+            {
+                "name": "created_at",
+                "description": "Last modified date",
+                "example": "January 15, 2026",
+            },
         ],
         "run": [
             {"name": "run_name", "description": "Run name", "example": "Run-2026-001"},
             {"name": "run_status", "description": "Run status", "example": "COMPLETED"},
-            {"name": "started_at", "description": "Run start time", "example": "2026-01-20 08:00"},
-            {"name": "completed_at", "description": "Run completion time", "example": "2026-01-20 14:30"},
+            {
+                "name": "started_at",
+                "description": "Run start time",
+                "example": "2026-01-20 08:00",
+            },
+            {
+                "name": "completed_at",
+                "description": "Run completion time",
+                "example": "2026-01-20 14:30",
+            },
         ],
         "project": [
-            {"name": "project_name", "description": "Project name", "example": "AAV Campaign Q1"},
-            {"name": "organization_name", "description": "Organization name", "example": "Acme Therapeutics"},
+            {
+                "name": "project_name",
+                "description": "Project name",
+                "example": "AAV Campaign Q1",
+            },
+            {
+                "name": "organization_name",
+                "description": "Organization name",
+                "example": "Acme Therapeutics",
+            },
         ],
         "loops": [
-            {"name": "roles", "description": "List of roles with .name, .steps, .sop_header, .br_header", "type": "loop"},
-            {"name": "steps", "description": "Steps within a role (batch record)", "type": "loop"},
-            {"name": "role.sop_steps", "description": "Steps within a role (SOP)", "type": "loop"},
-            {"name": "notes", "description": "Run-level notes with .meta, .content", "type": "loop"},
-            {"name": "figures", "description": "Image attachments with .image, .number, .filename", "type": "loop"},
-            {"name": "non_image_attachments", "description": "Non-image attachments with .filename, .type, .scope", "type": "loop"},
+            {
+                "name": "roles",
+                "description": "List of roles with .name, .steps, .sop_header, .br_header",
+                "type": "loop",
+            },
+            {
+                "name": "steps",
+                "description": "Steps within a role (batch record)",
+                "type": "loop",
+            },
+            {
+                "name": "role.sop_steps",
+                "description": "Steps within a role (SOP)",
+                "type": "loop",
+            },
+            {
+                "name": "notes",
+                "description": "Run-level notes with .meta, .content",
+                "type": "loop",
+            },
+            {
+                "name": "figures",
+                "description": "Image attachments with .image, .number, .filename",
+                "type": "loop",
+            },
+            {
+                "name": "non_image_attachments",
+                "description": "Non-image attachments with .filename, .type, .scope",
+                "type": "loop",
+            },
         ],
         "step_fields": [
             {"name": "step.name", "description": "Step name"},
-            {"name": "step.description", "description": "Step description with params filled in"},
+            {
+                "name": "step.description",
+                "description": "Step description with params filled in",
+            },
             {"name": "step.duration_min", "description": "Duration in minutes"},
-            {"name": "step.value_display", "description": "Parameter values (RichText, use {{r }})", "syntax": "{{r step.value_display }}"},
+            {
+                "name": "step.value_display",
+                "description": "Parameter values (RichText, use {{r }})",
+                "syntax": "{{r step.value_display }}",
+            },
             {"name": "step.initials", "description": "Completer initials"},
-            {"name": "step.notes_display", "description": "Step-level notes + figure cross-references"},
+            {
+                "name": "step.notes_display",
+                "description": "Step-level notes + figure cross-references",
+            },
             {"name": "step.role_name", "description": "Role name for this step"},
         ],
         "special": [
-            {"name": "page_break", "description": "Insert a page break", "syntax": "{{r page_break }}"},
-            {"name": "is_role_based", "description": "Boolean — true if protocol uses swimlane roles"},
-            {"name": "protocol_subtitle", "description": "Run name + description (RichText)", "syntax": "{{r protocol_subtitle }}"},
+            {
+                "name": "page_break",
+                "description": "Insert a page break",
+                "syntax": "{{r page_break }}",
+            },
+            {
+                "name": "is_role_based",
+                "description": "Boolean — true if protocol uses swimlane roles",
+            },
+            {
+                "name": "protocol_subtitle",
+                "description": "Run name + description (RichText)",
+                "syntax": "{{r protocol_subtitle }}",
+            },
         ],
     }
 
@@ -439,9 +498,7 @@ async def get_template(
         raise HTTPException(status_code=404, detail="Template not found")
 
     # Compute is_current_default
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
+    org_result = await db.execute(select(Organization).where(Organization.id == org_id))
     org = org_result.scalar_one()
     default_ids = _get_default_ids(org)
 
@@ -476,9 +533,7 @@ async def update_template(
     # Verify ownership + admin permission
     if template.org_id != org_id:
         raise HTTPException(status_code=404, detail="Template not found")
-    await _require_template_admin(
-        db, user.id, org_id, template.project_id
-    )
+    await _require_template_admin(db, user.id, org_id, template.project_id)
 
     # Apply updates
     if body.name is not None:
@@ -502,17 +557,13 @@ async def update_template(
             template.archived_by_id = None
 
     if body.set_as_default is True:
-        await _set_template_as_default(
-            db, template, org_id, template.project_id
-        )
+        await _set_template_as_default(db, template, org_id, template.project_id)
 
     await db.commit()
     await db.refresh(template)
 
     # Compute is_current_default
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
+    org_result = await db.execute(select(Organization).where(Organization.id == org_id))
     org = org_result.scalar_one()
     default_ids = _get_default_ids(org)
 

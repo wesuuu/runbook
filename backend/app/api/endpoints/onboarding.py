@@ -1,4 +1,5 @@
 """Onboarding tour API — state and sample artifact lifecycle."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException

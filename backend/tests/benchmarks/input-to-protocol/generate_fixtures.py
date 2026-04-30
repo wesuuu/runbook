@@ -14,13 +14,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import (
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer, Table,
+                                TableStyle)
 
 FIXTURES_DIR = Path(__file__).parent
 
@@ -78,14 +73,18 @@ def _build_pdf(output_path: Path, title: str, doc_number: str, elements_fn):
         ["Effective: 2026-01-15", "Rev: 1.0"],
     ]
     header_table = Table(header_data, colWidths=[4 * inch, 3 * inch])
-    header_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.95)),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("SPAN", (0, 0), (1, 0)),
-        ("ALIGN", (0, 0), (1, 0), "CENTER"),
-    ]))
+    header_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.95)),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("SPAN", (0, 0), (1, 0)),
+                ("ALIGN", (0, 0), (1, 0), "CENTER"),
+            ]
+        )
+    )
     elements.append(header_table)
     elements.append(Spacer(1, 0.3 * inch))
 
@@ -159,44 +158,56 @@ def generate_01_buffer_prep():
 
     def body(elements, header, body, section):
         elements.append(Paragraph("1. Purpose", section))
-        elements.append(Paragraph(
-            "This SOP describes the preparation of 10L Tris-HCl buffer (50mM, pH 7.4) "
-            "for use in downstream purification processes.",
-            body,
-        ))
+        elements.append(
+            Paragraph(
+                "This SOP describes the preparation of 10L Tris-HCl buffer (50mM, pH 7.4) "
+                "for use in downstream purification processes.",
+                body,
+            )
+        )
         elements.append(Paragraph("2. Responsible Personnel", section))
         elements.append(Paragraph("Role: Operator", body))
         elements.append(Paragraph("3. Procedure", section))
-        elements.append(Paragraph(
-            "<b>Step 1: Buffer Preparation</b><br/>"
-            "Weigh 60.57g Tris base and dissolve in 8L purified water in a 10L carboy. "
-            "Stir at 200 RPM until fully dissolved (approximately 15 minutes). "
-            "Target volume: 10L. Target concentration: 50mM.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 2: pH Adjustment</b><br/>"
-            "Using a calibrated pH meter, adjust pH to 7.4 (&plusmn; 0.05) by slow addition "
-            "of concentrated HCl (6N). Mix thoroughly between additions. "
-            "Record final pH reading.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 3: Sterile Filtration</b><br/>"
-            "Filter the entire 10L volume through a 0.22&mu;m PES membrane filter "
-            "into a sterile carboy. Use a peristaltic pump at 500 mL/min flow rate. "
-            "Perform bubble-point integrity test post-filtration.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 4: QC Sampling</b><br/>"
-            "Collect a 50mL sample into a sterile polypropylene tube. "
-            "Label with buffer name, lot number, and date. "
-            "Store at 2-8&deg;C. Submit for pH verification and bioburden testing.",
-            body,
-        ))
+        elements.append(
+            Paragraph(
+                "<b>Step 1: Buffer Preparation</b><br/>"
+                "Weigh 60.57g Tris base and dissolve in 8L purified water in a 10L carboy. "
+                "Stir at 200 RPM until fully dissolved (approximately 15 minutes). "
+                "Target volume: 10L. Target concentration: 50mM.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 2: pH Adjustment</b><br/>"
+                "Using a calibrated pH meter, adjust pH to 7.4 (&plusmn; 0.05) by slow addition "
+                "of concentrated HCl (6N). Mix thoroughly between additions. "
+                "Record final pH reading.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 3: Sterile Filtration</b><br/>"
+                "Filter the entire 10L volume through a 0.22&mu;m PES membrane filter "
+                "into a sterile carboy. Use a peristaltic pump at 500 mL/min flow rate. "
+                "Perform bubble-point integrity test post-filtration.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 4: QC Sampling</b><br/>"
+                "Collect a 50mL sample into a sterile polypropylene tube. "
+                "Label with buffer name, lot number, and date. "
+                "Store at 2-8&deg;C. Submit for pH verification and bioburden testing.",
+                body,
+            )
+        )
 
-    _build_pdf(out_dir / "document.pdf", "Tris-HCl Buffer Preparation", "SOP-BUF-001", body)
+    _build_pdf(
+        out_dir / "document.pdf", "Tris-HCl Buffer Preparation", "SOP-BUF-001", body
+    )
 
 
 def generate_02_cell_culture_passage():
@@ -206,11 +217,13 @@ def generate_02_cell_culture_passage():
 
     def body(elements, header, body, section):
         elements.append(Paragraph("1. Purpose", section))
-        elements.append(Paragraph(
-            "Routine passage of adherent CHO-K1 cells for seed train maintenance. "
-            "Cells are split 1:4 every 3-4 days when reaching 80-90% confluence.",
-            body,
-        ))
+        elements.append(
+            Paragraph(
+                "Routine passage of adherent CHO-K1 cells for seed train maintenance. "
+                "Cells are split 1:4 every 3-4 days when reaching 80-90% confluence.",
+                body,
+            )
+        )
         elements.append(Paragraph("2. Responsible Personnel", section))
         elements.append(Paragraph("Role: Operator", body))
         elements.append(Paragraph("3. Materials", section))
@@ -223,63 +236,81 @@ def generate_02_cell_culture_passage():
             ["T-175 Flasks", "Corning, tissue-culture treated"],
         ]
         mat_table = Table(materials, colWidths=[2.5 * inch, 4 * inch])
-        mat_table.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.95)),
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ]))
+        mat_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.95)),
+                    ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ]
+            )
+        )
         elements.append(mat_table)
         elements.append(Spacer(1, 0.2 * inch))
 
         elements.append(Paragraph("4. Procedure", section))
-        elements.append(Paragraph(
-            "<b>Step 1: Pre-warm Media</b><br/>"
-            "Remove complete growth medium from 4&deg;C storage. "
-            "Place in 37&deg;C water bath for 20 minutes. "
-            "Volume required: 35mL per T-175 flask.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 2: Aspirate Spent Media</b><br/>"
-            "Remove flask from incubator. Using a vacuum aspirator, "
-            "carefully remove all spent media from the flask. "
-            "Tilt flask to collect residual media at the corner.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 3: PBS Wash</b><br/>"
-            "Add 10mL PBS to the flask. Gently rock the flask to wash the cell monolayer. "
-            "Aspirate the PBS wash. Repeat once for a total of 2 washes.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 4: Trypsinization</b><br/>"
-            "Add 5mL 0.25% Trypsin-EDTA to the flask. "
-            "Incubate at 37&deg;C for 5 minutes. "
-            "Check cell detachment under microscope.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 5: Neutralize and Harvest</b><br/>"
-            "Add 10mL complete medium to neutralize trypsin. "
-            "Pipette up and down to create single-cell suspension. "
-            "Transfer to a 50mL conical tube.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 6: Cell Count</b><br/>"
-            "Take 100&mu;L sample. Mix with 100&mu;L Trypan Blue (1:2 dilution). "
-            "Load hemocytometer and count using Trypan Blue exclusion method. "
-            "Record viable cell density and viability percentage.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 7: Seed New Flasks</b><br/>"
-            "Seed new T-175 flasks at 0.5 &times; 10<super>6</super> cells/mL "
-            "in 35mL complete medium. "
-            "Place in incubator at 37&deg;C, 5% CO2, humidified atmosphere.",
-            body,
-        ))
+        elements.append(
+            Paragraph(
+                "<b>Step 1: Pre-warm Media</b><br/>"
+                "Remove complete growth medium from 4&deg;C storage. "
+                "Place in 37&deg;C water bath for 20 minutes. "
+                "Volume required: 35mL per T-175 flask.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 2: Aspirate Spent Media</b><br/>"
+                "Remove flask from incubator. Using a vacuum aspirator, "
+                "carefully remove all spent media from the flask. "
+                "Tilt flask to collect residual media at the corner.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 3: PBS Wash</b><br/>"
+                "Add 10mL PBS to the flask. Gently rock the flask to wash the cell monolayer. "
+                "Aspirate the PBS wash. Repeat once for a total of 2 washes.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 4: Trypsinization</b><br/>"
+                "Add 5mL 0.25% Trypsin-EDTA to the flask. "
+                "Incubate at 37&deg;C for 5 minutes. "
+                "Check cell detachment under microscope.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 5: Neutralize and Harvest</b><br/>"
+                "Add 10mL complete medium to neutralize trypsin. "
+                "Pipette up and down to create single-cell suspension. "
+                "Transfer to a 50mL conical tube.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 6: Cell Count</b><br/>"
+                "Take 100&mu;L sample. Mix with 100&mu;L Trypan Blue (1:2 dilution). "
+                "Load hemocytometer and count using Trypan Blue exclusion method. "
+                "Record viable cell density and viability percentage.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 7: Seed New Flasks</b><br/>"
+                "Seed new T-175 flasks at 0.5 &times; 10<super>6</super> cells/mL "
+                "in 35mL complete medium. "
+                "Place in incubator at 37&deg;C, 5% CO2, humidified atmosphere.",
+                body,
+            )
+        )
 
     _build_pdf(out_dir / "document.pdf", "CHO-K1 Cell Passage", "SOP-CC-012", body)
 
@@ -365,60 +396,76 @@ def generate_04_transfection():
 
     def body(elements, header, body, section):
         elements.append(Paragraph("1. Purpose", section))
-        elements.append(Paragraph(
-            "Transient transfection of HEK293 cells for recombinant protein expression "
-            "using Lipofectamine 3000. Target: 6-well plate scale.",
-            body,
-        ))
+        elements.append(
+            Paragraph(
+                "Transient transfection of HEK293 cells for recombinant protein expression "
+                "using Lipofectamine 3000. Target: 6-well plate scale.",
+                body,
+            )
+        )
         elements.append(Paragraph("2. Responsible Personnel", section))
         elements.append(Paragraph("Role: Scientist", body))
         elements.append(Paragraph("3. Procedure", section))
-        elements.append(Paragraph(
-            "<b>Step 1: Seed Cells (Day -1)</b><br/>"
-            "Seed HEK293 cells at 0.5 &times; 10<super>6</super> cells/well "
-            "in 2mL complete DMEM per well of a 6-well plate. "
-            "Incubate overnight at 37&deg;C, 5% CO2. "
-            "Cells should be 70-80% confluent at transfection.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 2: Prepare DNA-Lipid Complexes (Day 0)</b><br/>"
-            "Per well: dilute 2.5&mu;g plasmid DNA in 125&mu;L Opti-MEM. "
-            "In a separate tube, dilute 3.75&mu;L Lipofectamine 3000 in 125&mu;L Opti-MEM. "
-            "Add 5&mu;L P3000 reagent to the DNA tube. "
-            "Combine DNA and lipid tubes, mix gently. Incubate 15 minutes at room temperature. "
-            "DNA:lipid ratio is 1:1.5.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 3: Transfect Cells</b><br/>"
-            "Add 250&mu;L DNA-lipid complex dropwise to each well. "
-            "Gently rock plate to distribute. "
-            "Method: lipofection. Reagent: Lipofectamine 3000. DNA amount: 2.5&mu;g/well.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 4: Incubate</b><br/>"
-            "Return plate to incubator. Incubate for 4-6 hours at 37&deg;C, 5% CO2. "
-            "Do not disturb the plate during incubation.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 5: Media Change</b><br/>"
-            "After 4-6 hours, aspirate transfection media. "
-            "Replace with 2mL fresh complete DMEM per well. "
-            "Return to incubator.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 6: Assess Transfection (Day 2)</b><br/>"
-            "At 48 hours post-transfection, count cells and assess viability. "
-            "Take 100&mu;L sample, mix with Trypan Blue (1:2 dilution). "
-            "Method: Trypan Blue exclusion. Expected viability: &gt;85%.",
-            body,
-        ))
+        elements.append(
+            Paragraph(
+                "<b>Step 1: Seed Cells (Day -1)</b><br/>"
+                "Seed HEK293 cells at 0.5 &times; 10<super>6</super> cells/well "
+                "in 2mL complete DMEM per well of a 6-well plate. "
+                "Incubate overnight at 37&deg;C, 5% CO2. "
+                "Cells should be 70-80% confluent at transfection.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 2: Prepare DNA-Lipid Complexes (Day 0)</b><br/>"
+                "Per well: dilute 2.5&mu;g plasmid DNA in 125&mu;L Opti-MEM. "
+                "In a separate tube, dilute 3.75&mu;L Lipofectamine 3000 in 125&mu;L Opti-MEM. "
+                "Add 5&mu;L P3000 reagent to the DNA tube. "
+                "Combine DNA and lipid tubes, mix gently. Incubate 15 minutes at room temperature. "
+                "DNA:lipid ratio is 1:1.5.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 3: Transfect Cells</b><br/>"
+                "Add 250&mu;L DNA-lipid complex dropwise to each well. "
+                "Gently rock plate to distribute. "
+                "Method: lipofection. Reagent: Lipofectamine 3000. DNA amount: 2.5&mu;g/well.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 4: Incubate</b><br/>"
+                "Return plate to incubator. Incubate for 4-6 hours at 37&deg;C, 5% CO2. "
+                "Do not disturb the plate during incubation.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 5: Media Change</b><br/>"
+                "After 4-6 hours, aspirate transfection media. "
+                "Replace with 2mL fresh complete DMEM per well. "
+                "Return to incubator.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 6: Assess Transfection (Day 2)</b><br/>"
+                "At 48 hours post-transfection, count cells and assess viability. "
+                "Take 100&mu;L sample, mix with Trypan Blue (1:2 dilution). "
+                "Method: Trypan Blue exclusion. Expected viability: &gt;85%.",
+                body,
+            )
+        )
 
-    _build_pdf(out_dir / "document.pdf", "HEK293 Transient Transfection", "SOP-CC-023", body)
+    _build_pdf(
+        out_dir / "document.pdf", "HEK293 Transient Transfection", "SOP-CC-023", body
+    )
 
 
 def generate_05_fill_finish_qc():
@@ -428,87 +475,115 @@ def generate_05_fill_finish_qc():
 
     def body(elements, header, body, section):
         elements.append(Paragraph("1. Purpose", section))
-        elements.append(Paragraph(
-            "Aseptic fill of drug product into 2mL glass vials, followed by "
-            "lyophilization and QC release testing. Batch size: 500 vials.",
-            body,
-        ))
+        elements.append(
+            Paragraph(
+                "Aseptic fill of drug product into 2mL glass vials, followed by "
+                "lyophilization and QC release testing. Batch size: 500 vials.",
+                body,
+            )
+        )
         elements.append(Paragraph("2. Responsible Personnel", section))
 
         roles = [
             ["Role", "Responsibility"],
-            ["Fill Operator", "Steps 1-4, 6: Buffer prep, filtration, fill, sealing, lyo"],
-            ["QC Inspector", "Steps 5, 7, 8: Visual inspection, particulate testing, assay"],
+            [
+                "Fill Operator",
+                "Steps 1-4, 6: Buffer prep, filtration, fill, sealing, lyo",
+            ],
+            [
+                "QC Inspector",
+                "Steps 5, 7, 8: Visual inspection, particulate testing, assay",
+            ],
         ]
         role_table = Table(roles, colWidths=[2 * inch, 4.5 * inch])
-        role_table.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.95)),
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ]))
+        role_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.95)),
+                    ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ]
+            )
+        )
         elements.append(role_table)
         elements.append(Spacer(1, 0.2 * inch))
 
         elements.append(Paragraph("3. Procedure", section))
-        elements.append(Paragraph(
-            "<b>Step 1: Prepare Formulation Buffer</b> (Fill Operator)<br/>"
-            "Prepare 5L of histidine formulation buffer (10mM L-histidine, 150mM NaCl, "
-            "pH 6.0). Dissolve components in WFI, adjust pH with HCl. "
-            "Volume: 5L. pH target: 6.0.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 2: Sterile Filtration</b> (Fill Operator)<br/>"
-            "Filter drug substance through 0.22&mu;m PES membrane into sterile vessel. "
-            "Filter type: PES membrane. Pore size: 0.22&mu;m. Volume: 1.2L. "
-            "Perform integrity test post-filtration.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 3: Vial Filling</b> (Fill Operator)<br/>"
-            "Fill each vial with 1.2mL drug product using peristaltic pump. "
-            "Fill speed: medium (2 mL/sec). Container type: 2mL Type I glass vial. "
-            "Check fill weight every 50 vials (&plusmn; 3% target).",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 4: Stoppering and Crimping</b> (Fill Operator)<br/>"
-            "Insert rubber stopper into each vial under laminar flow. "
-            "Apply aluminum crimp cap using manual crimping tool. "
-            "Verify each seal visually. Duration: 120 minutes for 500 vials.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 5: 100% Visual Inspection</b> (QC Inspector)<br/>"
-            "Inspect every vial against black and white backgrounds. "
-            "Inspection type: 100% manual. Reject criteria: visible particles, "
-            "cracks, seal defects, fill volume anomalies. "
-            "Acceptance criteria: no visible particles, intact seal.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 6: Lyophilization</b> (Fill Operator)<br/>"
-            "Load vials into lyophilizer. Cycle parameters: "
-            "shelf temperature -40&deg;C, chamber pressure 100 mTorr, "
-            "primary drying 24 hours, secondary drying 6 hours at 25&deg;C. "
-            "Total cycle: 30 hours.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 7: Particulate Testing</b> (QC Inspector)<br/>"
-            "Test per USP &lt;788&gt;. Use HIAC liquid particle counter. "
-            "Acceptance: &le; 6000 particles &ge; 10&mu;m, &le; 600 particles &ge; 25&mu;m per container. "
-            "Test 10 vials from the batch. Method: light obscuration.",
-            body,
-        ))
-        elements.append(Paragraph(
-            "<b>Step 8: Potency Assay</b> (QC Inspector)<br/>"
-            "Run ELISA potency assay on 3 vials. "
-            "Assay type: ELISA. Method: sandwich ELISA. "
-            "Acceptance: 80-120% of nominal potency. "
-            "Report mean, SD, and %CV.",
-            body,
-        ))
+        elements.append(
+            Paragraph(
+                "<b>Step 1: Prepare Formulation Buffer</b> (Fill Operator)<br/>"
+                "Prepare 5L of histidine formulation buffer (10mM L-histidine, 150mM NaCl, "
+                "pH 6.0). Dissolve components in WFI, adjust pH with HCl. "
+                "Volume: 5L. pH target: 6.0.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 2: Sterile Filtration</b> (Fill Operator)<br/>"
+                "Filter drug substance through 0.22&mu;m PES membrane into sterile vessel. "
+                "Filter type: PES membrane. Pore size: 0.22&mu;m. Volume: 1.2L. "
+                "Perform integrity test post-filtration.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 3: Vial Filling</b> (Fill Operator)<br/>"
+                "Fill each vial with 1.2mL drug product using peristaltic pump. "
+                "Fill speed: medium (2 mL/sec). Container type: 2mL Type I glass vial. "
+                "Check fill weight every 50 vials (&plusmn; 3% target).",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 4: Stoppering and Crimping</b> (Fill Operator)<br/>"
+                "Insert rubber stopper into each vial under laminar flow. "
+                "Apply aluminum crimp cap using manual crimping tool. "
+                "Verify each seal visually. Duration: 120 minutes for 500 vials.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 5: 100% Visual Inspection</b> (QC Inspector)<br/>"
+                "Inspect every vial against black and white backgrounds. "
+                "Inspection type: 100% manual. Reject criteria: visible particles, "
+                "cracks, seal defects, fill volume anomalies. "
+                "Acceptance criteria: no visible particles, intact seal.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 6: Lyophilization</b> (Fill Operator)<br/>"
+                "Load vials into lyophilizer. Cycle parameters: "
+                "shelf temperature -40&deg;C, chamber pressure 100 mTorr, "
+                "primary drying 24 hours, secondary drying 6 hours at 25&deg;C. "
+                "Total cycle: 30 hours.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 7: Particulate Testing</b> (QC Inspector)<br/>"
+                "Test per USP &lt;788&gt;. Use HIAC liquid particle counter. "
+                "Acceptance: &le; 6000 particles &ge; 10&mu;m, &le; 600 particles &ge; 25&mu;m per container. "
+                "Test 10 vials from the batch. Method: light obscuration.",
+                body,
+            )
+        )
+        elements.append(
+            Paragraph(
+                "<b>Step 8: Potency Assay</b> (QC Inspector)<br/>"
+                "Run ELISA potency assay on 3 vials. "
+                "Assay type: ELISA. Method: sandwich ELISA. "
+                "Acceptance: 80-120% of nominal potency. "
+                "Report mean, SD, and %CV.",
+                body,
+            )
+        )
 
     _build_pdf(out_dir / "document.pdf", "Drug Product Fill/Finish", "SOP-FF-004", body)
 

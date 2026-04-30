@@ -1,18 +1,16 @@
 """Integration tests for notification API endpoints."""
 
-import pytest
-import pytest_asyncio
 from uuid import uuid4
 
-from app.models.notifications import (
-    NotificationChannel,
-    NotificationSubscription,
-    Notification,
-    NotificationDelivery,
-)
+import pytest
+import pytest_asyncio
 
+from app.models.notifications import (Notification, NotificationChannel,
+                                      NotificationDelivery,
+                                      NotificationSubscription)
 
 # ── Org Channel CRUD ─────────────────────────────────────────────────────
+
 
 class TestOrgChannels:
     @pytest.mark.asyncio
@@ -52,7 +50,11 @@ class TestOrgChannels:
         )
         await client.post(
             "/notifications/channels",
-            json={"name": "Ch2", "channel_type": "WEBHOOK", "config": {"url": "http://test"}},
+            json={
+                "name": "Ch2",
+                "channel_type": "WEBHOOK",
+                "config": {"url": "http://test"},
+            },
             headers=auth_headers,
         )
 
@@ -97,8 +99,8 @@ class TestOrgChannels:
     ):
         """A MEMBER (not ADMIN) of an org should not be able to create
         org-level notification channels."""
-        from app.core.security import hash_password, create_access_token
-        from app.models.iam import User, OrganizationMember
+        from app.core.security import create_access_token, hash_password
+        from app.models.iam import OrganizationMember, User
 
         member = User(
             email="member_only@example.com",
@@ -108,15 +110,18 @@ class TestOrgChannels:
         )
         db_session.add(member)
         await db_session.flush()
-        db_session.add(OrganizationMember(
-            user_id=member.id,
-            organization_id=test_org.id,
-            role="MEMBER",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=member.id,
+                organization_id=test_org.id,
+                role="MEMBER",
+            )
+        )
         await db_session.flush()
 
         token = create_access_token(
-            member.id, org_id=test_org.id,
+            member.id,
+            org_id=test_org.id,
             subscription_tier=test_org.subscription_tier,
         )
         headers = {"Authorization": f"Bearer {token}"}
@@ -130,6 +135,7 @@ class TestOrgChannels:
 
 
 # ── User Channel CRUD ────────────────────────────────────────────────────
+
 
 class TestUserChannels:
     @pytest.mark.asyncio
@@ -181,6 +187,7 @@ class TestUserChannels:
 
 
 # ── Subscriptions ────────────────────────────────────────────────────────
+
 
 class TestSubscriptions:
     @pytest.mark.asyncio
@@ -294,6 +301,7 @@ class TestSubscriptions:
 
 # ── In-App Notifications ────────────────────────────────────────────────
 
+
 class TestInAppNotifications:
     @pytest.mark.asyncio
     async def test_list_empty(self, client, auth_headers):
@@ -339,9 +347,7 @@ class TestInAppNotifications:
 
         # Mark read
         notif_id = data["items"][0]["id"]
-        resp = await client.put(
-            f"/notifications/{notif_id}/read", headers=auth_headers
-        )
+        resp = await client.put(f"/notifications/{notif_id}/read", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["read_at"] is not None
 
@@ -350,18 +356,18 @@ class TestInAppNotifications:
         assert resp.json()["count"] == 0
 
     @pytest.mark.asyncio
-    async def test_mark_all_read(
-        self, client, auth_headers, test_user, db_session
-    ):
+    async def test_mark_all_read(self, client, auth_headers, test_user, db_session):
         for i in range(3):
-            db_session.add(Notification(
-                user_id=test_user.id,
-                event_type="RUN_STARTED",
-                entity_type="run",
-                entity_id=uuid4(),
-                title=f"Notif {i}",
-                message=f"Message {i}",
-            ))
+            db_session.add(
+                Notification(
+                    user_id=test_user.id,
+                    event_type="RUN_STARTED",
+                    entity_type="run",
+                    entity_id=uuid4(),
+                    title=f"Notif {i}",
+                    message=f"Message {i}",
+                )
+            )
         await db_session.flush()
 
         resp = await client.get("/notifications/unread-count", headers=auth_headers)
@@ -395,6 +401,7 @@ class TestInAppNotifications:
 
 
 # ── Channel Test Endpoint ────────────────────────────────────────────────
+
 
 class TestChannelTest:
     @pytest.mark.asyncio

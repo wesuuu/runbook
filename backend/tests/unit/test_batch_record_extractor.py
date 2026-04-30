@@ -7,20 +7,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.batch.batch_record_extractor import (
-    BatchRecordExtraction,
-    ExtractedDeviation,
-    ExtractedParameterValue,
-    ExtractedSignature,
-    ExtractedStep,
-    ExtractedTimestamp,
-    ParamMapping,
-    StepMapping,
-    StepMappingResult,
-    extract_batch_record_data,
-    _extract_chunked,
-    map_values_to_execution_data,
-)
-
+    BatchRecordExtraction, ExtractedDeviation, ExtractedParameterValue,
+    ExtractedSignature, ExtractedStep, ExtractedTimestamp, ParamMapping,
+    StepMapping, StepMappingResult, _extract_chunked,
+    extract_batch_record_data, map_values_to_execution_data)
 
 # ── Pydantic model validation ───────────────────────────────────────
 
@@ -51,11 +41,15 @@ class TestExtractionModels:
     def test_confidence_bounds(self):
         with pytest.raises(Exception):
             ExtractedParameterValue(
-                field_label="pH", value=7.0, confidence=1.5,
+                field_label="pH",
+                value=7.0,
+                confidence=1.5,
             )
         with pytest.raises(Exception):
             ExtractedParameterValue(
-                field_label="pH", value=7.0, confidence=-0.1,
+                field_label="pH",
+                value=7.0,
+                confidence=-0.1,
             )
 
     def test_extracted_step_with_all_fields(self):
@@ -64,25 +58,30 @@ class TestExtractionModels:
             step_number=1,
             parameters=[
                 ExtractedParameterValue(
-                    field_label="pH", value=7.4, confidence=0.9,
+                    field_label="pH",
+                    value=7.4,
+                    confidence=0.9,
                 ),
             ],
             timestamps=[
                 ExtractedTimestamp(
-                    value="2026-01-15T08:30:00", label="Start",
+                    value="2026-01-15T08:30:00",
+                    label="Start",
                     confidence=0.85,
                 ),
             ],
             signatures=[
                 ExtractedSignature(
-                    initials_or_name="JKL", role="Operator",
+                    initials_or_name="JKL",
+                    role="Operator",
                     confidence=0.9,
                 ),
             ],
             deviations=[
                 ExtractedDeviation(
                     description="Slight foam observed",
-                    severity="minor", confidence=0.7,
+                    severity="minor",
+                    confidence=0.7,
                 ),
             ],
             notes="Mixed for 30 min",
@@ -153,15 +152,17 @@ class TestStepMappingModels:
         assert len(m.param_mappings) == 1
 
     def test_step_mapping_result(self):
-        result = StepMappingResult(mappings=[
-            StepMapping(
-                extracted_step_index=0,
-                extracted_step_name="Step 1",
-                protocol_step_id="node-1",
-                protocol_step_name="Step One",
-                score=0.9,
-            ),
-        ])
+        result = StepMappingResult(
+            mappings=[
+                StepMapping(
+                    extracted_step_index=0,
+                    extracted_step_name="Step 1",
+                    protocol_step_id="node-1",
+                    protocol_step_name="Step One",
+                    score=0.9,
+                ),
+            ]
+        )
         assert len(result.mappings) == 1
 
 
@@ -316,7 +317,8 @@ class TestExtractBatchRecordData:
                     confidence=0.9,
                     parameters=[
                         ExtractedParameterValue(
-                            field_label="pH", value=7.0,
+                            field_label="pH",
+                            value=7.0,
                             confidence=0.95,
                         ),
                     ],
@@ -330,7 +332,10 @@ class TestExtractBatchRecordData:
             new_callable=lambda: AsyncMock(return_value=mock_extraction),
         ):
             result = await extract_batch_record_data(
-                "some text", [(1, b"fake_png")], None, None,
+                "some text",
+                [(1, b"fake_png")],
+                None,
+                None,
             )
 
         assert result.document_title == "Test"
@@ -360,7 +365,10 @@ class TestExtractBatchRecordData:
             side_effect=mock_single_call,
         ):
             result = await extract_batch_record_data(
-                "text", [(1, b"pg1"), (2, b"pg2")], None, None,
+                "text",
+                [(1, b"pg1"), (2, b"pg2")],
+                None,
+                None,
             )
 
         assert result.document_title == "Chunked"
@@ -369,13 +377,14 @@ class TestExtractBatchRecordData:
     async def test_non_context_error_propagates(self):
         with patch(
             "app.services.batch.batch_record_extractor._extract_single_call",
-            new_callable=lambda: AsyncMock(
-                side_effect=ValueError("some other error")
-            ),
+            new_callable=lambda: AsyncMock(side_effect=ValueError("some other error")),
         ):
             with pytest.raises(ValueError, match="some other error"):
                 await extract_batch_record_data(
-                    "text", [(1, b"pg1")], None, None,
+                    "text",
+                    [(1, b"pg1")],
+                    None,
+                    None,
                 )
 
 
@@ -385,15 +394,13 @@ class TestExtractChunked:
             document_title="Doc",
             batch_id="LOT-1",
             steps=[
-                ExtractedStep(step_name="Step A", confidence=0.9,
-                              source_page=1),
+                ExtractedStep(step_name="Step A", confidence=0.9, source_page=1),
             ],
             overall_confidence=0.9,
         )
         chunk2 = BatchRecordExtraction(
             steps=[
-                ExtractedStep(step_name="Step B", confidence=0.85,
-                              source_page=8),
+                ExtractedStep(step_name="Step B", confidence=0.85, source_page=8),
             ],
             overall_confidence=0.85,
         )

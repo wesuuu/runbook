@@ -11,20 +11,37 @@ from dataclasses import dataclass, field
 
 from tests.benchmarks.matching import f1, fuzzy_ratio
 
-
 _fuzzy_match = fuzzy_ratio
 
 
 _UNIT_SYNONYMS: dict[str, str] = {
-    "°c": "c", "c": "c", "celsius": "c",
-    "μm": "um", "um": "um", "micron": "um", "microns": "um",
-    "ml": "ml", "milliliter": "ml", "milliliters": "ml",
-    "l": "l", "liter": "l", "liters": "l",
-    "g": "g", "grams": "g",
-    "mg": "mg", "milligrams": "mg",
-    "psi": "psi", "bar": "bar", "rpm": "rpm",
-    "min": "min", "minute": "min", "minutes": "min",
-    "hr": "hr", "hour": "hr", "hours": "hr", "h": "hr",
+    "°c": "c",
+    "c": "c",
+    "celsius": "c",
+    "μm": "um",
+    "um": "um",
+    "micron": "um",
+    "microns": "um",
+    "ml": "ml",
+    "milliliter": "ml",
+    "milliliters": "ml",
+    "l": "l",
+    "liter": "l",
+    "liters": "l",
+    "g": "g",
+    "grams": "g",
+    "mg": "mg",
+    "milligrams": "mg",
+    "psi": "psi",
+    "bar": "bar",
+    "rpm": "rpm",
+    "min": "min",
+    "minute": "min",
+    "minutes": "min",
+    "hr": "hr",
+    "hour": "hr",
+    "hours": "hr",
+    "h": "hr",
 }
 
 
@@ -79,14 +96,14 @@ class RunScoreDetails:
 @dataclass
 class RunScores:
     fixture_name: str
-    step_completeness: float = 0.0     # 20%
-    param_accuracy: float = 0.0        # 25%
-    timestamps: float = 0.0            # 15%
-    signatures: float = 0.0            # 10%
-    deviations: float = 0.0            # 10%
-    na_correctness: float = 0.0        # 10%
-    notes_preservation: float = 0.0    # 5%
-    run_metadata: float = 0.0          # 5%
+    step_completeness: float = 0.0  # 20%
+    param_accuracy: float = 0.0  # 25%
+    timestamps: float = 0.0  # 15%
+    signatures: float = 0.0  # 10%
+    deviations: float = 0.0  # 10%
+    na_correctness: float = 0.0  # 10%
+    notes_preservation: float = 0.0  # 5%
+    run_metadata: float = 0.0  # 5%
     details: RunScoreDetails = field(default_factory=RunScoreDetails)
 
     @property
@@ -177,31 +194,41 @@ def score_run(
         for key, exp_val in exp_results.items():
             param_total += 1
             if key not in act_results:
-                d.param_value_mismatches.append({
-                    "step": step_id, "key": key,
-                    "expected": exp_val, "actual": None,
-                })
+                d.param_value_mismatches.append(
+                    {
+                        "step": step_id,
+                        "key": key,
+                        "expected": exp_val,
+                        "actual": None,
+                    }
+                )
                 continue
             act_val = act_results[key]
             if isinstance(exp_val, (int, float)) and isinstance(act_val, (int, float)):
                 if _numeric_equal(exp_val, act_val):
                     param_correct += 1
                 else:
-                    d.param_value_mismatches.append({
-                        "step": step_id, "key": key,
-                        "expected": exp_val, "actual": act_val,
-                    })
+                    d.param_value_mismatches.append(
+                        {
+                            "step": step_id,
+                            "key": key,
+                            "expected": exp_val,
+                            "actual": act_val,
+                        }
+                    )
             else:
                 if str(exp_val).lower().strip() == str(act_val).lower().strip():
                     param_correct += 1
                 else:
-                    d.param_value_mismatches.append({
-                        "step": step_id, "key": key,
-                        "expected": exp_val, "actual": act_val,
-                    })
-    scores.param_accuracy = (
-        param_correct / param_total if param_total > 0 else 1.0
-    )
+                    d.param_value_mismatches.append(
+                        {
+                            "step": step_id,
+                            "key": key,
+                            "expected": exp_val,
+                            "actual": act_val,
+                        }
+                    )
+    scores.param_accuracy = param_correct / param_total if param_total > 0 else 1.0
 
     # ── 3. na_correctness (per matched step, status must match) ──
     na_total = 0
@@ -214,14 +241,14 @@ def score_run(
             if exp_status == act_status:
                 na_correct += 1
             else:
-                d.na_mismatches.append({
-                    "step": step_id,
-                    "expected": exp_status,
-                    "actual": act_status,
-                })
-    scores.na_correctness = (
-        na_correct / na_total if na_total > 0 else 1.0
-    )
+                d.na_mismatches.append(
+                    {
+                        "step": step_id,
+                        "expected": exp_status,
+                        "actual": act_status,
+                    }
+                )
+    scores.na_correctness = na_correct / na_total if na_total > 0 else 1.0
 
     # ── 3. timestamps F1 over (step, label, value) ──
     exp_ts: list[tuple] = []
@@ -255,11 +282,17 @@ def score_run(
                 matched += 1
                 remaining.remove(best)
             else:
-                d.timestamps_missed.append({
-                    "step": exp[0], "label": exp[1], "value": exp[2],
-                })
+                d.timestamps_missed.append(
+                    {
+                        "step": exp[0],
+                        "label": exp[1],
+                        "value": exp[2],
+                    }
+                )
         scores.timestamps = f1(
-            n_matched=matched, n_expected=len(exp_ts), n_actual=len(act_ts),
+            n_matched=matched,
+            n_expected=len(exp_ts),
+            n_actual=len(act_ts),
         )
 
     # ── 4. signatures F1 over (step, initials, role) ──
@@ -290,10 +323,14 @@ def score_run(
     exp_sigs, act_sigs = [], []
     for step_id, s in expected_ed.items():
         for sig in s.get("signatures", []) or []:
-            exp_sigs.append((step_id, sig.get("initials_or_name", ""), sig.get("role") or ""))
+            exp_sigs.append(
+                (step_id, sig.get("initials_or_name", ""), sig.get("role") or "")
+            )
     for step_id, s in actual_ed.items():
         for sig in s.get("signatures", []) or []:
-            act_sigs.append((step_id, sig.get("initials_or_name", ""), sig.get("role") or ""))
+            act_sigs.append(
+                (step_id, sig.get("initials_or_name", ""), sig.get("role") or "")
+            )
     scores.signatures, sig_missed = _f1_tuples(exp_sigs, act_sigs)
     d.signatures_missed.extend(
         {"step": m[0], "initials_or_name": m[1], "role": m[2]} for m in sig_missed
@@ -308,9 +345,7 @@ def score_run(
         for dv in s.get("deviations", []) or []:
             act_devs.append((step_id, dv.get("description", "")))
     scores.deviations, dev_missed = _f1_tuples(exp_devs, act_devs, threshold=0.6)
-    d.deviations_missed.extend(
-        {"step": m[0], "description": m[1]} for m in dev_missed
-    )
+    d.deviations_missed.extend({"step": m[0], "description": m[1]} for m in dev_missed)
 
     # ── 7. notes_preservation (avg fuzzy ratio per matched completed step) ──
     notes_scores: list[float] = []
@@ -325,9 +360,13 @@ def score_run(
         ratio = _fuzzy_match(exp_notes, act_notes)
         notes_scores.append(ratio)
         if ratio < 0.7:
-            d.notes_mismatches.append({
-                "step": step_id, "expected": exp_notes, "actual": act_notes,
-            })
+            d.notes_mismatches.append(
+                {
+                    "step": step_id,
+                    "expected": exp_notes,
+                    "actual": act_notes,
+                }
+            )
     scores.notes_preservation = (
         sum(notes_scores) / len(notes_scores) if notes_scores else 1.0
     )
@@ -341,9 +380,13 @@ def score_run(
         scores.run_metadata = 1.0
     else:
         scores.run_metadata = 0.0
-        d.run_metadata_mismatches.append({
-            "field": "run_name", "expected": exp_name, "actual": act_name,
-        })
+        d.run_metadata_mismatches.append(
+            {
+                "field": "run_name",
+                "expected": exp_name,
+                "actual": act_name,
+            }
+        )
 
     return scores
 
@@ -357,18 +400,30 @@ def print_run_report(scores: RunScores) -> None:
     print(f"{'=' * 65}")
     print(f"  {'Dimension':<24} {'Score':>6}  Detail")
     print(f"  {'-' * 60}")
-    print(f"  {'Step Completeness':<24} {scores.step_completeness:>5.2f}  "
-          f"{d.steps_found}/{d.steps_expected} found, {len(d.steps_extra)} extra")
-    print(f"  {'Param Accuracy':<24} {scores.param_accuracy:>5.2f}  "
-          f"{len(d.param_value_mismatches)} mismatches")
-    print(f"  {'Timestamps':<24} {scores.timestamps:>5.2f}  "
-          f"{len(d.timestamps_missed)} missed")
-    print(f"  {'Signatures':<24} {scores.signatures:>5.2f}  "
-          f"{len(d.signatures_missed)} missed")
-    print(f"  {'Deviations':<24} {scores.deviations:>5.2f}  "
-          f"{len(d.deviations_missed)} missed")
-    print(f"  {'N/A Correctness':<24} {scores.na_correctness:>5.2f}  "
-          f"{len(d.na_mismatches)} mismatches")
+    print(
+        f"  {'Step Completeness':<24} {scores.step_completeness:>5.2f}  "
+        f"{d.steps_found}/{d.steps_expected} found, {len(d.steps_extra)} extra"
+    )
+    print(
+        f"  {'Param Accuracy':<24} {scores.param_accuracy:>5.2f}  "
+        f"{len(d.param_value_mismatches)} mismatches"
+    )
+    print(
+        f"  {'Timestamps':<24} {scores.timestamps:>5.2f}  "
+        f"{len(d.timestamps_missed)} missed"
+    )
+    print(
+        f"  {'Signatures':<24} {scores.signatures:>5.2f}  "
+        f"{len(d.signatures_missed)} missed"
+    )
+    print(
+        f"  {'Deviations':<24} {scores.deviations:>5.2f}  "
+        f"{len(d.deviations_missed)} missed"
+    )
+    print(
+        f"  {'N/A Correctness':<24} {scores.na_correctness:>5.2f}  "
+        f"{len(d.na_mismatches)} mismatches"
+    )
     print(f"  {'Notes Preservation':<24} {scores.notes_preservation:>5.2f}")
     print(f"  {'Run Metadata':<24} {scores.run_metadata:>5.2f}")
     print(f"  {'-' * 60}")
@@ -418,24 +473,26 @@ def build_auto_finalized_mappings(extraction, mappings) -> list[dict]:
     finalized: list[dict] = []
     for sm in mappings:
         step = extraction.steps[sm.extracted_step_index]
-        finalized.append({
-            "protocol_step_id": sm.protocol_step_id,
-            "values": [
-                {
-                    "schema_field_key": pm.schema_field_key,
-                    "value": pm.extracted_value,
-                    "accepted": True,
-                    "edited": False,
-                    "original_value": pm.extracted_value,
-                    "original_confidence": pm.confidence,
-                }
-                for pm in sm.param_mappings
-            ],
-            "notes": step.notes or "",
-            "na": False,
-            "na_reason": "",
-            "timestamps": [t.model_dump() for t in step.timestamps],
-            "signatures": [s.model_dump() for s in step.signatures],
-            "deviations": [dv.model_dump() for dv in step.deviations],
-        })
+        finalized.append(
+            {
+                "protocol_step_id": sm.protocol_step_id,
+                "values": [
+                    {
+                        "schema_field_key": pm.schema_field_key,
+                        "value": pm.extracted_value,
+                        "accepted": True,
+                        "edited": False,
+                        "original_value": pm.extracted_value,
+                        "original_confidence": pm.confidence,
+                    }
+                    for pm in sm.param_mappings
+                ],
+                "notes": step.notes or "",
+                "na": False,
+                "na_reason": "",
+                "timestamps": [t.model_dump() for t in step.timestamps],
+                "signatures": [s.model_dump() for s in step.signatures],
+                "deviations": [dv.model_dump() for dv in step.deviations],
+            }
+        )
     return finalized

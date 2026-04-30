@@ -220,9 +220,7 @@ def build_context(
                     )
                     annotation = ""
                     if pd["editor"] or pd["edited_at"]:
-                        parts = [
-                            p for p in (pd["editor"], pd["edited_at"]) if p
-                        ]
+                        parts = [p for p in (pd["editor"], pd["edited_at"]) if p]
                         annotation = " " + " ".join(parts)
                     rt.add(f"{annotation} \u2192 ", size=VS, color="#64748B")
                 rt.add(pd["value"], size=VS)
@@ -273,9 +271,7 @@ def build_context(
     # (description + param_sentence + duration for SOP template) and
     # batch-record-style steps (full step_ctx for batch record template).
     # Index step_contexts by step ID for lookup.
-    step_ctx_by_id = {
-        sc.get("_step_id", ""): sc for sc in step_contexts
-    }
+    step_ctx_by_id = {sc.get("_step_id", ""): sc for sc in step_contexts}
 
     role_contexts = []
     for role_data in roles_with_steps or []:
@@ -297,15 +293,11 @@ def build_context(
             # conditional paragraphs in the Word output
             sop_body = RichText()
             if desc:
-                sop_body.add(
-                    f"    {desc}", size=Pt(10), color="#334155"
-                )
+                sop_body.add(f"    {desc}", size=Pt(10), color="#334155")
             if param_sentence:
                 if desc:
                     sop_body.add("\a")
-                sop_body.add(
-                    f"    {param_sentence}", size=Pt(10), color="#334155"
-                )
+                sop_body.add(f"    {param_sentence}", size=Pt(10), color="#334155")
             duration = s.get("duration_min")
             if duration:
                 if desc or param_sentence:
@@ -331,16 +323,18 @@ def build_context(
                 br_steps.append(br_step)
             else:
                 # Fallback: build a minimal step context from role step data
-                br_steps.append({
-                    "_step_id": step_id,
-                    "name": s.get("name", ""),
-                    "description": desc or param_sentence or "--",
-                    "duration_min": s.get("duration_min"),
-                    "role_name": role_data.get("role_name", ""),
-                    "value_display": "",
-                    "initials": "",
-                    "notes_display": "",
-                })
+                br_steps.append(
+                    {
+                        "_step_id": step_id,
+                        "name": s.get("name", ""),
+                        "description": desc or param_sentence or "--",
+                        "duration_min": s.get("duration_min"),
+                        "role_name": role_data.get("role_name", ""),
+                        "value_display": "",
+                        "initials": "",
+                        "notes_display": "",
+                    }
+                )
 
         # Pre-compute role header as RichText to avoid empty
         # conditional paragraphs that create whitespace gaps in Word
@@ -358,13 +352,9 @@ def build_context(
             sop_header.add(header_name, bold=True, size=Pt(14))
             if process_desc:
                 sop_header.add("\a")  # new paragraph
-                sop_header.add(
-                    process_desc, size=Pt(10), color="#64748B"
-                )
+                sop_header.add(process_desc, size=Pt(10), color="#64748B")
             sop_header.add("\a")
-            sop_header.add(
-                "\u2500" * 50, size=Pt(6), color="#C8C8C8"
-            )
+            sop_header.add("\u2500" * 50, size=Pt(6), color="#C8C8C8")
 
         # Pre-compute batch record header (page break + role name)
         br_header = RichText()
@@ -451,9 +441,7 @@ def build_context(
     if protocol_description:
         if run_name:
             protocol_subtitle.add("\a")
-        protocol_subtitle.add(
-            protocol_description, size=Pt(10), color="#64748B"
-        )
+        protocol_subtitle.add(protocol_description, size=Pt(10), color="#64748B")
 
     return {
         "protocol_name": protocol_name,
@@ -583,9 +571,7 @@ async def resolve_default_template_id(
             return val
 
     # 2. Org default
-    result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
+    result = await db.execute(select(Organization).where(Organization.id == org_id))
     org = result.scalar_one_or_none()
     if org:
         val = getattr(org, col_attr, None)
@@ -605,111 +591,106 @@ async def resolve_default_template_id(
 
 # ── Mock data for template preview ──
 
+
 def get_mock_context() -> dict[str, Any]:
     """Build mock context for template preview. Lazy — only called when needed."""
     return build_context(
-    protocol_name="Example Protocol — Buffer Preparation",
-    protocol_description=(
-        "This protocol describes the preparation of phosphate-buffered "
-        "saline (PBS) for use in downstream cell culture applications."
-    ),
-    version_number=3,
-    created_at="January 15, 2026",
-    run_name="Run-2026-001",
-    run_status="COMPLETED",
-    started_at="2026-01-20 08:00",
-    completed_at="2026-01-20 14:30",
-    project_name="AAV Production Campaign Q1",
-    organization_name="Acme Therapeutics",
-    is_role_based=True,
-    roles_with_steps=[
-        {
-            "role_name": "Media Prep",
-            "steps": [
-                {
-                    "name": "Weigh Reagents",
-                    "description": "Weigh out NaCl, KCl, and phosphate salts.",
-                    "params": {"nacl_g": 8.0, "kcl_g": 0.2},
-                    "param_schema": {
-                        "properties": {
-                            "nacl_g": {"title": "NaCl", "unit": "g"},
-                            "kcl_g": {"title": "KCl", "unit": "g"},
-                        }
+        protocol_name="Example Protocol — Buffer Preparation",
+        protocol_description=(
+            "This protocol describes the preparation of phosphate-buffered "
+            "saline (PBS) for use in downstream cell culture applications."
+        ),
+        version_number=3,
+        created_at="January 15, 2026",
+        run_name="Run-2026-001",
+        run_status="COMPLETED",
+        started_at="2026-01-20 08:00",
+        completed_at="2026-01-20 14:30",
+        project_name="AAV Production Campaign Q1",
+        organization_name="Acme Therapeutics",
+        is_role_based=True,
+        roles_with_steps=[
+            {
+                "role_name": "Media Prep",
+                "steps": [
+                    {
+                        "name": "Weigh Reagents",
+                        "description": "Weigh out NaCl, KCl, and phosphate salts.",
+                        "params": {"nacl_g": 8.0, "kcl_g": 0.2},
+                        "param_schema": {
+                            "properties": {
+                                "nacl_g": {"title": "NaCl", "unit": "g"},
+                                "kcl_g": {"title": "KCl", "unit": "g"},
+                            }
+                        },
+                        "duration_min": 10,
                     },
-                    "duration_min": 10,
-                },
-                {
-                    "name": "Dissolve in Water",
-                    "description": (
-                        "Add reagents to {{volume}} mL of purified water "
-                        "and stir until dissolved."
-                    ),
-                    "params": {"volume": 1000},
-                    "param_schema": {
-                        "properties": {
-                            "volume": {"title": "Volume", "unit": "mL"}
-                        }
+                    {
+                        "name": "Dissolve in Water",
+                        "description": (
+                            "Add reagents to {{volume}} mL of purified water "
+                            "and stir until dissolved."
+                        ),
+                        "params": {"volume": 1000},
+                        "param_schema": {
+                            "properties": {"volume": {"title": "Volume", "unit": "mL"}}
+                        },
+                        "duration_min": 15,
                     },
-                    "duration_min": 15,
-                },
-            ],
-        },
-        {
-            "role_name": "QC",
-            "steps": [
-                {
-                    "name": "Measure pH",
-                    "description": "Measure pH and adjust to target.",
-                    "params": {"target_ph": 7.4},
-                    "param_schema": {
-                        "properties": {
-                            "target_ph": {"title": "Target pH"}
-                        }
+                ],
+            },
+            {
+                "role_name": "QC",
+                "steps": [
+                    {
+                        "name": "Measure pH",
+                        "description": "Measure pH and adjust to target.",
+                        "params": {"target_ph": 7.4},
+                        "param_schema": {
+                            "properties": {"target_ph": {"title": "Target pH"}}
+                        },
+                        "duration_min": 5,
                     },
-                    "duration_min": 5,
+                ],
+            },
+        ],
+        flat_steps=[
+            {
+                "id": "s1",
+                "name": "Weigh Reagents",
+                "description": "Weigh out NaCl, KCl, and phosphate salts.",
+                "role_name": "Media Prep",
+                "params": {"nacl_g": 8.0, "kcl_g": 0.2},
+                "param_schema": {
+                    "properties": {
+                        "nacl_g": {"title": "NaCl", "unit": "g"},
+                        "kcl_g": {"title": "KCl", "unit": "g"},
+                    }
                 },
-            ],
-        },
-    ],
-    flat_steps=[
-        {
-            "id": "s1",
-            "name": "Weigh Reagents",
-            "description": "Weigh out NaCl, KCl, and phosphate salts.",
-            "role_name": "Media Prep",
-            "params": {"nacl_g": 8.0, "kcl_g": 0.2},
-            "param_schema": {
-                "properties": {
-                    "nacl_g": {"title": "NaCl", "unit": "g"},
-                    "kcl_g": {"title": "KCl", "unit": "g"},
-                }
+                "duration_min": 10,
             },
-            "duration_min": 10,
-        },
-        {
-            "id": "s2",
-            "name": "Dissolve in Water",
-            "description": (
-                "Add reagents to {{volume}} mL of purified water "
-                "and stir until dissolved."
-            ),
-            "role_name": "Media Prep",
-            "params": {"volume": 1000},
-            "param_schema": {
-                "properties": {"volume": {"title": "Volume", "unit": "mL"}}
+            {
+                "id": "s2",
+                "name": "Dissolve in Water",
+                "description": (
+                    "Add reagents to {{volume}} mL of purified water "
+                    "and stir until dissolved."
+                ),
+                "role_name": "Media Prep",
+                "params": {"volume": 1000},
+                "param_schema": {
+                    "properties": {"volume": {"title": "Volume", "unit": "mL"}}
+                },
+                "duration_min": 15,
             },
-            "duration_min": 15,
-        },
-        {
-            "id": "s3",
-            "name": "Measure pH",
-            "description": "Measure pH and adjust to target.",
-            "role_name": "QC",
-            "params": {"target_ph": 7.4},
-            "param_schema": {
-                "properties": {"target_ph": {"title": "Target pH"}}
+            {
+                "id": "s3",
+                "name": "Measure pH",
+                "description": "Measure pH and adjust to target.",
+                "role_name": "QC",
+                "params": {"target_ph": 7.4},
+                "param_schema": {"properties": {"target_ph": {"title": "Target pH"}}},
+                "duration_min": 5,
             },
-            "duration_min": 5,
-        },
-    ],
-)
+        ],
+    )

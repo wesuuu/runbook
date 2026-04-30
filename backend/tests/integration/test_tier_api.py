@@ -6,12 +6,8 @@ import pytest
 import pytest_asyncio
 
 from app.core.security import create_access_token, hash_password
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    User,
-    SubscriptionTier,
-)
+from app.models.iam import (Organization, OrganizationMember, SubscriptionTier,
+                            User)
 
 
 class TestLoginIncludesOrgContext:
@@ -31,19 +27,27 @@ class TestLoginIncludesOrgContext:
         )
         db_session.add(user)
         await db_session.flush()
-        db_session.add(OrganizationMember(
-            user_id=user.id, organization_id=org.id, role="ADMIN",
-        ))
+        db_session.add(
+            OrganizationMember(
+                user_id=user.id,
+                organization_id=org.id,
+                role="ADMIN",
+            )
+        )
         await db_session.flush()
 
-        resp = await client.post("/auth/login", json={
-            "email": "tiertest@example.com",
-            "password": "testpass",
-        })
+        resp = await client.post(
+            "/auth/login",
+            json={
+                "email": "tiertest@example.com",
+                "password": "testpass",
+            },
+        )
         assert resp.status_code == 200
         token = resp.json()["access_token"]
 
         from app.core.security import decode_access_token
+
         payload = decode_access_token(token)
         assert payload is not None
         assert payload.org_id == org.id
@@ -55,15 +59,19 @@ class TestRegisterCreatesOrg:
 
     @pytest.mark.asyncio
     async def test_register_creates_org_and_membership(self, client, db_session):
-        resp = await client.post("/auth/register", json={
-            "email": "newuser@example.com",
-            "password": "testpass123",
-            "full_name": "New User",
-        })
+        resp = await client.post(
+            "/auth/register",
+            json={
+                "email": "newuser@example.com",
+                "password": "testpass123",
+                "full_name": "New User",
+            },
+        )
         assert resp.status_code == 200
         token = resp.json()["access_token"]
 
         from app.core.security import decode_access_token
+
         payload = decode_access_token(token)
         assert payload is not None
         assert payload.org_id is not None
@@ -75,7 +83,10 @@ class TestOrgResponseIncludesTier:
 
     @pytest.mark.asyncio
     async def test_org_list_includes_tier(
-        self, client, auth_headers, test_org,
+        self,
+        client,
+        auth_headers,
+        test_org,
     ):
         resp = await client.get(
             f"/iam/organizations/{test_org.id}",
@@ -110,7 +121,9 @@ class TestAuthMiddleware:
 
     @pytest.mark.asyncio
     async def test_protected_route_works_with_valid_token(
-        self, client, auth_headers,
+        self,
+        client,
+        auth_headers,
     ):
         resp = await client.get("/auth/me", headers=auth_headers)
         assert resp.status_code == 200

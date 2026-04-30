@@ -3,15 +3,10 @@ from datetime import timedelta
 
 import pytest
 
-from app.core.security import (
-    hash_password,
-    verify_password,
-    create_access_token,
-    create_verification_jwt,
-    decode_access_token,
-    generate_verification_token,
-    TokenPayload,
-)
+from app.core.security import (TokenPayload, create_access_token,
+                               create_verification_jwt, decode_access_token,
+                               generate_verification_token, hash_password,
+                               verify_password)
 
 
 def test_hash_verify_roundtrip():
@@ -47,6 +42,7 @@ def test_create_decode_token_with_org_context():
 
 def test_decode_expired_token():
     from app.core import config
+
     original = config.settings.access_token_expire_minutes
     config.settings.access_token_expire_minutes = 0
     try:
@@ -56,14 +52,17 @@ def test_decode_expired_token():
         config.settings.access_token_expire_minutes = original
 
     # Create a truly expired token manually
-    from jose import jwt
     from datetime import datetime, timezone
+
+    from jose import jwt
+
     payload = {
         "sub": str(uuid.uuid4()),
         "exp": datetime(2020, 1, 1, tzinfo=timezone.utc),
     }
     expired_token = jwt.encode(
-        payload, config.settings.secret_key,
+        payload,
+        config.settings.secret_key,
         algorithm=config.settings.jwt_algorithm,
     )
     assert decode_access_token(expired_token) is None
@@ -127,8 +126,10 @@ def test_token_roundtrip_with_email_verified_false():
 
 def test_old_token_without_ev_defaults_to_verified():
     """Tokens created before email verification feature default to verified."""
-    from jose import jwt as jose_jwt
     from datetime import datetime, timezone
+
+    from jose import jwt as jose_jwt
+
     from app.core import config
 
     payload = {
@@ -136,7 +137,8 @@ def test_old_token_without_ev_defaults_to_verified():
         "exp": datetime(2030, 1, 1, tzinfo=timezone.utc),
     }
     old_token = jose_jwt.encode(
-        payload, config.settings.secret_key,
+        payload,
+        config.settings.secret_key,
         algorithm=config.settings.jwt_algorithm,
     )
     decoded = decode_access_token(old_token)

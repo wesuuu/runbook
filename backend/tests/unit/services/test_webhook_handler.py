@@ -52,9 +52,15 @@ async def test_subscription_updated_upgrade_flips_tier_and_writes_audit(
     assert org_with_pro_trial.subscription_status == "active"
     assert org_with_pro_trial.cancel_at_period_end is False
 
-    audit_rows = (await db_session.execute(
-        select(AuditLog).where(AuditLog.entity_id == org_with_pro_trial.id)
-    )).scalars().all()
+    audit_rows = (
+        (
+            await db_session.execute(
+                select(AuditLog).where(AuditLog.entity_id == org_with_pro_trial.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert any(
         row.action == "UPDATE"
         and "subscription_tier" in (row.changes or {})
@@ -93,9 +99,15 @@ async def test_subscription_deleted_sets_canceled_and_writes_audit(
     await db_session.refresh(org_with_pro_trial)
     assert org_with_pro_trial.subscription_status == "canceled"
 
-    audit_rows = (await db_session.execute(
-        select(AuditLog).where(AuditLog.entity_id == org_with_pro_trial.id)
-    )).scalars().all()
+    audit_rows = (
+        (
+            await db_session.execute(
+                select(AuditLog).where(AuditLog.entity_id == org_with_pro_trial.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert any(
         row.action == "UPDATE"
         and row.changes
@@ -105,9 +117,7 @@ async def test_subscription_deleted_sets_canceled_and_writes_audit(
 
 
 @pytest.mark.asyncio
-async def test_invoice_payment_failed_sets_past_due(
-    db_session, org_with_pro_trial
-):
+async def test_invoice_payment_failed_sets_past_due(db_session, org_with_pro_trial):
     org_with_pro_trial.subscription_status = "active"
     await db_session.flush()
 
@@ -129,39 +139,48 @@ async def test_handle_event_is_idempotent(db_session, org_with_pro_trial):
     await webhook_handler.handle_event(db_session, event)
     await db_session.flush()
 
-    audit_rows = (await db_session.execute(
-        select(AuditLog).where(
-            AuditLog.entity_id == org_with_pro_trial.id
+    audit_rows = (
+        (
+            await db_session.execute(
+                select(AuditLog).where(AuditLog.entity_id == org_with_pro_trial.id)
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
     tier_change_rows = [
-        r for r in audit_rows
-        if r.changes and "subscription_tier" in r.changes
+        r for r in audit_rows if r.changes and "subscription_tier" in r.changes
     ]
     assert len(tier_change_rows) == 1  # second apply was a no-op
 
-    events_seen = (await db_session.execute(
-        select(StripeEvent).where(
-            StripeEvent.stripe_event_id == event["id"]
+    events_seen = (
+        (
+            await db_session.execute(
+                select(StripeEvent).where(StripeEvent.stripe_event_id == event["id"])
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(events_seen) == 1
 
 
 @pytest.mark.asyncio
-async def test_handle_event_unknown_customer_logs_and_returns(
-    db_session, caplog
-):
+async def test_handle_event_unknown_customer_logs_and_returns(db_session, caplog):
     event = _load("customer_subscription_updated_upgrade")
     with caplog.at_level("WARNING"):
         await webhook_handler.handle_event(db_session, event)
         await db_session.flush()
 
-    events_seen = (await db_session.execute(
-        select(StripeEvent).where(
-            StripeEvent.stripe_event_id == event["id"]
+    events_seen = (
+        (
+            await db_session.execute(
+                select(StripeEvent).where(StripeEvent.stripe_event_id == event["id"])
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(events_seen) == 1
     assert any("no matching org" in r.message.lower() for r in caplog.records)
 
@@ -171,17 +190,21 @@ async def test_subscription_updated_caches_has_payment_method(
     db_session, org_with_pro_trial, monkeypatch
 ):
     from unittest.mock import MagicMock
+
     from app.services.billing import stripe_client
+
     fake = MagicMock()
     fake.Customer.retrieve.return_value = MagicMock(
         invoice_settings=MagicMock(default_payment_method="pm_test_card")
     )
     stripe_client.set_fake_client(fake)
-    for key in ("stripe_secret_key", "stripe_webhook_secret",
-                "stripe_essentials_price_id", "stripe_pro_price_id"):
-        monkeypatch.setattr(
-            f"app.services.billing.stripe_client.settings.{key}", "x"
-        )
+    for key in (
+        "stripe_secret_key",
+        "stripe_webhook_secret",
+        "stripe_essentials_price_id",
+        "stripe_pro_price_id",
+    ):
+        monkeypatch.setattr(f"app.services.billing.stripe_client.settings.{key}", "x")
 
     event = _load("customer_subscription_updated_upgrade")
     await webhook_handler.handle_event(db_session, event)
@@ -198,17 +221,21 @@ async def test_subscription_updated_reflects_no_payment_method(
     db_session, org_with_pro_trial, monkeypatch
 ):
     from unittest.mock import MagicMock
+
     from app.services.billing import stripe_client
+
     fake = MagicMock()
     fake.Customer.retrieve.return_value = MagicMock(
         invoice_settings=MagicMock(default_payment_method=None)
     )
     stripe_client.set_fake_client(fake)
-    for key in ("stripe_secret_key", "stripe_webhook_secret",
-                "stripe_essentials_price_id", "stripe_pro_price_id"):
-        monkeypatch.setattr(
-            f"app.services.billing.stripe_client.settings.{key}", "x"
-        )
+    for key in (
+        "stripe_secret_key",
+        "stripe_webhook_secret",
+        "stripe_essentials_price_id",
+        "stripe_pro_price_id",
+    ):
+        monkeypatch.setattr(f"app.services.billing.stripe_client.settings.{key}", "x")
 
     org_with_pro_trial.has_payment_method = True
     await db_session.flush()

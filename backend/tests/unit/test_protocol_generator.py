@@ -9,16 +9,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.ai.protocol_generator import (
-    GeneratedProtocol,
-    GeneratedStep,
-    build_graph,
-    extract_params,
-    match_unit_op,
-)
+from app.services.ai.workflows.protocol_generator import (GeneratedProtocol,
+                                                          GeneratedStep,
+                                                          build_graph,
+                                                          extract_params,
+                                                          match_unit_op)
 
 
-def _make_unit_op(name: str, category: str = "General", param_schema: dict | None = None):
+def _make_unit_op(
+    name: str, category: str = "General", param_schema: dict | None = None
+):
     """Create a mock UnitOpDefinition."""
     op = MagicMock()
     op.id = uuid.uuid4()
@@ -48,9 +48,11 @@ class TestBuildGraph:
 
         graph = build_graph(generated, unit_ops, session_id, user_id)
 
-        assert len(graph["nodes"]) == 1
-        assert len(graph["edges"]) == 0
-        node = graph["nodes"][0]
+        # 1 processStart + 1 step; 1 edge connecting them
+        assert len(graph["nodes"]) == 2
+        assert len(graph["edges"]) == 1
+        assert graph["nodes"][0]["type"] == "processStart"
+        node = graph["nodes"][1]
         assert node["type"] == "unitOp"
         assert node["data"]["label"] == "Buffer Mix"
         assert node["data"]["category"] == "Media Prep"
@@ -70,14 +72,18 @@ class TestBuildGraph:
 
         graph = build_graph(generated, [], uuid.uuid4(), uuid.uuid4())
 
-        assert len(graph["nodes"]) == 3
-        assert len(graph["edges"]) == 2
-        # Edge 0: A -> B
+        # 1 processStart + 3 steps; 3 edges (PS->A, A->B, B->C)
+        assert len(graph["nodes"]) == 4
+        assert len(graph["edges"]) == 3
+        # Edge 0: PS -> A
         assert graph["edges"][0]["source"] == graph["nodes"][0]["id"]
         assert graph["edges"][0]["target"] == graph["nodes"][1]["id"]
-        # Edge 1: B -> C
+        # Edge 1: A -> B
         assert graph["edges"][1]["source"] == graph["nodes"][1]["id"]
         assert graph["edges"][1]["target"] == graph["nodes"][2]["id"]
+        # Edge 2: B -> C
+        assert graph["edges"][2]["source"] == graph["nodes"][2]["id"]
+        assert graph["edges"][2]["target"] == graph["nodes"][3]["id"]
 
     def test_horizontal_positions_increment(self):
         steps = [
@@ -88,10 +94,12 @@ class TestBuildGraph:
 
         graph = build_graph(generated, [], uuid.uuid4(), uuid.uuid4())
 
-        x0 = graph["nodes"][0]["position"]["x"]
+        # nodes[0] is the processStart (placed left of the first step);
+        # nodes[1] and nodes[2] are the two unit ops, separated by x_increment.
         x1 = graph["nodes"][1]["position"]["x"]
-        assert x1 > x0
-        assert x1 - x0 == 300
+        x2 = graph["nodes"][2]["position"]["x"]
+        assert x2 > x1
+        assert x2 - x1 == 300
 
     def test_metadata_present(self):
         steps = [GeneratedStep(name="S", unit_op_name="S", duration_min=10)]
@@ -135,13 +143,12 @@ class TestBuildGraph:
             duration_min=60,
             params={"temperature": 42.0},
         )
-        generated = GeneratedProtocol(
-            name="P", description="", steps=[step]
-        )
+        generated = GeneratedProtocol(name="P", description="", steps=[step])
 
         graph = build_graph(generated, [op], uuid.uuid4(), uuid.uuid4())
 
-        node = graph["nodes"][0]
+        # nodes[0] is processStart, nodes[1] is the unit op
+        node = graph["nodes"][1]
         assert node["data"]["category"] == "Cell Culture"
         assert node["data"]["unitOpId"] == str(op.id)
         assert node["data"]["paramSchema"] == schema

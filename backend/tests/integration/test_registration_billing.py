@@ -32,9 +32,7 @@ def configured_fake_stripe(monkeypatch):
         "stripe_essentials_price_id",
         "stripe_pro_price_id",
     ):
-        monkeypatch.setattr(
-            f"app.services.billing.stripe_client.settings.{key}", "x"
-        )
+        monkeypatch.setattr(f"app.services.billing.stripe_client.settings.{key}", "x")
     return fake
 
 
@@ -52,12 +50,16 @@ async def test_register_creates_trial_subscription_when_stripe_configured(
     )
     assert resp.status_code == 200
 
-    user = (await db_session.execute(
-        select(User).where(User.email == "newuser@example.com")
-    )).scalar_one()
-    org = (await db_session.execute(
-        select(Organization).where(Organization.id == user.selected_org_id)
-    )).scalar_one()
+    user = (
+        await db_session.execute(
+            select(User).where(User.email == "newuser@example.com")
+        )
+    ).scalar_one()
+    org = (
+        await db_session.execute(
+            select(Organization).where(Organization.id == user.selected_org_id)
+        )
+    ).scalar_one()
 
     assert org.stripe_customer_id == "cus_reg_111"
     assert org.stripe_subscription_id == "sub_reg_222"
@@ -83,12 +85,16 @@ async def test_register_succeeds_without_stripe_configured(
     )
     assert resp.status_code == 200
 
-    user = (await db_session.execute(
-        select(User).where(User.email == "unconfigured@example.com")
-    )).scalar_one()
-    org = (await db_session.execute(
-        select(Organization).where(Organization.id == user.selected_org_id)
-    )).scalar_one()
+    user = (
+        await db_session.execute(
+            select(User).where(User.email == "unconfigured@example.com")
+        )
+    ).scalar_one()
+    org = (
+        await db_session.execute(
+            select(Organization).where(Organization.id == user.selected_org_id)
+        )
+    ).scalar_one()
 
     assert org.stripe_customer_id is None
     assert org.stripe_subscription_id is None

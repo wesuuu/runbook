@@ -1,9 +1,10 @@
 """Tests for OAuth fields migration and constraints."""
+
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import User
 
@@ -112,14 +113,14 @@ async def test_oauth_provider_unique_constraint_allows_nulls(db_session: AsyncSe
     await db_session.flush()
 
     # Both should be created successfully (NULL, NULL is allowed in UNIQUE constraint)
-    count = await db_session.scalar(
-        select(text("COUNT(*)")).select_from(User)
-    )
+    count = await db_session.scalar(select(text("COUNT(*)")).select_from(User))
     assert count >= 2
 
 
 @pytest.mark.asyncio
-async def test_oauth_provider_different_providers_unique_subject(db_session: AsyncSession):
+async def test_oauth_provider_different_providers_unique_subject(
+    db_session: AsyncSession,
+):
     """Verify same subject with different providers is allowed (composite uniqueness)."""
     # User with Google OAuth
     user1 = User(
@@ -142,9 +143,7 @@ async def test_oauth_provider_different_providers_unique_subject(db_session: Asy
     await db_session.flush()
 
     # Both should exist
-    users = await db_session.scalars(
-        select(User).where(User.oauth_subject == "12345")
-    )
+    users = await db_session.scalars(select(User).where(User.oauth_subject == "12345"))
     user_list = users.all()
     assert len(user_list) == 2
     assert {u.oauth_provider for u in user_list} == {"google", "github"}
@@ -172,9 +171,7 @@ async def test_existing_users_unaffected(db_session: AsyncSession):
 
     # Verify all users created and OAuth fields are null
     for data in users_data:
-        user = await db_session.scalar(
-            select(User).where(User.email == data["email"])
-        )
+        user = await db_session.scalar(select(User).where(User.email == data["email"]))
         assert user is not None
         assert user.oauth_provider is None
         assert user.oauth_subject is None

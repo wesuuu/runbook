@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ai import AiProviderConfig
 from app.models.iam import Organization, User
 
-
 # --- Auth required ---
 
 

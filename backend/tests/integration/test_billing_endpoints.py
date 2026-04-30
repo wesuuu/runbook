@@ -26,15 +26,14 @@ def configured_fake_stripe(monkeypatch):
         "stripe_essentials_price_id",
         "stripe_pro_price_id",
     ):
-        monkeypatch.setattr(
-            f"app.services.billing.stripe_client.settings.{key}", "x"
-        )
+        monkeypatch.setattr(f"app.services.billing.stripe_client.settings.{key}", "x")
     return fake
 
 
 async def _make_billing_user(db_session, role: str = OrgRole.ADMIN.value):
     from app.core.security import hash_password
     from app.models.iam import User
+
     org = Organization(
         name="Billing Test",
         subscription_tier="essentials",
@@ -51,9 +50,9 @@ async def _make_billing_user(db_session, role: str = OrgRole.ADMIN.value):
     )
     db_session.add(user)
     await db_session.flush()
-    db_session.add(OrganizationMember(
-        user_id=user.id, organization_id=org.id, role=role
-    ))
+    db_session.add(
+        OrganizationMember(user_id=user.id, organization_id=org.id, role=role)
+    )
     await db_session.flush()
     return user, org
 
@@ -61,6 +60,7 @@ async def _make_billing_user(db_session, role: str = OrgRole.ADMIN.value):
 async def _auth_headers_for(user):
     from app.core.security import create_access_token
     from app.models.iam import SubscriptionTier
+
     token = create_access_token(
         user_id=user.id,
         org_id=user.selected_org_id,
@@ -90,9 +90,7 @@ async def test_get_subscription_returns_state(
 async def test_get_subscription_rejects_non_billing_member(
     client: AsyncClient, db_session, configured_fake_stripe
 ):
-    user, _ = await _make_billing_user(
-        db_session, role=OrgRole.MEMBER.value
-    )
+    user, _ = await _make_billing_user(db_session, role=OrgRole.MEMBER.value)
     headers = await _auth_headers_for(user)
 
     resp = await client.get("/billing/subscription", headers=headers)
@@ -106,9 +104,7 @@ async def test_create_portal_session_returns_url(
     user, _ = await _make_billing_user(db_session)
     headers = await _auth_headers_for(user)
 
-    resp = await client.post(
-        "/billing/portal-session", json={}, headers=headers
-    )
+    resp = await client.post("/billing/portal-session", json={}, headers=headers)
 
     assert resp.status_code == 200
     data = resp.json()
@@ -136,9 +132,7 @@ async def test_create_portal_session_uses_custom_return_url(
 
 
 @pytest.mark.asyncio
-async def test_endpoints_return_503_when_unconfigured(
-    client: AsyncClient, db_session
-):
+async def test_endpoints_return_503_when_unconfigured(client: AsyncClient, db_session):
     # Relies on the conftest autouse _disable_stripe_globally fixture to
     # ensure Stripe config is blanked — don't re-apply configured_fake_stripe.
     user, _ = await _make_billing_user(db_session)
@@ -148,9 +142,7 @@ async def test_endpoints_return_503_when_unconfigured(
     assert resp.status_code == 503
     assert "Billing" in resp.json()["detail"]
 
-    resp = await client.post(
-        "/billing/portal-session", json={}, headers=headers
-    )
+    resp = await client.post("/billing/portal-session", json={}, headers=headers)
     assert resp.status_code == 503
 
 
@@ -173,12 +165,8 @@ async def test_webhook_accepts_valid_signature(
         ("stripe_essentials_price_id", "price_ess"),
         ("stripe_pro_price_id", "price_pro"),
     ]:
-        monkeypatch.setattr(
-            f"app.services.billing.stripe_client.settings.{key}", val
-        )
-        monkeypatch.setattr(
-            f"app.api.endpoints.billing.settings.{key}", val
-        )
+        monkeypatch.setattr(f"app.services.billing.stripe_client.settings.{key}", val)
+        monkeypatch.setattr(f"app.api.endpoints.billing.settings.{key}", val)
     stripe_client._reset_cache()
 
     # Pre-create the org so the event has a matching customer
@@ -195,24 +183,29 @@ async def test_webhook_accepts_valid_signature(
     # Prime the real stripe module (not the injected fake) for construct_event
     stripe_client._reset_cache()
     from app.services.billing.stripe_client import get_stripe
+
     _ = get_stripe()
 
-    payload = json.dumps({
-        "id": "evt_sig_test_001",
-        "object": "event",
-        "type": "customer.subscription.updated",
-        "created": 1714000000,
-        "data": {"object": {
-            "id": "sub_test_456",
-            "object": "subscription",
-            "customer": "cus_test_123",
-            "status": "active",
-            "trial_end": None,
-            "current_period_end": 1716678400,
-            "cancel_at_period_end": False,
-            "items": {"data": [{"price": {"id": "price_pro"}}]},
-        }},
-    }).encode()
+    payload = json.dumps(
+        {
+            "id": "evt_sig_test_001",
+            "object": "event",
+            "type": "customer.subscription.updated",
+            "created": 1714000000,
+            "data": {
+                "object": {
+                    "id": "sub_test_456",
+                    "object": "subscription",
+                    "customer": "cus_test_123",
+                    "status": "active",
+                    "trial_end": None,
+                    "current_period_end": 1716678400,
+                    "cancel_at_period_end": False,
+                    "items": {"data": [{"price": {"id": "price_pro"}}]},
+                }
+            },
+        }
+    ).encode()
     sig = _sign_stripe_event(payload, secret)
 
     resp = await client.post(
@@ -224,23 +217,22 @@ async def test_webhook_accepts_valid_signature(
 
 
 @pytest.mark.asyncio
-async def test_webhook_rejects_invalid_signature(
-    client: AsyncClient, monkeypatch
-):
+async def test_webhook_rejects_invalid_signature(client: AsyncClient, monkeypatch):
     for key, val in [
         ("stripe_secret_key", "sk_test_x"),
         ("stripe_webhook_secret", "whsec_signing"),
         ("stripe_essentials_price_id", "price_ess"),
         ("stripe_pro_price_id", "price_pro"),
     ]:
-        monkeypatch.setattr(
-            f"app.services.billing.stripe_client.settings.{key}", val
-        )
+        monkeypatch.setattr(f"app.services.billing.stripe_client.settings.{key}", val)
     stripe_client._reset_cache()
 
     resp = await client.post(
         "/billing/webhook",
         content=b'{"id": "evt_bogus"}',
-        headers={"stripe-signature": "t=1,v1=badsig", "content-type": "application/json"},
+        headers={
+            "stripe-signature": "t=1,v1=badsig",
+            "content-type": "application/json",
+        },
     )
     assert resp.status_code == 400

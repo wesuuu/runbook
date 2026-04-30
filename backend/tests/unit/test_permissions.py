@@ -4,24 +4,15 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    Organization,
-    OrganizationMember,
-    Team,
-    TeamMember,
-    User,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
-    PermissionLevel,
-    TeamRole,
-)
-from app.models.science import Project, Protocol, Run
 from app.core.security import hash_password
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            Team, TeamMember, TeamRole, User)
+from app.models.science import Project, Protocol, Run
 from app.services.core.permissions import check_permission
 
-
 # --- Helpers ---
+
 
 async def _setup_org_and_user(db, role="MEMBER"):
     """Create an org and user with membership."""
@@ -37,11 +28,13 @@ async def _setup_org_and_user(db, role="MEMBER"):
     db.add(user)
     await db.flush()
 
-    db.add(OrganizationMember(
-        user_id=user.id,
-        organization_id=org.id,
-        role=role,
-    ))
+    db.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=org.id,
+            role=role,
+        )
+    )
     await db.flush()
     return org, user
 
@@ -59,14 +52,17 @@ async def _create_project(db, org):
 
 # --- Tests ---
 
+
 @pytest.mark.asyncio
 async def test_org_admin_full_access(db_session: AsyncSession):
     org, user = await _setup_org_and_user(db_session, role="ADMIN")
     project = await _create_project(db_session, org)
 
     result = await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
+        db_session,
+        user.id,
+        ObjectType.PROJECT,
+        project.id,
         PermissionLevel.ADMIN,
     )
     assert result is True
@@ -84,8 +80,10 @@ async def test_org_admin_no_cross_org(db_session: AsyncSession):
     await db_session.flush()
 
     result = await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
+        db_session,
+        user.id,
+        ObjectType.PROJECT,
+        project.id,
         PermissionLevel.VIEW,
     )
     assert result is False
@@ -96,20 +94,27 @@ async def test_individual_view_can_view(db_session: AsyncSession):
     org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.VIEW.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
     await db_session.flush()
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
-        PermissionLevel.VIEW,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.VIEW,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -117,20 +122,27 @@ async def test_individual_view_cannot_edit(db_session: AsyncSession):
     org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.VIEW.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
     await db_session.flush()
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
-        PermissionLevel.EDIT,
-    ) is False
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.EDIT,
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -138,27 +150,39 @@ async def test_individual_edit_can_edit(db_session: AsyncSession):
     org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.EDIT.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
     await db_session.flush()
 
     # EDIT can view
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
-        PermissionLevel.VIEW,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.VIEW,
+        )
+        is True
+    )
     # EDIT can edit
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
-        PermissionLevel.EDIT,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.EDIT,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -170,23 +194,34 @@ async def test_team_perm_grants_member_access(db_session: AsyncSession):
     db_session.add(team)
     await db_session.flush()
 
-    db_session.add(TeamMember(
-        user_id=user.id, team_id=team.id, role=TeamRole.MEMBER,
-    ))
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.TEAM,
-        principal_id=team.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.VIEW.value,
-    ))
+    db_session.add(
+        TeamMember(
+            user_id=user.id,
+            team_id=team.id,
+            role=TeamRole.MEMBER,
+        )
+    )
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.TEAM,
+            principal_id=team.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
     await db_session.flush()
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
-        PermissionLevel.VIEW,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.VIEW,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -198,32 +233,45 @@ async def test_individual_overrides_team(db_session: AsyncSession):
     db_session.add(team)
     await db_session.flush()
 
-    db_session.add(TeamMember(
-        user_id=user.id, team_id=team.id, role=TeamRole.MEMBER,
-    ))
+    db_session.add(
+        TeamMember(
+            user_id=user.id,
+            team_id=team.id,
+            role=TeamRole.MEMBER,
+        )
+    )
     # Team has VIEW
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.TEAM,
-        principal_id=team.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.VIEW.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.TEAM,
+            principal_id=team.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
     # Individual has EDIT (overrides team)
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.EDIT.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
     await db_session.flush()
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
-        PermissionLevel.EDIT,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.EDIT,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -231,13 +279,15 @@ async def test_protocol_inherits_project(db_session: AsyncSession):
     org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.VIEW.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
 
     protocol = Protocol(
         name="Test Protocol",
@@ -247,11 +297,16 @@ async def test_protocol_inherits_project(db_session: AsyncSession):
     db_session.add(protocol)
     await db_session.flush()
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROTOCOL, protocol.id,
-        PermissionLevel.VIEW,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROTOCOL,
+            protocol.id,
+            PermissionLevel.VIEW,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -259,13 +314,15 @@ async def test_run_inherits_project(db_session: AsyncSession):
     org, user = await _setup_org_and_user(db_session, role="MEMBER")
     project = await _create_project(db_session, org)
 
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.EDIT.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
 
     run_obj = Run(
         name="Test Run",
@@ -276,11 +333,16 @@ async def test_run_inherits_project(db_session: AsyncSession):
     db_session.add(run_obj)
     await db_session.flush()
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.RUN, run_obj.id,
-        PermissionLevel.EDIT,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.RUN,
+            run_obj.id,
+            PermissionLevel.EDIT,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -289,11 +351,16 @@ async def test_no_permission_denied(db_session: AsyncSession):
     project = await _create_project(db_session, org)
 
     # No permission granted at all
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
-        PermissionLevel.VIEW,
-    ) is False
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.VIEW,
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -316,14 +383,20 @@ async def test_non_org_member_denied(db_session: AsyncSession):
 
     # User not in org — even if they somehow have a perm row,
     # check_permission should deny because they're not an org member
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.PROJECT, project.id,
-        PermissionLevel.VIEW,
-    ) is False
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.VIEW,
+        )
+        is False
+    )
 
 
 # --- Document permission tests (F-0021) ---
+
 
 async def _create_document(db, org, user, project=None):
     """Create a document for permission testing."""
@@ -358,11 +431,16 @@ async def test_document_org_admin_can_delete(db_session: AsyncSession):
     await db_session.flush()
     doc = await _create_document(db_session, org, other)
 
-    assert await check_permission(
-        db_session, admin.id,
-        ObjectType.DOCUMENT, doc.id,
-        PermissionLevel.EDIT,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            admin.id,
+            ObjectType.DOCUMENT,
+            doc.id,
+            PermissionLevel.EDIT,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -378,11 +456,16 @@ async def test_document_member_no_perm_denied(db_session: AsyncSession):
     await db_session.flush()
     doc = await _create_document(db_session, org, other)
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.DOCUMENT, doc.id,
-        PermissionLevel.EDIT,
-    ) is False
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.DOCUMENT,
+            doc.id,
+            PermissionLevel.EDIT,
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -391,20 +474,27 @@ async def test_document_with_edit_perm_can_delete(db_session: AsyncSession):
     org, user = await _setup_org_and_user(db_session, role="MEMBER")
     doc = await _create_document(db_session, org, user)
 
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.DOCUMENT.value,
-        object_id=doc.id,
-        permission_level=PermissionLevel.EDIT.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.DOCUMENT.value,
+            object_id=doc.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
     await db_session.flush()
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.DOCUMENT, doc.id,
-        PermissionLevel.EDIT,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.DOCUMENT,
+            doc.id,
+            PermissionLevel.EDIT,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -415,20 +505,27 @@ async def test_document_with_view_perm_cannot_delete(
     org, user = await _setup_org_and_user(db_session, role="MEMBER")
     doc = await _create_document(db_session, org, user)
 
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.DOCUMENT.value,
-        object_id=doc.id,
-        permission_level=PermissionLevel.VIEW.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.DOCUMENT.value,
+            object_id=doc.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
     await db_session.flush()
 
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.DOCUMENT, doc.id,
-        PermissionLevel.EDIT,
-    ) is False
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.DOCUMENT,
+            doc.id,
+            PermissionLevel.EDIT,
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -441,21 +538,28 @@ async def test_document_inherits_project_permission(
     doc = await _create_document(db_session, org, user, project=project)
 
     # Grant EDIT on the project
-    db_session.add(ObjectPermission(
-        principal_type=PrincipalType.USER,
-        principal_id=user.id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project.id,
-        permission_level=PermissionLevel.EDIT.value,
-    ))
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
     await db_session.flush()
 
     # Document should inherit EDIT from project
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.DOCUMENT, doc.id,
-        PermissionLevel.EDIT,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.DOCUMENT,
+            doc.id,
+            PermissionLevel.EDIT,
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -467,8 +571,13 @@ async def test_document_no_project_no_inheritance(
     doc = await _create_document(db_session, org, user)  # No project
 
     # No direct permission — should be denied
-    assert await check_permission(
-        db_session, user.id,
-        ObjectType.DOCUMENT, doc.id,
-        PermissionLevel.VIEW,
-    ) is False
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.DOCUMENT,
+            doc.id,
+            PermissionLevel.VIEW,
+        )
+        is False
+    )

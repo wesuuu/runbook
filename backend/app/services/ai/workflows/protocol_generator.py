@@ -1,4 +1,25 @@
-"""Service to generate a Protocol graph from a chat conversation via LLM."""
+"""One-shot protocol generation from a chat conversation.
+
+DORMANT SINCE TD-0081 (Apr 2026).
+
+This workflow is not currently invoked by any endpoint or background job.
+It is preserved because:
+  - The code is written and tested.
+  - It represents a legitimate alternate UX path ("explore in chat, then
+    formalize") that we may productize later.
+  - Deleting and rebuilding later is more work than keeping it dormant.
+
+Status: kept until we confirm the conversational `protocol_builder` subagent
+performs well in production. Once validated, this file may be deleted along
+with its unit test (tests/unit/test_protocol_generator.py).
+
+DO NOT add new callers without first promoting this to a real product
+feature with its own task and acceptance criteria.
+
+The graph-building helpers (build_graph, match_unit_op, extract_params) in
+this module ARE used by services/protocols/creation.py and must not be
+removed without replacing them.
+"""
 
 import logging
 from datetime import datetime, timezone
@@ -23,17 +44,13 @@ class GeneratedStep(BaseModel):
     """A single step in a generated protocol."""
 
     name: str = Field(description="Display name for this step")
-    unit_op_name: str = Field(
-        description="Name of the unit operation from the catalog"
-    )
+    unit_op_name: str = Field(description="Name of the unit operation from the catalog")
     category: str = Field(
         default="General",
         description="Category (e.g. Media Prep, Cell Culture)",
     )
     description: str = Field(default="", description="Brief description")
-    duration_min: int = Field(
-        default=30, description="Estimated duration in minutes"
-    )
+    duration_min: int = Field(default=30, description="Estimated duration in minutes")
     params: dict[str, Any] = Field(
         default_factory=dict,
         description="Parameter values for this step",
@@ -45,9 +62,7 @@ class GeneratedProtocol(BaseModel):
 
     name: str = Field(description="Protocol name")
     description: str = Field(default="", description="Protocol description")
-    steps: list[GeneratedStep] = Field(
-        description="Ordered list of protocol steps"
-    )
+    steps: list[GeneratedStep] = Field(description="Ordered list of protocol steps")
 
 
 # --- Public API ---
@@ -112,10 +127,7 @@ async def generate_protocol_from_chat(
     sys_msg = ChatMessage(
         session_id=session.id,
         role=ChatMessageRole.SYSTEM,
-        content=(
-            f"Protocol '{generated.name}' generated as draft "
-            f"in project."
-        ),
+        content=(f"Protocol '{generated.name}' generated as draft " f"in project."),
     )
     db.add(sys_msg)
     await db.flush()
@@ -199,6 +211,25 @@ def build_graph(
     x_increment = 300
     y_position = 200
 
+    # Every protocol begins with a Process Start node — frontend
+    # `protocolValidation.computeProcessStartValidationErrors` flags a graph
+    # without one, and the renderer expects it as the chain root.
+    process_start_id = f"node-{uuid4()}"
+    nodes.append(
+        {
+            "id": process_start_id,
+            "type": "processStart",
+            "position": {"x": x_start - x_increment, "y": y_position},
+            "width": 220,
+            "data": {
+                "label": "Start of Protocol",
+                "description": (
+                    "Marks the beginning of the process. Every protocol has one."
+                ),
+            },
+        }
+    )
+
     for i, step in enumerate(generated.steps):
         node_id = f"node-{uuid4()}"
         matched_op = match_unit_op(step.unit_op_name, unit_ops)
@@ -231,14 +262,16 @@ def build_graph(
         }
         nodes.append(node)
 
-        # Create edge to previous node
-        if i > 0:
-            edge = {
+        # First unit op connects to the Process Start; subsequent steps
+        # chain to the previous unit op.
+        prev_id = process_start_id if i == 0 else nodes[-2]["id"]
+        edges.append(
+            {
                 "id": f"edge-{uuid4()}",
-                "source": nodes[i - 1]["id"],
+                "source": prev_id,
                 "target": node_id,
             }
-            edges.append(edge)
+        )
 
     return {
         "nodes": nodes,

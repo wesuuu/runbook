@@ -21,14 +21,12 @@ class OAuthService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_or_create_user(
-        self, provider: str, user_info: UserInfo
-    ) -> User:
+    async def get_or_create_user(self, provider: str, user_info: UserInfo) -> User:
         """Look up or create user by OAuth provider + subject."""
         # Look up by oauth_provider + oauth_subject
         stmt = select(User).where(
-            (User.oauth_provider == provider) &
-            (User.oauth_subject == user_info.oauth_subject)
+            (User.oauth_provider == provider)
+            & (User.oauth_subject == user_info.oauth_subject)
         )
         existing = await self.db.scalar(stmt)
 

@@ -7,8 +7,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import (get_current_user, get_or_404, require_permission,
-                           require_active_subscription)
+from app.core.deps import (get_current_user, get_or_404,
+                           require_active_subscription, require_permission)
 from app.db.session import get_db
 from app.models.execution import AuditLog
 from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
@@ -90,17 +90,12 @@ async def list_projects(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    visible_ids = await get_visible_project_ids(
-        db, user.id, organization_id
-    )
+    visible_ids = await get_visible_project_ids(db, user.id, organization_id)
     if not visible_ids:
         return []
 
     result = await db.execute(
-        select(Project)
-        .where(Project.id.in_(visible_ids))
-        .offset(skip)
-        .limit(limit)
+        select(Project).where(Project.id.in_(visible_ids)).offset(skip).limit(limit)
     )
     return result.scalars().all()
 
@@ -110,9 +105,7 @@ async def list_projects(
     response_model=ProjectResponse,
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.VIEW
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.VIEW)
         )
     ],
 )
@@ -128,9 +121,7 @@ async def get_project(
     response_model=ProjectResponse,
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.EDIT
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.EDIT)
         )
     ],
 )
@@ -150,8 +141,11 @@ async def update_project(
     # Require ADMIN for settings changes
     if "settings" in changes:
         allowed = await check_permission(
-            db, user.id, ObjectType.PROJECT,
-            project_id, PermissionLevel.ADMIN,
+            db,
+            user.id,
+            ObjectType.PROJECT,
+            project_id,
+            PermissionLevel.ADMIN,
         )
         if not allowed:
             raise HTTPException(
@@ -180,9 +174,7 @@ async def update_project(
     "/{project_id}",
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.ADMIN
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.ADMIN)
         )
     ],
 )
@@ -223,9 +215,7 @@ async def delete_project(
     response_model=AuditLogPage,
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.VIEW
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.VIEW)
         )
     ],
 )
@@ -233,9 +223,17 @@ async def get_project_activity(
     project_id: UUID,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    entity_type: str | None = Query(None, description="Filter by entity type (comma-separated: Project,Protocol,Run,Experiment)"),
-    action: str | None = Query(None, description="Filter by action (comma-separated: CREATE,UPDATE,DELETE,STEP_EDIT,STEP_COMPLETE,STEP_UNCOMPLETE)"),
-    search: str | None = Query(None, description="Search entity names and change details"),
+    entity_type: str | None = Query(
+        None,
+        description="Filter by entity type (comma-separated: Project,Protocol,Run,Experiment)",
+    ),
+    action: str | None = Query(
+        None,
+        description="Filter by action (comma-separated: CREATE,UPDATE,DELETE,STEP_EDIT,STEP_COMPLETE,STEP_UNCOMPLETE)",
+    ),
+    search: str | None = Query(
+        None, description="Search entity names and change details"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     # Verify project exists
@@ -247,9 +245,7 @@ async def get_project_activity(
     )
     protocol_ids = list(proto_result.scalars().all())
 
-    run_result = await db.execute(
-        select(Run.id).where(Run.project_id == project_id)
-    )
+    run_result = await db.execute(select(Run.id).where(Run.project_id == project_id))
     run_ids = list(run_result.scalars().all())
 
     # Build filter conditions for all related entities
@@ -263,8 +259,7 @@ async def get_project_activity(
     conditions = []
     if not entity_types_filter or "Project" in entity_types_filter:
         conditions.append(
-            (AuditLog.entity_type == "Project")
-            & (AuditLog.entity_id == project_id),
+            (AuditLog.entity_type == "Project") & (AuditLog.entity_id == project_id),
         )
     if not entity_types_filter or "Protocol" in entity_types_filter:
         if protocol_ids:
@@ -275,8 +270,7 @@ async def get_project_activity(
     if not entity_types_filter or "Run" in entity_types_filter:
         if run_ids:
             conditions.append(
-                (AuditLog.entity_type == "Run")
-                & (AuditLog.entity_id.in_(run_ids))
+                (AuditLog.entity_type == "Run") & (AuditLog.entity_id.in_(run_ids))
             )
 
     # Experiment audit entries
@@ -349,9 +343,9 @@ async def get_project_activity(
                 )
 
         # Also match against changes JSONB text
-        changes_match = func.lower(
-            func.cast(AuditLog.changes, sqlalchemy.Text)
-        ).like(search_term)
+        changes_match = func.lower(func.cast(AuditLog.changes, sqlalchemy.Text)).like(
+            search_term
+        )
         name_match_conditions.append(changes_match)
 
         base_filter = base_filter & or_(*name_match_conditions)
@@ -377,22 +371,16 @@ async def get_project_activity(
     entity_name_map: dict[str, str] = {}
 
     # Protocols
-    proto_ids_in_logs = {
-        l.entity_id for l in logs if l.entity_type == "Protocol"
-    }
+    proto_ids_in_logs = {l.entity_id for l in logs if l.entity_type == "Protocol"}
     if proto_ids_in_logs:
         name_result = await db.execute(
-            select(Protocol.id, Protocol.name).where(
-                Protocol.id.in_(proto_ids_in_logs)
-            )
+            select(Protocol.id, Protocol.name).where(Protocol.id.in_(proto_ids_in_logs))
         )
         for row in name_result.all():
             entity_name_map[f"Protocol:{row[0]}"] = row[1]
 
     # Runs
-    run_ids_in_logs = {
-        l.entity_id for l in logs if l.entity_type == "Run"
-    }
+    run_ids_in_logs = {l.entity_id for l in logs if l.entity_type == "Run"}
     if run_ids_in_logs:
         name_result = await db.execute(
             select(Run.id, Run.name).where(Run.id.in_(run_ids_in_logs))
@@ -401,9 +389,7 @@ async def get_project_activity(
             entity_name_map[f"Run:{row[0]}"] = row[1]
 
     # Project name
-    proj_result = await db.execute(
-        select(Project.name).where(Project.id == project_id)
-    )
+    proj_result = await db.execute(select(Project.name).where(Project.id == project_id))
     proj_name = proj_result.scalar_one_or_none()
     entity_name_map[f"Project:{project_id}"] = proj_name or ""
 
@@ -430,21 +416,18 @@ async def get_project_activity(
             )
         )
 
-    return AuditLogPage(
-        items=items, total=total, offset=offset, limit=limit
-    )
+    return AuditLogPage(items=items, total=total, offset=offset, limit=limit)
 
 
 # --- Approver Management ---
+
 
 @router.get(
     "/{project_id}/approvers",
     response_model=List[ApproverEntry],
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.VIEW
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.VIEW)
         )
     ],
 )
@@ -480,13 +463,15 @@ async def list_approvers(
             t = t_result.scalar_one_or_none()
             if t:
                 name = t.name
-        entries.append(ApproverEntry(
-            id=perm.id,
-            principal_type=perm.principal_type,
-            principal_id=perm.principal_id,
-            name=name,
-            email=email,
-        ))
+        entries.append(
+            ApproverEntry(
+                id=perm.id,
+                principal_type=perm.principal_type,
+                principal_id=perm.principal_id,
+                name=name,
+                email=email,
+            )
+        )
     return entries
 
 
@@ -496,9 +481,7 @@ async def list_approvers(
     status_code=201,
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.ADMIN
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.ADMIN)
         )
     ],
 )
@@ -520,9 +503,7 @@ async def add_approver(
     )
     existing = result.scalar_one_or_none()
     if existing:
-        raise HTTPException(
-            status_code=409, detail="Approver already exists"
-        )
+        raise HTTPException(status_code=409, detail="Approver already exists")
 
     perm = ObjectPermission(
         principal_type=grant.principal_type,
@@ -539,17 +520,13 @@ async def add_approver(
     name = None
     email = None
     if grant.principal_type == PrincipalType.USER.value:
-        u_result = await db.execute(
-            select(User).where(User.id == grant.principal_id)
-        )
+        u_result = await db.execute(select(User).where(User.id == grant.principal_id))
         u = u_result.scalar_one_or_none()
         if u:
             name = u.full_name or u.email
             email = u.email
     elif grant.principal_type == PrincipalType.TEAM.value:
-        t_result = await db.execute(
-            select(Team).where(Team.id == grant.principal_id)
-        )
+        t_result = await db.execute(select(Team).where(Team.id == grant.principal_id))
         t = t_result.scalar_one_or_none()
         if t:
             name = t.name
@@ -567,9 +544,7 @@ async def add_approver(
     "/{project_id}/approvers/{permission_id}",
     dependencies=[
         Depends(
-            require_permission(
-                ObjectType.PROJECT, "project_id", PermissionLevel.ADMIN
-            )
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.ADMIN)
         )
     ],
 )
@@ -598,6 +573,7 @@ async def remove_approver(
 
 # --- Permission Management ---
 
+
 @router.get("/{project_id}/permissions", response_model=list[dict])
 async def list_project_permissions(
     project_id: UUID,
@@ -606,8 +582,11 @@ async def list_project_permissions(
 ):
     """List all permission grants on a project. Requires ADMIN on project."""
     has_perm = await check_permission(
-        db, current_user.id, ObjectType.PROJECT,
-        project_id, PermissionLevel.ADMIN,
+        db,
+        current_user.id,
+        ObjectType.PROJECT,
+        project_id,
+        PermissionLevel.ADMIN,
     )
     if not has_perm:
         raise HTTPException(403, "Admin access required")
@@ -655,8 +634,11 @@ async def update_project_permission(
 ):
     """Update permission level on a grant. Requires ADMIN."""
     has_perm = await check_permission(
-        db, current_user.id, ObjectType.PROJECT,
-        project_id, PermissionLevel.ADMIN,
+        db,
+        current_user.id,
+        ObjectType.PROJECT,
+        project_id,
+        PermissionLevel.ADMIN,
     )
     if not has_perm:
         raise HTTPException(403, "Admin access required")

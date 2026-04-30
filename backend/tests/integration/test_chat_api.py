@@ -1,21 +1,72 @@
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession
 from app.models.iam import Organization
+from app.services.ai.deps import RetrievedChunk
 
 
-# Mock LLM call for all tests in this module
-# _call_llm returns (content, sources, tool_calls, message_history, context_warning)
+def _make_send_message_mock(content: str, sources: list) -> AsyncMock:
+    """Return an AsyncMock for send_message that creates real DB rows.
+
+    The real send_message persists ChatMessage rows and returns them.
+    We mock at the endpoint-import level so we can fully control the response
+    without needing a live AI provider.
+    """
+
+    async def _fake_send_message(db, session, user_content, *, user_id, is_org_admin):
+        from app.models.chat import ChatMessage, ChatMessageRole
+
+        user_msg = ChatMessage(
+            session_id=session.id,
+            role=ChatMessageRole.USER,
+            content=user_content,
+        )
+        db.add(user_msg)
+
+        # Auto-title session if still "New Chat"
+        if session.title == "New Chat":
+            session.title = user_content[:100].strip()
+
+        assistant_msg = ChatMessage(
+            session_id=session.id,
+            role=ChatMessageRole.ASSISTANT,
+            content=content,
+            metadata_=(
+                {
+                    "sources": [
+                        {
+                            "document_id": str(s.document_id),
+                            "document_title": s.document_title,
+                            "chunk_id": str(s.chunk_id),
+                            "chunk_index": s.chunk_index,
+                            "page_number": s.page_number,
+                            "score": s.score,
+                            "snippet": s.content[:200],
+                        }
+                        for s in sources
+                    ]
+                }
+                if sources
+                else None
+            ),
+        )
+        db.add(assistant_msg)
+        await db.flush()
+        return user_msg, assistant_msg, sources
+
+    return _fake_send_message
+
+
+# Mock send_message for all tests in this module
 @pytest.fixture(autouse=True)
 def mock_llm_and_rag():
     with patch(
-        "app.services.ai.chat_service._call_llm",
-        new_callable=AsyncMock,
-        return_value=("I'm Batchrite AI, happy to help!", [], [], [], None),
+        "app.api.endpoints.chat.send_message",
+        new=_make_send_message_mock("I'm Batchrite AI, happy to help!", []),
     ):
         yield
 
@@ -112,9 +163,7 @@ class TestListChatSessions:
         for i in range(5):
             await _create_session(client, auth_headers, f"Chat {i}")
 
-        resp = await client.get(
-            "/chat/sessions?limit=2&offset=0", headers=auth_headers
-        )
+        resp = await client.get("/chat/sessions?limit=2&offset=0", headers=auth_headers)
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] == 5
@@ -145,9 +194,7 @@ class TestGetChatSession:
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.status_code == 200
         body = resp.json()
         assert body["id"] == session_id
@@ -158,9 +205,7 @@ class TestGetChatSession:
         self, client: AsyncClient, auth_headers: dict, test_org: Organization
     ):
         fake_id = str(uuid.uuid4())
-        resp = await client.get(
-            f"/chat/sessions/{fake_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{fake_id}", headers=auth_headers)
         assert resp.status_code == 404
 
 
@@ -189,15 +234,11 @@ class TestDeleteChatSession:
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
-        resp = await client.delete(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.status_code == 204
 
         # Verify it's gone
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -205,9 +246,7 @@ class TestDeleteChatSession:
         self, client: AsyncClient, auth_headers: dict, test_org: Organization
     ):
         fake_id = str(uuid.uuid4())
-        resp = await client.delete(
-            f"/chat/sessions/{fake_id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/chat/sessions/{fake_id}", headers=auth_headers)
         assert resp.status_code == 404
 
 
@@ -254,9 +293,7 @@ class TestSendChatMessage:
         )
 
         # Check that title was updated
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.json()["title"] == "Tell me about CHO cells"
 
     @pytest.mark.asyncio
@@ -305,9 +342,7 @@ class TestSendChatMessage:
         )
 
         # Get session — should have 4 messages (2 user + 2 assistant)
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         assert resp.status_code == 200
         messages = resp.json()["messages"]
         assert len(messages) == 4
@@ -319,8 +354,6 @@ class TestSendChatMessageWithRAG:
     @pytest.fixture(autouse=True)
     def override_mocks(self):
         """Override the module-level mocks with RAG-aware ones."""
-        from app.services.ai.chat_service import RetrievedChunk
-
         fake_sources = [
             RetrievedChunk(
                 document_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
@@ -332,16 +365,11 @@ class TestSendChatMessageWithRAG:
                 score=0.85,
             ),
         ]
-        fake_tool_calls = [{"tool": "search_documents", "query": "buffer prep", "results": 1}]
         with patch(
-            "app.services.ai.chat_service._call_llm",
-            new_callable=AsyncMock,
-            return_value=(
+            "app.api.endpoints.chat.send_message",
+            new=_make_send_message_mock(
                 "Based on the Buffer Prep SOP [1], you should mix Tris-HCl.",
                 fake_sources,
-                fake_tool_calls,
-                [],
-                None,
             ),
         ):
             yield
@@ -382,9 +410,7 @@ class TestSendChatMessageWithRAG:
         )
 
         # Get session and check assistant message metadata
-        resp = await client.get(
-            f"/chat/sessions/{session_id}", headers=auth_headers
-        )
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         messages = resp.json()["messages"]
         assistant_msg = [m for m in messages if m["role"] == "assistant"][0]
         assert assistant_msg["metadata_"] is not None

@@ -119,14 +119,10 @@ def generate_sop_pdf(
 
     # Check if roles are real named roles (swimlane-based) vs unnamed
     # process groups. Only force page breaks between named roles.
-    has_named_roles = any(
-        rd.get("role_name") for rd in roles_with_steps
-    )
+    has_named_roles = any(rd.get("role_name") for rd in roles_with_steps)
 
     # Detect process sections (from processStart nodes)
-    has_process_sections = any(
-        rd.get("process_name") for rd in roles_with_steps
-    )
+    has_process_sections = any(rd.get("process_name") for rd in roles_with_steps)
 
     # Only draw the top divider when there are no process section headers
     # (process sections provide their own visual separation)

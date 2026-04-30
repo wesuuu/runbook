@@ -18,23 +18,23 @@ from app.services.documents.fonts import FONTS_DIR
 
 DEFAULT_FORMAT: dict[str, Any] = {
     "font_family": "Helvetica",
-    "font_size": "medium",       # small | medium | large
+    "font_size": "medium",  # small | medium | large
     "header_color": [30, 41, 59],  # RGB for table header / section accents
-    "row_spacing": "normal",     # compact | normal | relaxed
+    "row_spacing": "normal",  # compact | normal | relaxed
 }
 
 # Font-size presets: maps (size_name) → (body, step_title, section_title, doc_title)
 _FONT_SIZES = {
-    "small":  {"body": 8,  "step_title": 9,  "section": 12, "title": 16, "table": 7},
+    "small": {"body": 8, "step_title": 9, "section": 12, "title": 16, "table": 7},
     "medium": {"body": 10, "step_title": 11, "section": 14, "title": 18, "table": 8},
-    "large":  {"body": 12, "step_title": 13, "section": 16, "title": 20, "table": 10},
+    "large": {"body": 12, "step_title": 13, "section": 16, "title": 20, "table": 10},
 }
 
 # Row-spacing presets: maps name → (line_h, min_row_h, step_gap)
 _ROW_SPACING = {
-    "compact":  {"line_h": 3.5, "min_row_h": 6,  "step_gap": 2},
-    "normal":   {"line_h": 4,   "min_row_h": 8,  "step_gap": 3},
-    "relaxed":  {"line_h": 5,   "min_row_h": 10, "step_gap": 5},
+    "compact": {"line_h": 3.5, "min_row_h": 6, "step_gap": 2},
+    "normal": {"line_h": 4, "min_row_h": 8, "step_gap": 3},
+    "relaxed": {"line_h": 5, "min_row_h": 10, "step_gap": 5},
 }
 
 
@@ -120,10 +120,7 @@ def _build_param_sentence(
     if not params:
         return ""
 
-    filled = {
-        k: v for k, v in params.items()
-        if v is not None and v != "" and v != []
-    }
+    filled = {k: v for k, v in params.items() if v is not None and v != "" and v != []}
     if not filled:
         return ""
 
@@ -263,7 +260,4 @@ def _get_editable_params(
     if not param_schema:
         return []
     props = param_schema.get("properties", {})
-    return [
-        (key, prop) for key, prop in props.items()
-        if not prop.get("x-ref-type")
-    ]
+    return [(key, prop) for key, prop in props.items() if not prop.get("x-ref-type")]

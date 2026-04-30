@@ -9,14 +9,10 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import Organization, OrganizationMember, User
-from app.models.library import (
-    Document,
-    DocumentChunk,
-    DocumentStatus,
-    STALE_PROCESSING_SECONDS,
-)
 from app.core.security import hash_password
+from app.models.iam import Organization, OrganizationMember, User
+from app.models.library import (STALE_PROCESSING_SECONDS, Document,
+                                DocumentChunk, DocumentStatus)
 
 
 @pytest_asyncio.fixture
@@ -32,9 +28,7 @@ async def recovery_user(db_session: AsyncSession) -> User:
 
 
 @pytest_asyncio.fixture
-async def recovery_org(
-    db_session: AsyncSession, recovery_user: User
-) -> Organization:
+async def recovery_org(db_session: AsyncSession, recovery_user: User) -> Organization:
     org = Organization(name="Recovery Org")
     db_session.add(org)
     await db_session.flush()
@@ -92,9 +86,7 @@ class TestIdempotentProcessing:
         await db_session.flush()
 
         result = await db_session.execute(
-            select(DocumentChunk).where(
-                DocumentChunk.document_id == doc.id
-            )
+            select(DocumentChunk).where(DocumentChunk.document_id == doc.id)
         )
         assert len(result.scalars().all()) == 3
 
@@ -102,16 +94,12 @@ class TestIdempotentProcessing:
         from sqlalchemy import delete
 
         await db_session.execute(
-            delete(DocumentChunk).where(
-                DocumentChunk.document_id == doc.id
-            )
+            delete(DocumentChunk).where(DocumentChunk.document_id == doc.id)
         )
         await db_session.flush()
 
         result = await db_session.execute(
-            select(DocumentChunk).where(
-                DocumentChunk.document_id == doc.id
-            )
+            select(DocumentChunk).where(DocumentChunk.document_id == doc.id)
         )
         assert len(result.scalars().all()) == 0
 
