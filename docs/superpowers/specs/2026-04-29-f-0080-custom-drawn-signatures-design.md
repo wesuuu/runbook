@@ -112,7 +112,7 @@ initials = _get_initials(name) if name else ""
 # step["initials"] = initials  (a string)
 ```
 
-After this change, builders gain a `signature_resolver` helper:
+After this change, builders gain a `_resolve_initials` helper:
 
 ```python
 def _resolve_initials(
@@ -121,13 +121,13 @@ def _resolve_initials(
     name: str,
     user_signatures: dict[str, str],   # user_id -> resolved abs path
     docx: DocxTemplate,
-) -> Union[str, InlineImage]:
+) -> Union[RichText, InlineImage]:
     """Return InlineImage when the user has a registered initials signature,
-    else fall back to the text initials we always rendered."""
+    else fall back to cursive-styled text initials."""
     path = user_signatures.get(user_id)
     if path and Path(path).exists():
         return InlineImage(docx, path, width=Mm(20))  # narrow inline cell
-    return _get_initials(name)
+    return RichText(_get_initials(name), font="Dancing Script")
 ```
 
 `build_context` callers gather all relevant user IDs (`completed_by_user_id`,
@@ -136,10 +136,58 @@ def _resolve_initials(
 `FileStorageService`, and pass the dict into the resolver. No N+1 queries.
 
 The variable name in the docx template stays `step.initials`. No template
-change needed; the existing seeded `.docx` files continue to work.
+change needed; the existing seeded `.docx` files continue to work, and
+user-uploaded templates automatically get cursive fallbacks too because
+docxtpl applies `RichText` font formatting at render time.
 
 `signature_full` is captured + stored + serveable but is **not** added to the
 docx context in this task — there's no template variable for it yet.
+
+#### Cursive font availability
+
+The `RichText(font="Dancing Script")` only renders cursive if LibreOffice
+can find the font via fontconfig. We bundle `DancingScript-Regular.ttf` in
+the repo; today it's only used by the deprecated fpdf2 path. We need
+LibreOffice to see it too.
+
+**Move the font** from `backend/app/services/documents/fonts/` to
+`backend/app/data/fonts/DancingScript-Regular.ttf` so it lives alongside
+other bundled app data (e.g. `backend/app/data/unit_op_libraries/`).
+Update the existing fpdf2 import (`pdf_base._CURSIVE_FONT_PATH` /
+`fonts.FONTS_DIR`) to the new location so the deprecated path keeps
+working until cleanup.
+
+**Register at app startup.** New helper
+`backend/app/services/documents/font_setup.py::ensure_cursive_font_registered()`
+called from FastAPI's startup event:
+
+```python
+def ensure_cursive_font_registered() -> None:
+    """Copy DancingScript into the user font dir and refresh fontconfig
+    cache so LibreOffice can find it. Idempotent — no-ops if already
+    registered."""
+    src = Path(__file__).parent.parent.parent / "data" / "fonts" / "DancingScript-Regular.ttf"
+    dest_dir = Path.home() / ".fonts"
+    dest = dest_dir / src.name
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if not dest.exists() or dest.stat().st_mtime < src.stat().st_mtime:
+        shutil.copy2(src, dest)
+        try:
+            subprocess.run(
+                ["fc-cache", "-f", str(dest_dir)],
+                check=True, timeout=10, capture_output=True,
+            )
+        except (FileNotFoundError, subprocess.SubprocessError) as e:
+            logger.warning("fc-cache failed; cursive fallback may not render: %s", e)
+```
+
+Failure is non-fatal — if `fc-cache` is unavailable or the copy fails, the
+text initials still appear in the PDF, just in the document's body font
+instead of cursive. Logged at WARN level.
+
+For prod (Docker) we can later add a Dockerfile line that installs the
+font at image-build time as belt-and-suspenders, but that's not required
+for this task.
 
 ### Frontend
 
@@ -236,8 +284,17 @@ Backend:
 - `backend/app/api/endpoints/auth.py` — three new routes (POST/DELETE/GET)
 - `backend/app/services/protocols/template_engine.py` — `_resolve_initials`
   helper; bulk preload signature paths in `build_context`
+- `backend/app/data/fonts/DancingScript-Regular.ttf` (move from
+  `backend/app/services/documents/fonts/`)
+- `backend/app/services/documents/fonts/__init__.py` — update
+  `FONTS_DIR` to point at the new location (or remove if no longer
+  needed)
+- `backend/app/services/documents/font_setup.py` (new) —
+  `ensure_cursive_font_registered()` helper
+- `backend/app/main.py` — call the helper from FastAPI startup
 - `backend/tests/integration/test_user_signatures.py` (new)
 - `backend/tests/unit/test_template_engine_signatures.py` (new)
+- `backend/tests/unit/test_font_setup.py` (new)
 
 Frontend:
 
