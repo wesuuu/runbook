@@ -69,6 +69,21 @@ def parse_template(file_path: str | Path) -> tuple[list[str], list[str]]:
     return recognized, unrecognized
 
 
+def _resolve_initials(
+    *,
+    user_id: str,
+    name: str,
+    user_signatures: dict[str, str],
+    docx: DocxTemplate,
+):
+    """Return an InlineImage of the user's drawn initials if registered,
+    else a cursive RichText with the auto-generated text initials."""
+    path = user_signatures.get(user_id)
+    if path and Path(path).exists():
+        return InlineImage(docx, path, width=Mm(20))
+    return RichText(_get_initials(name), font="Dancing Script")
+
+
 def build_context(
     *,
     protocol_name: str = "",
