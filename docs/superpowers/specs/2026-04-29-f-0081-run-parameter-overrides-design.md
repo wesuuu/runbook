@@ -374,6 +374,19 @@ The Run history view (existing `RunHistory.svelte`) iterates audit entries by en
 
 ---
 
+## Verification strategy
+
+Each phase has automated tests called out in its section. On top of those, we run a `qa-verify` browser session at every phase boundary that has a user-facing surface:
+
+| Phase | Automated | `qa-verify` session |
+|---|---|---|
+| **1** · ProtocolVersion description | Backend integration tests; Vitest for `PublishVersionDialog` | **Yes.** Open protocol editor → click Publish → fill description + change_summary → confirm version saves with the description; reload and verify it appears in version history. |
+| **2** · Backend override API | Backend integration tests (full coverage of merge / mirror / audit / PLANNED-only guard / version-pinned snapshot / deep-copy regression) | **No isolated session.** Phase 2 has no UI surface. Verification rolls into Phase 3's session, which exercises the API end-to-end through the wizard. Backend correctness is enforced by the test suite at this point. |
+| **3** · Wizard | Vitest per step component + `template.ts` + `runOverrides.ts`; Playwright e2e for full creation flow | **Yes.** Full wizard flow: name → protocol+version pick → parameter overrides (value, swap, add, remove, instruction edit) → save-as-version dialog appears → both branches of the dialog (Just for this run / Save as v_N+1) → review → create → land on run detail page with overrides visible. UI/UX audit specifically watching for: oversized inputs/buttons, overflow on tablet width, spacing inconsistencies in the per-UO cards, sticky-aside behavior at long scroll, validation-error legibility. |
+| **4** · Run detail integration | Vitest + Playwright | **Yes.** Open a PLANNED run → edit an override → save → verify audit entry; transition run to ACTIVE → confirm overrides flip to read-only and edit affordances disappear. |
+
+`qa-verify` sessions in Phases 1, 3, 4 must fix any FAIL or POLISH issues found before the phase is considered complete.
+
 ## Open questions / risks
 
 | Question | Resolution |
