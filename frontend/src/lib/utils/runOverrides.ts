@@ -37,7 +37,10 @@ function deriveLabel(props: Record<string, any> | undefined, key: string): strin
     if (prop && typeof prop === 'object' && typeof prop.title === 'string' && prop.title) {
         return prop.title;
     }
-    return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    return key
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function isUnitOp(node: any): boolean {

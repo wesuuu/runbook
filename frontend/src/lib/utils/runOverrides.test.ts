@@ -180,6 +180,18 @@ describe('buildOverridesPayload', () => {
         const payload = buildOverridesPayload(edits, curr);
         expect(payload?.nodes.n1.paramSchema).toBeUndefined();
     });
+
+    it('emits paramSchema but no params entry on removed-only schema change', () => {
+        const orig = sampleGraph();
+        const curr = sampleGraph((g) => {
+            delete g.nodes[0].data.paramSchema.properties.ph;
+            delete g.nodes[0].data.params.ph;
+        });
+        const edits = computeEdits(orig, curr);
+        const payload = buildOverridesPayload(edits, curr);
+        expect(payload?.nodes.n1.paramSchema).toBeDefined();
+        expect(payload?.nodes.n1.params).toBeUndefined();
+    });
 });
 
 const multiRoleGraph = () => ({
