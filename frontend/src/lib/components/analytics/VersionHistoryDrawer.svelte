@@ -17,12 +17,14 @@
         versions = [],
         currentVersion = 0,
         loading = false,
+        topOffset = 57,
         onRevert,
         onClose,
     }: {
         versions: Version[];
         currentVersion: number;
         loading: boolean;
+        topOffset?: number;
         onRevert: (versionNumber: number) => void;
         onClose: () => void;
     } = $props();
@@ -30,7 +32,7 @@
 </script>
 
 <div class="drawer-overlay" onclick={onClose} role="presentation"></div>
-<aside class="drawer">
+<aside class="drawer" style:top="{topOffset}px">
     <div class="drawer-header">
         <h3>Version History</h3>
         <Button variant="ghost" size="icon-sm" onclick={onClose} aria-label="Close">
@@ -101,7 +103,6 @@
 
     .drawer {
         position: fixed;
-        top: 57px;
         right: 0;
         bottom: 0;
         width: 340px;

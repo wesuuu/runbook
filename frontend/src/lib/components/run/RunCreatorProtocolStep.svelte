@@ -173,6 +173,7 @@
         }))}
         currentVersion={effectiveVersionNumber ?? 0}
         loading={loadingVersions}
+        topOffset={0}
         onRevert={pickFromDrawer}
         onClose={() => (drawerOpen = false)}
     />
