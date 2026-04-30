@@ -78,10 +78,10 @@
 
 <div
     class={cn(
-        'relative rounded-md border border-border bg-background overflow-hidden',
+        'relative w-full rounded-md border border-border bg-background overflow-hidden',
         className,
     )}
-    style="width: {width}px; height: {height}px;"
+    style="max-width: {width}px; height: {height}px;"
 >
     <canvas
         bind:this={canvas}
