@@ -1668,11 +1668,11 @@ git commit -m "feat(settings): embed SignatureCard under Profile tab"
 
 ## Phase D — Verification
 
-### Task 14: Browser verification via qa-verify agent
+### Task 14: Manual browser smoke test via Chrome MCP
 
-**Files:** none — verification only
+**Files:** none — verification only. Catches startup / wiring problems before delegating to qa-verify, while servers are still warm.
 
-- [ ] **Step 1: Start dev servers in the worktree**
+- [ ] **Step 1: Start dev servers on worktree ports**
 
 ```bash
 # Backend (port 8010 — worktree convention)
@@ -1682,8 +1682,49 @@ cd backend && source .venv/bin/activate && \
 # Frontend (port 5183 — worktree convention)
 cd frontend && VITE_API_PORT=8010 npm run dev -- --port 5183 &
 
-sleep 5
+sleep 6
+curl -sf http://localhost:8010/health  # confirm backend up
+curl -sf http://localhost:5183/        # confirm frontend up
 ```
+
+If either curl fails, tail the server stderr (the background processes log inline) and fix before continuing.
+
+- [ ] **Step 2: Drive the feature through Chrome MCP**
+
+Load the chrome MCP tools as needed (they are deferred — use ToolSearch with `select:mcp__claude-in-chrome__<name>`). Then perform this scripted walkthrough:
+
+1. `tabs_context_mcp` — capture current tab state.
+2. `tabs_create_mcp` to `http://localhost:5183/` — log in (use a seeded dev account, or register one if needed).
+3. Navigate to `http://localhost:5183/settings?tab=profile` and `read_page`. Confirm the **Signature** card is rendered between Profile and Password, with two pads ("Initials", "Full Signature") side-by-side on desktop width.
+4. **Initials happy path:** drive a pen stroke onto the initials canvas. Use `javascript_tool` to dispatch synthetic `pointerdown`/`pointermove`/`pointerup` events on the canvas (signature_pad listens for pointer events), tracing a short curve. Click **Save Initials** via `find` + a click. Confirm a success toast appears and the saved-image preview shows up after `read_page` reload.
+5. **Persistence:** reload the page. Confirm the preview is still rendered and is served from `/auth/signatures/{user_id}/initials`. Use `read_network_requests` to confirm the GET returned 200 with `content-type: image/png`.
+6. **Empty-pad guard:** click **Save Initials** without drawing. Confirm an error toast fires and no network call is made.
+7. **Clear:** draw, then click **Clear**. Pad should empty, save button should disable.
+8. **Delete:** click the destructive **Delete** button on the preview. Confirm DELETE request fires, preview disappears, and `refreshUser` re-renders the card with no preview.
+9. **Full signature:** repeat steps 4–8 for the Full Signature pad.
+10. **Backend rendering smoke:** with initials saved, open `http://localhost:5183/api/science/protocols/<any-protocol-with-completed-steps>/pdf/sop` (or whichever protocol PDF endpoint exists — check `backend/app/api/endpoints/protocol_pdfs.py` for the exact path). Use `read_network_requests` to confirm 200 + `application/pdf`. Save the PDF locally via `javascript_tool` (`fetch` → blob → download) and inspect with `pdftotext`/`pdfimages` to confirm the drawn signature image is embedded for the current user's completed steps. Then delete the saved signature, re-render the same PDF, and confirm the cursive (Dancing Script) text fallback now appears instead of an embedded image.
+11. **Console / network sweep:** call `read_console_messages` with pattern `"error|warning"`. No new errors from this feature should appear. Call `read_network_requests` and confirm no 4xx/5xx other than the intentional empty-pad rejection.
+12. Optional: `gif_creator` capture of the initials draw → save → preview flow, named `f-0080-initials-flow.gif`, for the ClickUp comment.
+
+If anything in steps 1–11 fails, fix it now (while the servers are warm) before the qa-verify dispatch. Re-run the failing leg only.
+
+- [ ] **Step 3: Leave dev servers running**
+
+Do **not** kill the servers — Task 15 (qa-verify) needs them. Note the bash job IDs so they can be cleaned up after qa-verify finishes.
+
+---
+
+### Task 15: Browser verification via qa-verify agent
+
+**Files:** none — verification only. Servers are already running from Task 14.
+
+- [ ] **Step 1: Confirm servers are still up**
+
+```bash
+curl -sf http://localhost:8010/health && curl -sf http://localhost:5183/
+```
+
+If either is down, restart them as in Task 14, Step 1.
 
 - [ ] **Step 2: Launch the qa-verify agent**
 
@@ -1771,7 +1812,8 @@ Spec coverage:
 - ✅ `signature_pad` dependency → Task 10
 - ✅ `<SignaturePad />` UI primitive → Task 11
 - ✅ Signature card in Settings → Tasks 12–13
-- ✅ qa-verify browser verification → Task 14
+- ✅ Manual Chrome MCP smoke test → Task 14
+- ✅ qa-verify browser verification → Task 15
 
 No placeholders, types are consistent (`SignaturePadHandle` interface used in both `signature-pad.svelte` and `SignatureCard.svelte`; `_initials_user_id` / `_initials_name` used identically in `build_context` and `render_to_docx`).
 
