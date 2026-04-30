@@ -5,7 +5,7 @@
     import { Button } from "$lib/components/ui/button";
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
-    import CreateRunModal from "$lib/components/project/CreateRunModal.svelte";
+    import RunCreatorWizardModal from "$lib/components/run/RunCreatorWizardModal.svelte";
     import AddExistingRunModal from "$lib/components/project/AddExistingRunModal.svelte";
     import RunsTab from "$lib/components/project/RunsTab.svelte";
     import {
@@ -328,7 +328,7 @@
 
 <!-- MODALS -->
 {#if experiment}
-    <CreateRunModal
+    <RunCreatorWizardModal
         bind:open={showRunModal}
         projectId={experiment.project_id}
         {protocols}

@@ -8,7 +8,7 @@
     } from "./projectUtils";
     import ProjectDataTable from "./ProjectDataTable.svelte";
     import RunsTab from "./RunsTab.svelte";
-    import CreateRunModal from "./CreateRunModal.svelte";
+    import RunCreatorWizardModal from "$lib/components/run/RunCreatorWizardModal.svelte";
     import { Button } from "$lib/components/ui/button";
 
     interface Props {
@@ -216,7 +216,7 @@
     </div>
 {/if}
 
-<CreateRunModal
+<RunCreatorWizardModal
     bind:open={showRunModal}
     {projectId}
     {protocols}
