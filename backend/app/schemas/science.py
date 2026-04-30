@@ -136,6 +136,12 @@ class ProtocolVersionResponse(ProtocolVersionListItem):
         from_attributes = True
 
 
+class PublishDraftRequest(BaseModel):
+    """Optional metadata captured when promoting a draft version to published."""
+    description: Optional[str] = None
+    change_summary: Optional[str] = None
+
+
 # Protocol Approval Schemas
 class ProtocolApprovalAction(BaseModel):
     comment: Optional[str] = None
