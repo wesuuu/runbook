@@ -101,6 +101,7 @@ def build_context(
     is_role_based: bool = True,
     execution_data: dict[str, Any] | None = None,
     user_map: dict[str, str] | None = None,
+    user_signatures: dict[str, str] | None = None,
     started_by_id: str | None = None,
     notes: list[dict[str, Any]] | None = None,
     attachments: list[dict[str, Any]] | None = None,
@@ -109,6 +110,7 @@ def build_context(
     """Assemble the Jinja2 context dict for template rendering."""
     exec_data = execution_data or {}
     umap = user_map or {}
+    sigmap = user_signatures or {}
 
     # Pre-compute figure map: step_id → [figure_number, ...]
     active_atts = [a for a in (attachments or []) if not a.get("deleted")]
@@ -199,14 +201,20 @@ def build_context(
             )
 
         # Initials for completer
-        completer_name = umap.get(completed_by_uid, "")
-        if not completer_name and started_by_id:
-            completer_name = umap.get(started_by_id, "")
-        initials = (
-            _get_initials(completer_name)
-            if completer_name and sd.get("status") == "completed"
-            else ""
+        completer_uid = completed_by_uid or (
+            started_by_id if not completed_by_uid else ""
         )
+        completer_name = umap.get(completer_uid, "")
+        # Store both the resolved name and the user_id so render_to_docx
+        # can build the InlineImage / RichText against the open
+        # DocxTemplate (mirrors the figure-handling pattern).
+        if completer_name and sd.get("status") == "completed":
+            initials_user_id = completer_uid
+            initials_text_fallback = _get_initials(completer_name)
+        else:
+            initials_user_id = ""
+            initials_text_fallback = ""
+        initials = initials_text_fallback  # plain-text placeholder for now
 
         # Single value display (for single-param steps)
         single_value = ""
@@ -275,6 +283,8 @@ def build_context(
             "single_value": single_value,
             "value_display": value_display,
             "initials": initials,
+            "_initials_user_id": initials_user_id,
+            "_initials_name": completer_name,
             "status": sd.get("status", ""),
             "notes_text": step_notes_text,
             "figure_refs": figure_refs,
@@ -347,6 +357,8 @@ def build_context(
                         "role_name": role_data.get("role_name", ""),
                         "value_display": "",
                         "initials": "",
+                        "_initials_user_id": "",
+                        "_initials_name": "",
                         "notes_display": "",
                     }
                 )
