@@ -282,7 +282,9 @@ class RunCreate(BaseModel):
     name: str
     project_id: UUID
     protocol_id: Optional[UUID] = None
+    protocol_version_number: Optional[int] = None
     experiment_id: Optional[UUID] = None
+    overrides: Optional["RunOverrides"] = None
 
 
 class RunUpdate(BaseModel):
@@ -305,6 +307,30 @@ class RunResponse(RunBase):
 
     class Config:
         from_attributes = True
+
+
+# --- Run Overrides (F-0081) ---
+
+
+class NodeOverrides(BaseModel):
+    """Sparse overrides for a single unit-op node in a run snapshot.
+
+    All fields optional. `params` is a sparse dict (only the keys being
+    overridden); `equipment`, `paramSchema`, and `description` are full
+    replacements. None means "inherit from protocol default".
+    """
+    params: Optional[Dict[str, Any]] = None
+    equipment: Optional[List[Dict[str, Any]]] = None
+    paramSchema: Optional[Dict[str, Any]] = None
+    description: Optional[str] = None
+
+
+class RunOverrides(BaseModel):
+    """Per-run edits to a protocol snapshot, keyed by unit-op node id."""
+    nodes: Dict[str, NodeOverrides] = Field(default_factory=dict)
+
+
+RunCreate.model_rebuild()
 
 
 class ExperimentResponse(BaseModel):
