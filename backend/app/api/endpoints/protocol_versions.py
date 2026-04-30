@@ -54,12 +54,14 @@ async def list_protocol_versions(
             id=v.id,
             version_number=v.version_number,
             name=v.name,
+            description=v.description,
             change_summary=v.change_summary,
             created_by_name=(
                 v.created_by.full_name or v.created_by.email
                 if v.created_by else None
             ),
             created_at=v.created_at,
+            is_draft=v.is_draft,
         )
         for v in versions
     ]

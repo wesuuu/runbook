@@ -116,6 +116,7 @@ class ProtocolVersionListItem(BaseModel):
     id: UUID
     version_number: int
     name: str
+    description: Optional[str] = None
     change_summary: Optional[str] = None
     created_by_name: Optional[str] = None
     created_at: datetime

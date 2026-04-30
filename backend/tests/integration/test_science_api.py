@@ -1253,3 +1253,45 @@ async def test_assignment_operations_audit_logged(
     assert delete_log is not None
     assert delete_log.actor_id == test_user.id
     assert "lane_node_id" in delete_log.changes
+
+
+@pytest.mark.asyncio
+async def test_list_versions_returns_description(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """List endpoint exposes the version description field."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    from app.models.science import ProtocolVersion
+    version = ProtocolVersion(
+        protocol_id=protocol.id,
+        version_number=1,
+        name=protocol.name,
+        graph={"nodes": [], "edges": []},
+        description="Tightened DO range",
+        change_summary="DO 30 -> 25",
+        is_draft=False,
+    )
+    db_session.add(version)
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/science/protocols/{protocol.id}/versions",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    versions = resp.json()
+    assert len(versions) == 1
+    assert versions[0]["description"] == "Tightened DO range"
+    assert versions[0]["change_summary"] == "DO 30 -> 25"
