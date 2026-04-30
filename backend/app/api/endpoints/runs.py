@@ -220,6 +220,14 @@ async def update_run(
     new_status = update_data.status.value if update_data.status else None
     current_status = run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
 
+    # Block graph edits when the run has left PLANNED — overrides are GMP-locked
+    # at that point. (F-0081)
+    if update_data.graph is not None and current_status != "PLANNED":
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot edit run graph: run must be in PLANNED status to apply overrides",
+        )
+
     if new_status and new_status != current_status:
         valid_transitions = {
             "PLANNED": {"ACTIVE"},

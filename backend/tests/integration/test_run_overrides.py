@@ -341,3 +341,79 @@ async def test_create_run_with_unknown_version_returns_404(
         headers=auth_headers,
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_run_graph_allowed_while_planned(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    protocol = await _seed_protocol(db_session, test_project)
+    create_resp = await client.post(
+        "/science/runs",
+        json={
+            "name": "Run",
+            "project_id": str(test_project.id),
+            "protocol_id": str(protocol.id),
+        },
+        headers=auth_headers,
+    )
+    run_id = create_resp.json()["id"]
+
+    # PLANNED is the default — confirm the guard does NOT trigger.
+    new_graph = copy.deepcopy(create_resp.json()["graph"])
+    n1 = next(n for n in new_graph["nodes"] if n["id"] == "n1")
+    n1["data"]["params"]["pH"] = 6.8
+
+    resp = await client.put(
+        f"/science/runs/{run_id}",
+        json={"graph": new_graph},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    n1_resp = next(
+        n for n in resp.json()["graph"]["nodes"] if n["id"] == "n1"
+    )
+    assert n1_resp["data"]["params"]["pH"] == 6.8
+
+
+@pytest.mark.asyncio
+async def test_update_run_graph_rejected_when_not_planned(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user,
+    db_session: AsyncSession,
+):
+    """Once a run leaves PLANNED, graph edits return 422."""
+    protocol = await _seed_protocol(db_session, test_project)
+    create_resp = await client.post(
+        "/science/runs",
+        json={
+            "name": "Run",
+            "project_id": str(test_project.id),
+            "protocol_id": str(protocol.id),
+        },
+        headers=auth_headers,
+    )
+    run_id = create_resp.json()["id"]
+
+    # Mark ACTIVE directly in the DB to skip the role-assignment guard, which
+    # is unrelated to the override behavior under test.
+    run = (await db_session.execute(select(Run).where(Run.id == run_id))).scalar_one()
+    run.status = "ACTIVE"
+    await db_session.flush()
+
+    new_graph = copy.deepcopy(create_resp.json()["graph"])
+    n1 = next(n for n in new_graph["nodes"] if n["id"] == "n1")
+    n1["data"]["params"]["pH"] = 6.8
+
+    resp = await client.put(
+        f"/science/runs/{run_id}",
+        json={"graph": new_graph},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "PLANNED" in resp.json()["detail"]
