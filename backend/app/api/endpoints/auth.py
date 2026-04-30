@@ -63,16 +63,24 @@ MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 def _user_response(user: User) -> UserResponse:
-    """Build UserResponse with computed avatar_url and tos_current."""
+    """Build UserResponse with computed avatar/signature URLs and tos_current."""
     avatar_url = None
     if user.avatar_path:
         avatar_url = f"/auth/avatars/{user.id}"
+    signature_initials_url = None
+    if user.signature_initials_path:
+        signature_initials_url = f"/auth/signatures/{user.id}/initials"
+    signature_full_url = None
+    if user.signature_full_path:
+        signature_full_url = f"/auth/signatures/{user.id}/full"
     return UserResponse(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
         job_title=user.job_title,
         avatar_url=avatar_url,
+        signature_initials_url=signature_initials_url,
+        signature_full_url=signature_full_url,
         preferences=user.preferences or {},
         is_active=user.is_active,
         email_verified=user.email_verified,
