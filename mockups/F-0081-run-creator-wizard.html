@@ -493,7 +493,7 @@ input, select { font-family: inherit; font-size: inherit; }
 }
 .uo-actions .struct-note b { color: hsl(35 80% 35%); }
 
-/* Instruction preview */
+/* Instruction block (editable) */
 .uo-preview {
   padding: 14px 20px;
   border-top: 1px solid var(--border);
@@ -508,7 +508,10 @@ input, select { font-family: inherit; font-size: inherit; }
   text-transform: uppercase;
   margin-bottom: 6px;
   display: flex; align-items: center; gap: 8px;
+  justify-content: space-between;
 }
+.uo-preview .label .l { display: flex; align-items: center; gap: 8px; }
+.uo-preview .label .r { display: flex; align-items: center; gap: 8px; }
 .uo-preview .label .preview-pill {
   background: var(--primary);
   color: var(--primary-fg);
@@ -517,6 +520,27 @@ input, select { font-family: inherit; font-size: inherit; }
   font-size: 10px;
   letter-spacing: 0.04em;
 }
+.uo-preview .label .modified-pill {
+  background: hsl(155 60% 92%);
+  color: hsl(155 70% 22%);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.uo-preview .label .modified-pill::before { content: '◆ '; }
+.uo-preview .label .edit-link {
+  background: none; border: none;
+  color: var(--primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.uo-preview .label .edit-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .uo-preview .text {
   font-size: 14px;
   line-height: 1.55;
@@ -533,6 +557,79 @@ input, select { font-family: inherit; font-size: inherit; }
   background: var(--muted);
   color: var(--fg);
   font-weight: 400;
+}
+.uo-preview .editor {
+  margin-top: 4px;
+}
+.uo-preview .editor .template-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+.uo-preview .editor .available-vars {
+  font-size: 11px;
+  color: var(--muted-fg);
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+}
+.uo-preview .editor .available-vars code {
+  background: var(--muted);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 4px;
+}
+.uo-preview .editor textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--fg);
+  resize: vertical;
+}
+.uo-preview .editor textarea:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px hsl(195 85% 22% / 0.18);
+}
+.uo-preview .editor .actions {
+  display: flex; gap: 12px; align-items: center;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.uo-preview .editor .revert {
+  background: transparent;
+  border: none;
+  color: var(--muted-fg);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.uo-preview .editor .revert:hover { color: var(--fg); }
+.uo-preview .render-block {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+.uo-preview .render-block .render-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
 }
 
 /* Structural change pill in unit-op header */
@@ -1002,14 +1099,36 @@ input, select { font-family: inherit; font-size: inherit; }
 
         <div class="uo-preview">
           <div class="label">
-            <span class="preview-pill">PREVIEW</span>
-            Step instructions (with overrides applied)
+            <span class="l">
+              <span class="preview-pill">INSTRUCTIONS</span>
+              Edit language for this run
+              <span class="modified-pill">modified</span>
+            </span>
+            <span class="r">
+              <button class="edit-link">↺ revert to protocol default</button>
+            </span>
           </div>
-          <p class="text">
-            Prepare <mark>120</mark> L of buffer in the mixing vessel. Adjust to a target pH of <mark>6.80</mark>
-            using the pH meter, with conductivity of <mark class="def">14.00</mark> mS/cm.
-            Stir for <mark class="def">30</mark> minutes.
-          </p>
+
+          <div class="editor">
+            <span class="template-label">Template</span>
+            <p class="available-vars">
+              Available: <code>{{pH}}</code><code>{{conductivity}}</code><code>{{volume}}</code><code>{{mix_duration}}</code>
+            </p>
+            <textarea>Prepare {{volume}} L of buffer in mixing vessel B-3 (NOT the legacy A-1 — see SOP-204). Adjust to a target pH of {{pH}} using the calibrated pH meter, with conductivity of {{conductivity}} mS/cm. Stir for {{mix_duration}} minutes.</textarea>
+            <div class="actions">
+              <span class="muted mono" style="font-size: 11px;">protocol default →</span>
+              <em style="color: var(--muted-fg); font-size: 12px;">"Prepare {{volume}} L of buffer in the mixing vessel. Adjust to a target pH of {{pH}} using the pH meter, with conductivity of {{conductivity}} mS/cm. Stir for {{mix_duration}} minutes."</em>
+            </div>
+          </div>
+
+          <div class="render-block">
+            <div class="render-label">Live preview · with overrides applied</div>
+            <p class="text">
+              Prepare <mark>120</mark> L of buffer in mixing vessel B-3 (NOT the legacy A-1 — see SOP-204).
+              Adjust to a target pH of <mark>6.80</mark> using the calibrated pH meter, with conductivity of
+              <mark class="def">14.00</mark> mS/cm. Stir for <mark class="def">30</mark> minutes.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -1132,8 +1251,13 @@ input, select { font-family: inherit; font-size: inherit; }
 
         <div class="uo-preview">
           <div class="label">
-            <span class="preview-pill">PREVIEW</span>
-            Step instructions (with overrides applied)
+            <span class="l">
+              <span class="preview-pill">INSTRUCTIONS</span>
+              Live preview · with overrides applied
+            </span>
+            <span class="r">
+              <button class="edit-link">✎ Edit instructions</button>
+            </span>
           </div>
           <p class="text">
             Inoculate <mark class="def">200</mark> L bioreactor with cells at <mark>0.45 ×10⁶ cells/mL</mark>.
@@ -1318,7 +1442,7 @@ input, select { font-family: inherit; font-size: inherit; }
   <div class="dialog" style="margin-bottom: 0; max-width: 1200px;">
     <div class="head">
       <h3>Save these edits as a new protocol version?</h3>
-      <p>You made <b style="color: var(--fg)">5 edits</b> to <b style="color: var(--fg)">Mab Production Pilot v3</b>. Keep them scoped to this run, or promote them to a new version so future runs inherit them. Default action is <b style="color: var(--fg)">Just for this run</b> — press <span class="mono" style="background: var(--muted); padding: 1px 6px; border-radius: 3px; font-size: 12px;">Enter</span> to dismiss.</p>
+      <p>You made <b style="color: var(--fg)">6 edits</b> to <b style="color: var(--fg)">Mab Production Pilot v3</b>. Keep them scoped to this run, or promote them to a new version so future runs inherit them. Default action is <b style="color: var(--fg)">Just for this run</b> — press <span class="mono" style="background: var(--muted); padding: 1px 6px; border-radius: 3px; font-size: 12px;">Enter</span> to dismiss.</p>
     </div>
     <div class="body">
       <ul class="change-list">
@@ -1329,6 +1453,10 @@ input, select { font-family: inherit; font-size: inherit; }
         <li>
           <span class="tag" style="background: hsl(155 60% 92%); color: hsl(155 70% 22%);">VALUE</span>
           <span><b>UO-01 · Buffer Mix</b> — Volume: 50 L → 120 L</span>
+        </li>
+        <li>
+          <span class="tag" style="background: hsl(195 60% 92%); color: hsl(195 85% 22%);">INSTRUCTION</span>
+          <span><b>UO-01 · Buffer Mix</b> — clarified mixing-vessel reference (B-3 vs. legacy A-1)</span>
         </li>
         <li>
           <span class="tag eq">SWAP</span>

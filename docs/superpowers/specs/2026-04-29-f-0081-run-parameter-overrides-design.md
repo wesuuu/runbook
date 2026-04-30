@@ -146,7 +146,8 @@ Overrides themselves live entirely within `Run.graph` JSONB — no DB migration 
 | `node.data.protocol_equipment` | Original protocol equipment — preserved forever |
 | `node.data.paramSchema` | Effective schema for this run (reflects added/removed params) |
 | `node.data.protocol_paramSchema` | Original protocol schema — preserved forever |
-| `node.data.description` | Effective instruction template (untouched today; future-extensible) |
+| `node.data.description` | Effective instruction template for this run (overridable) |
+| `node.data.protocol_description` | Original protocol instruction template — preserved forever |
 
 The "protocol_*" mirror fields make `effective vs. default` diffs trivial to compute downstream (relevant to F-0069 run comparison).
 
@@ -162,6 +163,7 @@ class NodeOverrides(BaseModel):
     params: Optional[Dict[str, Any]] = None        # sparse: only the keys being overridden
     equipment: Optional[List[SelectedEquipment]] = None  # full replacement list (None = inherit)
     paramSchema: Optional[Dict[str, Any]] = None   # full schema if structurally modified
+    description: Optional[str] = None              # full replacement of instruction template (None = inherit)
 
 class RunOverrides(BaseModel):
     """Per-run edits to the protocol snapshot. Empty = use protocol defaults."""
@@ -198,11 +200,12 @@ In `backend/app/api/endpoints/runs.py:53` (the existing `create_run`):
    - Else, load the matching `ProtocolVersion` and use its `graph`.
 2. **Deep copy** the graph (`copy.deepcopy`) — current code does a shallow `protocol.graph.copy()` which would mutate the protocol on per-node overrides.
 3. For each node in `graph["nodes"]` of type `unitOp`:
-   - Capture originals into mirror fields: `protocol_params`, `protocol_equipment`, `protocol_paramSchema`.
+   - Capture originals into mirror fields: `protocol_params`, `protocol_equipment`, `protocol_paramSchema`, `protocol_description`.
    - If `overrides.nodes[node_id]` exists:
      - `params = {**protocol_params, **overrides.params}` (sparse merge)
      - `equipment = overrides.equipment or protocol_equipment`
      - `paramSchema = overrides.paramSchema or protocol_paramSchema`
+     - `description = overrides.description if overrides.description is not None else protocol_description`
 4. Persist `Run.graph` with the merged result.
 5. **Audit log** one entry per overridden field, using a new audit action `OVERRIDE_SET` (creation-time). Payload mirrors the existing `STEP_EDIT` shape at `runs.py:282-303`:
    ```python
@@ -212,7 +215,7 @@ In `backend/app/api/endpoints/runs.py:53` (the existing `create_run`):
         "field_label": prop_title, "old_value": protocol_default, "new_value": override_value},
    )
    ```
-   Equipment swaps and schema add/remove get the same action with `field` set to `"equipment"` or `"paramSchema.<key>"` respectively.
+   Equipment swaps, schema add/remove, and instruction edits get the same action with `field` set to `"equipment"`, `"paramSchema.<key>"`, or `"description"` respectively.
 6. Existing audit on run creation (`{"name": run_in.name}`) stays unchanged.
 
 ### API shape — `PUT /science/runs/{id}` (edit while PLANNED)
@@ -241,6 +244,7 @@ Backend integration (`backend/tests/integration/api/test_runs_overrides.py`):
 - `create_run` with sparse value overrides → merged values applied; defaults preserved in mirrors
 - `create_run` with equipment swap → `node.data.equipment` reflects swap; `protocol_equipment` preserved
 - `create_run` with `paramSchema` override (added param) → schema mutated; new key visible in `paramSchema.properties`
+- `create_run` with `description` override → instruction template replaced; `protocol_description` mirror preserves original
 - `create_run` with overrides → audit log has one `STEP_EDIT` entry per overridden field
 - `update_run` with `graph` while `PLANNED` → 200, audit entries written
 - `update_run` with `graph` while `ACTIVE` → 422
@@ -298,7 +302,7 @@ Shared UI:
   - **Parameter table** (4 columns: Parameter, Default, Override for this run, Action). One row per `paramSchema.properties` key. Override input column varies by `prop.type` and `prop["x-ref-type"]` (mirroring Inspector at line 441-490).
   - **`+ Add parameter`** button at table foot opens an inline schema-row form (key + label + type) — reuses logic from Inspector's schema editor (`Inspector.svelte:518-562`). Added rows get an amber `+ ADDED` chip.
   - **Remove a row** (`✕`): marks the param as removed, shows struck-through with a `− REMOVED` chip. Removed rows stay visible (so the diff is readable). Restore via `↺`.
-  - **Instruction preview** block: `renderTemplate(node.data.description, mergedParams)` with `<mark>` highlighting on overridden values, muted-toned `<mark>` for defaults.
+  - **Instructions** block: editable. Default state shows the rendered template (with `<mark>` highlighting on overridden values, muted-toned `<mark>` for defaults) and an `Edit instructions` link. Clicking reveals a textarea pre-filled with `node.data.description`; the rendered preview updates live below as the user types. A `↺ revert to protocol default` button restores the original. If the effective `description !== protocol_description`, the block shows a `◆ instructions modified` chip in the header and stays expanded by default. Uses the shared `renderTemplate()` util.
 - Aside (sticky 320px column): live counts (Value overrides / Equipment swaps / Structural changes / Inheriting / Validation errors), diff preview list.
 - Footer action bar: `Skip · use defaults` / `Back` / `Continue to review`.
 
@@ -306,7 +310,7 @@ Shared UI:
 
 Triggered on `Continue to review` if `computeEdits(originalGraph, currentGraph).length > 0`.
 
-- Lists every edit grouped by unit op: `VALUE` / `SWAP` / `ADDED` / `REMOVED` tags + human-readable diff.
+- Lists every edit grouped by unit op: `VALUE` / `SWAP` / `ADDED` / `REMOVED` / `INSTRUCTION` tags + human-readable diff. (For `INSTRUCTION` the diff shows the first ~80 chars of old → new with ellipsis; full text on hover.)
 - Description input: optional one-liner ("e.g. Reduced pH target for DOE arm 4; swapped to Bioreactor B").
 - Three actions: `Cancel` / `Save as v{N+1}` (secondary) / **`Just for this run · continue →`** (primary, focused — Enter dismisses).
 - If "Save as v{N+1}":
