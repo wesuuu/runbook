@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 import uuid as uuid_mod
 from datetime import datetime, timezone
@@ -21,15 +22,19 @@ from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol, Run, RunRoleAssignment
+from app.models.science import (Project, Protocol, ProtocolVersion, Run,
+                                 RunRoleAssignment)
 from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunCreate, RunNote, RunNoteCreate,
-                                 RunNoteListResponse, RunResponse,
-                                 RunRoleAssignmentCreate,
+                                 RunNoteListResponse, RunOverrides,
+                                 RunResponse, RunRoleAssignmentCreate,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunUpdate)
 from app.services.core.audit import log_audit
 from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
+from app.services.runs.overrides import (apply_node_overrides,
+                                         diff_unit_op_node,
+                                         snapshot_unit_op_node)
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
@@ -73,7 +78,7 @@ async def create_run(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    initial_graph = {}
+    initial_graph: dict = {}
     if run_in.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_in.protocol_id)
@@ -88,7 +93,32 @@ async def create_run(
                 status_code=400,
                 detail="Cannot create run from archived protocol",
             )
-        initial_graph = protocol.graph.copy() if protocol.graph else {}
+
+        # Resolve which graph to snapshot: a specific version, else current.
+        if run_in.protocol_version_number is not None:
+            v_result = await db.execute(
+                select(ProtocolVersion).where(
+                    (ProtocolVersion.protocol_id == protocol.id)
+                    & (ProtocolVersion.version_number == run_in.protocol_version_number)
+                    & (ProtocolVersion.is_draft == False)  # noqa: E712
+                )
+            )
+            version = v_result.scalar_one_or_none()
+            if version is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        f"Protocol version {run_in.protocol_version_number} "
+                        f"not found for this protocol"
+                    ),
+                )
+            initial_graph = copy.deepcopy(version.graph or {})
+        else:
+            initial_graph = copy.deepcopy(protocol.graph or {})
+
+        # Snapshot protocol_* mirror fields on every unit-op node.
+        for node in iter_unit_op_nodes(initial_graph):
+            snapshot_unit_op_node(node)
 
     run_obj = Run(
         name=run_in.name,
@@ -101,10 +131,28 @@ async def create_run(
     db.add(run_obj)
     await db.flush()
 
+    # Apply overrides if provided.
+    override_diffs = []
+    if run_in.overrides is not None:
+        node_index = {n["id"]: n for n in iter_unit_op_nodes(run_obj.graph)}
+        for node_id, ov in run_in.overrides.nodes.items():
+            node = node_index.get(node_id)
+            if node is None:
+                # Unknown node id: ignore (sparse override addressing a missing
+                # node is a frontend bug, but we don't want to 500 on it).
+                continue
+            override_diffs.extend(apply_node_overrides(node, ov))
+        # Notify SQLAlchemy that we mutated the JSONB column in place.
+        flag_modified(run_obj, "graph")
+
     await log_audit(
         db, user.id, "CREATE", "Run",
         run_obj.id, {"name": run_in.name},
     )
+    for d in override_diffs:
+        await log_audit(
+            db, user.id, "OVERRIDE_SET", "Run", run_obj.id, d,
+        )
 
     await db.commit()
     await db.refresh(run_obj)
