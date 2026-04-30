@@ -1,6 +1,8 @@
 <script lang="ts">
     import VersionHistoryDrawer from '$lib/components/analytics/VersionHistoryDrawer.svelte';
     import type { Protocol, ProtocolVersion } from '$lib/schemas/protocols';
+    import { slide } from 'svelte/transition';
+    import { cubicOut } from 'svelte/easing';
 
     interface Props {
         protocols: Protocol[];
@@ -139,7 +141,7 @@
     </div>
 
     {#if selectedVersion}
-        <div class="version-card">
+        <div class="version-card" transition:slide={{ duration: 220, easing: cubicOut }}>
             <div class="version-card-head">
                 <span class="version-pill">v{selectedVersion.version_number}</span>
                 <span class="version-name">{selectedVersion.name}</span>

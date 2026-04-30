@@ -9,6 +9,10 @@
     } from '$lib/utils/runOverrides';
     import { detectEquipmentConflicts } from '$lib/components/protocol/protocolGraph';
     import type { ProtocolRole } from '$lib/schemas/protocols';
+    import { fade, slide } from 'svelte/transition';
+    import { flip } from 'svelte/animate';
+    import { cubicOut } from 'svelte/easing';
+    import { blockDuration, listDuration } from '$lib/transitions';
 
     interface OrgEquipment {
         id: string;
@@ -153,7 +157,7 @@
 <div class="overrides-editor">
     <div class="cards-column">
         {#if isMultiRole && activeRole}
-            <div class="role-context">
+            <div class="role-context" transition:slide={{ duration: 200, easing: cubicOut }}>
                 <div class="rc-left">
                     <div class="role-bar" style:background={activeRole.color}></div>
                     <div>
@@ -182,19 +186,24 @@
         {/if}
 
         {#if visibleUnitOpNodes.length === 0}
-            <div class="empty">
+            <div class="empty" in:fade={{ duration: blockDuration() }}>
                 {#if isMultiRole}No unit ops for this role.{:else}No unit ops in this protocol.{/if}
             </div>
         {:else}
             {#each visibleUnitOpNodes as node (node.id)}
-                <RunCreatorUnitOpCard
-                    node={node as Parameters<typeof RunCreatorUnitOpCard>[0]['node']}
-                    {mediaPrepNodes}
-                    {orgEquipment}
-                    conflictingIds={new Set(conflicts.get(node.id) ?? [])}
-                    onChange={patchNode}
-                    onSwapEquipment={(id) => { swapNodeId = id; }}
-                />
+                <div
+                    in:fade={{ duration: listDuration() }}
+                    animate:flip={{ duration: listDuration() }}
+                >
+                    <RunCreatorUnitOpCard
+                        node={node as Parameters<typeof RunCreatorUnitOpCard>[0]['node']}
+                        {mediaPrepNodes}
+                        {orgEquipment}
+                        conflictingIds={new Set(conflicts.get(node.id) ?? [])}
+                        onChange={patchNode}
+                        onSwapEquipment={(id) => { swapNodeId = id; }}
+                    />
+                </div>
             {/each}
         {/if}
     </div>

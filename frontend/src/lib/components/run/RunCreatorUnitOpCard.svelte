@@ -4,6 +4,8 @@
     import EquipmentChipList from '$lib/components/shared/EquipmentChipList.svelte';
     import SchemaEditor, { type SchemaRow } from '$lib/components/shared/SchemaEditor.svelte';
     import { Button } from '$lib/components/ui/button';
+    import { slide } from 'svelte/transition';
+    import { cubicOut } from 'svelte/easing';
 
     interface MediaPrepNode { id: string; label: string; }
     interface OrgEquipment { id: string; name: string; }
@@ -241,7 +243,7 @@
         </div>
         <p class="rendered-template">{renderedEffective || '— no instructions —'}</p>
         {#if showInstructions}
-            <div class="instructions-editor">
+            <div class="instructions-editor" transition:slide={{ duration: 180, easing: cubicOut }}>
                 <textarea
                     bind:value={editingDescription}
                     onblur={commitDescription}

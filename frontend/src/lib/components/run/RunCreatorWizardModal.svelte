@@ -13,6 +13,8 @@
     import SaveAsNewVersionDialog from './SaveAsNewVersionDialog.svelte';
     import { computeEdits, buildOverridesPayload } from '$lib/utils/runOverrides';
     import type { Protocol, ProtocolVersion, ProtocolRole } from '$lib/schemas/protocols';
+    import { fade, fly } from 'svelte/transition';
+    import { blockDuration } from '$lib/transitions';
 
     type GraphNode = {
         id: string;
@@ -69,6 +71,7 @@
 
     let currentStep = $state<1 | 2 | 3 | 4>(1);
     let highestVisited = $state<1 | 2 | 3 | 4>(1);
+    let stepDirection = $state<'forward' | 'backward'>('forward');
 
     let nameValid = $state(false);
     let protocolValid = $state(false);
@@ -202,20 +205,26 @@
     });
 
     function jumpTo(step: 1 | 2 | 3 | 4) {
-        if (step <= highestVisited) currentStep = step;
+        if (step <= highestVisited) {
+            stepDirection = step > currentStep ? 'forward' : 'backward';
+            currentStep = step;
+        }
     }
 
     function next() {
         if (currentStep === 1 && nameValid) {
+            stepDirection = 'forward';
             currentStep = 2;
             highestVisited = Math.max(highestVisited, 2) as typeof highestVisited;
         } else if (currentStep === 2 && protocolValid) {
+            stepDirection = 'forward';
             currentStep = 3;
             highestVisited = Math.max(highestVisited, 3) as typeof highestVisited;
         } else if (currentStep === 3) {
             if (edits.length > 0) {
                 saveDialogOpen = true;
             } else {
+                stepDirection = 'forward';
                 currentStep = 4;
                 highestVisited = Math.max(highestVisited, 4) as typeof highestVisited;
             }
@@ -223,7 +232,10 @@
     }
 
     function back() {
-        if (currentStep > 1) currentStep = (currentStep - 1) as typeof currentStep;
+        if (currentStep > 1) {
+            stepDirection = 'backward';
+            currentStep = (currentStep - 1) as typeof currentStep;
+        }
     }
 
     function requestClose() {
@@ -241,6 +253,7 @@
 
     function dialogJustThisRun() {
         saveDialogOpen = false;
+        stepDirection = 'forward';
         currentStep = 4;
         highestVisited = Math.max(highestVisited, 4) as typeof highestVisited;
     }
@@ -275,6 +288,7 @@
             await loadVersions(protocolId);
             protocolVersionNumber = nextVer;
             saveDialogOpen = false;
+            stepDirection = 'forward';
             currentStep = 4;
             highestVisited = Math.max(highestVisited, 4) as typeof highestVisited;
         } catch (e) {
@@ -315,73 +329,89 @@
 
     <div class="wizard-body">
         <main class="wizard-main">
-            {#if currentStep === 1}
-                <RunCreatorNameStep
-                    name={runName}
-                    {experimentId}
-                    {experiments}
-                    lockedExperiment={forExperiment}
-                    onChange={(v) => { runName = v.name; experimentId = v.experimentId; }}
-                    onValidate={(v) => { nameValid = v; }}
-                />
-            {:else if currentStep === 2}
-                <RunCreatorProtocolStep
-                    {protocols}
-                    {protocolId}
-                    {protocolVersionNumber}
-                    {versions}
-                    {loadingVersions}
-                    onChange={(v) => { protocolId = v.protocolId; protocolVersionNumber = v.protocolVersionNumber; }}
-                    onValidate={(v) => { protocolValid = v; }}
-                    onLoadVersions={loadVersions}
-                />
-            {:else if currentStep === 3 && currentGraph && originalGraph}
-                <RunOverridesEditor
-                    {originalGraph}
-                    {currentGraph}
-                    {orgEquipment}
-                    {mediaPrepNodes}
-                    {roles}
-                    {activeRoleId}
-                    onChange={(g) => { currentGraph = g; }}
-                    onRoleChange={(id) => { activeRoleId = id; }}
-                />
-            {:else if currentStep === 4}
-                <RunCreatorReviewStep
-                    {runName}
-                    experimentName={experiments.find((e) => e.id === experimentId)?.name ?? null}
-                    protocolName={selectedProtocol?.name ?? ''}
-                    versionNumber={selectedVersion?.version_number ?? 0}
-                    {isLatestVersion}
-                    {edits}
-                    {creating}
-                    error={createError}
-                    onCreate={createRun}
-                />
-            {/if}
+            {#key currentStep}
+                <div
+                    class="step-pane"
+                    in:fly={{
+                        x: stepDirection === 'forward' ? 16 : -16,
+                        duration: blockDuration(),
+                    }}
+                >
+                    {#if currentStep === 1}
+                        <RunCreatorNameStep
+                            name={runName}
+                            {experimentId}
+                            {experiments}
+                            lockedExperiment={forExperiment}
+                            onChange={(v) => { runName = v.name; experimentId = v.experimentId; }}
+                            onValidate={(v) => { nameValid = v; }}
+                        />
+                    {:else if currentStep === 2}
+                        <RunCreatorProtocolStep
+                            {protocols}
+                            {protocolId}
+                            {protocolVersionNumber}
+                            {versions}
+                            {loadingVersions}
+                            onChange={(v) => { protocolId = v.protocolId; protocolVersionNumber = v.protocolVersionNumber; }}
+                            onValidate={(v) => { protocolValid = v; }}
+                            onLoadVersions={loadVersions}
+                        />
+                    {:else if currentStep === 3 && currentGraph && originalGraph}
+                        <RunOverridesEditor
+                            {originalGraph}
+                            {currentGraph}
+                            {orgEquipment}
+                            {mediaPrepNodes}
+                            {roles}
+                            {activeRoleId}
+                            onChange={(g) => { currentGraph = g; }}
+                            onRoleChange={(id) => { activeRoleId = id; }}
+                        />
+                    {:else if currentStep === 4}
+                        <RunCreatorReviewStep
+                            {runName}
+                            experimentName={experiments.find((e) => e.id === experimentId)?.name ?? null}
+                            protocolName={selectedProtocol?.name ?? ''}
+                            versionNumber={selectedVersion?.version_number ?? 0}
+                            {isLatestVersion}
+                            {edits}
+                            {creating}
+                            error={createError}
+                            onCreate={createRun}
+                        />
+                    {/if}
+                </div>
+            {/key}
         </main>
 
         <footer class="wizard-footer">
             <Button variant="ghost" onclick={requestClose}>Cancel</Button>
             <div class="footer-spacer"></div>
             {#if currentStep > 1 && currentStep < 4}
-                <Button variant="secondary" onclick={back}>Back</Button>
+                <div in:fade={{ duration: blockDuration() }}>
+                    <Button variant="secondary" onclick={back}>Back</Button>
+                </div>
             {/if}
             {#if currentStep === 3}
-                <Button
-                    variant="ghost"
-                    onclick={() => { currentGraph = JSON.parse(JSON.stringify(originalGraph)); next(); }}
-                >
-                    Skip · use defaults
-                </Button>
+                <div in:fade={{ duration: blockDuration() }}>
+                    <Button
+                        variant="ghost"
+                        onclick={() => { currentGraph = JSON.parse(JSON.stringify(originalGraph)); next(); }}
+                    >
+                        Skip · use defaults
+                    </Button>
+                </div>
             {/if}
             {#if currentStep < 4}
-                <Button
-                    onclick={next}
-                    disabled={(currentStep === 1 && !nameValid) || (currentStep === 2 && !protocolValid)}
-                >
-                    {currentStep === 3 ? 'Continue to review' : 'Continue'}
-                </Button>
+                <div in:fade={{ duration: blockDuration() }}>
+                    <Button
+                        onclick={next}
+                        disabled={(currentStep === 1 && !nameValid) || (currentStep === 2 && !protocolValid)}
+                    >
+                        {currentStep === 3 ? 'Continue to review' : 'Continue'}
+                    </Button>
+                </div>
             {/if}
         </footer>
     </div>
@@ -432,5 +462,8 @@
     }
     .footer-spacer {
         flex: 1;
+    }
+    .step-pane {
+        height: 100%;
     }
 </style>
