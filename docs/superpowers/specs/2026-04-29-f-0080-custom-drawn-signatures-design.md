@@ -267,6 +267,57 @@ Frontend:
 - Manual / Playwright: draw → save → reload → preview shows stored image;
   clear → save with empty pad is rejected; delete restores fallback.
 
+## Browser verification (qa-verify)
+
+After implementation passes the unit + integration suites, launch the
+`qa-verify` agent to validate the feature end-to-end in a browser. The agent
+must check both functional correctness and UI/UX polish. Brief it with:
+
+**Login**: dev creds `localhost:5432` / `postgres` / `postgres` / `batchrite`;
+any password works.
+
+**Functional checks** (must all pass):
+
+- Settings → Profile tab shows a new "Signature" card with two pads
+  (Initials + Full)
+- Drawing on the initials pad and clicking Save persists the signature;
+  reload shows the stored image preview, not the cursive fallback
+- Clicking Clear empties the pad without saving
+- Clicking Delete removes the stored signature; preview reverts to the
+  cursive auto-generated initials
+- Same flow for the Full Signature pad
+- Saving an empty pad is rejected with a visible error
+- Uploading >500 KB or non-PNG via direct API → 400 (sanity check)
+- Generate a batch record PDF for a run where the current user has a
+  saved initials signature: open the rendered PDF and confirm the
+  initials cells contain the drawn image rather than text
+- Generate the same PDF for a user with NO saved signature: confirm the
+  cells contain cursive text initials (Dancing Script font)
+
+**UI/UX audit** (qa-verify must catch and fix any of these):
+
+- The Signature card matches the visual style of the surrounding Profile
+  cards (same `Card` / `CardHeader` / `CardContent` primitives, spacing,
+  typography)
+- The two pads sit side-by-side on desktop and stack cleanly on tablet /
+  narrow viewports
+- Pad canvases have a clear border, visible "Sign here" baseline or
+  placeholder, and obvious affordance (cursor-crosshair, hover state)
+- Save / Clear / Delete buttons follow project button conventions
+  (shadcn-svelte primitives, correct variants, `cursor-pointer`,
+  `hover:` transitions)
+- Touch / stylus drawing works smoothly on a tablet viewport (qa-verify
+  should resize the browser to a tablet width and try drawing)
+- Loading spinner appears during upload (mirrors avatar pattern)
+- Toast notifications fire on success / failure (uses existing `toast`)
+- No layout shifts, oversized inputs, overflow, or spacing inconsistencies
+- Strokes are smooth (signature_pad's bezier interpolation is enabled,
+  not jagged segments)
+
+The qa-verify agent must fix any FAIL or POLISH issues it finds before
+returning. Report back with a confirmation that all checks pass and a
+short note on anything that was adjusted.
+
 ## Migration / rollout
 
 - Single Alembic migration adding both columns. No data backfill.
