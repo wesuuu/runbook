@@ -77,11 +77,14 @@ def _resolve_initials(
     docx: DocxTemplate,
 ):
     """Return an InlineImage of the user's drawn initials if registered,
-    else a cursive RichText with the auto-generated text initials."""
+    else the auto-generated text initials. The template uses
+    `{{ step.initials }}` (plain), which renders InlineImage objects
+    natively but cannot render RichText — so the fallback is a plain
+    string, matching pre-F-0080 behavior."""
     path = user_signatures.get(user_id)
     if path and Path(path).exists():
         return InlineImage(docx, path, width=Mm(20))
-    return RichText(_get_initials(name), font="Dancing Script")
+    return _get_initials(name)
 
 
 def build_context(
@@ -206,8 +209,9 @@ def build_context(
         )
         completer_name = umap.get(completer_uid, "")
         # Store both the resolved name and the user_id so render_to_docx
-        # can build the InlineImage / RichText against the open
-        # DocxTemplate (mirrors the figure-handling pattern).
+        # can swap in an InlineImage of the user's drawn signature
+        # against the open DocxTemplate (mirrors the figure-handling
+        # pattern). Falls back to text initials when none registered.
         if completer_name and sd.get("status") == "completed":
             initials_user_id = completer_uid
             initials_text_fallback = _get_initials(completer_name)

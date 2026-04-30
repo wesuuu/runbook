@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from docxtpl import DocxTemplate, InlineImage, RichText
+from docxtpl import DocxTemplate, InlineImage
 
 from app.services.protocols.template_engine import _resolve_initials
 
@@ -22,7 +22,7 @@ def test_returns_inline_image_when_signature_path_exists(tmp_path):
     assert isinstance(result, InlineImage)
 
 
-def test_falls_back_to_cursive_richtext_when_no_signature():
+def test_falls_back_to_text_initials_when_no_signature():
     docx = MagicMock(spec=DocxTemplate)
 
     result = _resolve_initials(
@@ -31,9 +31,7 @@ def test_falls_back_to_cursive_richtext_when_no_signature():
         user_signatures={},
         docx=docx,
     )
-    assert isinstance(result, RichText)
-    # docxtpl RichText stores its XML; the font name should be embedded
-    assert "Dancing Script" in result.xml or "DancingScript" in result.xml
+    assert result == "J.S."
 
 
 def test_falls_back_when_path_is_missing_from_disk(tmp_path):
@@ -46,7 +44,7 @@ def test_falls_back_when_path_is_missing_from_disk(tmp_path):
         user_signatures={"u1": str(missing_path)},
         docx=docx,
     )
-    assert isinstance(result, RichText)
+    assert result == "J.S."
 
 
 def test_falls_back_when_user_unknown():
@@ -58,7 +56,7 @@ def test_falls_back_when_user_unknown():
         user_signatures={"someone-else": "/path/that/exists"},
         docx=docx,
     )
-    assert isinstance(result, RichText)
+    assert result == "J.S."
 
 
 def test_render_to_docx_swaps_initials_to_inline_image(tmp_path):
