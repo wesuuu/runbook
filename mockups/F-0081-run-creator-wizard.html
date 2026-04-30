@@ -1101,34 +1101,18 @@ input, select { font-family: inherit; font-size: inherit; }
           <div class="label">
             <span class="l">
               <span class="preview-pill">INSTRUCTIONS</span>
-              Edit language for this run
+              Live preview · with overrides applied
               <span class="modified-pill">modified</span>
             </span>
             <span class="r">
-              <button class="edit-link">↺ revert to protocol default</button>
+              <button class="edit-link">✎ Edit instructions</button>
             </span>
           </div>
-
-          <div class="editor">
-            <span class="template-label">Template</span>
-            <p class="available-vars">
-              Available: <code>{{pH}}</code><code>{{conductivity}}</code><code>{{volume}}</code><code>{{mix_duration}}</code>
-            </p>
-            <textarea>Prepare {{volume}} L of buffer in mixing vessel B-3 (NOT the legacy A-1 — see SOP-204). Adjust to a target pH of {{pH}} using the calibrated pH meter, with conductivity of {{conductivity}} mS/cm. Stir for {{mix_duration}} minutes.</textarea>
-            <div class="actions">
-              <span class="muted mono" style="font-size: 11px;">protocol default →</span>
-              <em style="color: var(--muted-fg); font-size: 12px;">"Prepare {{volume}} L of buffer in the mixing vessel. Adjust to a target pH of {{pH}} using the pH meter, with conductivity of {{conductivity}} mS/cm. Stir for {{mix_duration}} minutes."</em>
-            </div>
-          </div>
-
-          <div class="render-block">
-            <div class="render-label">Live preview · with overrides applied</div>
-            <p class="text">
-              Prepare <mark>120</mark> L of buffer in mixing vessel B-3 (NOT the legacy A-1 — see SOP-204).
-              Adjust to a target pH of <mark>6.80</mark> using the calibrated pH meter, with conductivity of
-              <mark class="def">14.00</mark> mS/cm. Stir for <mark class="def">30</mark> minutes.
-            </p>
-          </div>
+          <p class="text">
+            Prepare <mark>120</mark> L of buffer in mixing vessel B-3 (NOT the legacy A-1 — see SOP-204).
+            Adjust to a target pH of <mark>6.80</mark> using the calibrated pH meter, with conductivity of
+            <mark class="def">14.00</mark> mS/cm. Stir for <mark class="def">30</mark> minutes.
+          </p>
         </div>
       </div>
 
