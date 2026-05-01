@@ -25,6 +25,7 @@ from app.schemas.science import (ProtocolCreate, ProtocolImportFinalizeRequest,
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
+from app.services.protocols.lookup import get_protocol_full, list_protocols
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +338,6 @@ async def get_protocol(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.protocols.lookup import get_protocol_full
     try:
         await get_protocol_full(db, user_id=user.id, protocol_id=protocol_id)
     except ValueError as e:
@@ -366,8 +366,12 @@ async def list_project_protocols(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.protocols.lookup import list_protocols
-    items = await list_protocols(db, user_id=user.id, project_id=project_id)
+    items = await list_protocols(
+        db,
+        user_id=user.id,
+        org_id=user.selected_org_id,
+        project_id=project_id,
+    )
     if not include_archived:
         items = [it for it in items if it.status != "ARCHIVED"]
     ids = [it.id for it in items]

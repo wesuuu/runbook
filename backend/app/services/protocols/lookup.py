@@ -10,13 +10,13 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.iam import (ObjectPermission, ObjectType, PermissionLevel,
-                            PrincipalType)
-from app.models.science import (Project, Protocol, ProtocolRole,
-                                ProtocolVersion)
-from app.services.core.permissions import check_permission
+from app.models.iam import ObjectType, PermissionLevel
+from app.models.science import Project, Protocol, ProtocolRole, ProtocolVersion
+from app.services.core.permissions import (check_permission,
+                                           get_visible_project_ids)
 
 
 @dataclass
@@ -46,21 +46,21 @@ class ProtocolFull:
 
 
 async def list_protocols(
-    db,
+    db: AsyncSession,
     *,
     user_id: UUID,
+    org_id: UUID,
     project_id: UUID | None = None,
 ) -> list[ProtocolListItem]:
-    """Return protocols the user can VIEW. Optionally filter to one project."""
-    # Subquery: project_ids the user has any permission on (USER principal).
-    # Org-admin / role-based access is honored by check_permission below; this
-    # subquery is a fast pre-filter to avoid scanning every protocol.
-    perm_proj_q = select(ObjectPermission.object_id).where(
-        ObjectPermission.principal_type == PrincipalType.USER,
-        ObjectPermission.principal_id == user_id,
-        ObjectPermission.object_type == ObjectType.PROJECT.value,
-    )
-    perm_proj_ids = {row[0] for row in (await db.execute(perm_proj_q)).all()}
+    """Return protocols the user can VIEW. Optionally filter to one project.
+
+    Visibility honors org-admin status, direct user permissions, team
+    permissions, and projects with `permissions_enabled=false` (open to all
+    org members) — see ``get_visible_project_ids``.
+    """
+    visible_project_ids = await get_visible_project_ids(db, user_id, org_id)
+    if not visible_project_ids:
+        return []
 
     has_draft_subq = (
         select(ProtocolVersion.protocol_id)
@@ -72,8 +72,7 @@ async def list_protocols(
         select(Protocol, Project.name, has_draft_subq.c.protocol_id)
         .join(Project, Protocol.project_id == Project.id)
         .outerjoin(has_draft_subq, has_draft_subq.c.protocol_id == Protocol.id)
-        .where(Protocol.project_id.in_(perm_proj_ids) if perm_proj_ids
-               else Protocol.id.is_(None))
+        .where(Protocol.project_id.in_(visible_project_ids))
         .order_by(Protocol.name)
     )
     if project_id is not None:
@@ -96,7 +95,7 @@ async def list_protocols(
 
 
 async def get_protocol_full(
-    db, *, user_id: UUID, protocol_id: UUID
+    db: AsyncSession, *, user_id: UUID, protocol_id: UUID
 ) -> ProtocolFull:
     """Return one protocol's full state (metadata, graph, roles).
 
@@ -115,7 +114,10 @@ async def get_protocol_full(
 
     if protocol.project_id is not None:
         allowed = await check_permission(
-            db, user_id, ObjectType.PROJECT, protocol.project_id,
+            db,
+            user_id,
+            ObjectType.PROJECT,
+            protocol.project_id,
             PermissionLevel.VIEW,
         )
         if not allowed:
