@@ -225,6 +225,51 @@ async def test_list_protocols_for_project(
     assert len(data) >= 1
 
 
+@pytest.mark.asyncio
+async def test_list_protocols_filters_archived_by_default(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Archived protocols are hidden by default and shown with include_archived=true."""
+    active = Protocol(
+        name="Active Protocol",
+        project_id=test_project.id,
+        graph={},
+        status="DRAFT",
+    )
+    archived = Protocol(
+        name="Archived Protocol",
+        project_id=test_project.id,
+        graph={},
+        status="ARCHIVED",
+    )
+    db_session.add_all([active, archived])
+    await db_session.flush()
+
+    # Default: archived hidden
+    resp = await client.get(
+        f"/science/projects/{test_project.id}/protocols",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    names = {p["name"] for p in resp.json()}
+    assert "Active Protocol" in names
+    assert "Archived Protocol" not in names
+
+    # include_archived=true: archived included
+    resp = await client.get(
+        f"/science/projects/{test_project.id}/protocols",
+        params={"include_archived": "true"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    names = {p["name"] for p in resp.json()}
+    assert "Active Protocol" in names
+    assert "Archived Protocol" in names
+
+
 # --- Protocol Roles ---
 
 

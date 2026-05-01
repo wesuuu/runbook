@@ -339,7 +339,7 @@ async def get_protocol(
 ):
     from app.services.protocols.lookup import get_protocol_full
     try:
-        full = await get_protocol_full(db, user_id=user.id, protocol_id=protocol_id)
+        await get_protocol_full(db, user_id=user.id, protocol_id=protocol_id)
     except ValueError as e:
         msg = str(e)
         if "not found" in msg:
@@ -347,7 +347,6 @@ async def get_protocol(
         raise HTTPException(status_code=403, detail=msg)
     # Re-load the ORM object so the existing ProtocolResponse serializer works
     # unchanged (it expects ORM attrs, not the dataclass).
-    _ = full
     protocol = await get_or_404(
         db,
         Protocol,
@@ -363,11 +362,14 @@ async def get_protocol(
 )
 async def list_project_protocols(
     project_id: UUID,
+    include_archived: bool = Query(False),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.protocols.lookup import list_protocols
     items = await list_protocols(db, user_id=user.id, project_id=project_id)
+    if not include_archived:
+        items = [it for it in items if it.status != "ARCHIVED"]
     ids = [it.id for it in items]
     if not ids:
         return []
