@@ -6,7 +6,6 @@
         PopoverContent,
     } from '$lib/components/ui/popover';
     import { Button } from '$lib/components/ui/button';
-    import { fade } from 'svelte/transition';
 
     interface Props {
         roles: string[];
@@ -40,12 +39,7 @@
     <div class="flex items-center gap-1.5 flex-wrap min-w-0">
         <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
         {#each roles.filter((r) => r !== 'MEMBER') as r (r)}
-            <span
-                in:fade={{ duration: 150 }}
-                out:fade={{ duration: 100 }}
-            >
-                <Badge variant="outline">{labelFor(r)}</Badge>
-            </span>
+            <Badge variant="outline">{labelFor(r)}</Badge>
         {/each}
     </div>
 

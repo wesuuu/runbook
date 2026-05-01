@@ -596,16 +596,34 @@
         }
     }
 
-    // Update member roles (multi-role)
+    // Update member roles (multi-role) with optimistic update
     async function updateMemberRoles(userId: string, roles: string[]) {
         const org = getCurrentOrg();
         if (!org) return;
+        const idx = members.findIndex((m) => m.user_id === userId);
+        if (idx === -1) return;
+        const previous = members[idx];
+        members = [
+            ...members.slice(0, idx),
+            { ...previous, roles },
+            ...members.slice(idx + 1),
+        ];
         try {
-            await api.patch(`/iam/organizations/${org.id}/members/${userId}`, {
-                roles,
-            });
-            await loadMembers();
+            const updated = await api.patch(
+                `/iam/organizations/${org.id}/members/${userId}`,
+                { roles },
+            );
+            members = [
+                ...members.slice(0, idx),
+                { ...members[idx], ...updated },
+                ...members.slice(idx + 1),
+            ];
         } catch (e: unknown) {
+            members = [
+                ...members.slice(0, idx),
+                previous,
+                ...members.slice(idx + 1),
+            ];
             toast.error(
                 'Failed to update roles',
                 e instanceof Error ? e.message : '',
