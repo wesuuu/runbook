@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            Team, TeamMember, TeamRole, User)
+                            OrganizationMember, OrgRole, PermissionLevel,
+                            PrincipalType, Team, TeamMember, TeamRole, User,
+                            has_any_org_role, has_org_role)
 from app.models.science import Project, Protocol, Run
 from app.services.core.permissions import check_permission
 
@@ -28,11 +29,12 @@ async def _setup_org_and_user(db, role="MEMBER"):
     db.add(user)
     await db.flush()
 
+    roles = ["MEMBER"] if role == "MEMBER" else ["MEMBER", role]
     db.add(
         OrganizationMember(
             user_id=user.id,
             organization_id=org.id,
-            role=role,
+            roles=roles,
         )
     )
     await db.flush()
@@ -581,3 +583,67 @@ async def test_document_no_project_no_inheritance(
         )
         is False
     )
+
+
+# --- TD-0084 multi-role helper tests ---
+
+
+def test_has_org_role_true_when_present():
+    m = OrganizationMember(roles=["MEMBER", "ADMIN"])
+    assert has_org_role(m, "ADMIN") is True
+
+
+def test_has_org_role_false_when_missing():
+    m = OrganizationMember(roles=["MEMBER"])
+    assert has_org_role(m, "ADMIN") is False
+
+
+def test_has_org_role_handles_none_roles():
+    m = OrganizationMember(roles=None)
+    assert has_org_role(m, "ADMIN") is False
+
+
+def test_has_any_org_role_returns_true_on_overlap():
+    m = OrganizationMember(roles=["MEMBER", "BILLING"])
+    assert has_any_org_role(m, ["ADMIN", "BILLING"]) is True
+
+
+def test_has_any_org_role_returns_false_on_no_overlap():
+    m = OrganizationMember(roles=["MEMBER"])
+    assert has_any_org_role(m, ["ADMIN", "BILLING"]) is False
+
+
+def test_org_role_includes_protocol_approver():
+    assert OrgRole.PROTOCOL_APPROVER.value == "PROTOCOL_APPROVER"
+
+
+@pytest.mark.asyncio
+async def test_resolver_multi_role_member_has_admin_access(db_session: AsyncSession):
+    org = Organization(name="Multi Role Org")
+    db_session.add(org)
+    await db_session.flush()
+    user = User(
+        email=f"multi-{uuid.uuid4().hex[:8]}@example.com",
+        hashed_password=hash_password("test"),
+        full_name="Multi",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=org.id,
+            roles=["MEMBER", "ADMIN", "BILLING"],
+        )
+    )
+    project = Project(name="P", organization_id=org.id)
+    db_session.add(project)
+    await db_session.flush()
+
+    assert await check_permission(
+        db_session,
+        user.id,
+        ObjectType.PROJECT,
+        project.id,
+        PermissionLevel.ADMIN,
+    ) is True
