@@ -36,11 +36,13 @@ class OrganizationResponse(BaseModel):
 
 class OrgMemberAdd(BaseModel):
     user_id: UUID
-    role: str = "MEMBER"  # ADMIN, BILLING, MEMBER, PROTOCOL_APPROVER
+    roles: Optional[List[str]] = None
+    role: Optional[str] = None  # deprecated, accepted for back-compat
 
 
 class OrgMemberUpdate(BaseModel):
-    role: str  # ADMIN, BILLING, MEMBER, PROTOCOL_APPROVER
+    roles: Optional[List[str]] = None
+    role: Optional[str] = None  # deprecated, accepted for back-compat
 
 
 class OrgMemberResponse(BaseModel):
