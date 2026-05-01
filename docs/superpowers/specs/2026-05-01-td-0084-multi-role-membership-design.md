@@ -105,9 +105,19 @@ Down migration is the inverse: add back `role`, set it to `'ADMIN' if 'ADMIN'=AN
 
 `OrgMemberSchema.role: string` → `roles: array<string>` (Zod). Settings page (`routes/settings/+page.svelte`):
 - `isOrgAdmin` derives from `roles.includes('ADMIN')`.
-- The per-row single-select replaced by a multi-select using `Popover` + `Checkbox` from `bits-ui` / shadcn-svelte (same primitives the codebase already uses), styled as a chip-list trigger.
-- `MEMBER` is shown as a non-removable chip (read-only badge) since the server enforces it.
-- Invite-dialog initial role stays single-select (matches `Invitation.role`).
+- The Role table column replaces its `<select>` with a chip-trigger that opens a `Popover` containing `dropdown-menu-checkbox-item`s (one per non-MEMBER role). The trigger displays each currently-assigned role as a `Badge`, plus a chevron.
+- `MEMBER` renders as a dimmed, non-clickable `Badge` (the server enforces it; UI shows it but does not allow toggling).
+- Closing the popover with changes triggers a single `PATCH /iam/organizations/{org_id}/members/{user_id}` with the full new `roles` list. Optimistic update + toast on failure.
+- Mobile card snippet keeps its single-line role display, just rendering the chips inline (badges already wrap).
+- Invite-dialog initial role stays single-select (matches `Invitation.role` — out of scope).
+
+Layout sketch:
+
+```
+│ User             │ Roles                          │ Status  │ ...
+│ Jane Doe         │ [Member] [Admin]            ▾  │ Active  │ ...
+│                                  ↑ click opens popover with checkbox list
+```
 
 ### Tests
 
