@@ -20,6 +20,8 @@
         { value: 'PROTOCOL_APPROVER', label: 'Protocol approver' },
     ] as const;
 
+    let open = $state(false);
+
     function toggle(role: string, checked: boolean) {
         const next = checked
             ? [...new Set([...roles, role, 'MEMBER'])]
@@ -44,7 +46,7 @@
     </div>
 
     {#if !disabled}
-        <Popover>
+        <Popover bind:open>
             <PopoverTrigger>
                 <Button
                     variant="ghost"

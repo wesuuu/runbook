@@ -600,30 +600,20 @@
     async function updateMemberRoles(userId: string, roles: string[]) {
         const org = getCurrentOrg();
         if (!org) return;
-        const idx = members.findIndex((m) => m.user_id === userId);
-        if (idx === -1) return;
-        const previous = members[idx];
-        members = [
-            ...members.slice(0, idx),
-            { ...previous, roles },
-            ...members.slice(idx + 1),
-        ];
+        const member = members.find((m) => m.user_id === userId);
+        if (!member) return;
+        const previousRoles = member.roles;
+        member.roles = roles;
         try {
             const updated = await api.patch(
                 `/iam/organizations/${org.id}/members/${userId}`,
                 { roles },
             );
-            members = [
-                ...members.slice(0, idx),
-                { ...members[idx], ...updated },
-                ...members.slice(idx + 1),
-            ];
+            if (updated && Array.isArray(updated.roles)) {
+                member.roles = updated.roles;
+            }
         } catch (e: unknown) {
-            members = [
-                ...members.slice(0, idx),
-                previous,
-                ...members.slice(idx + 1),
-            ];
+            member.roles = previousRoles;
             toast.error(
                 'Failed to update roles',
                 e instanceof Error ? e.message : '',
