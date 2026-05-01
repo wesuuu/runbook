@@ -107,6 +107,17 @@ export function computeEdits(originalGraph: any, currentGraph: any): Edit[] {
                         newValue: currParams[key],
                     });
                 }
+                if (!deepEqual(origProps[key], currProps[key])) {
+                    edits.push({
+                        nodeId: node.id,
+                        stepName,
+                        kind: 'SCHEMA',
+                        field: key,
+                        fieldLabel: deriveLabel(currProps, key),
+                        oldValue: origProps[key],
+                        newValue: currProps[key],
+                    });
+                }
             }
         }
 

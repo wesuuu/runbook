@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { untrack } from 'svelte';
     import { renderTemplate } from '$lib/utils/template';
     import ParamInput from '$lib/components/shared/ParamInput.svelte';
     import EquipmentChipList from '$lib/components/shared/EquipmentChipList.svelte';
@@ -96,6 +97,7 @@
     }
 
     function setSchemaRows(rows: SchemaRow[]) {
+        schemaRows = rows;
         const nextProps: Record<string, ParamProp> = {};
         const nextParams: Record<string, unknown> = { ...(data.params ?? {}) };
         for (const r of rows) {
@@ -121,13 +123,18 @@
 
     const renderedDefault = $derived(renderTemplate(data.protocol_description ?? '', protoParams));
     const renderedEffective = $derived(renderTemplate(data.description ?? '', data.params ?? {}));
-    const schemaRows = $derived<SchemaRow[]>(
-        Object.entries(props).map(([k, v]) => ({
+    let schemaRows = $state<SchemaRow[]>([]);
+    $effect(() => {
+        const fromProps: SchemaRow[] = Object.entries(props).map(([k, v]) => ({
             key: k,
             title: v.title ?? k,
             type: (v.type ?? 'string') as SchemaRow['type'],
-        })),
-    );
+        }));
+        untrack(() => {
+            const blanks = schemaRows.filter((r) => !r.key);
+            schemaRows = [...fromProps, ...blanks];
+        });
+    });
 </script>
 
 <article class="uo-card" class:has-overrides={overriddenCount > 0 || equipmentSwapped || descriptionModified}>
