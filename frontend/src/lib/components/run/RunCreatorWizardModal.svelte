@@ -329,6 +329,7 @@
 
     <div class="wizard-body">
         <main class="wizard-main">
+          <div class="wizard-content">
             {#key currentStep}
                 <div
                     class="step-pane"
@@ -383,6 +384,7 @@
                     {/if}
                 </div>
             {/key}
+          </div>
         </main>
 
         <footer class="wizard-footer">
@@ -446,11 +448,14 @@
     .wizard-main {
         flex: 1;
         overflow-y: auto;
-        padding: 1.5rem;
+        width: 100%;
+    }
+    .wizard-content {
         max-width: 72rem;
         width: 100%;
         margin-left: auto;
         margin-right: auto;
+        padding: 1.5rem;
     }
     .wizard-footer {
         display: flex;
