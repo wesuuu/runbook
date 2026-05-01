@@ -337,47 +337,46 @@ async def get_protocol(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    allowed = await check_permission(
-        db,
-        user.id,
-        ObjectType.PROTOCOL,
-        protocol_id,
-        PermissionLevel.VIEW,
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    return await get_or_404(
+    from app.services.protocols.lookup import get_protocol_full
+    try:
+        full = await get_protocol_full(db, user_id=user.id, protocol_id=protocol_id)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(status_code=403, detail=msg)
+    # Re-load the ORM object so the existing ProtocolResponse serializer works
+    # unchanged (it expects ORM attrs, not the dataclass).
+    _ = full
+    protocol = await get_or_404(
         db,
         Protocol,
         protocol_id,
         options=[selectinload(Protocol.roles)],
     )
+    return protocol
 
 
 @router.get(
     "/projects/{project_id}/protocols",
     response_model=List[ProtocolResponse],
-    dependencies=[
-        Depends(
-            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.VIEW)
-        )
-    ],
 )
 async def list_project_protocols(
     project_id: UUID,
-    include_archived: bool = Query(False),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
+    from app.services.protocols.lookup import list_protocols
+    items = await list_protocols(db, user_id=user.id, project_id=project_id)
+    ids = [it.id for it in items]
+    if not ids:
+        return []
+    result = await db.execute(
         select(Protocol)
         .options(selectinload(Protocol.roles))
-        .where(Protocol.project_id == project_id)
+        .where(Protocol.id.in_(ids))
     )
-    if not include_archived:
-        stmt = stmt.where(Protocol.status != "ARCHIVED")
-    result = await db.execute(stmt)
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 @router.delete("/protocols/{protocol_id}", status_code=200)
