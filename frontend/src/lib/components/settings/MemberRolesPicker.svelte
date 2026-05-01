@@ -6,6 +6,7 @@
         PopoverContent,
     } from '$lib/components/ui/popover';
     import { Button } from '$lib/components/ui/button';
+    import { fade } from 'svelte/transition';
 
     interface Props {
         roles: string[];
@@ -20,29 +21,14 @@
         { value: 'PROTOCOL_APPROVER', label: 'Protocol approver' },
     ] as const;
 
-    let open = $state(false);
-    let draft = $state<string[]>([...roles]);
-
-    $effect(() => {
-        if (!open) draft = [...roles];
-    });
-
     function toggle(role: string, checked: boolean) {
-        if (checked) draft = [...new Set([...draft, role, 'MEMBER'])];
-        else draft = draft.filter((r) => r !== role);
-    }
-
-    function commit() {
-        const final = [...new Set([...draft, 'MEMBER'])];
+        const next = checked
+            ? [...new Set([...roles, role, 'MEMBER'])]
+            : [...new Set([...roles.filter((r) => r !== role), 'MEMBER'])];
         const same =
-            final.length === roles.length &&
-            final.every((r) => roles.includes(r));
-        if (!same) onChange(final);
-    }
-
-    function handleOpenChange(next: boolean) {
-        open = next;
-        if (!next) commit();
+            next.length === roles.length &&
+            next.every((r) => roles.includes(r));
+        if (!same) onChange(next);
     }
 
     function labelFor(role: string): string {
@@ -54,12 +40,17 @@
     <div class="flex items-center gap-1.5 flex-wrap min-w-0">
         <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
         {#each roles.filter((r) => r !== 'MEMBER') as r (r)}
-            <Badge variant="outline">{labelFor(r)}</Badge>
+            <span
+                in:fade={{ duration: 150 }}
+                out:fade={{ duration: 100 }}
+            >
+                <Badge variant="outline">{labelFor(r)}</Badge>
+            </span>
         {/each}
     </div>
 
     {#if !disabled}
-        <Popover {open} onOpenChange={handleOpenChange}>
+        <Popover>
             <PopoverTrigger>
                 <Button
                     variant="ghost"
@@ -77,7 +68,7 @@
                     >
                         <input
                             type="checkbox"
-                            checked={draft.includes(r.value)}
+                            checked={roles.includes(r.value)}
                             onchange={(e) =>
                                 toggle(
                                     r.value,
