@@ -40,7 +40,7 @@
 </script>
 
 <div class="flex items-center gap-1.5 min-w-0">
-    <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+    <div class="flex items-center gap-1.5 flex-nowrap whitespace-nowrap">
         <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
         {#each roles.filter((r) => r !== 'MEMBER') as r (r)}
             <span
