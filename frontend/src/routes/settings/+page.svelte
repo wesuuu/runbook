@@ -662,7 +662,7 @@
     });
 </script>
 
-<div class="max-w-5xl mx-auto space-y-8">
+<div class="max-w-6xl mx-auto space-y-8">
     <div>
         <h1 class="text-3xl font-bold tracking-tight">Settings</h1>
         <p class="text-muted-foreground">Manage your organization, teams, and profile.</p>
