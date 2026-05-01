@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F-0081 — Multi-Role Parameters · shadcn-svelte mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+/* === Tokens (mirrors frontend/src/app.css default theme) === */
+:root {
+  --bg:           hsl(200 25% 97%);
+  --fg:           hsl(215 40% 12%);
+  --card:         hsl(0 0% 100%);
+  --card-fg:      hsl(215 40% 12%);
+  --muted:        hsl(205 25% 94%);
+  --muted-fg:     hsl(215 15% 42%);
+  --primary:      hsl(195 85% 22%);
+  --primary-fg:   hsl(195 30% 98%);
+  --accent:       hsl(155 70% 38%);
+  --accent-fg:    hsl(155 30% 98%);
+  --destructive:  hsl(355 75% 50%);
+  --destructive-soft: hsl(355 75% 96%);
+  --border:       hsl(205 22% 87%);
+  --ring:         hsl(195 85% 22%);
+  --radius:       0.625rem;
+  --radius-md:    0.375rem;
+  --radius-sm:    0.125rem;
+
+  /* Role color marks — drawn from ProtocolRole.color in DB.
+     Used as small dots only, not as fills, to keep the page calm. */
+  --role-op:      hsl(28 75% 48%);   /* warm ochre */
+  --role-sup:     hsl(232 50% 56%);  /* slate periwinkle */
+  --role-qc:      hsl(290 32% 48%);  /* dusty plum */
+
+  --font-sans:    'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:    'DM Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); color: var(--fg); }
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+button { font-family: inherit; }
+input, select { font-family: inherit; font-size: inherit; }
+
+/* === Top app bar === */
+.appbar {
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 24px;
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+.appbar .brand { font-weight: 600; color: var(--fg); }
+.appbar .crumb { color: var(--muted-fg); }
+.appbar .crumb a { color: var(--muted-fg); text-decoration: none; }
+.appbar .crumb a:hover { color: var(--fg); }
+.appbar .crumb .here { color: var(--fg); }
+.appbar .sep { color: var(--border); margin: 0 4px; }
+.appbar .right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+
+/* === Page shell === */
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+}
+
+/* === Page header === */
+.page-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.page-head h1 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  color: var(--fg);
+}
+.page-head .sub {
+  margin-top: 4px;
+  color: var(--muted-fg);
+  font-size: 14px;
+  max-width: 560px;
+}
+.page-head .right { display: flex; gap: 8px; align-items: center; }
+
+/* === Stepper (matches sibling mockup) === */
+.stepper {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin-bottom: 24px;
+}
+.stepper .step {
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px;
+  border-radius: var(--radius-md);
+  color: var(--muted-fg);
+  font-size: 13px;
+}
+.stepper .step .num {
+  width: 22px; height: 22px;
+  border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--muted);
+  color: var(--muted-fg);
+}
+.stepper .step .label { font-weight: 500; }
+.stepper .step.done { color: var(--fg); }
+.stepper .step.done .num { background: var(--accent); color: var(--accent-fg); }
+.stepper .step.done .num::before { content: '✓'; }
+.stepper .step.done .num span { display: none; }
+.stepper .step.active { background: hsl(195 60% 96%); color: var(--primary); }
+.stepper .step.active .num { background: var(--primary); color: var(--primary-fg); }
+
+/* === Role tab strip (the new pattern) === */
+.role-strip {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin-bottom: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+}
+.role-tab {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: 6px;
+  cursor: pointer;
+  color: var(--muted-fg);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  transition: background 0.12s ease;
+  min-width: 0;
+}
+.role-tab:hover { background: hsl(200 20% 98%); }
+.role-tab .tab-eyebrow {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.005em;
+  display: flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.role-tab .tab-eyebrow .mark {
+  width: 8px; height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.role-tab .tab-eyebrow .mark.op  { background: var(--role-op); }
+.role-tab .tab-eyebrow .mark.sup { background: var(--role-sup); }
+.role-tab .tab-eyebrow .mark.qc  { background: var(--role-qc); }
+.role-tab .tab-stats {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-fg);
+  letter-spacing: 0.02em;
+}
+.role-tab .tab-pills {
+  display: flex; gap: 4px; flex-wrap: wrap; min-height: 18px; margin-top: 2px;
+}
+
+.role-tab.active {
+  background: hsl(195 60% 96%);
+  color: var(--primary);
+}
+.role-tab.active .tab-eyebrow { color: var(--primary); }
+.role-tab.active .tab-stats { color: hsl(195 50% 32%); }
+
+/* === Two-column layout === */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+/* === Card primitive === */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+}
+.card + .card { margin-top: 16px; }
+
+/* === Role context bar === */
+.role-context {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+.role-context .left { display: flex; align-items: center; gap: 12px; }
+.role-context .role-bar {
+  width: 4px; height: 32px; border-radius: 2px;
+  background: var(--role-op);
+  flex-shrink: 0;
+}
+.role-context .name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.role-context .meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-fg);
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+.role-context .right { display: flex; align-items: center; gap: 8px; }
+
+/* role nav (← / pos / →) */
+.role-nav {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--card);
+}
+.role-nav button {
+  width: 32px; height: 32px;
+  border: 0;
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.12s ease;
+}
+.role-nav button:hover { background: var(--muted); }
+.role-nav .pos {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-fg);
+  padding: 0 12px;
+  background: hsl(200 20% 98%);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  display: inline-flex; align-items: center;
+  letter-spacing: 0.04em;
+}
+
+/* === Unit op header === */
+.uo-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.uo-head .left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.uo-head .uo-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-fg);
+  background: var(--muted);
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.02em;
+}
+.uo-head .uo-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.uo-head .uo-cat {
+  font-size: 11px;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.uo-head .right { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted-fg); }
+
+/* === Badges === */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.badge.ovr {
+  background: hsl(155 70% 95%);
+  color: hsl(155 70% 22%);
+  border-color: hsl(155 50% 80%);
+}
+.badge.ovr::before { content: '◆'; font-size: 9px; }
+.badge.added {
+  background: hsl(35 80% 92%);
+  color: hsl(35 80% 28%);
+  border-color: hsl(35 70% 78%);
+}
+.badge.muted {
+  background: var(--muted);
+  color: var(--muted-fg);
+}
+.badge.swap {
+  background: hsl(195 60% 95%);
+  color: var(--primary);
+  border-color: hsl(195 50% 80%);
+}
+
+/* === Equipment section === */
+.uo-equipment {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: hsl(200 25% 99%);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.uo-equipment .label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+.eq-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 10px 4px 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.eq-chip .icon {
+  width: 18px; height: 18px;
+  border-radius: 999px;
+  background: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px;
+}
+.eq-chip .name { font-weight: 500; color: var(--fg); }
+.eq-chip .sn { font-family: var(--font-mono); font-size: 11px; color: var(--muted-fg); }
+.eq-chip.swapped {
+  border-color: hsl(155 50% 65%);
+  background: hsl(155 60% 98%);
+}
+.eq-chip.swapped .name { color: hsl(155 70% 22%); }
+.eq-chip.swapped::before {
+  content: '◆';
+  color: hsl(155 70% 28%);
+  font-size: 10px;
+  margin-right: 2px;
+}
+.eq-was {
+  font-size: 12px;
+  color: var(--muted-fg);
+  font-style: italic;
+}
+.swap-btn {
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 5px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.swap-btn:hover { background: var(--muted); }
+
+/* === Param table === */
+.ptable {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) 160px minmax(180px, 1fr) 32px;
+  gap: 0;
+}
+.ptable .th {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 10px 16px;
+  background: hsl(200 20% 98%);
+  border-bottom: 1px solid var(--border);
+}
+.ptable .row { display: contents; }
+.ptable .row > .cell {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; min-height: 56px;
+}
+.ptable .row:last-child > .cell { border-bottom: none; }
+.ptable .row.set > .cell { background: hsl(155 60% 98%); }
+.ptable .row.added > .cell { background: hsl(35 90% 98%); }
+
+.ptable .pname {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ptable .pname .name {
+  font-size: 14px; font-weight: 500;
+}
+.ptable .pname .name .unit {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-fg);
+  margin-left: 6px;
+  font-weight: 400;
+}
+.ptable .row.added .pname .name::before {
+  content: '+ added';
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: hsl(35 80% 28%);
+  background: hsl(35 80% 92%);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  margin-right: 8px;
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+.ptable .pname .help {
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+.ptable .default {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+.ptable .default.dash { color: hsl(215 15% 70%); }
+.ptable .ovr-cell { padding: 0 !important; position: relative; }
+.ptable .ovr-cell .input {
+  width: calc(100% - 16px);
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--fg);
+  margin: 0 8px;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.ptable .ovr-cell .input:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px hsl(195 85% 22% / 0.18);
+}
+.ptable .row.set .ovr-cell .input {
+  border-color: hsl(155 50% 65%);
+  font-weight: 500;
+  color: hsl(155 70% 22%);
+}
+.ptable .actions { justify-content: center; }
+.ptable .reset-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted-fg);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-size: 14px;
+}
+.ptable .reset-btn:hover { background: var(--muted); color: var(--fg); }
+.ptable .row:not(.set):not(.added) .reset-btn { visibility: hidden; }
+
+/* footer of param table — add row */
+.add-param {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: hsl(200 25% 99%);
+}
+.add-param button {
+  background: transparent;
+  border: 0;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.add-param button:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* === Collapsed UO card === */
+.card.collapsed { box-shadow: none; background: hsl(200 25% 99%); }
+.card.collapsed .uo-head { border-bottom: 0; padding: 12px 20px; }
+.card.collapsed .uo-head .uo-name { font-size: 14px; color: var(--muted-fg); }
+.card.collapsed .uo-equipment,
+.card.collapsed .ptable,
+.card.collapsed .add-param,
+.card.collapsed .uo-instructions { display: none; }
+.expand-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted-fg);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.expand-btn:hover { background: var(--muted); color: var(--fg); }
+
+/* === Instructions block === */
+.uo-instructions {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: hsl(200 25% 99%);
+}
+.uo-instructions .head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  color: var(--muted-fg);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.uo-instructions .head .right { display: flex; align-items: center; gap: 8px; }
+.uo-instructions .head a {
+  color: var(--primary);
+  text-transform: none;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-decoration: none;
+  letter-spacing: 0;
+}
+.uo-instructions .head a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.uo-instructions .rendered {
+  font-size: 14px;
+  color: var(--fg);
+  line-height: 1.65;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.uo-instructions .rendered mark {
+  background: hsl(155 70% 95%);
+  color: hsl(155 70% 22%);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+.uo-instructions .rendered mark.was {
+  background: var(--muted);
+  color: var(--muted-fg);
+  text-decoration: line-through;
+  text-decoration-color: hsl(215 15% 60%);
+}
+
+/* === Aside (live summary, role-grouped) === */
+.aside { position: sticky; top: 24px; }
+.aside .head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.aside .head h3 { font-size: 14px; font-weight: 600; }
+.aside .head .scope {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--muted-fg);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.aside .body { padding: 14px 18px; }
+.aside .stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.aside .stat-cell {
+  padding: 10px 12px;
+  background: hsl(200 25% 99%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.aside .stat-cell .num {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--fg);
+  line-height: 1.1;
+}
+.aside .stat-cell .num.zero { color: hsl(215 15% 70%); }
+.aside .stat-cell .lbl {
+  font-size: 11px;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.role-group { margin-top: 8px; }
+.role-group .role-group-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  margin: 0 -10px 4px;
+  font-size: 12px;
+  color: var(--muted-fg);
+  background: transparent;
+  border: 0;
+  width: calc(100% + 20px);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background 0.12s ease;
+}
+.role-group .role-group-head:hover { background: hsl(200 20% 98%); }
+.role-group .role-group-head.active { background: hsl(195 60% 96%); }
+.role-group .role-group-head.active .name { color: var(--primary); }
+.role-group .role-group-head .mark {
+  width: 8px; height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.role-group .role-group-head .mark.op  { background: var(--role-op); }
+.role-group .role-group-head .mark.sup { background: var(--role-sup); }
+.role-group .role-group-head .mark.qc  { background: var(--role-qc); }
+.role-group .role-group-head .name {
+  font-weight: 600;
+  color: var(--fg);
+  font-size: 13px;
+}
+.role-group .role-group-head .count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted-fg);
+}
+
+.pdiff {
+  padding: 8px 0;
+  border-top: 1px dashed var(--border);
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+}
+.pdiff:first-of-type { border-top: 0; }
+.pdiff .tag {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+}
+.pdiff .tag.value { background: hsl(155 70% 95%); color: hsl(155 70% 22%); }
+.pdiff .tag.swap  { background: hsl(195 60% 95%); color: var(--primary); }
+.pdiff .tag.added { background: hsl(35 80% 92%); color: hsl(35 80% 28%); }
+.pdiff .name { font-size: 13px; font-weight: 500; }
+.pdiff .diff { font-family: var(--font-mono); font-size: 11px; margin-top: 2px; }
+.pdiff .diff .from { color: var(--muted-fg); text-decoration: line-through; }
+.pdiff .diff .arrow { color: var(--muted-fg); margin: 0 4px; }
+.pdiff .diff .to { color: hsl(155 70% 28%); font-weight: 500; }
+.role-group .empty {
+  padding: 8px 0 4px;
+  font-size: 12px;
+  color: var(--muted-fg);
+  font-style: italic;
+}
+
+/* === Footer (action bar) === */
+.footer {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.btn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.btn:hover { background: var(--muted); }
+.btn.primary {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-color: var(--primary);
+}
+.btn.primary:hover { background: hsl(195 85% 18%); }
+.btn.ghost { border-color: transparent; color: var(--muted-fg); }
+.btn.ghost:hover { color: var(--fg); background: var(--muted); }
+.spacer { flex: 1; }
+
+/* === Designer note === */
+.note {
+  margin-top: 40px;
+  background: var(--card);
+  border: 1px dashed hsl(35 70% 70%);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  position: relative;
+  max-width: 760px;
+}
+.note::before {
+  content: 'design note';
+  position: absolute;
+  top: -10px; left: 18px;
+  background: var(--bg);
+  padding: 2px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(35 80% 35%);
+}
+.note p { font-size: 13.5px; color: var(--fg); line-height: 1.6; }
+.note p + p { margin-top: 10px; }
+.note ul { margin-top: 10px; padding-left: 18px; font-size: 13px; }
+.note li { margin-bottom: 6px; color: var(--fg); }
+.note li strong {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary);
+  font-weight: 500;
+}
+.note code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--muted);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <div class="brand">Batchrite</div>
+  <div class="crumb">
+    <a href="#">Projects</a><span class="sep">/</span>
+    <a href="#">mAb Process Dev</a><span class="sep">/</span>
+    <span class="here">New Run</span>
+  </div>
+  <div class="right">
+    <span style="font-size:12px;">F-0081 · multi-role-tabs · option A</span>
+  </div>
+</div>
+
+<div class="shell">
+
+  <!-- ─────────── Page head + stepper ─────────── -->
+
+  <div class="page-head">
+    <div>
+      <h1>Step 3 · Parameters</h1>
+      <div class="sub">
+        Three roles handle this protocol. Switch tabs to edit each role's unit ops &mdash;
+        overrides on inactive tabs are kept, not lost.
+      </div>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step done"><span class="num"><span>1</span></span><span class="label">Name</span></div>
+    <div class="step done"><span class="num"><span>2</span></span><span class="label">Protocol</span></div>
+    <div class="step active"><span class="num">3</span><span class="label">Parameters</span></div>
+    <div class="step"><span class="num">4</span><span class="label">Review</span></div>
+  </div>
+
+  <!-- ─────────── Two-column layout ─────────── -->
+
+  <div class="layout">
+
+    <section>
+
+      <!-- Active role context bar -->
+      <div class="role-context">
+        <div class="left">
+          <div class="role-bar"></div>
+          <div>
+            <div class="name">Operator</div>
+            <div class="meta">Role 1 of 3 · 5 UNIT OPS · 23 PARAMETERS</div>
+          </div>
+        </div>
+        <div class="right">
+          <div class="role-nav">
+            <button title="Previous role" aria-label="Previous role">‹</button>
+            <span class="pos">1 / 3</span>
+            <button title="Next role" aria-label="Next role">›</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── UO-01 (no overrides) ── -->
+      <div class="card">
+        <div class="uo-head">
+          <div class="left">
+            <span class="uo-num">UO-01</span>
+            <span class="uo-name">Buffer mix</span>
+            <span class="uo-cat">Media prep</span>
+          </div>
+          <div class="right">
+            <span class="badge muted">inheriting</span>
+          </div>
+        </div>
+
+        <div class="uo-equipment">
+          <span class="label">Equipment</span>
+          <span class="eq-chip">
+            <span class="icon">⚙</span>
+            <span class="name">Bioreactor A</span>
+            <span class="sn">SN-9421</span>
+          </span>
+          <button class="swap-btn">Swap</button>
+        </div>
+
+        <div class="ptable">
+          <div class="th">Parameter</div>
+          <div class="th">Default</div>
+          <div class="th">Override for this run</div>
+          <div class="th"></div>
+
+          <div class="row">
+            <div class="cell pname">
+              <div class="name">Temperature <span class="unit">°C</span></div>
+            </div>
+            <div class="cell default">25.0</div>
+            <div class="cell ovr-cell"><input class="input" type="number" value="25.0" /></div>
+            <div class="cell actions"><button class="reset-btn" title="Revert">↺</button></div>
+          </div>
+
+          <div class="row">
+            <div class="cell pname">
+              <div class="name">pH <span class="unit">±0.05</span></div>
+            </div>
+            <div class="cell default">7.00</div>
+            <div class="cell ovr-cell"><input class="input" type="number" value="7.00" /></div>
+            <div class="cell actions"><button class="reset-btn" title="Revert">↺</button></div>
+          </div>
+
+          <div class="row">
+            <div class="cell pname">
+              <div class="name">Buffer volume <span class="unit">mL</span></div>
+            </div>
+            <div class="cell default">1000</div>
+            <div class="cell ovr-cell"><input class="input" type="number" value="1000" /></div>
+            <div class="cell actions"><button class="reset-btn" title="Revert">↺</button></div>
+          </div>
+        </div>
+
+        <div class="add-param"><button>+ Add parameter</button></div>
+      </div>
+
+      <!-- ── UO-02 (the star: overrides + swap + added param + instructions) ── -->
+      <div class="card">
+        <div class="uo-head">
+          <div class="left">
+            <span class="uo-num">UO-02</span>
+            <span class="uo-name">Cell seeding</span>
+            <span class="uo-cat">Cell culture</span>
+          </div>
+          <div class="right">
+            <span class="badge ovr">3 modified</span>
+            <span class="badge added">1 added</span>
+            <span class="badge swap">equipment swapped</span>
+          </div>
+        </div>
+
+        <div class="uo-equipment">
+          <span class="label">Equipment</span>
+          <span class="eq-chip swapped">
+            <span class="icon">⚙</span>
+            <span class="name">Bioreactor B</span>
+            <span class="sn">SN-1132</span>
+          </span>
+          <span class="eq-was">protocol used: Bioreactor A</span>
+          <button class="swap-btn">Swap</button>
+        </div>
+
+        <div class="ptable">
+          <div class="th">Parameter</div>
+          <div class="th">Default</div>
+          <div class="th">Override for this run</div>
+          <div class="th"></div>
+
+          <div class="row set">
+            <div class="cell pname">
+              <div class="name">Seeding density <span class="unit">cells/mL</span></div>
+            </div>
+            <div class="cell default">2.0e5</div>
+            <div class="cell ovr-cell"><input class="input" type="text" value="3.5e5" /></div>
+            <div class="cell actions"><button class="reset-btn" title="Revert">↺</button></div>
+          </div>
+
+          <div class="row set">
+            <div class="cell pname">
+              <div class="name">Volume <span class="unit">mL</span></div>
+            </div>
+            <div class="cell default">10.0</div>
+            <div class="cell ovr-cell"><input class="input" type="number" value="15.0" /></div>
+            <div class="cell actions"><button class="reset-btn" title="Revert">↺</button></div>
+          </div>
+
+          <div class="row set">
+            <div class="cell pname">
+              <div class="name">Incubation temp <span class="unit">°C</span></div>
+            </div>
+            <div class="cell default">37.0</div>
+            <div class="cell ovr-cell"><input class="input" type="number" value="36.5" /></div>
+            <div class="cell actions"><button class="reset-btn" title="Revert">↺</button></div>
+          </div>
+
+          <div class="row">
+            <div class="cell pname">
+              <div class="name">CO₂ <span class="unit">%</span></div>
+            </div>
+            <div class="cell default">5.0</div>
+            <div class="cell ovr-cell"><input class="input" type="number" value="5.0" /></div>
+            <div class="cell actions"><button class="reset-btn" title="Revert">↺</button></div>
+          </div>
+
+          <div class="row added">
+            <div class="cell pname">
+              <div class="name">Residence time <span class="unit">min</span></div>
+            </div>
+            <div class="cell default dash">—</div>
+            <div class="cell ovr-cell"><input class="input" type="number" value="45" /></div>
+            <div class="cell actions"><button class="reset-btn" title="Remove">✕</button></div>
+          </div>
+        </div>
+
+        <div class="add-param"><button>+ Add parameter</button></div>
+
+        <div class="uo-instructions">
+          <div class="head">
+            <span>Instructions <span style="margin-left:8px;" class="badge muted">◆ modified</span></span>
+            <div class="right">
+              <a href="#">✎ Edit instructions</a>
+            </div>
+          </div>
+          <div class="rendered">
+            Seed at <mark>3.5e5</mark> cells/mL <mark class="was">2.0e5</mark> in <mark>15.0</mark> mL of pre-warmed medium. Incubate at <mark>36.5</mark>°C with <mark>5.0</mark>% CO₂ for <mark>45</mark> min.
+          </div>
+        </div>
+      </div>
+
+      <!-- ── UO-03 (collapsed) ── -->
+      <div class="card collapsed">
+        <div class="uo-head">
+          <div class="left">
+            <span class="uo-num">UO-03</span>
+            <span class="uo-name">Centrifugation</span>
+            <span class="uo-cat">Reaction</span>
+          </div>
+          <div class="right"><button class="expand-btn">expand</button></div>
+        </div>
+      </div>
+
+      <!-- ── UO-04 (collapsed) ── -->
+      <div class="card collapsed">
+        <div class="uo-head">
+          <div class="left">
+            <span class="uo-num">UO-04</span>
+            <span class="uo-name">Sampling</span>
+            <span class="uo-cat">Sampling</span>
+          </div>
+          <div class="right"><button class="expand-btn">expand</button></div>
+        </div>
+      </div>
+
+      <!-- ── UO-05 (collapsed) ── -->
+      <div class="card collapsed">
+        <div class="uo-head">
+          <div class="left">
+            <span class="uo-num">UO-05</span>
+            <span class="uo-name">Hand-off to Senior Operator</span>
+            <span class="uo-cat">Transition</span>
+          </div>
+          <div class="right"><button class="expand-btn">expand</button></div>
+        </div>
+      </div>
+
+      <!-- Footer action bar -->
+      <div class="footer">
+        <button class="btn ghost">Cancel</button>
+        <button class="btn">← Back</button>
+        <div class="spacer"></div>
+        <button class="btn ghost">Skip · use defaults</button>
+        <button class="btn primary">Continue to review →</button>
+      </div>
+
+    </section>
+
+    <!-- ─────────── Aside (role-grouped diff) ─────────── -->
+
+    <aside class="aside card">
+      <div class="head">
+        <h3>Override summary</h3>
+        <span class="scope">all roles</span>
+      </div>
+      <div class="body">
+
+        <div class="stats">
+          <div class="stat-cell">
+            <div class="num">3</div>
+            <div class="lbl">Value</div>
+          </div>
+          <div class="stat-cell">
+            <div class="num">1</div>
+            <div class="lbl">Equipment</div>
+          </div>
+          <div class="stat-cell">
+            <div class="num">1</div>
+            <div class="lbl">Added</div>
+          </div>
+          <div class="stat-cell">
+            <div class="num zero">0</div>
+            <div class="lbl">Removed</div>
+          </div>
+        </div>
+
+        <div class="role-group">
+          <button class="role-group-head active">
+            <span class="mark op"></span>
+            <span class="name">Operator</span>
+            <span class="count">4 edits</span>
+          </button>
+
+          <div class="pdiff">
+            <span class="tag value">value</span>
+            <div>
+              <div class="name">Cell seeding · seeding density</div>
+              <div class="diff">
+                <span class="from">2.0e5</span>
+                <span class="arrow">→</span>
+                <span class="to">3.5e5 cells/mL</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pdiff">
+            <span class="tag value">value</span>
+            <div>
+              <div class="name">Cell seeding · volume</div>
+              <div class="diff">
+                <span class="from">10.0 mL</span>
+                <span class="arrow">→</span>
+                <span class="to">15.0 mL</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pdiff">
+            <span class="tag value">value</span>
+            <div>
+              <div class="name">Cell seeding · incubation temp</div>
+              <div class="diff">
+                <span class="from">37.0 °C</span>
+                <span class="arrow">→</span>
+                <span class="to">36.5 °C</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pdiff">
+            <span class="tag added">added</span>
+            <div>
+              <div class="name">Cell seeding · residence time</div>
+              <div class="diff">
+                <span class="arrow">+</span>
+                <span class="to">45 min</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="role-group">
+          <button class="role-group-head">
+            <span class="mark sup"></span>
+            <span class="name">Senior Operator</span>
+            <span class="count">1 edit</span>
+          </button>
+
+          <div class="pdiff">
+            <span class="tag swap">swap</span>
+            <div>
+              <div class="name">Harvest · centrifuge</div>
+              <div class="diff">
+                <span class="from">Sorvall RC-6</span>
+                <span class="arrow">→</span>
+                <span class="to">Avanti J-26</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="role-group">
+          <button class="role-group-head">
+            <span class="mark qc"></span>
+            <span class="name">QC Reviewer</span>
+            <span class="count">0 edits</span>
+          </button>
+          <div class="empty">— inheriting all defaults —</div>
+        </div>
+
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ─────────── Designer note ─────────── -->
+
+  <div class="note">
+    <p>
+      No tab strip. The <strong style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:var(--primary);font-weight:500;">role context bar</strong> + <strong style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:var(--primary);font-weight:500;">role-grouped aside</strong> together do everything a tab strip would have done, with less chrome.
+    </p>
+    <ul>
+      <li><strong>Where am I?</strong> Role context bar shows the active role's name, ordinal, and stats with the role color as a vertical bar.</li>
+      <li><strong>How do I move linearly?</strong> The ‹ 1 / 3 › nav in the context bar &mdash; one-tap on tablet.</li>
+      <li><strong>How do I jump?</strong> The aside's role group headers are clickable. Click "Senior Operator" in the aside → cards filter to that role, context bar updates, the clicked group highlights.</li>
+      <li><strong>How do I see edits across roles?</strong> The aside is always global &mdash; never changes when you switch roles. That's the constant orientation point.</li>
+      <li><strong>State preservation</strong> &mdash; overrides on inactive roles stay in <code>currentGraph</code>; switching is a presentational filter, not a remount. The aside's per-role count proves this.</li>
+      <li><strong>Role color</strong> &mdash; small dot driven by <code>ProtocolRole.color</code>. Used as a mark, not a fill. Mint stays the sole override signal.</li>
+    </ul>
+  </div>
+
+</div>
+
+</body>
+</html>

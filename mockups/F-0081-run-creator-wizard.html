@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F-0081 — Run Creator Wizard · shadcn-svelte mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+/* === Tokens (mirrors frontend/src/app.css default theme) === */
+:root {
+  --bg:           hsl(200 25% 97%);
+  --fg:           hsl(215 40% 12%);
+  --card:         hsl(0 0% 100%);
+  --card-fg:      hsl(215 40% 12%);
+  --muted:        hsl(205 25% 94%);
+  --muted-fg:     hsl(215 15% 42%);
+  --primary:      hsl(195 85% 22%);
+  --primary-fg:   hsl(195 30% 98%);
+  --accent:       hsl(155 70% 38%);
+  --accent-fg:    hsl(155 30% 98%);
+  --destructive:  hsl(355 75% 50%);
+  --destructive-soft: hsl(355 75% 96%);
+  --border:       hsl(205 22% 87%);
+  --ring:         hsl(195 85% 22%);
+  --radius:       0.625rem;
+  --radius-md:    0.375rem;
+  --radius-sm:    0.125rem;
+  --font-sans:    'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:    'DM Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); color: var(--fg); }
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+button { font-family: inherit; }
+input, select { font-family: inherit; font-size: inherit; }
+
+/* === Top app bar (just for context, not part of wizard) === */
+.appbar {
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 24px;
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+.appbar .brand { font-weight: 600; color: var(--fg); }
+.appbar .crumb { color: var(--muted-fg); }
+.appbar .crumb a { color: var(--muted-fg); text-decoration: none; }
+.appbar .crumb a:hover { color: var(--fg); }
+.appbar .crumb .here { color: var(--fg); }
+.appbar .sep { color: var(--border); margin: 0 4px; }
+.appbar .right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+
+/* === Page shell === */
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+}
+
+/* === Page header === */
+.page-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.page-head h1 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  color: var(--fg);
+}
+.page-head .sub {
+  margin-top: 4px;
+  color: var(--muted-fg);
+  font-size: 14px;
+}
+.page-head .sub b { color: var(--fg); font-weight: 500; }
+.page-head .right { display: flex; gap: 8px; align-items: center; }
+.page-head .save-state {
+  font-size: 12px;
+  color: var(--muted-fg);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.page-head .save-state .dot {
+  width: 6px; height: 6px; border-radius: 999px; background: var(--accent);
+}
+
+/* === Stepper === */
+.stepper {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin-bottom: 24px;
+}
+.stepper .step {
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px;
+  border-radius: var(--radius-md);
+  color: var(--muted-fg);
+  font-size: 13px;
+}
+.stepper .step .num {
+  width: 22px; height: 22px;
+  border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--muted);
+  color: var(--muted-fg);
+}
+.stepper .step .label { font-weight: 500; }
+.stepper .step.done { color: var(--fg); }
+.stepper .step.done .num { background: var(--accent); color: var(--accent-fg); }
+.stepper .step.done .num::before { content: '✓'; }
+.stepper .step.done .num span { display: none; }
+.stepper .step.active { background: hsl(195 60% 96%); color: var(--primary); }
+.stepper .step.active .num { background: var(--primary); color: var(--primary-fg); }
+
+/* === Two-column layout === */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+/* === Card primitive === */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+}
+.card + .card { margin-top: 16px; }
+
+/* === Unit op header === */
+.uo-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.uo-head .left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.uo-head .uo-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-fg);
+  background: var(--muted);
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.02em;
+}
+.uo-head .uo-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.uo-head .uo-cat {
+  font-size: 11px;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.uo-head .right { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted-fg); }
+
+/* === Badges === */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.badge.ovr {
+  background: hsl(155 70% 95%);
+  color: hsl(155 70% 22%);
+  border-color: hsl(155 50% 80%);
+}
+.badge.ovr::before { content: '◆'; font-size: 9px; }
+.badge.muted {
+  background: var(--muted);
+  color: var(--muted-fg);
+}
+.badge.dest {
+  background: var(--destructive-soft);
+  color: var(--destructive);
+  border-color: hsl(355 75% 80%);
+}
+
+/* === Param table === */
+.ptable {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) 160px minmax(180px, 1fr) 32px;
+  gap: 0;
+}
+.ptable .th {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 10px 16px;
+  background: hsl(200 20% 98%);
+  border-bottom: 1px solid var(--border);
+}
+.ptable .row { display: contents; }
+.ptable .row > .cell {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; min-height: 56px;
+}
+.ptable .row:last-child > .cell { border-bottom: none; }
+.ptable .row.set > .cell { background: hsl(155 60% 98%); }
+.ptable .row.err > .cell { background: var(--destructive-soft); }
+.ptable .pname {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ptable .pname .name {
+  font-size: 14px; font-weight: 500;
+}
+.ptable .pname .name .unit {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-fg);
+  margin-left: 6px;
+  font-weight: 400;
+}
+.ptable .pname .help {
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+.ptable .default {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+.ptable .ovr-cell {
+  padding: 0 !important;
+  position: relative;
+}
+.ptable .ovr-cell .input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--fg);
+  margin: 0 8px;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.ptable .ovr-cell .input::placeholder { color: hsl(215 15% 60%); font-style: italic; }
+.ptable .ovr-cell .input:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px hsl(195 85% 22% / 0.18);
+}
+.ptable .row.set .ovr-cell .input {
+  border-color: hsl(155 50% 65%);
+  background: var(--card);
+  font-weight: 500;
+  color: hsl(155 70% 22%);
+}
+.ptable .row.err .ovr-cell .input {
+  border-color: var(--destructive);
+  color: var(--destructive);
+  font-weight: 500;
+}
+.ptable .err-msg {
+  position: absolute;
+  bottom: 6px; left: 24px; right: 8px;
+  font-size: 11px;
+  color: var(--destructive);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+.ptable .row.err > .cell { padding-bottom: 22px; }
+.ptable .actions {
+  justify-content: center;
+}
+.ptable .reset-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted-fg);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-size: 14px;
+}
+.ptable .reset-btn:hover { background: var(--muted); color: var(--fg); }
+.ptable .row:not(.set) .reset-btn { visibility: hidden; }
+
+/* === Aside (Live summary) === */
+.aside {
+  position: sticky; top: 88px;
+}
+.aside .head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.aside .head h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.aside .body { padding: 14px 18px; }
+.aside .stat {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 13px;
+}
+.aside .stat:last-of-type { border-bottom: none; padding-bottom: 8px; }
+.aside .stat .l { color: var(--muted-fg); }
+.aside .stat .v { font-family: var(--font-mono); font-weight: 500; font-size: 14px; }
+.aside .stat .v.accent { color: hsl(155 70% 28%); }
+.aside .stat .v.dest { color: var(--destructive); }
+
+.aside .preview { padding: 14px 18px; border-top: 1px solid var(--border); }
+.aside .preview h4 {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  margin-bottom: 12px;
+}
+.aside .pdiff {
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.aside .pdiff:last-child { border-bottom: none; padding-bottom: 0; }
+.aside .pdiff .head {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-fg);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  border: none;
+  padding: 0;
+  display: block;
+}
+.aside .pdiff .name { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+.aside .pdiff .diff { font-family: var(--font-mono); font-size: 12px; }
+.aside .pdiff .from { color: var(--muted-fg); text-decoration: line-through; }
+.aside .pdiff .arrow { color: var(--muted-fg); margin: 0 6px; }
+.aside .pdiff .to { color: hsl(155 70% 28%); font-weight: 500; }
+
+.aside .footnote {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted-fg);
+  line-height: 1.5;
+}
+
+/* === Equipment section (within unit-op card) === */
+.uo-equipment {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: hsl(200 25% 99%);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.uo-equipment .label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+.eq-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 10px 4px 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.eq-chip .icon {
+  width: 18px; height: 18px;
+  border-radius: 999px;
+  background: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px;
+}
+.eq-chip .name { font-weight: 500; color: var(--fg); }
+.eq-chip .sn { font-family: var(--font-mono); font-size: 11px; color: var(--muted-fg); }
+.eq-chip.swapped {
+  border-color: hsl(155 50% 65%);
+  background: hsl(155 60% 98%);
+}
+.eq-chip.swapped .name { color: hsl(155 70% 22%); }
+.eq-chip .swap-link {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: var(--primary);
+  padding: 0 0 0 4px;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.eq-chip.swapped::before {
+  content: '◆';
+  color: hsl(155 70% 28%);
+  font-size: 10px;
+  margin-right: 2px;
+}
+
+/* Param row remove button (replaces reset for added params) */
+.ptable .row.added > .cell { background: hsl(35 90% 98%); }
+.ptable .row.added .name::before {
+  content: '+ added';
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: hsl(35 80% 35%);
+  background: hsl(35 80% 92%);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  margin-right: 8px;
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+.ptable .row.removed { opacity: 0.5; }
+.ptable .row.removed .name { text-decoration: line-through; }
+.ptable .row.removed .name::before {
+  content: '− removed';
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--destructive);
+  background: var(--destructive-soft);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  margin-right: 8px;
+  vertical-align: middle;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+.ptable .row.removed .ovr-cell .input { background: transparent; border-color: transparent; color: var(--muted-fg); }
+
+/* Add-parameter footer + structural-change banner */
+.uo-actions {
+  padding: 10px 16px;
+  border-top: 1px dashed var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  background: hsl(200 25% 99%);
+}
+.uo-actions .add-param {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px;
+  color: var(--primary);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.uo-actions .add-param:hover { background: var(--muted); border-color: var(--primary); border-style: solid; }
+.uo-actions .struct-note {
+  font-size: 12px;
+  color: var(--muted-fg);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.uo-actions .struct-note b { color: hsl(35 80% 35%); }
+
+/* Instruction block (editable) */
+.uo-preview {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: hsl(195 60% 98%);
+}
+.uo-preview .label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  display: flex; align-items: center; gap: 8px;
+  justify-content: space-between;
+}
+.uo-preview .label .l { display: flex; align-items: center; gap: 8px; }
+.uo-preview .label .r { display: flex; align-items: center; gap: 8px; }
+.uo-preview .label .preview-pill {
+  background: var(--primary);
+  color: var(--primary-fg);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.uo-preview .label .modified-pill {
+  background: hsl(155 60% 92%);
+  color: hsl(155 70% 22%);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.uo-preview .label .modified-pill::before { content: '◆ '; }
+.uo-preview .label .edit-link {
+  background: none; border: none;
+  color: var(--primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.uo-preview .label .edit-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.uo-preview .text {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--fg);
+}
+.uo-preview .text mark {
+  background: hsl(155 70% 88%);
+  color: hsl(155 70% 18%);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+.uo-preview .text mark.def {
+  background: var(--muted);
+  color: var(--fg);
+  font-weight: 400;
+}
+.uo-preview .editor {
+  margin-top: 4px;
+}
+.uo-preview .editor .template-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+.uo-preview .editor .available-vars {
+  font-size: 11px;
+  color: var(--muted-fg);
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+}
+.uo-preview .editor .available-vars code {
+  background: var(--muted);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 4px;
+}
+.uo-preview .editor textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--fg);
+  resize: vertical;
+}
+.uo-preview .editor textarea:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px hsl(195 85% 22% / 0.18);
+}
+.uo-preview .editor .actions {
+  display: flex; gap: 12px; align-items: center;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.uo-preview .editor .revert {
+  background: transparent;
+  border: none;
+  color: var(--muted-fg);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.uo-preview .editor .revert:hover { color: var(--fg); }
+.uo-preview .render-block {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+.uo-preview .render-block .render-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+/* Structural change pill in unit-op header */
+.badge.struct {
+  background: hsl(35 90% 95%);
+  color: hsl(35 80% 32%);
+  border-color: hsl(35 80% 80%);
+}
+.badge.struct::before { content: '⚙'; font-size: 10px; }
+
+/* === Save-as-new-version dialog mockup (overlay) === */
+.dialog-backdrop {
+  position: fixed; inset: 0;
+  background: hsl(215 40% 12% / 0.5);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 32px;
+  z-index: 50;
+}
+.dialog {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 100%; max-width: 540px;
+  box-shadow: 0 20px 50px -20px rgb(0 0 0 / 0.3);
+  animation: pop 0.2s ease;
+  margin-bottom: 32px;
+}
+@keyframes pop { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.dialog .head {
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.dialog .head h3 { font-size: 17px; font-weight: 600; }
+.dialog .head p { font-size: 13px; color: var(--muted-fg); margin-top: 4px; }
+.dialog .body { padding: 16px 22px; }
+.dialog .change-list { margin: 0; padding: 0; list-style: none; }
+.dialog .change-list li {
+  padding: 8px 0;
+  font-size: 13px;
+  display: flex; align-items: baseline; gap: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+.dialog .change-list li:last-child { border-bottom: none; }
+.dialog .change-list .tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dialog .change-list .tag.add { background: hsl(35 80% 92%); color: hsl(35 80% 32%); }
+.dialog .change-list .tag.eq { background: hsl(195 60% 92%); color: hsl(195 85% 22%); }
+.dialog .body .name-row {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.dialog .body .name-row label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  margin-bottom: 6px;
+}
+.dialog .body .name-row input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  background: var(--card);
+  color: var(--fg);
+}
+.dialog .body .name-row input:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px hsl(195 85% 22% / 0.18);
+}
+.dialog .body .name-row .hint { font-size: 12px; color: var(--muted-fg); margin-top: 6px; }
+.dialog .foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+  background: hsl(200 25% 98%);
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+
+/* === Step 2 (Protocol & version) preview at top of page === */
+.section-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 80px 0 24px;
+  padding-top: 32px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.section-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.protocol-pick {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 16px;
+}
+.protocol-pick label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  margin-bottom: 6px;
+}
+.protocol-pick label .opt { color: var(--muted-fg); font-weight: 400; }
+.protocol-pick .picker-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 4px;
+}
+.protocol-pick select.picker {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  font-size: 14px;
+  color: var(--fg);
+  font-family: inherit;
+  cursor: pointer;
+}
+.protocol-pick select.picker:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px hsl(195 85% 22% / 0.18);
+}
+
+.version-summary {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: hsl(200 25% 98%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: start;
+}
+.version-summary .meta { font-size: 13px; color: var(--fg); line-height: 1.6; }
+.version-summary .meta .v {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  background: hsl(195 60% 94%);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  margin-right: 6px;
+}
+.version-summary .meta .latest-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  margin-left: 4px;
+}
+.version-summary .meta .stats {
+  display: block;
+  font-size: 12px;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  margin-top: 4px;
+}
+.version-summary .meta .desc {
+  display: block;
+  margin-top: 6px;
+  color: var(--fg);
+  font-size: 13px;
+  font-style: italic;
+}
+.version-summary .meta .desc.empty {
+  color: var(--muted-fg);
+  font-style: normal;
+}
+.version-summary .actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+
+.version-list {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  overflow: hidden;
+}
+.version-list .vrow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  padding: 12px 16px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.version-list .vrow:last-child { border-bottom: none; }
+.version-list .vrow:hover { background: hsl(200 25% 98%); }
+.version-list .vrow.selected { background: hsl(195 60% 97%); }
+.version-list .vrow.selected::before {
+  content: '●';
+  color: var(--primary);
+  font-size: 10px;
+  margin-right: -8px;
+}
+.version-list .vrow .vnum {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.version-list .vrow .vinfo .desc { font-size: 13px; }
+.version-list .vrow .vinfo .meta {
+  font-size: 11px;
+  color: var(--muted-fg);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+.version-list .vrow .stats { font-size: 11px; color: var(--muted-fg); font-family: var(--font-mono); text-align: right; }
+
+.version-detail {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+.version-detail .head {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: hsl(200 25% 98%);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px;
+}
+.version-detail .head .title { font-weight: 500; }
+.version-detail .body { padding: 4px 16px; }
+.version-detail .uo-line {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 13px;
+}
+.version-detail .uo-line:last-child { border-bottom: none; }
+.version-detail .uo-line .num { font-family: var(--font-mono); font-size: 11px; color: var(--muted-fg); }
+.version-detail .uo-line .label { font-weight: 500; }
+.version-detail .uo-line .label .cat { font-family: var(--font-mono); font-size: 11px; color: var(--muted-fg); margin-left: 6px; font-weight: 400; }
+.version-detail .uo-line .params { font-family: var(--font-mono); font-size: 11px; color: var(--muted-fg); }
+.version-detail .uo-line .params b { color: var(--fg); font-weight: 500; }
+
+/* === Footer action bar === */
+.footer {
+  position: sticky;
+  bottom: 0;
+  margin-top: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 -2px 8px -4px rgb(0 0 0 / 0.06);
+}
+.footer .info {
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+.footer .info b { color: var(--fg); font-weight: 500; }
+.footer .spacer { flex: 1; }
+
+/* === Buttons (mirror shadcn button.svelte) === */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.btn-default { background: var(--primary); color: var(--primary-fg); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
+.btn-default:hover { background: hsl(195 85% 18%); }
+.btn-outline { background: var(--card); border-color: var(--border); color: var(--fg); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04); }
+.btn-outline:hover { background: var(--muted); }
+.btn-ghost { background: transparent; color: var(--muted-fg); }
+.btn-ghost:hover { background: var(--muted); color: var(--fg); }
+.btn-link { background: transparent; color: var(--primary); padding: 0 4px; height: auto; }
+.btn-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+.btn:disabled { opacity: 0.5; pointer-events: none; }
+
+.btn-sm { height: 32px; padding: 0 12px; font-size: 13px; }
+
+/* small utility */
+.muted { color: var(--muted-fg); }
+.mono { font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <span class="brand">Batchrite</span>
+  <span class="crumb"><a href="#">CHO-K1 Optimization</a><span class="sep">/</span><a href="#">Runs</a><span class="sep">/</span><span class="here">New run</span></span>
+  <span class="right">
+    <span class="muted" style="font-size:12px;">wesley@trellis.bio</span>
+  </span>
+</div>
+
+<div class="shell">
+
+  <!-- Page header -->
+  <div class="page-head">
+    <div>
+      <h1>New run · parameter overrides</h1>
+      <div class="sub">
+        Adjust values where this run differs from <b>Mab Production Pilot v3</b>.
+        Skip this step to inherit every protocol default.
+      </div>
+    </div>
+    <div class="right">
+      <span class="save-state"><span class="dot"></span> Draft saved · 0.4s ago</span>
+      <button class="btn btn-ghost btn-sm">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Stepper -->
+  <div class="stepper">
+    <div class="step done">
+      <span class="num"><span>1</span></span>
+      <span class="label">Run name</span>
+    </div>
+    <div class="step done">
+      <span class="num"><span>2</span></span>
+      <span class="label">Protocol</span>
+    </div>
+    <div class="step active">
+      <span class="num"><span>3</span></span>
+      <span class="label">Parameters</span>
+    </div>
+    <div class="step">
+      <span class="num"><span>4</span></span>
+      <span class="label">Review</span>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+
+      <!-- Unit op 1 -->
+      <div class="card">
+        <div class="uo-head">
+          <div class="left">
+            <span class="uo-num">UO-01</span>
+            <span class="uo-name">Buffer Mix</span>
+            <span class="uo-cat">· Media Prep</span>
+          </div>
+          <div class="right">
+            <span>4 parameters</span>
+            <span class="badge ovr">2 overridden</span>
+          </div>
+        </div>
+
+        <div class="uo-equipment">
+          <span class="label">Equipment</span>
+          <span class="eq-chip">
+            <span class="icon">⏱</span>
+            <span class="name">Stir Plate</span>
+            <span class="sn">SN-MX-22</span>
+            <button class="swap-link">swap</button>
+          </span>
+          <span class="eq-chip">
+            <span class="icon">⚖</span>
+            <span class="name">pH Meter</span>
+            <span class="sn">SN-PH-09</span>
+            <button class="swap-link">swap</button>
+          </span>
+        </div>
+
+        <div class="ptable">
+          <div class="th">Parameter</div>
+          <div class="th">Default</div>
+          <div class="th">Override for this run</div>
+          <div class="th"></div>
+
+          <div class="row set">
+            <div class="cell pname">
+              <div class="name">pH<span class="unit">unitless</span></div>
+              <div class="help">Target pH after final adjustment.</div>
+            </div>
+            <div class="cell default">7.20</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" value="6.80">
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Revert to default">↺</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="cell pname">
+              <div class="name">Conductivity<span class="unit">mS/cm</span></div>
+              <div class="help">Final conductivity target.</div>
+            </div>
+            <div class="cell default">14.00</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" placeholder="14.00 (default)">
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Revert to default">↺</button>
+            </div>
+          </div>
+
+          <div class="row set">
+            <div class="cell pname">
+              <div class="name">Volume<span class="unit">L</span></div>
+              <div class="help">Total prepared buffer volume.</div>
+            </div>
+            <div class="cell default">50</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" value="120">
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Revert to default">↺</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="cell pname">
+              <div class="name">Mix duration<span class="unit">min</span></div>
+              <div class="help">Stirring time once all components added.</div>
+            </div>
+            <div class="cell default">30</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" placeholder="30 (default)">
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Revert to default">↺</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="uo-actions">
+          <button class="add-param">＋ Add parameter</button>
+          <span class="struct-note">2 value edits — you'll be asked whether to save a new protocol version on Continue.</span>
+        </div>
+
+        <div class="uo-preview">
+          <div class="label">
+            <span class="l">
+              <span class="preview-pill">INSTRUCTIONS</span>
+              Live preview · with overrides applied
+              <span class="modified-pill">modified</span>
+            </span>
+            <span class="r">
+              <button class="edit-link">✎ Edit instructions</button>
+            </span>
+          </div>
+          <p class="text">
+            Prepare <mark>120</mark> L of buffer in mixing vessel B-3 (NOT the legacy A-1 — see SOP-204).
+            Adjust to a target pH of <mark>6.80</mark> using the calibrated pH meter, with conductivity of
+            <mark class="def">14.00</mark> mS/cm. Stir for <mark class="def">30</mark> minutes.
+          </p>
+        </div>
+      </div>
+
+      <!-- Unit op 2 -->
+      <div class="card">
+        <div class="uo-head">
+          <div class="left">
+            <span class="uo-num">UO-02</span>
+            <span class="uo-name">Bioreactor Inoculation</span>
+            <span class="uo-cat">· Cell Culture</span>
+          </div>
+          <div class="right">
+            <span>6 parameters</span>
+            <span class="badge struct">protocol modified</span>
+            <span class="badge dest">1 invalid</span>
+          </div>
+        </div>
+
+        <div class="uo-equipment">
+          <span class="label">Equipment</span>
+          <span class="eq-chip swapped">
+            <span class="icon">⚛</span>
+            <span class="name">Bioreactor B</span>
+            <span class="sn">SN-BR-201</span>
+            <button class="swap-link">swap</button>
+          </span>
+          <span class="eq-chip">
+            <span class="icon">⊙</span>
+            <span class="name">DO Probe</span>
+            <span class="sn">SN-DO-04</span>
+            <button class="swap-link">swap</button>
+          </span>
+          <span class="muted" style="font-size:12px; margin-left: auto;">
+            <span class="mono">protocol used</span> Bioreactor A · SN-BR-101
+          </span>
+        </div>
+
+        <div class="ptable">
+          <div class="th">Parameter</div>
+          <div class="th">Default</div>
+          <div class="th">Override for this run</div>
+          <div class="th"></div>
+
+          <div class="row">
+            <div class="cell pname">
+              <div class="name">Working volume<span class="unit">L</span></div>
+              <div class="help">Initial culture volume on inoculation.</div>
+            </div>
+            <div class="cell default">200</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" placeholder="200 (default)">
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Revert to default">↺</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="cell pname">
+              <div class="name">Temperature<span class="unit">°C</span></div>
+              <div class="help">Setpoint for the first 72 h.</div>
+            </div>
+            <div class="cell default">36.5</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" placeholder="36.5 (default)">
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Revert to default">↺</button>
+            </div>
+          </div>
+
+          <div class="row err">
+            <div class="cell pname">
+              <div class="name">Dissolved O₂<span class="unit">%</span></div>
+              <div class="help">Target DO controlled by sparge.</div>
+            </div>
+            <div class="cell default">30</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" value="220">
+              <div class="err-msg">Above schema maximum (60). Allowed: 10–60.</div>
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Revert to default">↺</button>
+            </div>
+          </div>
+
+          <div class="row removed">
+            <div class="cell pname">
+              <div class="name">Agitation<span class="unit">rpm</span></div>
+              <div class="help">Impeller speed.</div>
+            </div>
+            <div class="cell default">80</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" value="" disabled placeholder="(removed for this run)">
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Restore" style="visibility: visible;">↺</button>
+            </div>
+          </div>
+
+          <div class="row added set">
+            <div class="cell pname">
+              <div class="name">Inoculation density<span class="unit">×10⁶ cells/mL</span></div>
+              <div class="help">Added for this DOE arm — not in the original protocol.</div>
+            </div>
+            <div class="cell default muted">—</div>
+            <div class="cell ovr-cell">
+              <input class="input" type="text" value="0.45">
+            </div>
+            <div class="cell actions">
+              <button class="reset-btn" title="Remove" style="visibility: visible;">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="uo-actions">
+          <button class="add-param">＋ Add parameter</button>
+          <span class="struct-note">5 edits on this step (1 swap, 2 schema, 2 values) — you'll be asked whether to save a new protocol version on Continue.</span>
+        </div>
+
+        <div class="uo-preview">
+          <div class="label">
+            <span class="l">
+              <span class="preview-pill">INSTRUCTIONS</span>
+              Live preview · with overrides applied
+            </span>
+            <span class="r">
+              <button class="edit-link">✎ Edit instructions</button>
+            </span>
+          </div>
+          <p class="text">
+            Inoculate <mark class="def">200</mark> L bioreactor with cells at <mark>0.45 ×10⁶ cells/mL</mark>.
+            Hold temperature at <mark class="def">36.5</mark> °C and target dissolved O₂
+            of <mark style="background: var(--destructive-soft); color: var(--destructive);">220</mark>%
+            <span style="color: var(--destructive); font-size: 12px;"> ⚠ value must be resolved before continuing</span>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Hint card -->
+      <div class="card" style="padding: 14px 18px; display: flex; gap: 12px; align-items: flex-start; border-style: dashed; background: hsl(200 30% 98%);">
+        <span class="badge muted" style="margin-top: 1px;">↺</span>
+        <div style="font-size: 13px; color: var(--muted-fg); line-height: 1.5;">
+          You can keep editing overrides while this run is in <b style="color:var(--fg)">Planned</b>. Once it transitions to <b style="color:var(--fg)">Active</b>, parameters lock and the run becomes the immutable GMP record.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Aside -->
+    <aside>
+      <div class="card aside">
+        <div class="head">
+          <h3>Run draft</h3>
+          <span class="badge muted">PLANNED</span>
+        </div>
+        <div class="body">
+          <div class="stat"><span class="l">Unit ops</span><span class="v">7</span></div>
+          <div class="stat"><span class="l">Parameters total</span><span class="v">31</span></div>
+          <div class="stat"><span class="l">Value overrides</span><span class="v accent">2</span></div>
+          <div class="stat"><span class="l">Equipment swaps</span><span class="v accent">1</span></div>
+          <div class="stat"><span class="l">Structural changes</span><span class="v" style="color: hsl(35 80% 35%);">2</span></div>
+          <div class="stat"><span class="l">Inheriting protocol</span><span class="v">28</span></div>
+          <div class="stat"><span class="l">Validation errors</span><span class="v dest">1</span></div>
+        </div>
+
+        <div class="preview">
+          <h4>Diff preview</h4>
+          <div class="pdiff">
+            <div class="head">UO-01 · BUFFER MIX</div>
+            <div class="name">pH</div>
+            <div class="diff"><span class="from">7.20</span><span class="arrow">→</span><span class="to">6.80</span></div>
+          </div>
+          <div class="pdiff">
+            <div class="head">UO-01 · BUFFER MIX</div>
+            <div class="name">Volume</div>
+            <div class="diff"><span class="from">50 L</span><span class="arrow">→</span><span class="to">120 L</span></div>
+          </div>
+        </div>
+
+        <div class="footnote">
+          Overrides become read-only once the run is started. Run history will always show what changed and who.
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Sticky footer action bar -->
+  <div class="footer">
+    <div class="info"><b>2 overrides · 1 equipment swap · 2 structural changes</b> · <span style="color: var(--destructive)">1 validation error</span></div>
+    <div class="spacer"></div>
+    <button class="btn btn-ghost">Skip · use all defaults</button>
+    <button class="btn btn-outline">← Back</button>
+    <button class="btn btn-default">Continue to review →</button>
+  </div>
+
+</div>
+
+<div class="shell">
+  <div class="section-divider">Earlier in the wizard · Step 02 — Protocol &amp; version</div>
+
+  <div class="protocol-pick">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div>
+        <label for="proto-pick">Protocol</label>
+        <div class="picker-row">
+          <select id="proto-pick" class="picker">
+            <option>Mab Production Pilot v3</option>
+            <option>CHO-DG44 Standard Run</option>
+            <option>HEK293 Transient</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label for="ver-pick">Version <span class="opt">— defaults to latest</span></label>
+        <div class="picker-row">
+          <select id="ver-pick" class="picker">
+            <option>v3 (latest)</option>
+            <option>v2</option>
+            <option>v1</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="version-summary">
+      <div class="meta">
+        <span class="v">v3</span>
+        <b>Mab Production Pilot</b><span class="latest-pill">LATEST</span>
+        <span class="stats">7 unit ops · 31 parameters · 4 equipment slots · created Apr 12 by Wesley Uykimpang</span>
+        <span class="desc">Reduced agitation cap from 100 → 80 rpm; added pH control during seed expansion.</span>
+      </div>
+      <div class="actions">
+        <button class="btn btn-outline btn-sm">Compare versions</button>
+        <button class="btn btn-ghost btn-sm">View graph ↗</button>
+      </div>
+    </div>
+
+    <details style="margin-top: 16px;">
+      <summary style="cursor: pointer; font-size: 13px; color: var(--primary); font-weight: 500; padding: 6px 0;">↳ Compare versions (preview)</summary>
+      <div class="version-list">
+        <div class="vrow selected">
+          <div class="vnum">v3</div>
+          <div class="vinfo">
+            <div class="desc">Reduced agitation cap from 100 → 80 rpm; added pH control during seed expansion.</div>
+            <div class="meta">2026-04-12 · Wesley Uykimpang · LATEST</div>
+          </div>
+          <div class="stats">7 UOs<br>31 params</div>
+        </div>
+        <div class="vrow">
+          <div class="vnum">v2</div>
+          <div class="vinfo">
+            <div class="desc">Switched buffer from PBS to TBS; tightened DO range.</div>
+            <div class="meta">2026-03-04 · Maya Patel</div>
+          </div>
+          <div class="stats">7 UOs<br>30 params</div>
+        </div>
+        <div class="vrow">
+          <div class="vnum">v1</div>
+          <div class="vinfo">
+            <div class="desc empty">No description</div>
+            <div class="meta">2026-02-18 · Wesley Uykimpang · INITIAL</div>
+          </div>
+          <div class="stats">6 UOs<br>27 params</div>
+        </div>
+      </div>
+
+      <div class="version-detail">
+        <div class="head">
+          <div class="title">v3 · Unit ops at-a-glance</div>
+          <span class="muted" style="font-size: 12px;">Compact preview — click "View graph ↗" for the full canvas</span>
+        </div>
+        <div class="body">
+          <div class="uo-line">
+            <div class="num">UO-01</div>
+            <div class="label">Buffer Mix<span class="cat">· Media Prep</span></div>
+            <div class="params"><b>4</b> params · <b>2</b> equipment</div>
+          </div>
+          <div class="uo-line">
+            <div class="num">UO-02</div>
+            <div class="label">Bioreactor Inoculation<span class="cat">· Cell Culture</span></div>
+            <div class="params"><b>5</b> params · <b>2</b> equipment</div>
+          </div>
+          <div class="uo-line">
+            <div class="num">UO-03</div>
+            <div class="label">Seed Expansion<span class="cat">· Cell Culture</span></div>
+            <div class="params"><b>4</b> params · <b>1</b> equipment</div>
+          </div>
+          <div class="uo-line">
+            <div class="num">UO-04</div>
+            <div class="label">Cell Banking<span class="cat">· Recovery</span></div>
+            <div class="params"><b>5</b> params · <b>3</b> equipment</div>
+          </div>
+          <div class="uo-line">
+            <div class="num">…</div>
+            <div class="label muted" style="color: var(--muted-fg); font-style: italic;">3 more unit ops</div>
+            <div class="params"></div>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     "Save as new protocol version?" dialog — fires on Continue
+     whenever there are any edits. Mocked here as visible
+     so you can see what the prompt looks like.
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="dialog-backdrop" style="position: relative; padding: 0; background: transparent; backdrop-filter: none; margin-top: -32px;">
+  <div class="dialog" style="margin-bottom: 0; max-width: 1200px;">
+    <div class="head">
+      <h3>Save these edits as a new protocol version?</h3>
+      <p>You made <b style="color: var(--fg)">6 edits</b> to <b style="color: var(--fg)">Mab Production Pilot v3</b>. Keep them scoped to this run, or promote them to a new version so future runs inherit them. Default action is <b style="color: var(--fg)">Just for this run</b> — press <span class="mono" style="background: var(--muted); padding: 1px 6px; border-radius: 3px; font-size: 12px;">Enter</span> to dismiss.</p>
+    </div>
+    <div class="body">
+      <ul class="change-list">
+        <li>
+          <span class="tag" style="background: hsl(155 60% 92%); color: hsl(155 70% 22%);">VALUE</span>
+          <span><b>UO-01 · Buffer Mix</b> — pH: 7.20 → 6.80</span>
+        </li>
+        <li>
+          <span class="tag" style="background: hsl(155 60% 92%); color: hsl(155 70% 22%);">VALUE</span>
+          <span><b>UO-01 · Buffer Mix</b> — Volume: 50 L → 120 L</span>
+        </li>
+        <li>
+          <span class="tag" style="background: hsl(195 60% 92%); color: hsl(195 85% 22%);">INSTRUCTION</span>
+          <span><b>UO-01 · Buffer Mix</b> — clarified mixing-vessel reference (B-3 vs. legacy A-1)</span>
+        </li>
+        <li>
+          <span class="tag eq">SWAP</span>
+          <span><b>UO-02 · Bioreactor Inoculation</b> — Bioreactor A → Bioreactor B</span>
+        </li>
+        <li>
+          <span class="tag add">REMOVED</span>
+          <span><b>UO-02 · Bioreactor Inoculation</b> — parameter "Agitation"</span>
+        </li>
+        <li>
+          <span class="tag add">ADDED</span>
+          <span><b>UO-02 · Bioreactor Inoculation</b> — parameter "Inoculation density"</span>
+        </li>
+      </ul>
+      <div class="name-row">
+        <label for="version-name">If saved, new version description</label>
+        <input id="version-name" type="text" placeholder="e.g. Reduced pH target for DOE arm 4; swapped to Bioreactor B">
+        <p class="hint">Will be saved as <b>v4</b>. Future runs of this protocol will pick up these changes by default.</p>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="btn btn-ghost">Cancel</button>
+      <button class="btn btn-outline">Save as v4</button>
+      <button class="btn btn-default">Just for this run · continue →</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -13,6 +13,7 @@
     import RoleAssignmentPanel from "$lib/components/run/RoleAssignmentPanel.svelte";
     import RunResultsSummary from "$lib/components/run/RunResultsSummary.svelte";
     import RunEditMode from "$lib/components/run/RunEditMode.svelte";
+    import RunEditorModal from "$lib/components/run/RunEditorModal.svelte";
     import RunObserverView from "$lib/components/run/RunObserverView.svelte";
     import RunNotes from "$lib/components/run/RunNotes.svelte";
     import RunAttachmentsTab from "$lib/components/run/RunAttachmentsTab.svelte";
@@ -59,6 +60,10 @@
     let isEditMode = $state(false);
     let editExecutionData = $state<Record<string, any>>({});
     let savingEdits = $state(false);
+
+    // PLANNED-state edit modal
+    let canEditPlanned = $state(false);
+    let showPlannedEditor = $state(false);
 
     // -- Onboarding Tour --
     let runTourModalOpen = $state(false);
@@ -107,10 +112,22 @@
             projectMembers = membersResp || [];
 
             await loadUnanalyzedCount();
+            await loadEditPermissions();
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             loading = false;
+        }
+    }
+
+    async function loadEditPermissions() {
+        try {
+            const perms = await api.get<{ can_edit_planned: boolean; is_creator: boolean }>(
+                `/science/runs/${id}/permissions`,
+            );
+            canEditPlanned = !!perms?.can_edit_planned;
+        } catch {
+            canEditPlanned = false;
         }
     }
 
@@ -407,9 +424,24 @@
                         <h1 class="text-3xl font-bold text-foreground">
                             {run.name}
                         </h1>
-                        <span class="inline-block text-xs font-semibold px-3 py-1 bg-muted text-foreground/80 rounded-full">
-                            Planned
-                        </span>
+                        <div class="flex items-center gap-2">
+                            {#if canEditPlanned}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onclick={() => (showPlannedEditor = true)}
+                                    class="gap-1.5"
+                                >
+                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                    Edit Run
+                                </Button>
+                            {/if}
+                            <span class="inline-block text-xs font-semibold px-3 py-1 bg-muted text-foreground/80 rounded-full">
+                                Planned
+                            </span>
+                        </div>
                     </div>
                     <a
                         href="/projects/{run.project_id}?tab=runs"
@@ -1015,6 +1047,16 @@
                 bind:open={showGoOffline}
                 runId={run.id}
                 runName={run.name}
+            />
+        {/if}
+
+        {#if run.status === "PLANNED" && canEditPlanned}
+            <RunEditorModal
+                bind:open={showPlannedEditor}
+                {run}
+                {roleAssignments}
+                {projectMembers}
+                onSaved={loadData}
             />
         {/if}
     {/if}

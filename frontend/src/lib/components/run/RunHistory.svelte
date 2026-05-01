@@ -50,6 +50,8 @@
             STEP_COMPLETE: 'completed a step',
             STEP_UNCOMPLETE: 'uncompleted a step',
             STEP_EDIT: 'edited a step',
+            OVERRIDE_SET: 'set overrides at creation',
+            OVERRIDE_EDIT: 'edited overrides while planned',
             NOTE_ADDED: 'added a note',
             ATTACHMENT_UPLOADED: 'uploaded a file',
             ATTACHMENT_DELETED: 'removed a file',
@@ -86,6 +88,18 @@
                 break;
 
             case 'STEP_EDIT':
+                if (c.step_name) lines.push({ label: 'Step', value: c.step_name });
+                if (c.field_label || c.field) {
+                    lines.push({
+                        label: c.field_label ?? c.field,
+                        value: String(c.new_value ?? ''),
+                        oldValue: String(c.old_value ?? ''),
+                    });
+                }
+                break;
+
+            case 'OVERRIDE_SET':
+            case 'OVERRIDE_EDIT':
                 if (c.step_name) lines.push({ label: 'Step', value: c.step_name });
                 if (c.field_label || c.field) {
                     lines.push({

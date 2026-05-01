@@ -22,7 +22,7 @@
     import ActivityTab from "$lib/components/project/ActivityTab.svelte";
     import SettingsTab from "$lib/components/project/SettingsTab.svelte";
     import ProtocolImportModal from "$lib/components/modals/ProtocolImportModal.svelte";
-    import CreateRunModal from "$lib/components/project/CreateRunModal.svelte";
+    import RunCreatorWizardModal from "$lib/components/run/RunCreatorWizardModal.svelte";
     import BatchRecordImportModal from "$lib/components/modals/BatchRecordImportModal.svelte";
     import { HelpMenu, TourModal, runProjectTour } from "$lib/onboarding";
     import { shouldShowDot, markDismissed, isCompleted, isDismissed, isHydrated } from "$lib/onboarding/tourStore.svelte";
@@ -498,7 +498,7 @@
 />
 
 <!-- RUN MODAL -->
-<CreateRunModal
+<RunCreatorWizardModal
     bind:open={showRunModal}
     projectId={id}
     {protocols}
