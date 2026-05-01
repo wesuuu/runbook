@@ -18,7 +18,7 @@ from app.models.execution import AuditLog
 from app.models.iam import (Invitation, InvitationStatus, ObjectPermission,
                             ObjectType, Organization, OrganizationMember,
                             OrgRole, PermissionLevel, Team, TeamMember,
-                            TeamRole, User)
+                            TeamRole, User, has_org_role)
 from app.models.science import Equipment
 from app.schemas.iam import (InvitationCreate, InvitationResponse,
                              OrganizationCreate, OrganizationResponse,
@@ -48,7 +48,7 @@ async def _require_org_admin(
         )
     )
     membership = result.scalar_one_or_none()
-    if membership is None or membership.role != "ADMIN":
+    if membership is None or not has_org_role(membership, OrgRole.ADMIN.value):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Org admin required",
@@ -118,7 +118,7 @@ async def create_organization(
     membership = OrganizationMember(
         user_id=user.id,
         organization_id=org.id,
-        role="ADMIN",
+        roles=["ADMIN", "MEMBER"],
     )
     db.add(membership)
     await db.commit()
@@ -202,7 +202,7 @@ async def add_org_member(
             raise HTTPException(status_code=409, detail="User is already a member")
         # Reactivate archived membership
         existing.archived = False
-        existing.role = body.role
+        existing.roles = sorted({OrgRole.MEMBER.value, body.role})
         membership = existing
     else:
         # Enforce max 3 admins per org
@@ -210,7 +210,7 @@ async def add_org_member(
             admin_count = await db.execute(
                 select(func.count()).where(
                     OrganizationMember.organization_id == org_id,
-                    OrganizationMember.role == "ADMIN",
+                    OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
                     OrganizationMember.archived == False,
                 )
             )
@@ -230,7 +230,7 @@ async def add_org_member(
         membership = OrganizationMember(
             user_id=body.user_id,
             organization_id=org_id,
-            role=body.role,
+            roles=sorted({OrgRole.MEMBER.value, body.role}),
         )
         db.add(membership)
 
@@ -322,11 +322,11 @@ async def update_org_member_role(
         raise HTTPException(status_code=404, detail="Membership not found")
 
     # Enforce max 3 admins
-    if body.role == "ADMIN" and membership.role != "ADMIN":
+    if body.role == "ADMIN" and not has_org_role(membership, OrgRole.ADMIN.value):
         admin_count = await db.execute(
             select(func.count()).where(
                 OrganizationMember.organization_id == org_id,
-                OrganizationMember.role == "ADMIN",
+                OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
                 OrganizationMember.archived == False,
             )
         )
@@ -336,7 +336,7 @@ async def update_org_member_role(
                 detail="Maximum of 3 admins per organization",
             )
 
-    membership.role = body.role
+    membership.roles = sorted({OrgRole.MEMBER.value, body.role})
     await db.commit()
     await db.refresh(membership)
     return membership
@@ -372,7 +372,7 @@ async def list_org_members(
                 id=m.id,
                 user_id=m.user_id,
                 organization_id=m.organization_id,
-                role=m.role,
+                roles=list(m.roles or []),
                 email=u.email if u else None,
                 full_name=u.full_name if u else None,
                 created_at=m.created_at,

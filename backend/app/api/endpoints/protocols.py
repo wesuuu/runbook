@@ -13,8 +13,8 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import (get_current_user, get_or_404,
                            require_active_subscription, require_permission)
 from app.db.session import get_db
-from app.models.iam import (ObjectType, OrganizationMember, PermissionLevel,
-                            User)
+from app.models.iam import (ObjectType, OrganizationMember, OrgRole,
+                            PermissionLevel, User)
 from app.models.science import (Project, Protocol, ProtocolRole,
                                 ProtocolVersion, Run)
 from app.schemas.science import (ProtocolCreate, ProtocolImportFinalizeRequest,
@@ -74,7 +74,7 @@ async def create_protocol(
             select(OrganizationMember).where(
                 OrganizationMember.user_id == user.id,
                 OrganizationMember.organization_id == protocol.organization_id,
-                OrganizationMember.role == "admin",
+                OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
             )
         )
         if result.scalar_one_or_none() is None:
@@ -278,7 +278,7 @@ async def finalize_protocol_import(
             select(OrganizationMember).where(
                 OrganizationMember.user_id == user.id,
                 OrganizationMember.organization_id == request.organization_id,
-                OrganizationMember.role == "admin",
+                OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
             )
         )
         if result.scalar_one_or_none() is None:
@@ -632,7 +632,7 @@ async def update_protocol(
                 admin_result = await db.execute(
                     select(OrganizationMember.user_id).where(
                         OrganizationMember.organization_id == proj.organization_id,
-                        OrganizationMember.role == "ADMIN",
+                        OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
                     )
                 )
                 admin_ids = [row[0] for row in admin_result.all() if row[0] != user.id]

@@ -2,7 +2,22 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
+
+# Hierarchy used to derive the legacy single `role` from the `roles` list.
+# Highest-ranked role wins. ADMIN > BILLING > PROTOCOL_APPROVER > MEMBER.
+_LEGACY_ROLE_RANK = {
+    "ADMIN": 4,
+    "BILLING": 3,
+    "PROTOCOL_APPROVER": 2,
+    "MEMBER": 1,
+}
+
+
+def _legacy_role_from_roles(roles: list[str]) -> str:
+    if not roles:
+        return "MEMBER"
+    return max(roles, key=lambda r: _LEGACY_ROLE_RANK.get(r, 0))
 
 
 class OrganizationCreate(BaseModel):
@@ -21,24 +36,30 @@ class OrganizationResponse(BaseModel):
 
 class OrgMemberAdd(BaseModel):
     user_id: UUID
-    role: str = "MEMBER"  # ADMIN, BILLING, MEMBER
+    role: str = "MEMBER"  # ADMIN, BILLING, MEMBER, PROTOCOL_APPROVER
 
 
 class OrgMemberUpdate(BaseModel):
-    role: str  # ADMIN, BILLING, MEMBER
+    role: str  # ADMIN, BILLING, MEMBER, PROTOCOL_APPROVER
 
 
 class OrgMemberResponse(BaseModel):
     id: UUID
     user_id: UUID
     organization_id: UUID
-    role: str
+    roles: List[str]
     email: Optional[str] = None
     full_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def role(self) -> str:
+        # Legacy field: derive a single role from the `roles` list for back-compat.
+        return _legacy_role_from_roles(list(self.roles or []))
 
 
 class TeamCreate(BaseModel):

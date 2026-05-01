@@ -446,7 +446,7 @@ class TestAcceptInvitation:
         )
         membership = result.scalar_one_or_none()
         assert membership is not None
-        assert membership.role == "MEMBER"
+        assert "MEMBER" in (membership.roles or [])
 
     @pytest.mark.asyncio
     async def test_accept_invitation_no_account_redirects_to_register(
@@ -1074,7 +1074,7 @@ class TestRegistrationOrgMembership:
             )
         )
         membership = result.scalar_one()
-        assert membership.role == "ADMIN"
+        assert "ADMIN" in (membership.roles or [])
 
         # Verify org name
         result = await db_session.execute(

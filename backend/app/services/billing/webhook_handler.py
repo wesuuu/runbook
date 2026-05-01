@@ -239,7 +239,7 @@ async def _primary_user(db: AsyncSession, org: Organization) -> Optional[User]:
         .where(
             OrganizationMember.organization_id == org.id,
             OrganizationMember.archived == False,  # noqa: E712
-            OrganizationMember.role == OrgRole.ADMIN,
+            OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
         )
         .order_by(OrganizationMember.created_at.asc())
         .limit(1)
