@@ -1160,6 +1160,24 @@ class TestMultiRoleEndpoints:
         assert "BOGUS" in resp.text
 
     @pytest.mark.asyncio
+    async def test_cannot_remove_last_admin(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        test_org: Organization,
+        test_user: User,
+    ):
+        # test_user is the only ADMIN in test_org; downgrading to MEMBER-only
+        # must fail with 400.
+        resp = await client.patch(
+            f"/iam/organizations/{test_org.id}/members/{test_user.id}",
+            json={"roles": ["MEMBER"]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "last admin" in resp.text.lower()
+
+    @pytest.mark.asyncio
     async def test_member_role_cannot_be_removed(
         self,
         client: AsyncClient,

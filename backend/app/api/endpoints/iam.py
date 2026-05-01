@@ -375,6 +375,25 @@ async def update_org_member_role(
                 detail="Maximum of 3 admins per organization",
             )
 
+    # Enforce last-admin guard (only when removing ADMIN from a member that had it)
+    losing_admin = (
+        OrgRole.ADMIN.value not in new_roles
+        and has_org_role(membership, OrgRole.ADMIN.value)
+    )
+    if losing_admin:
+        admin_count_result = await db.execute(
+            select(func.count()).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
+                OrganizationMember.archived == False,
+            )
+        )
+        if (admin_count_result.scalar() or 0) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last admin from an organization",
+            )
+
     membership.roles = new_roles
     await db.commit()
     await db.refresh(membership)
