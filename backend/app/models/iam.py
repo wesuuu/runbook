@@ -153,6 +153,12 @@ class User(Base, UUIDMixin, TimestampMixin):
     full_name: Mapped[Optional[str]] = mapped_column(String)
     job_title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     avatar_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    signature_initials_path: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
+    signature_full_path: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
     preferences: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default="{}", nullable=False
     )

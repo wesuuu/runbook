@@ -20,6 +20,7 @@
     import { ProjectSchema } from "$lib/schemas";
     import type { NodeTypes } from "@xyflow/svelte";
     import ProtocolSidebar from "$lib/components/protocol/ProtocolSidebar.svelte";
+    import PublishVersionDialog from "$lib/components/protocol/PublishVersionDialog.svelte";
     import CanvasToolbar from "$lib/components/protocol/CanvasToolbar.svelte";
     import ValidationBanners from "$lib/components/protocol/ValidationBanners.svelte";
     import {
@@ -97,6 +98,7 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
     let saving = $state(false);
+    let publishDialogOpen = $state(false);
 
     // Flow state
     let nodes = $state<Node[]>([]);
@@ -520,6 +522,13 @@
             return;
         }
 
+        // Open the dialog; actual publish happens in performPublish via onConfirm
+        publishDialogOpen = true;
+    }
+
+    async function performPublish(payload: { description: string | undefined; change_summary: string | undefined }) {
+        if (!protocol) return;
+
         saving = true;
 
         try {
@@ -531,9 +540,10 @@
             });
             const draftVersionNumber = versionNumber + 1;
 
-            // Then publish the draft
+            // Then publish the draft (with optional metadata from the dialog)
             const publishResponse: any = await api.post(
                 `/science/protocols/${protocol.id}/publish-draft?version_number=${draftVersionNumber}`,
+                payload,
             );
 
             protocolStatus = publishResponse.status || "APPROVED";
@@ -1038,6 +1048,12 @@
         onOpClick={handleOpPreview}
     />
     {/if}
+
+    <PublishVersionDialog
+        bind:open={publishDialogOpen}
+        versionNumber={versionNumber + 1}
+        onConfirm={performPublish}
+    />
 
     <!-- ============= CANVAS ============= -->
     <div

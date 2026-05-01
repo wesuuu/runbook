@@ -21,6 +21,7 @@
     import TemplatesTab from '$lib/components/settings/TemplatesTab.svelte';
     import BillingTab from '$lib/components/settings/BillingTab.svelte';
     import AppearanceTab from '$lib/components/settings/AppearanceTab.svelte';
+    import SignatureCard from '$lib/components/settings/SignatureCard.svelte';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
@@ -1066,6 +1067,8 @@
                 </div>
             </CardContent>
         </Card>
+
+        <SignatureCard />
 
         <!-- Password -->
         <Card>
