@@ -52,7 +52,7 @@ class TestSwitchOrg:
             OrganizationMember(
                 user_id=test_user.id,
                 organization_id=org2.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -106,7 +106,7 @@ class TestSwitchOrg:
             OrganizationMember(
                 user_id=test_user.id,
                 organization_id=org2.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -142,7 +142,7 @@ class TestSwitchOrg:
             OrganizationMember(
                 user_id=test_user.id,
                 organization_id=org2.id,
-                role="MEMBER",
+                roles=["MEMBER"],
                 archived=True,
             )
         )
@@ -219,7 +219,7 @@ class TestInvitationCreate:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -244,7 +244,7 @@ class TestInvitationCreate:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -642,7 +642,7 @@ class TestDeclineInvitation:
             OrganizationMember(
                 user_id=other.id,
                 organization_id=other_org.id,
-                role="ADMIN",
+                roles=["MEMBER", "ADMIN"],
             )
         )
         await db_session.flush()
@@ -675,7 +675,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -726,7 +726,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         # Membership in org2 (fallback)
@@ -734,7 +734,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=org2.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -771,7 +771,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -799,7 +799,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -832,7 +832,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         db_session.add(
@@ -878,7 +878,7 @@ class TestAddOrgMember:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
                 archived=True,
             )
         )
@@ -985,7 +985,7 @@ class TestArchivedFiltering:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=org.id,
-                role="ADMIN",
+                roles=["MEMBER", "ADMIN"],
                 archived=True,
             )
         )

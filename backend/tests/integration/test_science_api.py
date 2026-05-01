@@ -171,7 +171,7 @@ async def test_update_protocol_view_only_forbidden(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     db_session.add(

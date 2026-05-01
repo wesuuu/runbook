@@ -31,7 +31,7 @@ class TestLoginIncludesOrgContext:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=org.id,
-                role="ADMIN",
+                roles=["MEMBER", "ADMIN"],
             )
         )
         await db_session.flush()
