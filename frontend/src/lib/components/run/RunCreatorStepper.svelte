@@ -1,5 +1,5 @@
 <script lang="ts">
-    type StepNum = 1 | 2 | 3 | 4;
+    type StepNum = 1 | 2 | 3 | 4 | 5;
 
     interface Props {
         currentStep: StepNum;
@@ -13,7 +13,8 @@
         { n: 1, label: 'Name' },
         { n: 2, label: 'Protocol' },
         { n: 3, label: 'Parameters' },
-        { n: 4, label: 'Review' },
+        { n: 4, label: 'Assignee' },
+        { n: 5, label: 'Review' },
     ] as const;
 </script>
 

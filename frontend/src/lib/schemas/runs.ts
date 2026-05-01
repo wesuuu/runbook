@@ -48,6 +48,7 @@ export const RunSchema = z.object({
     execution_data: z.record(z.string(), z.unknown()).default({}),
     experiment_id: z.string().uuid().nullable().optional(),
     started_by_id: z.string().uuid().nullable().optional(),
+    created_by_id: z.string().uuid().nullable().optional(),
     notes: z.array(RunNoteSchema).default([]),
     attachments: z.array(RunAttachmentSchema).default([]),
     created_at: z.string(),

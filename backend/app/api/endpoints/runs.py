@@ -127,6 +127,7 @@ async def create_run(
         experiment_id=run_in.experiment_id,
         graph=initial_graph,
         execution_data={},
+        created_by_id=user.id,
     )
     db.add(run_obj)
     await db.flush()
@@ -175,6 +176,48 @@ async def get_run(
     return await get_or_404(db, Run, run_id)
 
 
+@router.get("/runs/{run_id}/permissions")
+async def get_run_permissions(
+    run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compute the current user's edit permissions for a run.
+
+    `can_edit_planned` is true iff the run is in PLANNED status and the user
+    can edit its setup (overrides, name, assignees). The rules mirror PUT
+    `/runs/{run_id}`: any user with EDIT on the run (org admins, project
+    admins, explicit grantees, or any org member when the parent project
+    has permissions_enabled=false), plus the run creator on
+    permissions_enabled=true projects.
+    """
+    can_view = await check_permission(
+        db, user.id, ObjectType.RUN, run_id, PermissionLevel.VIEW,
+    )
+    if not can_view:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    run_obj = await get_or_404(db, Run, run_id)
+    status_str = (
+        run_obj.status if isinstance(run_obj.status, str)
+        else run_obj.status.value
+    )
+
+    has_edit = await check_permission(
+        db, user.id, ObjectType.RUN, run_id, PermissionLevel.EDIT,
+    )
+    is_creator = run_obj.created_by_id == user.id
+
+    can_edit_planned = (
+        status_str == "PLANNED" and (has_edit or is_creator)
+    )
+
+    return {
+        "can_edit_planned": can_edit_planned,
+        "is_creator": is_creator,
+    }
+
+
 @router.get(
     "/projects/{project_id}/runs",
     response_model=List[RunResponse],
@@ -207,18 +250,31 @@ async def update_run(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
+    run_obj = await get_or_404(db, Run, run_id)
+    current_status_str = (
+        run_obj.status if isinstance(run_obj.status, str)
+        else run_obj.status.value
+    )
+
     allowed = await check_permission(
         db, user.id, ObjectType.RUN,
         run_id, PermissionLevel.EDIT,
     )
+    # Run creator may always edit their own PLANNED run, even on projects
+    # with permissions_enabled=true where they don't have an explicit EDIT
+    # grant. Once the run leaves PLANNED, normal permission rules apply.
+    if (
+        not allowed
+        and current_status_str == "PLANNED"
+        and run_obj.created_by_id == user.id
+    ):
+        allowed = True
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    run_obj = await get_or_404(db, Run, run_id)
-
     # Validate status transitions
     new_status = update_data.status.value if update_data.status else None
-    current_status = run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
+    current_status = current_status_str
 
     # Block graph edits when the run has left PLANNED — overrides are GMP-locked
     # at that point. (F-0081)

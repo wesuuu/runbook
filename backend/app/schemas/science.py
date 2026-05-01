@@ -300,6 +300,7 @@ class RunResponse(RunBase):
     protocol_id: Optional[UUID]
     experiment_id: Optional[UUID] = None
     started_by_id: Optional[UUID] = None
+    created_by_id: Optional[UUID] = None
     notes: list[RunNote] = Field(default_factory=list)
     attachments: list[RunAttachment] = Field(default_factory=list)
     created_at: datetime

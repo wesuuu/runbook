@@ -9,6 +9,7 @@
     import RunCreatorNameStep from './RunCreatorNameStep.svelte';
     import RunCreatorProtocolStep from './RunCreatorProtocolStep.svelte';
     import RunOverridesEditor from './RunOverridesEditor.svelte';
+    import RunCreatorAssigneeStep from './RunCreatorAssigneeStep.svelte';
     import RunCreatorReviewStep from './RunCreatorReviewStep.svelte';
     import SaveAsNewVersionDialog from './SaveAsNewVersionDialog.svelte';
     import { computeEdits, buildOverridesPayload } from '$lib/utils/runOverrides';
@@ -53,6 +54,12 @@
         onCreated,
     }: Props = $props();
 
+    interface ProjectMember {
+        id: string;
+        full_name?: string | null;
+        email?: string | null;
+    }
+
     let versions = $state<ProtocolVersion[]>([]);
     let orgEquipment = $state<OrgEquipment[]>([]);
     let loadedOrgEq = $state(false);
@@ -69,8 +76,14 @@
     let roles = $state<ProtocolRole[]>([]);
     let activeRoleId = $state<string | null>(null);
 
-    let currentStep = $state<1 | 2 | 3 | 4>(1);
-    let highestVisited = $state<1 | 2 | 3 | 4>(1);
+    let projectMembers = $state<ProjectMember[]>([]);
+    let loadingMembers = $state(false);
+    let loadedMembersForProject = $state<string | null>(null);
+    let assignments = $state<Record<string, string>>({});
+
+    type StepNum = 1 | 2 | 3 | 4 | 5;
+    let currentStep = $state<StepNum>(1);
+    let highestVisited = $state<StepNum>(1);
     let stepDirection = $state<'forward' | 'backward'>('forward');
 
     let nameValid = $state(false);
@@ -102,6 +115,12 @@
             .map((n) => ({ id: n.id, label: ((n.data as { label?: string } | undefined)?.label) ?? n.id })),
     );
 
+    const swimLaneNodes = $derived(
+        (currentGraph?.nodes ?? [])
+            .filter((n) => n.type === 'swimLane')
+            .map((n) => ({ id: n.id, data: { label: ((n.data as { label?: string } | undefined)?.label) ?? 'Role' } })),
+    );
+
     function resetState() {
         runName = '';
         experimentId = forExperiment?.id ?? null;
@@ -112,6 +131,7 @@
         versions = [];
         roles = [];
         activeRoleId = null;
+        assignments = {};
         currentStep = 1;
         highestVisited = 1;
         nameValid = false;
@@ -119,6 +139,22 @@
         saveDialogOpen = false;
         creating = false;
         createError = null;
+    }
+
+    async function loadProjectMembers(pid: string) {
+        if (loadedMembersForProject === pid) return;
+        loadingMembers = true;
+        try {
+            const members = await api.get<ProjectMember[]>(
+                `/science/projects/${pid}/members`,
+            );
+            projectMembers = members ?? [];
+            loadedMembersForProject = pid;
+        } catch {
+            projectMembers = [];
+        } finally {
+            loadingMembers = false;
+        }
     }
 
     $effect(() => {
@@ -132,6 +168,9 @@
                         loadedOrgEq = true;
                     }).catch(() => {});
                 }
+            }
+            if (projectId) {
+                loadProjectMembers(projectId);
             }
         }
     });
@@ -204,37 +243,39 @@
         currentGraph = stamped;
     });
 
-    function jumpTo(step: 1 | 2 | 3 | 4) {
+    function jumpTo(step: StepNum) {
         if (step <= highestVisited) {
             stepDirection = step > currentStep ? 'forward' : 'backward';
             currentStep = step;
         }
     }
 
+    function advanceTo(step: StepNum) {
+        stepDirection = 'forward';
+        currentStep = step;
+        highestVisited = Math.max(highestVisited, step) as StepNum;
+    }
+
     function next() {
         if (currentStep === 1 && nameValid) {
-            stepDirection = 'forward';
-            currentStep = 2;
-            highestVisited = Math.max(highestVisited, 2) as typeof highestVisited;
+            advanceTo(2);
         } else if (currentStep === 2 && protocolValid) {
-            stepDirection = 'forward';
-            currentStep = 3;
-            highestVisited = Math.max(highestVisited, 3) as typeof highestVisited;
+            advanceTo(3);
         } else if (currentStep === 3) {
             if (edits.length > 0) {
                 saveDialogOpen = true;
             } else {
-                stepDirection = 'forward';
-                currentStep = 4;
-                highestVisited = Math.max(highestVisited, 4) as typeof highestVisited;
+                advanceTo(4);
             }
+        } else if (currentStep === 4) {
+            advanceTo(5);
         }
     }
 
     function back() {
         if (currentStep > 1) {
             stepDirection = 'backward';
-            currentStep = (currentStep - 1) as typeof currentStep;
+            currentStep = (currentStep - 1) as StepNum;
         }
     }
 
@@ -253,9 +294,7 @@
 
     function dialogJustThisRun() {
         saveDialogOpen = false;
-        stepDirection = 'forward';
-        currentStep = 4;
-        highestVisited = Math.max(highestVisited, 4) as typeof highestVisited;
+        advanceTo(4);
     }
 
     async function dialogSaveAsVersion(description: string) {
@@ -288,11 +327,30 @@
             await loadVersions(protocolId);
             protocolVersionNumber = nextVer;
             saveDialogOpen = false;
-            stepDirection = 'forward';
-            currentStep = 4;
-            highestVisited = Math.max(highestVisited, 4) as typeof highestVisited;
+            advanceTo(4);
         } catch (e) {
             createError = e instanceof Error ? e.message : 'Failed to save version';
+        }
+    }
+
+    async function persistAssignments(runId: string) {
+        const hasLanes = swimLaneNodes.length > 0;
+        const entries = Object.entries(assignments).filter(([, userId]) => !!userId);
+        for (const [key, userId] of entries) {
+            const lane = hasLanes ? swimLaneNodes.find((l) => l.id === key) : null;
+            const lane_node_id = hasLanes ? key : '__run__';
+            const role_name = hasLanes
+                ? (lane?.data.label ?? 'Role')
+                : 'Operator';
+            try {
+                await api.post(`/science/runs/${runId}/role-assignments`, {
+                    lane_node_id,
+                    role_name,
+                    user_id: userId,
+                });
+            } catch {
+                // Non-fatal: the run is already created. The user can retry from the run page.
+            }
         }
     }
 
@@ -311,6 +369,7 @@
             const overrides = buildOverridesPayload(edits, currentGraph);
             if (overrides) payload.overrides = overrides;
             const newRun = await api.post<{ id: string }>('/science/runs', payload);
+            await persistAssignments(newRun.id);
             onCreated?.(newRun);
             open = false;
             goto(`/runs/${newRun.id}`);
@@ -370,6 +429,14 @@
                             onRoleChange={(id) => { activeRoleId = id; }}
                         />
                     {:else if currentStep === 4}
+                        <RunCreatorAssigneeStep
+                            {swimLaneNodes}
+                            {projectMembers}
+                            {loadingMembers}
+                            {assignments}
+                            onChange={(a) => { assignments = a; }}
+                        />
+                    {:else if currentStep === 5}
                         <RunCreatorReviewStep
                             {runName}
                             experimentName={experiments.find((e) => e.id === experimentId)?.name ?? null}
@@ -390,7 +457,7 @@
         <footer class="wizard-footer">
             <Button variant="ghost" onclick={requestClose}>Cancel</Button>
             <div class="footer-spacer"></div>
-            {#if currentStep > 1 && currentStep < 4}
+            {#if currentStep > 1 && currentStep < 5}
                 <div in:fade={{ duration: blockDuration() }}>
                     <Button variant="secondary" onclick={back}>Back</Button>
                 </div>
@@ -405,13 +472,20 @@
                     </Button>
                 </div>
             {/if}
-            {#if currentStep < 4}
+            {#if currentStep === 4}
+                <div in:fade={{ duration: blockDuration() }}>
+                    <Button variant="ghost" onclick={() => { assignments = {}; advanceTo(5); }}>
+                        Skip · assign later
+                    </Button>
+                </div>
+            {/if}
+            {#if currentStep < 5}
                 <div in:fade={{ duration: blockDuration() }}>
                     <Button
                         onclick={next}
                         disabled={(currentStep === 1 && !nameValid) || (currentStep === 2 && !protocolValid)}
                     >
-                        {currentStep === 3 ? 'Continue to review' : 'Continue'}
+                        {currentStep === 4 ? 'Continue to review' : 'Continue'}
                     </Button>
                 </div>
             {/if}
