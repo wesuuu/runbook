@@ -10,6 +10,20 @@ Expand the `protocol_builder` chat subagent so it can update existing protocols,
 
 This drops the `NeedsTargetDecision` pattern entirely and avoids touching the inline draft logic in `api/endpoints/protocols.py`.
 
+## DRY: extract before adding
+
+Several capabilities the chat needs already exist as inline endpoint logic with no service function. Per the "one set of logic" rule, this work extracts that logic into the new service modules and refactors the endpoints to call the same functions. The chat tool then calls the same service. Specifically:
+
+| Capability | Lives today as | After this change |
+|---|---|---|
+| List protocols | inline in `endpoints/protocols.py:367` (`list_project_protocols`) | `services/protocols/lookup.py:list_protocols` — endpoint + chat tool both call it |
+| Get full protocol | inline in `endpoints/protocols.py:335` (`get_protocol`) | `services/protocols/lookup.py:get_protocol_full` — endpoint + chat tool both call it |
+| Update protocol metadata | one branch of inline `endpoints/protocols.py:534` (`update_protocol`) | `services/protocols/creation.py:update_protocol_metadata` — endpoint delegates the metadata-only branch; draft/graph branches stay inline (out of scope) |
+| Role CRUD | inline in `endpoints/protocols.py:684-823` | `services/protocols/roles.py:list_roles/add_role/update_role/remove_role` — endpoints delegate |
+| Update unit op | inline in `endpoints/unit_ops.py:220` | `services/protocols/unit_ops.py:update_unit_op_definition` — endpoint delegates |
+
+**Genuinely new** (no existing implementation; frontend builds the whole graph client-side and bulk-PUTs through `update_protocol`): `add_protocol_step`, `remove_protocol_step`, `reorder_protocol_steps`, `replace_step_unit_op`, `elevate_unit_op_scope`. These get a service function and a chat tool only — the frontend's bulk-PUT path is left alone, but the helpers are shaped so it could adopt them later.
+
 ## New tools (all in `subagents/protocol_builder/tools.py`)
 
 | Tool | Mutates? | Service delegate |
@@ -137,11 +151,21 @@ Permission rules mirror `create_unit_op_definition`:
 
 **Tool-layer tests** in `tests/unit/test_subagents_protocol_builder.py`: per new tool — service is monkeypatched, assert arg mapping, `tool_calls` audit append, dataclass shape, and the `ok=False` translation when the service raises `ValueError`.
 
+## Endpoint refactors (in scope)
+
+After each new service function is written + tested, refactor the matching endpoint to call it. Endpoint integration tests must continue to pass unchanged. Touched endpoints:
+
+- `endpoints/protocols.py:list_project_protocols` → call `lookup.list_protocols`
+- `endpoints/protocols.py:get_protocol` → call `lookup.get_protocol_full`
+- `endpoints/protocols.py:update_protocol` — only the metadata-only branch (no `graph` in changes, `save_as_draft=False`) delegates to `creation.update_protocol_metadata`. The graph + draft branches stay inline.
+- `endpoints/protocols.py:list_protocol_roles / create_protocol_role / update_protocol_role / delete_protocol_role` → call `roles.*`
+- `endpoints/unit_ops.py:update_unit_op` → call `unit_ops.update_unit_op_definition`
+
 ## Out of scope (explicit)
 
 - Draft-version materialization / `NeedsTargetDecision` flow (deferred).
 - Arbitrary edge re-wiring (`update_protocol_edges`).
 - "Inline graph node → UnitOpDefinition" promotion.
 - Role-control gating (no role-perm model exists yet).
-- Frontend changes — chat surfaces these tools through existing message rendering. No new UI components.
-- Modifying the existing endpoint draft logic in `api/endpoints/protocols.py`.
+- Frontend changes — chat surfaces these tools through existing message rendering. No new UI components. The frontend's bulk-PUT graph save path stays as-is.
+- Modifying the existing endpoint draft / graph logic in `api/endpoints/protocols.py:update_protocol` (only the metadata-only branch is touched).
