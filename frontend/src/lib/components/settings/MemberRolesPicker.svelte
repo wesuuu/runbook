@@ -39,8 +39,8 @@
     }
 </script>
 
-<div class="flex items-start gap-1.5 min-w-0">
-    <div class="flex flex-col items-start gap-1 whitespace-nowrap">
+<div class="flex items-center gap-1.5 min-w-0">
+    <div class="flex items-center gap-1.5 flex-nowrap whitespace-nowrap">
         <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
         {#each roles.filter((r) => r !== 'MEMBER') as r (r)}
             <span
