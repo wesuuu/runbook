@@ -156,6 +156,106 @@ async def test_remove_role_refuses_on_published(
 
 
 @pytest.mark.asyncio
+async def test_add_role_appends_swimlane_node(
+    db_session: AsyncSession, test_user: User, draft_protocol: Protocol
+):
+    draft_protocol.graph = {"nodes": [], "edges": [], "layout": "horizontal"}
+    await db_session.flush()
+    role = await add_role(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_protocol.id,
+        name="Operator",
+        color="#abcdef",
+    )
+    await db_session.refresh(draft_protocol)
+    lane_nodes = [n for n in draft_protocol.graph["nodes"] if n["type"] == "swimLane"]
+    assert len(lane_nodes) == 1
+    lane = lane_nodes[0]
+    assert lane["id"] == f"lane-{role.id}"
+    assert lane["data"]["label"] == "Operator"
+    assert lane["data"]["color"] == "#abcdef"
+    assert lane["data"]["roleId"] == str(role.id)
+    assert lane["data"]["orientation"] == "horizontal"
+    assert lane["position"] == {"x": 0, "y": 0}
+
+
+@pytest.mark.asyncio
+async def test_add_role_offsets_subsequent_lanes_vertical(
+    db_session: AsyncSession, test_user: User, draft_protocol: Protocol
+):
+    draft_protocol.graph = {"nodes": [], "edges": [], "layout": "vertical"}
+    await db_session.flush()
+    await add_role(
+        db_session, user_id=test_user.id, protocol_id=draft_protocol.id, name="A"
+    )
+    await add_role(
+        db_session, user_id=test_user.id, protocol_id=draft_protocol.id, name="B"
+    )
+    await db_session.refresh(draft_protocol)
+    lanes = [n for n in draft_protocol.graph["nodes"] if n["type"] == "swimLane"]
+    assert lanes[0]["position"] == {"x": 0, "y": 0}
+    assert lanes[1]["position"] == {"x": 220, "y": 0}
+    assert all(n["data"]["orientation"] == "vertical" for n in lanes)
+
+
+@pytest.mark.asyncio
+async def test_update_role_patches_swimlane_label_and_color(
+    db_session: AsyncSession, test_user: User, draft_protocol: Protocol
+):
+    draft_protocol.graph = {"nodes": [], "edges": [], "layout": "horizontal"}
+    await db_session.flush()
+    role = await add_role(
+        db_session, user_id=test_user.id, protocol_id=draft_protocol.id, name="Old"
+    )
+    await update_role(
+        db_session,
+        user_id=test_user.id,
+        role_id=role.id,
+        name="New",
+        color="#112233",
+    )
+    await db_session.refresh(draft_protocol)
+    lane = next(
+        n for n in draft_protocol.graph["nodes"] if n["id"] == f"lane-{role.id}"
+    )
+    assert lane["data"]["label"] == "New"
+    assert lane["data"]["color"] == "#112233"
+
+
+@pytest.mark.asyncio
+async def test_remove_role_drops_lane_and_clears_parent(
+    db_session: AsyncSession, test_user: User, draft_protocol: Protocol
+):
+    draft_protocol.graph = {"nodes": [], "edges": [], "layout": "horizontal"}
+    await db_session.flush()
+    role = await add_role(
+        db_session, user_id=test_user.id, protocol_id=draft_protocol.id, name="R"
+    )
+    lane_id = f"lane-{role.id}"
+    nested = {
+        "id": "uo-1",
+        "type": "unitOp",
+        "parentId": lane_id,
+        "extent": "parent",
+        "position": {"x": 10, "y": 10},
+        "data": {"label": "step"},
+    }
+    graph = dict(draft_protocol.graph)
+    graph["nodes"] = list(graph["nodes"]) + [nested]
+    draft_protocol.graph = graph
+    await db_session.flush()
+
+    await remove_role(db_session, user_id=test_user.id, role_id=role.id)
+    await db_session.refresh(draft_protocol)
+    nodes = draft_protocol.graph["nodes"]
+    assert all(n["id"] != lane_id for n in nodes)
+    step = next(n for n in nodes if n["id"] == "uo-1")
+    assert "parentId" not in step
+    assert "extent" not in step
+
+
+@pytest.mark.asyncio
 async def test_role_ops_require_view_or_edit(db_session: AsyncSession, test_user: User):
     other_org = Organization(name="o", subscription_tier="ESSENTIALS")
     db_session.add(other_org)

@@ -134,6 +134,21 @@ To build out a role's chain of steps: call `add_protocol_role` first,
 then `add_protocol_step(..., role_id=<new_role_id>)` per step. The new
 nodes will be assigned to that role's lane via `parentId`.
 
+**Recognize role triggers proactively.** Whenever the user introduces a
+step that is performed by a *different* operator/person/team than the
+current chain (phrases like "another person", "someone else", "a
+different operator", "QA reviewer", "the night-shift tech", "have
+[name] do this"), assume a new role is required:
+
+1. `list_protocol_roles(protocol_id)` to see what already exists.
+2. If no matching role, call `add_protocol_role` with a sensible name
+   derived from the user's wording before creating the step.
+3. Then call `add_protocol_step(..., role_id=<role_id>)` so the step
+   lands inside that role's swimlane.
+
+Do not silently drop the role hint and append the step to the existing
+chain — the user expects a visible lane in the editor.
+
 ## Unit op editing and scope ladder
 
 Unit op definitions live at one of three scopes:

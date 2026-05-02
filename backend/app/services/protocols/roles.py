@@ -4,8 +4,14 @@ Mutations require DRAFT status on the parent protocol + project EDIT perm.
 Reads require VIEW. Single canonical impl shared by:
   - api/endpoints/protocols.py role endpoints
   - subagents/protocol_builder/tools.py role tools
+
+Role mutations also keep the protocol graph in sync:
+  - add_role appends a swimLane node mirroring what the editor inserts
+  - update_role patches the lane node's label/color
+  - remove_role drops the lane node and clears parentId on nested steps
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -14,6 +20,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Protocol, ProtocolRole
 from app.services.core.permissions import check_permission
+
+
+def _lane_id(role_id: UUID) -> str:
+    return f"lane-{role_id}"
+
+
+def _build_lane_node(role: ProtocolRole, layout: str, role_index: int) -> dict[str, Any]:
+    """Mirror frontend createSwimLaneNode (protocolNodes.ts)."""
+    lane_offset = role_index * 220
+    if layout == "vertical":
+        position = {"x": lane_offset, "y": 0}
+        style = "width: 220px; height: 500px;"
+    else:
+        position = {"x": 0, "y": lane_offset}
+        style = "width: 800px; height: 200px;"
+    return {
+        "id": _lane_id(role.id),
+        "type": "swimLane",
+        "zIndex": -1,
+        "position": position,
+        "data": {
+            "label": role.name,
+            "color": role.color,
+            "roleId": str(role.id),
+            "orientation": layout,
+        },
+        "style": style,
+    }
+
+
+def _graph_layout(graph: dict) -> str:
+    layout = graph.get("layout")
+    return "vertical" if layout == "vertical" else "horizontal"
 
 
 async def _load_protocol_or_raise(db: AsyncSession, protocol_id: UUID) -> Protocol:
@@ -100,6 +139,15 @@ async def add_role(
     )
     db.add(role)
     await db.flush()
+
+    graph = dict(proto.graph or {})
+    nodes = list(graph.get("nodes", []))
+    layout = _graph_layout(graph)
+    role_index = sum(1 for n in nodes if n.get("type") == "swimLane")
+    nodes.append(_build_lane_node(role, layout, role_index))
+    graph["nodes"] = nodes
+    proto.graph = graph
+    await db.flush()
     return role
 
 
@@ -126,6 +174,27 @@ async def update_role(
     if sort_order is not None:
         role.sort_order = sort_order
     await db.flush()
+
+    graph = dict(proto.graph or {})
+    nodes = list(graph.get("nodes", []))
+    lane_id = _lane_id(role.id)
+    changed = False
+    for i, node in enumerate(nodes):
+        if node.get("id") == lane_id:
+            updated = dict(node)
+            data = dict(updated.get("data", {}))
+            if name is not None:
+                data["label"] = role.name
+            if color is not None:
+                data["color"] = role.color
+            updated["data"] = data
+            nodes[i] = updated
+            changed = True
+            break
+    if changed:
+        graph["nodes"] = nodes
+        proto.graph = graph
+        await db.flush()
     return role
 
 
@@ -137,5 +206,26 @@ async def remove_role(db: AsyncSession, *, user_id: UUID, role_id: UUID) -> None
         raise ValueError(f"Role {role_id} not found")
     proto = await _load_protocol_or_raise(db, role.protocol_id)
     await _require_draft_and_edit(db, user_id, proto)
+    lane_id = _lane_id(role.id)
     await db.delete(role)
     await db.flush()
+
+    graph = dict(proto.graph or {})
+    nodes = list(graph.get("nodes", []))
+    new_nodes: list[dict] = []
+    removed = False
+    for node in nodes:
+        if node.get("id") == lane_id:
+            removed = True
+            continue
+        if node.get("parentId") == lane_id:
+            cleaned = dict(node)
+            cleaned.pop("parentId", None)
+            cleaned.pop("extent", None)
+            new_nodes.append(cleaned)
+        else:
+            new_nodes.append(node)
+    if removed or new_nodes != nodes:
+        graph["nodes"] = new_nodes
+        proto.graph = graph
+        await db.flush()
