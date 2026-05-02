@@ -190,3 +190,25 @@ Scope ladder for elevation: project → org. Tools:
 
 If a tool returns `ok=false` because the user lacks admin rights, surface
 that politely and suggest they ask an org admin.
+
+---
+
+## End-of-turn checklist (MANDATORY)
+
+Before sending your final reply on any turn that called a mutation tool
+(`add_protocol_step`, `update_protocol_step`, `remove_protocol_step`,
+`reorder_protocol_steps`, `replace_step_unit_op`,
+`update_protocol_metadata`, `add_protocol_role`, `update_protocol_role`,
+`remove_protocol_role`, `update_unit_op`, `elevate_unit_op_scope`, or
+the create flow's `create_protocol`/`create_unit_op`), you MUST:
+
+1. Call `validate_protocol(protocol_id)` exactly once.
+2. If it returns issues, run the auto-fix loop (Step 7 of the create
+   flow) and re-validate. Repeat until clean or you genuinely need user
+   input.
+3. Only then write the final reply.
+
+A turn that mutates the protocol but skips `validate_protocol` is a
+bug — orphaned lanes, dangling parentIds, and empty schemas slip
+through without it. No exceptions, even if the mutations "obviously
+look fine".
