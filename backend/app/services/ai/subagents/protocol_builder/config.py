@@ -9,10 +9,10 @@ from subagents_pydantic_ai import SubAgentConfig
 from app.services.ai.subagents.protocol_builder.tools import (
     add_protocol_role, add_protocol_step, create_protocol, create_unit_op,
     elevate_unit_op_scope, get_protocol, list_projects, list_protocol_roles,
-    list_protocols, list_unit_ops, remove_protocol_role,
-    remove_protocol_step, replace_step_unit_op, reorder_protocol_steps,
-    update_protocol_metadata, update_protocol_role, update_protocol_step,
-    update_unit_op, validate_protocol)
+    list_protocols, list_unit_ops, remove_protocol_role, remove_protocol_step,
+    reorder_protocol_steps, replace_step_unit_op, update_protocol_metadata,
+    update_protocol_role, update_protocol_step, update_unit_op,
+    validate_protocol)
 
 _PROMPT_PATH = Path(__file__).parent / "prompt.md"
 

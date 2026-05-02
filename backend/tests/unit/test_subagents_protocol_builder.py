@@ -29,25 +29,35 @@ def test_build_returns_subagent_config():
     from app.services.ai.subagents.protocol_builder.tools import (
         add_protocol_role, add_protocol_step, elevate_unit_op_scope,
         get_protocol, list_protocol_roles, list_protocols,
-        remove_protocol_role, remove_protocol_step, replace_step_unit_op,
-        reorder_protocol_steps, update_protocol_metadata,
-        update_protocol_role, update_unit_op,
-    )
+        remove_protocol_role, remove_protocol_step, reorder_protocol_steps,
+        replace_step_unit_op, update_protocol_metadata, update_protocol_role,
+        update_unit_op)
 
     cfg = build("openai:gpt-4.1-mini")
     assert cfg["name"] == "protocol_builder"
     assert cfg["model"] == "openai:gpt-4.1-mini"
     tools = cfg["agent_kwargs"]["tools"]
     expected = {
-        list_projects, list_unit_ops, create_unit_op, create_protocol,
-        validate_protocol, update_protocol_step,
+        list_projects,
+        list_unit_ops,
+        create_unit_op,
+        create_protocol,
+        validate_protocol,
+        update_protocol_step,
         # F-0082 additions
-        list_protocols, get_protocol, update_protocol_metadata,
-        add_protocol_step, remove_protocol_step, reorder_protocol_steps,
+        list_protocols,
+        get_protocol,
+        update_protocol_metadata,
+        add_protocol_step,
+        remove_protocol_step,
+        reorder_protocol_steps,
         replace_step_unit_op,
-        list_protocol_roles, add_protocol_role, update_protocol_role,
+        list_protocol_roles,
+        add_protocol_role,
+        update_protocol_role,
         remove_protocol_role,
-        update_unit_op, elevate_unit_op_scope,
+        update_unit_op,
+        elevate_unit_op_scope,
     }
     assert set(tools) >= expected
 
@@ -175,11 +185,17 @@ async def test_list_protocols_tool_delegates(monkeypatch):
     async def fake(*args, **kwargs):
         captured.update(kwargs)
         from app.services.protocols.lookup import ProtocolListItem
+
         return [
             ProtocolListItem(
-                id=_uuid.uuid4(), name="A", description=None,
-                project_id=_uuid.uuid4(), project_name="proj", status="DRAFT",
-                version_number=0, has_draft=False,
+                id=_uuid.uuid4(),
+                name="A",
+                description=None,
+                project_id=_uuid.uuid4(),
+                project_name="proj",
+                status="DRAFT",
+                version_number=0,
+                has_draft=False,
             ),
         ]
 
@@ -200,11 +216,18 @@ async def test_get_protocol_tool_delegates(monkeypatch):
 
     async def fake(*args, **kwargs):
         from app.services.protocols.lookup import ProtocolFull
+
         return ProtocolFull(
-            id=pid, name="P", description="d",
-            project_id=_uuid.uuid4(), project_name="proj",
-            status="DRAFT", version_number=0, has_draft=False,
-            graph={"nodes": [], "edges": []}, roles=[],
+            id=pid,
+            name="P",
+            description="d",
+            project_id=_uuid.uuid4(),
+            project_name="proj",
+            status="DRAFT",
+            version_number=0,
+            has_draft=False,
+            graph={"nodes": [], "edges": []},
+            roles=[],
         )
 
     monkeypatch.setattr(
@@ -258,7 +281,9 @@ async def test_update_protocol_metadata_tool(monkeypatch):
     )
     pid = _uuid.uuid4()
     result = await update_protocol_metadata(
-        ctx, protocol_id=str(pid), name="New Name",
+        ctx,
+        protocol_id=str(pid),
+        name="New Name",
     )
     assert captured["protocol_id"] == pid
     assert captured["name"] == "New Name"
@@ -278,7 +303,9 @@ async def test_update_protocol_metadata_published_returns_error(monkeypatch):
         fake,
     )
     result = await update_protocol_metadata(
-        ctx, protocol_id=str(_uuid.uuid4()), name="X",
+        ctx,
+        protocol_id=str(_uuid.uuid4()),
+        name="X",
     )
     assert result.ok is False
     assert "published" in result.summary
@@ -300,8 +327,12 @@ async def test_add_protocol_step_tool(monkeypatch):
     pid = _uuid.uuid4()
     rid = _uuid.uuid4()
     result = await add_protocol_step(
-        ctx, protocol_id=str(pid), name="Mix", unit_op_name="Mix Op",
-        duration_min=20, role_id=str(rid),
+        ctx,
+        protocol_id=str(pid),
+        name="Mix",
+        unit_op_name="Mix Op",
+        duration_min=20,
+        role_id=str(rid),
     )
     assert captured["protocol_id"] == pid
     assert captured["role_id"] == rid
@@ -323,7 +354,9 @@ async def test_remove_protocol_step_tool(monkeypatch):
     )
     pid = _uuid.uuid4()
     result = await remove_protocol_step(
-        ctx, protocol_id=str(pid), step_index=2,
+        ctx,
+        protocol_id=str(pid),
+        step_index=2,
     )
     assert captured["step_index"] == 2
     assert result.ok is True
@@ -344,7 +377,9 @@ async def test_reorder_protocol_steps_tool(monkeypatch):
     )
     pid = _uuid.uuid4()
     result = await reorder_protocol_steps(
-        ctx, protocol_id=str(pid), ordered_step_indices=[2, 0, 1],
+        ctx,
+        protocol_id=str(pid),
+        ordered_step_indices=[2, 0, 1],
     )
     assert captured["ordered_step_indices"] == [2, 0, 1]
     assert result.ok is True
@@ -365,7 +400,10 @@ async def test_replace_step_unit_op_tool(monkeypatch):
     )
     pid = _uuid.uuid4()
     result = await replace_step_unit_op(
-        ctx, protocol_id=str(pid), step_index=1, new_unit_op_name="Cell Seeding",
+        ctx,
+        protocol_id=str(pid),
+        step_index=1,
+        new_unit_op_name="Cell Seeding",
     )
     assert captured["new_unit_op_name"] == "Cell Seeding"
     assert result.ok is True
@@ -385,6 +423,7 @@ async def test_list_protocol_roles_tool(monkeypatch):
 
     async def fake(db, **kwargs):
         from app.models.science import ProtocolRole
+
         r1 = ProtocolRole(name="Op", color="#fff", sort_order=0)
         r1.id = _uuid.uuid4()
         return [r1]
@@ -406,6 +445,7 @@ async def test_add_protocol_role_tool(monkeypatch):
     async def fake(db, **kwargs):
         captured.update(kwargs)
         from app.models.science import ProtocolRole
+
         r = ProtocolRole(name=kwargs["name"], color="#fff", sort_order=0)
         r.id = _uuid.uuid4()
         return r
@@ -415,7 +455,9 @@ async def test_add_protocol_role_tool(monkeypatch):
         fake,
     )
     result = await add_protocol_role(
-        ctx, protocol_id=str(_uuid.uuid4()), name="Operator",
+        ctx,
+        protocol_id=str(_uuid.uuid4()),
+        name="Operator",
     )
     assert captured["name"] == "Operator"
     assert result.ok is True
@@ -429,8 +471,8 @@ async def test_update_protocol_role_tool(monkeypatch):
     async def fake(db, **kwargs):
         captured.update(kwargs)
         from app.models.science import ProtocolRole
-        r = ProtocolRole(name=kwargs.get("name") or "X", color="#fff",
-                         sort_order=0)
+
+        r = ProtocolRole(name=kwargs.get("name") or "X", color="#fff", sort_order=0)
         r.id = kwargs["role_id"]
         return r
 
@@ -488,7 +530,9 @@ async def test_update_unit_op_tool(monkeypatch):
     )
     uoid = _uuid.uuid4()
     result = await update_unit_op(
-        ctx, unit_op_id=str(uoid), description="new desc",
+        ctx,
+        unit_op_id=str(uoid),
+        description="new desc",
     )
     assert captured["unit_op_id"] == uoid
     assert captured["description"] == "new desc"

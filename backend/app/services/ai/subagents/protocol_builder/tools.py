@@ -26,8 +26,7 @@ from app.services.protocols.creation import \
     update_protocol_step as update_protocol_step_service
 from app.services.protocols.graph import add_step as add_step_service
 from app.services.protocols.graph import remove_step as remove_step_service
-from app.services.protocols.graph import \
-    reorder_steps as reorder_steps_service
+from app.services.protocols.graph import reorder_steps as reorder_steps_service
 from app.services.protocols.graph import \
     replace_step_unit_op as replace_step_unit_op_service
 from app.services.protocols.lookup import ProtocolFull
@@ -543,9 +542,7 @@ def _summary_from_full(p: ProtocolFull) -> str:
     state = p.status
     if p.has_draft:
         state += " (draft pending)"
-    step_count = len(
-        [n for n in p.graph.get("nodes", []) if n.get("type") == "unitOp"]
-    )
+    step_count = len([n for n in p.graph.get("nodes", []) if n.get("type") == "unitOp"])
     return (
         f"Protocol '{p.name}' in project '{p.project_name}' — {state}, "
         f"v{p.version_number}, {step_count} steps"
@@ -669,9 +666,7 @@ class ProtocolMutationResult:
 
 
 def _mutation_error(protocol_id: str, exc: ValueError) -> ProtocolMutationResult:
-    return ProtocolMutationResult(
-        ok=False, protocol_id=protocol_id, summary=str(exc)
-    )
+    return ProtocolMutationResult(ok=False, protocol_id=protocol_id, summary=str(exc))
 
 
 async def update_protocol_metadata(
@@ -700,9 +695,7 @@ async def update_protocol_metadata(
         )
         return _mutation_error(protocol_id, e)
     fields = [
-        k
-        for k, v in (("name", name), ("description", description))
-        if v is not None
+        k for k, v in (("name", name), ("description", description)) if v is not None
     ]
     ctx.deps.tool_calls.append(
         {
@@ -758,9 +751,7 @@ async def add_protocol_step(
         )
         return _mutation_error(protocol_id, e)
     where = (
-        f"after step {after_step_index}"
-        if after_step_index is not None
-        else "appended"
+        f"after step {after_step_index}" if after_step_index is not None else "appended"
     )
     ctx.deps.tool_calls.append(
         {
@@ -931,7 +922,9 @@ async def list_protocol_roles(
     pid = UUID(protocol_id)
     try:
         roles = await list_roles_service(
-            ctx.deps.db, user_id=ctx.deps.user_id, protocol_id=pid,
+            ctx.deps.db,
+            user_id=ctx.deps.user_id,
+            protocol_id=pid,
         )
     except ValueError as e:
         ctx.deps.tool_calls.append(
@@ -1066,7 +1059,9 @@ async def remove_protocol_role(
     rid = UUID(role_id)
     try:
         await remove_role_service(
-            ctx.deps.db, user_id=ctx.deps.user_id, role_id=rid,
+            ctx.deps.db,
+            user_id=ctx.deps.user_id,
+            role_id=rid,
         )
     except ValueError as e:
         ctx.deps.tool_calls.append(
@@ -1085,7 +1080,9 @@ async def remove_protocol_role(
         }
     )
     return RoleMutationResult(
-        ok=True, role_id=role_id, summary="Removed role.",
+        ok=True,
+        role_id=role_id,
+        summary="Removed role.",
     )
 
 
@@ -1102,7 +1099,10 @@ class UnitOpMutationResult:
 
 def _uo_error(unit_op_id: str, exc: ValueError) -> UnitOpMutationResult:
     return UnitOpMutationResult(
-        ok=False, unit_op_id=unit_op_id, name="", summary=str(exc),
+        ok=False,
+        unit_op_id=unit_op_id,
+        name="",
+        summary=str(exc),
     )
 
 
@@ -1171,7 +1171,8 @@ async def update_unit_op(
 
 
 async def elevate_unit_op_scope(
-    ctx: RunContext[ChatDeps], unit_op_id: str,
+    ctx: RunContext[ChatDeps],
+    unit_op_id: str,
 ) -> UnitOpMutationResult:
     """Promote a project-scoped unit op to org-wide. Org-admin only."""
     uoid = UUID(unit_op_id)
