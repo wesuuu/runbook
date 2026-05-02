@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             PermissionLevel, PrincipalType, User)
-from app.models.science import Project, Protocol, ProtocolRole
-from app.services.protocols.graph import add_step
+from app.models.science import (Project, Protocol, ProtocolRole,
+                                UnitOpDefinition)
+from app.services.protocols.graph import (add_step, remove_step, reorder_steps,
+                                          replace_step_unit_op)
 
 
 def _seed_graph_with_n_steps(n: int) -> dict:
@@ -214,4 +216,142 @@ async def test_add_step_index_out_of_range(
             name="X",
             unit_op_name="X",
             after_step_index=99,
+        )
+
+
+@pytest.mark.asyncio
+async def test_remove_step_drops_node_and_rewires(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    updated = await remove_step(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        step_index=0,
+    )
+    unit_ops = [n for n in updated.graph["nodes"] if n["type"] == "unitOp"]
+    assert len(unit_ops) == 1
+    assert unit_ops[0]["data"]["label"] == "Step 1"
+    edges = updated.graph["edges"]
+    assert len(edges) == 1
+    assert edges[0]["target"] == unit_ops[0]["id"]
+
+
+@pytest.mark.asyncio
+async def test_remove_step_index_out_of_range(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    with pytest.raises(ValueError, match="out of range"):
+        await remove_step(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=draft_proto.id,
+            step_index=5,
+        )
+
+
+@pytest.mark.asyncio
+async def test_reorder_steps_reverses_chain(
+    db_session: AsyncSession, test_user: User, test_org: Organization
+):
+    proj = Project(name="ro", organization_id=test_org.id, owner_id=test_user.id)
+    db_session.add(proj)
+    await db_session.flush()
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=test_user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=proj.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
+    proto = Protocol(
+        name="R",
+        project_id=proj.id,
+        status="DRAFT",
+        graph=_seed_graph_with_n_steps(3),
+    )
+    db_session.add(proto)
+    await db_session.flush()
+
+    updated = await reorder_steps(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=proto.id,
+        ordered_step_indices=[2, 1, 0],
+    )
+    unit_ops = [n for n in updated.graph["nodes"] if n["type"] == "unitOp"]
+    assert [n["data"]["label"] for n in unit_ops] == ["Step 2", "Step 1", "Step 0"]
+    edges = updated.graph["edges"]
+    assert len(edges) == 3
+    ids = [n["id"] for n in unit_ops]
+    chain = {e["source"]: e["target"] for e in edges}
+    assert chain[ids[0]] == ids[1]
+    assert chain[ids[1]] == ids[2]
+
+
+@pytest.mark.asyncio
+async def test_reorder_rejects_bad_permutation(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    with pytest.raises(ValueError, match="permutation"):
+        await reorder_steps(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=draft_proto.id,
+            ordered_step_indices=[0, 0],
+        )
+    with pytest.raises(ValueError, match="permutation"):
+        await reorder_steps(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=draft_proto.id,
+            ordered_step_indices=[0],
+        )
+
+
+@pytest.mark.asyncio
+async def test_replace_step_unit_op_uses_catalog(
+    db_session: AsyncSession,
+    test_org: Organization,
+    test_user: User,
+    draft_proto: Protocol,
+):
+    op = UnitOpDefinition(
+        name="Cell Seeding",
+        category="Cell Culture",
+        description="seed cells",
+        param_schema={"properties": {"vol": {"type": "number"}}},
+        organization_id=test_org.id,
+        project_id=None,
+    )
+    db_session.add(op)
+    await db_session.flush()
+    updated = await replace_step_unit_op(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        step_index=0,
+        new_unit_op_name="Cell Seeding",
+    )
+    unit_ops = [n for n in updated.graph["nodes"] if n["type"] == "unitOp"]
+    target = unit_ops[0]
+    assert target["data"]["unitOpId"] == str(op.id)
+    assert target["data"]["category"] == "Cell Culture"
+    assert target["data"]["label"] == "Step 0"
+    assert "vol" in target["data"]["paramSchema"]["properties"]
+
+
+@pytest.mark.asyncio
+async def test_replace_step_unit_op_unknown_op_raises(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    with pytest.raises(ValueError, match="not found"):
+        await replace_step_unit_op(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=draft_proto.id,
+            step_index=0,
+            new_unit_op_name="Nope",
         )
