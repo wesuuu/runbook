@@ -8,10 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             PermissionLevel, PrincipalType, User)
-from app.models.science import Project, Protocol
+from app.models.science import Project, Protocol, ProtocolRole
 from app.services.protocols.creation import (ProtocolSpec, ProtocolStep,
                                              create_protocol_from_spec,
-                                             update_protocol_metadata)
+                                             update_protocol_metadata,
+                                             update_protocol_step)
 
 
 @pytest_asyncio.fixture
@@ -201,3 +202,65 @@ async def test_update_protocol_metadata_refuses_without_perm(
             protocol_id=proto.id,
             name="Y",
         )
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_step_refuses_on_published(
+    db_session: AsyncSession, test_user: User, project: Project
+):
+    proto = Protocol(
+        name="Pub",
+        project_id=project.id,
+        status="APPROVED",
+        version_number=1,
+        graph={
+            "nodes": [
+                {"id": "ps", "type": "processStart", "data": {}},
+                {"id": "u0", "type": "unitOp", "data": {"label": "A"}},
+            ],
+            "edges": [{"id": "e", "source": "ps", "target": "u0"}],
+        },
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    with pytest.raises(ValueError, match="published"):
+        await update_protocol_step(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=proto.id,
+            step_index=0,
+            description="x",
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_step_sets_parent_for_role(
+    db_session: AsyncSession, test_user: User, project: Project
+):
+    proto = Protocol(
+        name="P",
+        project_id=project.id,
+        status="DRAFT",
+        graph={
+            "nodes": [
+                {"id": "ps", "type": "processStart", "data": {}},
+                {"id": "u0", "type": "unitOp", "data": {"label": "A"}},
+            ],
+            "edges": [{"id": "e", "source": "ps", "target": "u0"}],
+        },
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    role = ProtocolRole(protocol_id=proto.id, name="Op", sort_order=0)
+    db_session.add(role)
+    await db_session.flush()
+
+    updated = await update_protocol_step(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=proto.id,
+        step_index=0,
+        role_id=role.id,
+    )
+    node = next(n for n in updated.graph["nodes"] if n["type"] == "unitOp")
+    assert node.get("parentId") == f"lane-{role.id}"

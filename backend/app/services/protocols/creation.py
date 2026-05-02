@@ -118,16 +118,14 @@ async def update_protocol_step(
     category: str | None = None,
     param_schema: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
+    role_id: UUID | None = None,
 ) -> Protocol:
-    """Patch a single unit-op step inside an existing Protocol's graph.
+    """Patch a single unit-op step inside an existing DRAFT Protocol's graph.
 
-    Used by the chat agent's auto-fix loop after `validate_protocol` flags
-    issues with a specific step. ``step_index`` is the 0-based index of
-    the unit-op node among unit-op nodes only (Process Start is excluded).
-
-    Only the kwargs supplied are written; ``None`` leaves the field alone.
-    Raises ValueError on missing protocol, missing edit permission, or
-    invalid ``step_index``.
+    Only the kwargs supplied are written. ``role_id`` sets the node's
+    ``parentId`` to ``lane-<role_id>`` (frontend lane convention).
+    Refuses on APPROVED/PENDING_APPROVAL — published protocols require a
+    new draft (out of scope for this service).
     """
     result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
     protocol = result.scalar_one_or_none()
@@ -144,6 +142,11 @@ async def update_protocol_step(
         )
         if not allowed:
             raise ValueError("You don't have edit permission on this protocol")
+
+    if protocol.status != "DRAFT":
+        raise ValueError(
+            "Protocol is published — create a draft in the protocol editor first."
+        )
 
     graph = dict(protocol.graph or {})
     nodes = list(graph.get("nodes", []))
@@ -168,6 +171,9 @@ async def update_protocol_step(
         data["params"] = params
 
     node["data"] = data
+    if role_id is not None:
+        node["parentId"] = f"lane-{role_id}"
+
     nodes[node_idx] = node
     graph["nodes"] = nodes
     protocol.graph = graph
