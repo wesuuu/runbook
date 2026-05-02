@@ -102,9 +102,10 @@ async def list_skills(
 async def get_chat_config(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    current_org_id: uuid.UUID | None = Depends(get_org_id_from_request),
 ):
     """Return chat configuration for the current user's org."""
-    org_id, _ = await _get_user_org(current_user, db)
+    org_id, _ = await _get_user_org(current_user, db, org_id=current_org_id)
     context_window = await get_context_window("chat", db, org_id=org_id)
     model_name = await get_model_display_name("chat", db, org_id=org_id)
 
@@ -129,8 +130,9 @@ async def create_chat_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_active_subscription()),
+    current_org_id: uuid.UUID | None = Depends(get_org_id_from_request),
 ):
-    org_id, _ = await _get_user_org(current_user, db)
+    org_id, _ = await _get_user_org(current_user, db, org_id=current_org_id)
     session = await create_session(
         db,
         user_id=current_user.id,
@@ -149,8 +151,9 @@ async def list_chat_sessions(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    current_org_id: uuid.UUID | None = Depends(get_org_id_from_request),
 ):
-    org_id, _ = await _get_user_org(current_user, db)
+    org_id, _ = await _get_user_org(current_user, db, org_id=current_org_id)
     sessions, total = await list_sessions(
         db, user_id=current_user.id, org_id=org_id, limit=limit, offset=offset
     )
