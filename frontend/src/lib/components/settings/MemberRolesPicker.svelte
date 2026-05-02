@@ -39,7 +39,7 @@
     }
 </script>
 
-<div class="flex items-center gap-1.5 flex-wrap min-w-0">
+<div class="flex items-center justify-center gap-1.5 flex-wrap max-w-[260px]">
     <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
     {#each roles.filter((r) => r !== "MEMBER") as r (r)}
         <span
@@ -81,12 +81,12 @@
                     </label>
                 {/each}
                 <hr class="my-2" />
-                <div
-                    class="flex items-center gap-2 text-xs text-muted-foreground"
+                <label
+                    class="flex items-center gap-2 text-sm text-muted-foreground cursor-not-allowed"
                 >
                     <input type="checkbox" checked disabled />
                     <span>Member <span class="opacity-60">(always)</span></span>
-                </div>
+                </label>
             </PopoverContent>
         </Popover>
     {/if}
