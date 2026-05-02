@@ -15,7 +15,7 @@ from uuid import UUID
 from pydantic_ai import RunContext
 from sqlalchemy import select
 
-from app.models.science import Project, Protocol, UnitOpDefinition
+from app.models.science import Project, Protocol, ProtocolRole, UnitOpDefinition
 from app.services.ai.deps import ChatDeps
 from app.services.protocols.creation import ProtocolSpec, ProtocolStep
 from app.services.protocols.creation import \
@@ -323,7 +323,12 @@ async def validate_protocol(
     )
     unit_ops = list(unit_ops_q.scalars().all())
 
-    result = validate_protocol_graph(protocol.graph or {}, unit_ops)
+    roles_q = await ctx.deps.db.execute(
+        select(ProtocolRole).where(ProtocolRole.protocol_id == protocol.id)
+    )
+    roles = list(roles_q.scalars().all())
+
+    result = validate_protocol_graph(protocol.graph or {}, unit_ops, roles=roles)
     error_count = sum(1 for i in result.issues if i.severity == "error")
     warning_count = sum(1 for i in result.issues if i.severity == "warning")
 
@@ -439,6 +444,7 @@ async def update_protocol_step(
     category: str | None = None,
     param_schema: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
+    role_id: str | None = None,
 ) -> UpdateProtocolStepResult:
     """Patch one unit-op step in an existing protocol's graph.
 
@@ -466,6 +472,8 @@ async def update_protocol_step(
         fields_updated.append("param_schema")
     if params is not None:
         fields_updated.append("params")
+    if role_id is not None:
+        fields_updated.append("role_id")
 
     await update_protocol_step_service(
         ctx.deps.db,
@@ -476,6 +484,7 @@ async def update_protocol_step(
         category=category,
         param_schema=param_schema,
         params=params,
+        role_id=UUID(role_id) if role_id else None,
     )
 
     ctx.deps.tool_calls.append(

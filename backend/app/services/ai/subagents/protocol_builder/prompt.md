@@ -149,6 +149,30 @@ different operator", "QA reviewer", "the night-shift tech", "have
 Do not silently drop the role hint and append the step to the existing
 chain — the user expects a visible lane in the editor.
 
+## Validate after edits
+
+`validate_protocol(protocol_id)` is your safety net for both create AND
+edit flows. After any sequence of mutations on an existing protocol —
+adding/removing/updating steps, adding/updating/removing roles,
+swapping unit ops — run `validate_protocol` once before reporting back
+to the user. Do not rely on individual tool returns.
+
+The validator now also reports role/lane consistency:
+- `missing_lane_node` — a ProtocolRole row exists but its swimLane is
+  not in the graph. Fix by re-adding the role (which recreates the
+  lane) or by removing the orphan role.
+- `orphaned_lane_node` — a swimLane node has no matching role. Fix by
+  removing the lane via the editor (no tool today) or recreating the
+  role.
+- `orphaned_parent_id` — a step's `parentId` points at a lane that
+  doesn't exist. Fix by reassigning the step to a real role:
+  `update_protocol_step(protocol_id, step_index, role_id=<real_role_id>)`.
+  If no suitable role exists, `add_protocol_role` first.
+
+Apply the same auto-fix loop here as in the create flow: fix what you
+can without changing the user's intent, re-validate, and only stop
+when issues are zero or the remaining ones need user input.
+
 ## Unit op editing and scope ladder
 
 Unit op definitions live at one of three scopes:
