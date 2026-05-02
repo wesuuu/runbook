@@ -7,8 +7,12 @@ from pathlib import Path
 from subagents_pydantic_ai import SubAgentConfig
 
 from app.services.ai.subagents.protocol_builder.tools import (
-    create_protocol, create_unit_op, list_projects, list_unit_ops,
-    update_protocol_step, validate_protocol)
+    add_protocol_role, add_protocol_step, create_protocol, create_unit_op,
+    elevate_unit_op_scope, get_protocol, list_projects, list_protocol_roles,
+    list_protocols, list_unit_ops, remove_protocol_role,
+    remove_protocol_step, replace_step_unit_op, reorder_protocol_steps,
+    update_protocol_metadata, update_protocol_role, update_protocol_step,
+    update_unit_op, validate_protocol)
 
 _PROMPT_PATH = Path(__file__).parent / "prompt.md"
 
@@ -24,21 +28,42 @@ def build(model: str) -> SubAgentConfig:
     return SubAgentConfig(
         name="protocol_builder",
         description=(
-            "Collaborates with the user to design and create a draft Protocol "
-            "record. Dispatch when the user wants to build, scaffold, or "
-            "generate a new protocol from scratch or from a description."
+            "Collaborates with the user to design, build, and edit Protocol "
+            "records and their roles, plus manage custom unit-op definitions. "
+            "Dispatch when the user wants to create a new protocol, edit an "
+            "existing draft protocol's steps/metadata/roles, or modify or "
+            "elevate the scope of a custom unit op."
         ),
         instructions=instructions,
         model=model,
         typically_needs_context=True,
         agent_kwargs={
             "tools": [
+                # Reads
                 list_projects,
+                list_protocols,
+                get_protocol,
                 list_unit_ops,
+                list_protocol_roles,
+                # Creation
                 create_unit_op,
                 create_protocol,
+                # Validation
                 validate_protocol,
+                # Mutations (DRAFT-only)
+                update_protocol_metadata,
+                add_protocol_step,
                 update_protocol_step,
+                remove_protocol_step,
+                reorder_protocol_steps,
+                replace_step_unit_op,
+                # Roles
+                add_protocol_role,
+                update_protocol_role,
+                remove_protocol_role,
+                # Unit op mutations
+                update_unit_op,
+                elevate_unit_op_scope,
             ],
         },
     )
