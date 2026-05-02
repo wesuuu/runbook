@@ -39,17 +39,19 @@
     }
 </script>
 
-<div class="flex items-center justify-center gap-1.5 flex-wrap max-w-[260px]">
-    <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
-    {#each roles.filter((r) => r !== "MEMBER") as r (r)}
-        <span
-            animate:flip={{ duration: 150 }}
-            in:fade={{ duration: 120 }}
-            out:fade={{ duration: 120 }}
-        >
-            <Badge variant="outline">{labelFor(r)}</Badge>
-        </span>
-    {/each}
+<div class="flex items-start gap-1.5 w-[260px]">
+    <div class="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+        <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
+        {#each roles.filter((r) => r !== "MEMBER") as r (r)}
+            <span
+                animate:flip={{ duration: 150 }}
+                in:fade={{ duration: 120 }}
+                out:fade={{ duration: 120 }}
+            >
+                <Badge variant="outline">{labelFor(r)}</Badge>
+            </span>
+        {/each}
+    </div>
 
     {#if !disabled}
         <Popover bind:open>
@@ -58,7 +60,7 @@
                     variant="ghost"
                     size="sm"
                     aria-label="Edit roles"
-                    class="h-6 px-2 text-xs"
+                    class="h-6 px-2 text-xs shrink-0"
                 >
                     ▾
                 </Button>
