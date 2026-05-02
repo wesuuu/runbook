@@ -3,9 +3,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, List, Optional
 
-from sqlalchemy import (Boolean, DateTime, ForeignKey, Index, String,
-                        UniqueConstraint)
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, ForeignKey, Index,
+                        String, UniqueConstraint, text)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -29,6 +29,10 @@ class OrgRole(str, Enum):
     ADMIN = "ADMIN"
     BILLING = "BILLING"
     MEMBER = "MEMBER"
+    PROTOCOL_APPROVER = "PROTOCOL_APPROVER"
+
+
+_ALLOWED_ORG_ROLES = frozenset(r.value for r in OrgRole)
 
 
 class TeamRole(str, Enum):
@@ -208,13 +212,22 @@ class OrganizationMember(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "organization_members"
     __table_args__ = (
         UniqueConstraint("user_id", "organization_id", name="uq_org_member"),
+        CheckConstraint(
+            "roles <@ ARRAY['ADMIN','BILLING','MEMBER',"
+            "'PROTOCOL_APPROVER']::varchar[]",
+            name="ck_org_member_roles",
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
     )
-    role: Mapped[str] = mapped_column(String, default=OrgRole.MEMBER, nullable=False)
+    roles: Mapped[List[str]] = mapped_column(
+        ARRAY(String),
+        nullable=False,
+        server_default=text("ARRAY['MEMBER']::varchar[]"),
+    )
     archived: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
@@ -222,6 +235,19 @@ class OrganizationMember(Base, UUIDMixin, TimestampMixin):
     # Relationships
     user: Mapped["User"] = relationship(back_populates="org_memberships")
     organization: Mapped["Organization"] = relationship(back_populates="members")
+
+
+def has_org_role(membership: "OrganizationMember", role: str) -> bool:
+    """True if the membership holds the given role."""
+    return role in (membership.roles or [])
+
+
+def has_any_org_role(
+    membership: "OrganizationMember", roles: List[str]
+) -> bool:
+    """True if the membership holds any of the given roles."""
+    member_roles = set(membership.roles or [])
+    return any(r in member_roles for r in roles)
 
 
 class ObjectPermission(Base, UUIDMixin, TimestampMixin):

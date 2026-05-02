@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
-from app.models.iam import OrganizationMember, User
+from app.models.iam import OrganizationMember, OrgRole, User, has_org_role
 from app.models.notifications import (ChannelType, DeliveryStatus,
                                       Notification, NotificationChannel,
                                       NotificationDelivery,
@@ -66,7 +66,7 @@ async def _require_org_admin(db: AsyncSession, user_id: UUID, org_id: UUID) -> N
     )
     result = await db.execute(stmt)
     membership = result.scalar_one_or_none()
-    if not membership or membership.role != "ADMIN":
+    if not membership or not has_org_role(membership, OrgRole.ADMIN.value):
         raise HTTPException(403, "Organization admin access required")
 
 

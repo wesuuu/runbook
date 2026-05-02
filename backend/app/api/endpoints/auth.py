@@ -191,7 +191,7 @@ async def register(
         OrganizationMember(
             user_id=user.id,
             organization_id=org.id,
-            role="ADMIN",
+            roles=["ADMIN", "MEMBER"],
         )
     )
 
@@ -533,14 +533,14 @@ async def accept_invite(
     if existing is not None:
         if existing.archived:
             existing.archived = False
-            existing.role = invitation.role
+            existing.roles = sorted({"MEMBER", invitation.role})
         # else: already active member — no-op
     else:
         db.add(
             OrganizationMember(
                 user_id=invited_user.id,
                 organization_id=invitation.organization_id,
-                role=invitation.role,
+                roles=sorted({"MEMBER", invitation.role}),
             )
         )
 

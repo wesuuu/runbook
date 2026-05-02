@@ -247,7 +247,7 @@ async def test_create_org_scoped_op_as_member_forbidden(
         OrganizationMember(
             user_id=member.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()
@@ -416,7 +416,7 @@ async def test_list_excludes_unsubscribed_library_ops(
         OrganizationMember(
             user_id=user.id,
             organization_id=second_org.id,
-            role="ADMIN",
+            roles=["MEMBER", "ADMIN"],
         )
     )
     await db_session.flush()

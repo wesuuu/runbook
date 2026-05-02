@@ -15,10 +15,10 @@ from app.core.deps import (get_current_user, get_or_404,
 from app.core.security import generate_verification_token
 from app.db.session import get_db
 from app.models.execution import AuditLog
-from app.models.iam import (Invitation, InvitationStatus, ObjectPermission,
-                            ObjectType, Organization, OrganizationMember,
-                            OrgRole, PermissionLevel, Team, TeamMember,
-                            TeamRole, User)
+from app.models.iam import (_ALLOWED_ORG_ROLES, Invitation, InvitationStatus,
+                            ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, OrgRole, PermissionLevel, Team,
+                            TeamMember, TeamRole, User, has_org_role)
 from app.models.science import Equipment
 from app.schemas.iam import (InvitationCreate, InvitationResponse,
                              OrganizationCreate, OrganizationResponse,
@@ -32,6 +32,44 @@ from app.services.billing import seat_limits
 from app.services.core.permissions import check_permission
 
 router = APIRouter()
+
+_DEPRECATION_LOG = logging.getLogger("app.deprecation")
+
+
+def _normalize_roles(
+    input_roles: list[str] | None, raw_role: str | None
+) -> list[str]:
+    """Server-side role normalization: ensure MEMBER, dedupe, validate.
+
+    Raises HTTPException(400) on unknown values. Logs a deprecation warning
+    when only the legacy `role` field is supplied.
+    """
+    if raw_role is not None and not input_roles:
+        _DEPRECATION_LOG.warning(
+            "OrganizationMember accepted deprecated single-role payload "
+            "(role=%r). Switch to roles=[...] before next release.",
+            raw_role,
+        )
+        input_roles = [raw_role]
+    roles = list(input_roles or [])
+    if OrgRole.MEMBER.value not in roles:
+        roles.append(OrgRole.MEMBER.value)
+    bad = [r for r in roles if r not in _ALLOWED_ORG_ROLES]
+    if bad:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown role(s): {bad}. Allowed: "
+                f"{sorted(_ALLOWED_ORG_ROLES)}"
+            ),
+        )
+    seen: set[str] = set()
+    out: list[str] = []
+    for r in roles:
+        if r not in seen:
+            seen.add(r)
+            out.append(r)
+    return out
 
 
 # --- Helpers ---
@@ -48,7 +86,7 @@ async def _require_org_admin(
         )
     )
     membership = result.scalar_one_or_none()
-    if membership is None or membership.role != "ADMIN":
+    if membership is None or not has_org_role(membership, OrgRole.ADMIN.value):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Org admin required",
@@ -118,7 +156,7 @@ async def create_organization(
     membership = OrganizationMember(
         user_id=user.id,
         organization_id=org.id,
-        role="ADMIN",
+        roles=["ADMIN", "MEMBER"],
     )
     db.add(membership)
     await db.commit()
@@ -197,20 +235,22 @@ async def add_org_member(
     )
     existing = result.scalar_one_or_none()
 
+    new_roles = _normalize_roles(body.roles, body.role)
+
     if existing is not None:
         if not existing.archived:
             raise HTTPException(status_code=409, detail="User is already a member")
         # Reactivate archived membership
         existing.archived = False
-        existing.role = body.role
+        existing.roles = new_roles
         membership = existing
     else:
         # Enforce max 3 admins per org
-        if body.role == "ADMIN":
+        if OrgRole.ADMIN.value in new_roles:
             admin_count = await db.execute(
                 select(func.count()).where(
                     OrganizationMember.organization_id == org_id,
-                    OrganizationMember.role == "ADMIN",
+                    OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
                     OrganizationMember.archived == False,
                 )
             )
@@ -230,7 +270,7 @@ async def add_org_member(
         membership = OrganizationMember(
             user_id=body.user_id,
             organization_id=org_id,
-            role=body.role,
+            roles=new_roles,
         )
         db.add(membership)
 
@@ -303,12 +343,7 @@ async def update_org_member_role(
 ):
     await _require_org_admin(db, user.id, org_id)
 
-    valid_roles = {"ADMIN", "BILLING", "MEMBER"}
-    if body.role not in valid_roles:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid role. Must be one of: {valid_roles}",
-        )
+    new_roles = _normalize_roles(body.roles, body.role)
 
     result = await db.execute(
         select(OrganizationMember).where(
@@ -321,12 +356,16 @@ async def update_org_member_role(
     if membership is None:
         raise HTTPException(status_code=404, detail="Membership not found")
 
-    # Enforce max 3 admins
-    if body.role == "ADMIN" and membership.role != "ADMIN":
+    # Enforce max 3 admins (only when adding ADMIN to a member that didn't have it)
+    becoming_admin = (
+        OrgRole.ADMIN.value in new_roles
+        and not has_org_role(membership, OrgRole.ADMIN.value)
+    )
+    if becoming_admin:
         admin_count = await db.execute(
             select(func.count()).where(
                 OrganizationMember.organization_id == org_id,
-                OrganizationMember.role == "ADMIN",
+                OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
                 OrganizationMember.archived == False,
             )
         )
@@ -336,7 +375,26 @@ async def update_org_member_role(
                 detail="Maximum of 3 admins per organization",
             )
 
-    membership.role = body.role
+    # Enforce last-admin guard (only when removing ADMIN from a member that had it)
+    losing_admin = (
+        OrgRole.ADMIN.value not in new_roles
+        and has_org_role(membership, OrgRole.ADMIN.value)
+    )
+    if losing_admin:
+        admin_count_result = await db.execute(
+            select(func.count()).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
+                OrganizationMember.archived == False,
+            )
+        )
+        if (admin_count_result.scalar() or 0) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last admin from an organization",
+            )
+
+    membership.roles = new_roles
     await db.commit()
     await db.refresh(membership)
     return membership
@@ -372,7 +430,7 @@ async def list_org_members(
                 id=m.id,
                 user_id=m.user_id,
                 organization_id=m.organization_id,
-                role=m.role,
+                roles=list(m.roles or []),
                 email=u.email if u else None,
                 full_name=u.full_name if u else None,
                 created_at=m.created_at,

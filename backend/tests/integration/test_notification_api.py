@@ -114,7 +114,7 @@ class TestOrgChannels:
             OrganizationMember(
                 user_id=member.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
