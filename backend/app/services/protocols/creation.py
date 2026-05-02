@@ -173,3 +173,43 @@ async def update_protocol_step(
     protocol.graph = graph
     await db.flush()
     return protocol
+
+
+async def update_protocol_metadata(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    protocol_id: UUID,
+    name: str | None = None,
+    description: str | None = None,
+) -> Protocol:
+    """Patch an existing DRAFT Protocol's name and/or description.
+
+    Refuses on APPROVED/PENDING_APPROVAL — those require a draft via the
+    existing endpoint flow.
+    """
+    proto = (
+        await db.execute(select(Protocol).where(Protocol.id == protocol_id))
+    ).scalar_one_or_none()
+    if proto is None:
+        raise ValueError(f"Protocol {protocol_id} not found")
+    if proto.project_id is not None:
+        allowed = await check_permission(
+            db,
+            user_id,
+            ObjectType.PROJECT,
+            proto.project_id,
+            PermissionLevel.EDIT,
+        )
+        if not allowed:
+            raise ValueError("You don't have edit permission on this protocol")
+    if proto.status != "DRAFT":
+        raise ValueError(
+            "Protocol is published — create a draft in the protocol editor first."
+        )
+    if name is not None:
+        proto.name = name
+    if description is not None:
+        proto.description = description
+    await db.flush()
+    return proto

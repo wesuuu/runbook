@@ -573,6 +573,31 @@ async def update_protocol(
             detail="Cannot edit protocol while pending approval",
         )
 
+    # Metadata-only patch fast path (no graph change, no draft request) —
+    # delegate to the canonical service so chat tools and HTTP share logic.
+    if (
+        "graph" not in changes
+        and not save_as_draft
+        and any(k in changes for k in ("name", "description"))
+    ):
+        from app.services.protocols.creation import update_protocol_metadata
+
+        try:
+            await update_protocol_metadata(
+                db,
+                user_id=user.id,
+                protocol_id=protocol_id,
+                name=changes.get("name"),
+                description=changes.get("description"),
+            )
+        except ValueError as e:
+            msg = str(e)
+            if "published" in msg:
+                raise HTTPException(status_code=409, detail=msg)
+            raise HTTPException(status_code=403, detail=msg)
+        for k in ("name", "description"):
+            changes.pop(k, None)
+
     # If graph is being updated and save_as_draft is True
     if "graph" in changes and save_as_draft:
         new_graph = changes["graph"]

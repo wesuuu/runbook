@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             PermissionLevel, PrincipalType, User)
-from app.models.science import Project
+from app.models.science import Project, Protocol
 from app.services.protocols.creation import (ProtocolSpec, ProtocolStep,
-                                             create_protocol_from_spec)
+                                             create_protocol_from_spec,
+                                             update_protocol_metadata)
 
 
 @pytest_asyncio.fixture
@@ -134,4 +135,69 @@ async def test_raises_when_spec_has_no_steps(
             user_id=test_user.id,
             project_name=project.name,
             spec=spec,
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_metadata_patches_name_and_description(
+    db_session: AsyncSession,
+    test_user: User,
+    project: Project,
+):
+    proto = Protocol(
+        name="Old", description="o", project_id=project.id, status="DRAFT", graph={}
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    updated = await update_protocol_metadata(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=proto.id,
+        name="New",
+        description="n",
+    )
+    assert updated.name == "New"
+    assert updated.description == "n"
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_metadata_refuses_on_published(
+    db_session: AsyncSession,
+    test_user: User,
+    project: Project,
+):
+    proto = Protocol(
+        name="P", project_id=project.id, status="APPROVED", version_number=1, graph={}
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    with pytest.raises(ValueError, match="published"):
+        await update_protocol_metadata(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=proto.id,
+            name="X",
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_metadata_refuses_without_perm(
+    db_session: AsyncSession,
+    test_user: User,
+):
+    other_org = Organization(name="o2", subscription_tier="ESSENTIALS")
+    db_session.add(other_org)
+    await db_session.flush()
+    proj = Project(name="op", organization_id=other_org.id, owner_id=uuid.uuid4())
+    db_session.add(proj)
+    await db_session.flush()
+    proto = Protocol(name="X", project_id=proj.id, status="DRAFT", graph={})
+    db_session.add(proto)
+    await db_session.flush()
+    with pytest.raises(ValueError, match="permission"):
+        await update_protocol_metadata(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=proto.id,
+            name="Y",
         )
