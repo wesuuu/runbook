@@ -634,6 +634,14 @@ async def update_protocol(
             )
             db.add(draft)
 
+        # For unpublished protocols (still DRAFT), the live graph IS the
+        # working draft — keep it in sync so role/lane mutations from
+        # other paths (sidebar, chat tools) and the editor's saved state
+        # don't drift apart. Published protocols stay frozen until the
+        # draft is explicitly published.
+        if protocol.status == "DRAFT":
+            protocol.graph = new_graph
+
         audit_changes = {"action": "saved_draft", "draft_version": draft_version_number}
     else:
         # Normal save: update protocol graph and create version

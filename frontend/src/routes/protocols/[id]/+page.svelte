@@ -455,6 +455,12 @@
             lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
             hasUnsavedChanges = false;
             undoRedoState = createUndoRedoState();
+
+            // Populate version list so the save toast can tell whether it
+            // is creating a new draft vs editing the existing one.
+            if (id && id !== "new") {
+                await loadVersions();
+            }
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
         } finally {

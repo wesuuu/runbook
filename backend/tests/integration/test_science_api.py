@@ -893,7 +893,12 @@ async def test_save_as_draft_creates_draft_version(
     test_project: Project,
     db_session: AsyncSession,
 ):
-    """Test that save_as_draft creates a draft version without modifying main protocol."""
+    """save_as_draft creates a draft snapshot without bumping version_number.
+
+    For DRAFT-status protocols the live graph is also synced to the new draft
+    so role/lane mutations stay consistent — see
+    `test_save_as_draft_syncs_live_graph_for_unpublished_protocol`.
+    """
     protocol = Protocol(
         name="Test Protocol",
         project_id=test_project.id,
@@ -990,6 +995,71 @@ async def test_save_draft_always_creates_version(
     )
     versions = resp.json()
     assert any(v["version_number"] == 1 for v in versions)
+
+
+@pytest.mark.asyncio
+async def test_save_as_draft_syncs_live_graph_for_unpublished_protocol(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Unpublished (DRAFT) protocol's live graph mirrors the saved draft.
+
+    Otherwise role mutations (which write to protocols.graph directly) and
+    editor edits (which only wrote to a snapshot) drift apart and orphan
+    swimLane nodes survive after their roles are deleted.
+    """
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [{"id": "stale"}], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    new_graph = {"nodes": [{"id": "fresh"}], "edges": []}
+    resp = await client.put(
+        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        json={"graph": new_graph},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    await db_session.refresh(protocol)
+    assert protocol.graph == new_graph
+
+
+@pytest.mark.asyncio
+async def test_save_as_draft_preserves_live_graph_for_published_protocol(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """APPROVED protocol's live graph stays frozen until the draft is published."""
+    published_graph = {"nodes": [{"id": "published"}], "edges": []}
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="APPROVED",
+        version_number=1,
+        graph=published_graph,
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    resp = await client.put(
+        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        json={"graph": {"nodes": [{"id": "wip"}], "edges": []}},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    await db_session.refresh(protocol)
+    assert protocol.graph == published_graph
 
 
 @pytest.mark.asyncio
