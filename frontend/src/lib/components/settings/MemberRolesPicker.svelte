@@ -1,13 +1,13 @@
 <script lang="ts">
-    import { Badge } from '$lib/components/ui/badge';
+    import { Badge } from "$lib/components/ui/badge";
     import {
         Popover,
         PopoverTrigger,
         PopoverContent,
-    } from '$lib/components/ui/popover';
-    import { Button } from '$lib/components/ui/button';
-    import { fade } from 'svelte/transition';
-    import { flip } from 'svelte/animate';
+    } from "$lib/components/ui/popover";
+    import { Button } from "$lib/components/ui/button";
+    import { fade } from "svelte/transition";
+    import { flip } from "svelte/animate";
 
     interface Props {
         roles: string[];
@@ -17,17 +17,17 @@
     let { roles, disabled = false, onChange }: Props = $props();
 
     const ALL_ROLES = [
-        { value: 'ADMIN', label: 'Admin' },
-        { value: 'BILLING', label: 'Billing' },
-        { value: 'PROTOCOL_APPROVER', label: 'Protocol approver' },
+        { value: "ADMIN", label: "Admin" },
+        { value: "BILLING", label: "Billing" },
+        { value: "PROTOCOL_APPROVER", label: "Protocol approver" },
     ] as const;
 
     let open = $state(false);
 
     function toggle(role: string, checked: boolean) {
         const next = checked
-            ? [...new Set([...roles, role, 'MEMBER'])]
-            : [...new Set([...roles.filter((r) => r !== role), 'MEMBER'])];
+            ? [...new Set([...roles, role, "MEMBER"])]
+            : [...new Set([...roles.filter((r) => r !== role), "MEMBER"])];
         const same =
             next.length === roles.length &&
             next.every((r) => roles.includes(r));
@@ -39,19 +39,17 @@
     }
 </script>
 
-<div class="flex items-center gap-1.5 min-w-0">
-    <div class="flex items-center gap-1.5 flex-nowrap whitespace-nowrap">
-        <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
-        {#each roles.filter((r) => r !== 'MEMBER') as r (r)}
-            <span
-                animate:flip={{ duration: 150 }}
-                in:fade={{ duration: 120 }}
-                out:fade={{ duration: 120 }}
-            >
-                <Badge variant="outline">{labelFor(r)}</Badge>
-            </span>
-        {/each}
-    </div>
+<div class="flex items-center gap-1.5 flex-wrap min-w-0">
+    <Badge variant="secondary" class="opacity-70 cursor-default">Member</Badge>
+    {#each roles.filter((r) => r !== "MEMBER") as r (r)}
+        <span
+            animate:flip={{ duration: 150 }}
+            in:fade={{ duration: 120 }}
+            out:fade={{ duration: 120 }}
+        >
+            <Badge variant="outline">{labelFor(r)}</Badge>
+        </span>
+    {/each}
 
     {#if !disabled}
         <Popover bind:open>
