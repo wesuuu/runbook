@@ -171,7 +171,7 @@ async def test_update_protocol_view_only_forbidden(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     db_session.add(
@@ -1305,3 +1305,159 @@ async def test_assignment_operations_audit_logged(
     assert delete_log is not None
     assert delete_log.actor_id == test_user.id
     assert "lane_node_id" in delete_log.changes
+
+
+@pytest.mark.asyncio
+async def test_list_versions_returns_description(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """List endpoint exposes the version description field."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    from app.models.science import ProtocolVersion
+    version = ProtocolVersion(
+        protocol_id=protocol.id,
+        version_number=1,
+        name=protocol.name,
+        graph={"nodes": [], "edges": []},
+        description="Tightened DO range",
+        change_summary="DO 30 -> 25",
+        is_draft=False,
+    )
+    db_session.add(version)
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/science/protocols/{protocol.id}/versions",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    versions = resp.json()
+    assert len(versions) == 1
+    assert versions[0]["description"] == "Tightened DO range"
+    assert versions[0]["change_summary"] == "DO 30 -> 25"
+
+
+@pytest.mark.asyncio
+async def test_publish_draft_persists_description(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """publish-draft accepts an optional body with description; the value is
+    written onto the published version."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    resp = await client.put(
+        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        json={"graph": {"nodes": [{"id": "n1"}], "edges": []}},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    resp = await client.post(
+        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        json={"description": "Switched buffer from PBS to TBS"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    resp = await client.get(
+        f"/science/protocols/{protocol.id}/versions/1",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "Switched buffer from PBS to TBS"
+
+
+@pytest.mark.asyncio
+async def test_publish_draft_persists_change_summary(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """publish-draft writes change_summary from the body."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    resp = await client.put(
+        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        json={"graph": {"nodes": [{"id": "n1"}], "edges": []}},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    resp = await client.post(
+        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        json={"change_summary": "DO range tightened"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    resp = await client.get(
+        f"/science/protocols/{protocol.id}/versions/1",
+        headers=auth_headers,
+    )
+    assert resp.json()["change_summary"] == "DO range tightened"
+
+
+@pytest.mark.asyncio
+async def test_publish_draft_without_body_still_works(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Existing callers that don't send a body must continue to work.
+    Backward-compatibility regression guard."""
+    protocol = Protocol(
+        name="Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=0,
+        graph={"nodes": [], "edges": []},
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    resp = await client.put(
+        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        json={"graph": {"nodes": [{"id": "n1"}], "edges": []}},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    resp = await client.post(
+        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["version_number"] == 1

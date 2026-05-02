@@ -1,6 +1,5 @@
 import { type Page } from '@playwright/test';
-
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from './apiBase';
 
 export const SEED = {
   PROJECT_MAB_ID: '40000000-0000-0000-0000-000000000001',

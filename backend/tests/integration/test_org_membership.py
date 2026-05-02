@@ -52,7 +52,7 @@ class TestSwitchOrg:
             OrganizationMember(
                 user_id=test_user.id,
                 organization_id=org2.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -106,7 +106,7 @@ class TestSwitchOrg:
             OrganizationMember(
                 user_id=test_user.id,
                 organization_id=org2.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -142,7 +142,7 @@ class TestSwitchOrg:
             OrganizationMember(
                 user_id=test_user.id,
                 organization_id=org2.id,
-                role="MEMBER",
+                roles=["MEMBER"],
                 archived=True,
             )
         )
@@ -219,7 +219,7 @@ class TestInvitationCreate:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -244,7 +244,7 @@ class TestInvitationCreate:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -446,7 +446,7 @@ class TestAcceptInvitation:
         )
         membership = result.scalar_one_or_none()
         assert membership is not None
-        assert membership.role == "MEMBER"
+        assert "MEMBER" in (membership.roles or [])
 
     @pytest.mark.asyncio
     async def test_accept_invitation_no_account_redirects_to_register(
@@ -642,7 +642,7 @@ class TestDeclineInvitation:
             OrganizationMember(
                 user_id=other.id,
                 organization_id=other_org.id,
-                role="ADMIN",
+                roles=["MEMBER", "ADMIN"],
             )
         )
         await db_session.flush()
@@ -675,7 +675,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -726,7 +726,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         # Membership in org2 (fallback)
@@ -734,7 +734,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=org2.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -771,7 +771,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -799,7 +799,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         await db_session.flush()
@@ -832,7 +832,7 @@ class TestRemoveOrgMember:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
             )
         )
         db_session.add(
@@ -878,7 +878,7 @@ class TestAddOrgMember:
             OrganizationMember(
                 user_id=second_user.id,
                 organization_id=test_org.id,
-                role="MEMBER",
+                roles=["MEMBER"],
                 archived=True,
             )
         )
@@ -985,7 +985,7 @@ class TestArchivedFiltering:
             OrganizationMember(
                 user_id=user.id,
                 organization_id=org.id,
-                role="ADMIN",
+                roles=["MEMBER", "ADMIN"],
                 archived=True,
             )
         )
@@ -1074,7 +1074,7 @@ class TestRegistrationOrgMembership:
             )
         )
         membership = result.scalar_one()
-        assert membership.role == "ADMIN"
+        assert "ADMIN" in (membership.roles or [])
 
         # Verify org name
         result = await db_session.execute(
@@ -1082,3 +1082,125 @@ class TestRegistrationOrgMembership:
         )
         org = result.scalar_one()
         assert org.name == "Fresh User's Organization"
+
+
+class TestMultiRoleEndpoints:
+    """TD-0084: IAM endpoints accept `roles: list[str]` payloads."""
+
+    @pytest.mark.asyncio
+    async def test_add_member_with_multi_roles(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        test_org: Organization,
+        db_session: AsyncSession,
+    ):
+        u = User(email="newmem@example.com", full_name="N")
+        db_session.add(u)
+        await db_session.flush()
+        resp = await client.post(
+            f"/iam/organizations/{test_org.id}/members",
+            json={
+                "user_id": str(u.id),
+                "roles": ["BILLING", "PROTOCOL_APPROVER"],
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "MEMBER" in body["roles"]
+        assert "BILLING" in body["roles"]
+        assert "PROTOCOL_APPROVER" in body["roles"]
+
+    @pytest.mark.asyncio
+    async def test_back_compat_shim_accepts_role_string(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        test_org: Organization,
+        db_session: AsyncSession,
+        caplog,
+    ):
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="app.deprecation")
+        u = User(email="shim@example.com", full_name="S")
+        db_session.add(u)
+        await db_session.flush()
+        resp = await client.post(
+            f"/iam/organizations/{test_org.id}/members",
+            json={"user_id": str(u.id), "role": "BILLING"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert "BILLING" in resp.json()["roles"]
+        assert "MEMBER" in resp.json()["roles"]
+        assert any(
+            "deprecated" in rec.message.lower() and "role" in rec.message.lower()
+            for rec in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_validation_rejects_unknown_role(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        test_org: Organization,
+        db_session: AsyncSession,
+    ):
+        u = User(email="bad@example.com", full_name="B")
+        db_session.add(u)
+        await db_session.flush()
+        resp = await client.post(
+            f"/iam/organizations/{test_org.id}/members",
+            json={"user_id": str(u.id), "roles": ["BOGUS"]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400
+        assert "BOGUS" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_cannot_remove_last_admin(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        test_org: Organization,
+        test_user: User,
+    ):
+        # test_user is the only ADMIN in test_org; downgrading to MEMBER-only
+        # must fail with 400.
+        resp = await client.patch(
+            f"/iam/organizations/{test_org.id}/members/{test_user.id}",
+            json={"roles": ["MEMBER"]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "last admin" in resp.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_member_role_cannot_be_removed(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        test_org: Organization,
+        db_session: AsyncSession,
+    ):
+        u = User(email="alwaysmem@example.com", full_name="A")
+        db_session.add(u)
+        await db_session.flush()
+        db_session.add(
+            OrganizationMember(
+                user_id=u.id,
+                organization_id=test_org.id,
+                roles=["MEMBER", "BILLING"],
+            )
+        )
+        await db_session.flush()
+
+        resp = await client.patch(
+            f"/iam/organizations/{test_org.id}/members/{u.id}",
+            json={"roles": []},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["roles"] == ["MEMBER"]

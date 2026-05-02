@@ -37,7 +37,7 @@ async def _require_org_admin(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user_id,
             OrganizationMember.organization_id == org_id,
-            OrganizationMember.role == OrgRole.ADMIN,
+            OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
         )
     )
     if result.scalar_one_or_none() is None:
@@ -180,7 +180,7 @@ async def create_unit_op(
             select(OrganizationMember).where(
                 OrganizationMember.user_id == user.id,
                 OrganizationMember.organization_id == org_id,
-                OrganizationMember.role == OrgRole.ADMIN,
+                OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
             )
         )
         is_org_admin = admin_q.scalar_one_or_none() is not None

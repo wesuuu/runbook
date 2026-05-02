@@ -147,7 +147,8 @@ def require_org_role(required_role: "OrgRole"):
     Treats the three roles as a hierarchy: ADMIN >= BILLING >= MEMBER.
     An ADMIN implicitly satisfies BILLING or MEMBER requirements.
     """
-    from app.models.iam import OrganizationMember, OrgRole
+    from app.models.iam import (OrganizationMember, OrgRole,
+                                has_any_org_role)
 
     _RANK = {
         OrgRole.ADMIN: 2,
@@ -177,9 +178,12 @@ def require_org_role(required_role: "OrgRole"):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not a member of this organization",
             )
-        user_rank = _RANK.get(OrgRole(member.role), -1)
+        # Hierarchy: any role at or above the required rank satisfies it
         required_rank = _RANK[required_role]
-        if user_rank < required_rank:
+        satisfying = [
+            r.value for r, rank in _RANK.items() if rank >= required_rank
+        ]
+        if not has_any_org_role(member, satisfying):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Requires {required_role.value} role or above",

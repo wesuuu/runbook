@@ -171,6 +171,13 @@ class Run(Base, UUIDMixin, TimestampMixin):
         ForeignKey("users.id"), nullable=True
     )
 
+    # User who created this run. Used for permission checks when editing a
+    # PLANNED run on a project with permissions_enabled=true: the creator may
+    # always edit their own planned run, in addition to project admins.
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
     # Optional experiment grouping
     experiment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("experiments.id"), nullable=True
@@ -185,6 +192,9 @@ class Run(Base, UUIDMixin, TimestampMixin):
     experiment: Mapped[Optional["Experiment"]] = relationship(back_populates="runs")
     started_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[started_by_id]
+    )
+    created_by: Mapped[Optional["User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[created_by_id]
     )
     role_assignments: Mapped[List["RunRoleAssignment"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"

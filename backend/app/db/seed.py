@@ -129,7 +129,7 @@ async def seed_org(db: AsyncSession):
                 OrganizationMember(
                     user_id=uid,
                     organization_id=org_id,
-                    role=role,
+                    roles=sorted({"MEMBER", role}),
                 )
             )
     await db.flush()
@@ -318,7 +318,7 @@ async def seed_newbie_user(db: AsyncSession):
             OrganizationMember(
                 user_id=USER_NEWBIE,
                 organization_id=ORG_ID_NEWBIE,
-                role="ADMIN",
+                roles=["MEMBER", "ADMIN"],
             )
         )
 

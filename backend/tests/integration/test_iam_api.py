@@ -106,7 +106,7 @@ async def test_list_org_members_as_non_admin(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()
@@ -150,7 +150,7 @@ async def test_remove_org_member(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()
@@ -174,7 +174,7 @@ async def test_toggle_org_admin(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()
@@ -268,7 +268,7 @@ async def test_add_team_member(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()
@@ -295,7 +295,7 @@ async def test_remove_team_member(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     db_session.add(
@@ -459,7 +459,7 @@ async def test_search_users_returns_shared_org_member(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()

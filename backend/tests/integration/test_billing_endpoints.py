@@ -51,7 +51,11 @@ async def _make_billing_user(db_session, role: str = OrgRole.ADMIN.value):
     db_session.add(user)
     await db_session.flush()
     db_session.add(
-        OrganizationMember(user_id=user.id, organization_id=org.id, role=role)
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=org.id,
+            roles=sorted({"MEMBER", role}),
+        )
     )
     await db_session.flush()
     return user, org

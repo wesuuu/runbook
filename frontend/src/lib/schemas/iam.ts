@@ -15,7 +15,7 @@ export const OrgMemberSchema = z.object({
     id: uuidString(),
     user_id: uuidString(),
     organization_id: uuidString(),
-    role: z.string(),
+    roles: z.array(z.string()),
     email: z.string().nullable().optional(),
     full_name: z.string().nullable().optional(),
     created_at: z.string(),

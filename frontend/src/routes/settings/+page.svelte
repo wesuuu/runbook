@@ -21,6 +21,8 @@
     import TemplatesTab from '$lib/components/settings/TemplatesTab.svelte';
     import BillingTab from '$lib/components/settings/BillingTab.svelte';
     import AppearanceTab from '$lib/components/settings/AppearanceTab.svelte';
+    import SignatureCard from '$lib/components/settings/SignatureCard.svelte';
+    import MemberRolesPicker from '$lib/components/settings/MemberRolesPicker.svelte';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
@@ -227,7 +229,10 @@
     let membersLoading = $state(false);
     let membersError = $state('');
     const isOrgAdmin = $derived(
-        members.some((m: any) => m.user_id === getUser()?.id && m.role === 'ADMIN')
+        members.some(
+            (m: any) =>
+                m.user_id === getUser()?.id && (m.roles ?? []).includes('ADMIN'),
+        )
     );
     let inviteEmail = $state('');
     let showInviteDialog = $state(false);
@@ -265,6 +270,7 @@
         id: string;
         email: string;
         name: string | null;
+        roles: string[];
         role: string;
         status: string;
         date: string;
@@ -283,7 +289,8 @@
                 id: m.user_id,
                 email: m.email || '',
                 name: m.full_name || null,
-                role: m.role,
+                roles: m.roles ?? [],
+                role: '',
                 status: 'Active',
                 date: m.created_at || '',
                 raw: m,
@@ -295,6 +302,7 @@
                 id: inv.id,
                 email: inv.invited_email,
                 name: null,
+                roles: [],
                 role: inv.role,
                 status: invitationStatus(inv),
                 date: inv.created_at || '',
@@ -322,10 +330,11 @@
 
     function memberFilterFn(item: MemberRow, query: string): boolean {
         if (!query) return true;
+        const roleHay = (item.role || (item.roles ?? []).join(' ')).toLowerCase();
         return (
             (item.name?.toLowerCase().includes(query) ?? false) ||
             item.email.toLowerCase().includes(query) ||
-            item.role.toLowerCase().includes(query) ||
+            roleHay.includes(query) ||
             item.status.toLowerCase().includes(query)
         );
     }
@@ -587,28 +596,29 @@
         }
     }
 
-    // Update member role
-    async function updateMemberRole(userId: string, role: string) {
+    // Update member roles (multi-role) with optimistic update
+    async function updateMemberRoles(userId: string, roles: string[]) {
         const org = getCurrentOrg();
         if (!org) return;
+        const member = members.find((m) => m.user_id === userId);
+        if (!member) return;
+        const previousRoles = member.roles;
+        member.roles = roles;
         try {
-            await api.patch(`/iam/organizations/${org.id}/members/${userId}`, {
-                role,
-            });
-            await loadMembers();
+            const updated = await api.patch(
+                `/iam/organizations/${org.id}/members/${userId}`,
+                { roles },
+            );
+            if (updated && Array.isArray(updated.roles)) {
+                member.roles = updated.roles;
+            }
         } catch (e: unknown) {
-            console.error('Failed to update role:', e instanceof Error ? e.message : e);
+            member.roles = previousRoles;
+            toast.error(
+                'Failed to update roles',
+                e instanceof Error ? e.message : '',
+            );
         }
-    }
-
-    const ORG_ROLES = [
-        { value: 'ADMIN', label: 'Admin' },
-        { value: 'BILLING', label: 'Billing' },
-        { value: 'MEMBER', label: 'Member' },
-    ] as const;
-
-    function getOrgRoleLabel(role: string): string {
-        return ORG_ROLES.find((r) => r.value === role)?.label || role;
     }
 
     // Create team
@@ -652,7 +662,7 @@
     });
 </script>
 
-<div class="max-w-4xl mx-auto space-y-8">
+<div class="max-w-6xl mx-auto space-y-8">
     <div>
         <h1 class="text-3xl font-bold tracking-tight">Settings</h1>
         <p class="text-muted-foreground">Manage your organization, teams, and profile.</p>
@@ -824,7 +834,17 @@
                                 {/if}
                             </div>
                             <div class="flex items-center gap-2 text-xs text-muted-foreground ml-9">
-                                <span>{getOrgRoleLabel(row.role)}</span>
+                                {#if row.type === 'member'}
+                                    <div onclick={(e) => e.stopPropagation()} role="presentation">
+                                        <MemberRolesPicker
+                                            roles={row.roles}
+                                            disabled={!isOrgAdmin}
+                                            onChange={(roles) => updateMemberRoles(row.id, roles)}
+                                        />
+                                    </div>
+                                {:else}
+                                    <span>{row.role || 'Member'}</span>
+                                {/if}
                                 <span>&middot;</span>
                                 <span>{row.date ? formatDate(row.date) : '—'}</span>
                             </div>
@@ -850,19 +870,22 @@
                             </div>
                         </td>
                         <td class="py-3 px-4 text-center">
-                            {#if isOrgAdmin && row.type === 'member'}
-                                <select
-                                    class="px-2 py-1 border border-border rounded text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                                    value={row.role}
-                                    onchange={(e) => { e.stopPropagation(); updateMemberRole(row.id, e.currentTarget.value); }}
+                            {#if row.type === 'member'}
+                                <div
+                                    class="flex justify-center"
                                     onclick={(e) => e.stopPropagation()}
+                                    role="presentation"
                                 >
-                                    {#each ORG_ROLES as r}
-                                        <option value={r.value}>{r.label}</option>
-                                    {/each}
-                                </select>
+                                    <MemberRolesPicker
+                                        roles={row.roles}
+                                        disabled={!isOrgAdmin}
+                                        onChange={(roles) => updateMemberRoles(row.id, roles)}
+                                    />
+                                </div>
                             {:else}
-                                <span class="text-xs text-muted-foreground">{getOrgRoleLabel(row.role)}</span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                    {row.role || 'Member'}
+                                </span>
                             {/if}
                         </td>
                         <td class="py-3 px-4 text-center">
@@ -1066,6 +1089,8 @@
                 </div>
             </CardContent>
         </Card>
+
+        <SignatureCard />
 
         <!-- Password -->
         <Card>

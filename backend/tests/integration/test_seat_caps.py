@@ -19,7 +19,7 @@ async def _fill_org_to(db_session, org_id, target_count, start_count=1):
             OrganizationMember(
                 user_id=u.id,
                 organization_id=org_id,
-                role="MEMBER",
+                roles=["MEMBER"],
                 archived=False,
             )
         )
@@ -101,7 +101,7 @@ async def test_reactivate_archived_member_bypasses_cap(
         OrganizationMember(
             user_id=archived_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
             archived=True,
         )
     )

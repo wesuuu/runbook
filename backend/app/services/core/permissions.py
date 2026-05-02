@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.iam import (PERMISSION_RANK, ObjectPermission, ObjectType,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            TeamMember)
+                            OrganizationMember, OrgRole, PermissionLevel,
+                            PrincipalType, TeamMember, has_org_role)
 from app.models.library import Document
 from app.models.science import Project, Protocol, Run
 
@@ -119,7 +119,7 @@ async def check_permission(
     membership = result.scalar_one_or_none()
     if membership is None:
         return False  # Not even in the org
-    if membership.role == "ADMIN":
+    if has_org_role(membership, OrgRole.ADMIN.value):
         return True
 
     # 2. Check if project has permissions_enabled=false
@@ -211,7 +211,7 @@ async def get_visible_project_ids(
     membership = result.scalar_one_or_none()
     if membership is None:
         return []
-    if membership.role == "ADMIN":
+    if has_org_role(membership, OrgRole.ADMIN.value):
         result = await db.execute(
             select(Project.id).where(Project.organization_id == org_id)
         )

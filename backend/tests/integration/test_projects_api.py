@@ -77,7 +77,7 @@ async def test_list_projects_sees_permitted_only(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()
@@ -168,7 +168,7 @@ async def test_update_project_view_only_forbidden(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     db_session.add(
@@ -216,7 +216,7 @@ async def test_delete_project_edit_only_forbidden(
         OrganizationMember(
             user_id=second_user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     db_session.add(

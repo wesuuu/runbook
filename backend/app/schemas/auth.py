@@ -59,6 +59,8 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     job_title: Optional[str] = None
     avatar_url: Optional[str] = None
+    signature_initials_url: Optional[str] = None
+    signature_full_url: Optional[str] = None
     preferences: dict[str, Any] = {}
     is_active: bool
     email_verified: bool

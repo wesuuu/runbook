@@ -7,6 +7,7 @@
         id: string;
         version_number: number;
         name: string;
+        description: string | null;
         change_summary: string | null;
         created_by_name: string | null;
         created_at: string;
@@ -16,12 +17,14 @@
         versions = [],
         currentVersion = 0,
         loading = false,
+        topOffset = 57,
         onRevert,
         onClose,
     }: {
         versions: Version[];
         currentVersion: number;
         loading: boolean;
+        topOffset?: number;
         onRevert: (versionNumber: number) => void;
         onClose: () => void;
     } = $props();
@@ -29,7 +32,7 @@
 </script>
 
 <div class="drawer-overlay" onclick={onClose} role="presentation"></div>
-<aside class="drawer">
+<aside class="drawer" style:top="{topOffset}px">
     <div class="drawer-header">
         <h3>Version History</h3>
         <Button variant="ghost" size="icon-sm" onclick={onClose} aria-label="Close">
@@ -59,6 +62,9 @@
                             {/if}
                         </div>
                         <div class="version-meta">
+                            {#if version.description}
+                                <p class="version-description">{version.description}</p>
+                            {/if}
                             {#if version.change_summary}
                                 <p class="change-summary">{version.change_summary}</p>
                             {/if}
@@ -97,7 +103,6 @@
 
     .drawer {
         position: fixed;
-        top: 57px;
         right: 0;
         bottom: 0;
         width: 340px;
@@ -207,6 +212,13 @@
 
     .version-meta {
         margin-bottom: 6px;
+    }
+
+    .version-description {
+        font-size: 12px;
+        color: #475569;
+        margin: 0 0 4px;
+        line-height: 1.4;
     }
 
     .change-summary {
