@@ -5,7 +5,12 @@ from __future__ import annotations
 import uuid
 from unittest.mock import MagicMock
 
-from app.services.protocols.validation import validate_protocol_graph
+from fastapi import HTTPException
+
+from app.services.protocols.validation import (
+    assert_no_branch_errors,
+    validate_protocol_graph,
+)
 
 
 def _unit_op(name: str = "Buffer Mix") -> object:
@@ -204,3 +209,18 @@ def test_branch_role_issue_python_shape():
     assert issue.node_id == "b"
     assert "branches to" in issue.message
     assert result.ok is False
+
+
+def test_assert_no_branch_errors_raises_400_on_violation():
+    case = next(c for c in _FIXTURE_CASES if c["expected"]["fires_on"])
+    with pytest.raises(HTTPException) as exc_info:
+        assert_no_branch_errors(case["graph"], [])
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["error"] == "branch_requires_distinct_roles"
+    assert len(exc_info.value.detail["issues"]) >= 1
+
+
+def test_assert_no_branch_errors_passes_on_valid_graph():
+    case = next(c for c in _FIXTURE_CASES if not c["expected"]["fires_on"])
+    # Should not raise.
+    assert_no_branch_errors(case["graph"], [])

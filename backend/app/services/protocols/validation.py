@@ -279,8 +279,32 @@ def _branch_role_issues(
     return issues
 
 
+def assert_no_branch_errors(
+    graph: dict[str, Any],
+    unit_ops: list[UnitOpDefinition],
+) -> None:
+    """Raise HTTPException(400) if any branch_requires_distinct_roles issue fires.
+
+    Other validation issues (warnings, missing process start, etc.) are not
+    enforced here — callers handle them separately if needed.
+    """
+    from fastapi import HTTPException  # noqa: PLC0415 — keep validation.py import-light
+
+    result = validate_protocol_graph(graph, unit_ops)
+    blocking = [i for i in result.issues if i.code == "branch_requires_distinct_roles"]
+    if blocking:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "branch_requires_distinct_roles",
+                "issues": [i.model_dump() for i in blocking],
+            },
+        )
+
+
 __all__ = [
     "ValidationIssue",
     "ValidationResult",
     "validate_protocol_graph",
+    "assert_no_branch_errors",
 ]
