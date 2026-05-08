@@ -156,6 +156,7 @@ def validate_protocol_graph(
                 )
             )
 
+    issues.extend(_branch_role_issues(nodes, edges, graph))
     ok = not any(i.severity == "error" for i in issues)
     return ValidationResult(ok=ok, issues=issues)
 
@@ -199,6 +200,83 @@ def _process_starts_per_component(
         if ps_in_component:
             counts.append(ps_in_component)
     return counts
+
+
+def _branch_role_issues(
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    graph: dict[str, Any],
+) -> list[ValidationIssue]:
+    """Fire branch_requires_distinct_roles when a unit op has 2+ outgoing
+    branches sharing parentIds (or with null parentId), unless time mode is
+    enabled and the immediate target intervals are pairwise disjoint."""
+    issues: list[ValidationIssue] = []
+    nodes_by_id = {n["id"]: n for n in nodes if "id" in n}
+    outgoing: dict[str, list[str]] = {}
+    for e in edges:
+        s, t = e.get("source"), e.get("target")
+        if s is None or t is None:
+            continue
+        outgoing.setdefault(s, []).append(t)
+
+    time_enabled = bool(graph.get("timeEnabled"))
+    pixels_per_hour = float(graph.get("pixelsPerHour") or 200)
+    layout = graph.get("layout") or "horizontal"
+
+    def interval_for(node: dict[str, Any]) -> tuple[float, float]:
+        pos = node.get("position") or {}
+        axis = float(pos.get("x", 0)) if layout == "horizontal" else float(pos.get("y", 0))
+        start = axis / pixels_per_hour * 60.0
+        duration = float((node.get("data") or {}).get("duration_min") or 30)
+        return (start, start + duration)
+
+    def intervals_pairwise_disjoint(targets: list[dict[str, Any]]) -> bool:
+        intervals = [interval_for(t) for t in targets]
+        for i in range(len(intervals)):
+            for j in range(i + 1, len(intervals)):
+                a, b = intervals[i], intervals[j]
+                if not (a[1] <= b[0] or b[1] <= a[0]):
+                    return False
+        return True
+
+    for source_id, target_ids in outgoing.items():
+        src = nodes_by_id.get(source_id)
+        if not src or src.get("type") != "unitOp":
+            continue
+        targets = [
+            nodes_by_id[tid]
+            for tid in target_ids
+            if tid in nodes_by_id and nodes_by_id[tid].get("type") == "unitOp"
+        ]
+        if len(targets) < 2:
+            continue
+
+        parent_ids = [t.get("parentId") for t in targets]
+        has_duplicate = len(set(parent_ids)) != len(parent_ids)
+        has_null = any(pid is None for pid in parent_ids)
+        if not (has_duplicate or has_null):
+            continue
+
+        if time_enabled and intervals_pairwise_disjoint(targets):
+            continue
+
+        label = (src.get("data") or {}).get("label") or "<unnamed>"
+        target_labels = [(t.get("data") or {}).get("label") or "<unnamed>" for t in targets]
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                code="branch_requires_distinct_roles",
+                node_id=source_id,
+                message=(
+                    f"Step '{label}' branches to {', '.join(target_labels)} which "
+                    "share or lack distinct role assignments. Assign each branch "
+                    "target to a different role, or enable time mode and stagger "
+                    "the branches at non-overlapping times."
+                ),
+            )
+        )
+
+    return issues
 
 
 __all__ = [
