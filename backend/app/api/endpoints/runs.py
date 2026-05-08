@@ -21,7 +21,7 @@ from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol, Run, RunRoleAssignment
+from app.models.science import Project, Protocol, Run, RunRoleAssignment, UnitOpDefinition
 from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunCreate, RunNote, RunNoteCreate,
                                  RunNoteListResponse, RunResponse,
@@ -34,6 +34,7 @@ from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.template_engine import build_context, render_to_pdf
+from app.services.protocols.validation import assert_no_branch_errors
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,13 @@ async def create_run(
                 detail="Cannot create run from archived protocol",
             )
         initial_graph = protocol.graph.copy() if protocol.graph else {}
+        unit_ops_result = await db.execute(
+            select(UnitOpDefinition).where(
+                UnitOpDefinition.org_id == user.selected_org_id
+            )
+        )
+        unit_ops = list(unit_ops_result.scalars().all())
+        assert_no_branch_errors(initial_graph, unit_ops)
 
     run_obj = Run(
         name=run_in.name,
