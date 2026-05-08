@@ -10,7 +10,8 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol, ProtocolVersion
+from app.models.science import Project, Protocol, ProtocolVersion, UnitOpDefinition
+from app.services.protocols.validation import assert_no_branch_errors
 from app.schemas.science import (ProtocolApprovalAction, ProtocolResponse,
                                  ProtocolVersionListItem,
                                  ProtocolVersionResponse)
@@ -451,6 +452,14 @@ async def publish_draft_version(
     draft = version_result.scalar_one_or_none()
     if not draft:
         raise HTTPException(status_code=404, detail="Draft version not found")
+
+    # Defense-in-depth: reject publish if branch role rule fires.
+    org_id = user.selected_org_id
+    unit_ops_result = await db.execute(
+        select(UnitOpDefinition).where(UnitOpDefinition.org_id == org_id)
+    )
+    unit_ops = list(unit_ops_result.scalars().all())
+    assert_no_branch_errors(draft.graph or {}, unit_ops)
 
     # Mark as published (not a draft) and update main protocol
     draft.is_draft = False
