@@ -456,7 +456,7 @@ async def publish_draft_version(
     # Defense-in-depth: reject publish if branch role rule fires.
     org_id = user.selected_org_id
     unit_ops_result = await db.execute(
-        select(UnitOpDefinition).where(UnitOpDefinition.org_id == org_id)
+        select(UnitOpDefinition).where(UnitOpDefinition.organization_id == org_id)
     )
     unit_ops = list(unit_ops_result.scalars().all())
     assert_no_branch_errors(draft.graph or {}, unit_ops)

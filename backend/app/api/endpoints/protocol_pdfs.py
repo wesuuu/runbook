@@ -47,7 +47,7 @@ def _resolve_template_path(template: DocumentTemplate) -> str:
 async def _assert_branch_ok(db: AsyncSession, graph: dict, org_id) -> None:
     """Raise HTTPException(400) if the graph has branch_requires_distinct_roles errors."""
     result = await db.execute(
-        select(UnitOpDefinition).where(UnitOpDefinition.org_id == org_id)
+        select(UnitOpDefinition).where(UnitOpDefinition.organization_id == org_id)
     )
     unit_ops = list(result.scalars().all())
     assert_no_branch_errors(graph or {}, unit_ops)

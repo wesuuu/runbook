@@ -94,7 +94,7 @@ async def create_run(
         initial_graph = protocol.graph.copy() if protocol.graph else {}
         unit_ops_result = await db.execute(
             select(UnitOpDefinition).where(
-                UnitOpDefinition.org_id == user.selected_org_id
+                UnitOpDefinition.organization_id == user.selected_org_id
             )
         )
         unit_ops = list(unit_ops_result.scalars().all())
