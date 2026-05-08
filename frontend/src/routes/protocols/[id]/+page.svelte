@@ -345,6 +345,11 @@
 
     function openPdfPreview() {
         if (!protocol) return;
+        const block = blockingBranchMessage();
+        if (block) {
+            toast.error(block);
+            return;
+        }
         showVersionHistory = false;
         showPdfDrawer = true;
     }
@@ -370,6 +375,12 @@
         }
         return ids;
     });
+
+    function blockingBranchMessage(): string | null {
+        const errs = branchValidationErrors();
+        if (errs.length === 0) return null;
+        return `Cannot proceed: ${errs.length} branching ${errs.length === 1 ? "step needs" : "steps need"} distinct roles. See the warning banner.`;
+    }
 
     // --- Timeline helpers ---
     const totalHours = $derived(() => {
@@ -523,6 +534,12 @@
         // Block if already approved, pending, or archived
         if (protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED") {
             toast.warning(protocolStatus === "ARCHIVED" ? "Cannot save an archived protocol" : protocolStatus === "APPROVED" ? "Already published" : "Cannot save while pending approval");
+            return;
+        }
+
+        const block = blockingBranchMessage();
+        if (block) {
+            toast.error(block);
             return;
         }
 
