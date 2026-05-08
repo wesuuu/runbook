@@ -35,35 +35,30 @@ The rule applies identically on frontend and backend.
 
 #### `protocolValidation.ts` — extend, don't fork
 
-Add `severity: "warning" | "error"` to `BranchValidationError`. Update `computeBranchValidationErrors`:
+Every `BranchValidationError` is a hard-block error. No severity field — the type's existence implies blocking. Update `computeBranchValidationErrors`:
 
 - Signature gains a third arg: `(nodes, edges, timeContext: { timeEnabled: boolean; pixelsPerHour: number; layout: "horizontal" | "vertical" })`.
-- Detection unchanged for the same-lane case (severity = "error").
-- New case: any branch target with null `parentId` produces a separate error per branching source (severity = "error", `duplicateLane: null`, `targetNodeLabels` lists the unassigned targets).
-- After detection, filter out errors that pass time-mode suppression.
+- Same-lane detection unchanged (existing case).
+- New case: any branch target with null `parentId` produces an error per branching source (`duplicateLane: null`, `targetNodeLabels` lists the unassigned targets).
+- After detection, filter out errors that pass time-mode suppression (see Rule definition above).
 
 Existing call site at `+page.svelte:357` updates to pass the time context.
 
 #### Editor wiring (`+page.svelte`)
 
-- New derived: `branchBlockingNodeIds` — set of source node ids where `severity === "error"`. Drives the per-node `.invalid-blocking` class via context.
-- `setContext("branchValidation", ...)` gains `blockingNodeIds` reactive getter alongside the existing `invalidNodeIds`.
-- New helper `hasBlockingErrors()`: returns true if any branch error has severity error.
+- Existing `branchInvalidNodeIds` derived already lists every offending source; reuse as-is.
+- `setContext("branchValidation", ...)` unchanged in shape.
 - Pre-flight in:
-  - `saveAndPublish()` — toast `"Cannot publish: <N> branching node(s) need distinct roles. See warnings."` and abort before the publish POST.
-  - `openPdfPreview()` — toast same message, do not open drawer.
-- `RunCreatorWizardModal.svelte` `createRun()` — same pre-flight. The modal already loads the protocol object (with `protocol.graph.nodes/edges/timeEnabled/pixelsPerHour/layout`); call `computeBranchValidationErrors` against that. Toast and abort if any error-severity issue.
+  - `saveAndPublish()` — if `branchValidationErrors().length > 0`, toast `"Cannot publish: <N> branching node(s) need distinct roles. See warnings."` and abort before the publish POST.
+  - `openPdfPreview()` — same pre-flight, do not open drawer.
+- `RunCreatorWizardModal.svelte` `createRun()` — same pre-flight. The modal already loads the protocol object (with `protocol.graph.nodes/edges/timeEnabled/pixelsPerHour/layout`); call `computeBranchValidationErrors` against that. Toast and abort if any error.
 
 #### Per-node visual
 
-`UnitOpNode.svelte`:
-
-- Read `branchValidation.blockingNodeIds` (new context entry).
-- Apply `class:invalid-blocking` red variant when present.
-- Existing `.invalid` (amber) is retained for non-blocking warnings (none currently exist, but the field is reserved for future severity = "warning" entries).
+`UnitOpNode.svelte` already reads `branchValidation.invalidNodeIds` and applies `.invalid` to the offending source. Recolor `.invalid` from amber to red — every branch error is now blocking, so the visual should match.
 
 ```css
-.unit-op-node.invalid-blocking {
+.unit-op-node.invalid {
     border-color: #dc2626;
     box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.25), 0 4px 12px rgba(220, 38, 38, 0.15);
 }
@@ -79,8 +74,8 @@ Existing call site at `+page.svelte:357` updates to pass the time context.
 
 #### `ValidationBanners.svelte`
 
-- Render error-severity items with red styling (`#fef2f2` bg, `#dc2626` border).
-- Warning-severity items keep existing amber.
+- Branch validation banner restyled red (`#fef2f2` bg, `#dc2626` border, `#991b1b` text). Every branch error is blocking.
+- Process Start validation banner unchanged (still amber, still non-blocking — separate type, separate behavior).
 
 #### Drag-stop reassignment fix (prerequisite bundled)
 
@@ -148,11 +143,10 @@ nodes/edges/timeContext (Svelte runes)
   ↓
 computeBranchValidationErrors(nodes, edges, timeContext)
   ↓
-branchValidationErrors  →  ValidationBanners (banner UI)
-                       →  branchInvalidNodeIds (warnings, future)
-                       →  branchBlockingNodeIds (errors)
-                       →  Inspector (per-node detail)
-                       →  saveAndPublish / openPdfPreview / createRun (pre-flight)
+branchValidationErrors  →  ValidationBanners (red banner UI)
+                       →  branchInvalidNodeIds (red ring on source)
+                       →  Inspector (per-node detail when source selected)
+                       →  saveAndPublish / openPdfPreview / createRun (pre-flight, abort if any)
                        
 Backend graph dict
   ↓
