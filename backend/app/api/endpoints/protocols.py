@@ -25,6 +25,9 @@ from app.schemas.science import (ProtocolCreate, ProtocolImportFinalizeRequest,
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
+from app.services.protocols.lookup import get_protocol_full, list_protocols
+from app.services.protocols.roles import (add_role, list_roles, remove_role,
+                                          update_role)
 
 logger = logging.getLogger(__name__)
 
@@ -337,47 +340,51 @@ async def get_protocol(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    allowed = await check_permission(
-        db,
-        user.id,
-        ObjectType.PROTOCOL,
-        protocol_id,
-        PermissionLevel.VIEW,
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    return await get_or_404(
+    try:
+        await get_protocol_full(db, user_id=user.id, protocol_id=protocol_id)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(status_code=403, detail=msg)
+    # Re-load the ORM object so the existing ProtocolResponse serializer works
+    # unchanged (it expects ORM attrs, not the dataclass).
+    protocol = await get_or_404(
         db,
         Protocol,
         protocol_id,
         options=[selectinload(Protocol.roles)],
     )
+    return protocol
 
 
 @router.get(
     "/projects/{project_id}/protocols",
     response_model=List[ProtocolResponse],
-    dependencies=[
-        Depends(
-            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.VIEW)
-        )
-    ],
 )
 async def list_project_protocols(
     project_id: UUID,
     include_archived: bool = Query(False),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
-        select(Protocol)
-        .options(selectinload(Protocol.roles))
-        .where(Protocol.project_id == project_id)
+    items = await list_protocols(
+        db,
+        user_id=user.id,
+        org_id=user.selected_org_id,
+        project_id=project_id,
     )
     if not include_archived:
-        stmt = stmt.where(Protocol.status != "ARCHIVED")
-    result = await db.execute(stmt)
-    return result.scalars().all()
+        items = [it for it in items if it.status != "ARCHIVED"]
+    ids = [it.id for it in items]
+    if not ids:
+        return []
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id.in_(ids))
+    )
+    return list(result.scalars().all())
 
 
 @router.delete("/protocols/{protocol_id}", status_code=200)
@@ -566,6 +573,31 @@ async def update_protocol(
             detail="Cannot edit protocol while pending approval",
         )
 
+    # Metadata-only patch fast path (no graph change, no draft request) —
+    # delegate to the canonical service so chat tools and HTTP share logic.
+    if (
+        "graph" not in changes
+        and not save_as_draft
+        and any(k in changes for k in ("name", "description"))
+    ):
+        from app.services.protocols.creation import update_protocol_metadata
+
+        try:
+            await update_protocol_metadata(
+                db,
+                user_id=user.id,
+                protocol_id=protocol_id,
+                name=changes.get("name"),
+                description=changes.get("description"),
+            )
+        except ValueError as e:
+            msg = str(e)
+            if "published" in msg:
+                raise HTTPException(status_code=409, detail=msg)
+            raise HTTPException(status_code=403, detail=msg)
+        for k in ("name", "description"):
+            changes.pop(k, None)
+
     # If graph is being updated and save_as_draft is True
     if "graph" in changes and save_as_draft:
         new_graph = changes["graph"]
@@ -601,6 +633,14 @@ async def update_protocol(
                 batch_record_template_id=protocol.batch_record_template_id,
             )
             db.add(draft)
+
+        # For unpublished protocols (still DRAFT), the live graph IS the
+        # working draft — keep it in sync so role/lane mutations from
+        # other paths (sidebar, chat tools) and the editor's saved state
+        # don't drift apart. Published protocols stay frozen until the
+        # draft is explicitly published.
+        if protocol.status == "DRAFT":
+            protocol.graph = new_graph
 
         audit_changes = {"action": "saved_draft", "draft_version": draft_version_number}
     else:
@@ -690,22 +730,13 @@ async def list_protocol_roles(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    allowed = await check_permission(
-        db,
-        user.id,
-        ObjectType.PROTOCOL,
-        protocol_id,
-        PermissionLevel.VIEW,
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await db.execute(
-        select(ProtocolRole)
-        .where(ProtocolRole.protocol_id == protocol_id)
-        .order_by(ProtocolRole.sort_order)
-    )
-    return result.scalars().all()
+    try:
+        return await list_roles(db, user_id=user.id, protocol_id=protocol_id)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(status_code=403, detail=msg)
 
 
 @router.post(
@@ -720,25 +751,22 @@ async def create_protocol_role(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
-    allowed = await check_permission(
-        db,
-        user.id,
-        ObjectType.PROTOCOL,
-        protocol_id,
-        PermissionLevel.EDIT,
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    await get_or_404(db, Protocol, protocol_id)
-
-    new_role = ProtocolRole(
-        protocol_id=protocol_id,
-        name=role.name,
-        color=role.color,
-        sort_order=role.sort_order,
-    )
-    db.add(new_role)
+    try:
+        new_role = await add_role(
+            db,
+            user_id=user.id,
+            protocol_id=protocol_id,
+            name=role.name,
+            color=role.color,
+            sort_order=role.sort_order,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        if "published" in msg:
+            raise HTTPException(status_code=409, detail=msg)
+        raise HTTPException(status_code=403, detail=msg)
     await db.commit()
     await db.refresh(new_role)
     return new_role
@@ -756,33 +784,19 @@ async def update_protocol_role(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
-    allowed = await check_permission(
-        db,
-        user.id,
-        ObjectType.PROTOCOL,
-        protocol_id,
-        PermissionLevel.EDIT,
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await db.execute(
-        select(ProtocolRole).where(
-            ProtocolRole.id == role_id,
-            ProtocolRole.protocol_id == protocol_id,
-        )
-    )
-    role = result.scalar_one_or_none()
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-
     changes = update_data.model_dump(exclude_unset=True)
-    for key, value in changes.items():
-        setattr(role, key, value)
-
+    try:
+        updated = await update_role(db, user_id=user.id, role_id=role_id, **changes)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        if "published" in msg:
+            raise HTTPException(status_code=409, detail=msg)
+        raise HTTPException(status_code=403, detail=msg)
     await db.commit()
-    await db.refresh(role)
-    return role
+    await db.refresh(updated)
+    return updated
 
 
 @router.delete("/protocols/{protocol_id}/roles/{role_id}")
@@ -793,26 +807,14 @@ async def delete_protocol_role(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
-    allowed = await check_permission(
-        db,
-        user.id,
-        ObjectType.PROTOCOL,
-        protocol_id,
-        PermissionLevel.EDIT,
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await db.execute(
-        select(ProtocolRole).where(
-            ProtocolRole.id == role_id,
-            ProtocolRole.protocol_id == protocol_id,
-        )
-    )
-    role = result.scalar_one_or_none()
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-
-    await db.delete(role)
+    try:
+        await remove_role(db, user_id=user.id, role_id=role_id)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        if "published" in msg:
+            raise HTTPException(status_code=409, detail=msg)
+        raise HTTPException(status_code=403, detail=msg)
     await db.commit()
     return {"ok": True}

@@ -9,7 +9,11 @@
         deleteNode: (nodeId: string) => void;
     } = getContext("nodeActions");
 
+    const laneInfo: { childCount(laneId: string): number } | undefined =
+        getContext("laneInfo");
+
     const isVertical = $derived(data.orientation === "vertical");
+    const isEmpty = $derived((laneInfo?.childCount(id) ?? 1) === 0);
 </script>
 
 <ContextMenu.Root>
@@ -21,8 +25,8 @@
             style:--lane-color={data.color || "#94a3b8"}
         >
             <NodeResizer
-                minWidth={isVertical ? 220 : 600}
-                minHeight={isVertical ? 400 : 150}
+                minWidth={isVertical ? 140 : 280}
+                minHeight={isVertical ? 200 : 100}
                 isVisible={selected}
                 lineStyle="border-color: {data.color || '#94a3b8'}; border-width: 1px;"
                 handleStyle="background: {data.color ||
@@ -33,6 +37,14 @@
             <div class="lane-header" class:vertical-header={isVertical}>
                 <div class="lane-color-dot" style:background={data.color}></div>
                 <span class="lane-label">{data.label || "Untitled Role"}</span>
+                {#if isEmpty}
+                    <span
+                        class="lane-empty-badge"
+                        title="This role has no steps. Drag steps into this lane or remove the role."
+                    >
+                        ⚠ empty
+                    </span>
+                {/if}
             </div>
         </div>
     </ContextMenu.Trigger>
@@ -53,8 +65,25 @@
         border-radius: 12px;
         width: 100%;
         height: 100%;
-        min-height: 150px;
+        min-height: 100px;
         position: relative;
+    }
+
+    /* The xyflow node wrapper applies the user's resized width/height as
+       inline styles, but our content is wrapped in
+       <ContextMenu.Trigger> → <div cursor-wrapper> → .swimlane-node.
+       Neither wrapper has height set, so .swimlane-node's height: 100%
+       collapses to content height — making vertical NodeResizer drags
+       look like a no-op. Force the trigger chain to fill the xyflow
+       wrapper so resize-driven height changes propagate down. */
+    :global(.svelte-flow__node-swimLane > [data-slot="context-menu-trigger"]),
+    :global(
+            .svelte-flow__node-swimLane
+                > [data-slot="context-menu-trigger"]
+                > div
+        ) {
+        width: 100%;
+        height: 100%;
     }
 
     .swimlane-node.selected {
@@ -101,6 +130,20 @@
         color: #475569;
         text-transform: uppercase;
         letter-spacing: 0.05em;
+        white-space: nowrap;
+    }
+
+    .lane-empty-badge {
+        font-size: 10px;
+        font-weight: 600;
+        color: #b45309;
+        background: #fef3c7;
+        border: 1px solid #fde68a;
+        border-radius: 4px;
+        padding: 2px 6px;
+        margin-left: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
         white-space: nowrap;
     }
 

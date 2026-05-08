@@ -26,16 +26,40 @@ def make_ctx() -> RunContext[ChatDeps]:
 
 
 def test_build_returns_subagent_config():
+    from app.services.ai.subagents.protocol_builder.tools import (
+        add_protocol_role, add_protocol_step, elevate_unit_op_scope,
+        get_protocol, list_protocol_roles, list_protocols,
+        remove_protocol_role, remove_protocol_step, reorder_protocol_steps,
+        replace_step_unit_op, update_protocol_metadata, update_protocol_role,
+        update_unit_op)
+
     cfg = build("openai:gpt-4.1-mini")
     assert cfg["name"] == "protocol_builder"
     assert cfg["model"] == "openai:gpt-4.1-mini"
     tools = cfg["agent_kwargs"]["tools"]
-    assert list_projects in tools
-    assert list_unit_ops in tools
-    assert create_unit_op in tools
-    assert create_protocol in tools
-    assert validate_protocol in tools
-    assert update_protocol_step in tools
+    expected = {
+        list_projects,
+        list_unit_ops,
+        create_unit_op,
+        create_protocol,
+        validate_protocol,
+        update_protocol_step,
+        # F-0082 additions
+        list_protocols,
+        get_protocol,
+        update_protocol_metadata,
+        add_protocol_step,
+        remove_protocol_step,
+        reorder_protocol_steps,
+        replace_step_unit_op,
+        list_protocol_roles,
+        add_protocol_role,
+        update_protocol_role,
+        remove_protocol_role,
+        update_unit_op,
+        elevate_unit_op_scope,
+    }
+    assert set(tools) >= expected
 
 
 @pytest.mark.asyncio
@@ -142,3 +166,415 @@ async def test_update_protocol_step_delegates_to_service(monkeypatch):
     assert captured["params"] is None
     assert result.fields_updated == ["description", "category"]
     assert ctx.deps.tool_calls[-1]["tool"] == "update_protocol_step"
+
+
+# ─── F-0082: read tools (Task 10) ─────────────────────────────────────────────
+
+
+import uuid as _uuid
+
+from app.services.ai.subagents.protocol_builder.tools import (get_protocol,
+                                                              list_protocols)
+
+
+@pytest.mark.asyncio
+async def test_list_protocols_tool_delegates(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(*args, **kwargs):
+        captured.update(kwargs)
+        from app.services.protocols.lookup import ProtocolListItem
+
+        return [
+            ProtocolListItem(
+                id=_uuid.uuid4(),
+                name="A",
+                description=None,
+                project_id=_uuid.uuid4(),
+                project_name="proj",
+                status="DRAFT",
+                version_number=0,
+                has_draft=False,
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.list_protocols_service",
+        fake,
+    )
+    result = await list_protocols(ctx)
+    assert result.total == 1
+    assert result.protocols[0].name == "A"
+    assert ctx.deps.tool_calls[-1]["tool"] == "list_protocols"
+
+
+@pytest.mark.asyncio
+async def test_get_protocol_tool_delegates(monkeypatch):
+    ctx = make_ctx()
+    pid = _uuid.uuid4()
+
+    async def fake(*args, **kwargs):
+        from app.services.protocols.lookup import ProtocolFull
+
+        return ProtocolFull(
+            id=pid,
+            name="P",
+            description="d",
+            project_id=_uuid.uuid4(),
+            project_name="proj",
+            status="DRAFT",
+            version_number=0,
+            has_draft=False,
+            graph={"nodes": [], "edges": []},
+            roles=[],
+        )
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.get_protocol_full_service",
+        fake,
+    )
+    result = await get_protocol(ctx, protocol_id=str(pid))
+    assert result.protocol_id == str(pid)
+    assert result.summary.startswith("Protocol 'P'")
+    assert ctx.deps.tool_calls[-1]["tool"] == "get_protocol"
+
+
+@pytest.mark.asyncio
+async def test_get_protocol_tool_returns_error_on_value_error(monkeypatch):
+    ctx = make_ctx()
+
+    async def fake(*args, **kwargs):
+        raise ValueError("Protocol not found")
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.get_protocol_full_service",
+        fake,
+    )
+    result = await get_protocol(ctx, protocol_id=str(_uuid.uuid4()))
+    assert result.ok is False
+    assert "not found" in result.summary
+
+
+# ─── F-0082: mutation tools — metadata + graph (Task 11) ──────────────────────
+
+
+from app.services.ai.subagents.protocol_builder.tools import (
+    add_protocol_step, remove_protocol_step, reorder_protocol_steps,
+    replace_step_unit_op, update_protocol_metadata)
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_metadata_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        m = MagicMock()
+        m.name = kwargs.get("name") or "old"
+        return m
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.update_protocol_metadata_service",
+        fake,
+    )
+    pid = _uuid.uuid4()
+    result = await update_protocol_metadata(
+        ctx,
+        protocol_id=str(pid),
+        name="New Name",
+    )
+    assert captured["protocol_id"] == pid
+    assert captured["name"] == "New Name"
+    assert result.ok is True
+    assert ctx.deps.tool_calls[-1]["tool"] == "update_protocol_metadata"
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_metadata_published_returns_error(monkeypatch):
+    ctx = make_ctx()
+
+    async def fake(db, **kwargs):
+        raise ValueError("Protocol is published — create a draft first.")
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.update_protocol_metadata_service",
+        fake,
+    )
+    result = await update_protocol_metadata(
+        ctx,
+        protocol_id=str(_uuid.uuid4()),
+        name="X",
+    )
+    assert result.ok is False
+    assert "published" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_add_protocol_step_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.add_step_service",
+        fake,
+    )
+    pid = _uuid.uuid4()
+    rid = _uuid.uuid4()
+    result = await add_protocol_step(
+        ctx,
+        protocol_id=str(pid),
+        name="Mix",
+        unit_op_name="Mix Op",
+        duration_min=20,
+        role_id=str(rid),
+    )
+    assert captured["protocol_id"] == pid
+    assert captured["role_id"] == rid
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_remove_protocol_step_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.remove_step_service",
+        fake,
+    )
+    pid = _uuid.uuid4()
+    result = await remove_protocol_step(
+        ctx,
+        protocol_id=str(pid),
+        step_index=2,
+    )
+    assert captured["step_index"] == 2
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_reorder_protocol_steps_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.reorder_steps_service",
+        fake,
+    )
+    pid = _uuid.uuid4()
+    result = await reorder_protocol_steps(
+        ctx,
+        protocol_id=str(pid),
+        ordered_step_indices=[2, 0, 1],
+    )
+    assert captured["ordered_step_indices"] == [2, 0, 1]
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_replace_step_unit_op_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.replace_step_unit_op_service",
+        fake,
+    )
+    pid = _uuid.uuid4()
+    result = await replace_step_unit_op(
+        ctx,
+        protocol_id=str(pid),
+        step_index=1,
+        new_unit_op_name="Cell Seeding",
+    )
+    assert captured["new_unit_op_name"] == "Cell Seeding"
+    assert result.ok is True
+
+
+# ─── F-0082: role tools (Task 12) ─────────────────────────────────────────────
+
+
+from app.services.ai.subagents.protocol_builder.tools import (
+    add_protocol_role, list_protocol_roles, remove_protocol_role,
+    update_protocol_role)
+
+
+@pytest.mark.asyncio
+async def test_list_protocol_roles_tool(monkeypatch):
+    ctx = make_ctx()
+
+    async def fake(db, **kwargs):
+        from app.models.science import ProtocolRole
+
+        r1 = ProtocolRole(name="Op", color="#fff", sort_order=0)
+        r1.id = _uuid.uuid4()
+        return [r1]
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.list_roles_service",
+        fake,
+    )
+    result = await list_protocol_roles(ctx, protocol_id=str(_uuid.uuid4()))
+    assert result.ok is True
+    assert result.roles[0].name == "Op"
+
+
+@pytest.mark.asyncio
+async def test_add_protocol_role_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        from app.models.science import ProtocolRole
+
+        r = ProtocolRole(name=kwargs["name"], color="#fff", sort_order=0)
+        r.id = _uuid.uuid4()
+        return r
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.add_role_service",
+        fake,
+    )
+    result = await add_protocol_role(
+        ctx,
+        protocol_id=str(_uuid.uuid4()),
+        name="Operator",
+    )
+    assert captured["name"] == "Operator"
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_role_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        from app.models.science import ProtocolRole
+
+        r = ProtocolRole(name=kwargs.get("name") or "X", color="#fff", sort_order=0)
+        r.id = kwargs["role_id"]
+        return r
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.update_role_service",
+        fake,
+    )
+    rid = _uuid.uuid4()
+    result = await update_protocol_role(ctx, role_id=str(rid), name="New")
+    assert captured["role_id"] == rid
+    assert captured["name"] == "New"
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_remove_protocol_role_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.remove_role_service",
+        fake,
+    )
+    rid = _uuid.uuid4()
+    result = await remove_protocol_role(ctx, role_id=str(rid))
+    assert captured["role_id"] == rid
+    assert result.ok is True
+
+
+# ─── F-0082: unit op tools — update + elevate (Task 13) ───────────────────────
+
+
+from app.services.ai.subagents.protocol_builder.tools import (
+    elevate_unit_op_scope, update_unit_op)
+
+
+@pytest.mark.asyncio
+async def test_update_unit_op_tool(monkeypatch):
+    ctx = make_ctx()
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        m = MagicMock()
+        m.id = kwargs["unit_op_id"]
+        m.name = kwargs.get("name") or "Old"
+        return m
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.update_unit_op_definition_service",
+        fake,
+    )
+    uoid = _uuid.uuid4()
+    result = await update_unit_op(
+        ctx,
+        unit_op_id=str(uoid),
+        description="new desc",
+    )
+    assert captured["unit_op_id"] == uoid
+    assert captured["description"] == "new desc"
+    assert captured["is_org_admin"] is False  # from ChatDeps
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_elevate_unit_op_scope_tool(monkeypatch):
+    ctx = make_ctx()
+    ctx.deps.is_org_admin = True
+    captured = {}
+
+    async def fake(db, **kwargs):
+        captured.update(kwargs)
+        m = MagicMock()
+        m.id = kwargs["unit_op_id"]
+        m.name = "X"
+        return m
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.elevate_unit_op_scope_service",
+        fake,
+    )
+    uoid = _uuid.uuid4()
+    result = await elevate_unit_op_scope(ctx, unit_op_id=str(uoid))
+    assert captured["unit_op_id"] == uoid
+    assert captured["is_org_admin"] is True
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_elevate_returns_error_when_not_admin(monkeypatch):
+    ctx = make_ctx()  # is_org_admin defaults False
+
+    async def fake(db, **kwargs):
+        raise ValueError("Only organization admins can elevate unit ops.")
+
+    monkeypatch.setattr(
+        "app.services.ai.subagents.protocol_builder.tools.elevate_unit_op_scope_service",
+        fake,
+    )
+    result = await elevate_unit_op_scope(ctx, unit_op_id=str(_uuid.uuid4()))
+    assert result.ok is False
+    assert "admin" in result.summary
