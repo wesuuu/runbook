@@ -354,7 +354,13 @@
     let createModalCategory = $state("");
 
     // --- Validation (delegated to protocolValidation.ts) ---
-    const branchValidationErrors = $derived(() => computeBranchValidationErrors(nodes, edges));
+    const branchValidationErrors = $derived(() =>
+        computeBranchValidationErrors(nodes, edges, {
+            timeEnabled,
+            pixelsPerHour,
+            layout,
+        }),
+    );
     const processStartValidationErrors = $derived(() => computeProcessStartValidationErrors(nodes, edges));
 
     const branchInvalidNodeIds = $derived(() => {
