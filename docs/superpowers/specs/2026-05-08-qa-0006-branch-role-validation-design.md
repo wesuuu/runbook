@@ -51,7 +51,7 @@ Existing call site at `+page.svelte:357` updates to pass the time context.
 - Pre-flight in:
   - `saveAndPublish()` — if `branchValidationErrors().length > 0`, toast `"Cannot publish: <N> branching node(s) need distinct roles. See warnings."` and abort before the publish POST.
   - `openPdfPreview()` — same pre-flight, do not open drawer.
-- `RunCreatorWizardModal.svelte` `createRun()` — same pre-flight. The modal already loads the protocol object (with `protocol.graph.nodes/edges/timeEnabled/pixelsPerHour/layout`); call `computeBranchValidationErrors` against that. Toast and abort if any error.
+- `CreateRunModal.svelte` (run creation): no frontend pre-flight. The modal only carries protocol IDs, not graphs. Backend rejects with 400 and the existing `error` toast surfaces the message. Adding a pre-flight would require an extra `GET /protocols/{id}` round-trip for no UX gain.
 
 #### Per-node visual
 
@@ -138,7 +138,7 @@ computeBranchValidationErrors(nodes, edges, timeContext)
 branchValidationErrors  →  ValidationBanners (red banner UI)
                        →  branchInvalidNodeIds (red ring on source)
                        →  Inspector (per-node detail when source selected)
-                       →  saveAndPublish / openPdfPreview / createRun (pre-flight, abort if any)
+                       →  saveAndPublish / openPdfPreview (pre-flight, abort if any)
                        
 Backend graph dict
   ↓
@@ -207,7 +207,7 @@ Frontend:
 - `frontend/src/lib/components/protocol/protocolGraph.ts` — add `reparentNode` helper
 - `frontend/src/lib/components/protocol/Inspector.svelte` — branch-error callout for selected node
 - `frontend/src/routes/protocols/[id]/+page.svelte` — pre-flight in publish/PDF, drag-stop handler, pass time context
-- `frontend/src/lib/components/run/RunCreatorWizardModal.svelte` — pre-flight before createRun
+- (No frontend changes to `CreateRunModal.svelte` — backend 400 surfaces via existing error toast.)
 - New: `frontend/src/lib/components/protocol/protocolValidation.test.ts`
 
 (`UnitOpNode.svelte` and `ValidationBanners.svelte` are *not* touched — existing amber styling is reused.)
