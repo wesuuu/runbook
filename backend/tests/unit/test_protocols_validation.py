@@ -224,3 +224,112 @@ def test_assert_no_branch_errors_passes_on_valid_graph():
     case = next(c for c in _FIXTURE_CASES if not c["expected"]["fires_on"])
     # Should not raise.
     assert_no_branch_errors(case["graph"], [])
+
+
+def _role(name: str = "Operator") -> object:
+    r = MagicMock()
+    r.id = uuid.uuid4()
+    r.name = name
+    return r
+
+
+def _lane(role) -> dict:
+    return {
+        "id": f"lane-{role.id}",
+        "type": "swimLane",
+        "data": {"label": role.name, "roleId": str(role.id)},
+    }
+
+
+def test_role_with_lane_passes():
+    op = _unit_op()
+    role = _role()
+    step = _step("s1", unit_op_id=op.id)
+    step["parentId"] = f"lane-{role.id}"
+    graph = {
+        "nodes": [_ps("ps"), _lane(role), step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    assert result.ok is True
+    assert [i.code for i in result.issues] == []
+
+
+def test_role_with_lane_but_no_steps_flags_empty_lane():
+    op = _unit_op()
+    role = _role("Reviewer")
+    graph = {
+        "nodes": [_ps("ps"), _lane(role), _step("s1", unit_op_id=op.id)],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "empty_lane" in codes
+    empty = next(i for i in result.issues if i.code == "empty_lane")
+    assert empty.severity == "warning"
+    assert empty.node_id == f"lane-{role.id}"
+
+
+def test_empty_lane_not_flagged_when_role_missing_lane_node():
+    op = _unit_op()
+    role = _role("Reviewer")
+    graph = {
+        "nodes": [_ps("ps"), _step("s1", unit_op_id=op.id)],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "missing_lane_node" in codes
+    assert "empty_lane" not in codes
+
+
+def test_role_without_lane_flags_missing_lane_node():
+    op = _unit_op()
+    role = _role("Operator")
+    graph = {
+        "nodes": [_ps("ps"), _step("s1", unit_op_id=op.id)],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "missing_lane_node" in codes
+
+
+def test_lane_without_role_flags_orphaned_lane_node():
+    op = _unit_op()
+    fake_role = _role()  # not in roles list
+    graph = {
+        "nodes": [_ps("ps"), _lane(fake_role), _step("s1", unit_op_id=op.id)],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[])
+    codes = [i.code for i in result.issues]
+    assert "orphaned_lane_node" in codes
+
+
+def test_step_with_dangling_parent_id_flags_orphaned_parent_id():
+    op = _unit_op()
+    role = _role()
+    step = _step("s1", unit_op_id=op.id)
+    step["parentId"] = f"lane-{role.id}"  # but no lane node in graph
+    graph = {
+        "nodes": [_ps("ps"), step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "orphaned_parent_id" in codes
+    assert "missing_lane_node" in codes
+
+
+def test_roles_arg_omitted_skips_role_lane_checks():
+    op = _unit_op()
+    fake_role = _role()
+    graph = {
+        "nodes": [_ps("ps"), _lane(fake_role), _step("s1", unit_op_id=op.id)],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op])
+    codes = [i.code for i in result.issues]
+    assert "orphaned_lane_node" not in codes
+    assert "missing_lane_node" not in codes

@@ -202,7 +202,7 @@ async def test_user(db_session, test_org) -> User:
         OrganizationMember(
             user_id=user.id,
             organization_id=test_org.id,
-            role="ADMIN",
+            roles=["MEMBER", "ADMIN"],
         )
     )
     await db_session.flush()
@@ -248,7 +248,7 @@ async def second_user(db_session, second_org) -> User:
         OrganizationMember(
             user_id=user.id,
             organization_id=second_org.id,
-            role="ADMIN",
+            roles=["MEMBER", "ADMIN"],
         )
     )
     await db_session.flush()

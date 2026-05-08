@@ -304,7 +304,7 @@ async def test_list_documents_scoped_to_org(
             .scalar_one()
             .id,
             organization_id=org2.id,
-            role="ADMIN",
+            roles=["MEMBER", "ADMIN"],
         )
     )
     await db_session.flush()

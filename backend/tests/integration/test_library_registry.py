@@ -302,7 +302,7 @@ async def test_admin_reload_endpoint_as_member_forbidden(
         OrganizationMember(
             user_id=member.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()

@@ -20,6 +20,7 @@
     import { ProjectSchema } from "$lib/schemas";
     import type { NodeTypes } from "@xyflow/svelte";
     import ProtocolSidebar from "$lib/components/protocol/ProtocolSidebar.svelte";
+    import PublishVersionDialog from "$lib/components/protocol/PublishVersionDialog.svelte";
     import CanvasToolbar from "$lib/components/protocol/CanvasToolbar.svelte";
     import ValidationBanners from "$lib/components/protocol/ValidationBanners.svelte";
     import {
@@ -98,6 +99,7 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
     let saving = $state(false);
+    let publishDialogOpen = $state(false);
 
     // Flow state
     let nodes = $state<Node[]>([]);
@@ -266,6 +268,16 @@
     setContext("branchValidation", {
         get invalidNodeIds() {
             return branchInvalidNodeIds();
+        },
+    });
+
+    setContext("laneInfo", {
+        childCount(laneId: string): number {
+            let n = 0;
+            for (const node of nodes) {
+                if (node.parentId === laneId) n += 1;
+            }
+            return n;
         },
     });
 
@@ -471,6 +483,12 @@
             lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
             hasUnsavedChanges = false;
             undoRedoState = createUndoRedoState();
+
+            // Populate version list so the save toast can tell whether it
+            // is creating a new draft vs editing the existing one.
+            if (id && id !== "new") {
+                await loadVersions();
+            }
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
@@ -505,13 +523,22 @@
         try {
             const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
 
+            const draftVersionNumber = versionNumber + 1;
+            const draftExisted = versions.some(
+                (v) => v.version_number === draftVersionNumber && v.is_draft,
+            );
+
             // Save as draft (creates draft version without modifying main protocol)
             const updated: any = await api.put(`/science/protocols/${protocol.id}?save_as_draft=true`, {
                 graph: graphData,
             });
             // Reload versions to show the new draft
             await loadVersions();
-            toast.success(`Draft saved (v${versionNumber + 1})`);
+            toast.success(
+                draftExisted
+                    ? `Draft v${draftVersionNumber} edited`
+                    : `Draft saved (v${draftVersionNumber})`,
+            );
             // Mark as saved and reset undo/redo
             lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
             hasUnsavedChanges = false;
@@ -544,6 +571,13 @@
             return;
         }
 
+        // Open the dialog; actual publish happens in performPublish via onConfirm
+        publishDialogOpen = true;
+    }
+
+    async function performPublish(payload: { description: string | undefined; change_summary: string | undefined }) {
+        if (!protocol) return;
+
         saving = true;
 
         try {
@@ -555,9 +589,10 @@
             });
             const draftVersionNumber = versionNumber + 1;
 
-            // Then publish the draft
+            // Then publish the draft (with optional metadata from the dialog)
             const publishResponse: any = await api.post(
                 `/science/protocols/${protocol.id}/publish-draft?version_number=${draftVersionNumber}`,
+                payload,
             );
 
             protocolStatus = publishResponse.status || "APPROVED";
@@ -1081,6 +1116,12 @@
         onOpClick={handleOpPreview}
     />
     {/if}
+
+    <PublishVersionDialog
+        bind:open={publishDialogOpen}
+        versionNumber={versionNumber + 1}
+        onConfirm={performPublish}
+    />
 
     <!-- ============= CANVAS ============= -->
     <div

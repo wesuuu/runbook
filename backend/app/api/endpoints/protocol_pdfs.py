@@ -39,6 +39,23 @@ async def _load_template(
     return result.scalar_one_or_none()
 
 
+async def _build_user_signatures(
+    db: AsyncSession, user_ids: list[str | UUID]
+) -> dict[str, str]:
+    """Build {user_id: absolute_signature_path} for users with stored
+    drawn-initials signatures. Empty dict when no IDs are provided."""
+    if not user_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(User.id, User.signature_initials_path)
+            .where(User.id.in_(user_ids))
+            .where(User.signature_initials_path.is_not(None))
+        )
+    ).all()
+    return {str(uid): str(storage.resolve_path(path)) for uid, path in rows if path}
+
+
 def _resolve_template_path(template: DocumentTemplate) -> str:
     """Get the filesystem path for a template."""
     return str(storage.resolve_path_for_org(template.file_path, template.org_id))
@@ -90,6 +107,8 @@ async def get_protocol_sop_pdf(
     graph = protocol.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
+    user_signatures = await _build_user_signatures(db, [])
+
     context = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
@@ -100,6 +119,7 @@ async def get_protocol_sop_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        user_signatures=user_signatures,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
@@ -148,6 +168,8 @@ async def get_protocol_batch_record_pdf(
     graph = protocol.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
+    user_signatures = await _build_user_signatures(db, [])
+
     context = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
@@ -159,6 +181,7 @@ async def get_protocol_batch_record_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        user_signatures=user_signatures,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
@@ -210,6 +233,8 @@ async def preview_protocol_sop_pdf(
     graph = body.graph
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
+    user_signatures = await _build_user_signatures(db, [])
+
     context = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
@@ -220,6 +245,7 @@ async def preview_protocol_sop_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        user_signatures=user_signatures,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
@@ -270,6 +296,8 @@ async def preview_protocol_batch_record_pdf(
     graph = body.graph
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
+    user_signatures = await _build_user_signatures(db, [])
+
     context = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
@@ -281,6 +309,7 @@ async def preview_protocol_batch_record_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        user_signatures=user_signatures,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 

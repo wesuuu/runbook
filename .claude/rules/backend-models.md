@@ -84,6 +84,28 @@ credentials: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
 Common JSONB uses: graph data (Protocol/Run), param schemas, document metadata, AI credentials, chat message history.
 
+## Postgres ARRAY columns (multi-valued enums)
+
+For a column holding multiple enum values (e.g. additive roles), use
+`ARRAY(String)` plus a CHECK that the array is contained by the allowed set:
+
+```python
+roles: Mapped[List[str]] = mapped_column(
+    ARRAY(String), nullable=False,
+    server_default=text("ARRAY['MEMBER']::varchar[]"),
+)
+__table_args__ = (
+    CheckConstraint(
+        "roles <@ ARRAY['ADMIN','BILLING','MEMBER']::varchar[]",
+        name="ck_roles_allowed",
+    ),
+)
+```
+
+Query containment with `Column.contains([value])` (Postgres `@>`).
+Treat one element as canonical/implicit (e.g. MEMBER) and enforce it
+server-side on every write — don't rely on the DB default for updates.
+
 ## Enum Pattern
 
 Define as `str` + `Enum`, store as `String` column:

@@ -8,6 +8,8 @@ interface User {
     full_name: string | null;
     job_title: string | null;
     avatar_url: string | null;
+    signature_initials_url?: string | null;
+    signature_full_url?: string | null;
     preferences: Record<string, string>;
     is_active: boolean;
     email_verified: boolean;

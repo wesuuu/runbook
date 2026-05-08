@@ -13,7 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models.science import UnitOpDefinition
+from app.models.science import ProtocolRole, UnitOpDefinition
 
 Severity = str  # "error" | "warning"
 
@@ -36,12 +36,16 @@ _PLACEHOLDER_DESCRIPTIONS = {"", "todo", "tbd", "n/a", "placeholder"}
 def validate_protocol_graph(
     graph: dict[str, Any],
     unit_ops: list[UnitOpDefinition],
+    roles: list[ProtocolRole] | None = None,
 ) -> ValidationResult:
     """Check a graph for structural and quality problems.
 
     Args:
         graph: The Protocol.graph JSONB.
         unit_ops: Org-visible UnitOpDefinitions for resolving `unitOpId`.
+        roles: ProtocolRole rows for cross-checking that swimLane nodes
+            and unit-op `parentId`s line up. When omitted, role/lane
+            consistency checks are skipped.
 
     Returns:
         ValidationResult — `ok=False` if any issue has severity="error".
@@ -143,6 +147,25 @@ def validate_protocol_graph(
                 )
             )
 
+        parent_id = n.get("parentId")
+        if parent_id and isinstance(parent_id, str) and parent_id.startswith("lane-"):
+            lane_node_ids = {
+                ln.get("id") for ln in nodes if ln.get("type") == "swimLane"
+            }
+            if parent_id not in lane_node_ids:
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="orphaned_parent_id",
+                        message=(
+                            f"Step '{label}' has parentId={parent_id} but no "
+                            "matching swimLane node exists. The step will not "
+                            "render inside any role lane."
+                        ),
+                        node_id=node_id,
+                    )
+                )
+
         if node_id not in incoming_targets:
             issues.append(
                 ValidationIssue(
@@ -157,6 +180,59 @@ def validate_protocol_graph(
             )
 
     issues.extend(_branch_role_issues(nodes, edges, graph))
+
+    if roles is not None:
+        lane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
+        lane_ids_by_role = {f"lane-{r.id}": r for r in roles}
+        present_lane_ids = {ln.get("id") for ln in lane_nodes}
+        children_by_lane: dict[str, int] = {}
+        for n in unit_op_nodes:
+            pid = n.get("parentId")
+            if isinstance(pid, str) and pid.startswith("lane-"):
+                children_by_lane[pid] = children_by_lane.get(pid, 0) + 1
+        for lane_id, role in lane_ids_by_role.items():
+            if lane_id not in present_lane_ids:
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="missing_lane_node",
+                        message=(
+                            f"Role '{role.name}' has no swimLane node in the "
+                            "graph. Steps assigned to this role will not appear "
+                            "inside its lane."
+                        ),
+                    )
+                )
+                continue
+            if children_by_lane.get(lane_id, 0) == 0:
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="empty_lane",
+                        message=(
+                            f"Role '{role.name}' has no steps in its lane. "
+                            "Assign at least one step to this role or remove "
+                            "the role."
+                        ),
+                        node_id=lane_id,
+                    )
+                )
+        for ln in lane_nodes:
+            ln_id = ln.get("id")
+            if ln_id and ln_id not in lane_ids_by_role:
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="orphaned_lane_node",
+                        message=(
+                            f"SwimLane node {ln_id} does not match any "
+                            "ProtocolRole. Either remove the lane or recreate "
+                            "the role."
+                        ),
+                        node_id=ln_id,
+                    )
+                )
+
     ok = not any(i.severity == "error" for i in issues)
     return ValidationResult(ok=ok, issues=issues)
 

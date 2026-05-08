@@ -36,7 +36,7 @@ async def recovery_org(db_session: AsyncSession, recovery_user: User) -> Organiz
         OrganizationMember(
             user_id=recovery_user.id,
             organization_id=org.id,
-            role="ADMIN",
+            roles=["MEMBER", "ADMIN"],
         )
     )
     await db_session.flush()
