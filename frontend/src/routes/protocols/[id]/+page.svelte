@@ -1187,6 +1187,7 @@
                 onSaveAsNew={handleSaveAsNew}
                 onCreateEquipment={handleCreateEquipment}
                 onClose={() => (selectedNodeId = null)}
+                branchErrors={selectedNodeId ? branchValidationErrors().filter((e) => e.sourceNodeId === selectedNodeId) : []}
             />
         {/if}
     {/if}
