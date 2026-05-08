@@ -55,14 +55,7 @@ Existing call site at `+page.svelte:357` updates to pass the time context.
 
 #### Per-node visual
 
-`UnitOpNode.svelte` already reads `branchValidation.invalidNodeIds` and applies `.invalid` to the offending source. Recolor `.invalid` from amber to red — every branch error is now blocking, so the visual should match.
-
-```css
-.unit-op-node.invalid {
-    border-color: #dc2626;
-    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.25), 0 4px 12px rgba(220, 38, 38, 0.15);
-}
-```
+`UnitOpNode.svelte` already reads `branchValidation.invalidNodeIds` and applies the existing amber `.invalid` ring to the offending source. Reuse as-is — no CSS changes. The behavior change (publish/run/PDF now blocked) is what makes the existing visual meaningful, not the color.
 
 #### Inspector display
 
@@ -74,8 +67,7 @@ Existing call site at `+page.svelte:357` updates to pass the time context.
 
 #### `ValidationBanners.svelte`
 
-- Branch validation banner restyled red (`#fef2f2` bg, `#dc2626` border, `#991b1b` text). Every branch error is blocking.
-- Process Start validation banner unchanged (still amber, still non-blocking — separate type, separate behavior).
+No styling changes. Existing amber banner is reused for branch errors. Inspector callout (next section) and the toast on save/publish/run/PDF carry the "this blocks publish" message.
 
 #### Drag-stop reassignment fix (prerequisite bundled)
 
@@ -211,14 +203,14 @@ None — no schema or data migration. The change is pure validation logic plus U
 ## Files touched
 
 Frontend:
-- `frontend/src/lib/components/protocol/protocolValidation.ts` — extend
+- `frontend/src/lib/components/protocol/protocolValidation.ts` — extend rule, add time-mode arg
 - `frontend/src/lib/components/protocol/protocolGraph.ts` — add `reparentNode` helper
-- `frontend/src/lib/components/protocol/ValidationBanners.svelte` — error-severity styling
-- `frontend/src/lib/components/protocol/UnitOpNode.svelte` — `.invalid-blocking` class
-- `frontend/src/lib/components/protocol/Inspector.svelte` — branch-error callout
-- `frontend/src/routes/protocols/[id]/+page.svelte` — pre-flight, drag-stop handler, context
+- `frontend/src/lib/components/protocol/Inspector.svelte` — branch-error callout for selected node
+- `frontend/src/routes/protocols/[id]/+page.svelte` — pre-flight in publish/PDF, drag-stop handler, pass time context
 - `frontend/src/lib/components/run/RunCreatorWizardModal.svelte` — pre-flight before createRun
 - New: `frontend/src/lib/components/protocol/protocolValidation.test.ts`
+
+(`UnitOpNode.svelte` and `ValidationBanners.svelte` are *not* touched — existing amber styling is reused.)
 
 Backend:
 - `backend/app/services/protocols/validation.py` — new rule + assert helper
