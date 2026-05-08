@@ -6,7 +6,6 @@ import type { Node, Edge } from "@xyflow/svelte";
 
 import {
     computeBranchValidationErrors,
-    // @ts-expect-error - BranchTimeContext exported in Task 8
     type BranchTimeContext,
 } from "./protocolValidation";
 
