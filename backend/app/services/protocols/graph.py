@@ -19,6 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Protocol
 from app.services.core.permissions import check_permission
+from app.services.protocols.lane_layout import (
+    grow_lane_to_fit,
+    lane_relative_position,
+)
 
 
 async def _load_and_guard(
@@ -120,10 +124,18 @@ async def add_step(
     else:
         insert_pos = (uo_idx[-1] + 1) if uo_idx else (ps_idx[0] + 1)
 
+    layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
+    if role_id is not None:
+        lane_id = f"lane-{role_id}"
+        position = lane_relative_position(nodes, lane_id, graph_layout=layout)
+    else:
+        lane_id = None
+        position = {"x": 100, "y": 200}
+
     new_node: dict[str, Any] = {
         "id": f"node-{uuid4()}",
         "type": "unitOp",
-        "position": {"x": 100, "y": 200},
+        "position": position,
         "data": {
             "label": name,
             "unitOpId": None,
@@ -134,9 +146,12 @@ async def add_step(
             "paramSchema": {},
         },
     }
-    if role_id is not None:
-        new_node["parentId"] = f"lane-{role_id}"
+    if lane_id is not None:
+        new_node["parentId"] = lane_id
     nodes.insert(insert_pos, new_node)
+
+    if lane_id is not None:
+        nodes = grow_lane_to_fit(nodes, lane_id, graph_layout=layout)
 
     new_uo_ids = [n["id"] for n in nodes if n.get("type") == "unitOp"]
     all_ids = {n["id"] for n in nodes}

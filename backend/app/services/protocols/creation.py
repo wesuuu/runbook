@@ -15,6 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Project, Protocol, UnitOpDefinition
 from app.services.core.permissions import check_permission
+from app.services.protocols.lane_layout import (
+    grow_lane_to_fit,
+    lane_relative_position,
+)
 
 
 class ProtocolStep(BaseModel):
@@ -171,10 +175,30 @@ async def update_protocol_step(
         data["params"] = params
 
     node["data"] = data
+    new_lane_id: str | None = None
     if role_id is not None:
-        node["parentId"] = f"lane-{role_id}"
+        new_lane_id = f"lane-{role_id}"
+        old_parent_id = node.get("parentId")
+        if old_parent_id != new_lane_id:
+            layout = (
+                "vertical" if graph.get("layout") == "vertical" else "horizontal"
+            )
+            node["parentId"] = new_lane_id
+            # When parentId is set the position field becomes relative to
+            # the parent. The previous absolute coordinates (or relative
+            # coords from a different lane) would land the step outside
+            # the lane or stacked on top of an existing sibling — pick a
+            # fresh slot inside the new lane.
+            node["position"] = lane_relative_position(
+                nodes, new_lane_id, graph_layout=layout, exclude_node_id=node["id"]
+            )
 
     nodes[node_idx] = node
+
+    if new_lane_id is not None:
+        layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
+        nodes = grow_lane_to_fit(nodes, new_lane_id, graph_layout=layout)
+
     graph["nodes"] = nodes
     protocol.graph = graph
     await db.flush()

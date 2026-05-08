@@ -170,13 +170,43 @@ def _lane(role) -> dict:
 def test_role_with_lane_passes():
     op = _unit_op()
     role = _role()
+    step = _step("s1", unit_op_id=op.id)
+    step["parentId"] = f"lane-{role.id}"
     graph = {
-        "nodes": [_ps("ps"), _lane(role), _step("s1", unit_op_id=op.id)],
+        "nodes": [_ps("ps"), _lane(role), step],
         "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
     }
     result = validate_protocol_graph(graph, [op], roles=[role])
     assert result.ok is True
     assert [i.code for i in result.issues] == []
+
+
+def test_role_with_lane_but_no_steps_flags_empty_lane():
+    op = _unit_op()
+    role = _role("Reviewer")
+    graph = {
+        "nodes": [_ps("ps"), _lane(role), _step("s1", unit_op_id=op.id)],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "empty_lane" in codes
+    empty = next(i for i in result.issues if i.code == "empty_lane")
+    assert empty.severity == "warning"
+    assert empty.node_id == f"lane-{role.id}"
+
+
+def test_empty_lane_not_flagged_when_role_missing_lane_node():
+    op = _unit_op()
+    role = _role("Reviewer")
+    graph = {
+        "nodes": [_ps("ps"), _step("s1", unit_op_id=op.id)],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "missing_lane_node" in codes
+    assert "empty_lane" not in codes
 
 
 def test_role_without_lane_flags_missing_lane_node():

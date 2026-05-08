@@ -168,6 +168,12 @@ The validator now also reports role/lane consistency:
   doesn't exist. Fix by reassigning the step to a real role:
   `update_protocol_step(protocol_id, step_index, role_id=<real_role_id>)`.
   If no suitable role exists, `add_protocol_role` first.
+- `empty_lane` — a role/swimLane exists but no steps are assigned to it.
+  Either assign one of the existing steps to that role via
+  `update_protocol_step(protocol_id, step_index, role_id=<role_id>)`, OR
+  ask the user which steps belong in that role, OR remove the role with
+  `remove_protocol_role(role_id)` if it was added by mistake. Empty lanes
+  confuse the user — never leave them in.
 
 Apply the same auto-fix loop here as in the create flow: fix what you
 can without changing the user's intent, re-validate, and only stop

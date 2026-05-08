@@ -139,6 +139,61 @@ async def test_add_step_with_role_id_sets_parent(
     unit_ops = [n for n in updated.graph["nodes"] if n["type"] == "unitOp"]
     new_node = next(n for n in unit_ops if n["data"]["label"] == "Roled")
     assert new_node.get("parentId") == f"lane-{role.id}"
+    # First child of the lane lands at the standard inset slot.
+    assert new_node["position"] == {"x": 20, "y": 60}
+
+
+@pytest.mark.asyncio
+async def test_add_step_stacks_children_inside_lane(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    role_id = uuid.uuid4()
+    role = ProtocolRole(
+        id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0
+    )
+    db_session.add(role)
+    await db_session.flush()
+    # Inject a swimLane node so grow_lane_to_fit has something to size.
+    g = dict(draft_proto.graph)
+    g["nodes"] = list(g["nodes"]) + [
+        {
+            "id": f"lane-{role_id}",
+            "type": "swimLane",
+            "position": {"x": 0, "y": 0},
+            "data": {
+                "label": "Op",
+                "roleId": str(role_id),
+                "orientation": "horizontal",
+            },
+            "style": "width: 800px; height: 200px;",
+        }
+    ]
+    draft_proto.graph = g
+    await db_session.flush()
+
+    for i in range(5):
+        await add_step(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=draft_proto.id,
+            name=f"R{i}",
+            unit_op_name="X",
+            role_id=role.id,
+        )
+    await db_session.refresh(draft_proto)
+    children = [
+        n
+        for n in draft_proto.graph["nodes"]
+        if n.get("parentId") == f"lane-{role_id}"
+    ]
+    xs = sorted(c["position"]["x"] for c in children)
+    assert xs == [20, 260, 500, 740, 980]
+    # Lane should have grown to fit 5 children: 20 + 5*240 + 40 = 1260.
+    lane = next(
+        n for n in draft_proto.graph["nodes"] if n["id"] == f"lane-{role_id}"
+    )
+    assert lane["width"] == 1260
+    assert lane["height"] == 200
 
 
 @pytest.mark.asyncio

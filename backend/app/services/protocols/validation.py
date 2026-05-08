@@ -183,6 +183,11 @@ def validate_protocol_graph(
         lane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
         lane_ids_by_role = {f"lane-{r.id}": r for r in roles}
         present_lane_ids = {ln.get("id") for ln in lane_nodes}
+        children_by_lane: dict[str, int] = {}
+        for n in unit_op_nodes:
+            pid = n.get("parentId")
+            if isinstance(pid, str) and pid.startswith("lane-"):
+                children_by_lane[pid] = children_by_lane.get(pid, 0) + 1
         for lane_id, role in lane_ids_by_role.items():
             if lane_id not in present_lane_ids:
                 issues.append(
@@ -194,6 +199,20 @@ def validate_protocol_graph(
                             "graph. Steps assigned to this role will not appear "
                             "inside its lane."
                         ),
+                    )
+                )
+                continue
+            if children_by_lane.get(lane_id, 0) == 0:
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="empty_lane",
+                        message=(
+                            f"Role '{role.name}' has no steps in its lane. "
+                            "Assign at least one step to this role or remove "
+                            "the role."
+                        ),
+                        node_id=lane_id,
                     )
                 )
         for ln in lane_nodes:

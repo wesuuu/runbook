@@ -270,6 +270,16 @@
         },
     });
 
+    setContext("laneInfo", {
+        childCount(laneId: string): number {
+            let n = 0;
+            for (const node of nodes) {
+                if (node.parentId === laneId) n += 1;
+            }
+            return n;
+        },
+    });
+
     setContext("nodeActions", {
         setNodeHandleOrientation(nodeId: string, orientation: "horizontal" | "vertical" | null) {
             pushUndoSnapshot();
