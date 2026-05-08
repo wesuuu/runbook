@@ -203,3 +203,26 @@ export function findSwimLaneParent(
     }
     return { parentId: undefined, adjustedPosition: position };
 }
+
+/**
+ * Move a node to a new absolute position. If the new position falls inside a
+ * swimlane, set parentId to that lane and adjust the node's position to be
+ * relative to the lane. Otherwise clear parentId and use the absolute position.
+ *
+ * Caller must pass the absolute position (not the SvelteFlow node-relative
+ * position). Convert by adding the current parent's position before calling.
+ */
+export function reparentNode(
+    nodes: Node[],
+    nodeId: string,
+    absolutePosition: { x: number; y: number },
+): Node[] {
+    const idx = nodes.findIndex((n) => n.id === nodeId);
+    if (idx < 0) return nodes;
+    const { parentId, adjustedPosition } = findSwimLaneParent(nodes, absolutePosition);
+    return nodes.map((n, i) =>
+        i === idx
+            ? { ...n, parentId, position: adjustedPosition }
+            : n,
+    );
+}
