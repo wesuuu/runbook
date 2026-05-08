@@ -150,3 +150,57 @@ def test_disconnected_step_is_warning():
     result = validate_protocol_graph(graph, [op])
     codes = [i.code for i in result.issues]
     assert "disconnected_step" in codes
+
+
+# ---------------------------------------------------------------------------
+# Branch role validation — shared fixture contract (QA-0006)
+# ---------------------------------------------------------------------------
+
+import json
+from pathlib import Path
+
+import pytest
+
+# Repo root: backend/tests/unit/test_protocols_validation.py → parents[3] = repo root
+_FIXTURE_PATH = Path(__file__).parents[3] / "tests" / "fixtures" / "branch_role_validation.json"
+_FIXTURE_CASES = json.loads(_FIXTURE_PATH.read_text())["cases"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    _FIXTURE_CASES,
+    ids=[c["name"] for c in _FIXTURE_CASES],
+)
+def test_branch_role_fixture(case):
+    """Shared behavior contract for branch_requires_distinct_roles.
+
+    Cases live in tests/fixtures/branch_role_validation.json — the single
+    source of truth shared with the frontend test suite. Adding/changing
+    a case forces both implementations to update together.
+    """
+    result = validate_protocol_graph(case["graph"], [])
+    actual_sources = sorted(
+        i.node_id
+        for i in result.issues
+        if i.code == "branch_requires_distinct_roles"
+    )
+    expected = sorted(case["expected"]["fires_on"])
+    assert actual_sources == expected, (
+        f"case '{case['name']}': expected fires_on={expected}, got {actual_sources}"
+    )
+
+
+def test_branch_role_issue_python_shape():
+    """Backend-specific assertions on ValidationIssue (severity, message)."""
+    case = next(
+        c for c in _FIXTURE_CASES
+        if c["name"] == "branching with two targets in same parentId fires"
+    )
+    result = validate_protocol_graph(case["graph"], [])
+    issue = next(
+        i for i in result.issues if i.code == "branch_requires_distinct_roles"
+    )
+    assert issue.severity == "error"
+    assert issue.node_id == "b"
+    assert "branches to" in issue.message
+    assert result.ok is False
