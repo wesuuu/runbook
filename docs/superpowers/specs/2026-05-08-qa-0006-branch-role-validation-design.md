@@ -29,6 +29,34 @@ For each node `X` with `outDegree ≥ 2`:
 
 The rule applies identically on frontend and backend.
 
+## Test fixtures (shared behavior contract)
+
+Because the rule is implemented twice (Python + TypeScript), behavior divergence is the main maintenance risk. To pin both implementations to the same observable behavior, the canonical test cases live in a single JSON fixture at `tests/fixtures/branch_role_validation.json`. Both `backend/tests/unit/test_protocols_validation.py` and `frontend/src/lib/components/protocol/protocolValidation.test.ts` load this fixture and assert identical outcomes.
+
+Fixture shape:
+
+```json
+{
+  "cases": [
+    {
+      "name": "<human-readable case name>",
+      "graph": {
+        "nodes": [...],
+        "edges": [...],
+        "timeEnabled": false,
+        "pixelsPerHour": 200,
+        "layout": "horizontal"
+      },
+      "expected": { "fires_on": ["<sourceNodeId>", ...] }
+    }
+  ]
+}
+```
+
+`fires_on` is the sorted list of source node IDs that should appear as `branch_requires_distinct_roles` errors. Both validators are tested with `sorted(actual_source_ids) === sorted(expected.fires_on)`. Per-language tests can additionally cover language-specific concerns (e.g., Python `severity == "error"`, TypeScript `BranchValidationError.targetNodeLabels` shape) but the cross-cutting behavior contract is the fixture.
+
+Adding a new case means one JSON entry, not two test functions. Removing/changing a case forces both implementations to update together.
+
 ## Architecture
 
 ### Frontend
@@ -201,6 +229,9 @@ Cases:
 None — no schema or data migration. The change is pure validation logic plus UI wiring.
 
 ## Files touched
+
+Shared:
+- New: `tests/fixtures/branch_role_validation.json` — canonical test cases, consumed by both backend and frontend test suites
 
 Frontend:
 - `frontend/src/lib/components/protocol/protocolValidation.ts` — extend rule, add time-mode arg

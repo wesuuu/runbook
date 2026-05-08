@@ -16,6 +16,7 @@
 
 | File | Role |
 |---|---|
+| `tests/fixtures/branch_role_validation.json` | **Shared behavior contract.** 8 canonical cases consumed by both backend and frontend tests. New file at repo root. |
 | `backend/app/services/protocols/validation.py` | Add `_branch_role_issues()` rule + `assert_no_branch_errors()` helper |
 | `backend/tests/unit/test_protocols_validation.py` | New test cases for the rule |
 | `backend/app/api/endpoints/protocol_versions.py` | Gate `POST /protocols/{id}/publish-draft` |
@@ -33,11 +34,12 @@
 
 ## Task Ordering / Dependencies
 
-The plan splits into three tracks that can be implemented in any order, but tasks within each track are sequential. Recommended order: backend rule → backend wiring → frontend rule → frontend wiring → drag-stop fix → manual verification.
+The plan splits into a shared prerequisite and three tracks. Tasks within a track are sequential. Recommended order: shared fixture → backend rule → backend wiring → frontend rule → frontend wiring → drag-stop fix → manual verification.
 
-- **Track A — Backend rule + tests** (Tasks 1–3)
+- **Task 0 — Shared test fixture** — prerequisite for Tracks A and C (the test files load it).
+- **Track A — Backend rule + tests** (Tasks 1–3) — depends on Task 0
 - **Track B — Backend endpoint wiring + integration tests** (Tasks 4–6) — depends on Track A
-- **Track C — Frontend rule + tests** (Tasks 7–9)
+- **Track C — Frontend rule + tests** (Tasks 7–9) — depends on Task 0
 - **Track D — Frontend wiring** (Tasks 10–13) — depends on Track C
 - **Track E — parentId reassignment fix** (Tasks 14–15) — independent
 - **Track F — Manual verification + close** (Tasks 16–17) — depends on all
@@ -46,249 +48,277 @@ Each task ends with a commit. Test commands assume CWD is the worktree root (`/h
 
 ---
 
-### Task 1: Backend — define the rule (failing tests first)
+### Task 0: Shared — define the test fixture (behavior contract)
 
 **Files:**
-- Test: `backend/tests/unit/test_protocols_validation.py` (extend)
+- Create: `tests/fixtures/branch_role_validation.json` (new file at repo root)
 
-- [ ] **Step 1: Add helper for building branching graphs at the top of the test file (after the existing `_step` helper, line ~46)**
+This fixture is the single source of truth for the rule's observable behavior. Both backend (`test_protocols_validation.py`) and frontend (`protocolValidation.test.ts`) load this file in subsequent tasks and assert identical outcomes. Adding a behavior case = one JSON entry, not two test functions.
 
-```python
-def _lane(node_id: str = "lane-1", label: str = "Lane 1") -> dict:
-    return {"id": node_id, "type": "swimLane", "data": {"label": label}, "position": {"x": 0, "y": 0}}
+- [ ] **Step 1: Create the fixture file**
 
-
-def _step_in_lane(
-    node_id: str,
-    lane_id: str | None,
-    *,
-    position: tuple[int, int] = (0, 0),
-    duration_min: int = 30,
-    label: str = "Step",
-) -> dict:
-    n = _step(node_id, label=label)
-    if lane_id is not None:
-        n["parentId"] = lane_id
-    n["position"] = {"x": position[0], "y": position[1]}
-    n["data"]["duration_min"] = duration_min
-    return n
+```json
+{
+    "$comment": "Shared behavior contract for branch_requires_distinct_roles. Consumed by backend/tests/unit/test_protocols_validation.py and frontend/src/lib/components/protocol/protocolValidation.test.ts. Each case's 'graph' is fed verbatim to the backend validator; the frontend test extracts nodes/edges and packs the rest into a BranchTimeContext. 'fires_on' is the sorted list of source node IDs that should produce branch_requires_distinct_roles errors.",
+    "cases": [
+        {
+            "name": "linear chain has no errors",
+            "graph": {
+                "nodes": [
+                    {"id": "ps", "type": "processStart", "data": {"label": "Start"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-A", "type": "swimLane", "data": {"label": "Lane A"}, "position": {"x": 0, "y": 0}},
+                    {"id": "a", "type": "unitOp", "parentId": "lane-A", "data": {"label": "A", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "b", "type": "unitOp", "parentId": "lane-A", "data": {"label": "B", "duration_min": 30}, "position": {"x": 100, "y": 0}}
+                ],
+                "edges": [
+                    {"id": "e0", "source": "ps", "target": "a"},
+                    {"id": "e1", "source": "a", "target": "b"}
+                ]
+            },
+            "expected": {"fires_on": []}
+        },
+        {
+            "name": "branching with all-distinct non-null parentIds is ok",
+            "graph": {
+                "nodes": [
+                    {"id": "ps", "type": "processStart", "data": {"label": "Start"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-A", "type": "swimLane", "data": {"label": "Lane A"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-B", "type": "swimLane", "data": {"label": "Lane B"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-C", "type": "swimLane", "data": {"label": "Lane C"}, "position": {"x": 0, "y": 0}},
+                    {"id": "a", "type": "unitOp", "parentId": "lane-A", "data": {"label": "A", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "b", "type": "unitOp", "parentId": "lane-A", "data": {"label": "B", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "c", "type": "unitOp", "parentId": "lane-B", "data": {"label": "C", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "d", "type": "unitOp", "parentId": "lane-C", "data": {"label": "D", "duration_min": 30}, "position": {"x": 0, "y": 0}}
+                ],
+                "edges": [
+                    {"id": "e0", "source": "ps", "target": "a"},
+                    {"id": "e1", "source": "a", "target": "b"},
+                    {"id": "e2", "source": "a", "target": "c"},
+                    {"id": "e3", "source": "a", "target": "d"}
+                ]
+            },
+            "expected": {"fires_on": []}
+        },
+        {
+            "name": "branching with two targets in same parentId fires",
+            "graph": {
+                "nodes": [
+                    {"id": "ps", "type": "processStart", "data": {"label": "Start"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-A", "type": "swimLane", "data": {"label": "Lane A"}, "position": {"x": 0, "y": 0}},
+                    {"id": "a", "type": "unitOp", "parentId": "lane-A", "data": {"label": "A", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "b", "type": "unitOp", "parentId": "lane-A", "data": {"label": "B", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "c", "type": "unitOp", "parentId": "lane-A", "data": {"label": "C", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "d", "type": "unitOp", "parentId": "lane-A", "data": {"label": "D", "duration_min": 30}, "position": {"x": 0, "y": 0}}
+                ],
+                "edges": [
+                    {"id": "e0", "source": "ps", "target": "a"},
+                    {"id": "e1", "source": "a", "target": "b"},
+                    {"id": "e2", "source": "b", "target": "c"},
+                    {"id": "e3", "source": "b", "target": "d"}
+                ]
+            },
+            "expected": {"fires_on": ["b"]}
+        },
+        {
+            "name": "branching with one null-parentId target fires",
+            "graph": {
+                "nodes": [
+                    {"id": "ps", "type": "processStart", "data": {"label": "Start"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-A", "type": "swimLane", "data": {"label": "Lane A"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-B", "type": "swimLane", "data": {"label": "Lane B"}, "position": {"x": 0, "y": 0}},
+                    {"id": "a", "type": "unitOp", "parentId": "lane-A", "data": {"label": "A", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "b", "type": "unitOp", "parentId": "lane-B", "data": {"label": "B", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "c", "type": "unitOp", "data": {"label": "C", "duration_min": 30}, "position": {"x": 0, "y": 0}}
+                ],
+                "edges": [
+                    {"id": "e0", "source": "ps", "target": "a"},
+                    {"id": "e1", "source": "a", "target": "b"},
+                    {"id": "e2", "source": "a", "target": "c"}
+                ]
+            },
+            "expected": {"fires_on": ["a"]}
+        },
+        {
+            "name": "time mode horizontal disjoint intervals suppress",
+            "graph": {
+                "timeEnabled": true,
+                "pixelsPerHour": 200,
+                "layout": "horizontal",
+                "nodes": [
+                    {"id": "ps", "type": "processStart", "data": {"label": "Start"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-A", "type": "swimLane", "data": {"label": "Lane A"}, "position": {"x": 0, "y": 0}},
+                    {"id": "a", "type": "unitOp", "parentId": "lane-A", "data": {"label": "A", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "b", "type": "unitOp", "parentId": "lane-A", "data": {"label": "B", "duration_min": 30}, "position": {"x": 400, "y": 0}},
+                    {"id": "c", "type": "unitOp", "parentId": "lane-A", "data": {"label": "C", "duration_min": 30}, "position": {"x": 500, "y": 0}}
+                ],
+                "edges": [
+                    {"id": "e0", "source": "ps", "target": "a"},
+                    {"id": "e1", "source": "a", "target": "b"},
+                    {"id": "e2", "source": "a", "target": "c"}
+                ]
+            },
+            "expected": {"fires_on": []}
+        },
+        {
+            "name": "time mode horizontal overlapping intervals fire",
+            "graph": {
+                "timeEnabled": true,
+                "pixelsPerHour": 200,
+                "layout": "horizontal",
+                "nodes": [
+                    {"id": "ps", "type": "processStart", "data": {"label": "Start"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-A", "type": "swimLane", "data": {"label": "Lane A"}, "position": {"x": 0, "y": 0}},
+                    {"id": "a", "type": "unitOp", "parentId": "lane-A", "data": {"label": "A", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "b", "type": "unitOp", "parentId": "lane-A", "data": {"label": "B", "duration_min": 60}, "position": {"x": 400, "y": 0}},
+                    {"id": "c", "type": "unitOp", "parentId": "lane-A", "data": {"label": "C", "duration_min": 60}, "position": {"x": 450, "y": 0}}
+                ],
+                "edges": [
+                    {"id": "e0", "source": "ps", "target": "a"},
+                    {"id": "e1", "source": "a", "target": "b"},
+                    {"id": "e2", "source": "a", "target": "c"}
+                ]
+            },
+            "expected": {"fires_on": ["a"]}
+        },
+        {
+            "name": "time mode vertical layout uses y-axis",
+            "graph": {
+                "timeEnabled": true,
+                "pixelsPerHour": 200,
+                "layout": "vertical",
+                "nodes": [
+                    {"id": "ps", "type": "processStart", "data": {"label": "Start"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-A", "type": "swimLane", "data": {"label": "Lane A"}, "position": {"x": 0, "y": 0}},
+                    {"id": "a", "type": "unitOp", "parentId": "lane-A", "data": {"label": "A", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "b", "type": "unitOp", "parentId": "lane-A", "data": {"label": "B", "duration_min": 30}, "position": {"x": 0, "y": 400}},
+                    {"id": "c", "type": "unitOp", "parentId": "lane-A", "data": {"label": "C", "duration_min": 30}, "position": {"x": 0, "y": 500}}
+                ],
+                "edges": [
+                    {"id": "e0", "source": "ps", "target": "a"},
+                    {"id": "e1", "source": "a", "target": "b"},
+                    {"id": "e2", "source": "a", "target": "c"}
+                ]
+            },
+            "expected": {"fires_on": []}
+        },
+        {
+            "name": "nested branching reports both branching points",
+            "graph": {
+                "nodes": [
+                    {"id": "ps", "type": "processStart", "data": {"label": "Start"}, "position": {"x": 0, "y": 0}},
+                    {"id": "lane-A", "type": "swimLane", "data": {"label": "Lane A"}, "position": {"x": 0, "y": 0}},
+                    {"id": "a", "type": "unitOp", "parentId": "lane-A", "data": {"label": "A", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "b", "type": "unitOp", "parentId": "lane-A", "data": {"label": "B", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "c", "type": "unitOp", "parentId": "lane-A", "data": {"label": "C", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "d", "type": "unitOp", "parentId": "lane-A", "data": {"label": "D", "duration_min": 30}, "position": {"x": 0, "y": 0}},
+                    {"id": "e", "type": "unitOp", "parentId": "lane-A", "data": {"label": "E", "duration_min": 30}, "position": {"x": 0, "y": 0}}
+                ],
+                "edges": [
+                    {"id": "e0", "source": "ps", "target": "a"},
+                    {"id": "e1", "source": "a", "target": "b"},
+                    {"id": "e2", "source": "a", "target": "c"},
+                    {"id": "e3", "source": "c", "target": "d"},
+                    {"id": "e4", "source": "c", "target": "e"}
+                ]
+            },
+            "expected": {"fires_on": ["a", "c"]}
+        }
+    ]
+}
 ```
 
-- [ ] **Step 2: Add the failing test cases at the bottom of the file**
-
-```python
-def test_branch_with_distinct_lanes_is_ok():
-    op = _unit_op()
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _lane("lane-B"),
-            _step_in_lane("a", "lane-A", label="A"),
-            _step_in_lane("b", "lane-A", label="B"),
-            _step_in_lane("c", "lane-A", label="C"),
-            _step_in_lane("d", "lane-B", label="D"),
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "b"},
-            {"id": "e2", "source": "b", "target": "c"},
-            {"id": "e3", "source": "b", "target": "d"},
-        ],
-    }
-    result = validate_protocol_graph(graph, [op])
-    codes = [i.code for i in result.issues]
-    assert "branch_requires_distinct_roles" not in codes
-
-
-def test_branch_with_same_lane_targets_is_error():
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _step_in_lane("a", "lane-A", label="A"),
-            _step_in_lane("b", "lane-A", label="B"),
-            _step_in_lane("c", "lane-A", label="C"),
-            _step_in_lane("d", "lane-A", label="D"),
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "b"},
-            {"id": "e2", "source": "b", "target": "c"},
-            {"id": "e3", "source": "b", "target": "d"},
-        ],
-    }
-    result = validate_protocol_graph(graph, [])
-    codes = [i.code for i in result.issues]
-    assert "branch_requires_distinct_roles" in codes
-    assert result.ok is False
-    issue = next(i for i in result.issues if i.code == "branch_requires_distinct_roles")
-    assert issue.node_id == "b"
-    assert issue.severity == "error"
-
-
-def test_branch_with_null_parent_target_is_error():
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _step_in_lane("a", "lane-A", label="A"),
-            _step_in_lane("b", "lane-A", label="B"),
-            _step_in_lane("c", "lane-A", label="C"),
-            _step_in_lane("d", None, label="D"),  # no parentId
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "b"},
-            {"id": "e2", "source": "b", "target": "c"},
-            {"id": "e3", "source": "b", "target": "d"},
-        ],
-    }
-    result = validate_protocol_graph(graph, [])
-    codes = [i.code for i in result.issues]
-    assert "branch_requires_distinct_roles" in codes
-
-
-def test_branch_time_mode_disjoint_intervals_suppressed_horizontal():
-    """Same-lane branches at non-overlapping x positions in time mode → suppressed."""
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _step_in_lane("a", "lane-A", position=(0, 0), duration_min=30),
-            _step_in_lane("b", "lane-A", position=(100, 0), duration_min=30),
-            # c at x=400 (start=120min) duration 30 → ends at 150min
-            _step_in_lane("c", "lane-A", position=(400, 0), duration_min=30),
-            # d at x=500 (start=150min) duration 30 → ends at 180min, disjoint from c
-            _step_in_lane("d", "lane-A", position=(500, 0), duration_min=30),
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "b"},
-            {"id": "e2", "source": "b", "target": "c"},
-            {"id": "e3", "source": "b", "target": "d"},
-        ],
-        "timeEnabled": True,
-        "pixelsPerHour": 200,
-        "layout": "horizontal",
-    }
-    result = validate_protocol_graph(graph, [])
-    codes = [i.code for i in result.issues]
-    assert "branch_requires_distinct_roles" not in codes
-
-
-def test_branch_time_mode_overlapping_intervals_fires():
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _step_in_lane("a", "lane-A", position=(0, 0)),
-            _step_in_lane("b", "lane-A", position=(100, 0)),
-            _step_in_lane("c", "lane-A", position=(400, 0), duration_min=60),  # 120-180
-            _step_in_lane("d", "lane-A", position=(450, 0), duration_min=60),  # 135-195 (overlaps c)
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "b"},
-            {"id": "e2", "source": "b", "target": "c"},
-            {"id": "e3", "source": "b", "target": "d"},
-        ],
-        "timeEnabled": True,
-        "pixelsPerHour": 200,
-        "layout": "horizontal",
-    }
-    result = validate_protocol_graph(graph, [])
-    codes = [i.code for i in result.issues]
-    assert "branch_requires_distinct_roles" in codes
-
-
-def test_branch_time_mode_vertical_layout_uses_y_axis():
-    """When layout=vertical, intervals come from y-axis, not x."""
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _step_in_lane("a", "lane-A", position=(0, 0)),
-            _step_in_lane("b", "lane-A", position=(0, 100)),
-            # x positions overlap, but y positions are disjoint
-            _step_in_lane("c", "lane-A", position=(0, 400), duration_min=30),
-            _step_in_lane("d", "lane-A", position=(0, 500), duration_min=30),
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "b"},
-            {"id": "e2", "source": "b", "target": "c"},
-            {"id": "e3", "source": "b", "target": "d"},
-        ],
-        "timeEnabled": True,
-        "pixelsPerHour": 200,
-        "layout": "vertical",
-    }
-    result = validate_protocol_graph(graph, [])
-    codes = [i.code for i in result.issues]
-    assert "branch_requires_distinct_roles" not in codes
-
-
-def test_branch_with_three_targets_in_three_distinct_lanes_is_ok():
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _lane("lane-B"),
-            _lane("lane-C"),
-            _step_in_lane("a", "lane-A"),
-            _step_in_lane("c", "lane-A"),
-            _step_in_lane("d", "lane-B"),
-            _step_in_lane("e", "lane-C"),
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "c"},
-            {"id": "e2", "source": "a", "target": "d"},
-            {"id": "e3", "source": "a", "target": "e"},
-        ],
-    }
-    result = validate_protocol_graph(graph, [])
-    codes = [i.code for i in result.issues]
-    assert "branch_requires_distinct_roles" not in codes
-
-
-def test_branch_with_three_targets_two_in_same_lane_is_error():
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _lane("lane-B"),
-            _step_in_lane("a", "lane-A"),
-            _step_in_lane("c", "lane-A"),
-            _step_in_lane("d", "lane-A"),  # duplicate of c's lane
-            _step_in_lane("e", "lane-B"),
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "c"},
-            {"id": "e2", "source": "a", "target": "d"},
-            {"id": "e3", "source": "a", "target": "e"},
-        ],
-    }
-    result = validate_protocol_graph(graph, [])
-    codes = [i.code for i in result.issues]
-    assert "branch_requires_distinct_roles" in codes
-```
-
-- [ ] **Step 3: Run tests to verify they fail**
+- [ ] **Step 2: Verify it parses as JSON**
 
 Run:
 ```bash
-cd backend && pytest tests/unit/test_protocols_validation.py -v -k "branch"
+python -c "import json; d = json.load(open('tests/fixtures/branch_role_validation.json')); print(f'{len(d[\"cases\"])} cases')"
 ```
-Expected: 8 new tests FAIL with `assert "branch_requires_distinct_roles" in codes` or similar (rule not implemented yet). Existing tests pass.
+Expected: `8 cases`.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/fixtures/branch_role_validation.json
+git commit -m "test(qa-0006): shared fixture for branch role validation cases
+
+Single source of truth for branch_requires_distinct_roles behavior.
+Loaded by backend (test_protocols_validation.py) and frontend
+(protocolValidation.test.ts) tests in following tasks."
+```
+
+---
+
+### Task 1: Backend — failing tests via shared fixture
+
+**Files:**
+- Modify: `backend/tests/unit/test_protocols_validation.py` (extend)
+
+- [ ] **Step 1: Add the fixture-driven test at the bottom of the test file**
+
+```python
+import json
+from pathlib import Path
+
+import pytest
+
+# Repo root: backend/tests/unit/test_protocols_validation.py → parents[3] = repo root
+_FIXTURE_PATH = Path(__file__).parents[3] / "tests" / "fixtures" / "branch_role_validation.json"
+_FIXTURE_CASES = json.loads(_FIXTURE_PATH.read_text())["cases"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    _FIXTURE_CASES,
+    ids=[c["name"] for c in _FIXTURE_CASES],
+)
+def test_branch_role_fixture(case):
+    """Shared behavior contract for branch_requires_distinct_roles.
+
+    Cases live in tests/fixtures/branch_role_validation.json — the single
+    source of truth shared with the frontend test suite. Adding/changing
+    a case forces both implementations to update together.
+    """
+    result = validate_protocol_graph(case["graph"], [])
+    actual_sources = sorted(
+        i.node_id
+        for i in result.issues
+        if i.code == "branch_requires_distinct_roles"
+    )
+    expected = sorted(case["expected"]["fires_on"])
+    assert actual_sources == expected, (
+        f"case '{case['name']}': expected fires_on={expected}, got {actual_sources}"
+    )
+
+
+def test_branch_role_issue_python_shape():
+    """Backend-specific assertions on ValidationIssue (severity, message)."""
+    case = next(
+        c for c in _FIXTURE_CASES
+        if c["name"] == "branching with two targets in same parentId fires"
+    )
+    result = validate_protocol_graph(case["graph"], [])
+    issue = next(
+        i for i in result.issues if i.code == "branch_requires_distinct_roles"
+    )
+    assert issue.severity == "error"
+    assert issue.node_id == "b"
+    assert "branches to" in issue.message
+    assert result.ok is False
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run:
+```bash
+cd backend && pytest tests/unit/test_protocols_validation.py -v -k "branch_role"
+```
+Expected: All parametrized cases that expect `fires_on` non-empty FAIL (rule not implemented yet — backend reports zero `branch_requires_distinct_roles` issues). The shape test also FAILS. Cases with `fires_on: []` pass trivially.
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add backend/tests/unit/test_protocols_validation.py
-git commit -m "test(qa-0006): failing tests for branch_requires_distinct_roles rule"
+git commit -m "test(qa-0006): backend failing tests load shared branch role fixture"
 ```
 
 ---
@@ -418,43 +448,27 @@ immediate branch target intervals are pairwise disjoint."
 
 - [ ] **Step 1: Add a failing test for the helper at the bottom of the test file**
 
+These tests reuse fixture cases (loaded as `_FIXTURE_CASES` in Task 1's edits) so the helper's behavior tracks the shared contract.
+
 ```python
-import pytest
 from fastapi import HTTPException
 
 from app.services.protocols.validation import assert_no_branch_errors
 
 
 def test_assert_no_branch_errors_raises_400_on_violation():
-    graph = {
-        "nodes": [
-            _ps("ps"),
-            _lane("lane-A"),
-            _step_in_lane("a", "lane-A"),
-            _step_in_lane("c", "lane-A"),
-            _step_in_lane("d", "lane-A"),
-        ],
-        "edges": [
-            {"id": "e0", "source": "ps", "target": "a"},
-            {"id": "e1", "source": "a", "target": "c"},
-            {"id": "e2", "source": "a", "target": "d"},
-        ],
-    }
+    case = next(c for c in _FIXTURE_CASES if c["expected"]["fires_on"])
     with pytest.raises(HTTPException) as exc_info:
-        assert_no_branch_errors(graph, [])
+        assert_no_branch_errors(case["graph"], [])
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail["error"] == "branch_requires_distinct_roles"
     assert len(exc_info.value.detail["issues"]) >= 1
 
 
 def test_assert_no_branch_errors_passes_on_valid_graph():
-    op = _unit_op()
-    graph = {
-        "nodes": [_ps("ps"), _step("s1", unit_op_id=op.id)],
-        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
-    }
-    # Should not raise
-    assert_no_branch_errors(graph, [op])
+    case = next(c for c in _FIXTURE_CASES if not c["expected"]["fires_on"])
+    # Should not raise.
+    assert_no_branch_errors(case["graph"], [])
 ```
 
 - [ ] **Step 2: Verify test fails**
@@ -863,150 +877,92 @@ git commit -m "test(qa-0006): integration tests for endpoint enforcement"
 
 ---
 
-### Task 7: Frontend — extend `computeBranchValidationErrors` (failing tests)
+### Task 7: Frontend — failing tests via shared fixture
 
 **Files:**
 - Create: `frontend/src/lib/components/protocol/protocolValidation.test.ts`
 
 - [ ] **Step 1: Create the test file**
 
+The fixture lives outside `frontend/`, so we read it via `fs` rather than a TS `import` (avoids `rootDir` resolution noise).
+
 ```typescript
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import type { Node, Edge } from "@xyflow/svelte";
-import { computeBranchValidationErrors } from "./protocolValidation";
 
-const TIME_OFF = { timeEnabled: false, pixelsPerHour: 200, layout: "horizontal" as const };
+import {
+    computeBranchValidationErrors,
+    type BranchTimeContext,
+} from "./protocolValidation";
 
-function lane(id: string): Node {
+// frontend/src/lib/components/protocol/protocolValidation.test.ts
+// → ../../../../../tests/fixtures/branch_role_validation.json (5 ups to repo root)
+const FIXTURE_PATH = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../../../tests/fixtures/branch_role_validation.json",
+);
+
+interface FixtureCase {
+    name: string;
+    graph: {
+        nodes: unknown[];
+        edges: unknown[];
+        timeEnabled?: boolean;
+        pixelsPerHour?: number;
+        layout?: "horizontal" | "vertical";
+    };
+    expected: { fires_on: string[] };
+}
+
+const FIXTURE: { cases: FixtureCase[] } = JSON.parse(
+    readFileSync(FIXTURE_PATH, "utf-8"),
+);
+
+function timeContextOf(c: FixtureCase): BranchTimeContext {
     return {
-        id,
-        type: "swimLane",
-        position: { x: 0, y: 0 },
-        data: { label: id },
-    } as unknown as Node;
+        timeEnabled: c.graph.timeEnabled ?? false,
+        pixelsPerHour: c.graph.pixelsPerHour ?? 200,
+        layout: c.graph.layout ?? "horizontal",
+    };
 }
 
-function step(
-    id: string,
-    parentId: string | undefined,
-    opts: { x?: number; y?: number; durationMin?: number } = {},
-): Node {
-    return {
-        id,
-        type: "unitOp",
-        parentId,
-        position: { x: opts.x ?? 0, y: opts.y ?? 0 },
-        data: { label: id, duration_min: opts.durationMin ?? 30 },
-    } as unknown as Node;
-}
+describe("computeBranchValidationErrors (shared fixture)", () => {
+    // Shared behavior contract — cases live in
+    // tests/fixtures/branch_role_validation.json. Adding/changing a case
+    // forces both backend and frontend to update together.
+    it.each(FIXTURE.cases.map((c) => [c.name, c] as const))(
+        "%s",
+        (_name, c) => {
+            const nodes = c.graph.nodes as unknown as Node[];
+            const edges = c.graph.edges as unknown as Edge[];
+            const errs = computeBranchValidationErrors(
+                nodes,
+                edges,
+                timeContextOf(c),
+            );
+            const actual = errs.map((e) => e.sourceNodeId).sort();
+            const expected = [...c.expected.fires_on].sort();
+            expect(actual).toEqual(expected);
+        },
+    );
 
-function edge(id: string, source: string, target: string): Edge {
-    return { id, source, target } as Edge;
-}
-
-describe("computeBranchValidationErrors", () => {
-    it("no branching → no errors", () => {
-        const nodes = [step("a", "lane-1"), step("b", "lane-1")];
-        const edges = [edge("e1", "a", "b")];
-        expect(computeBranchValidationErrors(nodes, edges, TIME_OFF)).toEqual([]);
-    });
-
-    it("branching with all-distinct non-null parentIds → no errors", () => {
-        const nodes = [
-            lane("lane-A"), lane("lane-B"), lane("lane-C"),
-            step("a", "lane-A"),
-            step("b", "lane-A"),
-            step("c", "lane-B"),
-            step("d", "lane-C"),
-        ];
-        const edges = [edge("e1", "a", "b"), edge("e2", "a", "c"), edge("e3", "a", "d")];
-        expect(computeBranchValidationErrors(nodes, edges, TIME_OFF)).toEqual([]);
-    });
-
-    it("branching with two targets in same parentId → fires", () => {
-        const nodes = [
-            lane("lane-A"),
-            step("a", "lane-A"),
-            step("b", "lane-A"),
-            step("c", "lane-A"),
-        ];
-        const edges = [edge("e1", "a", "b"), edge("e2", "a", "c")];
-        const errs = computeBranchValidationErrors(nodes, edges, TIME_OFF);
+    // Frontend-specific shape assertions on BranchValidationError.
+    it("error shape includes source label and target labels", () => {
+        const c = FIXTURE.cases.find(
+            (x) => x.name === "branching with two targets in same parentId fires",
+        )!;
+        const errs = computeBranchValidationErrors(
+            c.graph.nodes as unknown as Node[],
+            c.graph.edges as unknown as Edge[],
+            timeContextOf(c),
+        );
         expect(errs).toHaveLength(1);
-        expect(errs[0].sourceNodeId).toBe("a");
-    });
-
-    it("branching with one null parentId target → fires", () => {
-        const nodes = [
-            lane("lane-A"),
-            step("a", "lane-A"),
-            step("b", "lane-A"),
-            step("c", undefined),
-        ];
-        const edges = [edge("e1", "a", "b"), edge("e2", "a", "c")];
-        const errs = computeBranchValidationErrors(nodes, edges, TIME_OFF);
-        expect(errs).toHaveLength(1);
-    });
-
-    it("time mode + horizontal + disjoint intervals → suppressed", () => {
-        const nodes = [
-            lane("lane-A"),
-            step("a", "lane-A", { x: 0 }),
-            step("b", "lane-A", { x: 400, durationMin: 30 }),  // 120-150 min
-            step("c", "lane-A", { x: 500, durationMin: 30 }),  // 150-180 min, disjoint
-        ];
-        const edges = [edge("e1", "a", "b"), edge("e2", "a", "c")];
-        expect(computeBranchValidationErrors(nodes, edges, {
-            timeEnabled: true, pixelsPerHour: 200, layout: "horizontal",
-        })).toEqual([]);
-    });
-
-    it("time mode + overlapping intervals → fires", () => {
-        const nodes = [
-            lane("lane-A"),
-            step("a", "lane-A", { x: 0 }),
-            step("b", "lane-A", { x: 400, durationMin: 60 }),
-            step("c", "lane-A", { x: 450, durationMin: 60 }),
-        ];
-        const edges = [edge("e1", "a", "b"), edge("e2", "a", "c")];
-        const errs = computeBranchValidationErrors(nodes, edges, {
-            timeEnabled: true, pixelsPerHour: 200, layout: "horizontal",
-        });
-        expect(errs).toHaveLength(1);
-    });
-
-    it("time mode + vertical layout uses y-axis", () => {
-        const nodes = [
-            lane("lane-A"),
-            step("a", "lane-A", { y: 0 }),
-            step("b", "lane-A", { x: 0, y: 400, durationMin: 30 }),
-            step("c", "lane-A", { x: 0, y: 500, durationMin: 30 }),
-        ];
-        const edges = [edge("e1", "a", "b"), edge("e2", "a", "c")];
-        expect(computeBranchValidationErrors(nodes, edges, {
-            timeEnabled: true, pixelsPerHour: 200, layout: "vertical",
-        })).toEqual([]);
-    });
-
-    it("nested branching reports both branching points independently", () => {
-        const nodes = [
-            lane("lane-A"),
-            step("a", "lane-A"),
-            step("b", "lane-A"),
-            step("c", "lane-A"),
-            step("d", "lane-A"),
-            step("e", "lane-A"),
-        ];
-        // a→(b,c), c→(d,e). Both branching points have same-lane targets.
-        const edges = [
-            edge("e1", "a", "b"),
-            edge("e2", "a", "c"),
-            edge("e3", "c", "d"),
-            edge("e4", "c", "e"),
-        ];
-        const errs = computeBranchValidationErrors(nodes, edges, TIME_OFF);
-        const sources = errs.map(e => e.sourceNodeId).sort();
-        expect(sources).toEqual(["a", "c"]);
+        expect(errs[0].sourceNodeId).toBe("b");
+        expect(errs[0].sourceNodeLabel).toBe("B");
+        expect(errs[0].targetNodeLabels.sort()).toEqual(["C", "D"]);
     });
 });
 ```
@@ -1017,13 +973,13 @@ Run:
 ```bash
 cd frontend && npm run test -- protocolValidation
 ```
-Expected: most tests FAIL (signature mismatch — the function doesn't accept the time-context arg yet, plus the null-parentId case isn't currently flagged independently when groups are size 1).
+Expected: parametrized cases that expect `fires_on` non-empty FAIL (signature mismatch — `computeBranchValidationErrors` doesn't accept the time-context arg yet, and null-parentId targets aren't flagged when their groups are size 1). Empty-`fires_on` cases may pass trivially or also fail depending on signature error.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add frontend/src/lib/components/protocol/protocolValidation.test.ts
-git commit -m "test(qa-0006): failing frontend tests for branch validation extension"
+git commit -m "test(qa-0006): frontend failing tests load shared branch role fixture"
 ```
 
 ---
@@ -1729,6 +1685,7 @@ Do not close the task without it.
 ## Self-Review
 
 Spec coverage:
+- Shared behavior contract (fixture): Task 0. Loaded by Tasks 1 and 7.
 - Rule definition (immediate-target distinctness + null-parentId + time-mode suppression): Tasks 2, 8.
 - Frontend pre-flight on saveAndPublish + openPdfPreview: Task 10.
 - Backend gate on publish-draft: Task 4. /runs: Task 5. PDF endpoints: Task 5.
@@ -1736,7 +1693,7 @@ Spec coverage:
 - Inspector callout: Task 11.
 - ValidationBanners reuse: no task needed — banner already renders `branchValidationErrors` and that's preserved.
 - parentId reassignment fix: Tasks 12, 13, 14.
-- Tests (unit, integration): Tasks 1, 3, 6, 7, 12.
+- Tests (unit, integration): Tasks 0 (fixture), 1, 3, 6, 7, 12.
 
 No gaps.
 
