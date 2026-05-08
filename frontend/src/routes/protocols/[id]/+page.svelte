@@ -30,6 +30,7 @@
         clearTimelineSizing as clearTimeline,
         detectEquipmentConflicts as detectConflicts,
         findSwimLaneParent,
+        reparentNode,
     } from "$lib/components/protocol/protocolGraph";
     import {
         computeBranchValidationErrors,
@@ -802,6 +803,25 @@
         }
     }
 
+    function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
+        if (!targetNode) return;
+        if (targetNode.type !== "unitOp" && targetNode.type !== "processStart") return;
+        let absX = targetNode.position.x;
+        let absY = targetNode.position.y;
+        if (targetNode.parentId) {
+            const parent = nodes.find((n) => n.id === targetNode.parentId);
+            if (parent) {
+                absX += parent.position.x;
+                absY += parent.position.y;
+            }
+        }
+        const before = nodes.find((n) => n.id === targetNode.id)?.parentId;
+        const updated = reparentNode(nodes, targetNode.id, { x: absX, y: absY });
+        const after = updated.find((n) => n.id === targetNode.id)?.parentId;
+        if (before === after) return;
+        nodes = updated;
+    }
+
     // --- Equipment Management ---
     async function handleCreateEquipment(data: { name: string; description: string; equipment_type: string; location: string }): Promise<any> {
         const org = getCurrentOrg();
@@ -1150,6 +1170,7 @@
                 panOnDrag={interactionMode === "pan"}
                 snapGrid={timeEnabled ? [snapGridPx, snapGridPx] : undefined}
                 onnodedragstart={() => pushUndoSnapshot()}
+                onnodedragstop={handleNodeDragStop}
                 onconnectstart={() => { preConnectSnapshot = buildGraphSnapshot(nodes, edges); }}
                 onconnect={() => {
                     if (preConnectSnapshot) {
