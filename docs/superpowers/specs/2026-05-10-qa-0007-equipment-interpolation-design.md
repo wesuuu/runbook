@@ -39,23 +39,26 @@ SelectedEquipment {
 
 ## Backend interpolation
 
-Two files carry the substitution logic today: `backend/app/services/documents/pdf_base.py` (the regex pass) and `backend/app/services/protocols/template_engine.py` (the per-step caller). Changes:
+Two files carry the substitution logic today: `backend/app/services/documents/pdf_base.py` (the regex pass) and `backend/app/services/protocols/template_engine.py` (the per-step caller). The render function stays equipment-agnostic — the caller flattens equipment fields into the params dict before invoking it.
 
 ### `pdf_base._render_template`
 
-- Signature changes from `_render_template(template, params) -> str` to `_render_template(template, params, equipment_lookup=None) -> tuple[str, list[str]]`.
+- Signature: `_render_template(template, params) -> tuple[str, list[str]]` (only change is returning the unresolved-token list alongside the rendered text).
 - Regex changes from `\{\{(\w+)\}\}` to `\{\{([A-Za-z][\w-]*)\}\}` so hyphens in `E-001` are matched.
-- Resolution order per match:
-  1. Token is a key in `params` and value is truthy/non-empty → substitute.
-  2. Token matches `^(.+)_(name|description)$` and group(1) is in `equipment_lookup` → substitute the matching field.
-  3. Otherwise → leave the literal `{{token}}` and add `token` to the returned unresolved list.
-- The unresolved list deduplicates and preserves order of first appearance.
+- Resolution per match: token is a key in `params` and value is truthy/non-empty → substitute; otherwise leave literal `{{token}}` and add `token` to the unresolved list (deduped, order of first appearance).
 
 ### `template_engine`
 
-- Build a single `equipment_lookup: dict[str, Equipment]` per render by walking the protocol graph's unit op nodes (including swimlane children), collecting every `(local_id, equipment_id)` pair with a non-empty `local_id`, and fetching the corresponding `Equipment` rows in one query scoped to the org.
-- If two assignments share a `local_id`, the first wins for resolution but the duplicate is recorded as a render warning so the issue isn't hidden (defense in depth even though the frontend blocks duplicates).
-- Aggregate unresolved tokens across all step renders for the protocol/run; return them in the response payload alongside the rendered document.
+Before each `_render_template` call, build a flat equipment-context dict and merge it into the params namespace passed to the renderer:
+
+1. Walk the protocol graph once (including swimlane children), collect every `(local_id, equipment_id)` pair with a non-empty `local_id`.
+2. Fetch the matching `Equipment` rows in one org-scoped query.
+3. Build `equipment_context: dict[str, str]` like `{"E-001_name": "Sartorius Bioreactor", "E-001_description": "5L stirred-tank, …", "E-002_name": …, …}`.
+4. Pass `{**equipment_context, **step_params}` as `params` to `_render_template`. Step params win on key collision so a deliberately-named `E-001_name` param could still override (edge case, but cheap to define).
+
+If two assignments share a `local_id`, the first wins in the dict and the duplicate is logged + recorded as a render warning so the issue isn't hidden (defense in depth even though the frontend blocks duplicates).
+
+Unresolved tokens are aggregated across all step renders for the protocol/run and returned in the response payload alongside the rendered document.
 
 ### API surface
 
@@ -89,8 +92,8 @@ Unresolved placeholders flow back via the existing PDF/instructions response. Th
 - `{{E-009_name}}` (unassigned) stays as literal `{{E-009_name}}` and appears in the unresolved list.
 - `{{my_param}}` continues to resolve from params (regression).
 - Mixed template: params + equipment + unresolved all in one input, all three behaviors observed.
-- `_build_equipment_lookup` walks nested swimlane children and dedupes by `local_id`.
-- Duplicate `local_id` across nodes: first wins, duplicate logged as warning.
+- Equipment-context builder walks nested swimlane children and produces flat `{<local_id>_name, <local_id>_description}` keys.
+- Duplicate `local_id` across nodes: first wins in the dict, duplicate logged as warning.
 
 ### Frontend unit
 
