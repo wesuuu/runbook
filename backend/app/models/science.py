@@ -27,6 +27,20 @@ class RunStatus(str, Enum):
     ARCHIVED = "ARCHIVED"
 
 
+class ProtocolApprovalAction(str, Enum):
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    REVERTED = "REVERTED"
+
+
+class ProtocolApprovalRequestStatus(str, Enum):
+    OPEN = "OPEN"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    WITHDRAWN = "WITHDRAWN"
+
+
 class Project(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "projects"
 
@@ -165,6 +179,7 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     approval_requests: Mapped[List["ProtocolApprovalRequest"]] = relationship(
         back_populates="protocol",
         cascade="all, delete-orphan",
+        order_by="ProtocolApprovalRequest.created_at.desc()",
     )
 
 
@@ -432,7 +447,9 @@ class ProtocolApprovalEvent(Base, UUIDMixin, TimestampMixin):
     actor: Mapped[Optional["app.models.iam.User"]] = relationship(
         "app.models.iam.User", foreign_keys=[actor_id]
     )
-    protocol_version: Mapped[Optional["ProtocolVersion"]] = relationship()
+    protocol_version: Mapped[Optional["ProtocolVersion"]] = relationship(
+        foreign_keys=[protocol_version_id]
+    )
 
 
 class ProtocolApprovalRequest(Base, UUIDMixin, TimestampMixin):
