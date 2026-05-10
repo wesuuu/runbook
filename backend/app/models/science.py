@@ -3,7 +3,8 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 from sqlalchemy import (Boolean, CheckConstraint, DateTime, Enum, ForeignKey,
-                        Index, Integer, String, UniqueConstraint, desc, func)
+                        Index, Integer, String, UniqueConstraint, desc, func,
+                        text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -108,6 +109,18 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     is_tour_sample: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False, index=True
     )
+    requires_approval: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # The template graph structure
     graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -137,6 +150,21 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
         back_populates="protocol",
         cascade="all, delete-orphan",
         order_by="ProtocolVersion.version_number.desc()",
+    )
+    created_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[created_by_id]
+    )
+    approved_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[approved_by_id]
+    )
+    approval_events: Mapped[List["ProtocolApprovalEvent"]] = relationship(
+        back_populates="protocol",
+        cascade="all, delete-orphan",
+        order_by="ProtocolApprovalEvent.created_at.desc()",
+    )
+    approval_requests: Mapped[List["ProtocolApprovalRequest"]] = relationship(
+        back_populates="protocol",
+        cascade="all, delete-orphan",
     )
 
 
@@ -184,6 +212,9 @@ class Run(Base, UUIDMixin, TimestampMixin):
     )
     is_tour_sample: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False, index=True
+    )
+    is_strict: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
     )
 
     # Relationships
@@ -368,3 +399,84 @@ class Equipment(Base, UUIDMixin, TimestampMixin):
     description: Mapped[Optional[str]] = mapped_column(String)
     equipment_type: Mapped[Optional[str]] = mapped_column(String)
     location: Mapped[Optional[str]] = mapped_column(String)
+
+
+class ProtocolApprovalEvent(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "protocol_approval_events"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('SUBMITTED','APPROVED','REJECTED','REVERTED')",
+            name="ck_proto_appr_event_action",
+        ),
+        Index(
+            "ix_proto_appr_event_protocol_created",
+            "protocol_id",
+            "created_at",
+        ),
+    )
+
+    protocol_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False
+    )
+    protocol_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("protocol_versions.id", ondelete="SET NULL"), nullable=True
+    )
+    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    signature_statement: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    protocol: Mapped["Protocol"] = relationship(back_populates="approval_events")
+    actor: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[actor_id]
+    )
+    protocol_version: Mapped[Optional["ProtocolVersion"]] = relationship()
+
+
+class ProtocolApprovalRequest(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "protocol_approval_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('OPEN','APPROVED','REJECTED','WITHDRAWN')",
+            name="ck_proto_appr_req_status",
+        ),
+        Index(
+            "ix_proto_appr_req_open_unique",
+            "protocol_id",
+            "requested_user_id",
+            unique=True,
+            postgresql_where=text("status = 'OPEN'"),
+        ),
+    )
+
+    protocol_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False
+    )
+    requested_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    requested_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default="OPEN", server_default="OPEN", nullable=False
+    )
+    fulfilled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    fulfilled_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    protocol: Mapped["Protocol"] = relationship(back_populates="approval_requests")
+    requested_user: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[requested_user_id]
+    )
+    requested_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[requested_by_id]
+    )
+    fulfilled_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[fulfilled_by_id]
+    )
