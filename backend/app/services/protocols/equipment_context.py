@@ -22,14 +22,16 @@ logger = logging.getLogger(__name__)
 
 async def build_equipment_context(
     db: AsyncSession,
-    org_id: uuid.UUID,
+    org_id: uuid.UUID | None,
     graph: dict[str, Any] | None,
 ) -> tuple[dict[str, str], list[str]]:
     """Walk the protocol graph, build the flat template-context dict.
 
     Args:
         db: async session.
-        org_id: scope Equipment lookup to this org.
+        org_id: scope Equipment lookup to this org. When ``None`` (e.g. the
+            caller has no selected org) the function short-circuits and returns
+            an empty context — Equipment is org-scoped, so nothing resolves.
         graph: protocol graph JSONB (``{"nodes": [...], "edges": [...]}``).
 
     Returns:
@@ -38,7 +40,7 @@ async def build_equipment_context(
         equipment field, and ``warnings`` is a list of human-readable strings
         for duplicate local_ids and missing Equipment rows.
     """
-    if not graph:
+    if not graph or org_id is None:
         return {}, []
 
     nodes = graph.get("nodes") or []
