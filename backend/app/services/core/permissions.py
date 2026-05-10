@@ -122,6 +122,16 @@ async def check_permission(
     if has_org_role(membership, OrgRole.ADMIN.value):
         return True
 
+    # F-0066: Org PROTOCOL_APPROVER grants VIEW/EDIT/APPROVE on protocols
+    # (no project access, no ADMIN).
+    if (
+        object_type == ObjectType.PROTOCOL
+        and has_org_role(membership, OrgRole.PROTOCOL_APPROVER.value)
+        and required_level
+        in (PermissionLevel.VIEW, PermissionLevel.EDIT, PermissionLevel.APPROVE)
+    ):
+        return True
+
     # 2. Check if project has permissions_enabled=false
     #    If so, all org members get implicit EDIT access (VIEW/EDIT only)
     if required_level in (PermissionLevel.VIEW, PermissionLevel.EDIT):
