@@ -1,10 +1,12 @@
 """Integration tests for F-0066: /approvers endpoints locked to project ADMIN."""
 
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token
+from app.core.security import create_access_token, hash_password
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             User)
@@ -17,12 +19,8 @@ async def _make_edit_user_and_headers(
     test_project: Project,
 ) -> dict:
     """Create a MEMBER user with only EDIT on the project (not ADMIN)."""
-    import uuid as _uuid
-
-    from app.core.security import hash_password
-
     user = User(
-        email=f"edit-{_uuid.uuid4().hex[:8]}@test.com",
+        email=f"edit-{uuid.uuid4().hex[:8]}@test.com",
         hashed_password=hash_password("test"),
         full_name="Edit User",
         selected_org_id=test_org.id,
