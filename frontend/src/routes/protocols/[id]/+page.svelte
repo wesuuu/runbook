@@ -31,7 +31,8 @@
         clearTimelineSizing as clearTimeline,
         detectEquipmentConflicts as detectConflicts,
         findSwimLaneParent,
-        reparentNode,
+        adoptOrphanUnitOpsToLanes,
+        applyDragStopReparenting,
     } from "$lib/components/protocol/protocolGraph";
     import {
         computeBranchValidationErrors,
@@ -828,6 +829,22 @@
             y: (event.clientY - bounds.top - viewport.y) / viewport.zoom,
         };
 
+        if (op._nodeType === "swimLane") {
+            const role = op.role;
+            if (!role || !role.id) return;
+            if (nodes.some((n) => n.id === `lane-${role.id}`)) {
+                toast.warning(`Lane for "${role.name}" is already on the canvas`);
+                return;
+            }
+            pushUndoSnapshot();
+            const withLane = [
+                ...nodes,
+                createSwimLaneNode(role, layout, roles.length - 1, position),
+            ];
+            nodes = adoptOrphanUnitOpsToLanes(withLane);
+            return;
+        }
+
         const { parentId, adjustedPosition } = findSwimLaneParent(nodes, position);
 
         pushUndoSnapshot();
@@ -840,20 +857,8 @@
 
     function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
         if (!targetNode) return;
-        if (targetNode.type !== "unitOp" && targetNode.type !== "processStart") return;
-        let absX = targetNode.position.x;
-        let absY = targetNode.position.y;
-        if (targetNode.parentId) {
-            const parent = nodes.find((n) => n.id === targetNode.parentId);
-            if (parent) {
-                absX += parent.position.x;
-                absY += parent.position.y;
-            }
-        }
-        const before = nodes.find((n) => n.id === targetNode.id)?.parentId;
-        const updated = reparentNode(nodes, targetNode.id, { x: absX, y: absY });
-        const after = updated.find((n) => n.id === targetNode.id)?.parentId;
-        if (before === after) return;
+        const updated = applyDragStopReparenting(nodes, targetNode.id);
+        if (updated === nodes) return;
         nodes = updated;
     }
 
@@ -955,7 +960,8 @@
     function handleRoleCreated(role: any) {
         pushUndoSnapshot();
         roles = [...roles, role];
-        nodes = [...nodes, createSwimLaneNode(role, layout, roles.length - 1)];
+        const withLane = [...nodes, createSwimLaneNode(role, layout, roles.length - 1)];
+        nodes = adoptOrphanUnitOpsToLanes(withLane);
     }
 
     function handleRoleDeleted(roleId: string) {
