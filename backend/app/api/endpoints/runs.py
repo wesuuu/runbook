@@ -12,7 +12,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.api.endpoints.protocol_pdfs import (_load_template,
+from app.api.endpoints.protocol_pdfs import (_load_template, _pdf_response,
                                              _resolve_template_path)
 from app.core.deps import (get_current_user, get_or_404,
                            get_org_id_from_request,
@@ -33,6 +33,7 @@ from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
+from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import build_context, render_to_pdf
 
 logger = logging.getLogger(__name__)
@@ -572,7 +573,11 @@ async def get_run_sop_pdf(
     graph = run_obj.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context, _unresolved = build_context(
+    equipment_ctx, eq_warnings = await build_equipment_context(
+        db, user.selected_org_id, graph
+    )
+
+    context, unresolved = build_context(
         protocol_name=protocol_name,
         protocol_description=protocol_description,
         run_name=run_obj.name,
@@ -581,15 +586,21 @@ async def get_run_sop_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        equipment_context=equipment_ctx,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
+    if unresolved:
+        logger.warning(
+            "Unresolved template variables in run %s: %s", run_obj.id, unresolved
+        )
+    if eq_warnings:
+        logger.warning("Equipment warnings in run %s: %s", run_obj.id, eq_warnings)
+
     disp = disposition or "attachment"
     filename = f"SOP_{run_obj.name}.pdf".replace(" ", "_")
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    return _pdf_response(
+        pdf_bytes, filename=filename, disposition=disp, unresolved=unresolved
     )
 
 
@@ -643,6 +654,10 @@ async def get_run_batch_record_pdf(
     graph = run_obj.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
+    equipment_ctx, eq_warnings = await build_equipment_context(
+        db, user.selected_org_id, graph
+    )
+
     # Build user_map for electronic initials on filled records
     user_map: dict[str, str] = {}
     started_by_id_str: str | None = None
@@ -666,7 +681,7 @@ async def get_run_batch_record_pdf(
 
     run_status = _run_status_str(run_obj)
 
-    context, _unresolved = build_context(
+    context, unresolved = build_context(
         protocol_name=protocol_name,
         run_name=run_obj.name,
         run_status=run_status,
@@ -681,8 +696,16 @@ async def get_run_batch_record_pdf(
         notes=run_obj.notes if filled else None,
         attachments=run_obj.attachments if filled else None,
         storage=FileStorageService() if filled and embed_images else None,
+        equipment_context=equipment_ctx,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
+
+    if unresolved:
+        logger.warning(
+            "Unresolved template variables in run %s: %s", run_obj.id, unresolved
+        )
+    if eq_warnings:
+        logger.warning("Equipment warnings in run %s: %s", run_obj.id, eq_warnings)
 
     disp = disposition or "attachment"
     suffix = "COMPLETED" if filled else "BLANK"
@@ -715,19 +738,18 @@ async def get_run_batch_record_pdf(
 
         zip_buf.seek(0)
         zip_name = f"BatchRecord_{safe_name}.zip"
+        headers = {"Content-Disposition": f'attachment; filename="{zip_name}"'}
+        if unresolved:
+            headers["X-Unresolved-Placeholders"] = ",".join(unresolved)
         return Response(
             content=zip_buf.getvalue(),
             media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{zip_name}"',
-            },
+            headers=headers,
         )
 
     filename = f"BatchRecord_{safe_name}_{suffix}.pdf"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    return _pdf_response(
+        pdf_bytes, filename=filename, disposition=disp, unresolved=unresolved
     )
 
 

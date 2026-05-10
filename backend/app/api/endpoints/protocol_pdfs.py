@@ -17,6 +17,7 @@ from app.schemas.science import GraphPayload
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
+from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import build_context, render_to_pdf
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,24 @@ async def _load_template(
 def _resolve_template_path(template: DocumentTemplate) -> str:
     """Get the filesystem path for a template."""
     return str(storage.resolve_path_for_org(template.file_path, template.org_id))
+
+
+def _pdf_response(
+    pdf_bytes: bytes,
+    *,
+    filename: str,
+    disposition: str,
+    unresolved: list[str],
+) -> Response:
+    """Build a PDF response and attach X-Unresolved-Placeholders when needed."""
+    headers = {"Content-Disposition": f'{disposition}; filename="{filename}"'}
+    if unresolved:
+        headers["X-Unresolved-Placeholders"] = ",".join(unresolved)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers=headers,
+    )
 
 
 # --- Protocol PDF ---
@@ -78,7 +97,11 @@ async def get_protocol_sop_pdf(
     graph = protocol.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context, _unresolved = build_context(
+    equipment_ctx, eq_warnings = await build_equipment_context(
+        db, user.selected_org_id, graph
+    )
+
+    context, unresolved = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         version_number=protocol.version_number,
@@ -88,15 +111,25 @@ async def get_protocol_sop_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        equipment_context=equipment_ctx,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
+    if unresolved:
+        logger.warning(
+            "Unresolved template variables in protocol %s: %s",
+            protocol.id,
+            unresolved,
+        )
+    if eq_warnings:
+        logger.warning(
+            "Equipment warnings in protocol %s: %s", protocol.id, eq_warnings
+        )
+
     disp = disposition or "attachment"
     filename = f"SOP_Preview_{protocol.name}.pdf".replace(" ", "_")
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    return _pdf_response(
+        pdf_bytes, filename=filename, disposition=disp, unresolved=unresolved
     )
 
 
@@ -134,7 +167,11 @@ async def get_protocol_batch_record_pdf(
     graph = protocol.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context, _unresolved = build_context(
+    equipment_ctx, eq_warnings = await build_equipment_context(
+        db, user.selected_org_id, graph
+    )
+
+    context, unresolved = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         run_name="Preview",
@@ -145,15 +182,25 @@ async def get_protocol_batch_record_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        equipment_context=equipment_ctx,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
+    if unresolved:
+        logger.warning(
+            "Unresolved template variables in protocol %s: %s",
+            protocol.id,
+            unresolved,
+        )
+    if eq_warnings:
+        logger.warning(
+            "Equipment warnings in protocol %s: %s", protocol.id, eq_warnings
+        )
+
     disp = disposition or "attachment"
     filename = f"BatchRecord_Preview_{protocol.name}.pdf".replace(" ", "_")
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    return _pdf_response(
+        pdf_bytes, filename=filename, disposition=disp, unresolved=unresolved
     )
 
 
@@ -194,7 +241,11 @@ async def preview_protocol_sop_pdf(
     graph = body.graph
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context, _unresolved = build_context(
+    equipment_ctx, eq_warnings = await build_equipment_context(
+        db, user.selected_org_id, graph
+    )
+
+    context, unresolved = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         version_number=protocol.version_number,
@@ -204,15 +255,25 @@ async def preview_protocol_sop_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        equipment_context=equipment_ctx,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
+    if unresolved:
+        logger.warning(
+            "Unresolved template variables in protocol %s: %s",
+            protocol.id,
+            unresolved,
+        )
+    if eq_warnings:
+        logger.warning(
+            "Equipment warnings in protocol %s: %s", protocol.id, eq_warnings
+        )
+
     disp = disposition or "inline"
     filename = f"SOP_Preview_{protocol.name}.pdf".replace(" ", "_")
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    return _pdf_response(
+        pdf_bytes, filename=filename, disposition=disp, unresolved=unresolved
     )
 
 
@@ -252,7 +313,11 @@ async def preview_protocol_batch_record_pdf(
     graph = body.graph
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context, _unresolved = build_context(
+    equipment_ctx, eq_warnings = await build_equipment_context(
+        db, user.selected_org_id, graph
+    )
+
+    context, unresolved = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         run_name="Preview",
@@ -263,13 +328,23 @@ async def preview_protocol_batch_record_pdf(
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
+        equipment_context=equipment_ctx,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
+    if unresolved:
+        logger.warning(
+            "Unresolved template variables in protocol %s: %s",
+            protocol.id,
+            unresolved,
+        )
+    if eq_warnings:
+        logger.warning(
+            "Equipment warnings in protocol %s: %s", protocol.id, eq_warnings
+        )
+
     disp = disposition or "inline"
     filename = f"BatchRecord_Preview_{protocol.name}.pdf".replace(" ", "_")
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'{disp}; filename="{filename}"'},
+    return _pdf_response(
+        pdf_bytes, filename=filename, disposition=disp, unresolved=unresolved
     )
