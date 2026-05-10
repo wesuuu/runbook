@@ -17,7 +17,8 @@ from app.models.iam import (ObjectType, OrganizationMember, OrgRole,
                             PermissionLevel, User)
 from app.models.science import (Project, Protocol, ProtocolRole,
                                 ProtocolVersion, Run)
-from app.schemas.science import (ProtocolCreate, ProtocolImportFinalizeRequest,
+from app.schemas.science import (DesignateApprovalRequest, ProtocolCreate,
+                                 ProtocolImportFinalizeRequest,
                                  ProtocolImportProposalResponse,
                                  ProtocolRefineRequest, ProtocolResponse,
                                  ProtocolRoleCreate, ProtocolRoleResponse,
@@ -535,6 +536,93 @@ async def unarchive_protocol(
     await db.commit()
     await db.refresh(protocol)
     return protocol
+
+
+@router.post(
+    "/protocols/{protocol_id}/designate-approval",
+    response_model=ProtocolResponse,
+)
+async def designate_approval(
+    protocol_id: UUID,
+    body: DesignateApprovalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    """Toggle Protocol.requires_approval. Only the creator or a project admin
+    may change it, and only while the protocol is in DRAFT status.
+
+    Turning it on requires the parent project's
+    `settings.require_protocol_approval` flag to be enabled first.
+    """
+    protocol = await get_or_404(
+        db,
+        Protocol,
+        protocol_id,
+        options=[selectinload(Protocol.roles)],
+    )
+
+    if protocol.project_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="requires_approval is only supported for project-scoped protocols.",
+        )
+
+    project = await get_or_404(db, Project, protocol.project_id)
+
+    is_creator = protocol.created_by_id == user.id
+    is_admin = await check_permission(
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        project.id,
+        PermissionLevel.ADMIN,
+    )
+    if not (is_creator or is_admin):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Only the protocol creator or a project admin can change "
+                "requires_approval."
+            ),
+        )
+
+    if protocol.status != "DRAFT":
+        raise HTTPException(
+            status_code=400,
+            detail="requires_approval can only be changed while status is DRAFT.",
+        )
+
+    if body.requires_approval and not (project.settings or {}).get(
+        "require_protocol_approval"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Project setting `require_protocol_approval` must be enabled "
+                "before designating a protocol as requiring approval."
+            ),
+        )
+
+    protocol.requires_approval = body.requires_approval
+
+    await log_audit(
+        db,
+        user.id,
+        "UPDATE",
+        "Protocol",
+        protocol.id,
+        {"requires_approval": body.requires_approval},
+    )
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Protocol)
+        .options(selectinload(Protocol.roles))
+        .where(Protocol.id == protocol.id)
+    )
+    return result.scalar_one()
 
 
 @router.put("/protocols/{protocol_id}", response_model=ProtocolResponse)

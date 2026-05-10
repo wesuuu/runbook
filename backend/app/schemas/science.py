@@ -103,6 +103,12 @@ class ProtocolResponse(ProtocolBase):
     status: str = "DRAFT"
     version_number: int = 0
     is_tour_sample: bool = False
+    requires_approval: bool = False
+    created_by_id: Optional[UUID] = None
+    approved_by_id: Optional[UUID] = None
+    approved_at: Optional[datetime] = None
+    latest_signature_statement: Optional[str] = None
+    latest_approval_comment: Optional[str] = None
     roles: List[ProtocolRoleResponse] = []
     created_at: datetime
     updated_at: datetime
@@ -138,6 +144,7 @@ class ProtocolVersionResponse(ProtocolVersionListItem):
 
 class PublishDraftRequest(BaseModel):
     """Optional metadata captured when promoting a draft version to published."""
+
     description: Optional[str] = None
     change_summary: Optional[str] = None
 
@@ -145,6 +152,65 @@ class PublishDraftRequest(BaseModel):
 # Protocol Approval Schemas
 class ProtocolApprovalAction(BaseModel):
     comment: Optional[str] = None
+
+
+class DesignateApprovalRequest(BaseModel):
+    """Request body for POST /protocols/{id}/designate-approval."""
+
+    requires_approval: bool
+
+
+class SubmitForApprovalRequest(BaseModel):
+    """Request body for POST /protocols/{id}/submit-for-approval."""
+
+    requested_user_ids: List[UUID]
+
+
+class ApproveProtocolRequest(BaseModel):
+    """Request body for POST /protocols/{id}/approve."""
+
+    comment: Optional[str] = None
+    signature_statement: Optional[str] = None
+
+
+class RejectProtocolRequest(BaseModel):
+    """Request body for POST /protocols/{id}/reject."""
+
+    comment: str = Field(..., min_length=1)
+    signature_statement: Optional[str] = None
+
+
+class ApprovalActorRef(BaseModel):
+    id: UUID
+    name: str
+    email: str
+
+
+class ProtocolVersionRef(BaseModel):
+    id: UUID
+    version_number: int
+
+
+class ProtocolApprovalEventResponse(BaseModel):
+    id: UUID
+    action: str
+    comment: Optional[str] = None
+    signature_statement: Optional[str] = None
+    actor: Optional[ApprovalActorRef] = None
+    protocol_version: Optional[ProtocolVersionRef] = None
+    created_at: datetime
+
+
+class AwaitingApprovalItem(BaseModel):
+    """Single entry in GET /protocols/awaiting-my-approval response."""
+
+    protocol_id: UUID
+    name: str
+    project_id: Optional[UUID] = None
+    project_name: Optional[str] = None
+    organization_id: UUID
+    submitted_at: Optional[datetime] = None
+    submitted_by: Optional[ApprovalActorRef] = None
 
 
 # Experiment Schemas
@@ -301,6 +367,7 @@ class RunResponse(RunBase):
     experiment_id: Optional[UUID] = None
     started_by_id: Optional[UUID] = None
     created_by_id: Optional[UUID] = None
+    is_strict: bool = False
     notes: list[RunNote] = Field(default_factory=list)
     attachments: list[RunAttachment] = Field(default_factory=list)
     created_at: datetime
@@ -320,6 +387,7 @@ class NodeOverrides(BaseModel):
     overridden); `equipment`, `paramSchema`, and `description` are full
     replacements. None means "inherit from protocol default".
     """
+
     params: Optional[Dict[str, Any]] = None
     equipment: Optional[List[Dict[str, Any]]] = None
     paramSchema: Optional[Dict[str, Any]] = None
@@ -328,6 +396,7 @@ class NodeOverrides(BaseModel):
 
 class RunOverrides(BaseModel):
     """Per-run edits to a protocol snapshot, keyed by unit-op node id."""
+
     nodes: Dict[str, NodeOverrides] = Field(default_factory=dict)
 
 
