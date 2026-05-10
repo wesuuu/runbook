@@ -379,8 +379,11 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])
 app.include_router(iam.router, prefix="/iam", tags=["iam"])
 app.include_router(unit_ops.router, prefix="/science", tags=["science"])
-app.include_router(protocols.router, prefix="/science", tags=["science"])
+# protocol_versions registered first so its literal-path routes (e.g.
+# /protocols/awaiting-my-approval) win over /protocols/{protocol_id} in
+# protocols.router. (F-0066)
 app.include_router(protocol_versions.router, prefix="/science", tags=["science"])
+app.include_router(protocols.router, prefix="/science", tags=["science"])
 app.include_router(protocol_pdfs.router, prefix="/science", tags=["science"])
 app.include_router(runs.router, prefix="/science", tags=["science"])
 app.include_router(experiments.router, prefix="/science", tags=["science"])
