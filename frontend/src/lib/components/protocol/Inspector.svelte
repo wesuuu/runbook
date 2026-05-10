@@ -258,6 +258,15 @@
         )
     );
 
+    const equipmentHintTokens = $derived(
+        editEquipment
+            .filter((eq) => eq.local_id)
+            .flatMap((eq) => [
+                `{{${eq.local_id}_name}}`,
+                `{{${eq.local_id}_description}}`,
+            ])
+    );
+
     const renderedPreview = $derived(
         editDescription
             ? renderTemplate(editDescription, editParams)
@@ -307,9 +316,14 @@
         <!-- Description -->
         <div class="section" data-tour="inspector-instruction">
             <label class="section-label" for="node-description">Instruction</label>
-            {#if paramKeys.length > 0}
+            {#if paramKeys.length > 0 || equipmentHintTokens.length > 0}
                 <p class="template-hint">
-                    Available: {paramKeys.map(k => `{{${k}}}`).join('  ')}
+                    {#if paramKeys.length > 0}
+                        Params: {paramKeys.map(k => `{{${k}}}`).join('  ')}
+                    {/if}
+                    {#if equipmentHintTokens.length > 0}
+                        <br />Equipment: {equipmentHintTokens.join('  ')}
+                    {/if}
                 </p>
             {/if}
             <textarea
