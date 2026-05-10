@@ -78,7 +78,7 @@ async def get_protocol_sop_pdf(
     graph = protocol.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context = build_context(
+    context, _unresolved = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         version_number=protocol.version_number,
@@ -134,7 +134,7 @@ async def get_protocol_batch_record_pdf(
     graph = protocol.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context = build_context(
+    context, _unresolved = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         run_name="Preview",
@@ -194,7 +194,7 @@ async def preview_protocol_sop_pdf(
     graph = body.graph
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context = build_context(
+    context, _unresolved = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         version_number=protocol.version_number,
@@ -252,7 +252,7 @@ async def preview_protocol_batch_record_pdf(
     graph = body.graph
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context = build_context(
+    context, _unresolved = build_context(
         protocol_name=protocol.name,
         protocol_description=protocol.description or "",
         run_name="Preview",

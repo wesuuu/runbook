@@ -572,7 +572,7 @@ async def get_run_sop_pdf(
     graph = run_obj.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
-    context = build_context(
+    context, _unresolved = build_context(
         protocol_name=protocol_name,
         protocol_description=protocol_description,
         run_name=run_obj.name,
@@ -666,7 +666,7 @@ async def get_run_batch_record_pdf(
 
     run_status = _run_status_str(run_obj)
 
-    context = build_context(
+    context, _unresolved = build_context(
         protocol_name=protocol_name,
         run_name=run_obj.name,
         run_status=run_status,

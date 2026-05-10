@@ -567,7 +567,7 @@ def generate_batch_record_pdf(
                 desc = step.get("description", "") or ""
                 has_templates = desc and "{{" in desc
                 if has_templates:
-                    desc = _render_template(desc, step.get("params"))
+                    desc, _ = _render_template(desc, step.get("params"))
 
                 if has_templates:
                     full_desc = desc or "--"
@@ -739,7 +739,7 @@ def generate_batch_record_pdf(
             desc = step.get("description", "") or ""
             has_templates = desc and "{{" in desc
             if has_templates:
-                desc = _render_template(desc, step.get("params"))
+                desc, _ = _render_template(desc, step.get("params"))
 
             if has_templates:
                 full_desc = desc or "--"
