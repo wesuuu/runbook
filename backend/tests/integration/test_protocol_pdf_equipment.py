@@ -65,9 +65,7 @@ async def test_pdf_endpoint_attaches_unresolved_header(
                 "data": {
                     "label": "Step One",
                     "description": "Use {{E-001_name}} and {{E-999_name}}",
-                    "equipment": [
-                        {"local_id": "E-001", "equipment_id": str(eq.id)}
-                    ],
+                    "equipment": [{"local_id": "E-001", "equipment_id": str(eq.id)}],
                 },
             },
         ],
@@ -113,9 +111,7 @@ async def test_pdf_endpoint_no_header_when_all_resolved(
                 "data": {
                     "label": "Step One",
                     "description": "Use {{E-001_name}}",
-                    "equipment": [
-                        {"local_id": "E-001", "equipment_id": str(eq.id)}
-                    ],
+                    "equipment": [{"local_id": "E-001", "equipment_id": str(eq.id)}],
                 },
             },
         ],
