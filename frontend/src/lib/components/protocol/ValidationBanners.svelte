@@ -62,13 +62,13 @@
             {#each branchValidationErrors as err}
                 <div class="validation-item">
                     <strong>{err.sourceNodeLabel}</strong> branches to
-                    {err.targetNodeLabels.join(" & ")} in
+                    {err.targetNodeLabels.join(" & ")} —
                     {#if err.duplicateLane === null}
-                        <em>no swimlane</em>
+                        at least one branch has <em>no role assigned</em>.
                     {:else}
-                        the <em>same swimlane</em>
+                        two branches share the <em>same role</em>.
                     {/if}
-                    — move each branch target to a different role.
+                    Assign distinct roles, or enable time mode and stagger them.
                 </div>
             {/each}
         </div>

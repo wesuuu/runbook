@@ -15,7 +15,7 @@ export interface GraphState {
  */
 export function parseGraphState(graph: any): GraphState {
     return {
-        nodes: graph?.nodes || [],
+        nodes: sortNodesForParenting(graph?.nodes || []),
         edges: graph?.edges || [],
         layout: (graph?.layout || "horizontal") as "horizontal" | "vertical",
         handleOrientation: (graph?.handleOrientation || "vertical") as "horizontal" | "vertical",
@@ -172,13 +172,59 @@ export function detectEquipmentConflicts(
 }
 
 /**
- * Find the swimlane node that contains a given position, if any.
- * Returns the parent node ID and adjusted position relative to the parent.
+ * SvelteFlow requires parent nodes to appear before their children in the
+ * nodes array — otherwise its `adoptUserNodes` pass logs
+ * "Parent node X not found" and silently drops the parentId. Sort all
+ * swimLane nodes to the front while preserving the relative order within
+ * each group. Cheap to call after any structural change.
+ */
+export function sortNodesForParenting(nodes: Node[]): Node[] {
+    let needsSort = false;
+    let seenChild = false;
+    for (const n of nodes) {
+        if (n.type === "swimLane") {
+            if (seenChild) {
+                needsSort = true;
+                break;
+            }
+        } else {
+            seenChild = true;
+        }
+    }
+    if (!needsSort) return nodes;
+    const lanes: Node[] = [];
+    const others: Node[] = [];
+    for (const n of nodes) {
+        if (n.type === "swimLane") lanes.push(n);
+        else others.push(n);
+    }
+    return [...lanes, ...others];
+}
+
+function nodeSize(n: Node): { w: number; h: number } {
+    return {
+        w: (n.measured?.width || n.width || 0) as number,
+        h: (n.measured?.height || n.height || 0) as number,
+    };
+}
+
+/**
+ * Find the swimlane node that contains a given probe point, if any.
+ * Returns the parent node ID and adjusted top-left position relative to the
+ * parent. The probe point is what's tested against lane bounds; the
+ * topLeft argument is what the returned adjustedPosition is computed from.
+ *
+ * For drag/drop, callers should pass the dragged node's CENTER as `probe`
+ * (so the lane "claims" the node when most of it is over the lane, matching
+ * user intuition) and the node's TOP-LEFT corner as `topLeft` (so the
+ * SvelteFlow-relative position stays correct).
  */
 export function findSwimLaneParent(
     nodes: Node[],
-    position: { x: number; y: number },
+    probe: { x: number; y: number },
+    topLeft?: { x: number; y: number },
 ): { parentId: string | undefined; adjustedPosition: { x: number; y: number } } {
+    const tl = topLeft ?? probe;
     for (const n of nodes) {
         if (n.type === "swimLane") {
             const laneX = n.position.x;
@@ -186,20 +232,129 @@ export function findSwimLaneParent(
             const laneW = (n.measured?.width || n.width || 600) as number;
             const laneH = (n.measured?.height || n.height || 200) as number;
             if (
-                position.x >= laneX &&
-                position.x <= laneX + laneW &&
-                position.y >= laneY &&
-                position.y <= laneY + laneH
+                probe.x >= laneX &&
+                probe.x <= laneX + laneW &&
+                probe.y >= laneY &&
+                probe.y <= laneY + laneH
             ) {
                 return {
                     parentId: n.id,
                     adjustedPosition: {
-                        x: position.x - laneX,
-                        y: position.y - laneY,
+                        x: tl.x - laneX,
+                        y: tl.y - laneY,
                     },
                 };
             }
         }
     }
-    return { parentId: undefined, adjustedPosition: position };
+    return { parentId: undefined, adjustedPosition: tl };
+}
+
+/**
+ * Move a node to a new absolute top-left position. If the node's CENTER
+ * falls inside a swimlane, set parentId to that lane and adjust the node's
+ * top-left to be relative to the lane. Otherwise clear parentId and use the
+ * absolute top-left.
+ *
+ * Caller must pass the absolute top-left (not the SvelteFlow node-relative
+ * position). Convert by adding the current parent's position before calling.
+ * Pass the node's measured size so containment uses the visual center.
+ */
+export function reparentNode(
+    nodes: Node[],
+    nodeId: string,
+    absoluteTopLeft: { x: number; y: number },
+    size?: { w: number; h: number },
+): Node[] {
+    const idx = nodes.findIndex((n) => n.id === nodeId);
+    if (idx < 0) return nodes;
+    const s = size ?? nodeSize(nodes[idx]);
+    const center = {
+        x: absoluteTopLeft.x + s.w / 2,
+        y: absoluteTopLeft.y + s.h / 2,
+    };
+    const { parentId, adjustedPosition } = findSwimLaneParent(
+        nodes,
+        center,
+        absoluteTopLeft,
+    );
+    const next = nodes.map((n, i) =>
+        i === idx
+            ? { ...n, parentId, position: adjustedPosition }
+            : n,
+    );
+    return sortNodesForParenting(next);
+}
+
+const DEFAULT_DRAG_STOP_SIZE = { w: 180, h: 60 };
+
+/**
+ * React to a drag-stop on `nodeId`. Looks the node up in the live `nodes`
+ * array (NOT a snapshot from the caller — xyflow's drag callback hands us a
+ * node that can lag behind state for some operations, which used to teleport
+ * regrabbed nodes to the top-left). Behavior:
+ *
+ * - swimLane → run an orphan adoption sweep (the lane may have moved over
+ *   parent-less steps).
+ * - unitOp / processStart → compute the absolute top-left from the
+ *   parent-relative position, then reparent based on the visual center.
+ * - anything else (or unknown id) → return the array unchanged.
+ *
+ * Falls back to a sensible default size when the live node hasn't been
+ * measured yet, so freshly-dropped nodes still get a meaningful center.
+ */
+export function applyDragStopReparenting(
+    nodes: Node[],
+    nodeId: string,
+): Node[] {
+    const live = nodes.find((n) => n.id === nodeId);
+    if (!live) return nodes;
+    if (live.type === "swimLane") {
+        return adoptOrphanUnitOpsToLanes(nodes);
+    }
+    if (live.type !== "unitOp" && live.type !== "processStart") return nodes;
+    let absX = live.position.x;
+    let absY = live.position.y;
+    if (live.parentId) {
+        const parent = nodes.find((n) => n.id === live.parentId);
+        if (parent) {
+            absX += parent.position.x;
+            absY += parent.position.y;
+        }
+    }
+    const measured = nodeSize(live);
+    const size = {
+        w: measured.w || DEFAULT_DRAG_STOP_SIZE.w,
+        h: measured.h || DEFAULT_DRAG_STOP_SIZE.h,
+    };
+    return reparentNode(nodes, nodeId, { x: absX, y: absY }, size);
+}
+
+/**
+ * Adopt orphan (parentId-less) unit-op / processStart nodes whose CENTER
+ * falls inside any swimlane's bounds. Already-parented steps are left
+ * untouched, so this is safe to call after a user explicitly drops a new
+ * swimlane onto the canvas — orphans visible inside it become children, and
+ * steps already assigned to other lanes don't get yanked around.
+ */
+export function adoptOrphanUnitOpsToLanes(nodes: Node[]): Node[] {
+    let changed = false;
+    const next = nodes.map((n) => {
+        if (n.type !== "unitOp" && n.type !== "processStart") return n;
+        if (n.parentId) return n;
+        const s = nodeSize(n);
+        const center = {
+            x: n.position.x + s.w / 2,
+            y: n.position.y + s.h / 2,
+        };
+        const { parentId, adjustedPosition } = findSwimLaneParent(
+            nodes,
+            center,
+            n.position,
+        );
+        if (!parentId) return n;
+        changed = true;
+        return { ...n, parentId, position: adjustedPosition };
+    });
+    return sortNodesForParenting(changed ? next : nodes);
 }

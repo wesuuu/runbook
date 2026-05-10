@@ -31,6 +31,8 @@
         clearTimelineSizing as clearTimeline,
         detectEquipmentConflicts as detectConflicts,
         findSwimLaneParent,
+        adoptOrphanUnitOpsToLanes,
+        applyDragStopReparenting,
     } from "$lib/components/protocol/protocolGraph";
     import {
         computeBranchValidationErrors,
@@ -357,6 +359,11 @@
 
     function openPdfPreview() {
         if (!protocol) return;
+        const block = blockingBranchMessage();
+        if (block) {
+            toast.error(block);
+            return;
+        }
         showVersionHistory = false;
         showPdfDrawer = true;
     }
@@ -366,7 +373,13 @@
     let createModalCategory = $state("");
 
     // --- Validation (delegated to protocolValidation.ts) ---
-    const branchValidationErrors = $derived(() => computeBranchValidationErrors(nodes, edges));
+    const branchValidationErrors = $derived(() =>
+        computeBranchValidationErrors(nodes, edges, {
+            timeEnabled,
+            pixelsPerHour,
+            layout,
+        }),
+    );
     const processStartValidationErrors = $derived(() => computeProcessStartValidationErrors(nodes, edges));
 
     const branchInvalidNodeIds = $derived(() => {
@@ -376,6 +389,12 @@
         }
         return ids;
     });
+
+    function blockingBranchMessage(): string | null {
+        const errs = branchValidationErrors();
+        if (errs.length === 0) return null;
+        return `Cannot proceed: ${errs.length} branching ${errs.length === 1 ? "step needs" : "steps need"} distinct roles. See the warning banner.`;
+    }
 
     // --- Timeline helpers ---
     const totalHours = $derived(() => {
@@ -544,6 +563,12 @@
         // Block if already approved, pending, or archived
         if (protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED") {
             toast.warning(protocolStatus === "ARCHIVED" ? "Cannot save an archived protocol" : protocolStatus === "APPROVED" ? "Already published" : "Cannot save while pending approval");
+            return;
+        }
+
+        const block = blockingBranchMessage();
+        if (block) {
+            toast.error(block);
             return;
         }
 
@@ -804,6 +829,22 @@
             y: (event.clientY - bounds.top - viewport.y) / viewport.zoom,
         };
 
+        if (op._nodeType === "swimLane") {
+            const role = op.role;
+            if (!role || !role.id) return;
+            if (nodes.some((n) => n.id === `lane-${role.id}`)) {
+                toast.warning(`Lane for "${role.name}" is already on the canvas`);
+                return;
+            }
+            pushUndoSnapshot();
+            const withLane = [
+                ...nodes,
+                createSwimLaneNode(role, layout, roles.length - 1, position),
+            ];
+            nodes = adoptOrphanUnitOpsToLanes(withLane);
+            return;
+        }
+
         const { parentId, adjustedPosition } = findSwimLaneParent(nodes, position);
 
         pushUndoSnapshot();
@@ -812,6 +853,13 @@
         } else {
             nodes = [...nodes, createUnitOpNode(op, adjustedPosition, parentId, timeEnabled, layout, pixelsPerHour)];
         }
+    }
+
+    function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
+        if (!targetNode) return;
+        const updated = applyDragStopReparenting(nodes, targetNode.id);
+        if (updated === nodes) return;
+        nodes = updated;
     }
 
     // --- Equipment Management ---
@@ -912,7 +960,8 @@
     function handleRoleCreated(role: any) {
         pushUndoSnapshot();
         roles = [...roles, role];
-        nodes = [...nodes, createSwimLaneNode(role, layout, roles.length - 1)];
+        const withLane = [...nodes, createSwimLaneNode(role, layout, roles.length - 1)];
+        nodes = adoptOrphanUnitOpsToLanes(withLane);
     }
 
     function handleRoleDeleted(roleId: string) {
@@ -1168,6 +1217,7 @@
                 panOnDrag={interactionMode === "pan"}
                 snapGrid={timeEnabled ? [snapGridPx, snapGridPx] : undefined}
                 onnodedragstart={() => pushUndoSnapshot()}
+                onnodedragstop={handleNodeDragStop}
                 onconnectstart={() => { preConnectSnapshot = buildGraphSnapshot(nodes, edges); }}
                 onconnect={() => {
                     if (preConnectSnapshot) {
@@ -1205,6 +1255,7 @@
                 onSaveAsNew={handleSaveAsNew}
                 onCreateEquipment={handleCreateEquipment}
                 onClose={() => (selectedNodeId = null)}
+                branchErrors={selectedNodeId ? branchValidationErrors().filter((e) => e.sourceNodeId === selectedNodeId) : []}
             />
         {/if}
     {/if}

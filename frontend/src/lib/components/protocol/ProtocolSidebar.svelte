@@ -340,7 +340,22 @@
 
         <div class="roles-list">
             {#each roles as role}
-                <div class="role-item">
+                <div
+                    class="role-item"
+                    draggable="true"
+                    title="Drag onto canvas to add lane"
+                    ondragstart={(e) => {
+                        if (!e.dataTransfer) return;
+                        e.dataTransfer.setData(
+                            "application/svelteflow",
+                            JSON.stringify({
+                                _nodeType: "swimLane",
+                                role: { id: role.id, name: role.name, color: role.color },
+                            }),
+                        );
+                        e.dataTransfer.effectAllowed = "move";
+                    }}
+                >
                     <div
                         class="role-dot"
                         style:background={role.color}

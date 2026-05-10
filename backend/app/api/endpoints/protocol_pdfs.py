@@ -11,13 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol
+from app.models.science import Project, Protocol, UnitOpDefinition
 from app.models.templates import DocumentTemplate
 from app.schemas.science import GraphPayload
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.template_engine import build_context, render_to_pdf
+from app.services.protocols.validation import assert_no_branch_errors
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,15 @@ def _resolve_template_path(template: DocumentTemplate) -> str:
     return str(storage.resolve_path_for_org(template.file_path, template.org_id))
 
 
+async def _assert_branch_ok(db: AsyncSession, graph: dict, org_id) -> None:
+    """Raise HTTPException(400) if the graph has branch_requires_distinct_roles errors."""
+    result = await db.execute(
+        select(UnitOpDefinition).where(UnitOpDefinition.organization_id == org_id)
+    )
+    unit_ops = list(result.scalars().all())
+    assert_no_branch_errors(graph or {}, unit_ops)
+
+
 # --- Protocol PDF ---
 
 
@@ -86,6 +96,8 @@ async def get_protocol_sop_pdf(
     protocol = result.scalar_one_or_none()
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
+
+    await _assert_branch_ok(db, protocol.graph or {}, user.selected_org_id)
 
     template = await _load_template(db, template_id or protocol.sop_template_id)
     if not template:
@@ -143,6 +155,8 @@ async def get_protocol_batch_record_pdf(
     protocol = result.scalar_one_or_none()
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
+
+    await _assert_branch_ok(db, protocol.graph or {}, user.selected_org_id)
 
     template = await _load_template(
         db, template_id or protocol.batch_record_template_id
@@ -209,6 +223,8 @@ async def preview_protocol_sop_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
+    await _assert_branch_ok(db, body.graph, user.selected_org_id)
+
     template = await _load_template(db, template_id or protocol.sop_template_id)
     if not template:
         raise HTTPException(status_code=404, detail="SOP template not found")
@@ -267,6 +283,8 @@ async def preview_protocol_batch_record_pdf(
     protocol = result.scalar_one_or_none()
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
+
+    await _assert_branch_ok(db, body.graph, user.selected_org_id)
 
     template = await _load_template(
         db, template_id or protocol.batch_record_template_id

@@ -7,6 +7,7 @@
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
     import EquipmentPickerModal from "$lib/components/modals/EquipmentPickerModal.svelte";
     import { Button } from "$lib/components/ui/button";
+    import type { BranchValidationError } from "$lib/components/protocol/protocolValidation";
     import EquipmentChipList from "$lib/components/shared/EquipmentChipList.svelte";
     import SchemaEditor from "$lib/components/shared/SchemaEditor.svelte";
     import type { SchemaRow } from "$lib/components/shared/SchemaEditor.svelte";
@@ -46,9 +47,10 @@
         onSaveAsNew: (name: string, paramSchema: Record<string, any>, category: string) => Promise<void>;
         onCreateEquipment?: (data: { name: string; description: string; equipment_type: string; location: string }) => Promise<Equipment>;
         onClose: () => void;
+        branchErrors?: BranchValidationError[];
     }
 
-    let { node, allNodes, orgEquipment = [], equipmentConflicts = new Map(), onApply, onSaveAsNew, onCreateEquipment, onClose }: Props = $props();
+    let { node, allNodes, orgEquipment = [], equipmentConflicts = new Map(), onApply, onSaveAsNew, onCreateEquipment, onClose, branchErrors = [] }: Props = $props();
 
     const timelineConfig: {
         enabled: boolean;
@@ -272,6 +274,25 @@
             </div>
         </div>
 
+        {#if branchErrors.length > 0}
+            <div class="branch-error-callout">
+                <span class="branch-error-icon">&#x26A0;</span>
+                <div>
+                    {#each branchErrors as err}
+                        <div class="branch-error-line">
+                            Branches to <strong>{err.targetNodeLabels.join(", ")}</strong>
+                            {#if err.duplicateLane === null}
+                                — at least one branch has no role assigned.
+                            {:else}
+                                — two branches share the same role.
+                            {/if}
+                            Assign distinct roles, or enable time mode and stagger them.
+                        </div>
+                    {/each}
+                </div>
+            </div>
+        {/if}
+
         <!-- Description -->
         <div class="section" data-tour="inspector-instruction">
             <label class="section-label" for="node-description">Instruction</label>
@@ -486,6 +507,29 @@
     .inspector-header {
         padding: 16px;
         border-bottom: 1px solid hsl(240, 5.9%, 90%);
+    }
+
+    .branch-error-callout {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 12px;
+        margin: 12px 16px 0 16px;
+        background: #fffbeb;
+        border: 1px solid #f59e0b;
+        border-radius: 6px;
+        font-size: 12px;
+        color: #92400e;
+        line-height: 1.4;
+    }
+
+    .branch-error-icon {
+        flex-shrink: 0;
+        font-size: 14px;
+    }
+
+    .branch-error-line + .branch-error-line {
+        margin-top: 4px;
     }
 
     .header-top {
