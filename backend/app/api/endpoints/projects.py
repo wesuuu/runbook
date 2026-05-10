@@ -427,7 +427,7 @@ async def get_project_activity(
     response_model=List[ApproverEntry],
     dependencies=[
         Depends(
-            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.VIEW)
+            require_permission(ObjectType.PROJECT, "project_id", PermissionLevel.ADMIN)
         )
     ],
 )
