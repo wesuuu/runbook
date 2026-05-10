@@ -356,6 +356,29 @@ async def get_protocol(
         protocol_id,
         options=[selectinload(Protocol.roles)],
     )
+
+    # F-0066: derive latest_signature_statement / latest_approval_comment
+    # from the most recent APPROVED ProtocolApprovalEvent.
+    from app.models.science import ProtocolApprovalEvent
+
+    latest = await db.execute(
+        select(ProtocolApprovalEvent)
+        .where(
+            ProtocolApprovalEvent.protocol_id == protocol_id,
+            ProtocolApprovalEvent.action == "APPROVED",
+        )
+        .order_by(ProtocolApprovalEvent.created_at.desc())
+        .limit(1)
+    )
+    latest_ev = latest.scalar_one_or_none()
+    # Stash on the ORM instance for `from_attributes` serialization.
+    protocol.latest_signature_statement = (  # type: ignore[attr-defined]
+        latest_ev.signature_statement if latest_ev else None
+    )
+    protocol.latest_approval_comment = (  # type: ignore[attr-defined]
+        latest_ev.comment if latest_ev else None
+    )
+
     return protocol
 
 
