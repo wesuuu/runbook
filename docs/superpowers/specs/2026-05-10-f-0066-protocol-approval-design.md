@@ -96,13 +96,19 @@ One Alembic revision: `f0039_protocol_approval`. Down-revision is the current he
 
 ---
 
-## 4. IAM
+## 4. IAM — two parallel approver tracks
+
+Approval can come from either of two roles. Both flow through the existing `PermissionLevel.APPROVE` check, just attached at different scopes.
+
+**Project Protocol Approver (project-scoped).** A user that has `PermissionLevel.APPROVE` on a project via `ObjectPermission`. Today this row is created by the existing `POST /projects/{id}/approvers` endpoint. Renamed in UI/docs to **"Protocol Approver"** to make the role explicit (today it's labeled generically as "approver"). Management endpoint is locked to project ADMINs (see §5.1).
+
+**Org Protocol Approver (org-scoped).** An `OrganizationMember` whose `roles` array contains `OrgRole.PROTOCOL_APPROVER`. Granted by org ADMINs (TD-0084 already covers this).
 
 Edit `backend/app/services/core/permissions.py` `check_permission`:
 
 After the existing `OrgRole.ADMIN` bypass (around line 122), add: if `obj.object_type == ObjectType.PROTOCOL` AND the membership has `OrgRole.PROTOCOL_APPROVER`, grant **VIEW**, **EDIT**, **APPROVE** for any protocol in the same organization. ADMIN-level on protocols is **not** granted.
 
-This deliberately gives no project-level access (they cannot list runs, see project members, etc.). They reach individual protocols via the "awaiting my approval" endpoint or a direct URL.
+This deliberately gives org Protocol Approvers no project-level access (they cannot list runs, see project members, etc.). They reach individual protocols via the "awaiting my approval" endpoint or a direct URL. Project Protocol Approvers, in contrast, retain full project-scope visibility because their APPROVE permission lives on the project itself.
 
 ---
 
@@ -129,7 +135,7 @@ Body:
 ```json
 { "comment": "optional", "signature_statement": "optional" }
 ```
-- Caller must have project APPROVE on parent project OR org PROTOCOL_APPROVER (covered by `check_permission`).
+- Caller must be a **project Protocol Approver** (project APPROVE permission) OR an **org Protocol Approver** (`OrgRole.PROTOCOL_APPROVER`). Both paths are covered by `check_permission` after the §4 patch.
 - Sets status APPROVED, sets `protocol.approved_by_id` (new field on Protocol — see below) & `approved_at`.
 - Writes `APPROVED` event with the signature_statement.
 - Marks **all** open `protocol_approval_requests` for this protocol as `APPROVED` (single approver suffices — out of scope: N-of-M).
@@ -157,6 +163,10 @@ Body:
 
 **Override endpoints** (`runs.py:162` `OVERRIDE_SET`, `runs.py:543` `OVERRIDE_EDIT`)
 - Reject 403 with code `RUN_IS_STRICT` when `run.is_strict`.
+
+**Project Protocol Approver management** — existing `GET/POST/DELETE /projects/{project_id}/approvers` (`projects.py:420–565`):
+- Lock all three to **project ADMIN** only (today they require project EDIT). 403 otherwise.
+- Rename the response/UI label from "approver" to "protocol_approver" where it surfaces to the client. Backend identifier stays `approvers` for URL stability.
 
 **Protocol designation endpoint** (new, simplest place is `protocols.py`):
 **`POST /science/protocols/{protocol_id}/designate-approval`**
@@ -260,7 +270,8 @@ The cursive fallback for "no saved signature" is rendered by python-docx as text
 | `lib/components/protocol/ApprovalSignatureDialog.svelte` | Modal opened by Approve/Reject. Approve mode: optional `signature_statement` textarea + preview of saved signature image (or cursive-name fallback). Reject mode: required `comment` textarea, signature optional. Confirm posts the appropriate endpoint. |
 | `lib/components/protocol/SubmitForApprovalDialog.svelte` | Modal opened by "Submit for Approval". Multi-select of eligible approvers (project APPROVE users + org PROTOCOL_APPROVER members), grouped headers. Confirm posts `/submit-for-approval`. |
 | `lib/components/protocol/RevertOnEditConfirmDialog.svelte` | Reusable confirm modal: "Editing will revert this protocol from APPROVED to DRAFT and require re-approval. Continue?" Triggered the first time the user makes a graph/name/description edit on an APPROVED protocol in a session. |
-| `lib/components/settings/ProtocolApproversCard.svelte` | Lives on the org settings page. Lists members with `roles` containing PROTOCOL_APPROVER, lets ADMINs add/remove. Wraps existing org-member endpoints from TD-0084. |
+| `lib/components/settings/OrgProtocolApproversCard.svelte` | Lives on the **org** settings page. Lists members with `roles` containing PROTOCOL_APPROVER, lets org ADMINs add/remove. Wraps existing org-member endpoints from TD-0084. |
+| `lib/components/project/ProjectProtocolApproversCard.svelte` | Lives in the **project** SettingsTab. Lists project members with PermissionLevel.APPROVE, lets project ADMINs add/remove via the existing `/projects/{id}/approvers` endpoints (now ADMIN-locked). |
 | `lib/components/shared/PendingApprovalsCard.svelte` | Dashboard card listing protocols awaiting the current user's approval. Pulls `/awaiting-my-approval`. Empty state hidden (don't render the card). |
 
 ### 7.2 Modifications
@@ -271,7 +282,7 @@ The cursive fallback for "no saved signature" is rendered by python-docx as text
 | `lib/components/run/RunOverridesEditor.svelte` | New prop `isStrict: boolean`. When true, render a banner "Overrides disabled — protocol is approved & strict" instead of the editor. |
 | `lib/components/run/RunCreatorUnitOpCard.svelte` | New prop `isStrict: boolean`. Hide override controls when true. |
 | `lib/components/project/ProtocolsTab.svelte` | New columns/badges: "Requires approval" pill; for APPROVED rows show approver name + date in a tooltip on the status badge. |
-| `lib/components/project/SettingsTab.svelte` | Add helper text under the existing `require_protocol_approval` toggle: "When enabled, protocols can be marked as requires-approval and runs are blocked until approved. Approvers are managed per project below, and globally in Org Settings." |
+| `lib/components/project/SettingsTab.svelte` | Add helper text under the existing `require_protocol_approval` toggle: "When enabled, protocols can be marked as requires-approval and runs are blocked until approved." Mount `<ProjectProtocolApproversCard>` directly below the toggle (replacing the current generic "Approvers" list). |
 | `routes/+page.svelte` (dashboard) | Mount `<PendingApprovalsCard>` near the top of the home page when the response is non-empty. |
 | `routes/protocols/[id]/+page.svelte` | Hook in `<RevertOnEditConfirmDialog>` — wrap the first onChange while status=APPROVED with the confirmation. State flag `revertConfirmedThisSession`. |
 | `routes/runs/[id]/+page.svelte` and the run-creator route | Pass `isStrict` (from `run.is_strict`) into RunOverridesEditor / RunCreatorUnitOpCard. |
@@ -303,7 +314,8 @@ Zod schemas in `lib/schemas/` for the new request/response shapes.
 - `tests/integration/test_protocol_edit_lock.py` — lock applies to name/description/graph; auto-revert on edit by authorized actor while APPROVED; REVERTED event written.
 - `tests/integration/test_run_approval_gate.py` — block when ungated, snapshot is_strict, override-block 403s.
 - `tests/integration/test_protocol_pdf_approval_section.py` — context builder yields the right `approval` / `approval_history` / `unapproved_warning`; with and without saved signature.
-- `tests/unit/test_permissions_protocol_approver.py` — org PROTOCOL_APPROVER passes VIEW/EDIT/APPROVE on protocol, fails on project/run/document.
+- `tests/unit/test_permissions_protocol_approver.py` — org PROTOCOL_APPROVER passes VIEW/EDIT/APPROVE on protocol, fails on project/run/document. Project Protocol Approver (PermissionLevel.APPROVE) passes APPROVE on its project's protocols, fails on protocols in other projects.
+- `tests/integration/test_project_protocol_approvers_admin_lock.py` — `/projects/{id}/approvers` GET/POST/DELETE return 403 for project EDIT, 200 for project ADMIN.
 
 Coverage target ≥80% on every touched file.
 
@@ -333,7 +345,7 @@ End-to-end golden path: designate → submit → approve → run-create succeeds
 
 ## 10. File touch list
 
-**Backend (modify):** `models/science.py`, `services/core/permissions.py`, `api/endpoints/protocol_versions.py`, `api/endpoints/protocols.py`, `api/endpoints/runs.py`, `api/endpoints/protocol_pdfs.py`, `services/protocols/template_engine.py`, `schemas/science.py`, `services/documents/templates/sop_default.docx`, `services/documents/templates/batch_record_default.docx`.
+**Backend (modify):** `models/science.py`, `services/core/permissions.py`, `api/endpoints/protocol_versions.py`, `api/endpoints/protocols.py`, `api/endpoints/projects.py` (lock `/approvers` to project ADMIN), `api/endpoints/runs.py`, `api/endpoints/protocol_pdfs.py`, `services/protocols/template_engine.py`, `schemas/science.py`, `services/documents/templates/sop_default.docx`, `services/documents/templates/batch_record_default.docx`.
 
 **Backend (new):** `alembic/versions/f0039_protocol_approval.py`, `services/approvals/__init__.py` + `events.py` (helper that writes events + audit log to keep endpoint code thin), `services/approvals/awaiting.py` (helper for the awaiting-me query), `tests/integration/test_protocol_approval_*` and `tests/unit/test_permissions_protocol_approver.py`.
 
