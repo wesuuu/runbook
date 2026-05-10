@@ -1,28 +1,56 @@
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
-from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol, ProtocolVersion, UnitOpDefinition
-from app.services.protocols.validation import assert_no_branch_errors
-from app.schemas.science import (ProtocolApprovalAction, ProtocolResponse,
-                                 ProtocolVersionListItem,
-                                 ProtocolVersionResponse,
-                                 PublishDraftRequest)
+from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
+                            OrgRole, PermissionLevel, PrincipalType, User)
+from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
+                                ProtocolApprovalRequest, ProtocolVersion,
+                                UnitOpDefinition)
+from app.schemas.science import (ApprovalActorRef, ApproveProtocolRequest,
+                                 AwaitingApprovalItem,
+                                 ProtocolApprovalEventResponse,
+                                 ProtocolResponse, ProtocolVersionListItem,
+                                 ProtocolVersionRef, ProtocolVersionResponse,
+                                 PublishDraftRequest, RejectProtocolRequest,
+                                 SubmitForApprovalRequest)
+from app.services.approvals import fulfill_open_requests, write_event
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
+from app.services.protocols.validation import assert_no_branch_errors
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# --- Awaiting My Approval ---
+# IMPORTANT: this route is registered BEFORE /protocols/{protocol_id}/... so
+# FastAPI doesn't try to parse "awaiting-my-approval" as a UUID.
+
+
+@router.get(
+    "/protocols/awaiting-my-approval",
+    response_model=List[AwaitingApprovalItem],
+)
+async def list_awaiting_my_approval(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List protocols pending approval that the current user can act on."""
+    from app.services.approvals.awaiting import list_awaiting_for_user
+
+    items = await list_awaiting_for_user(db, user.id)
+    return items
 
 
 # --- Protocol Version History ---
@@ -219,10 +247,18 @@ async def revert_protocol_version(
 )
 async def submit_protocol_for_approval(
     protocol_id: UUID,
+    body: SubmitForApprovalRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
+    """Move a DRAFT protocol to PENDING_APPROVAL and request approval from
+    the listed users.
+
+    Each requested user must either (a) hold APPROVE on the parent project
+    via ObjectPermission, or (b) hold the org PROTOCOL_APPROVER role in the
+    same organization as the project.
+    """
     allowed = await check_permission(
         db,
         user.id,
@@ -242,21 +278,89 @@ async def submit_protocol_for_approval(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
-    if protocol.status != "DRAFT":
+    if not protocol.requires_approval:
         raise HTTPException(
-            status_code=409,
-            detail=f"Cannot submit: protocol is {protocol.status}",
+            status_code=400,
+            detail="Protocol does not require approval. Designate it first.",
         )
 
+    if protocol.status != "DRAFT":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot submit: protocol status is {protocol.status}.",
+        )
+
+    if not body.requested_user_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one approver must be requested.",
+        )
+
+    # Resolve org context — supports project-scoped protocols (the typical case
+    # for approval). Org-scoped protocols still need an org for the role lookup.
+    org_id: Optional[UUID] = None
+    if protocol.project_id is not None:
+        proj_row = await db.execute(
+            select(Project).where(Project.id == protocol.project_id)
+        )
+        project_obj = proj_row.scalar_one_or_none()
+        if project_obj is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        org_id = project_obj.organization_id
+    else:
+        org_id = protocol.organization_id
+
+    # Build eligibility set
+    eligible: set[UUID] = set()
+    if protocol.project_id is not None:
+        proj_perm_rows = await db.execute(
+            select(ObjectPermission.principal_id).where(
+                ObjectPermission.object_type == ObjectType.PROJECT.value,
+                ObjectPermission.object_id == protocol.project_id,
+                ObjectPermission.principal_type == PrincipalType.USER.value,
+                ObjectPermission.permission_level == PermissionLevel.APPROVE.value,
+            )
+        )
+        eligible.update(proj_perm_rows.scalars().all())
+
+    if org_id is not None:
+        org_approver_rows = await db.execute(
+            select(OrganizationMember.user_id).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.roles.contains([OrgRole.PROTOCOL_APPROVER.value]),
+            )
+        )
+        eligible.update(org_approver_rows.scalars().all())
+
+    requested = set(body.requested_user_ids)
+    ineligible = requested - eligible
+    if ineligible:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "One or more requested users are not eligible approvers: "
+                + ", ".join(str(u) for u in ineligible)
+            ),
+        )
+
+    # State transitions
     protocol.status = "PENDING_APPROVAL"
 
-    await log_audit(
+    for uid in requested:
+        db.add(
+            ProtocolApprovalRequest(
+                protocol_id=protocol.id,
+                requested_user_id=uid,
+                requested_by_id=user.id,
+                status="OPEN",
+            )
+        )
+
+    await write_event(
         db,
-        user.id,
-        "UPDATE",
-        "Protocol",
-        protocol.id,
-        {"status": "PENDING_APPROVAL"},
+        protocol=protocol,
+        actor_id=user.id,
+        action="SUBMITTED",
     )
 
     await db.commit()
@@ -275,78 +379,90 @@ async def submit_protocol_for_approval(
 )
 async def approve_protocol(
     protocol_id: UUID,
-    action: ProtocolApprovalAction,
+    body: ApproveProtocolRequest,
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
-    # Require APPROVE permission on the parent project
-    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
-    protocol_obj = result.scalar_one_or_none()
-    if not protocol_obj:
-        raise HTTPException(status_code=404, detail="Protocol not found")
+    """Approve a PENDING_APPROVAL protocol.
 
+    Requires APPROVE on the protocol (granted via project APPROVE
+    permission or via the org PROTOCOL_APPROVER role).
+    """
     allowed = await check_permission(
         db,
         user.id,
-        ObjectType.PROJECT,
-        protocol_obj.project_id,
+        ObjectType.PROTOCOL,
+        protocol_id,
         PermissionLevel.APPROVE,
     )
     if not allowed:
         raise HTTPException(
             status_code=403,
-            detail="APPROVE permission required on project",
+            detail="APPROVE permission required to approve this protocol.",
         )
+
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
+    protocol_obj = result.scalar_one_or_none()
+    if not protocol_obj:
+        raise HTTPException(status_code=404, detail="Protocol not found")
 
     if protocol_obj.status != "PENDING_APPROVAL":
         raise HTTPException(
-            status_code=409,
-            detail=f"Cannot approve: protocol is {protocol_obj.status}",
+            status_code=400,
+            detail=f"Cannot approve: protocol is {protocol_obj.status}.",
         )
 
     protocol_obj.status = "APPROVED"
+    protocol_obj.approved_by_id = user.id
+    protocol_obj.approved_at = datetime.now(timezone.utc)
 
-    await log_audit(
+    await write_event(
         db,
-        user.id,
-        "UPDATE",
-        "Protocol",
-        protocol_obj.id,
-        {"status": "APPROVED", "comment": action.comment},
+        protocol=protocol_obj,
+        actor_id=user.id,
+        action="APPROVED",
+        comment=body.comment,
+        signature_statement=body.signature_statement,
+    )
+    await fulfill_open_requests(
+        db,
+        protocol_id=protocol_obj.id,
+        final_status="APPROVED",
+        actor_id=user.id,
     )
 
     await db.commit()
 
-    # Notify protocol author of approval
-    proj = await db.execute(
-        select(Project).where(Project.id == protocol_obj.project_id)
-    )
-    project = proj.scalar_one()
-
-    # Find the protocol author (latest version's created_by_id)
-    ver_result = await db.execute(
-        select(ProtocolVersion.created_by_id)
-        .where(ProtocolVersion.protocol_id == protocol_id)
-        .order_by(ProtocolVersion.version_number.desc())
-        .limit(1)
-    )
-    author_id = ver_result.scalar_one_or_none()
-    if author_id and author_id != user.id:
-        background_tasks.add_task(
-            send_notification,
-            db=db,
-            event_type="PROTOCOL_APPROVED",
-            org_id=project.organization_id,
-            entity_type="protocol",
-            entity_id=protocol_obj.id,
-            recipients=[author_id],
-            context={
-                "protocol_name": protocol_obj.name,
-                "approved_by": user.full_name or user.email,
-            },
+    # Notify protocol author of approval (best-effort, project-scoped only)
+    if protocol_obj.project_id is not None:
+        proj = await db.execute(
+            select(Project).where(Project.id == protocol_obj.project_id)
         )
+        project = proj.scalar_one_or_none()
+        if project is not None:
+            ver_result = await db.execute(
+                select(ProtocolVersion.created_by_id)
+                .where(ProtocolVersion.protocol_id == protocol_id)
+                .order_by(ProtocolVersion.version_number.desc())
+                .limit(1)
+            )
+            author_id = ver_result.scalar_one_or_none()
+            if author_id and author_id != user.id:
+                background_tasks.add_task(
+                    send_notification,
+                    db=db,
+                    event_type="PROTOCOL_APPROVED",
+                    org_id=project.organization_id,
+                    entity_type="protocol",
+                    entity_id=protocol_obj.id,
+                    recipients=[author_id],
+                    context={
+                        "protocol_name": protocol_obj.name,
+                        "approved_by": user.full_name or user.email,
+                    },
+                )
 
     result = await db.execute(
         select(Protocol)
@@ -362,45 +478,55 @@ async def approve_protocol(
 )
 async def reject_protocol(
     protocol_id: UUID,
-    action: ProtocolApprovalAction,
+    body: RejectProtocolRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
-    # Require APPROVE permission on the parent project
-    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
-    protocol_obj = result.scalar_one_or_none()
-    if not protocol_obj:
-        raise HTTPException(status_code=404, detail="Protocol not found")
+    """Reject a PENDING_APPROVAL protocol, returning it to DRAFT.
 
+    Requires APPROVE on the protocol. A non-empty `comment` is required
+    so the author understands why the protocol was sent back.
+    """
     allowed = await check_permission(
         db,
         user.id,
-        ObjectType.PROJECT,
-        protocol_obj.project_id,
+        ObjectType.PROTOCOL,
+        protocol_id,
         PermissionLevel.APPROVE,
     )
     if not allowed:
         raise HTTPException(
             status_code=403,
-            detail="APPROVE permission required on project",
+            detail="APPROVE permission required to reject this protocol.",
         )
+
+    result = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
+    protocol_obj = result.scalar_one_or_none()
+    if not protocol_obj:
+        raise HTTPException(status_code=404, detail="Protocol not found")
 
     if protocol_obj.status != "PENDING_APPROVAL":
         raise HTTPException(
-            status_code=409,
-            detail=f"Cannot reject: protocol is {protocol_obj.status}",
+            status_code=400,
+            detail=f"Cannot reject: protocol is {protocol_obj.status}.",
         )
 
     protocol_obj.status = "DRAFT"
 
-    await log_audit(
+    await write_event(
         db,
-        user.id,
-        "UPDATE",
-        "Protocol",
-        protocol_obj.id,
-        {"status": "DRAFT", "action": "rejected", "comment": action.comment},
+        protocol=protocol_obj,
+        actor_id=user.id,
+        action="REJECTED",
+        comment=body.comment,
+        signature_statement=body.signature_statement,
+    )
+    await fulfill_open_requests(
+        db,
+        protocol_id=protocol_obj.id,
+        final_status="REJECTED",
+        actor_id=user.id,
     )
 
     await db.commit()
@@ -492,3 +618,66 @@ async def publish_draft_version(
         .where(Protocol.id == protocol.id)
     )
     return result.scalar_one()
+
+
+# --- Approval History ---
+
+
+@router.get(
+    "/protocols/{protocol_id}/approval-history",
+    response_model=List[ProtocolApprovalEventResponse],
+)
+async def list_approval_history(
+    protocol_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the protocol's approval events, newest first."""
+    allowed = await check_permission(
+        db,
+        user.id,
+        ObjectType.PROTOCOL,
+        protocol_id,
+        PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await db.execute(
+        select(ProtocolApprovalEvent)
+        .options(
+            selectinload(ProtocolApprovalEvent.actor),
+            selectinload(ProtocolApprovalEvent.protocol_version),
+        )
+        .where(ProtocolApprovalEvent.protocol_id == protocol_id)
+        .order_by(ProtocolApprovalEvent.created_at.desc())
+    )
+    events = result.scalars().all()
+
+    response: list[ProtocolApprovalEventResponse] = []
+    for ev in events:
+        actor_ref = None
+        if ev.actor is not None:
+            actor_ref = ApprovalActorRef(
+                id=ev.actor.id,
+                name=ev.actor.full_name or ev.actor.email,
+                email=ev.actor.email,
+            )
+        version_ref = None
+        if ev.protocol_version is not None:
+            version_ref = ProtocolVersionRef(
+                id=ev.protocol_version.id,
+                version_number=ev.protocol_version.version_number,
+            )
+        response.append(
+            ProtocolApprovalEventResponse(
+                id=ev.id,
+                action=ev.action,
+                comment=ev.comment,
+                signature_statement=ev.signature_statement,
+                actor=actor_ref,
+                protocol_version=version_ref,
+                created_at=ev.created_at,
+            )
+        )
+    return response
