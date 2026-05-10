@@ -1,6 +1,11 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
+	import {
+		suggestNextLocalId,
+		findLocalIdConflicts
+	} from '$lib/protocol/equipmentIds';
+	import type { Node } from '@xyflow/svelte';
 
 	interface Equipment {
 		id: string;
@@ -15,6 +20,7 @@
 
 	interface SelectedEquipment {
 		equipment_id: string;
+		local_id?: string;
 		shareable: boolean;
 	}
 
@@ -23,6 +29,7 @@
 		nodeId: string;
 		currentEquipment: SelectedEquipment[];
 		orgEquipment: Equipment[];
+		allNodes: Node[];
 		conflictingIds: Set<string>;
 		onClose: () => void;
 		onApply: (equipment: SelectedEquipment[]) => void;
@@ -39,6 +46,7 @@
 		nodeId,
 		currentEquipment = [],
 		orgEquipment = [],
+		allNodes = [],
 		conflictingIds = new Set(),
 		onClose,
 		onApply,
@@ -47,7 +55,7 @@
 
 	let searchQuery = $state('');
 	let showCreateForm = $state(false);
-	let selectedItems = $state<Map<string, boolean>>(new Map());
+	let selectedItems = $state<Map<string, { local_id: string; shareable: boolean }>>(new Map());
 	let isCreating = $state(false);
 
 	// Form state for creating equipment
@@ -60,7 +68,12 @@
 	// Initialize selected items when modal opens
 	$effect(() => {
 		if (open) {
-			selectedItems = new Map(currentEquipment.map(e => [e.equipment_id, e.shareable]));
+			selectedItems = new Map(
+				currentEquipment.map((e) => [
+					e.equipment_id,
+					{ local_id: e.local_id ?? '', shareable: e.shareable }
+				])
+			);
 		}
 	});
 
@@ -72,21 +85,62 @@
 		);
 	});
 
+	function buildVirtualNodes(): Node[] {
+		const virtualSelf = {
+			id: nodeId,
+			type: 'unitOp',
+			position: { x: 0, y: 0 },
+			data: {
+				equipment: Array.from(selectedItems.entries()).map(([eqId, st]) => ({
+					equipment_id: eqId,
+					local_id: st.local_id,
+					shareable: st.shareable
+				}))
+			}
+		} as unknown as Node;
+		const otherNodes = allNodes.filter((n) => n.id !== nodeId);
+		return [...otherNodes, virtualSelf];
+	}
+
+	const conflictsHere = $derived.by(() => {
+		return findLocalIdConflicts(buildVirtualNodes());
+	});
+
+	const hasConflicts = $derived.by(() => {
+		for (const st of selectedItems.values()) {
+			if (st.local_id && conflictsHere.has(st.local_id)) return true;
+		}
+		return false;
+	});
+
+	function nextLocalIdInContext(): string {
+		return suggestNextLocalId(buildVirtualNodes());
+	}
+
 	function toggleEquipment(equipmentId: string) {
 		if (selectedItems.has(equipmentId)) {
 			selectedItems.delete(equipmentId);
 		} else {
-			selectedItems.set(equipmentId, false); // Default to non-shareable
+			selectedItems.set(equipmentId, {
+				local_id: nextLocalIdInContext(),
+				shareable: false
+			});
 		}
 		selectedItems = selectedItems; // Trigger reactivity
 	}
 
+	function updateLocalId(equipmentId: string, value: string) {
+		const current = selectedItems.get(equipmentId);
+		if (!current) return;
+		selectedItems.set(equipmentId, { ...current, local_id: value });
+		selectedItems = selectedItems;
+	}
+
 	function toggleShareable(equipmentId: string) {
-		if (selectedItems.has(equipmentId)) {
-			const current = selectedItems.get(equipmentId)!;
-			selectedItems.set(equipmentId, !current);
-			selectedItems = selectedItems; // Trigger reactivity
-		}
+		const current = selectedItems.get(equipmentId);
+		if (!current) return;
+		selectedItems.set(equipmentId, { ...current, shareable: !current.shareable });
+		selectedItems = selectedItems; // Trigger reactivity
 	}
 
 	async function handleCreate() {
@@ -107,7 +161,10 @@
 			});
 
 			// Add to selected items
-			selectedItems.set(newEq.id, false);
+			selectedItems.set(newEq.id, {
+				local_id: nextLocalIdInContext(),
+				shareable: false
+			});
 			selectedItems = selectedItems;
 
 			// Reset form
@@ -125,9 +182,10 @@
 
 	function handleApply() {
 		const equipment: SelectedEquipment[] = Array.from(selectedItems.entries()).map(
-			([equipmentId, shareable]) => ({
+			([equipmentId, st]) => ({
 				equipment_id: equipmentId,
-				shareable
+				local_id: st.local_id || undefined,
+				shareable: st.shareable
 			})
 		);
 		onApply(equipment);
@@ -139,7 +197,8 @@
 	}
 
 	function hasConflict(equipmentId: string): boolean {
-		return conflictingIds.has(equipmentId) && !(selectedItems.get(equipmentId) ?? false);
+		const st = selectedItems.get(equipmentId);
+		return conflictingIds.has(equipmentId) && !(st?.shareable ?? false);
 	}
 
 	function handleOpenChange(value: boolean) {
@@ -193,16 +252,37 @@
 								</label>
 							</div>
 
-							<!-- Shareable toggle and conflict badge -->
+							<!-- Local ID, shareable toggle, conflict badge -->
 							{#if selectedItems.has(equipment.id)}
+								{@const sel = selectedItems.get(equipment.id)!}
+								{@const localIdDup =
+									!!sel.local_id && conflictsHere.has(sel.local_id)}
 								<div class="item-controls">
+									<label class="localid-label">
+										ID
+										<input
+											type="text"
+											value={sel.local_id}
+											oninput={(e) =>
+												updateLocalId(
+													equipment.id,
+													(e.currentTarget as HTMLInputElement).value
+												)}
+											class="localid-input"
+											class:localid-error={localIdDup}
+											placeholder="E-001"
+										/>
+									</label>
+									{#if localIdDup}
+										<span class="conflict-badge">⚠ Duplicate ID</span>
+									{/if}
 									{#if hasConflict(equipment.id)}
 										<span class="conflict-badge">⚠ Conflict</span>
 									{/if}
 									<label class="shareable-label">
 										<input
 											type="checkbox"
-											checked={selectedItems.get(equipment.id) ?? false}
+											checked={sel.shareable}
 											onchange={() => toggleShareable(equipment.id)}
 											class="shareable-checkbox"
 										/>
@@ -298,10 +378,13 @@
 		</div>
 
 		<Dialog.Footer class="px-6 pb-6 pt-0 border-t border-border mt-0">
+			{#if hasConflicts}
+				<span class="footer-error">Resolve duplicate IDs before applying</span>
+			{/if}
 			<Button variant="secondary" onclick={onClose}>
 				Cancel
 			</Button>
-			<Button onclick={handleApply}>
+			<Button onclick={handleApply} disabled={hasConflicts}>
 				Apply
 			</Button>
 		</Dialog.Footer>
@@ -422,6 +505,43 @@
 		font-size: 0.75rem;
 		font-weight: 500;
 		white-space: nowrap;
+	}
+
+	.localid-label {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.75rem;
+		color: hsl(var(--muted-foreground));
+		font-weight: 500;
+	}
+
+	.localid-input {
+		width: 5rem;
+		padding: 0.25rem 0.375rem;
+		border: 1px solid hsl(var(--border));
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		background: hsl(var(--background));
+		color: hsl(var(--foreground));
+	}
+
+	.localid-input:focus {
+		outline: none;
+		border-color: hsl(var(--primary));
+		box-shadow: 0 0 0 2px hsl(var(--primary) / 0.1);
+	}
+
+	.localid-error {
+		border-color: #dc2626;
+	}
+
+	.footer-error {
+		flex: 1;
+		font-size: 0.75rem;
+		color: #b91c1c;
+		font-weight: 500;
 	}
 
 	.shareable-label {

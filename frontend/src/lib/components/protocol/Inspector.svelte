@@ -21,6 +21,7 @@
 
     interface SelectedEquipment {
         equipment_id: string;
+        local_id?: string;
         shareable: boolean;
     }
 
@@ -388,6 +389,9 @@
                     {#if editEquipment.length > 0}
                         {#each editEquipment as eq (eq.equipment_id)}
                             <div class="equipment-chip" class:conflict={equipmentConflicts.get(node?.id || '')?.includes(eq.equipment_id) && !eq.shareable}>
+                                {#if eq.local_id}
+                                    <span class="chip-localid">{eq.local_id}</span>
+                                {/if}
                                 <span class="chip-name">{getEquipmentName(eq.equipment_id)}</span>
                                 {#if eq.shareable}
                                     <span class="chip-badge">Shared</span>
@@ -419,6 +423,7 @@
                 nodeId={node?.id || ''}
                 currentEquipment={editEquipment}
                 {orgEquipment}
+                {allNodes}
                 conflictingIds={new Set(equipmentConflicts.get(node?.id || '') || [])}
                 onClose={() => (equipmentModalOpen = false)}
                 onApply={handleEquipmentApply}
@@ -938,6 +943,18 @@
         background-color: #fef08a;
         border-color: #fcd34d;
         color: #92400e;
+    }
+
+    .chip-localid {
+        display: inline-block;
+        padding: 2px 6px;
+        background-color: rgba(15, 23, 42, 0.08);
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 700;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.02em;
+        color: #1e293b;
     }
 
     .chip-name {
