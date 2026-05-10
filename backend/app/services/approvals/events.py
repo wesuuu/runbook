@@ -33,6 +33,10 @@ async def write_event(
     """
     if action not in VALID_ACTIONS:
         raise ValueError(f"invalid approval action {action!r}")
+    # Stamp created_at explicitly. Postgres `now()` returns transaction time,
+    # so consecutive events written inside one transaction (or one test
+    # SAVEPOINT) would otherwise share a timestamp and break DESC ordering.
+    now = datetime.now(timezone.utc)
     event = ProtocolApprovalEvent(
         protocol_id=protocol.id,
         protocol_version_id=protocol_version_id,
@@ -40,6 +44,8 @@ async def write_event(
         action=action,
         comment=comment,
         signature_statement=signature_statement,
+        created_at=now,
+        updated_at=now,
     )
     db.add(event)
 
