@@ -446,3 +446,53 @@ def test_batch_record_filled_figures():
     pdf = render_to_pdf(BR_TEMPLATE, ctx)
     _write_artifact("batch_record_filled_figures", docx, pdf)
     _assert_valid_pdf(pdf)
+
+
+# ── _render_template (QA-0007) ──
+
+from app.services.documents.pdf_base import _render_template  # noqa: E402
+
+
+def test_render_template_returns_unresolved_list_for_missing_keys():
+    out, unresolved = _render_template(
+        "Mix {{volume}} mL and stir {{rpm}}.",
+        {"volume": 500},
+    )
+    assert out == "Mix 500 mL and stir {{rpm}}."
+    assert unresolved == ["rpm"]
+
+
+def test_render_template_resolves_hyphenated_equipment_token():
+    out, unresolved = _render_template(
+        "Set up the {{E-001_name}} ({{E-001_description}}).",
+        {
+            "E-001_name": "Sartorius Bioreactor",
+            "E-001_description": "5L stirred-tank, single-use",
+        },
+    )
+    assert out == "Set up the Sartorius Bioreactor (5L stirred-tank, single-use)."
+    assert unresolved == []
+
+
+def test_render_template_leaves_unresolved_hyphen_token_literal_and_lists_it():
+    out, unresolved = _render_template(
+        "Calibrate {{E-009_name}}.",
+        {"unrelated": "x"},
+    )
+    assert out == "Calibrate {{E-009_name}}."
+    assert unresolved == ["E-009_name"]
+
+
+def test_render_template_deduplicates_unresolved_preserves_order():
+    out, unresolved = _render_template(
+        "{{b}} {{a}} {{b}} {{c}}",
+        {},
+    )
+    assert out == "{{b}} {{a}} {{b}} {{c}}"
+    assert unresolved == ["b", "a", "c"]
+
+
+def test_render_template_handles_empty_params_dict():
+    out, unresolved = _render_template("Plain text", None)
+    assert out == "Plain text"
+    assert unresolved == []

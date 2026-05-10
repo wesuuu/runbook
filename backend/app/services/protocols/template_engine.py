@@ -122,7 +122,7 @@ def build_context(
         param_schema = step.get("param_schema") or {}
         has_templates = desc and "{{" in desc
         if has_templates:
-            desc = _render_template(desc, params)
+            desc, _ = _render_template(desc, params)
 
         # Build param sentence if no inline templates
         param_sentence = ""
@@ -284,7 +284,7 @@ def build_context(
             param_schema = s.get("param_schema") or {}
             has_templates = desc and "{{" in desc
             if has_templates:
-                desc = _render_template(desc, params)
+                desc, _ = _render_template(desc, params)
             param_sentence = ""
             if not has_templates:
                 param_sentence = _build_param_sentence(params, param_schema)
