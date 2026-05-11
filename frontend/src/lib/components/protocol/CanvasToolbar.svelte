@@ -10,6 +10,7 @@
         versionNumber: number;
         previewingVersion: number | null;
         previewLoading: boolean;
+        latestDraftVersion: number | null;
         nodes: Node[];
         canUndoAction: boolean;
         canRedoAction: boolean;
@@ -31,6 +32,7 @@
         versionNumber,
         previewingVersion,
         previewLoading,
+        latestDraftVersion,
         nodes,
         canUndoAction,
         canRedoAction,
@@ -177,7 +179,9 @@
             >&#x2039;</Button>
             <span class="version-nav-label">
                 {#if previewingVersion !== null}
-                    v{previewingVersion}
+                    v{previewingVersion}{#if latestDraftVersion !== null && previewingVersion === latestDraftVersion}
+                        <span class="version-nav-draft-tag">draft</span>
+                    {/if}
                 {:else}
                     v{versionNumber}
                 {/if}
@@ -187,8 +191,14 @@
                 size="icon-sm"
                 class="version-nav-btn rounded-none"
                 onclick={() => onBrowseVersion('next')}
-                disabled={previewLoading || previewingVersion === null}
-                title="Next version"
+                disabled={previewLoading || (
+                    previewingVersion === null
+                        ? latestDraftVersion === null
+                        : previewingVersion >= (latestDraftVersion ?? versionNumber)
+                )}
+                title={latestDraftVersion !== null && previewingVersion === null
+                    ? `Next version (draft v${latestDraftVersion})`
+                    : "Next version"}
             >&#x203A;</Button>
         </div>
     {/if}
@@ -269,5 +279,17 @@
         min-width: 24px;
         text-align: center;
         font-family: monospace;
+    }
+
+    .version-nav-draft-tag {
+        margin-left: 4px;
+        padding: 1px 5px;
+        font-size: 9px;
+        font-weight: 700;
+        color: rgb(180, 83, 9);
+        background: rgb(254, 243, 199);
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
     }
 </style>

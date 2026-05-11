@@ -142,6 +142,10 @@
     let previewingVersion = $state<number | null>(null);
     let previewLoading = $state(false);
     let savedStateBeforePreview = $state<string | null>(null);
+    // Highest is_draft version_number above the published versionNumber, if any.
+    // When set, the toolbar's "next" arrow can advance past versionNumber to
+    // surface the unpublished draft.
+    let latestDraftVersion = $state<number | null>(null);
 
     // Track unsaved changes
     let hasUnsavedChanges = $state(false);
@@ -520,6 +524,7 @@
                 roles = protocol.roles || [];
                 protocolStatus = protocol.status || "DRAFT";
                 versionNumber = protocol.version_number || 0;
+                latestDraftVersion = protocol.latest_draft_version_number ?? null;
 
                 // Load unit ops scoped to this protocol's project
                 const projectParam = protocol.project_id ? `?project_id=${protocol.project_id}` : '';
@@ -696,6 +701,13 @@
         versionsLoading = true;
         try {
             versions = await api.get(`/science/protocols/${protocol.id}/versions`);
+            // Refresh draft-version pointer so the toolbar's "next" arrow
+            // stays accurate after save/publish/revert flows reload versions.
+            const draftAbove = versions
+                .filter((v: any) => v.is_draft && v.version_number > versionNumber)
+                .map((v: any) => v.version_number)
+                .sort((a: number, b: number) => b - a)[0];
+            latestDraftVersion = draftAbove ?? null;
         } catch (e: unknown) {
             console.error("Failed to load versions:", e instanceof Error ? e.message : e);
         } finally {
@@ -758,8 +770,10 @@
         const currentPreview = previewingVersion ?? versionNumber;
         const targetVersion = direction === 'prev' ? currentPreview - 1 : currentPreview + 1;
 
-        // Going forward past the current version exits preview
-        if (targetVersion > versionNumber) {
+        // Forward ceiling is the published version, unless an unpublished
+        // draft exists above it -- then the draft is reachable too.
+        const maxBrowsable = latestDraftVersion ?? versionNumber;
+        if (targetVersion > maxBrowsable) {
             exitPreview();
             return;
         }
@@ -1283,6 +1297,7 @@
             {versionNumber}
             {previewingVersion}
             {previewLoading}
+            {latestDraftVersion}
             {nodes}
             canUndoAction={canUndo(undoRedoState)}
             canRedoAction={canRedo(undoRedoState)}

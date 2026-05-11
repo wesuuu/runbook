@@ -386,6 +386,18 @@ async def get_protocol(
         latest_ev.comment if latest_ev else None
     )
 
+    # Surface unpublished drafts so the editor's version toggle can jump to
+    # them. Mirrors the same logic in list_project_protocols.
+    draft_row = await db.execute(
+        select(func.max(ProtocolVersion.version_number)).where(
+            ProtocolVersion.protocol_id == protocol_id,
+            ProtocolVersion.is_draft.is_(True),
+        )
+    )
+    draft_v = draft_row.scalar_one_or_none()
+    if draft_v is not None and draft_v > (protocol.version_number or 0):
+        protocol.latest_draft_version_number = draft_v  # type: ignore[attr-defined]
+
     return protocol
 
 

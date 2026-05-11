@@ -328,6 +328,46 @@ async def test_list_protocols_surfaces_latest_draft_version(
     assert by_name["No Draft"]["latest_draft_version_number"] is None
 
 
+@pytest.mark.asyncio
+async def test_get_protocol_surfaces_latest_draft_version(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """The single-protocol GET endpoint must surface
+    latest_draft_version_number so the editor's version toggle can jump
+    to an unpublished draft."""
+    from app.models.science import ProtocolVersion
+
+    protocol = Protocol(
+        name="Toggle Draft",
+        project_id=test_project.id,
+        graph={},
+        status="APPROVED",
+        version_number=4,
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+    db_session.add(
+        ProtocolVersion(
+            protocol_id=protocol.id,
+            version_number=5,
+            name=protocol.name,
+            graph={},
+            is_draft=True,
+        )
+    )
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/science/protocols/{protocol.id}",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["latest_draft_version_number"] == 5
+
+
 # --- Protocol Roles ---
 
 
