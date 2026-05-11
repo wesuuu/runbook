@@ -23,6 +23,10 @@ _DEFAULT_NODE_W = 220
 _DEFAULT_NODE_H = 100
 _LANE_DEFAULT_HORIZONTAL = (800, 200)
 _LANE_DEFAULT_VERTICAL = (220, 500)
+# Minimum visual gap between sibling unit-ops. The canonical sibling step
+# (lane_layout.CHILD_X_STEP / CHILD_Y_STEP) leaves ~20px; anything tighter
+# than this threshold reads as crowded.
+_MIN_SIBLING_GAP = 10.0
 
 _STYLE_DIM_RE = re.compile(r"\s*(width|height)\s*:\s*([0-9]+)\s*px\s*;?", re.IGNORECASE)
 
@@ -356,13 +360,16 @@ def _layout_quality_issues(
     graph: dict[str, Any],
 ) -> list[ValidationIssue]:
     """Surface bad-layout output from agent edits: a child whose lane-relative
-    bbox would render outside its parent lane, or two siblings whose bboxes
-    overlap. These are warnings — they don't block usability, but the chat
-    agent's `validate_protocol` should see them and re-place nodes neatly."""
+    bbox would render outside its parent lane, an unparented step whose world
+    bbox intersects a lane it should belong to, two siblings whose bboxes
+    overlap, or siblings packed too tightly. These are warnings — they don't
+    block usability, but the chat agent's `validate_protocol` should see them
+    and re-place nodes neatly."""
     issues: list[ValidationIssue] = []
     graph_layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
     nodes_by_id = {n.get("id"): n for n in nodes if n.get("id")}
     unit_op_nodes = [n for n in nodes if n.get("type") == "unitOp"]
+    lane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
 
     # Rule 1: child_outside_lane — parented unit-op extends past lane bounds.
     for n in unit_op_nodes:
@@ -394,15 +401,54 @@ def _layout_quality_issues(
                 )
             )
 
-    # Rule 2: overlapping_nodes — two unit-ops in the same parent frame whose
+    # Rule 2: step_overlaps_lane — top-level unit-op (no parentId) whose
+    # world bbox intersects a swimLane. The agent placed it on the lane edge
+    # instead of parenting it; visually it appears half-inside, half-outside.
+    # Children of a lane live in that lane's coordinate frame, so they can't
+    # visually intersect a different lane — only top-level steps need checking.
+    for n in unit_op_nodes:
+        parent_id = n.get("parentId")
+        if isinstance(parent_id, str) and parent_id.startswith("lane-"):
+            continue
+        pos = n.get("position") or {}
+        nx = float(pos.get("x", 0))
+        ny = float(pos.get("y", 0))
+        nw, nh = _node_dims(n)
+        for lane in lane_nodes:
+            lane_pos = lane.get("position") or {}
+            lx = float(lane_pos.get("x", 0))
+            ly = float(lane_pos.get("y", 0))
+            lw, lh = _lane_dims(lane, graph_layout)
+            if nx < lx + lw and lx < nx + nw and ny < ly + lh and ly < ny + nh:
+                label = (n.get("data") or {}).get("label") or "<unnamed>"
+                lane_label = (lane.get("data") or {}).get("label") or "<lane>"
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="step_overlaps_lane",
+                        node_id=n.get("id"),
+                        message=(
+                            f"Step '{label}' visually overlaps the '{lane_label}' "
+                            "swimlane but is not a child of it. Set its parentId "
+                            "to the lane and use lane-relative coordinates, or "
+                            "move it clear of the lane bounds."
+                        ),
+                    )
+                )
+                break
+
+    # Rule 3: overlapping_nodes — two unit-ops in the same parent frame whose
     # bboxes intersect. Children of different lanes are rendered in separate
     # coordinate frames and can't visually overlap, so group by parentId first.
+    # Rule 4: insufficient_node_spacing — sibling unit-ops that don't overlap
+    # but sit within _MIN_SIBLING_GAP of each other on both axes.
     by_parent: dict[str | None, list[dict[str, Any]]] = {}
     for n in unit_op_nodes:
         parent_id = n.get("parentId") if isinstance(n.get("parentId"), str) else None
         by_parent.setdefault(parent_id, []).append(n)
 
-    reported: set[frozenset[str]] = set()
+    reported_overlap: set[frozenset[str]] = set()
+    reported_spacing: set[frozenset[str]] = set()
     for siblings in by_parent.values():
         for i in range(len(siblings)):
             a = siblings[i]
@@ -416,14 +462,17 @@ def _layout_quality_issues(
                 bx = float((b.get("position") or {}).get("x", 0))
                 by_ = float((b.get("position") or {}).get("y", 0))
                 bw, bh = _node_dims(b)
-                if ax < bx + bw and bx < ax + aw and ay < by_ + bh and by_ < ay + ah:
-                    b_id = b.get("id")
+                b_id = b.get("id")
+                b_label = (b.get("data") or {}).get("label") or "<unnamed>"
+                overlap = (
+                    ax < bx + bw and bx < ax + aw and ay < by_ + bh and by_ < ay + ah
+                )
+                if overlap:
                     if a_id and b_id:
                         key = frozenset({a_id, b_id})
-                        if key in reported:
+                        if key in reported_overlap:
                             continue
-                        reported.add(key)
-                    b_label = (b.get("data") or {}).get("label") or "<unnamed>"
+                        reported_overlap.add(key)
                     issues.append(
                         ValidationIssue(
                             severity="warning",
@@ -433,6 +482,33 @@ def _layout_quality_issues(
                                 f"Steps '{a_label}' and '{b_label}' overlap "
                                 "visually. Space them out so a scientist can "
                                 "read the protocol at a glance."
+                            ),
+                        )
+                    )
+                    continue
+                # Non-overlapping: check separation. Gap on an axis is the
+                # signed distance between the nearer edges; <= 0 means the
+                # projections overlap on that axis. The pair is too tight
+                # only if BOTH axis projections are within _MIN_SIBLING_GAP
+                # (otherwise they're far apart on at least one axis).
+                gap_x = max(bx - (ax + aw), ax - (bx + bw))
+                gap_y = max(by_ - (ay + ah), ay - (by_ + bh))
+                if gap_x < _MIN_SIBLING_GAP and gap_y < _MIN_SIBLING_GAP:
+                    if a_id and b_id:
+                        key = frozenset({a_id, b_id})
+                        if key in reported_spacing:
+                            continue
+                        reported_spacing.add(key)
+                    issues.append(
+                        ValidationIssue(
+                            severity="warning",
+                            code="insufficient_node_spacing",
+                            node_id=a_id,
+                            message=(
+                                f"Steps '{a_label}' and '{b_label}' are crowded "
+                                f"— leave at least {int(_MIN_SIBLING_GAP)}px "
+                                "between sibling unit ops so the protocol stays "
+                                "readable."
                             ),
                         )
                     )

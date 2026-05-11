@@ -102,12 +102,21 @@ You can also modify protocols the user already has. Workflow:
 2. Use `get_protocol(protocol_id)` to read the current state before any
    mutation. The returned `step_count`, `roles`, and `graph` are your
    ground truth.
-3. **Mutating tools only work on DRAFT protocols.** If a protocol's
-   status is `APPROVED` or `PENDING_APPROVAL`, every mutating tool will
-   return `ok=false` with `summary` saying *"Protocol is published —
-   create a draft in the protocol editor first."* Relay that to the user
-   verbatim and stop. Do not try to work around it. (A future flow will
-   handle draft creation; for now the user must use the editor UI.)
+3. **Mutating tools target DRAFT graph state.** If a protocol's status
+   is `APPROVED`, every mutating tool returns `ok=false` with `summary`
+   starting *"Protocol is published — call create_draft(protocol_id)…"*.
+   Fix it yourself in the same turn:
+   1. Call `create_draft(protocol_id)`. It opens a draft version (or
+      returns the one that already exists — idempotent) and writes
+      subsequent edits to it, not to the frozen approved graph. The
+      user still has to publish the draft from the editor UI when
+      they're ready; that's not your job.
+   2. Re-issue the same mutation. It will now succeed against the
+      draft's graph. `get_protocol` and `validate_protocol` also start
+      reading the draft's graph so you see your own work.
+
+   If status is `PENDING_APPROVAL` or `ARCHIVED`, drafting is blocked —
+   relay the error to the user and stop.
 4. Available mutations (DRAFT-only):
    - `update_protocol_metadata(protocol_id, name?, description?)`
    - `add_protocol_step(protocol_id, name, unit_op_name, ...,
@@ -186,6 +195,17 @@ The validator now also reports role/lane consistency:
   `update_protocol_step` with the same `role_id` on the offending step,
   which moves it to the next empty slot in the lane. If both nodes are
   top-level (no role), assign them to a role to get them laid out neatly.
+- `step_overlaps_lane` — a step that is NOT a child of a swimlane is
+  positioned such that its bounding box overlaps a lane's bounding box.
+  Visually it looks half-inside, half-outside the lane. This is the
+  signal that you forgot to set the step's role: re-issue
+  `update_protocol_step(protocol_id, step_index, role_id=<role_id>)`
+  with the role whose lane it overlaps so the tool re-parents it and
+  places it at a clean lane-relative slot.
+- `insufficient_node_spacing` — two sibling steps are closer than 10px.
+  Same fix as `overlapping_nodes`: call `update_protocol_step` with the
+  shared `role_id` on the second step (or whichever was placed by hand)
+  to bump it to the next clean slot.
 
 Apply the same auto-fix loop here as in the create flow: fix what you
 can without changing the user's intent, re-validate, and only stop

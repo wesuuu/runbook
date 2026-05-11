@@ -503,3 +503,130 @@ def test_roles_arg_omitted_skips_role_lane_checks():
     codes = [i.code for i in result.issues]
     assert "orphaned_lane_node" not in codes
     assert "missing_lane_node" not in codes
+
+
+def test_top_level_step_intersecting_lane_flags_step_overlaps_lane():
+    """A top-level unit op (no parentId) whose world bbox intersects a
+    swimlane should fire step_overlaps_lane — the agent placed it on the
+    lane boundary instead of parenting it (see Storage and Labeling case)."""
+    op = _unit_op()
+    role = _role("QA Analyst")
+    lane = _horizontal_lane(role)
+    # Lane at world (0, 400), size 800x200 → bbox (0-800, 400-600).
+    # Place a top-level step at (60, 550) — bbox (60-280, 550-650) — its
+    # bottom half hangs below the lane, top half overlaps the lane.
+    step = _step("s1", unit_op_id=op.id, label="Storage and Labeling")
+    step["position"] = {"x": 60, "y": 550}
+    graph = {
+        "nodes": [_ps("ps"), lane, step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    issue = next((i for i in result.issues if i.code == "step_overlaps_lane"), None)
+    assert issue is not None
+    assert issue.severity == "warning"
+    assert issue.node_id == "s1"
+    assert "QA Analyst" in issue.message
+    # Warning-only — graph remains valid.
+    assert result.ok is True
+
+
+def test_top_level_step_clear_of_lane_does_not_fire_step_overlaps_lane():
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    step = _step("s1", unit_op_id=op.id)
+    step["position"] = {"x": 60, "y": 100}  # well above lane at y=400
+    graph = {
+        "nodes": [_ps("ps"), lane, step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "step_overlaps_lane" not in codes
+
+
+def test_parented_child_does_not_fire_step_overlaps_lane():
+    """Parented steps live in the lane's coordinate frame; child_outside_lane
+    handles their overflow. step_overlaps_lane is only for top-level steps."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    step = _child_step("s1", lane["id"], x=20, y=60)
+    step["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "step_overlaps_lane" not in codes
+
+
+def test_crowded_siblings_flag_insufficient_node_spacing():
+    """Two siblings that don't overlap but sit within 10px of each other
+    should be flagged as crowded."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role, width=2000)
+    a = _child_step("a", lane["id"], x=20, y=60)
+    # b sits 5px to the right of a (gap_x = 5 < 10). Same y → gap_y = -100.
+    b = _child_step("b", lane["id"], x=245, y=60)
+    a["data"]["unitOpId"] = str(op.id)
+    b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    tight = [i for i in result.issues if i.code == "insufficient_node_spacing"]
+    assert len(tight) == 1
+    assert tight[0].severity == "warning"
+
+
+def test_canonical_spacing_does_not_fire_insufficient_node_spacing():
+    """The canonical CHILD_X_STEP (240) leaves a 20px gap — well above
+    the 10px threshold."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role, width=2000)
+    a = _child_step("a", lane["id"], x=20, y=60)
+    b = _child_step("b", lane["id"], x=260, y=60)
+    a["data"]["unitOpId"] = str(op.id)
+    b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "insufficient_node_spacing" not in codes
+
+
+def test_overlap_takes_precedence_over_spacing():
+    """A pair that overlaps should fire overlapping_nodes but NOT also
+    insufficient_node_spacing."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    a = _child_step("a", lane["id"], x=20, y=60)
+    b = _child_step("b", lane["id"], x=100, y=60)  # overlaps a
+    a["data"]["unitOpId"] = str(op.id)
+    b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "overlapping_nodes" in codes
+    assert "insufficient_node_spacing" not in codes
