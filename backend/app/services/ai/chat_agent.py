@@ -20,8 +20,12 @@ from app.services.ai.cache_settings import CHAT_AGENT_MODEL_SETTINGS
 from app.services.ai.deps import ChatDeps
 from app.services.ai.runtime.compaction import CompactionState
 from app.services.ai.runtime.token_counting import tiktoken_counter
-from app.services.ai.subagents import (protocol_builder, research_library,
-                                       run_planner)
+from app.services.ai.subagents import (
+    protocol_creator,
+    protocol_editor,
+    research_library,
+    run_planner,
+)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _CHAT_PROMPT = (_PROMPTS_DIR / "chat_agent.md").read_text()
@@ -52,12 +56,16 @@ class _LiveState:
 def _cache_key(
     chat_model: Any,
     subagent_model: Any,
+    creation_model: Any,
+    editing_model: Any,
     summary_model: Any,
     context_window: int,
 ) -> tuple[str, ...]:
     return (
         str(chat_model),
         str(subagent_model),
+        str(creation_model),
+        str(editing_model),
         str(summary_model),
         str(context_window),
     )
@@ -117,15 +125,25 @@ async def build_chat_agent(
     """
     chat_model = await get_model("chat", db, org_id=org_id)
     subagent_model = await get_model("chat_subagent", db, org_id=org_id)
+    creation_model = await get_model("protocol_creation", db, org_id=org_id)
+    editing_model = await get_model("protocol_editing", db, org_id=org_id)
     summary_model = await get_model("chat_summary", db, org_id=org_id)
     context_window = await get_context_window("chat", db, org_id=org_id)
 
-    key = _cache_key(chat_model, subagent_model, summary_model, context_window)
+    key = _cache_key(
+        chat_model,
+        subagent_model,
+        creation_model,
+        editing_model,
+        summary_model,
+        context_window,
+    )
 
     if key not in _AGENT_CACHE:
         subagents = [
             research_library.build(subagent_model),
-            protocol_builder.build(subagent_model),
+            protocol_creator.build(creation_model),
+            protocol_editor.build(editing_model),
             run_planner.build(subagent_model),
         ]
 
