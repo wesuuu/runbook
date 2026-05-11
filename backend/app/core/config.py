@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     ai_chat_summary_model: str = ""
     ai_protocol_generation_provider: str = ""
     ai_protocol_generation_model: str = ""
+    ai_protocol_creation_provider: str = ""
+    ai_protocol_creation_model: str = ""
+    ai_protocol_editing_provider: str = ""
+    ai_protocol_editing_model: str = ""
     ai_template_convert_provider: str = ""
     ai_template_convert_model: str = ""
 
@@ -140,6 +144,7 @@ class Settings(BaseSettings):
         "mistral": 32768,
         "mixtral": 32768,
         "deepseek-r1": 65536,
+        "gpt-oss:120b-cloud": 131072,
         "command-r": 131072,
         "command-r-plus": 131072,
         "gpt-oss": 131072,
