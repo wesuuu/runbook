@@ -550,6 +550,17 @@ def render_to_docx(
         _swap(role.get("steps"))
         _swap(role.get("br_steps"))
 
+    # F-0066 — swap approval.signature_image_path to an InlineImage so
+    # the template can render `{{ approval.signature_image }}`. Mirrors
+    # the figure handling above.
+    approval = context.get("approval")
+    if isinstance(approval, dict):
+        sig_path = approval.get("signature_image_path")
+        if sig_path and Path(sig_path).exists():
+            approval["signature_image"] = InlineImage(
+                doc, str(sig_path), width=Mm(40)
+            )
+
     doc.render(context)
 
     buf = BytesIO()
