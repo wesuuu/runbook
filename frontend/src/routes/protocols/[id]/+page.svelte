@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount, setContext } from "svelte";
+    import { onMount, setContext, tick } from "svelte";
     import { page } from '$app/stores';
     import {
         SvelteFlow,
@@ -945,7 +945,38 @@
         }
     }
 
+    // Snapshot taken at drag-start for undo-on-cancel when APPROVED.
+    let preDragSnapshot: ReturnType<typeof buildGraphSnapshot> | null = $state(null);
+
+    function handleNodeDragStart() {
+        preDragSnapshot = buildGraphSnapshot(nodes, edges);
+        pushUndoSnapshot();
+    }
+
     function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
+        // Guard: if APPROVED and edit not yet confirmed, open the dialog and
+        // revert the drag if the user cancels.
+        console.log('[QAD] dragStop fired, status=', protocolStatus, 'targetNode=', targetNode?.id);
+        if (protocolStatus === 'APPROVED' && !confirmedEditAfterApproval) {
+            const snapshot = preDragSnapshot;
+            preDragSnapshot = null;
+            pendingEditAction = () => {
+                // Re-apply reparenting on confirmed drag
+                if (!targetNode) return;
+                const updated = applyDragStopReparenting(nodes, targetNode.id);
+                if (updated !== nodes) nodes = updated;
+            };
+            // Revert position to pre-drag state immediately so the node snaps back
+            if (snapshot) {
+                nodes = snapshot.nodes as typeof nodes;
+                edges = snapshot.edges as typeof edges;
+            }
+            // Open the dialog after a short timeout to ensure we're back in
+            // Svelte's reactive context after d3-drag's synthetic event handling.
+            setTimeout(() => { revertOnEditDialogOpen = true; }, 0);
+            return;
+        }
+        preDragSnapshot = null;
         if (!targetNode) return;
         const updated = applyDragStopReparenting(nodes, targetNode.id);
         if (updated === nodes) return;
@@ -1317,7 +1348,7 @@
                 selectionOnDrag={interactionMode === "select"}
                 panOnDrag={interactionMode === "pan"}
                 snapGrid={timeEnabled ? [snapGridPx, snapGridPx] : undefined}
-                onnodedragstart={() => pushUndoSnapshot()}
+                onnodedragstart={handleNodeDragStart}
                 onnodedragstop={handleNodeDragStop}
                 onconnectstart={() => { preConnectSnapshot = buildGraphSnapshot(nodes, edges); }}
                 onconnect={() => {

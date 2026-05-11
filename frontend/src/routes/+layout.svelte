@@ -43,18 +43,18 @@
 
     const fieldModeRoutes = ['/field'];
 
-    const isPublicRoute = $derived(PUBLIC_ROUTES.includes($page.url.pathname));
-    const isFieldMode = $derived(fieldModeRoutes.some((r) => $page.url.pathname.startsWith(r)));
+    const isPublicRoute = $derived(PUBLIC_ROUTES.includes($page?.url?.pathname ?? ''));
+    const isFieldMode = $derived(fieldModeRoutes.some((r) => ($page?.url?.pathname ?? '').startsWith(r)));
     const showNav = $derived(
-        !isPublicRoute && !isFieldMode && isAuthenticated() && $page.url.pathname !== '/legal/accept'
+        !isPublicRoute && !isFieldMode && isAuthenticated() && ($page?.url?.pathname ?? '') !== '/legal/accept'
     );
-    const shouldShowChat = $derived(!shouldHideChatIcon($page.url.pathname));
+    const shouldShowChat = $derived(!shouldHideChatIcon($page?.url?.pathname ?? ''));
     const currentOrg = $derived(getCurrentOrg());
     const canShowFab = $derived(isOrgPro(currentOrg));
     const isFullBleed = $derived(
-        $page.url.pathname.startsWith('/protocols/') ||
-        $page.url.pathname.startsWith('/export') ||
-        $page.url.pathname.startsWith('/chat') ||
+        ($page?.url?.pathname ?? '').startsWith('/protocols/') ||
+        ($page?.url?.pathname ?? '').startsWith('/export') ||
+        ($page?.url?.pathname ?? '').startsWith('/chat') ||
         isFieldMode
     );
 

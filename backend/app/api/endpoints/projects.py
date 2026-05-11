@@ -4,6 +4,7 @@ from uuid import UUID
 import sqlalchemy
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -491,30 +492,45 @@ async def add_approver(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
-    # Check if permission already exists
-    result = await db.execute(
-        select(ObjectPermission).where(
-            ObjectPermission.principal_type == grant.principal_type,
-            ObjectPermission.principal_id == grant.principal_id,
-            ObjectPermission.object_type == ObjectType.PROJECT.value,
-            ObjectPermission.object_id == project_id,
-            ObjectPermission.permission_level == PermissionLevel.APPROVE.value,
+    # Idempotent: return existing row if present, otherwise insert.
+    # try/except handles the race where two requests interleave between
+    # SELECT and INSERT.
+    async def _fetch_existing() -> ObjectPermission | None:
+        result = await db.execute(
+            select(ObjectPermission).where(
+                ObjectPermission.principal_type == grant.principal_type,
+                ObjectPermission.principal_id == grant.principal_id,
+                ObjectPermission.object_type == ObjectType.PROJECT.value,
+                ObjectPermission.object_id == project_id,
+                ObjectPermission.permission_level == PermissionLevel.APPROVE.value,
+            )
         )
-    )
-    existing = result.scalar_one_or_none()
-    if existing:
-        raise HTTPException(status_code=409, detail="Approver already exists")
+        return result.scalar_one_or_none()
 
-    perm = ObjectPermission(
-        principal_type=grant.principal_type,
-        principal_id=grant.principal_id,
-        object_type=ObjectType.PROJECT.value,
-        object_id=project_id,
-        permission_level=PermissionLevel.APPROVE.value,
-    )
-    db.add(perm)
-    await db.commit()
-    await db.refresh(perm)
+    existing = await _fetch_existing()
+    if existing:
+        perm = existing
+    else:
+        perm = ObjectPermission(
+            principal_type=grant.principal_type,
+            principal_id=grant.principal_id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=project_id,
+            permission_level=PermissionLevel.APPROVE.value,
+        )
+        db.add(perm)
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            perm = await _fetch_existing()
+            if perm is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Approver insert failed but no existing row found",
+                )
+        else:
+            await db.refresh(perm)
 
     # Resolve name
     name = None

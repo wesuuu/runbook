@@ -88,3 +88,40 @@ async def test_get_approvers_admin_ok(
     assert (
         resp.status_code == 200
     ), f"Expected 200 for ADMIN user, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.asyncio
+async def test_post_approver_idempotent(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    test_org: Organization,
+    test_project: Project,
+):
+    """POST /approvers twice with the same principal must return 201 both times."""
+    target = User(
+        email=f"target-{uuid.uuid4().hex[:8]}@test.com",
+        hashed_password=hash_password("test"),
+        full_name="Target User",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(target)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=target.id, organization_id=test_org.id, roles=["MEMBER"]
+        )
+    )
+    await db_session.commit()
+
+    body = {"principal_type": "USER", "principal_id": str(target.id)}
+    first = await client.post(
+        f"/projects/{test_project.id}/approvers", json=body, headers=auth_headers
+    )
+    assert first.status_code == 201, first.text
+    second = await client.post(
+        f"/projects/{test_project.id}/approvers", json=body, headers=auth_headers
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] == first.json()["id"]

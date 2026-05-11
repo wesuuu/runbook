@@ -10,7 +10,7 @@ export type ApprovalAction = z.infer<typeof ApprovalActionEnum>;
 
 export const ApprovalActorRefSchema = z
     .object({
-        id: z.string().uuid(),
+        id: z.string(),
         name: z.string().nullable(),
         email: z.string(),
     })
@@ -19,7 +19,7 @@ export type ApprovalActorRef = z.infer<typeof ApprovalActorRefSchema>;
 
 export const ProtocolVersionRefSchema = z
     .object({
-        id: z.string().uuid(),
+        id: z.string(),
         version_number: z.number().int(),
     })
     .passthrough();
@@ -27,7 +27,7 @@ export type ProtocolVersionRef = z.infer<typeof ProtocolVersionRefSchema>;
 
 export const ProtocolApprovalEventSchema = z
     .object({
-        id: z.string().uuid(),
+        id: z.string(),
         action: ApprovalActionEnum,
         comment: z.string().nullable().optional(),
         signature_statement: z.string().nullable().optional(),
@@ -43,15 +43,15 @@ export type ProtocolApprovalEventList = z.infer<typeof ProtocolApprovalEventList
 
 export const AwaitingApprovalItemSchema = z
     .object({
-        protocol_id: z.string().uuid(),
+        protocol_id: z.string(),
         name: z.string(),
-        project_id: z.string().uuid().nullable().optional(),
+        project_id: z.string().nullable().optional(),
         project_name: z.string().nullable().optional(),
         // Backend currently types this as non-null UUID, but the Phase 3
         // review noted a latent mismatch (org-scoped protocols can have
         // null project_id and the org_id derivation may also be null).
         // Accept null for forward compatibility.
-        organization_id: z.string().uuid().nullable().optional(),
+        organization_id: z.string().nullable().optional(),
         submitted_at: z.string().nullable().optional(),
         submitted_by: ApprovalActorRefSchema.nullable().optional(),
     })
@@ -68,7 +68,7 @@ export const DesignateApprovalRequestSchema = z.object({
 export type DesignateApprovalRequest = z.infer<typeof DesignateApprovalRequestSchema>;
 
 export const SubmitForApprovalRequestSchema = z.object({
-    requested_user_ids: z.array(z.string().uuid()),
+    requested_user_ids: z.array(z.string()),
 });
 export type SubmitForApprovalRequest = z.infer<typeof SubmitForApprovalRequestSchema>;
 
