@@ -97,14 +97,14 @@
 	 * stamped by the MutationObserver in the <script> block above.
 	 */
 	:global([data-sonner-toaster]) {
-		--width: 26.25rem;
+		--width: 26.25rem !important;
 	}
 
 	:global([data-sonner-toaster] [data-sonner-toast]) {
 		--type-color: var(--muted-fg);
 		--type-tint: var(--muted);
 		position: relative;
-		padding: 48px 18px 18px;
+		padding: 48px 18px 18px !important;
 		min-height: 5rem;
 		gap: 14px;
 		overflow: hidden;
@@ -140,7 +140,7 @@
 		content: attr(data-time);
 		position: absolute;
 		top: 0;
-		right: 18px;
+		right: 44px;
 		height: 32px;
 		display: flex;
 		align-items: center;
@@ -183,15 +183,32 @@
 		padding: 0.5rem 0.875rem;
 		min-height: 2.25rem;
 	}
+	/*
+	 * Close button lives INSIDE the strip's top-right corner so the body
+	 * stays clean (mock: Option C "Bench Tag"). Timestamp shifts left via
+	 * the ::after `right` offset above to make room.
+	 */
 	:global([data-sonner-toaster] [data-sonner-toast] [data-close-button]) {
-		width: 1.5rem;
-		height: 1.5rem;
-		top: 42px;
+		width: 1.5rem !important;
+		height: 1.5rem !important;
+		top: 4px !important;
+		left: auto !important;
+		right: 6px !important;
+		transform: none !important;
+		background: transparent !important;
+		border: none !important;
+		color: var(--type-color) !important;
+		opacity: 0.7;
+	}
+	:global([data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover) {
+		opacity: 1;
+		background: rgba(0, 0, 0, 0.05) !important;
 	}
 	:global([data-sonner-toaster] [data-sonner-toast] [data-icon]) {
-		width: 1.375rem;
-		height: 1.375rem;
+		width: 1.375rem !important;
+		height: 1.375rem !important;
 		color: var(--type-color);
+		margin-right: 4px;
 	}
 	:global([data-sonner-toaster] [data-sonner-toast] [data-icon] svg) {
 		width: 100%;
