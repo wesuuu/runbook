@@ -190,7 +190,7 @@ def generate_sop_pdf(
             # Render template placeholders in description
             has_templates = description and "{{" in description
             if has_templates:
-                description = _render_template(description, params)
+                description, _ = _render_template(description, params)
 
             # Description as prose paragraph
             if description:

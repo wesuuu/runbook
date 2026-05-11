@@ -27,6 +27,7 @@
 
     interface SelectedEquipment {
         equipment_id: string;
+        local_id?: string;
         shareable: boolean;
     }
 
@@ -228,9 +229,30 @@
         )
     );
 
+    const equipmentHintTokens = $derived(
+        editEquipment
+            .filter((eq) => eq.local_id)
+            .flatMap((eq) => [
+                `{{${eq.local_id}_name}}`,
+                `{{${eq.local_id}_description}}`,
+            ])
+    );
+
+    const equipmentTemplateContext = $derived.by(() => {
+        const ctx: Record<string, string> = {};
+        for (const eq of editEquipment) {
+            if (!eq.local_id) continue;
+            const meta = orgEquipment.find((e) => e.id === eq.equipment_id);
+            if (!meta) continue;
+            ctx[`${eq.local_id}_name`] = meta.name ?? '';
+            ctx[`${eq.local_id}_description`] = meta.description ?? '';
+        }
+        return ctx;
+    });
+
     const renderedPreview = $derived(
         editDescription
-            ? renderTemplate(editDescription, editParams)
+            ? renderTemplate(editDescription, { ...editParams, ...equipmentTemplateContext })
             : ''
     );
 
@@ -296,9 +318,14 @@
         <!-- Description -->
         <div class="section" data-tour="inspector-instruction">
             <label class="section-label" for="node-description">Instruction</label>
-            {#if paramKeys.length > 0}
+            {#if paramKeys.length > 0 || equipmentHintTokens.length > 0}
                 <p class="template-hint">
-                    Available: {paramKeys.map(k => `{{${k}}}`).join('  ')}
+                    {#if paramKeys.length > 0}
+                        Params: {paramKeys.map(k => `{{${k}}}`).join('  ')}
+                    {/if}
+                    {#if equipmentHintTokens.length > 0}
+                        <br />Equipment: {equipmentHintTokens.join('  ')}
+                    {/if}
                 </p>
             {/if}
             <textarea
@@ -397,6 +424,7 @@
                 nodeId={node?.id || ''}
                 currentEquipment={editEquipment}
                 {orgEquipment}
+                {allNodes}
                 conflictingIds={new Set(equipmentConflicts.get(node?.id || '') || [])}
                 onClose={() => (equipmentModalOpen = false)}
                 onApply={handleEquipmentApply}

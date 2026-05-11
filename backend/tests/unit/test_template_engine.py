@@ -285,7 +285,7 @@ def _assert_valid_pdf(pdf_bytes: bytes):
 
 
 def test_sop_simple():
-    ctx = build_context(
+    ctx, _ = build_context(
         protocol_name="Simple Buffer Protocol",
         protocol_description="A simple two-step buffer preparation protocol.",
         version_number=1,
@@ -301,7 +301,7 @@ def test_sop_simple():
 
 
 def test_sop_role_based():
-    ctx = build_context(
+    ctx, _ = build_context(
         protocol_name="Multi-Role Buffer Protocol",
         protocol_description="Protocol with Media Prep and QC roles.",
         version_number=2,
@@ -335,7 +335,7 @@ PROCESS_FLAT_STEPS = SIMPLE_FLAT_STEPS + [
 
 
 def test_sop_process_based():
-    ctx = build_context(
+    ctx, _ = build_context(
         protocol_name="Process-Based Protocol",
         protocol_description="Protocol organized by process sections.",
         version_number=1,
@@ -354,7 +354,7 @@ def test_sop_process_based():
 
 
 def test_batch_record_blank_simple():
-    ctx = build_context(
+    ctx, _ = build_context(
         protocol_name="Simple Buffer Protocol",
         run_name="Preview",
         version_number=1,
@@ -370,7 +370,7 @@ def test_batch_record_blank_simple():
 
 
 def test_batch_record_blank_roles():
-    ctx = build_context(
+    ctx, _ = build_context(
         protocol_name="Multi-Role Buffer Protocol",
         run_name="Preview",
         version_number=2,
@@ -386,7 +386,7 @@ def test_batch_record_blank_roles():
 
 
 def test_batch_record_filled_simple():
-    ctx = build_context(
+    ctx, _ = build_context(
         protocol_name="Multi-Role Buffer Protocol",
         run_name="Run-2026-001",
         run_status="COMPLETED",
@@ -407,7 +407,7 @@ def test_batch_record_filled_simple():
 
 def test_batch_record_filled_edited_gmp():
     """GMP audit trail — original values with edit markers."""
-    ctx = build_context(
+    ctx, _ = build_context(
         protocol_name="Multi-Role Buffer Protocol",
         run_name="Run-2026-002 (Edited)",
         run_status="EDITED",
@@ -428,7 +428,7 @@ def test_batch_record_filled_edited_gmp():
 
 def test_batch_record_filled_figures():
     """Batch record with embedded figure images."""
-    ctx = build_context(
+    ctx, _ = build_context(
         protocol_name="Multi-Role Buffer Protocol",
         run_name="Run-2026-003 (With Figures)",
         run_status="COMPLETED",
@@ -446,3 +446,117 @@ def test_batch_record_filled_figures():
     pdf = render_to_pdf(BR_TEMPLATE, ctx)
     _write_artifact("batch_record_filled_figures", docx, pdf)
     _assert_valid_pdf(pdf)
+
+
+# ── _render_template (QA-0007) ──
+
+from app.services.documents.pdf_base import _render_template  # noqa: E402
+
+
+def test_render_template_returns_unresolved_list_for_missing_keys():
+    out, unresolved = _render_template(
+        "Mix {{volume}} mL and stir {{rpm}}.",
+        {"volume": 500},
+    )
+    assert out == "Mix 500 mL and stir {{rpm}}."
+    assert unresolved == ["rpm"]
+
+
+def test_render_template_resolves_hyphenated_equipment_token():
+    out, unresolved = _render_template(
+        "Set up the {{E-001_name}} ({{E-001_description}}).",
+        {
+            "E-001_name": "Sartorius Bioreactor",
+            "E-001_description": "5L stirred-tank, single-use",
+        },
+    )
+    assert out == "Set up the Sartorius Bioreactor (5L stirred-tank, single-use)."
+    assert unresolved == []
+
+
+def test_render_template_leaves_unresolved_hyphen_token_literal_and_lists_it():
+    out, unresolved = _render_template(
+        "Calibrate {{E-009_name}}.",
+        {"unrelated": "x"},
+    )
+    assert out == "Calibrate {{E-009_name}}."
+    assert unresolved == ["E-009_name"]
+
+
+def test_render_template_deduplicates_unresolved_preserves_order():
+    out, unresolved = _render_template(
+        "{{b}} {{a}} {{b}} {{c}}",
+        {},
+    )
+    assert out == "{{b}} {{a}} {{b}} {{c}}"
+    assert unresolved == ["b", "a", "c"]
+
+
+def test_render_template_handles_empty_params_dict():
+    out, unresolved = _render_template("Plain text", None)
+    assert out == "Plain text"
+    assert unresolved == []
+
+
+def test_build_context_merges_equipment_into_step_params():
+    equipment_context = {
+        "E-001_name": "Sartorius Bioreactor",
+        "E-001_description": "5L stirred-tank, single-use",
+    }
+    flat_steps = [
+        {
+            "id": "n1",
+            "name": "Setup",
+            "description": (
+                "Set up the {{E-001_name}} ({{E-001_description}}). "
+                "Volume {{volume}} mL."
+            ),
+            "params": {"volume": 500},
+            "param_schema": {},
+            "duration_min": 10,
+            "role_name": "Op",
+        }
+    ]
+
+    ctx, unresolved = build_context(
+        protocol_name="P",
+        flat_steps=flat_steps,
+        is_role_based=False,
+        equipment_context=equipment_context,
+    )
+
+    step_desc = ctx["steps"][0]["description"]
+    assert "Sartorius Bioreactor" in step_desc
+    assert "5L stirred-tank" in step_desc
+    assert "500" in step_desc
+    assert unresolved == []
+
+
+def test_build_context_aggregates_unresolved_tokens_across_steps():
+    flat_steps = [
+        {
+            "id": "n1",
+            "name": "Step 1",
+            "description": "Use {{E-999_name}} and {{missing_param}}.",
+            "params": {"volume": 1},
+            "param_schema": {},
+            "duration_min": 1,
+            "role_name": "",
+        },
+        {
+            "id": "n2",
+            "name": "Step 2",
+            "description": "Also {{E-999_name}}.",
+            "params": {},
+            "param_schema": {},
+            "duration_min": 1,
+            "role_name": "",
+        },
+    ]
+    _, unresolved = build_context(
+        protocol_name="P",
+        flat_steps=flat_steps,
+        is_role_based=False,
+        equipment_context={},
+    )
+    assert sorted(unresolved) == sorted(["E-999_name", "missing_param"])

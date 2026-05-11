@@ -11,7 +11,7 @@ export function renderTemplate(
     if (!template) return '';
     if (!params) return template;
 
-    return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
+    return template.replace(/\{\{\s*([A-Za-z][\w-]*)\s*\}\}/g, (match, key: string) => {
         const val = params[key];
         if (
             val === undefined

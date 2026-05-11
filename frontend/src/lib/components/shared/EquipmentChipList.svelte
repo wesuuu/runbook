@@ -2,6 +2,7 @@
     interface SelectedEquipment {
         equipment_id: string;
         shareable: boolean;
+        local_id?: string;
     }
     interface OrgEquipment {
         id: string;
@@ -37,6 +38,9 @@
                 class:conflict={conflictingIds.has(eq.equipment_id) && !eq.shareable}
                 class:swapped={showSwapped.has(eq.equipment_id)}
             >
+                {#if eq.local_id}
+                    <span class="chip-localid">{eq.local_id}</span>
+                {/if}
                 <span class="chip-name">{nameFor(eq.equipment_id)}</span>
                 {#if eq.shareable}
                     <span class="chip-badge">Shared</span>
@@ -84,6 +88,15 @@
         font-size: 0.625rem;
         text-transform: uppercase;
         opacity: 0.7;
+    }
+    .chip-localid {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        padding: 0.0625rem 0.25rem;
+        border-radius: 0.25rem;
+        background-color: rgb(226 232 240); /* slate-200 */
+        color: rgb(30 41 59); /* slate-800 */
     }
     .chip-warning {
         color: rgb(220 38 38);  /* red-600 */

@@ -67,54 +67,54 @@ class TestRenderTemplate:
     """Test _render_template placeholder substitution."""
 
     def test_basic_substitution(self):
-        result = _render_template(
+        result, _ = _render_template(
             "Set temperature to {{temp}} degrees",
             {"temp": 37},
         )
         assert result == "Set temperature to 37 degrees"
 
     def test_multiple_placeholders(self):
-        result = _render_template(
+        result, _ = _render_template(
             "Mix {{volume}} mL at {{speed}} RPM",
             {"volume": 500, "speed": 200},
         )
         assert result == "Mix 500 mL at 200 RPM"
 
     def test_missing_param_keeps_placeholder(self):
-        result = _render_template(
+        result, _ = _render_template(
             "Set {{temp}} and {{pressure}}",
             {"temp": 37},
         )
         assert result == "Set 37 and {{pressure}}"
 
     def test_none_value_keeps_placeholder(self):
-        result = _render_template(
+        result, _ = _render_template(
             "Set {{temp}} degrees",
             {"temp": None},
         )
         assert result == "Set {{temp}} degrees"
 
     def test_empty_string_keeps_placeholder(self):
-        result = _render_template(
+        result, _ = _render_template(
             "Set {{temp}} degrees",
             {"temp": ""},
         )
         assert result == "Set {{temp}} degrees"
 
     def test_no_params_returns_template(self):
-        result = _render_template("No placeholders here", None)
+        result, _ = _render_template("No placeholders here", None)
         assert result == "No placeholders here"
 
     def test_no_placeholders_returns_unchanged(self):
-        result = _render_template("No placeholders", {"temp": 37})
+        result, _ = _render_template("No placeholders", {"temp": 37})
         assert result == "No placeholders"
 
     def test_bool_substitution(self):
-        result = _render_template("Sterile: {{sterile}}", {"sterile": True})
+        result, _ = _render_template("Sterile: {{sterile}}", {"sterile": True})
         assert result == "Sterile: Yes"
 
     def test_float_substitution(self):
-        result = _render_template("pH {{ph}}", {"ph": 7.0})
+        result, _ = _render_template("pH {{ph}}", {"ph": 7.0})
         assert result == "pH 7"
 
 

@@ -88,24 +88,31 @@ def _format_value(val: str | int | float | bool | list | dict | None) -> str:
 def _render_template(
     template: str,
     params: dict[str, Any] | None,
-) -> str:
+) -> tuple[str, list[str]]:
     """Substitute ``{{key}}`` placeholders with formatted param values.
 
-    Uses ``_format_value`` for consistent formatting.  Unfilled params
-    (missing key or None/empty value) keep the raw ``{{key}}`` syntax
-    so the user can see what still needs filling.
+    The regex matches ``[A-Za-z][\\w-]*`` so hyphenated equipment tokens
+    (e.g. ``{{E-001_name}}``) resolve alongside plain params. Returns the
+    rendered text and an ordered, deduplicated list of tokens that could
+    not be resolved (missing key, None, empty string, or empty list).
+    Unresolved tokens are left as literal ``{{key}}`` in the output.
     """
-    if not params:
-        return template
+    params = params or {}
+    unresolved: list[str] = []
+    seen: set[str] = set()
 
     def _replace(match: re.Match) -> str:
         key = match.group(1)
         val = params.get(key)
         if val is None or val == "" or val == []:
-            return match.group(0)  # keep raw placeholder
+            if key not in seen:
+                seen.add(key)
+                unresolved.append(key)
+            return match.group(0)
         return _format_value(val)
 
-    return re.sub(r"\{\{(\w+)\}\}", _replace, template)
+    rendered = re.sub(r"\{\{([A-Za-z][\w-]*)\}\}", _replace, template)
+    return rendered, unresolved
 
 
 def _build_param_sentence(

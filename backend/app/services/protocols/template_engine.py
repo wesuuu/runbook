@@ -109,11 +109,33 @@ def build_context(
     notes: list[dict[str, Any]] | None = None,
     attachments: list[dict[str, Any]] | None = None,
     storage: FileStorageService | None = None,
-) -> dict[str, Any]:
-    """Assemble the Jinja2 context dict for template rendering."""
+    equipment_context: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Assemble the Jinja2 context dict for template rendering.
+
+    Returns ``(context, unresolved)`` where ``unresolved`` is the
+    deduplicated, ordered list of ``{{token}}`` names that could not be
+    resolved across all step renders. Pass ``equipment_context`` to make
+    ``{{<local_id>_name}}`` / ``{{<local_id>_description}}`` resolvable;
+    per-step params still win on key collision.
+    """
     exec_data = execution_data or {}
     umap = user_map or {}
     sigmap = user_signatures or {}
+    eq_ctx = equipment_context or {}
+    unresolved_all: list[str] = []
+    _seen_unresolved: set[str] = set()
+
+    def _merge_and_render(
+        desc: str, params: dict[str, Any] | None
+    ) -> str:
+        merged = {**eq_ctx, **(params or {})}
+        rendered, unresolved = _render_template(desc, merged)
+        for tok in unresolved:
+            if tok not in _seen_unresolved:
+                _seen_unresolved.add(tok)
+                unresolved_all.append(tok)
+        return rendered
 
     # Pre-compute figure map: step_id → [figure_number, ...]
     active_atts = [a for a in (attachments or []) if not a.get("deleted")]
@@ -142,7 +164,7 @@ def build_context(
         param_schema = step.get("param_schema") or {}
         has_templates = desc and "{{" in desc
         if has_templates:
-            desc = _render_template(desc, params)
+            desc = _merge_and_render(desc, params)
 
         # Build param sentence if no inline templates
         param_sentence = ""
@@ -313,7 +335,7 @@ def build_context(
             param_schema = s.get("param_schema") or {}
             has_templates = desc and "{{" in desc
             if has_templates:
-                desc = _render_template(desc, params)
+                desc = _merge_and_render(desc, params)
             param_sentence = ""
             if not has_templates:
                 param_sentence = _build_param_sentence(params, param_schema)
@@ -474,27 +496,30 @@ def build_context(
             protocol_subtitle.add("\a")
         protocol_subtitle.add(protocol_description, size=Pt(10), color="#64748B")
 
-    return {
-        "protocol_name": protocol_name,
-        "protocol_subtitle": protocol_subtitle,
-        "protocol_description": protocol_description,
-        "version_number": version_number,
-        "created_at": created_at,
-        "run_name": run_name or "",
-        "run_status": run_status or "",
-        "started_at": started_at or "",
-        "completed_at": completed_at or "",
-        "project_name": project_name,
-        "organization_name": organization_name,
-        "is_role_based": is_role_based,
-        "page_break": RichText("\f"),
-        "steps": step_contexts,
-        "roles": role_contexts,
-        "notes": note_contexts,
-        "figures": figure_contexts,
-        "non_image_attachments": non_image_att_contexts,
-        "_user_signatures": sigmap,
-    }
+    return (
+        {
+            "protocol_name": protocol_name,
+            "protocol_subtitle": protocol_subtitle,
+            "protocol_description": protocol_description,
+            "version_number": version_number,
+            "created_at": created_at,
+            "run_name": run_name or "",
+            "run_status": run_status or "",
+            "started_at": started_at or "",
+            "completed_at": completed_at or "",
+            "project_name": project_name,
+            "organization_name": organization_name,
+            "is_role_based": is_role_based,
+            "page_break": RichText("\f"),
+            "steps": step_contexts,
+            "roles": role_contexts,
+            "notes": note_contexts,
+            "figures": figure_contexts,
+            "non_image_attachments": non_image_att_contexts,
+            "_user_signatures": sigmap,
+        },
+        unresolved_all,
+    )
 
 
 def render_to_docx(
@@ -650,7 +675,7 @@ async def resolve_default_template_id(
 
 def get_mock_context() -> dict[str, Any]:
     """Build mock context for template preview. Lazy — only called when needed."""
-    return build_context(
+    ctx, _ = build_context(
         protocol_name="Example Protocol — Buffer Preparation",
         protocol_description=(
             "This protocol describes the preparation of phosphate-buffered "
@@ -750,3 +775,4 @@ def get_mock_context() -> dict[str, Any]:
             },
         ],
     )
+    return ctx

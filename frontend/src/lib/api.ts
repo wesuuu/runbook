@@ -70,6 +70,7 @@ async function _handleErrorResponse(response: Response, fallbackMessage: string)
 }
 
 import { normalizeEndpoint } from '$lib/normalizeEndpoint';
+import { toast } from '$lib/toast';
 
 
 async function _fetchAsBlob(endpoint: string, method = 'GET', body?: unknown): Promise<Blob> {
@@ -82,6 +83,13 @@ async function _fetchAsBlob(endpoint: string, method = 'GET', body?: unknown): P
     const response = await fetch(`${API_BASE}${normalizeEndpoint(endpoint)}`, config);
     if (!response.ok) {
         await _handleErrorResponse(response, 'Request failed');
+    }
+    const unresolved = response.headers.get('X-Unresolved-Placeholders');
+    if (unresolved) {
+        toast.warning(
+            'Unresolved template variables',
+            `${unresolved}. They remain literal in the document.`,
+        );
     }
     return response.blob();
 }

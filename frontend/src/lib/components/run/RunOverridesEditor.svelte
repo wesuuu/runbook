@@ -276,6 +276,7 @@
         nodeId={swapNode.id}
         currentEquipment={(swapNode.data as { equipment?: Array<{ equipment_id: string; shareable: boolean }> })?.equipment ?? []}
         orgEquipment={orgEquipment as Parameters<typeof EquipmentPickerModal>[0]['orgEquipment']}
+        allNodes={(currentGraph?.nodes ?? []) as Parameters<typeof EquipmentPickerModal>[0]['allNodes']}
         conflictingIds={new Set(conflicts.get(swapNode.id) ?? [])}
         onClose={() => (swapNodeId = null)}
         onApply={applyEquipment}
