@@ -557,9 +557,7 @@ def render_to_docx(
     if isinstance(approval, dict):
         sig_path = approval.get("signature_image_path")
         if sig_path and Path(sig_path).exists():
-            approval["signature_image"] = InlineImage(
-                doc, str(sig_path), width=Mm(40)
-            )
+            approval["signature_image"] = InlineImage(doc, str(sig_path), width=Mm(40))
 
     doc.render(context)
 

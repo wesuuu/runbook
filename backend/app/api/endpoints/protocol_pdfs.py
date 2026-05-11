@@ -12,12 +12,8 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import (
-    Project,
-    Protocol,
-    ProtocolApprovalEvent,
-    UnitOpDefinition,
-)
+from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
+                                UnitOpDefinition)
 from app.models.templates import DocumentTemplate
 from app.schemas.science import GraphPayload
 from app.services.core.file_storage import FileStorageService
@@ -142,9 +138,7 @@ async def _build_approval_context(
         actor = latest_approved.actor
         if actor is not None:
             sigs = await _build_user_signatures(db, [actor.id])
-            sig_path = (sigs.get(str(actor.id), {}) or {}).get(
-                "signature_full_path"
-            )
+            sig_path = (sigs.get(str(actor.id), {}) or {}).get("signature_full_path")
             approver_name = actor.full_name or actor.email
             approver_email = actor.email
         else:
@@ -178,9 +172,7 @@ async def _load_protocol_project(
     """Load the project that owns a protocol, or None for org-scoped."""
     if not protocol.project_id:
         return None
-    result = await db.execute(
-        select(Project).where(Project.id == protocol.project_id)
-    )
+    result = await db.execute(select(Project).where(Project.id == protocol.project_id))
     return result.scalar_one_or_none()
 
 

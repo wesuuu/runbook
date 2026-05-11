@@ -25,7 +25,7 @@ from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import (Project, Protocol, ProtocolVersion, Run,
-                                 RunRoleAssignment, UnitOpDefinition)
+                                RunRoleAssignment, UnitOpDefinition)
 from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunCreate, RunNote, RunNoteCreate,
                                  RunNoteListResponse, RunOverrides,
@@ -33,16 +33,16 @@ from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunUpdate)
 from app.services.core.audit import log_audit
-from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
-from app.services.runs.overrides import (apply_node_overrides,
-                                         diff_unit_op_node,
-                                         snapshot_unit_op_node)
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.template_engine import build_context, render_to_pdf
 from app.services.protocols.validation import assert_no_branch_errors
+from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
+from app.services.runs.overrides import (apply_node_overrides,
+                                         diff_unit_op_node,
+                                         snapshot_unit_op_node)
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +117,7 @@ async def create_run(
                 detail={
                     "code": "PROTOCOL_NOT_APPROVED",
                     "message": (
-                        "This protocol requires approval before runs can be "
-                        "created."
+                        "This protocol requires approval before runs can be " "created."
                     ),
                 },
             )
@@ -136,8 +135,7 @@ async def create_run(
                 detail={
                     "code": "RUN_IS_STRICT",
                     "message": (
-                        "Overrides are disabled for runs of approved "
-                        "protocols."
+                        "Overrides are disabled for runs of approved " "protocols."
                     ),
                 },
             )
@@ -213,7 +211,12 @@ async def create_run(
     )
     for d in override_diffs:
         await log_audit(
-            db, user.id, "OVERRIDE_SET", "Run", run_obj.id, d,
+            db,
+            user.id,
+            "OVERRIDE_SET",
+            "Run",
+            run_obj.id,
+            d,
         )
 
     await db.commit()
@@ -256,25 +259,30 @@ async def get_run_permissions(
     permissions_enabled=true projects.
     """
     can_view = await check_permission(
-        db, user.id, ObjectType.RUN, run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not can_view:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     run_obj = await get_or_404(db, Run, run_id)
     status_str = (
-        run_obj.status if isinstance(run_obj.status, str)
-        else run_obj.status.value
+        run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
     )
 
     has_edit = await check_permission(
-        db, user.id, ObjectType.RUN, run_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.EDIT,
     )
     is_creator = run_obj.created_by_id == user.id
 
-    can_edit_planned = (
-        status_str == "PLANNED" and (has_edit or is_creator)
-    )
+    can_edit_planned = status_str == "PLANNED" and (has_edit or is_creator)
 
     return {
         "can_edit_planned": can_edit_planned,
@@ -313,8 +321,7 @@ async def update_run(
 ):
     run_obj = await get_or_404(db, Run, run_id)
     current_status_str = (
-        run_obj.status if isinstance(run_obj.status, str)
-        else run_obj.status.value
+        run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
     )
 
     allowed = await check_permission(
@@ -356,8 +363,7 @@ async def update_run(
                 detail={
                     "code": "RUN_IS_STRICT",
                     "message": (
-                        "Overrides are disabled for runs of approved "
-                        "protocols."
+                        "Overrides are disabled for runs of approved " "protocols."
                     ),
                 },
             )
@@ -441,8 +447,7 @@ async def update_run(
 
             # Build step name + param schema lookup from graph
             _node_map: dict[str, dict] = {
-                n["id"]: n.get("data", {})
-                for n in iter_unit_op_nodes(run_obj.graph)
+                n["id"]: n.get("data", {}) for n in iter_unit_op_nodes(run_obj.graph)
             }
 
             for step_id, new_step in new_exec.items():
@@ -478,7 +483,8 @@ async def update_run(
                         new_val = new_results.get(field_key)
                         if old_val != new_val:
                             field_label = derive_field_label(
-                                param_schema_props, field_key,
+                                param_schema_props,
+                                field_key,
                             )
                             await log_audit(
                                 db,
@@ -616,7 +622,12 @@ async def update_run(
         for node_id in old_nodes.keys() & new_nodes.keys():
             for diff in diff_unit_op_node(old_nodes[node_id], new_nodes[node_id]):
                 await log_audit(
-                    db, user.id, "OVERRIDE_EDIT", "Run", run_obj.id, diff,
+                    db,
+                    user.id,
+                    "OVERRIDE_EDIT",
+                    "Run",
+                    run_obj.id,
+                    diff,
                 )
 
     changes = update_data.model_dump(exclude_unset=True)
