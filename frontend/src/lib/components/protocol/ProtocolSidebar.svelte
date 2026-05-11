@@ -19,6 +19,7 @@
         versionNumber: number;
         saving: boolean;
         previewingVersion: number | null;
+        isHistoricalPreview: boolean;
         hasUnitOpNodes: boolean;
         canDesignate?: boolean;
         canApprove?: boolean;
@@ -47,6 +48,7 @@
         versionNumber,
         saving,
         previewingVersion,
+        isHistoricalPreview,
         hasUnitOpNodes,
         canDesignate = false,
         canApprove = false,
@@ -584,7 +586,7 @@
                     variant="default"
                     class="approval-action-btn"
                     onclick={openSubmitDialog}
-                    disabled={saving || previewingVersion !== null}
+                    disabled={saving || isHistoricalPreview}
                     data-testid="approval-submit-btn"
                 >
                     Submit for Approval
@@ -635,20 +637,20 @@
                 variant="default"
                 class="save-btn"
                 onclick={onSaveDraft}
-                disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "ARCHIVED" || previewingVersion !== null}
+                disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "ARCHIVED" || isHistoricalPreview}
                 title="Save changes as a draft (no publish)"
                 data-tour="protocol-save"
             >
-                {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked" : protocolStatus === "ARCHIVED" ? "Archived" : "Save Draft"}
+                {saving ? "Saving..." : isHistoricalPreview ? "Previewing..." : protocolStatus === "PENDING_APPROVAL" ? "Locked" : protocolStatus === "ARCHIVED" ? "Archived" : "Save Draft"}
             </Button>
             <Button
                 variant="default"
                 class="publish-btn"
                 onclick={onSaveAndPublish}
-                disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED" || previewingVersion !== null}
+                disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED" || isHistoricalPreview}
                 title={approvalRequired ? "Submit protocol for approval" : "Publish protocol"}
             >
-                {saving ? "Saving..." : previewingVersion !== null ? "Previewing..." : approvalRequired ? "Submit for Approval" : "Publish"}
+                {saving ? "Saving..." : isHistoricalPreview ? "Previewing..." : approvalRequired ? "Submit for Approval" : "Publish"}
             </Button>
         </div>
         {#if protocol && protocolStatus !== "PENDING_APPROVAL"}

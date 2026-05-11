@@ -1258,6 +1258,7 @@
         {versionNumber}
         {saving}
         {previewingVersion}
+        {isHistoricalPreview}
         {hasUnitOpNodes}
         {canDesignate}
         {canApprove}
