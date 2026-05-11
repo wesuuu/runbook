@@ -258,6 +258,7 @@ class ObjectPermission(Base, UUIDMixin, TimestampMixin):
             "principal_id",
             "object_type",
             "object_id",
+            "permission_level",
             name="uq_object_permission",
         ),
         Index("ix_objperm_object", "object_type", "object_id"),

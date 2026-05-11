@@ -53,6 +53,7 @@
             location: string;
         }) => Promise<OrgEquipment>;
         readonly?: boolean;
+        isStrict?: boolean;
     }
 
     let {
@@ -65,6 +66,7 @@
         onChange,
         onRoleChange,
         onCreateEquipment,
+        isStrict = false,
     }: Props = $props();
 
     const isMultiRole = $derived(roles.length > 1);
@@ -154,6 +156,11 @@
     }
 </script>
 
+{#if isStrict}
+    <div class="strict-banner" data-testid="run-overrides-strict-banner">
+        This run is locked to the approved protocol — overrides are disabled.
+    </div>
+{:else}
 <div class="overrides-editor">
     <div class="cards-column">
         {#if isMultiRole && activeRole}
@@ -202,6 +209,7 @@
                         conflictingIds={new Set(conflicts.get(node.id) ?? [])}
                         onChange={patchNode}
                         onSwapEquipment={(id) => { swapNodeId = id; }}
+                        {isStrict}
                     />
                 </div>
             {/each}
@@ -269,6 +277,7 @@
         {/if}
     </aside>
 </div>
+{/if}
 
 {#if swapNode}
     <EquipmentPickerModal
@@ -285,6 +294,15 @@
 {/if}
 
 <style>
+    .strict-banner {
+        padding: 1rem 1.25rem;
+        background-color: rgb(254 249 195);
+        border: 1px solid rgb(250 204 21);
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: rgb(113 63 18);
+    }
     .overrides-editor {
         display: grid;
         gap: 1.5rem;

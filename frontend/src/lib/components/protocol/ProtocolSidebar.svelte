@@ -3,6 +3,10 @@
     import { api } from "$lib/api";
     import { getNextRoleColor } from "$lib/components/protocol/protocolNodes";
     import { Button } from "$lib/components/ui/button";
+    import ApprovalDesignator from "$lib/components/protocol/ApprovalDesignator.svelte";
+    import ApprovalHistory from "$lib/components/protocol/ApprovalHistory.svelte";
+    import SubmitForApprovalDialog from "$lib/components/protocol/SubmitForApprovalDialog.svelte";
+    import ApprovalSignatureDialog from "$lib/components/protocol/ApprovalSignatureDialog.svelte";
     import { slide } from "svelte/transition";
     import { cubicOut } from "svelte/easing";
 
@@ -16,6 +20,10 @@
         saving: boolean;
         previewingVersion: number | null;
         hasUnitOpNodes: boolean;
+        canDesignate?: boolean;
+        canApprove?: boolean;
+        currentUserId?: string;
+        projectSettingEnabled?: boolean;
         onNameSaved: (name: string) => void;
         onDescriptionSaved: (description: string) => void;
         onRoleCreated: (role: any) => void;
@@ -27,6 +35,7 @@
         onDeleteOrArchive: () => void;
         onUnarchive: () => void;
         onOpClick: (op: any) => void;
+        onApprovalChange?: () => void;
     }
 
     let {
@@ -39,6 +48,10 @@
         saving,
         previewingVersion,
         hasUnitOpNodes,
+        canDesignate = false,
+        canApprove = false,
+        currentUserId = '',
+        projectSettingEnabled = false,
         onNameSaved,
         onDescriptionSaved,
         onRoleCreated,
@@ -50,7 +63,48 @@
         onDeleteOrArchive,
         onUnarchive,
         onOpClick,
+        onApprovalChange,
     }: Props = $props();
+
+    let submitDialogOpen = $state(false);
+    let signatureDialogOpen = $state(false);
+    let signatureMode = $state<'approve' | 'reject'>('approve');
+
+    const showApprovalSection = $derived(
+        !!protocol &&
+            (canDesignate ||
+                approvalRequired ||
+                protocolStatus === 'PENDING_APPROVAL' ||
+                protocolStatus === 'APPROVED'),
+    );
+
+    function openSubmitDialog() {
+        submitDialogOpen = true;
+    }
+
+    function openApproveDialog() {
+        signatureMode = 'approve';
+        signatureDialogOpen = true;
+    }
+
+    function openRejectDialog() {
+        signatureMode = 'reject';
+        signatureDialogOpen = true;
+    }
+
+    function handleApprovalDesignated(_next: boolean) {
+        onApprovalChange?.();
+    }
+
+    function handleApprovalSubmitted() {
+        onApprovalChange?.();
+    }
+
+    function handleSignatureSuccess() {
+        onApprovalChange?.();
+    }
+    // Suppress unused variable warning
+    void currentUserId;
 
     // --- Internal state ---
     let editingName = $state(false);
@@ -505,6 +559,65 @@
         <span>Drag nodes to canvas to add</span>
     </div>
 
+    <!-- Approval Section -->
+    {#if showApprovalSection && protocol}
+        <div class="sidebar-section approval-section" data-testid="approval-section">
+            <div class="section-header-row">
+                <span class="section-title">APPROVAL</span>
+            </div>
+
+            {#if canDesignate}
+                <div class="approval-row">
+                    <ApprovalDesignator
+                        protocolId={protocol.id}
+                        requiresApproval={approvalRequired}
+                        status={protocolStatus}
+                        canManage={canDesignate}
+                        {projectSettingEnabled}
+                        onChanged={handleApprovalDesignated}
+                    />
+                </div>
+            {/if}
+
+            {#if approvalRequired && protocolStatus === 'DRAFT'}
+                <Button
+                    variant="default"
+                    class="approval-action-btn"
+                    onclick={openSubmitDialog}
+                    disabled={saving || previewingVersion !== null}
+                    data-testid="approval-submit-btn"
+                >
+                    Submit for Approval
+                </Button>
+            {/if}
+
+            {#if canApprove && protocolStatus === 'PENDING_APPROVAL'}
+                <div class="approval-actions">
+                    <Button
+                        variant="default"
+                        class="approve-btn"
+                        onclick={openApproveDialog}
+                        data-testid="approval-approve-btn"
+                    >
+                        Approve
+                    </Button>
+                    <Button
+                        variant="outline"
+                        class="reject-btn"
+                        onclick={openRejectDialog}
+                        data-testid="approval-reject-btn"
+                    >
+                        Reject
+                    </Button>
+                </div>
+            {/if}
+
+            {#if approvalRequired}
+                <ApprovalHistory protocolId={protocol.id} />
+            {/if}
+        </div>
+    {/if}
+
     <!-- Save Button -->
     <div class="sidebar-footer">
         {#if hasUnitOpNodes}
@@ -549,6 +662,21 @@
         {/if}
     </div>
 </aside>
+
+{#if protocol}
+    <SubmitForApprovalDialog
+        bind:open={submitDialogOpen}
+        protocolId={protocol.id}
+        projectId={protocol.project_id}
+        onSuccess={handleApprovalSubmitted}
+    />
+    <ApprovalSignatureDialog
+        bind:open={signatureDialogOpen}
+        mode={signatureMode}
+        protocolId={protocol.id}
+        onSuccess={handleSignatureSuccess}
+    />
+{/if}
 
 <style>
     .sidebar {
@@ -1135,5 +1263,41 @@
         font-weight: 600;
         color: #94a3b8;
         font-family: monospace;
+    }
+
+    .approval-section {
+        background: #fafafa;
+    }
+
+    .approval-row {
+        margin-bottom: 8px;
+    }
+
+    .approval-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+    }
+
+    :global(.approval-action-btn) {
+        width: 100%;
+        margin-top: 6px;
+    }
+
+    :global(.approve-btn) {
+        flex: 1;
+        background: hsl(160, 60%, 40%);
+        color: white;
+    }
+
+    :global(.approve-btn:hover) {
+        background: hsl(160, 60%, 35%);
+        color: white;
+    }
+
+    :global(.reject-btn) {
+        flex: 1;
+        color: hsl(0, 70%, 45%);
+        border-color: hsl(0, 70%, 80%);
     }
 </style>

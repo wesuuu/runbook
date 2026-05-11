@@ -427,6 +427,7 @@
                             {activeRoleId}
                             onChange={(g) => { currentGraph = g; }}
                             onRoleChange={(id) => { activeRoleId = id; }}
+                            isStrict={selectedProtocol?.requires_approval ?? false}
                         />
                     {:else if currentStep === 4}
                         <RunCreatorAssigneeStep

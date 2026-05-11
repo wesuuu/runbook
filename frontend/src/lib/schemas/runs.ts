@@ -4,9 +4,9 @@ export const RunStatusEnum = z.enum(['PLANNED', 'ACTIVE', 'COMPLETED', 'EDITED',
 export type RunStatus = z.infer<typeof RunStatusEnum>;
 
 export const RunNoteSchema = z.object({
-    id: z.string().uuid(),
+    id: z.string(),
     content: z.string(),
-    author_id: z.string().uuid(),
+    author_id: z.string(),
     author_name: z.string().default('Unknown'),
     created_at: z.string(),
     run_status: z.string(),
@@ -20,12 +20,12 @@ export const RunNoteListSchema = z.object({
 }).passthrough();
 
 export const RunAttachmentSchema = z.object({
-    id: z.string().uuid(),
+    id: z.string(),
     file_path: z.string(),
     filename: z.string(),
     content_type: z.string(),
     size_bytes: z.number(),
-    uploaded_by_id: z.string().uuid(),
+    uploaded_by_id: z.string(),
     uploaded_at: z.string(),
     step_id: z.string().nullable().optional(),
     run_status: z.string(),
@@ -39,16 +39,17 @@ export const RunAttachmentListSchema = z.object({
 }).passthrough();
 
 export const RunSchema = z.object({
-    id: z.string().uuid(),
-    project_id: z.string().uuid(),
-    protocol_id: z.string().uuid().nullable().optional(),
+    id: z.string(),
+    project_id: z.string(),
+    protocol_id: z.string().nullable().optional(),
     name: z.string(),
     status: RunStatusEnum.default('PLANNED'),
+    is_strict: z.boolean().default(false),
     graph: z.record(z.string(), z.unknown()).default({}),
     execution_data: z.record(z.string(), z.unknown()).default({}),
-    experiment_id: z.string().uuid().nullable().optional(),
-    started_by_id: z.string().uuid().nullable().optional(),
-    created_by_id: z.string().uuid().nullable().optional(),
+    experiment_id: z.string().nullable().optional(),
+    started_by_id: z.string().nullable().optional(),
+    created_by_id: z.string().nullable().optional(),
     notes: z.array(RunNoteSchema).default([]),
     attachments: z.array(RunAttachmentSchema).default([]),
     created_at: z.string(),
@@ -98,10 +99,10 @@ export type RunOverrides = z.infer<typeof RunOverridesSchema>;
 
 export const RunCreatePayloadSchema = z.object({
     name: z.string().min(1),
-    project_id: z.string().uuid(),
-    protocol_id: z.string().uuid(),
+    project_id: z.string(),
+    protocol_id: z.string(),
     protocol_version_number: z.number().int().positive().optional(),
-    experiment_id: z.string().uuid().optional(),
+    experiment_id: z.string().optional(),
     overrides: RunOverridesSchema.optional(),
 });
 

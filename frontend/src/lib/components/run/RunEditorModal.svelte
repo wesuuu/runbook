@@ -53,6 +53,7 @@
         name: string;
         graph: Graph;
         protocol_id?: string | null;
+        is_strict?: boolean;
     }
 
     interface Props {
@@ -372,6 +373,7 @@
                                 onRoleChange={(id) => {
                                     activeRoleId = id;
                                 }}
+                                isStrict={run.is_strict ?? false}
                             />
                         {:else if activeTab === 'assignees'}
                             <RunCreatorAssigneeStep

@@ -7,6 +7,7 @@
     import { Badge } from '$lib/components/ui/badge';
     import { DocumentTemplateListSchema, type DocumentTemplate } from '$lib/schemas/templates';
     import TemplateConvertModal from '$lib/components/modals/TemplateConvertModal.svelte';
+    import ProjectProtocolApproversCard from '$lib/components/project/ProjectProtocolApproversCard.svelte';
 
     interface Props {
         projectId: string;
@@ -17,12 +18,10 @@
     let { projectId, project, onProjectUpdated }: Props = $props();
 
     let requireApproval = $state(false);
-    let approvers = $state<any[]>([]);
     let orgMembers = $state<any[]>([]);
     let settingsLoaded = $state(false);
     let settingsSaving = $state(false);
     let settingsMessage = $state<string | null>(null);
-    let newApproverUserId = $state<string>("");
 
     let permissionsEnabled = $state(false);
     let projectPermissions = $state<any[]>([]);
@@ -102,8 +101,6 @@
             requireApproval = project.settings?.require_protocol_approval || false;
             permissionsEnabled = project.settings?.permissions_enabled || false;
 
-            approvers = await api.get(`/projects/${projectId}/approvers`);
-
             const org = getCurrentOrg();
             if (org) {
                 const memberList = await api.get<any[]>(`/iam/organizations/${org.id}/members`);
@@ -143,30 +140,6 @@
             settingsMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
         } finally {
             settingsSaving = false;
-        }
-    }
-
-    async function addApprover() {
-        if (!newApproverUserId) return;
-        try {
-            const entry: any = await api.post(`/projects/${projectId}/approvers`, {
-                principal_type: "USER",
-                principal_id: newApproverUserId,
-            });
-            approvers = [...approvers, entry];
-            newApproverUserId = "";
-        } catch (e: unknown) {
-            settingsMessage = `Failed: ${e instanceof Error ? e.message : 'An error occurred'}`;
-            setTimeout(() => (settingsMessage = null), 3000);
-        }
-    }
-
-    async function removeApprover(permId: string) {
-        try {
-            await api.delete(`/projects/${projectId}/approvers/${permId}`);
-            approvers = approvers.filter((a: any) => a.id !== permId);
-        } catch (e: unknown) {
-            console.error("Failed to remove approver:", e instanceof Error ? e.message : e);
         }
     }
 
@@ -287,57 +260,8 @@
 
     <!-- Approvers Section -->
     {#if requireApproval}
-        <div class="bg-white border border-slate-200 rounded-lg p-6 mb-6">
-            <h4 class="text-sm font-bold text-slate-800 mb-1">Approvers</h4>
-            <p class="text-xs text-slate-500 mb-4">Users who can approve or reject protocols in this project.</p>
-
-            {#if approvers.length === 0}
-                <p class="text-xs text-slate-400 mb-4">No approvers assigned yet. Org admins can always approve.</p>
-            {:else}
-                <div class="space-y-2 mb-4">
-                    {#each approvers as approver}
-                        <div class="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg">
-                            <div class="flex items-center gap-2">
-                                <div class="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold">
-                                    {(approver.name || "?")[0].toUpperCase()}
-                                </div>
-                                <div>
-                                    <p class="text-sm font-medium text-slate-700">{approver.name || "Unknown"}</p>
-                                    {#if approver.email}
-                                        <p class="text-xs text-slate-400">{approver.email}</p>
-                                    {/if}
-                                </div>
-                            </div>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                class="h-auto p-0 text-xs text-slate-400 hover:text-red-500 hover:bg-transparent"
-                                onclick={() => removeApprover(approver.id)}
-                            >
-                                Remove
-                            </Button>
-                        </div>
-                    {/each}
-                </div>
-            {/if}
-
-            <div class="flex gap-2">
-                <select
-                    bind:value={newApproverUserId}
-                    class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                >
-                    <option value="">Select a user...</option>
-                    {#each orgMembers.filter((m) => !approvers.some((a) => a.principal_id === m.id)) as member}
-                        <option value={member.id}>{member.full_name || member.email}</option>
-                    {/each}
-                </select>
-                <Button
-                    onclick={addApprover}
-                    disabled={!newApproverUserId}
-                >
-                    Add
-                </Button>
-            </div>
+        <div class="mb-6">
+            <ProjectProtocolApproversCard projectId={projectId} canManage={true} />
         </div>
     {/if}
 

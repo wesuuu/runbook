@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount, setContext } from "svelte";
+    import { onMount, setContext, tick } from "svelte";
     import { page } from '$app/stores';
     import {
         SvelteFlow,
@@ -14,13 +14,14 @@
     } from "@xyflow/svelte";
     import "@xyflow/svelte/dist/style.css";
 
-    import { api, ApiError } from "$lib/api";
+    import { api, ApiError, getAwaitingMyApproval } from "$lib/api";
     import { toast } from "$lib/toast";
-    import { getCurrentOrg } from "$lib/auth.svelte";
+    import { getCurrentOrg, getUser } from "$lib/auth.svelte";
     import { ProjectSchema } from "$lib/schemas";
     import type { NodeTypes } from "@xyflow/svelte";
     import ProtocolSidebar from "$lib/components/protocol/ProtocolSidebar.svelte";
     import PublishVersionDialog from "$lib/components/protocol/PublishVersionDialog.svelte";
+    import RevertOnEditConfirmDialog from "$lib/components/protocol/RevertOnEditConfirmDialog.svelte";
     import CanvasToolbar from "$lib/components/protocol/CanvasToolbar.svelte";
     import ValidationBanners from "$lib/components/protocol/ValidationBanners.svelte";
     import {
@@ -124,6 +125,14 @@
     let versions = $state<any[]>([]);
     let versionsLoading = $state(false);
     let approvalRequired = $state(false);
+    let projectSettingEnabled = $state(false);
+    let canDesignate = $state(false);
+    let canApprove = $state(false);
+    let revertOnEditDialogOpen = $state(false);
+    let confirmedEditAfterApproval = $state(false);
+    let pendingEditAction: (() => void) | null = $state(null);
+
+    const currentUserId = $derived(getUser()?.id ?? '');
 
     // PDF preview drawer
     let showPdfDrawer = $state(false);
@@ -431,6 +440,70 @@
         pixelsPerHour = gs.pixelsPerHour;
     }
 
+    // --- Capability Resolution ---
+    async function resolveCapabilities() {
+        if (!protocol?.project_id) return;
+        // canDesignate: project ADMIN — soft-detect via /projects/{id}/permissions (403 if not admin)
+        try {
+            await api.get(`/projects/${protocol.project_id}/permissions`);
+            canDesignate = true;
+        } catch {
+            canDesignate = false;
+        }
+        // canApprove: only when status is PENDING_APPROVAL and the protocol appears in the
+        // current user's awaiting-approval list.
+        if (protocolStatus === 'PENDING_APPROVAL') {
+            try {
+                const items = await getAwaitingMyApproval();
+                canApprove = items.some((it) => it.protocol_id === protocol.id);
+            } catch {
+                canApprove = false;
+            }
+        } else {
+            canApprove = false;
+        }
+    }
+
+    async function refreshProtocol() {
+        if (!protocol?.id) return;
+        try {
+            const fresh: any = await api.get(`/science/protocols/${protocol.id}`);
+            protocol = fresh;
+            protocolStatus = fresh.status || 'DRAFT';
+            versionNumber = fresh.version_number || 0;
+            approvalRequired = (fresh.requires_approval as boolean) || false;
+            await resolveCapabilities();
+            // Reset edit-after-approval guard when status changes
+            if (protocolStatus !== 'APPROVED') {
+                confirmedEditAfterApproval = false;
+            }
+        } catch (e: unknown) {
+            console.error('Failed to refresh protocol:', e instanceof Error ? e.message : e);
+        }
+    }
+
+    // --- Revert-on-edit guard ---
+    function requireEditConfirmation(action: () => void): boolean {
+        // Returns true if the action can proceed immediately, false if we opened the dialog.
+        if (protocolStatus !== 'APPROVED' || confirmedEditAfterApproval) {
+            return true;
+        }
+        pendingEditAction = action;
+        revertOnEditDialogOpen = true;
+        return false;
+    }
+
+    function handleRevertConfirm() {
+        confirmedEditAfterApproval = true;
+        const fn = pendingEditAction;
+        pendingEditAction = null;
+        if (fn) fn();
+    }
+
+    function handleRevertCancel() {
+        pendingEditAction = null;
+    }
+
     // --- Data Loading ---
     async function loadData() {
         try {
@@ -452,14 +525,20 @@
                 const projectParam = protocol.project_id ? `?project_id=${protocol.project_id}` : '';
                 unitOps = await api.get(`/science/unit-ops${projectParam}`);
 
+                // Use protocol-level requires_approval as the canonical flag
+                approvalRequired = (protocol.requires_approval as boolean) || false;
+
                 // Fetch project settings for approval requirement and PDF format
                 try {
                     const proj = await api.get(`/projects/${protocol.project_id}`, { schema: ProjectSchema });
-                    approvalRequired = (proj.settings?.require_protocol_approval as boolean) || false;
+                    projectSettingEnabled = (proj.settings?.require_protocol_approval as boolean) || false;
                     projectPdfFormat = (proj.settings?.pdf_format as Record<string, any>) || {};
                 } catch {
                     // Ignore — approval not required if project fetch fails
                 }
+
+                // Resolve capabilities (best-effort; failures default to false)
+                await resolveCapabilities();
 
                 if (protocol.graph && protocol.graph.nodes) {
                     applyGraphState(protocol.graph);
@@ -820,13 +899,24 @@
         const opData = event.dataTransfer.getData("application/svelteflow");
         if (!opData) return;
 
+        // Capture event data before opening dialog (event becomes invalid after async)
+        const clientX = event.clientX;
+        const clientY = event.clientY;
+
+        if (!requireEditConfirmation(() => doDrop(opData, clientX, clientY))) {
+            return;
+        }
+        doDrop(opData, clientX, clientY);
+    }
+
+    function doDrop(opData: string, clientX: number, clientY: number) {
         const op = JSON.parse(opData);
 
         // Convert screen coordinates to flow coordinates
         const bounds = flowContainer.getBoundingClientRect();
         const position = {
-            x: (event.clientX - bounds.left - viewport.x) / viewport.zoom,
-            y: (event.clientY - bounds.top - viewport.y) / viewport.zoom,
+            x: (clientX - bounds.left - viewport.x) / viewport.zoom,
+            y: (clientY - bounds.top - viewport.y) / viewport.zoom,
         };
 
         if (op._nodeType === "swimLane") {
@@ -855,7 +945,38 @@
         }
     }
 
+    // Snapshot taken at drag-start for undo-on-cancel when APPROVED.
+    let preDragSnapshot: ReturnType<typeof buildGraphSnapshot> | null = $state(null);
+
+    function handleNodeDragStart() {
+        preDragSnapshot = buildGraphSnapshot(nodes, edges);
+        pushUndoSnapshot();
+    }
+
     function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
+        // Guard: if APPROVED and edit not yet confirmed, open the dialog and
+        // revert the drag if the user cancels.
+        console.log('[QAD] dragStop fired, status=', protocolStatus, 'targetNode=', targetNode?.id);
+        if (protocolStatus === 'APPROVED' && !confirmedEditAfterApproval) {
+            const snapshot = preDragSnapshot;
+            preDragSnapshot = null;
+            pendingEditAction = () => {
+                // Re-apply reparenting on confirmed drag
+                if (!targetNode) return;
+                const updated = applyDragStopReparenting(nodes, targetNode.id);
+                if (updated !== nodes) nodes = updated;
+            };
+            // Revert position to pre-drag state immediately so the node snaps back
+            if (snapshot) {
+                nodes = snapshot.nodes as typeof nodes;
+                edges = snapshot.edges as typeof edges;
+            }
+            // Open the dialog after a short timeout to ensure we're back in
+            // Svelte's reactive context after d3-drag's synthetic event handling.
+            setTimeout(() => { revertOnEditDialogOpen = true; }, 0);
+            return;
+        }
+        preDragSnapshot = null;
         if (!targetNode) return;
         const updated = applyDragStopReparenting(nodes, targetNode.id);
         if (updated === nodes) return;
@@ -896,6 +1017,9 @@
         paramSchema: Record<string, any> = {},
         position?: { x: number; y: number },
     ): void {
+        if (!requireEditConfirmation(() => handleInspectorApply(nodeId, params, duration, description, equipment, paramSchema, position))) {
+            return;
+        }
         pushUndoSnapshot();
         nodes = nodes.map((n) => {
             if (n.id === nodeId) {
@@ -932,6 +1056,9 @@
         label: string,
         description: string,
     ): void {
+        if (!requireEditConfirmation(() => handleProcessStartInspectorApply(nodeId, label, description))) {
+            return;
+        }
         pushUndoSnapshot();
         nodes = nodes.map((n) => {
             if (n.id === nodeId) {
@@ -1109,6 +1236,11 @@
         {saving}
         {previewingVersion}
         {hasUnitOpNodes}
+        {canDesignate}
+        {canApprove}
+        {currentUserId}
+        {projectSettingEnabled}
+        onApprovalChange={refreshProtocol}
         onNameSaved={(name) => { protocol.name = name; }}
         onDescriptionSaved={(desc) => { protocol.description = desc; }}
         onRoleCreated={handleRoleCreated}
@@ -1216,7 +1348,7 @@
                 selectionOnDrag={interactionMode === "select"}
                 panOnDrag={interactionMode === "pan"}
                 snapGrid={timeEnabled ? [snapGridPx, snapGridPx] : undefined}
-                onnodedragstart={() => pushUndoSnapshot()}
+                onnodedragstart={handleNodeDragStart}
                 onnodedragstop={handleNodeDragStop}
                 onconnectstart={() => { preConnectSnapshot = buildGraphSnapshot(nodes, edges); }}
                 onconnect={() => {
@@ -1314,6 +1446,12 @@
     {confirmVariant}
     onConfirm={() => { confirmAction(); confirmOpen = false; }}
     onCancel={() => (confirmOpen = false)}
+/>
+
+<RevertOnEditConfirmDialog
+    bind:open={revertOnEditDialogOpen}
+    onConfirm={handleRevertConfirm}
+    onCancel={handleRevertCancel}
 />
 
 <!-- PROTOCOL TOUR MODAL -->

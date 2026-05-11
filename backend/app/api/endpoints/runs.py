@@ -13,7 +13,9 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.api.endpoints.protocol_pdfs import (_load_template, _pdf_response,
+from app.api.endpoints.protocol_pdfs import (_build_approval_context,
+                                             _load_protocol_project,
+                                             _load_template, _pdf_response,
                                              _resolve_template_path)
 from app.core.deps import (get_current_user, get_or_404,
                            get_org_id_from_request,
@@ -23,7 +25,7 @@ from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import (Project, Protocol, ProtocolVersion, Run,
-                                 RunRoleAssignment, UnitOpDefinition)
+                                RunRoleAssignment, UnitOpDefinition)
 from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunCreate, RunNote, RunNoteCreate,
                                  RunNoteListResponse, RunOverrides,
@@ -31,10 +33,6 @@ from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunUpdate)
 from app.services.core.audit import log_audit
-from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
-from app.services.runs.overrides import (apply_node_overrides,
-                                         diff_unit_op_node,
-                                         snapshot_unit_op_node)
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
@@ -42,6 +40,10 @@ from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import build_context, render_to_pdf
 from app.services.protocols.validation import assert_no_branch_errors
+from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
+from app.services.runs.overrides import (apply_node_overrides,
+                                         diff_unit_op_node,
+                                         snapshot_unit_op_node)
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +84,12 @@ async def create_run(
         )
 
     result = await db.execute(select(Project).where(Project.id == run_in.project_id))
-    if result.scalar_one_or_none() is None:
+    project = result.scalar_one_or_none()
+    if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
     initial_graph: dict = {}
+    is_strict = False
     if run_in.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_in.protocol_id)
@@ -97,6 +101,44 @@ async def create_run(
             raise HTTPException(
                 status_code=400,
                 detail="Cannot create run from archived protocol",
+            )
+
+        # F-0066: gate run creation on approval status when both the project
+        # opts in and the protocol is designated for the approval workflow.
+        require_approval = bool(
+            (project.settings or {}).get("require_protocol_approval", False)
+        )
+        if (
+            require_approval
+            and protocol.requires_approval
+            and protocol.status != "APPROVED"
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "PROTOCOL_NOT_APPROVED",
+                    "message": (
+                        "This protocol requires approval before runs can be " "created."
+                    ),
+                },
+            )
+
+        # F-0066: snapshot strictness from the protocol itself — once a
+        # protocol opts into the workflow, every run is strict regardless of
+        # the project setting at run-creation time.
+        is_strict = bool(protocol.requires_approval)
+
+        # F-0066: block ad-hoc overrides on strict runs. Doing this before
+        # the Run row is added keeps the rejection cheap and side-effect-free.
+        if is_strict and run_in.overrides is not None:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "RUN_IS_STRICT",
+                    "message": (
+                        "Overrides are disabled for runs of approved " "protocols."
+                    ),
+                },
             )
 
         # Resolve which graph to snapshot: a specific version, else current.
@@ -141,6 +183,7 @@ async def create_run(
         graph=initial_graph,
         execution_data={},
         created_by_id=user.id,
+        is_strict=is_strict,
     )
     db.add(run_obj)
     await db.flush()
@@ -169,7 +212,12 @@ async def create_run(
     )
     for d in override_diffs:
         await log_audit(
-            db, user.id, "OVERRIDE_SET", "Run", run_obj.id, d,
+            db,
+            user.id,
+            "OVERRIDE_SET",
+            "Run",
+            run_obj.id,
+            d,
         )
 
     await db.commit()
@@ -212,25 +260,30 @@ async def get_run_permissions(
     permissions_enabled=true projects.
     """
     can_view = await check_permission(
-        db, user.id, ObjectType.RUN, run_id, PermissionLevel.VIEW,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.VIEW,
     )
     if not can_view:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     run_obj = await get_or_404(db, Run, run_id)
     status_str = (
-        run_obj.status if isinstance(run_obj.status, str)
-        else run_obj.status.value
+        run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
     )
 
     has_edit = await check_permission(
-        db, user.id, ObjectType.RUN, run_id, PermissionLevel.EDIT,
+        db,
+        user.id,
+        ObjectType.RUN,
+        run_id,
+        PermissionLevel.EDIT,
     )
     is_creator = run_obj.created_by_id == user.id
 
-    can_edit_planned = (
-        status_str == "PLANNED" and (has_edit or is_creator)
-    )
+    can_edit_planned = status_str == "PLANNED" and (has_edit or is_creator)
 
     return {
         "can_edit_planned": can_edit_planned,
@@ -269,8 +322,7 @@ async def update_run(
 ):
     run_obj = await get_or_404(db, Run, run_id)
     current_status_str = (
-        run_obj.status if isinstance(run_obj.status, str)
-        else run_obj.status.value
+        run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
     )
 
     allowed = await check_permission(
@@ -295,6 +347,27 @@ async def update_run(
     # Validate status transitions
     new_status = update_data.status.value if update_data.status else None
     current_status = current_status_str
+
+    # F-0066: strict runs (snapshotted from designated protocols) reject any
+    # graph diff that mutates a unit-op field. We reuse diff_unit_op_node so
+    # the rule stays consistent with the OVERRIDE_EDIT audit emitter below.
+    if run_obj.is_strict and update_data.graph is not None:
+        old_nodes = {n["id"]: n for n in iter_unit_op_nodes(run_obj.graph)}
+        new_nodes = {n["id"]: n for n in iter_unit_op_nodes(update_data.graph)}
+        has_override_edit = any(
+            diff_unit_op_node(old_nodes[nid], new_nodes[nid])
+            for nid in old_nodes.keys() & new_nodes.keys()
+        )
+        if has_override_edit:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "RUN_IS_STRICT",
+                    "message": (
+                        "Overrides are disabled for runs of approved " "protocols."
+                    ),
+                },
+            )
 
     # Block graph edits when the run has left PLANNED — overrides are GMP-locked
     # at that point. (F-0081)
@@ -375,8 +448,7 @@ async def update_run(
 
             # Build step name + param schema lookup from graph
             _node_map: dict[str, dict] = {
-                n["id"]: n.get("data", {})
-                for n in iter_unit_op_nodes(run_obj.graph)
+                n["id"]: n.get("data", {}) for n in iter_unit_op_nodes(run_obj.graph)
             }
 
             for step_id, new_step in new_exec.items():
@@ -412,7 +484,8 @@ async def update_run(
                         new_val = new_results.get(field_key)
                         if old_val != new_val:
                             field_label = derive_field_label(
-                                param_schema_props, field_key,
+                                param_schema_props,
+                                field_key,
                             )
                             await log_audit(
                                 db,
@@ -550,7 +623,12 @@ async def update_run(
         for node_id in old_nodes.keys() & new_nodes.keys():
             for diff in diff_unit_op_node(old_nodes[node_id], new_nodes[node_id]):
                 await log_audit(
-                    db, user.id, "OVERRIDE_EDIT", "Run", run_obj.id, diff,
+                    db,
+                    user.id,
+                    "OVERRIDE_EDIT",
+                    "Run",
+                    run_obj.id,
+                    diff,
                 )
 
     changes = update_data.model_dump(exclude_unset=True)
@@ -678,6 +756,7 @@ async def get_run_sop_pdf(
     proto_version: int | None = None
     proto_modified: str | None = None
     sop_template_id: UUID | None = None
+    proto: Protocol | None = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -703,6 +782,16 @@ async def get_run_sop_pdf(
         db, user.selected_org_id, graph
     )
 
+    if proto is not None:
+        proto_project = await _load_protocol_project(db, proto)
+        approval_ctx = await _build_approval_context(db, proto, proto_project)
+    else:
+        approval_ctx = {
+            "approval": None,
+            "approval_history": [],
+            "unapproved_warning": False,
+        }
+
     context, unresolved = build_context(
         protocol_name=protocol_name,
         protocol_description=protocol_description,
@@ -714,6 +803,7 @@ async def get_run_sop_pdf(
         is_role_based=is_role_based,
         equipment_context=equipment_ctx,
     )
+    context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     if unresolved:
@@ -759,6 +849,7 @@ async def get_run_batch_record_pdf(
     protocol_version = None
     protocol_modified = None
     br_template_id: UUID | None = None
+    proto: Protocol | None = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -788,7 +879,7 @@ async def get_run_batch_record_pdf(
     # filled records. user_signatures resolves to absolute paths so the
     # render layer can build InlineImage objects (F-0080).
     user_map: dict[str, str] = {}
-    user_signatures: dict[str, str] = {}
+    user_signatures: dict[str, dict[str, str]] = {}
     started_by_id_str: str | None = None
     if filled and run_obj.execution_data:
         user_ids = set()
@@ -808,15 +899,35 @@ async def get_run_batch_record_pdf(
             result = await db.execute(select(User).where(User.id.in_(user_ids)))
             for u in result.scalars().all():
                 user_map[str(u.id)] = u.full_name or u.email
+                entry: dict[str, str] = {}
                 if u.signature_initials_path:
                     try:
-                        user_signatures[str(u.id)] = str(
+                        entry["signature_initials_path"] = str(
                             sig_storage.resolve_path(u.signature_initials_path)
                         )
                     except (ValueError, FileNotFoundError):
                         pass
+                if u.signature_full_path:
+                    try:
+                        entry["signature_full_path"] = str(
+                            sig_storage.resolve_path(u.signature_full_path)
+                        )
+                    except (ValueError, FileNotFoundError):
+                        pass
+                if entry:
+                    user_signatures[str(u.id)] = entry
 
     run_status = _run_status_str(run_obj)
+
+    if proto is not None:
+        proto_project = await _load_protocol_project(db, proto)
+        approval_ctx = await _build_approval_context(db, proto, proto_project)
+    else:
+        approval_ctx = {
+            "approval": None,
+            "approval_history": [],
+            "unapproved_warning": False,
+        }
 
     context, unresolved = build_context(
         protocol_name=protocol_name,
@@ -836,6 +947,7 @@ async def get_run_batch_record_pdf(
         storage=FileStorageService() if filled and embed_images else None,
         equipment_context=equipment_ctx,
     )
+    context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     if unresolved:

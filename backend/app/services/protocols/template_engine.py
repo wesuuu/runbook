@@ -45,6 +45,10 @@ KNOWN_VARIABLES = {
     "notes",
     "figures",
     "non_image_attachments",
+    # Approval (F-0066)
+    "approval",
+    "approval_history",
+    "unapproved_warning",
 }
 
 
@@ -73,15 +77,23 @@ def _resolve_initials(
     *,
     user_id: str,
     name: str,
-    user_signatures: dict[str, str],
+    user_signatures: dict,
     docx: DocxTemplate,
 ):
     """Return an InlineImage of the user's drawn initials if registered,
     else the auto-generated text initials. The template uses
     `{{ step.initials }}` (plain), which renders InlineImage objects
     natively but cannot render RichText — so the fallback is a plain
-    string, matching pre-F-0080 behavior."""
-    path = user_signatures.get(user_id)
+    string, matching pre-F-0080 behavior.
+
+    Accepts both the legacy ``{user_id: path_str}`` shape and the
+    F-0066 ``{user_id: {"signature_initials_path": path,
+    "signature_full_path": path}}`` shape."""
+    entry = user_signatures.get(user_id)
+    if isinstance(entry, dict):
+        path = entry.get("signature_initials_path")
+    else:
+        path = entry
     if path and Path(path).exists():
         return InlineImage(docx, path, width=Mm(20))
     return _get_initials(name)
@@ -104,7 +116,7 @@ def build_context(
     is_role_based: bool = True,
     execution_data: dict[str, Any] | None = None,
     user_map: dict[str, str] | None = None,
-    user_signatures: dict[str, str] | None = None,
+    user_signatures: dict[str, dict[str, str]] | None = None,
     started_by_id: str | None = None,
     notes: list[dict[str, Any]] | None = None,
     attachments: list[dict[str, Any]] | None = None,
@@ -562,6 +574,15 @@ def render_to_docx(
     for role in context.get("roles", []) or []:
         _swap(role.get("steps"))
         _swap(role.get("br_steps"))
+
+    # F-0066 — swap approval.signature_image_path to an InlineImage so
+    # the template can render `{{ approval.signature_image }}`. Mirrors
+    # the figure handling above.
+    approval = context.get("approval")
+    if isinstance(approval, dict):
+        sig_path = approval.get("signature_image_path")
+        if sig_path and Path(sig_path).exists():
+            approval["signature_image"] = InlineImage(doc, str(sig_path), width=Mm(40))
 
     doc.render(context)
 
