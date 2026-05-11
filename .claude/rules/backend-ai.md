@@ -31,10 +31,14 @@ services/ai/
 │   ├── token_counting.py#   tiktoken_counter
 │   └── sanitize.py      #   _sanitize_llm_output
 ├── subagents/           # Each subagent is its own package
-│   ├── protocol_builder/
-│   │   ├── config.py    #   build(model) -> SubAgentConfig
-│   │   ├── prompt.md    #   System prompt (read at build time)
-│   │   └── tools.py     #   Tool functions for this subagent
+│   ├── protocol_creator/ #   build(model) -> SubAgentConfig
+│   │   ├── config.py    #   imports tools from shared/protocols/
+│   │   └── prompt.md    #   creator-focused system prompt
+│   ├── protocol_editor/ #   build(model) -> SubAgentConfig
+│   │   ├── config.py    #   imports tools from shared/protocols/
+│   │   └── prompt.md    #   editor-focused system prompt
+│   ├── shared/          #   building blocks reusable across subagents
+│   │   └── protocols/   #   tool functions for protocol creation/editing
 │   ├── research_library/
 │   └── run_planner/
 ├── tools/               # Reserved for tools wired directly onto the parent chat Agent
@@ -42,7 +46,7 @@ services/ai/
 ```
 
 **Where things go:**
-- New **subagent**: new package under `subagents/<name>/` with `config.py` exposing `build(model)`, `prompt.md`, `tools.py`. Register in `chat_agent.py` `subagents = [...]`.
+- New **subagent**: new package under `subagents/<name>/` with `config.py` exposing `build(model)` and `prompt.md`. Tool functions go in the subagent's own `tools.py` unless multiple subagents need them — then put them in `subagents/shared/<domain>/tools.py`. Register the subagent in `chat_agent.py` `subagents = [...]`.
 - New **tool on an existing subagent**: add to that subagent's `tools.py` and append to its `agent_kwargs["tools"]` in `config.py`.
 - New **one-shot Agent** (called from a service, not via chat): add under `services/ai/workflows/` and call from the relevant domain service.
 - **Pure validators / business rules** the agent uses (e.g. graph validation): live in the domain service, not here. Example: `services/protocols/validation.py`. Tools wrap them.
@@ -79,7 +83,7 @@ agent = Agent(
     deps_type=ChatDeps,
     capabilities=[
         SubAgentCapability(
-            subagents=[research_library.build(m), protocol_builder.build(m), ...],
+            subagents=[research_library.build(m), protocol_creator.build(m), protocol_editor.build(m), ...],
             default_model=subagent_model,
             include_general_purpose=False,   # disable; otherwise it pulls openai:gpt-4.1 + OPENAI_API_KEY
             max_nesting_depth=1,
