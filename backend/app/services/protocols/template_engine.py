@@ -73,15 +73,23 @@ def _resolve_initials(
     *,
     user_id: str,
     name: str,
-    user_signatures: dict[str, str],
+    user_signatures: dict,
     docx: DocxTemplate,
 ):
     """Return an InlineImage of the user's drawn initials if registered,
     else the auto-generated text initials. The template uses
     `{{ step.initials }}` (plain), which renders InlineImage objects
     natively but cannot render RichText — so the fallback is a plain
-    string, matching pre-F-0080 behavior."""
-    path = user_signatures.get(user_id)
+    string, matching pre-F-0080 behavior.
+
+    Accepts both the legacy ``{user_id: path_str}`` shape and the
+    F-0066 ``{user_id: {"signature_initials_path": path,
+    "signature_full_path": path}}`` shape."""
+    entry = user_signatures.get(user_id)
+    if isinstance(entry, dict):
+        path = entry.get("signature_initials_path")
+    else:
+        path = entry
     if path and Path(path).exists():
         return InlineImage(docx, path, width=Mm(20))
     return _get_initials(name)
@@ -104,7 +112,7 @@ def build_context(
     is_role_based: bool = True,
     execution_data: dict[str, Any] | None = None,
     user_map: dict[str, str] | None = None,
-    user_signatures: dict[str, str] | None = None,
+    user_signatures: dict[str, dict[str, str]] | None = None,
     started_by_id: str | None = None,
     notes: list[dict[str, Any]] | None = None,
     attachments: list[dict[str, Any]] | None = None,

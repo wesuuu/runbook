@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_active_subscription
@@ -41,19 +41,40 @@ async def _load_template(
 
 async def _build_user_signatures(
     db: AsyncSession, user_ids: list[str | UUID]
-) -> dict[str, str]:
-    """Build {user_id: absolute_signature_path} for users with stored
-    drawn-initials signatures. Empty dict when no IDs are provided."""
+) -> dict[str, dict[str, str]]:
+    """Build {user_id: {kind: absolute_path}} for users with stored
+    signatures. Each entry contains optional keys
+    'signature_initials_path' (drawn initials) and/or
+    'signature_full_path' (drawn full signature). Users with neither
+    path are omitted. Empty dict when no IDs are provided."""
     if not user_ids:
         return {}
     rows = (
         await db.execute(
-            select(User.id, User.signature_initials_path)
+            select(
+                User.id,
+                User.signature_initials_path,
+                User.signature_full_path,
+            )
             .where(User.id.in_(user_ids))
-            .where(User.signature_initials_path.is_not(None))
+            .where(
+                or_(
+                    User.signature_initials_path.is_not(None),
+                    User.signature_full_path.is_not(None),
+                )
+            )
         )
     ).all()
-    return {str(uid): str(storage.resolve_path(path)) for uid, path in rows if path}
+    out: dict[str, dict[str, str]] = {}
+    for uid, initials_path, full_path in rows:
+        entry: dict[str, str] = {}
+        if initials_path:
+            entry["signature_initials_path"] = str(storage.resolve_path(initials_path))
+        if full_path:
+            entry["signature_full_path"] = str(storage.resolve_path(full_path))
+        if entry:
+            out[str(uid)] = entry
+    return out
 
 
 def _resolve_template_path(template: DocumentTemplate) -> str:

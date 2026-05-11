@@ -838,7 +838,7 @@ async def get_run_batch_record_pdf(
     # filled records. user_signatures resolves to absolute paths so the
     # render layer can build InlineImage objects (F-0080).
     user_map: dict[str, str] = {}
-    user_signatures: dict[str, str] = {}
+    user_signatures: dict[str, dict[str, str]] = {}
     started_by_id_str: str | None = None
     if filled and run_obj.execution_data:
         user_ids = set()
@@ -858,13 +858,23 @@ async def get_run_batch_record_pdf(
             result = await db.execute(select(User).where(User.id.in_(user_ids)))
             for u in result.scalars().all():
                 user_map[str(u.id)] = u.full_name or u.email
+                entry: dict[str, str] = {}
                 if u.signature_initials_path:
                     try:
-                        user_signatures[str(u.id)] = str(
+                        entry["signature_initials_path"] = str(
                             sig_storage.resolve_path(u.signature_initials_path)
                         )
                     except (ValueError, FileNotFoundError):
                         pass
+                if u.signature_full_path:
+                    try:
+                        entry["signature_full_path"] = str(
+                            sig_storage.resolve_path(u.signature_full_path)
+                        )
+                    except (ValueError, FileNotFoundError):
+                        pass
+                if entry:
+                    user_signatures[str(u.id)] = entry
 
     run_status = _run_status_str(run_obj)
 
