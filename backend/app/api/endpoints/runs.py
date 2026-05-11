@@ -81,10 +81,12 @@ async def create_run(
         )
 
     result = await db.execute(select(Project).where(Project.id == run_in.project_id))
-    if result.scalar_one_or_none() is None:
+    project = result.scalar_one_or_none()
+    if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
     initial_graph: dict = {}
+    is_strict = False
     if run_in.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_in.protocol_id)
@@ -97,6 +99,32 @@ async def create_run(
                 status_code=400,
                 detail="Cannot create run from archived protocol",
             )
+
+        # F-0066: gate run creation on approval status when both the project
+        # opts in and the protocol is designated for the approval workflow.
+        require_approval = bool(
+            (project.settings or {}).get("require_protocol_approval", False)
+        )
+        if (
+            require_approval
+            and protocol.requires_approval
+            and protocol.status != "APPROVED"
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "PROTOCOL_NOT_APPROVED",
+                    "message": (
+                        "This protocol requires approval before runs can be "
+                        "created."
+                    ),
+                },
+            )
+
+        # F-0066: snapshot strictness from the protocol itself — once a
+        # protocol opts into the workflow, every run is strict regardless of
+        # the project setting at run-creation time.
+        is_strict = bool(protocol.requires_approval)
 
         # Resolve which graph to snapshot: a specific version, else current.
         if run_in.protocol_version_number is not None:
@@ -140,6 +168,7 @@ async def create_run(
         graph=initial_graph,
         execution_data={},
         created_by_id=user.id,
+        is_strict=is_strict,
     )
     db.add(run_obj)
     await db.flush()
