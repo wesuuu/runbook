@@ -6,13 +6,14 @@ from pathlib import Path
 
 from subagents_pydantic_ai import SubAgentConfig
 
+from app.services.ai.cache_settings import CHAT_AGENT_MODEL_SETTINGS
 from app.services.ai.subagents.protocol_builder.tools import (
-    add_protocol_role, add_protocol_step, create_protocol, create_unit_op,
-    elevate_unit_op_scope, get_protocol, list_projects, list_protocol_roles,
-    list_protocols, list_unit_ops, remove_protocol_role, remove_protocol_step,
-    reorder_protocol_steps, replace_step_unit_op, update_protocol_metadata,
-    update_protocol_role, update_protocol_step, update_unit_op,
-    validate_protocol)
+    add_protocol_role, add_protocol_step, create_draft, create_protocol,
+    create_unit_op, elevate_unit_op_scope, get_protocol, list_projects,
+    list_protocol_roles, list_protocols, list_unit_ops, remove_protocol_role,
+    remove_protocol_step, reorder_protocol_steps, replace_step_unit_op,
+    update_protocol_metadata, update_protocol_role, update_protocol_step,
+    update_unit_op, validate_protocol)
 
 _PROMPT_PATH = Path(__file__).parent / "prompt.md"
 
@@ -38,6 +39,7 @@ def build(model: str) -> SubAgentConfig:
         model=model,
         typically_needs_context=True,
         agent_kwargs={
+            "model_settings": CHAT_AGENT_MODEL_SETTINGS,
             "tools": [
                 # Reads
                 list_projects,
@@ -50,7 +52,9 @@ def build(model: str) -> SubAgentConfig:
                 create_protocol,
                 # Validation
                 validate_protocol,
-                # Mutations (DRAFT-only)
+                # Draft lifecycle
+                create_draft,
+                # Mutations (DRAFT or active draft of APPROVED)
                 update_protocol_metadata,
                 add_protocol_step,
                 update_protocol_step,

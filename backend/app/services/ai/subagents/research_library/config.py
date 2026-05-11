@@ -6,6 +6,7 @@ from pathlib import Path
 
 from subagents_pydantic_ai import SubAgentConfig
 
+from app.services.ai.cache_settings import CHAT_AGENT_MODEL_SETTINGS
 from app.services.ai.subagents.research_library.tools import (list_documents,
                                                               read_section,
                                                               search_documents)
@@ -32,6 +33,7 @@ def build(model: str) -> SubAgentConfig:
         model=model,
         typically_needs_context=True,
         agent_kwargs={
+            "model_settings": CHAT_AGENT_MODEL_SETTINGS,
             "tools": [search_documents, read_section, list_documents],
         },
     )

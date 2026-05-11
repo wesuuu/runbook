@@ -38,6 +38,7 @@ _PROVIDER_ENV_KEYS: dict[str, str] = {
 _PROVIDER_SETTINGS_ATTRS: dict[str, str] = {
     "openrouter": "openrouter",
     "ollama": "ollama",
+    "anthropic": "anthropic",
 }
 
 

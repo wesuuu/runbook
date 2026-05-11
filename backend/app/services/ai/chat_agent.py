@@ -16,6 +16,7 @@ from subagents_pydantic_ai import SubAgentCapability
 
 from app.core.config import settings
 from app.services.ai.ai_config import get_context_window, get_model
+from app.services.ai.cache_settings import CHAT_AGENT_MODEL_SETTINGS
 from app.services.ai.deps import ChatDeps
 from app.services.ai.runtime.compaction import CompactionState
 from app.services.ai.runtime.token_counting import tiktoken_counter
@@ -135,6 +136,7 @@ async def build_chat_agent(
             chat_model,
             instructions=_CHAT_PROMPT,
             deps_type=ChatDeps,
+            model_settings=CHAT_AGENT_MODEL_SETTINGS,
             capabilities=[
                 SubAgentCapability(
                     subagents=subagents,

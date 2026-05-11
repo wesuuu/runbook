@@ -110,6 +110,7 @@ class Settings(BaseSettings):
     # add others (anthropic, openai, etc.) one line at a time when needed.
     openrouter: ProviderConfig = ProviderConfig()
     ollama: ProviderConfig = ProviderConfig()
+    anthropic: ProviderConfig = ProviderConfig()
 
     # Template conversion settings
     template_convert_max_tool_calls: int = 25
