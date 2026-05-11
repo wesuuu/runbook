@@ -677,12 +677,68 @@ async def update_protocol(
 
     changes = update_data.model_dump(exclude_unset=True)
 
+    # F-0066 Task 14: fields whose mutation while APPROVED triggers an
+    # auto-revert to DRAFT, and whose mutation while PENDING_APPROVAL is
+    # outright rejected. Anything outside this set is allowed to flow
+    # through unchanged.
+    APPROVED_EDIT_FIELDS = {"name", "description", "graph"}
+    changed_fields = set(changes.keys()) & APPROVED_EDIT_FIELDS
+
     # Block edits while pending approval
-    if protocol.status == "PENDING_APPROVAL" and "graph" in changes:
+    if protocol.status == "PENDING_APPROVAL" and changed_fields:
         raise HTTPException(
             status_code=409,
             detail="Cannot edit protocol while pending approval",
         )
+
+    # F-0066 Task 14: APPROVED protocols can be edited only by the creator,
+    # a project admin, or an approver, and any such edit auto-reverts the
+    # protocol to DRAFT and emits a single REVERTED event. Doing this
+    # *before* the metadata-only fast-path means a rename-while-APPROVED
+    # still triggers the revert + audit trail (the fast-path otherwise
+    # 409s on any non-DRAFT protocol).
+    auto_revert_emitted = False
+    if protocol.status == "APPROVED" and changed_fields:
+        is_creator = protocol.created_by_id == user.id
+        is_admin = False
+        is_approver = False
+        if protocol.project_id is not None:
+            is_admin = await check_permission(
+                db,
+                user.id,
+                ObjectType.PROJECT,
+                protocol.project_id,
+                PermissionLevel.ADMIN,
+            )
+        is_approver = await check_permission(
+            db,
+            user.id,
+            ObjectType.PROTOCOL,
+            protocol.id,
+            PermissionLevel.APPROVE,
+        )
+        if not (is_creator or is_admin or is_approver):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Only the creator, project admin, or an approver can "
+                    "edit an APPROVED protocol."
+                ),
+            )
+
+        protocol.status = "DRAFT"
+        protocol.approved_by_id = None
+        protocol.approved_at = None
+
+        from app.services.approvals import write_event
+
+        await write_event(
+            db,
+            protocol=protocol,
+            actor_id=user.id,
+            action="REVERTED",
+        )
+        auto_revert_emitted = True
 
     # Metadata-only patch fast path (no graph change, no draft request) —
     # delegate to the canonical service so chat tools and HTTP share logic.
@@ -771,10 +827,11 @@ async def update_protocol(
             )
             db.add(version)
 
-            # Revert approved protocol to draft on edit
-            if protocol.status == "APPROVED":
-                protocol.status = "DRAFT"
-
+            # F-0066 Task 14: status flip + REVERTED event are emitted at the
+            # top of this handler (auto_revert_emitted). Here we just keep
+            # the legacy notification side-effect when a graph edit was the
+            # trigger, so project admins still hear about it.
+            if auto_revert_emitted and "graph" in changes:
                 # Notify project admins of reversion
                 proj_result = await db.execute(
                     select(Project).where(Project.id == protocol.project_id)
