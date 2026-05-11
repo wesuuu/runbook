@@ -8,6 +8,15 @@ import {
     type SubscriptionState,
     type PortalSessionResponse,
 } from '$lib/schemas/billing';
+import { ProtocolSchema, type Protocol } from '$lib/schemas/protocols';
+import {
+    ProtocolApprovalEventListSchema,
+    AwaitingApprovalListSchema,
+    type ProtocolApprovalEventList,
+    type AwaitingApprovalList,
+    type ApproveProtocolRequest,
+    type RejectProtocolRequest,
+} from '$lib/schemas/protocolApproval';
 
 export class ApiError extends Error {
     status: number;
@@ -228,6 +237,77 @@ export const api = {
     postBlobUrl,
     postDownloadBlob,
     connectSSE,
+};
+
+// --- Protocol Approval (F-0066) ---
+
+export function designateProtocolApproval(
+    protocolId: string,
+    requiresApproval: boolean,
+): Promise<Protocol> {
+    return api.post<Protocol>(
+        `/science/protocols/${protocolId}/designate-approval`,
+        { requires_approval: requiresApproval },
+        { schema: ProtocolSchema },
+    );
+}
+
+export function submitProtocolForApproval(
+    protocolId: string,
+    requestedUserIds: string[],
+): Promise<Protocol> {
+    return api.post<Protocol>(
+        `/science/protocols/${protocolId}/submit-for-approval`,
+        { requested_user_ids: requestedUserIds },
+        { schema: ProtocolSchema },
+    );
+}
+
+export function approveProtocol(
+    protocolId: string,
+    body: ApproveProtocolRequest = {},
+): Promise<Protocol> {
+    return api.post<Protocol>(
+        `/science/protocols/${protocolId}/approve`,
+        body,
+        { schema: ProtocolSchema },
+    );
+}
+
+export function rejectProtocol(
+    protocolId: string,
+    body: RejectProtocolRequest,
+): Promise<Protocol> {
+    return api.post<Protocol>(
+        `/science/protocols/${protocolId}/reject`,
+        body,
+        { schema: ProtocolSchema },
+    );
+}
+
+export function getProtocolApprovalHistory(
+    protocolId: string,
+): Promise<ProtocolApprovalEventList> {
+    return api.get<ProtocolApprovalEventList>(
+        `/science/protocols/${protocolId}/approval-history`,
+        { schema: ProtocolApprovalEventListSchema },
+    );
+}
+
+export function getAwaitingMyApproval(): Promise<AwaitingApprovalList> {
+    return api.get<AwaitingApprovalList>(
+        '/science/protocols/awaiting-my-approval',
+        { schema: AwaitingApprovalListSchema },
+    );
+}
+
+export const protocolApprovalApi = {
+    designate: designateProtocolApproval,
+    submit: submitProtocolForApproval,
+    approve: approveProtocol,
+    reject: rejectProtocol,
+    history: getProtocolApprovalHistory,
+    awaitingMine: getAwaitingMyApproval,
 };
 
 export const billingApi = {

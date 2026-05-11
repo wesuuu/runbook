@@ -22,6 +22,12 @@ export const ProtocolSchema = z.object({
     graph: z.record(z.string(), z.unknown()).default({}),
     roles: z.array(ProtocolRoleSchema).default([]),
     is_tour_sample: z.boolean().default(false),
+    requires_approval: z.boolean().default(false),
+    created_by_id: z.string().uuid().nullable().optional(),
+    approved_by_id: z.string().uuid().nullable().optional(),
+    approved_at: z.string().nullable().optional(),
+    latest_signature_statement: z.string().nullable().optional(),
+    latest_approval_comment: z.string().nullable().optional(),
     created_at: z.string(),
     updated_at: z.string(),
 }).passthrough();

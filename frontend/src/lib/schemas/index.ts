@@ -1,5 +1,6 @@
 export * from './projects';
 export * from './protocols';
+export * from './protocolApproval';
 export * from './runs';
 export * from './experiments';
 export * from './iam';

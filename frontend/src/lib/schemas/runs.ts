@@ -44,6 +44,7 @@ export const RunSchema = z.object({
     protocol_id: z.string().uuid().nullable().optional(),
     name: z.string(),
     status: RunStatusEnum.default('PLANNED'),
+    is_strict: z.boolean().default(false),
     graph: z.record(z.string(), z.unknown()).default({}),
     execution_data: z.record(z.string(), z.unknown()).default({}),
     experiment_id: z.string().uuid().nullable().optional(),
