@@ -44,4 +44,21 @@ describe('renderTemplate', () => {
     it('returns empty string for empty template', () => {
         expect(renderTemplate('', { a: 1 })).toBe('');
     });
+
+    it('substitutes hyphenated equipment tokens (E-001_name, E-001_description)', () => {
+        const tpl = 'Use {{E-001_name}} ({{E-001_description}}) to mix.';
+        const out = renderTemplate(tpl, {
+            'E-001_name': 'Centrifuge A',
+            'E-001_description': 'Benchtop 5000 rpm',
+        });
+        expect(out).toBe('Use Centrifuge A (Benchtop 5000 rpm) to mix.');
+    });
+
+    it('tolerates surrounding whitespace inside {{ ... }}', () => {
+        expect(renderTemplate('{{ name }}', { name: 'World' })).toBe('World');
+    });
+
+    it('leaves hyphenated tokens with no matching value untouched', () => {
+        expect(renderTemplate('{{E-002_name}}', {})).toBe('{{E-002_name}}');
+    });
 });

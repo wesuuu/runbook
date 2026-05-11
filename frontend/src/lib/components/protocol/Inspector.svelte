@@ -238,9 +238,21 @@
             ])
     );
 
+    const equipmentTemplateContext = $derived.by(() => {
+        const ctx: Record<string, string> = {};
+        for (const eq of editEquipment) {
+            if (!eq.local_id) continue;
+            const meta = orgEquipment.find((e) => e.id === eq.equipment_id);
+            if (!meta) continue;
+            ctx[`${eq.local_id}_name`] = meta.name ?? '';
+            ctx[`${eq.local_id}_description`] = meta.description ?? '';
+        }
+        return ctx;
+    });
+
     const renderedPreview = $derived(
         editDescription
-            ? renderTemplate(editDescription, editParams)
+            ? renderTemplate(editDescription, { ...editParams, ...equipmentTemplateContext })
             : ''
     );
 
