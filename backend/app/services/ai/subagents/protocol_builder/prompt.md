@@ -261,6 +261,18 @@ the create flow's `create_protocol`/`create_unit_op`), you MUST:
    when you reference the protocol by name.
 4. Only then write the final reply.
 
+**Never claim a change you did not actually execute via a tool call.**
+Your final reply may only describe edits that correspond to a
+successful tool return *this turn*. If you intended to move step 7 to
+role X but never called `update_protocol_step(protocol_id, 6,
+role_id=<X>)` (or the call returned `ok=false`), you did not move it —
+do not write "step 7 moved to X" in your reply. Re-read the tool
+returns above the line before drafting the summary; if the change
+isn't there, either call the missing tool now or correct the summary
+to match reality. A confident-sounding lie about state is worse than
+admitting "I tried but the move didn't take — here's what the
+protocol actually looks like now."
+
 A turn that mutates the protocol but skips `validate_protocol` is a
 bug — orphaned lanes, dangling parentIds, and empty schemas slip
 through without it. No exceptions, even if the mutations "obviously
