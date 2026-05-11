@@ -8,12 +8,23 @@ REST endpoint or background job.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
 
 from app.models.science import ProtocolRole, UnitOpDefinition
+
+# Visual-bbox defaults used by layout-quality rules. These mirror the
+# frontend node defaults (see protocolNodes.ts) and the lane-layout
+# constants (services/protocols/lane_layout.py).
+_DEFAULT_NODE_W = 220
+_DEFAULT_NODE_H = 100
+_LANE_DEFAULT_HORIZONTAL = (800, 200)
+_LANE_DEFAULT_VERTICAL = (220, 500)
+
+_STYLE_DIM_RE = re.compile(r"\s*(width|height)\s*:\s*([0-9]+)\s*px\s*;?", re.IGNORECASE)
 
 Severity = str  # "error" | "warning"
 
@@ -180,6 +191,7 @@ def validate_protocol_graph(
             )
 
     issues.extend(_branch_role_issues(nodes, edges, graph))
+    issues.extend(_layout_quality_issues(nodes, graph))
 
     if roles is not None:
         lane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
@@ -278,6 +290,156 @@ def _process_starts_per_component(
     return counts
 
 
+def _read_dims_from_style(style: Any) -> tuple[float | None, float | None]:
+    """Parse ``"width: …px; height: …px;"`` strings written by legacy graphs."""
+    if not isinstance(style, str):
+        return (None, None)
+    width: float | None = None
+    height: float | None = None
+    for key, val in _STYLE_DIM_RE.findall(style):
+        if key.lower() == "width" and width is None:
+            width = float(val)
+        elif key.lower() == "height" and height is None:
+            height = float(val)
+    return width, height
+
+
+def _node_dims(node: dict[str, Any]) -> tuple[float, float]:
+    """Return (width, height) for a unit-op node, with sensible defaults.
+
+    Reads numeric ``width``/``height`` props first, falling back to the
+    legacy ``style`` string, then to ``_DEFAULT_NODE_W`` / ``_DEFAULT_NODE_H``.
+    """
+    w_prop = node.get("width")
+    h_prop = node.get("height")
+    width = float(w_prop) if isinstance(w_prop, (int, float)) else None
+    height = float(h_prop) if isinstance(h_prop, (int, float)) else None
+    if width is None or height is None:
+        style_w, style_h = _read_dims_from_style(node.get("style"))
+        if width is None:
+            width = style_w
+        if height is None:
+            height = style_h
+    return (
+        width if width is not None else float(_DEFAULT_NODE_W),
+        height if height is not None else float(_DEFAULT_NODE_H),
+    )
+
+
+def _lane_dims(lane_node: dict[str, Any], graph_layout: str) -> tuple[float, float]:
+    """Return (width, height) for a swimLane node, with orientation defaults."""
+    w_prop = lane_node.get("width")
+    h_prop = lane_node.get("height")
+    width = float(w_prop) if isinstance(w_prop, (int, float)) else None
+    height = float(h_prop) if isinstance(h_prop, (int, float)) else None
+    if width is None or height is None:
+        style_w, style_h = _read_dims_from_style(lane_node.get("style"))
+        if width is None:
+            width = style_w
+        if height is None:
+            height = style_h
+    orientation = (lane_node.get("data") or {}).get("orientation")
+    if orientation not in ("horizontal", "vertical"):
+        orientation = graph_layout
+    if orientation == "vertical":
+        default_w, default_h = _LANE_DEFAULT_VERTICAL
+    else:
+        default_w, default_h = _LANE_DEFAULT_HORIZONTAL
+    return (
+        width if width is not None else float(default_w),
+        height if height is not None else float(default_h),
+    )
+
+
+def _layout_quality_issues(
+    nodes: list[dict[str, Any]],
+    graph: dict[str, Any],
+) -> list[ValidationIssue]:
+    """Surface bad-layout output from agent edits: a child whose lane-relative
+    bbox would render outside its parent lane, or two siblings whose bboxes
+    overlap. These are warnings — they don't block usability, but the chat
+    agent's `validate_protocol` should see them and re-place nodes neatly."""
+    issues: list[ValidationIssue] = []
+    graph_layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
+    nodes_by_id = {n.get("id"): n for n in nodes if n.get("id")}
+    unit_op_nodes = [n for n in nodes if n.get("type") == "unitOp"]
+
+    # Rule 1: child_outside_lane — parented unit-op extends past lane bounds.
+    for n in unit_op_nodes:
+        parent_id = n.get("parentId")
+        if not isinstance(parent_id, str) or not parent_id.startswith("lane-"):
+            continue
+        lane = nodes_by_id.get(parent_id)
+        if lane is None or lane.get("type") != "swimLane":
+            # `orphaned_parent_id` already covers this case.
+            continue
+        pos = n.get("position") or {}
+        x = float(pos.get("x", 0))
+        y = float(pos.get("y", 0))
+        w, h = _node_dims(n)
+        lane_w, lane_h = _lane_dims(lane, graph_layout)
+        if x < 0 or y < 0 or x + w > lane_w or y + h > lane_h:
+            label = (n.get("data") or {}).get("label") or "<unnamed>"
+            issues.append(
+                ValidationIssue(
+                    severity="warning",
+                    code="child_outside_lane",
+                    node_id=n.get("id"),
+                    message=(
+                        f"Step '{label}' is positioned outside its swimlane — "
+                        "the agent likely placed it on the edge instead of "
+                        "inside. Re-place it using lane-relative coordinates "
+                        "and grow the lane to fit."
+                    ),
+                )
+            )
+
+    # Rule 2: overlapping_nodes — two unit-ops in the same parent frame whose
+    # bboxes intersect. Children of different lanes are rendered in separate
+    # coordinate frames and can't visually overlap, so group by parentId first.
+    by_parent: dict[str | None, list[dict[str, Any]]] = {}
+    for n in unit_op_nodes:
+        parent_id = n.get("parentId") if isinstance(n.get("parentId"), str) else None
+        by_parent.setdefault(parent_id, []).append(n)
+
+    reported: set[frozenset[str]] = set()
+    for siblings in by_parent.values():
+        for i in range(len(siblings)):
+            a = siblings[i]
+            ax = float((a.get("position") or {}).get("x", 0))
+            ay = float((a.get("position") or {}).get("y", 0))
+            aw, ah = _node_dims(a)
+            a_id = a.get("id")
+            a_label = (a.get("data") or {}).get("label") or "<unnamed>"
+            for j in range(i + 1, len(siblings)):
+                b = siblings[j]
+                bx = float((b.get("position") or {}).get("x", 0))
+                by_ = float((b.get("position") or {}).get("y", 0))
+                bw, bh = _node_dims(b)
+                if ax < bx + bw and bx < ax + aw and ay < by_ + bh and by_ < ay + ah:
+                    b_id = b.get("id")
+                    if a_id and b_id:
+                        key = frozenset({a_id, b_id})
+                        if key in reported:
+                            continue
+                        reported.add(key)
+                    b_label = (b.get("data") or {}).get("label") or "<unnamed>"
+                    issues.append(
+                        ValidationIssue(
+                            severity="warning",
+                            code="overlapping_nodes",
+                            node_id=a_id,
+                            message=(
+                                f"Steps '{a_label}' and '{b_label}' overlap "
+                                "visually. Space them out so a scientist can "
+                                "read the protocol at a glance."
+                            ),
+                        )
+                    )
+
+    return issues
+
+
 def _branch_role_issues(
     nodes: list[dict[str, Any]],
     edges: list[dict[str, Any]],
@@ -301,7 +463,9 @@ def _branch_role_issues(
 
     def interval_for(node: dict[str, Any]) -> tuple[float, float]:
         pos = node.get("position") or {}
-        axis = float(pos.get("x", 0)) if layout == "horizontal" else float(pos.get("y", 0))
+        axis = (
+            float(pos.get("x", 0)) if layout == "horizontal" else float(pos.get("y", 0))
+        )
         start = axis / pixels_per_hour * 60.0
         duration = float((node.get("data") or {}).get("duration_min") or 30)
         return (start, start + duration)
@@ -337,7 +501,9 @@ def _branch_role_issues(
             continue
 
         label = (src.get("data") or {}).get("label") or "<unnamed>"
-        target_labels = [(t.get("data") or {}).get("label") or "<unnamed>" for t in targets]
+        target_labels = [
+            (t.get("data") or {}).get("label") or "<unnamed>" for t in targets
+        ]
         issues.append(
             ValidationIssue(
                 severity="error",
@@ -364,7 +530,8 @@ def assert_no_branch_errors(
     Other validation issues (warnings, missing process start, etc.) are not
     enforced here — callers handle them separately if needed.
     """
-    from fastapi import HTTPException  # noqa: PLC0415 — keep validation.py import-light
+    from fastapi import \
+        HTTPException  # noqa: PLC0415 — keep validation.py import-light
 
     result = validate_protocol_graph(graph, unit_ops)
     blocking = [i for i in result.issues if i.code == "branch_requires_distinct_roles"]
