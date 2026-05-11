@@ -24,6 +24,8 @@ async def test_build_chat_agent_returns_agent_with_capabilities():
             "chat": fake_chat_model,
             "chat_subagent": fake_subagent_model,
             "chat_summary": fake_summary_model,
+            "protocol_creation": fake_subagent_model,
+            "protocol_editing": fake_subagent_model,
         }[cap]
 
     async def fake_get_context_window(cap, db_, org_id=None):
