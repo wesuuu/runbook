@@ -61,7 +61,7 @@ DEFAULT_CONFIGS = {
     },
     "chat_subagent": {
         "provider": "openrouter",
-        "model_name": "anthropic/claude-sonnet-4",
+        "model_name": "anthropic/claude-haiku-4.5",
     },
     "chat_summary": {
         "provider": "openrouter",
