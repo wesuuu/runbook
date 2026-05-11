@@ -53,6 +53,7 @@
         name: string;
         graph: Graph;
         protocol_id?: string | null;
+        is_strict?: boolean;
     }
 
     interface Props {
