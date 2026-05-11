@@ -7,10 +7,8 @@ from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 
-from app.services.protocols.validation import (
-    assert_no_branch_errors,
-    validate_protocol_graph,
-)
+from app.services.protocols.validation import (assert_no_branch_errors,
+                                               validate_protocol_graph)
 
 
 def _unit_op(name: str = "Buffer Mix") -> object:
@@ -167,7 +165,9 @@ from pathlib import Path
 import pytest
 
 # Repo root: backend/tests/unit/test_protocols_validation.py → parents[3] = repo root
-_FIXTURE_PATH = Path(__file__).parents[3] / "tests" / "fixtures" / "branch_role_validation.json"
+_FIXTURE_PATH = (
+    Path(__file__).parents[3] / "tests" / "fixtures" / "branch_role_validation.json"
+)
 _FIXTURE_CASES = json.loads(_FIXTURE_PATH.read_text())["cases"]
 
 
@@ -185,26 +185,23 @@ def test_branch_role_fixture(case):
     """
     result = validate_protocol_graph(case["graph"], [])
     actual_sources = sorted(
-        i.node_id
-        for i in result.issues
-        if i.code == "branch_requires_distinct_roles"
+        i.node_id for i in result.issues if i.code == "branch_requires_distinct_roles"
     )
     expected = sorted(case["expected"]["fires_on"])
-    assert actual_sources == expected, (
-        f"case '{case['name']}': expected fires_on={expected}, got {actual_sources}"
-    )
+    assert (
+        actual_sources == expected
+    ), f"case '{case['name']}': expected fires_on={expected}, got {actual_sources}"
 
 
 def test_branch_role_issue_python_shape():
     """Backend-specific assertions on ValidationIssue (severity, message)."""
     case = next(
-        c for c in _FIXTURE_CASES
+        c
+        for c in _FIXTURE_CASES
         if c["name"] == "branching with two targets in same parentId fires"
     )
     result = validate_protocol_graph(case["graph"], [])
-    issue = next(
-        i for i in result.issues if i.code == "branch_requires_distinct_roles"
-    )
+    issue = next(i for i in result.issues if i.code == "branch_requires_distinct_roles")
     assert issue.severity == "error"
     assert issue.node_id == "b"
     assert "branches to" in issue.message
@@ -320,6 +317,179 @@ def test_step_with_dangling_parent_id_flags_orphaned_parent_id():
     codes = [i.code for i in result.issues]
     assert "orphaned_parent_id" in codes
     assert "missing_lane_node" in codes
+
+
+def _horizontal_lane(role, *, width: int = 800, height: int = 200) -> dict:
+    return {
+        "id": f"lane-{role.id}",
+        "type": "swimLane",
+        "position": {"x": 0, "y": 400},
+        "width": width,
+        "height": height,
+        "data": {
+            "label": role.name,
+            "roleId": str(role.id),
+            "orientation": "horizontal",
+        },
+    }
+
+
+def _child_step(node_id: str, parent_id: str, x: int, y: int) -> dict:
+    op = _unit_op()
+    step = _step(node_id, unit_op_id=op.id, label=node_id)
+    step["parentId"] = parent_id
+    step["position"] = {"x": x, "y": y}
+    return step
+
+
+def test_child_inside_lane_passes():
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    step = _child_step("s1", lane["id"], x=20, y=60)
+    step["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "child_outside_lane" not in codes
+
+
+def test_child_overflowing_lane_horizontally_is_warning():
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role, width=400, height=200)
+    # Child at x=300 with default width 220 overruns lane width 400.
+    step = _child_step("s1", lane["id"], x=300, y=60)
+    step["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    issue = next((i for i in result.issues if i.code == "child_outside_lane"), None)
+    assert issue is not None
+    assert issue.severity == "warning"
+    assert issue.node_id == "s1"
+    # Layout-quality rules are warnings only — graph remains valid.
+    assert result.ok is True
+
+
+def test_child_with_negative_position_is_warning():
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    step = _child_step("s1", lane["id"], x=-50, y=60)
+    step["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "child_outside_lane" in codes
+
+
+def test_dangling_parent_id_does_not_double_flag_layout():
+    """If the lane node is missing entirely, orphaned_parent_id already fires —
+    we shouldn't also surface child_outside_lane against the same step."""
+    op = _unit_op()
+    role = _role()
+    step = _child_step("s1", f"lane-{role.id}", x=20, y=60)
+    step["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), step],
+        "edges": [{"id": "e1", "source": "ps", "target": "s1"}],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "orphaned_parent_id" in codes
+    assert "child_outside_lane" not in codes
+
+
+def test_overlapping_siblings_in_same_lane_is_warning():
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    a = _child_step("a", lane["id"], x=20, y=60)
+    b = _child_step("b", lane["id"], x=100, y=60)  # 220-wide → overlaps a
+    a["data"]["unitOpId"] = str(op.id)
+    b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    overlaps = [i for i in result.issues if i.code == "overlapping_nodes"]
+    assert len(overlaps) == 1
+    assert overlaps[0].severity == "warning"
+
+
+def test_neatly_spaced_siblings_in_same_lane_pass():
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role, width=2000)
+    a = _child_step("a", lane["id"], x=20, y=60)
+    b = _child_step("b", lane["id"], x=260, y=60)  # exactly one CHILD_X_STEP over
+    a["data"]["unitOpId"] = str(op.id)
+    b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "overlapping_nodes" not in codes
+
+
+def test_overlapping_top_level_nodes_is_warning():
+    op = _unit_op()
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 100, "y": 200}
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 150, "y": 220}
+    graph = {
+        "nodes": [_ps("ps"), a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    result = validate_protocol_graph(graph, [op])
+    codes = [i.code for i in result.issues]
+    assert "overlapping_nodes" in codes
+
+
+def test_overlap_across_different_lanes_is_not_flagged():
+    """Children of different lanes are rendered in separate coordinate frames
+    — they can't visually overlap, even at identical lane-relative coords."""
+    op = _unit_op()
+    role_a = _role("A")
+    role_b = _role("B")
+    lane_a = _horizontal_lane(role_a)
+    lane_b = _horizontal_lane(role_b)
+    step_a = _child_step("a", lane_a["id"], x=20, y=60)
+    step_b = _child_step("b", lane_b["id"], x=20, y=60)
+    step_a["data"]["unitOpId"] = str(op.id)
+    step_b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane_a, lane_b, step_a, step_b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role_a, role_b])
+    codes = [i.code for i in result.issues]
+    assert "overlapping_nodes" not in codes
 
 
 def test_roles_arg_omitted_skips_role_lane_checks():
