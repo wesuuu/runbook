@@ -16,6 +16,7 @@
         protocolStatus: string;
         previewingVersion: number | null;
         versionNumber: number;
+        latestDraftVersion: number | null;
         branchValidationErrors: BranchError[];
         processStartValidationErrors: ProcessStartError[];
         onUnarchive: () => void;
@@ -27,12 +28,19 @@
         protocolStatus,
         previewingVersion,
         versionNumber,
+        latestDraftVersion,
         branchValidationErrors,
         processStartValidationErrors,
         onUnarchive,
         onRestorePreviewedVersion,
         onExitPreview,
     }: Props = $props();
+
+    const isViewingDraft = $derived(
+        previewingVersion !== null
+            && latestDraftVersion !== null
+            && previewingVersion === latestDraftVersion,
+    );
 </script>
 
 <!-- Archive banner -->
@@ -45,12 +53,19 @@
 
 <!-- Version preview banner -->
 {#if previewingVersion !== null}
-    <div class="preview-banner">
-        <span>Viewing <strong>v{previewingVersion}</strong> of {versionNumber} (read-only preview)</span>
-        <div class="preview-banner-actions">
-            <Button size="sm" onclick={onRestorePreviewedVersion}>Restore this version</Button>
-            <Button size="sm" variant="outline" onclick={onExitPreview}>Back to current</Button>
-        </div>
+    <div class="preview-banner" class:preview-banner-draft={isViewingDraft}>
+        {#if isViewingDraft}
+            <span>Editing unpublished <strong>draft v{previewingVersion}</strong> — published v{versionNumber} is unchanged until you publish</span>
+            <div class="preview-banner-actions">
+                <Button size="sm" variant="outline" onclick={onExitPreview}>Back to v{versionNumber}</Button>
+            </div>
+        {:else}
+            <span>Viewing <strong>v{previewingVersion}</strong> of {versionNumber} (read-only preview)</span>
+            <div class="preview-banner-actions">
+                <Button size="sm" onclick={onRestorePreviewedVersion}>Restore this version</Button>
+                <Button size="sm" variant="outline" onclick={onExitPreview}>Back to current</Button>
+            </div>
+        {/if}
     </div>
 {/if}
 
@@ -111,6 +126,13 @@
         font-size: 12px;
         color: #1e40af;
         white-space: nowrap;
+    }
+
+    .preview-banner.preview-banner-draft {
+        background: #fffbeb;
+        border-color: #f59e0b;
+        color: #92400e;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
     }
 
     .preview-banner-actions {

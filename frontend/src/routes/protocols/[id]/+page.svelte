@@ -147,6 +147,14 @@
     // surface the unpublished draft.
     let latestDraftVersion = $state<number | null>(null);
 
+    // Historical previews are read-only ("you're looking at v2 of an
+    // APPROVED v4"); the unpublished-draft preview is editable so the user
+    // can keep iterating on the draft without leaving the toggle view.
+    const isHistoricalPreview = $derived(
+        previewingVersion !== null
+            && previewingVersion !== latestDraftVersion,
+    );
+
     // Track unsaved changes
     let hasUnsavedChanges = $state(false);
     let lastSavedState = $state<string>("");
@@ -585,8 +593,9 @@
     async function saveDraft() {
         if (!protocol) return;
 
-        // Block save while previewing old version
-        if (previewingVersion !== null) {
+        // Block save while previewing a historical version (editing the
+        // unpublished draft is allowed and just updates that draft).
+        if (isHistoricalPreview) {
             toast.warning("Exit version preview before saving");
             return;
         }
@@ -638,8 +647,8 @@
     async function saveAndPublish() {
         if (!protocol) return;
 
-        // Block save while previewing old version
-        if (previewingVersion !== null) {
+        // Block save while previewing a historical version.
+        if (isHistoricalPreview) {
             toast.warning("Exit version preview before saving");
             return;
         }
@@ -895,7 +904,7 @@
         event.preventDefault();
         if (!event.dataTransfer) return;
 
-        if (previewingVersion !== null) {
+        if (isHistoricalPreview) {
             toast.warning("Exit version preview before editing");
             return;
         }
@@ -1328,6 +1337,7 @@
             {protocolStatus}
             {previewingVersion}
             {versionNumber}
+            {latestDraftVersion}
             branchValidationErrors={branchValidationErrors()}
             processStartValidationErrors={processStartValidationErrors()}
             onUnarchive={unarchiveProtocol}
