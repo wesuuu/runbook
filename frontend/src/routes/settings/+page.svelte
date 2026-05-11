@@ -23,6 +23,7 @@
     import AppearanceTab from '$lib/components/settings/AppearanceTab.svelte';
     import SignatureCard from '$lib/components/settings/SignatureCard.svelte';
     import MemberRolesPicker from '$lib/components/settings/MemberRolesPicker.svelte';
+    import OrgProtocolApproversCard from '$lib/components/settings/OrgProtocolApproversCard.svelte';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
@@ -945,6 +946,10 @@
                 </CardContent>
             {/if}
         </Card>
+
+        <div class="mt-6">
+            <OrgProtocolApproversCard canManage={isOrgAdmin} />
+        </div>
 
     <!-- Teams Tab -->
     {:else if activeTab === 'teams'}
