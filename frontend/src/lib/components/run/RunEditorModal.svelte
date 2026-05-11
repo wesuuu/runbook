@@ -372,6 +372,7 @@
                                 onRoleChange={(id) => {
                                     activeRoleId = id;
                                 }}
+                                isStrict={run.is_strict ?? false}
                             />
                         {:else if activeTab === 'assignees'}
                             <RunCreatorAssigneeStep

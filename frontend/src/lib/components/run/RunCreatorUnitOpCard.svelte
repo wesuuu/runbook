@@ -46,9 +46,10 @@
         conflictingIds: Set<string>;
         onChange: (next: UnitOpNode) => void;
         onSwapEquipment: (nodeId: string) => void;
+        isStrict?: boolean;
     }
 
-    let { node, mediaPrepNodes, orgEquipment, conflictingIds, onChange, onSwapEquipment }: Props = $props();
+    let { node, mediaPrepNodes, orgEquipment, conflictingIds, onChange, onSwapEquipment, isStrict = false }: Props = $props();
 
     const data = $derived<UnitOpData>(node.data ?? {});
     const props = $derived((data.paramSchema?.properties ?? {}) as Record<string, ParamProp>);
@@ -165,7 +166,9 @@
                 {conflictingIds}
                 showSwapped={equipmentSwapped ? new Set((data.equipment ?? []).map((e) => e.equipment_id)) : new Set()}
             />
-            <Button variant="outline" size="sm" onclick={() => onSwapEquipment(node.id)}>Swap</Button>
+            {#if !isStrict}
+                <Button variant="outline" size="sm" onclick={() => onSwapEquipment(node.id)}>Swap</Button>
+            {/if}
         </div>
     </section>
 
@@ -177,8 +180,10 @@
                     <tr>
                         <th>Parameter</th>
                         <th>Default</th>
-                        <th>Override for this run</th>
-                        <th></th>
+                        {#if !isStrict}
+                            <th>Override for this run</th>
+                            <th></th>
+                        {/if}
                     </tr>
                 </thead>
                 <tbody>
@@ -195,33 +200,35 @@
                                 {#if isAdded}<span class="muted">—</span>
                                 {:else}{String(protoParams[key] ?? '')}{/if}
                             </td>
-                            <td>
-                                <ParamInput
-                                    id="ov-{node.id}-{key}"
-                                    schema={prop}
-                                    value={data.params?.[key]}
-                                    {mediaPrepNodes}
-                                    onChange={(v) => setParam(key, v)}
-                                />
-                            </td>
-                            <td class="action-cell">
-                                {#if isModified}
+                            {#if !isStrict}
+                                <td>
+                                    <ParamInput
+                                        id="ov-{node.id}-{key}"
+                                        schema={prop}
+                                        value={data.params?.[key]}
+                                        {mediaPrepNodes}
+                                        onChange={(v) => setParam(key, v)}
+                                    />
+                                </td>
+                                <td class="action-cell">
+                                    {#if isModified}
+                                        <button
+                                            type="button"
+                                            class="row-action"
+                                            aria-label="Revert {key}"
+                                            title="Revert to default"
+                                            onclick={() => revertParam(key)}
+                                        >↺</button>
+                                    {/if}
                                     <button
                                         type="button"
-                                        class="row-action"
-                                        aria-label="Revert {key}"
-                                        title="Revert to default"
-                                        onclick={() => revertParam(key)}
-                                    >↺</button>
-                                {/if}
-                                <button
-                                    type="button"
-                                    class="row-action row-action-remove"
-                                    aria-label="Remove {key}"
-                                    title="Remove parameter"
-                                    onclick={() => removeParam(key)}
-                                >✕</button>
-                            </td>
+                                        class="row-action row-action-remove"
+                                        aria-label="Remove {key}"
+                                        title="Remove parameter"
+                                        onclick={() => removeParam(key)}
+                                    >✕</button>
+                                </td>
+                            {/if}
                         </tr>
                     {/each}
                 </tbody>
@@ -229,27 +236,31 @@
         </section>
     {/if}
 
-    <section class="uo-section">
-        <details class="schema-details">
-            <summary class="section-label cursor-pointer">+ ADD / EDIT SCHEMA</summary>
-            <SchemaEditor rows={schemaRows} onChange={setSchemaRows} />
-        </details>
-    </section>
+    {#if !isStrict}
+        <section class="uo-section">
+            <details class="schema-details">
+                <summary class="section-label cursor-pointer">+ ADD / EDIT SCHEMA</summary>
+                <SchemaEditor rows={schemaRows} onChange={setSchemaRows} />
+            </details>
+        </section>
+    {/if}
 
     <section class="uo-section instructions-section">
         <div class="instructions-head">
             <h4 class="section-label">INSTRUCTIONS</h4>
             {#if descriptionModified}<span class="badge badge-amber">◆ modified</span>{/if}
-            <button
-                type="button"
-                class="link"
-                onclick={() => (showInstructions = !showInstructions)}
-            >
-                {showInstructions ? 'Hide editor' : '✎ Edit instructions'}
-            </button>
+            {#if !isStrict}
+                <button
+                    type="button"
+                    class="link"
+                    onclick={() => (showInstructions = !showInstructions)}
+                >
+                    {showInstructions ? 'Hide editor' : '✎ Edit instructions'}
+                </button>
+            {/if}
         </div>
         <p class="rendered-template">{renderedEffective || '— no instructions —'}</p>
-        {#if showInstructions}
+        {#if showInstructions && !isStrict}
             <div class="instructions-editor" transition:slide={{ duration: 180, easing: cubicOut }}>
                 <textarea
                     bind:value={editingDescription}
