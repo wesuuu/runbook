@@ -23,6 +23,7 @@ from app.schemas.science import (DesignateApprovalRequest, ProtocolCreate,
                                  ProtocolRefineRequest, ProtocolResponse,
                                  ProtocolRoleCreate, ProtocolRoleResponse,
                                  ProtocolRoleUpdate, ProtocolUpdate)
+from app.services.approvals import write_event
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
@@ -33,6 +34,12 @@ from app.services.protocols.roles import (add_role, list_roles, remove_role,
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# F-0066 Task 14: fields whose mutation while APPROVED triggers an
+# auto-revert to DRAFT, and whose mutation while PENDING_APPROVAL is
+# outright rejected. Anything outside this set is allowed to flow
+# through unchanged.
+APPROVED_EDIT_FIELDS = {"name", "description", "graph"}
 
 
 # --- Protocols ---
@@ -677,11 +684,6 @@ async def update_protocol(
 
     changes = update_data.model_dump(exclude_unset=True)
 
-    # F-0066 Task 14: fields whose mutation while APPROVED triggers an
-    # auto-revert to DRAFT, and whose mutation while PENDING_APPROVAL is
-    # outright rejected. Anything outside this set is allowed to flow
-    # through unchanged.
-    APPROVED_EDIT_FIELDS = {"name", "description", "graph"}
     changed_fields = set(changes.keys()) & APPROVED_EDIT_FIELDS
 
     # Block edits while pending approval
@@ -730,14 +732,16 @@ async def update_protocol(
         protocol.approved_by_id = None
         protocol.approved_at = None
 
-        from app.services.approvals import write_event
-
         await write_event(
             db,
             protocol=protocol,
             actor_id=user.id,
             action="REVERTED",
         )
+        # Flush so the metadata-only fast path below (which re-SELECTs
+        # the protocol inside update_protocol_metadata) sees the new
+        # DRAFT status and doesn't 409 on its "published" guard.
+        await db.flush()
         auto_revert_emitted = True
 
     # Metadata-only patch fast path (no graph change, no draft request) —
