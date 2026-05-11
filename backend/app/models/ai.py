@@ -33,6 +33,8 @@ SUPPORTED_CAPABILITIES = (
     "chat",
     "chat_subagent",
     "chat_summary",
+    "protocol_creation",
+    "protocol_editing",
     "protocol_generation",
     "template_convert",
 )
@@ -66,6 +68,14 @@ DEFAULT_CONFIGS = {
     "chat_summary": {
         "provider": "openrouter",
         "model_name": "anthropic/claude-sonnet-4",
+    },
+    "protocol_creation": {
+        "provider": "ollama",
+        "model_name": "gpt-oss:120b-cloud",
+    },
+    "protocol_editing": {
+        "provider": "ollama",
+        "model_name": "gpt-oss:120b-cloud",
     },
     "protocol_generation": {
         "provider": "openrouter",
