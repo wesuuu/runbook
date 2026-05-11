@@ -8,8 +8,10 @@
 
 	// Stamp every toast with a wall-clock timestamp the moment it mounts, so the
 	// mono "lab printout" header strip (rendered via CSS ::before) can read it
-	// via attr(data-time). Sonner doesn't expose a per-toast hook, so we watch
-	// the toaster container for added toast elements.
+	// via attr(data-time). svelte-sonner doesn't expose a per-toast hook AND
+	// only mounts [data-sonner-toaster] when toasts.length > 0, so we observe
+	// document.body and pick up the toast li no matter when the container
+	// appears.
 	$effect(() => {
 		const formatTime = (d: Date) =>
 			d.toLocaleTimeString('en-US', {
@@ -29,31 +31,14 @@
 			for (const m of mutations) {
 				for (const node of m.addedNodes) {
 					if (!(node instanceof Element)) continue;
-					if (node.matches('[data-sonner-toast]')) stamp(node);
+					if (node.matches?.('[data-sonner-toast]')) stamp(node);
 					node.querySelectorAll?.('[data-sonner-toast]').forEach(stamp);
 				}
 			}
 		});
 
-		let attached = false;
-		const attach = () => {
-			if (attached) return true;
-			const root = document.querySelector('[data-sonner-toaster]');
-			if (!root) return false;
-			observer.observe(root, { childList: true, subtree: true });
-			root.querySelectorAll('[data-sonner-toast]').forEach(stamp);
-			attached = true;
-			return true;
-		};
-
-		if (!attach()) {
-			// Toaster mounts after this effect on first render; retry next frame.
-			const raf = requestAnimationFrame(attach);
-			return () => {
-				cancelAnimationFrame(raf);
-				observer.disconnect();
-			};
-		}
+		observer.observe(document.body, { childList: true, subtree: true });
+		document.querySelectorAll('[data-sonner-toast]').forEach(stamp);
 
 		return () => observer.disconnect();
 	});
