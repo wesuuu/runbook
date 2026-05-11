@@ -155,6 +155,13 @@
             && previewingVersion !== latestDraftVersion,
     );
 
+    // Editing the unpublished draft is not "editing the approved
+    // protocol" -- skip the revert-on-edit confirmation dialog.
+    const isEditingDraft = $derived(
+        previewingVersion !== null
+            && previewingVersion === latestDraftVersion,
+    );
+
     // Track unsaved changes
     let hasUnsavedChanges = $state(false);
     let lastSavedState = $state<string>("");
@@ -497,7 +504,7 @@
     // --- Revert-on-edit guard ---
     function requireEditConfirmation(action: () => void): boolean {
         // Returns true if the action can proceed immediately, false if we opened the dialog.
-        if (protocolStatus !== 'APPROVED' || confirmedEditAfterApproval) {
+        if (protocolStatus !== 'APPROVED' || confirmedEditAfterApproval || isEditingDraft) {
             return true;
         }
         pendingEditAction = action;
@@ -979,8 +986,7 @@
     function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
         // Guard: if APPROVED and edit not yet confirmed, open the dialog and
         // revert the drag if the user cancels.
-        console.log('[QAD] dragStop fired, status=', protocolStatus, 'targetNode=', targetNode?.id);
-        if (protocolStatus === 'APPROVED' && !confirmedEditAfterApproval) {
+        if (protocolStatus === 'APPROVED' && !confirmedEditAfterApproval && !isEditingDraft) {
             const snapshot = preDragSnapshot;
             preDragSnapshot = null;
             pendingEditAction = () => {
