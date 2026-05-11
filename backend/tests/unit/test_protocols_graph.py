@@ -6,12 +6,21 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            PermissionLevel, PrincipalType, User)
-from app.models.science import (Project, Protocol, ProtocolRole,
-                                UnitOpDefinition)
-from app.services.protocols.graph import (add_step, remove_step, reorder_steps,
-                                          replace_step_unit_op)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
+from app.models.science import Project, Protocol, ProtocolRole, UnitOpDefinition
+from app.services.protocols.graph import (
+    add_step,
+    remove_step,
+    reorder_steps,
+    replace_step_unit_op,
+)
 
 
 def _seed_graph_with_n_steps(n: int) -> dict:
@@ -148,9 +157,7 @@ async def test_add_step_stacks_children_inside_lane(
     db_session: AsyncSession, test_user: User, draft_proto: Protocol
 ):
     role_id = uuid.uuid4()
-    role = ProtocolRole(
-        id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0
-    )
+    role = ProtocolRole(id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0)
     db_session.add(role)
     await db_session.flush()
     # Inject a swimLane node so grow_lane_to_fit has something to size.
@@ -182,16 +189,12 @@ async def test_add_step_stacks_children_inside_lane(
         )
     await db_session.refresh(draft_proto)
     children = [
-        n
-        for n in draft_proto.graph["nodes"]
-        if n.get("parentId") == f"lane-{role_id}"
+        n for n in draft_proto.graph["nodes"] if n.get("parentId") == f"lane-{role_id}"
     ]
     xs = sorted(c["position"]["x"] for c in children)
     assert xs == [20, 260, 500, 740, 980]
     # Lane should have grown to fit 5 children: 20 + 5*240 + 40 = 1260.
-    lane = next(
-        n for n in draft_proto.graph["nodes"] if n["id"] == f"lane-{role_id}"
-    )
+    lane = next(n for n in draft_proto.graph["nodes"] if n["id"] == f"lane-{role_id}")
     assert lane["width"] == 1260
     assert lane["height"] == 200
 
@@ -410,3 +413,88 @@ async def test_replace_step_unit_op_unknown_op_raises(
             step_index=0,
             new_unit_op_name="Nope",
         )
+
+
+@pytest.mark.asyncio
+async def test_add_step_top_level_packs_chain_no_overlap(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    """Adding a top-level (no-role) step must position the new node such
+    that no two top-level chain steps overlap. The seed has two unit ops
+    at (100, 0) and (200, 0) which would otherwise overlap each other
+    after the agent inserts a third at the hardcoded (100, 200)."""
+    from app.services.protocols.graph import add_step
+    from app.services.protocols.lane_layout import CHILD_X_STEP
+
+    updated = await add_step(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        name="New",
+        unit_op_name="X",
+    )
+    top_level = [
+        n
+        for n in updated.graph["nodes"]
+        if n.get("type") == "unitOp" and not n.get("parentId")
+    ]
+    xs = [n["position"]["x"] for n in top_level]
+    # Anchor = first existing step's position (100, 0). Uniform spacing.
+    assert xs == [100, 100 + CHILD_X_STEP, 100 + 2 * CHILD_X_STEP]
+    # No two steps share the same x → no visual stack.
+    assert len(set(xs)) == len(xs)
+
+
+@pytest.mark.asyncio
+async def test_add_step_top_level_middle_insert_no_overlap(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    """Inserting a step in the middle of the chain re-flows so the new
+    node and its predecessors/successors don't collide."""
+    from app.services.protocols.graph import add_step
+    from app.services.protocols.lane_layout import CHILD_X_STEP
+
+    updated = await add_step(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        name="Middle",
+        unit_op_name="X",
+        after_step_index=0,
+    )
+    unit_ops = [n for n in updated.graph["nodes"] if n["type"] == "unitOp"]
+    xs = [n["position"]["x"] for n in unit_ops]
+    assert xs == [100, 100 + CHILD_X_STEP, 100 + 2 * CHILD_X_STEP]
+    labels = [n["data"]["label"] for n in unit_ops]
+    assert labels == ["Step 0", "Middle", "Step 1"]
+
+
+@pytest.mark.asyncio
+async def test_relayout_chain_fixes_legacy_overlap(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    """A graph whose top-level steps were placed at the same legacy
+    (100, 200) slot — the symptom we're trying to fix — gets spaced out."""
+    from app.services.protocols.graph import relayout_chain
+    from app.services.protocols.lane_layout import CHILD_X_STEP
+
+    # Force the seed's two unit ops to the legacy overlapping slot.
+    g = dict(draft_proto.graph)
+    nodes = [dict(n) for n in g["nodes"]]
+    for n in nodes:
+        if n.get("type") == "unitOp":
+            n["position"] = {"x": 100, "y": 200}
+    g["nodes"] = nodes
+    draft_proto.graph = g
+    await db_session.flush()
+
+    updated = await relayout_chain(
+        db_session, user_id=test_user.id, protocol_id=draft_proto.id
+    )
+    top_level = [
+        n
+        for n in updated.graph["nodes"]
+        if n.get("type") == "unitOp" and not n.get("parentId")
+    ]
+    xs = [n["position"]["x"] for n in top_level]
+    assert xs == [100, 100 + CHILD_X_STEP]

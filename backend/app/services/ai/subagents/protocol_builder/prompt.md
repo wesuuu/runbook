@@ -211,11 +211,22 @@ The validator now also reports role/lane consistency:
   — that call recomputes the lane-relative slot and grows the lane to
   fit. Do NOT try to hand-pick `position` coordinates; the tools own
   layout.
-- `overlapping_nodes` — two steps in the same lane (or both unparented)
-  have intersecting bounding boxes. Re-trigger placement by calling
-  `update_protocol_step` with the same `role_id` on the offending step,
-  which moves it to the next empty slot in the lane. If both nodes are
-  top-level (no role), assign them to a role to get them laid out neatly.
+- `overlapping_nodes` — two steps in the same parent frame have
+  intersecting bounding boxes. Two cases:
+    - **Both top-level (no role / no `parentId`)**: call
+      `relayout_protocol_chain(protocol_id)`. That re-flows the whole
+      chain row at uniform spacing along the layout axis. Do NOT
+      assign a role to "tidy them up" — that changes the user's intent
+      and shoves a chain step into a swimlane it doesn't belong in.
+    - **Both children of the same swimlane**: re-issue
+      `update_protocol_step(protocol_id, step_index, role_id=<role_id>)`
+      with the lane's `role_id` on the offending step. The update path
+      only repositions when `parentId` changes, so this works by first
+      reparenting the node to top-level then back into the lane — or
+      more pragmatically, by calling it on the newer of the two
+      offenders. If that doesn't shake the stack loose, call
+      `relayout_protocol_chain` as a fallback for siblings that ended
+      up unparented.
 - `step_overlaps_lane` — a step that is NOT a child of a swimlane is
   positioned such that its bounding box overlaps a lane's bounding box.
   Visually it looks half-inside, half-outside the lane. This is the
@@ -224,8 +235,9 @@ The validator now also reports role/lane consistency:
   with the role whose lane it overlaps so the tool re-parents it and
   places it at a clean lane-relative slot.
 - `insufficient_node_spacing` — two sibling steps are closer than 10px.
-  Same fix as `overlapping_nodes`: call `update_protocol_step` with the
-  shared `role_id` on the second step (or whichever was placed by hand)
+  Same fix as `overlapping_nodes`: top-level pairs →
+  `relayout_protocol_chain(protocol_id)`; in-lane pairs →
+  `update_protocol_step` with the shared `role_id` on the offending step
   to bump it to the next clean slot.
 
 Apply the same auto-fix loop here as in the create flow: fix what you
@@ -286,9 +298,10 @@ that politely and suggest they ask an org admin.
 Before sending your final reply on any turn that called a mutation tool
 (`add_protocol_step`, `update_protocol_step`, `remove_protocol_step`,
 `reorder_protocol_steps`, `replace_step_unit_op`,
-`update_protocol_metadata`, `add_protocol_role`, `update_protocol_role`,
-`remove_protocol_role`, `update_unit_op`, `elevate_unit_op_scope`, or
-the create flow's `create_protocol`/`create_unit_op`), you MUST:
+`relayout_protocol_chain`, `update_protocol_metadata`,
+`add_protocol_role`, `update_protocol_role`, `remove_protocol_role`,
+`update_unit_op`, `elevate_unit_op_scope`, or the create flow's
+`create_protocol`/`create_unit_op`), you MUST:
 
 1. Call `validate_protocol(protocol_id)` exactly once.
 2. If it returns issues, run the auto-fix loop (Step 7 of the create

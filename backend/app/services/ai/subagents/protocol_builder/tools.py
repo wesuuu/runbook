@@ -15,7 +15,8 @@ from uuid import UUID
 from pydantic_ai import RunContext
 from sqlalchemy import select
 
-from app.models.science import Project, Protocol, ProtocolRole, UnitOpDefinition
+from app.models.science import (Project, Protocol, ProtocolRole,
+                                UnitOpDefinition)
 from app.services.ai.deps import ChatDeps
 from app.services.protocols.creation import ProtocolSpec, ProtocolStep
 from app.services.protocols.creation import \
@@ -25,6 +26,8 @@ from app.services.protocols.creation import \
 from app.services.protocols.creation import \
     update_protocol_step as update_protocol_step_service
 from app.services.protocols.graph import add_step as add_step_service
+from app.services.protocols.graph import \
+    relayout_chain as relayout_chain_service
 from app.services.protocols.graph import remove_step as remove_step_service
 from app.services.protocols.graph import reorder_steps as reorder_steps_service
 from app.services.protocols.graph import \
@@ -965,6 +968,54 @@ async def replace_step_unit_op(
         ok=True,
         protocol_id=protocol_id,
         summary=f"Replaced step {step_index} unit op with '{new_unit_op_name}'.",
+    )
+
+
+async def relayout_protocol_chain(
+    ctx: RunContext[ChatDeps],
+    protocol_id: str,
+) -> ProtocolMutationResult:
+    """Re-pack top-level chain steps at uniform spacing along the layout axis.
+
+    Use this when ``validate_protocol`` reports ``overlapping_nodes`` or
+    ``insufficient_node_spacing`` for top-level (no-role) unit-op steps —
+    the symptom is two or more chain steps stacked on the same coordinates.
+    The first top-level step keeps its position; the rest are placed at
+    even ``CHILD_X_STEP`` (horizontal) or ``CHILD_Y_STEP`` (vertical) offsets
+    from it. Children of swimlanes are not touched; for in-lane overlap,
+    re-issue ``update_protocol_step`` with the ``role_id`` instead.
+
+    Args:
+        ctx: Run context with shared deps.
+        protocol_id: UUID of the protocol to re-layout.
+    """
+    pid = UUID(protocol_id)
+    try:
+        await relayout_chain_service(
+            ctx.deps.db,
+            user_id=ctx.deps.user_id,
+            protocol_id=pid,
+        )
+    except ValueError as e:
+        ctx.deps.tool_calls.append(
+            {
+                "tool": "relayout_protocol_chain",
+                "subagent": "protocol_builder",
+                "error": str(e),
+            }
+        )
+        return _mutation_error(protocol_id, e)
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "relayout_protocol_chain",
+            "subagent": "protocol_builder",
+            "protocol_id": protocol_id,
+        }
+    )
+    return ProtocolMutationResult(
+        ok=True,
+        protocol_id=protocol_id,
+        summary="Re-flowed top-level chain steps at uniform spacing.",
     )
 
 

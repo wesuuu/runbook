@@ -143,6 +143,51 @@ def grow_lane_to_fit(
     return out
 
 
+TOP_LEVEL_DEFAULT_X = 100
+TOP_LEVEL_DEFAULT_Y = 200
+
+
+def relayout_top_level_chain(
+    nodes: list[dict[str, Any]],
+    *,
+    graph_layout: str,
+) -> list[dict[str, Any]]:
+    """Re-flow top-level unit-op nodes along the chain axis with uniform spacing.
+
+    Top-level here means ``type == "unitOp"`` with no ``parentId``. Children
+    of swimlanes live in lane-relative coordinates and are owned by
+    ``lane_relative_position``/``grow_lane_to_fit``; this helper leaves them
+    alone.
+
+    Order follows the node list (the chain edges are rebuilt in list order,
+    so list order == visual chain order). Spacing is ``CHILD_X_STEP`` on x
+    for horizontal layout, ``CHILD_Y_STEP`` on y for vertical. The anchor is
+    the existing position of the first top-level unit-op so the row stays
+    where the user last saw it; subsequent nodes are placed at uniform
+    offsets from that anchor along the layout axis (cross-axis stays equal
+    to the anchor's value).
+    """
+    top_level_indices = [
+        i
+        for i, n in enumerate(nodes)
+        if n.get("type") == "unitOp" and not n.get("parentId")
+    ]
+    if not top_level_indices:
+        return nodes
+    first = nodes[top_level_indices[0]]
+    first_pos = first.get("position") or {}
+    anchor_x = float(first_pos.get("x", TOP_LEVEL_DEFAULT_X))
+    anchor_y = float(first_pos.get("y", TOP_LEVEL_DEFAULT_Y))
+    out = list(nodes)
+    for k, i in enumerate(top_level_indices):
+        if graph_layout == "vertical":
+            new_pos = {"x": anchor_x, "y": anchor_y + k * CHILD_Y_STEP}
+        else:
+            new_pos = {"x": anchor_x + k * CHILD_X_STEP, "y": anchor_y}
+        out[i] = {**out[i], "position": new_pos}
+    return out
+
+
 __all__ = [
     "CHILD_INSET_X",
     "CHILD_INSET_Y",
@@ -150,6 +195,9 @@ __all__ = [
     "CHILD_Y_STEP",
     "LANE_DEFAULT_HORIZONTAL",
     "LANE_DEFAULT_VERTICAL",
+    "TOP_LEVEL_DEFAULT_X",
+    "TOP_LEVEL_DEFAULT_Y",
     "grow_lane_to_fit",
     "lane_relative_position",
+    "relayout_top_level_chain",
 ]

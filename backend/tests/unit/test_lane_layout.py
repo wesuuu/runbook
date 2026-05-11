@@ -1,9 +1,12 @@
 """Tests for services/protocols/lane_layout.py."""
 
 from app.services.protocols.lane_layout import (
+    CHILD_X_STEP,
+    CHILD_Y_STEP,
     LANE_DEFAULT_HORIZONTAL,
     grow_lane_to_fit,
     lane_relative_position,
+    relayout_top_level_chain,
 )
 
 
@@ -11,9 +14,7 @@ def _lane(lane_id: str = "lane-1", orientation: str = "horizontal") -> dict:
     """Build a swimLane node carrying the legacy ``style`` string. Most
     existing protocols persist dimensions this way, so the helpers must
     keep working without numeric ``width`` / ``height`` props set."""
-    width, height = (
-        (220, 500) if orientation == "vertical" else LANE_DEFAULT_HORIZONTAL
-    )
+    width, height = (220, 500) if orientation == "vertical" else LANE_DEFAULT_HORIZONTAL
     return {
         "id": lane_id,
         "type": "swimLane",
@@ -149,3 +150,72 @@ def test_grow_lane_to_fit_reads_dimensions_from_legacy_style_only():
     # promoted to numeric props.
     assert grown["width"] == 950
     assert grown["height"] == 320
+
+
+def _top_level_uo(node_id: str, x: float, y: float) -> dict:
+    return {
+        "id": node_id,
+        "type": "unitOp",
+        "position": {"x": x, "y": y},
+        "data": {},
+    }
+
+
+def test_relayout_top_level_chain_spaces_horizontal():
+    """Two top-level steps stacked at the same coords get re-flowed at
+    CHILD_X_STEP intervals along x, anchored on the first node's position."""
+    nodes = [
+        _top_level_uo("a", 100, 200),
+        _top_level_uo("b", 100, 200),
+        _top_level_uo("c", 100, 200),
+    ]
+    out = relayout_top_level_chain(nodes, graph_layout="horizontal")
+    xs = [n["position"]["x"] for n in out]
+    ys = [n["position"]["y"] for n in out]
+    assert xs == [100, 100 + CHILD_X_STEP, 100 + 2 * CHILD_X_STEP]
+    assert ys == [200, 200, 200]
+
+
+def test_relayout_top_level_chain_spaces_vertical():
+    nodes = [
+        _top_level_uo("a", 50, 80),
+        _top_level_uo("b", 999, 999),  # the anchor wins; this node moves
+    ]
+    out = relayout_top_level_chain(nodes, graph_layout="vertical")
+    xs = [n["position"]["x"] for n in out]
+    ys = [n["position"]["y"] for n in out]
+    assert xs == [50, 50]
+    assert ys == [80, 80 + CHILD_Y_STEP]
+
+
+def test_relayout_top_level_chain_ignores_lane_children():
+    """Nodes parented to a swimlane are owned by lane layout — leave them."""
+    nodes = [
+        _lane("lane-1"),
+        _child("child-a", "lane-1"),
+        _top_level_uo("t1", 100, 200),
+        _top_level_uo("t2", 100, 200),
+    ]
+    # Mutate the lane child to a non-default position so we can detect if
+    # relayout wrongly touched it.
+    nodes[1]["position"] = {"x": 7, "y": 11}
+    out = relayout_top_level_chain(nodes, graph_layout="horizontal")
+    child_pos = next(n for n in out if n["id"] == "child-a")["position"]
+    assert child_pos == {"x": 7, "y": 11}
+    t2_pos = next(n for n in out if n["id"] == "t2")["position"]
+    assert t2_pos == {"x": 100 + CHILD_X_STEP, "y": 200}
+
+
+def test_relayout_top_level_chain_preserves_anchor_when_no_top_level():
+    """A graph with only lane children is a no-op."""
+    nodes = [_lane("lane-1"), _child("child-a", "lane-1")]
+    out = relayout_top_level_chain(nodes, graph_layout="horizontal")
+    assert out == nodes
+
+
+def test_relayout_top_level_chain_does_not_mutate_input():
+    nodes = [_top_level_uo("a", 100, 200), _top_level_uo("b", 100, 200)]
+    out = relayout_top_level_chain(nodes, graph_layout="horizontal")
+    # New list, new node dicts — input untouched.
+    assert nodes[1]["position"] == {"x": 100, "y": 200}
+    assert out[1]["position"] == {"x": 100 + CHILD_X_STEP, "y": 200}

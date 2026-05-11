@@ -19,8 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Protocol
 from app.services.core.permissions import check_permission
-from app.services.protocols.lane_layout import (grow_lane_to_fit,
-                                                lane_relative_position)
+from app.services.protocols.lane_layout import (TOP_LEVEL_DEFAULT_X,
+                                                TOP_LEVEL_DEFAULT_Y,
+                                                grow_lane_to_fit,
+                                                lane_relative_position,
+                                                relayout_top_level_chain)
 
 
 async def _load_and_guard(
@@ -130,7 +133,7 @@ async def add_step(
         position = lane_relative_position(nodes, lane_id, graph_layout=layout)
     else:
         lane_id = None
-        position = {"x": 100, "y": 200}
+        position = {"x": TOP_LEVEL_DEFAULT_X, "y": TOP_LEVEL_DEFAULT_Y}
 
     new_node: dict[str, Any] = {
         "id": f"node-{uuid4()}",
@@ -152,6 +155,12 @@ async def add_step(
 
     if lane_id is not None:
         nodes = grow_lane_to_fit(nodes, lane_id, graph_layout=layout)
+    else:
+        # Top-level insert: re-flow the chain row so the new node and its
+        # siblings sit at uniform spacing along the layout axis. Without
+        # this, a top-level add stacks every new step on the same default
+        # (100, 200) slot and the agent has no way to space them out.
+        nodes = relayout_top_level_chain(nodes, graph_layout=layout)
 
     new_uo_ids = [n["id"] for n in nodes if n.get("type") == "unitOp"]
     all_ids = {n["id"] for n in nodes}
@@ -184,6 +193,8 @@ async def remove_step(
         )
     drop_pos = uo_idx[step_index]
     nodes.pop(drop_pos)
+    layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
+    nodes = relayout_top_level_chain(nodes, graph_layout=layout)
     ps_id = next(n["id"] for n in nodes if n.get("type") == "processStart")
     new_uo_ids = [n["id"] for n in nodes if n.get("type") == "unitOp"]
     all_ids = {n["id"] for n in nodes}
@@ -218,6 +229,8 @@ async def reorder_steps(
     new_nodes = list(nodes)
     for slot, new_uo in zip(uo_idx, new_unit_ops):
         new_nodes[slot] = new_uo
+    layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
+    new_nodes = relayout_top_level_chain(new_nodes, graph_layout=layout)
     ps_id = next(n["id"] for n in new_nodes if n.get("type") == "processStart")
     new_uo_ids = [n["id"] for n in new_nodes if n.get("type") == "unitOp"]
     all_ids = {n["id"] for n in new_nodes}
@@ -275,6 +288,32 @@ async def replace_step_unit_op(
     data["paramSchema"] = op.param_schema or {}
     node["data"] = data
     nodes[node_pos] = node
+    graph["nodes"] = nodes
+    wg.set_graph(graph)
+    await db.flush()
+    return wg.protocol
+
+
+async def relayout_chain(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    protocol_id: UUID,
+) -> Protocol:
+    """Re-pack top-level unit-op nodes at uniform spacing along the chain axis.
+
+    For legacy graphs whose top-level steps were placed at the same
+    hardcoded slot and now overlap visually. Children of swimlanes are
+    untouched — their layout is owned by lane_relative_position. The first
+    top-level node keeps its position so the chain row stays where the user
+    last saw it; subsequent top-level nodes are spaced by ``CHILD_X_STEP``
+    on x (horizontal layout) or ``CHILD_Y_STEP`` on y (vertical).
+    """
+    wg = await _load_and_guard(db, user_id, protocol_id)
+    graph = dict(wg.graph)
+    nodes = list(graph.get("nodes", []))
+    layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
+    nodes = relayout_top_level_chain(nodes, graph_layout=layout)
     graph["nodes"] = nodes
     wg.set_graph(graph)
     await db.flush()
