@@ -119,6 +119,10 @@
                     <span>&middot;</span>
                     <span>v{proto.version_number}</span>
                 {/if}
+                {#if proto.latest_draft_version_number}
+                    <span>&middot;</span>
+                    <span class="text-amber-700">v{proto.latest_draft_version_number} draft</span>
+                {/if}
                 <span>&middot;</span>
                 <span>{formatDate(proto.updated_at || proto.created_at)}</span>
             </div>
@@ -134,7 +138,14 @@
             {/if}
         </td>
         <td class="hidden md:table-cell py-3 px-4 text-sm font-medium text-slate-800 max-w-[300px] whitespace-nowrap overflow-hidden text-ellipsis">{proto.description || "--"}</td>
-        <td class="hidden lg:table-cell py-3 px-4 text-xs text-slate-400 font-mono whitespace-nowrap">{proto.version_number ? `v${proto.version_number}` : "--"}</td>
+        <td class="hidden lg:table-cell py-3 px-4 text-xs text-slate-400 font-mono whitespace-nowrap">
+            {proto.version_number ? `v${proto.version_number}` : "--"}
+            {#if proto.latest_draft_version_number}
+                <Badge variant="secondary" class="ml-1 bg-amber-50 text-amber-700 ring-1 ring-amber-200" title="An unpublished draft (v{proto.latest_draft_version_number}) exists">
+                    v{proto.latest_draft_version_number} draft
+                </Badge>
+            {/if}
+        </td>
         <td class="py-3 px-4 whitespace-nowrap">
             <span class="inline-block text-xs font-semibold px-3 py-0.5 rounded-full {protocolStatusClasses(proto.status)}">
                 {protocolStatusLabel(proto.status)}

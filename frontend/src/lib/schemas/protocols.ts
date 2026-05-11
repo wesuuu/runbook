@@ -19,6 +19,7 @@ export const ProtocolSchema = z.object({
     description: z.string().nullable().optional(),
     status: z.string().default('DRAFT'),
     version_number: z.number().default(0),
+    latest_draft_version_number: z.number().nullable().optional(),
     graph: z.record(z.string(), z.unknown()).default({}),
     roles: z.array(ProtocolRoleSchema).default([]),
     is_tour_sample: z.boolean().default(false),

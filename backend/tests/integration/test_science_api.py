@@ -270,6 +270,64 @@ async def test_list_protocols_filters_archived_by_default(
     assert "Archived Protocol" in names
 
 
+@pytest.mark.asyncio
+async def test_list_protocols_surfaces_latest_draft_version(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+):
+    """Approved protocols with an unpublished draft should expose
+    latest_draft_version_number so the project table can badge them."""
+    from app.models.science import ProtocolVersion
+
+    with_draft = Protocol(
+        name="Has Draft",
+        project_id=test_project.id,
+        graph={},
+        status="APPROVED",
+        version_number=4,
+    )
+    no_draft = Protocol(
+        name="No Draft",
+        project_id=test_project.id,
+        graph={},
+        status="APPROVED",
+        version_number=2,
+    )
+    db_session.add_all([with_draft, no_draft])
+    await db_session.flush()
+    db_session.add(
+        ProtocolVersion(
+            protocol_id=with_draft.id,
+            version_number=5,
+            name=with_draft.name,
+            graph={},
+            is_draft=True,
+        )
+    )
+    # Older non-draft version shouldn't trigger the badge.
+    db_session.add(
+        ProtocolVersion(
+            protocol_id=no_draft.id,
+            version_number=1,
+            name=no_draft.name,
+            graph={},
+            is_draft=False,
+        )
+    )
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/science/projects/{test_project.id}/protocols",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    by_name = {p["name"]: p for p in resp.json()}
+    assert by_name["Has Draft"]["latest_draft_version_number"] == 5
+    assert by_name["No Draft"]["latest_draft_version_number"] is None
+
+
 # --- Protocol Roles ---
 
 
@@ -1396,6 +1454,7 @@ async def test_list_versions_returns_description(
     await db_session.flush()
 
     from app.models.science import ProtocolVersion
+
     version = ProtocolVersion(
         protocol_id=protocol.id,
         version_number=1,

@@ -415,7 +415,31 @@ async def list_project_protocols(
         .options(selectinload(Protocol.roles))
         .where(Protocol.id.in_(ids))
     )
-    return list(result.scalars().all())
+    protos = list(result.scalars().all())
+    # Surface unpublished drafts so the project table can badge them. A
+    # protocol "has a draft" iff there's a ProtocolVersion row with
+    # is_draft=true and version_number greater than the protocol's
+    # currently published version_number.
+    draft_rows = await db.execute(
+        select(
+            ProtocolVersion.protocol_id,
+            func.max(ProtocolVersion.version_number),
+        )
+        .where(
+            ProtocolVersion.protocol_id.in_(ids),
+            ProtocolVersion.is_draft.is_(True),
+        )
+        .group_by(ProtocolVersion.protocol_id)
+    )
+    latest_draft_by_protocol = {pid: v for pid, v in draft_rows.all()}
+    responses: list[ProtocolResponse] = []
+    for p in protos:
+        resp = ProtocolResponse.model_validate(p)
+        draft_v = latest_draft_by_protocol.get(p.id)
+        if draft_v is not None and draft_v > (p.version_number or 0):
+            resp.latest_draft_version_number = draft_v
+        responses.append(resp)
+    return responses
 
 
 @router.delete("/protocols/{protocol_id}", status_code=200)

@@ -102,6 +102,9 @@ class ProtocolResponse(ProtocolBase):
     organization_id: Optional[UUID] = None
     status: str = "DRAFT"
     version_number: int = 0
+    # Highest is_draft version_number above version_number, when an
+    # unpublished draft exists. None if the only versions are published.
+    latest_draft_version_number: Optional[int] = None
     is_tour_sample: bool = False
     requires_approval: bool = False
     created_by_id: Optional[UUID] = None
