@@ -81,6 +81,13 @@ Two new capabilities are added to follow the existing pattern in `.claude/rules/
    ```
    No new provider-level credential fields are needed — Ollama is already wired (`settings.ollama`) and is the default for both capabilities.
 3. **`settings.context_window_defaults`** — confirm `gpt-oss:120b-cloud` is present; if not, add it so compaction does not silently fall back to 8192 every turn.
+4. **`backend/settings.example.yaml`** — add commented-out example entries under "AI capability routing" alongside the existing `ai_protocol_generation_*` lines:
+   ```yaml
+   # ai_protocol_creation_provider: ollama
+   # ai_protocol_creation_model: gpt-oss:120b-cloud
+   # ai_protocol_editing_provider: ollama
+   # ai_protocol_editing_model: gpt-oss:120b-cloud
+   ```
 
 Per-capability env var override remains `BATCHRITE_AI_PROTOCOL_CREATION_{PROVIDER,MODEL}` / `BATCHRITE_AI_PROTOCOL_EDITING_{PROVIDER,MODEL}`, identical to the existing chat capabilities.
 
