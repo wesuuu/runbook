@@ -66,6 +66,10 @@
 # ai_chat_model: anthropic/claude-opus-4
 # ai_protocol_generation_provider: openrouter
 # ai_protocol_generation_model: anthropic/claude-opus-4
+# ai_protocol_creation_provider: ollama
+# ai_protocol_creation_model: gpt-oss:120b-cloud
+# ai_protocol_editing_provider: ollama
+# ai_protocol_editing_model: gpt-oss:120b-cloud
 # ai_template_convert_provider: openrouter
 # ai_template_convert_model: anthropic/claude-opus-4
 # ai_embedding_provider: ollama
