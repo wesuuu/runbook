@@ -45,6 +45,10 @@ KNOWN_VARIABLES = {
     "notes",
     "figures",
     "non_image_attachments",
+    # Approval (F-0066)
+    "approval",
+    "approval_history",
+    "unapproved_warning",
 }
 
 

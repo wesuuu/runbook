@@ -13,7 +13,9 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.api.endpoints.protocol_pdfs import (_load_template,
+from app.api.endpoints.protocol_pdfs import (_build_approval_context,
+                                             _load_protocol_project,
+                                             _load_template,
                                              _resolve_template_path)
 from app.core.deps import (get_current_user, get_or_404,
                            get_org_id_from_request,
@@ -742,6 +744,7 @@ async def get_run_sop_pdf(
     proto_version: int | None = None
     proto_modified: str | None = None
     sop_template_id: UUID | None = None
+    proto: Protocol | None = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -763,6 +766,16 @@ async def get_run_sop_pdf(
     graph = run_obj.graph or {}
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
+    if proto is not None:
+        proto_project = await _load_protocol_project(db, proto)
+        approval_ctx = await _build_approval_context(db, proto, proto_project)
+    else:
+        approval_ctx = {
+            "approval": None,
+            "approval_history": [],
+            "unapproved_warning": False,
+        }
+
     context = build_context(
         protocol_name=protocol_name,
         protocol_description=protocol_description,
@@ -773,6 +786,7 @@ async def get_run_sop_pdf(
         flat_steps=flat_steps,
         is_role_based=is_role_based,
     )
+    context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "attachment"
@@ -813,6 +827,7 @@ async def get_run_batch_record_pdf(
     protocol_version = None
     protocol_modified = None
     br_template_id: UUID | None = None
+    proto: Protocol | None = None
     if run_obj.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_obj.protocol_id)
@@ -878,6 +893,16 @@ async def get_run_batch_record_pdf(
 
     run_status = _run_status_str(run_obj)
 
+    if proto is not None:
+        proto_project = await _load_protocol_project(db, proto)
+        approval_ctx = await _build_approval_context(db, proto, proto_project)
+    else:
+        approval_ctx = {
+            "approval": None,
+            "approval_history": [],
+            "unapproved_warning": False,
+        }
+
     context = build_context(
         protocol_name=protocol_name,
         run_name=run_obj.name,
@@ -895,6 +920,7 @@ async def get_run_batch_record_pdf(
         attachments=run_obj.attachments if filled else None,
         storage=FileStorageService() if filled and embed_images else None,
     )
+    context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "attachment"

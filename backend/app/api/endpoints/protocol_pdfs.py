@@ -7,11 +7,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol, UnitOpDefinition
+from app.models.science import (
+    Project,
+    Protocol,
+    ProtocolApprovalEvent,
+    UnitOpDefinition,
+)
 from app.models.templates import DocumentTemplate
 from app.schemas.science import GraphPayload
 from app.services.core.file_storage import FileStorageService
@@ -77,9 +83,105 @@ async def _build_user_signatures(
     return out
 
 
+async def _build_approval_context(
+    db: AsyncSession,
+    protocol: Protocol,
+    project: Project | None,
+) -> dict:
+    """Return {approval, approval_history, unapproved_warning} for a
+    protocol, used by SOP/batch-record templates.
+
+    - ``approval``: the latest APPROVED event (or None) with approver
+      identity, version, statement, and the absolute path to the
+      approver's full-signature image when registered.
+    - ``approval_history``: every event for this protocol, newest
+      first. Each item exposes ``action``, ``actor_name``, ``comment``,
+      ``signature_statement``, ``created_at``. Missing actors fall back
+      to ``"(deleted user)"``.
+    - ``unapproved_warning``: True iff the project requires approval
+      AND the protocol is designated AND the protocol is not currently
+      APPROVED.
+    """
+    project_settings: dict = (project.settings or {}) if project is not None else {}
+    project_requires = bool(project_settings.get("require_protocol_approval"))
+    unapproved_warning = (
+        project_requires
+        and bool(protocol.requires_approval)
+        and protocol.status != "APPROVED"
+    )
+
+    events_result = await db.execute(
+        select(ProtocolApprovalEvent)
+        .where(ProtocolApprovalEvent.protocol_id == protocol.id)
+        .order_by(ProtocolApprovalEvent.created_at.desc())
+        .options(selectinload(ProtocolApprovalEvent.actor))
+    )
+    events = list(events_result.scalars().all())
+
+    history = []
+    latest_approved: ProtocolApprovalEvent | None = None
+    for ev in events:
+        actor = ev.actor
+        actor_name = (
+            (actor.full_name or actor.email) if actor is not None else "(deleted user)"
+        )
+        history.append(
+            {
+                "action": ev.action,
+                "actor_name": actor_name,
+                "comment": ev.comment,
+                "signature_statement": ev.signature_statement,
+                "created_at": ev.created_at,
+            }
+        )
+        if ev.action == "APPROVED" and latest_approved is None:
+            latest_approved = ev
+
+    approval = None
+    if latest_approved is not None:
+        actor = latest_approved.actor
+        if actor is not None:
+            sigs = await _build_user_signatures(db, [actor.id])
+            sig_path = (sigs.get(str(actor.id), {}) or {}).get(
+                "signature_full_path"
+            )
+            approver_name = actor.full_name or actor.email
+            approver_email = actor.email
+        else:
+            sig_path = None
+            approver_name = "(deleted user)"
+            approver_email = ""
+        approval = {
+            "approver_name": approver_name,
+            "approver_email": approver_email,
+            "approved_at": latest_approved.created_at,
+            "signature_statement": latest_approved.signature_statement,
+            "signature_image_path": sig_path,
+            "protocol_version": protocol.version_number,
+        }
+
+    return {
+        "approval": approval,
+        "approval_history": history,
+        "unapproved_warning": unapproved_warning,
+    }
+
+
 def _resolve_template_path(template: DocumentTemplate) -> str:
     """Get the filesystem path for a template."""
     return str(storage.resolve_path_for_org(template.file_path, template.org_id))
+
+
+async def _load_protocol_project(
+    db: AsyncSession, protocol: Protocol
+) -> Project | None:
+    """Load the project that owns a protocol, or None for org-scoped."""
+    if not protocol.project_id:
+        return None
+    result = await db.execute(
+        select(Project).where(Project.id == protocol.project_id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def _assert_branch_ok(db: AsyncSession, graph: dict, org_id) -> None:
@@ -129,6 +231,8 @@ async def get_protocol_sop_pdf(
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
     user_signatures = await _build_user_signatures(db, [])
+    project = await _load_protocol_project(db, protocol)
+    approval_ctx = await _build_approval_context(db, protocol, project)
 
     context = build_context(
         protocol_name=protocol.name,
@@ -142,6 +246,7 @@ async def get_protocol_sop_pdf(
         is_role_based=is_role_based,
         user_signatures=user_signatures,
     )
+    context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "attachment"
@@ -190,6 +295,8 @@ async def get_protocol_batch_record_pdf(
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
     user_signatures = await _build_user_signatures(db, [])
+    project = await _load_protocol_project(db, protocol)
+    approval_ctx = await _build_approval_context(db, protocol, project)
 
     context = build_context(
         protocol_name=protocol.name,
@@ -204,6 +311,7 @@ async def get_protocol_batch_record_pdf(
         is_role_based=is_role_based,
         user_signatures=user_signatures,
     )
+    context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "attachment"
@@ -255,6 +363,8 @@ async def preview_protocol_sop_pdf(
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
     user_signatures = await _build_user_signatures(db, [])
+    project = await _load_protocol_project(db, protocol)
+    approval_ctx = await _build_approval_context(db, protocol, project)
 
     context = build_context(
         protocol_name=protocol.name,
@@ -268,6 +378,7 @@ async def preview_protocol_sop_pdf(
         is_role_based=is_role_based,
         user_signatures=user_signatures,
     )
+    context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "inline"
@@ -318,6 +429,8 @@ async def preview_protocol_batch_record_pdf(
     roles_with_steps, flat_steps, is_role_based = _parse_graph_roles_and_steps(graph)
 
     user_signatures = await _build_user_signatures(db, [])
+    project = await _load_protocol_project(db, protocol)
+    approval_ctx = await _build_approval_context(db, protocol, project)
 
     context = build_context(
         protocol_name=protocol.name,
@@ -332,6 +445,7 @@ async def preview_protocol_batch_record_pdf(
         is_role_based=is_role_based,
         user_signatures=user_signatures,
     )
+    context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     disp = disposition or "inline"
