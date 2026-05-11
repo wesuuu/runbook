@@ -19,15 +19,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Protocol
 from app.services.core.permissions import check_permission
-from app.services.protocols.lane_layout import (
-    grow_lane_to_fit,
-    lane_relative_position,
-)
+from app.services.protocols.lane_layout import (grow_lane_to_fit,
+                                                lane_relative_position)
 
 
 async def _load_and_guard(
     db: AsyncSession, user_id: UUID, protocol_id: UUID
-) -> Protocol:
+) -> "WorkingDraft":
+    from app.services.protocols.draft import (WorkingDraft,
+                                              resolve_working_draft)
+
     proto = (
         await db.execute(select(Protocol).where(Protocol.id == protocol_id))
     ).scalar_one_or_none()
@@ -43,11 +44,7 @@ async def _load_and_guard(
         )
         if not allowed:
             raise ValueError("You don't have edit permission on this protocol")
-    if proto.status != "DRAFT":
-        raise ValueError(
-            "Protocol is published — create a draft in the protocol editor first."
-        )
-    return proto
+    return await resolve_working_draft(db, proto)
 
 
 def _split_nodes(graph: dict) -> tuple[list[dict], list[int], list[int]]:
@@ -107,8 +104,8 @@ async def add_step(
     ``after_step_index=None`` appends after the last unit op. Otherwise
     inserts immediately after that 0-based unit-op step index.
     """
-    proto = await _load_and_guard(db, user_id, protocol_id)
-    graph = dict(proto.graph or {})
+    wg = await _load_and_guard(db, user_id, protocol_id)
+    graph = dict(wg.graph)
     nodes, ps_idx, uo_idx = _split_nodes(graph)
     if not ps_idx:
         raise ValueError("Protocol graph has no Process Start node")
@@ -126,6 +123,9 @@ async def add_step(
 
     layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
     if role_id is not None:
+        from app.services.protocols.roles import assert_role_on_protocol
+
+        await assert_role_on_protocol(db, protocol_id=protocol_id, role_id=role_id)
         lane_id = f"lane-{role_id}"
         position = lane_relative_position(nodes, lane_id, graph_layout=layout)
     else:
@@ -159,9 +159,9 @@ async def add_step(
 
     graph["nodes"] = nodes
     graph["edges"] = edges
-    proto.graph = graph
+    wg.set_graph(graph)
     await db.flush()
-    return proto
+    return wg.protocol
 
 
 async def remove_step(
@@ -172,8 +172,8 @@ async def remove_step(
     step_index: int,
 ) -> Protocol:
     """Delete the unit-op node at the given 0-based step index."""
-    proto = await _load_and_guard(db, user_id, protocol_id)
-    graph = dict(proto.graph or {})
+    wg = await _load_and_guard(db, user_id, protocol_id)
+    graph = dict(wg.graph)
     nodes, ps_idx, uo_idx = _split_nodes(graph)
     if not ps_idx:
         raise ValueError("Protocol graph has no Process Start node")
@@ -191,9 +191,9 @@ async def remove_step(
     graph["edges"] = _rebuild_chain_edges(
         graph.get("edges", []), ps_id, new_uo_ids, all_ids
     )
-    proto.graph = graph
+    wg.set_graph(graph)
     await db.flush()
-    return proto
+    return wg.protocol
 
 
 async def reorder_steps(
@@ -205,8 +205,8 @@ async def reorder_steps(
 ) -> Protocol:
     """Reorder unit-op steps. ``ordered_step_indices`` is a permutation of
     range(n_unit_ops) — the new visual order."""
-    proto = await _load_and_guard(db, user_id, protocol_id)
-    graph = dict(proto.graph or {})
+    wg = await _load_and_guard(db, user_id, protocol_id)
+    graph = dict(wg.graph)
     nodes, ps_idx, uo_idx = _split_nodes(graph)
     if not ps_idx:
         raise ValueError("Protocol graph has no Process Start node")
@@ -225,9 +225,9 @@ async def reorder_steps(
     graph["edges"] = _rebuild_chain_edges(
         graph.get("edges", []), ps_id, new_uo_ids, all_ids
     )
-    proto.graph = graph
+    wg.set_graph(graph)
     await db.flush()
-    return proto
+    return wg.protocol
 
 
 async def replace_step_unit_op(
@@ -246,8 +246,8 @@ async def replace_step_unit_op(
     """
     from app.models.science import UnitOpDefinition
 
-    proto = await _load_and_guard(db, user_id, protocol_id)
-    graph = dict(proto.graph or {})
+    wg = await _load_and_guard(db, user_id, protocol_id)
+    graph = dict(wg.graph)
     nodes, _, uo_idx = _split_nodes(graph)
     if step_index < 0 or step_index >= len(uo_idx):
         raise ValueError(
@@ -276,6 +276,6 @@ async def replace_step_unit_op(
     node["data"] = data
     nodes[node_pos] = node
     graph["nodes"] = nodes
-    proto.graph = graph
+    wg.set_graph(graph)
     await db.flush()
-    return proto
+    return wg.protocol

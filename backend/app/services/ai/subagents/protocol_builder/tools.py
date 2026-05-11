@@ -296,11 +296,13 @@ async def validate_protocol(
     unit ops with no parameter schema, hollow custom ops, and orphan steps.
     Errors block usability; warnings flag rough spots a scientist will hit.
     """
-    proto_row = await ctx.deps.db.execute(
-        select(Protocol).where(Protocol.id == UUID(protocol_id))
-    )
-    protocol = proto_row.scalar_one_or_none()
-    if protocol is None:
+    try:
+        full = await get_protocol_full_service(
+            ctx.deps.db,
+            user_id=ctx.deps.user_id,
+            protocol_id=UUID(protocol_id),
+        )
+    except ValueError as e:
         return ValidateProtocolResult(
             ok=False,
             error_count=1,
@@ -309,10 +311,10 @@ async def validate_protocol(
                 ValidationIssue(
                     severity="error",
                     code="protocol_not_found",
-                    message=f"Protocol {protocol_id} not found.",
+                    message=str(e),
                 )
             ],
-            summary=f"Protocol {protocol_id} not found.",
+            summary=str(e),
         )
 
     unit_ops_q = await ctx.deps.db.execute(
@@ -324,11 +326,11 @@ async def validate_protocol(
     unit_ops = list(unit_ops_q.scalars().all())
 
     roles_q = await ctx.deps.db.execute(
-        select(ProtocolRole).where(ProtocolRole.protocol_id == protocol.id)
+        select(ProtocolRole).where(ProtocolRole.protocol_id == full.id)
     )
     roles = list(roles_q.scalars().all())
 
-    result = validate_protocol_graph(protocol.graph or {}, unit_ops, roles=roles)
+    result = validate_protocol_graph(full.graph or {}, unit_ops, roles=roles)
     error_count = sum(1 for i in result.issues if i.severity == "error")
     warning_count = sum(1 for i in result.issues if i.severity == "warning")
 
@@ -676,6 +678,78 @@ class ProtocolMutationResult:
 
 def _mutation_error(protocol_id: str, exc: ValueError) -> ProtocolMutationResult:
     return ProtocolMutationResult(ok=False, protocol_id=protocol_id, summary=str(exc))
+
+
+@dataclass
+class CreateDraftResult:
+    """Result of a create_draft call."""
+
+    ok: bool
+    protocol_id: str
+    draft_version_number: int
+    created: bool
+    summary: str
+
+
+async def create_draft(
+    ctx: RunContext[ChatDeps], protocol_id: str
+) -> CreateDraftResult:
+    """Open a draft on an APPROVED protocol so edits can land.
+
+    The other mutation tools refuse on APPROVED protocols with a message
+    pointing here. Call this once when you hit that error, then re-issue
+    your edits — they will write to the draft version. Idempotent: if a
+    draft already exists, this returns it without creating a new one.
+    The user later publishes via the protocol editor's UI (no chat tool
+    for publish yet).
+    """
+    from app.services.protocols.draft import create_draft_version
+
+    pid = UUID(protocol_id)
+    try:
+        draft, created = await create_draft_version(
+            ctx.deps.db, user_id=ctx.deps.user_id, protocol_id=pid
+        )
+    except ValueError as e:
+        ctx.deps.tool_calls.append(
+            {
+                "tool": "create_draft",
+                "subagent": "protocol_builder",
+                "error": str(e),
+            }
+        )
+        return CreateDraftResult(
+            ok=False,
+            protocol_id=protocol_id,
+            draft_version_number=0,
+            created=False,
+            summary=str(e),
+        )
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "create_draft",
+            "subagent": "protocol_builder",
+            "protocol_id": protocol_id,
+            "draft_version_number": draft.version_number,
+            "created": created,
+        }
+    )
+    summary = (
+        f"Opened draft version {draft.version_number}. Re-issue your edits — "
+        "they will now apply to the draft."
+        if created
+        else (
+            f"Draft version {draft.version_number} already open. Continue "
+            "editing it."
+        )
+    )
+    return CreateDraftResult(
+        ok=True,
+        protocol_id=protocol_id,
+        draft_version_number=draft.version_number,
+        created=created,
+        summary=summary,
+    )
 
 
 async def update_protocol_metadata(

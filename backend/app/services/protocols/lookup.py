@@ -123,21 +123,46 @@ async def get_protocol_full(
         if not allowed:
             raise ValueError("You don't have permission to view this protocol")
 
-    draft_q = select(func.count()).where(
-        ProtocolVersion.protocol_id == protocol.id,
-        ProtocolVersion.is_draft.is_(True),
-    )
-    has_draft = (await db.execute(draft_q)).scalar_one() > 0
+    # Pull the latest draft (if any) once, so we can both flag has_draft
+    # and surface the draft's graph/name/description on APPROVED protocols
+    # — chat tools that just mutated the draft need to read their own
+    # work, not the frozen published graph.
+    draft_row = (
+        await db.execute(
+            select(ProtocolVersion)
+            .where(
+                ProtocolVersion.protocol_id == protocol.id,
+                ProtocolVersion.is_draft.is_(True),
+            )
+            .order_by(ProtocolVersion.version_number.desc())
+        )
+    ).scalars().first()
+    has_draft = draft_row is not None
+
+    if draft_row is not None and protocol.status == "APPROVED":
+        graph = draft_row.graph or {}
+        name = draft_row.name or protocol.name
+        description = (
+            draft_row.description
+            if draft_row.description is not None
+            else protocol.description
+        )
+        version_number = draft_row.version_number
+    else:
+        graph = protocol.graph or {}
+        name = protocol.name
+        description = protocol.description
+        version_number = protocol.version_number
 
     return ProtocolFull(
         id=protocol.id,
-        name=protocol.name,
-        description=protocol.description,
+        name=name,
+        description=description,
         project_id=protocol.project_id,
         project_name=project_name,
         status=protocol.status,
-        version_number=protocol.version_number,
+        version_number=version_number,
         has_draft=has_draft,
-        graph=protocol.graph or {},
+        graph=graph,
         roles=list(protocol.roles),
     )

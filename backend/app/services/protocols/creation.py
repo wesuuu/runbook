@@ -15,10 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Project, Protocol, UnitOpDefinition
 from app.services.core.permissions import check_permission
-from app.services.protocols.lane_layout import (
-    grow_lane_to_fit,
-    lane_relative_position,
-)
+from app.services.protocols.lane_layout import (grow_lane_to_fit,
+                                                lane_relative_position)
 
 
 class ProtocolStep(BaseModel):
@@ -147,12 +145,10 @@ async def update_protocol_step(
         if not allowed:
             raise ValueError("You don't have edit permission on this protocol")
 
-    if protocol.status != "DRAFT":
-        raise ValueError(
-            "Protocol is published — create a draft in the protocol editor first."
-        )
+    from app.services.protocols.draft import resolve_working_draft
 
-    graph = dict(protocol.graph or {})
+    wg = await resolve_working_draft(db, protocol)
+    graph = dict(wg.graph)
     nodes = list(graph.get("nodes", []))
     unit_op_indices = [i for i, n in enumerate(nodes) if n.get("type") == "unitOp"]
     if step_index < 0 or step_index >= len(unit_op_indices):
@@ -177,12 +173,13 @@ async def update_protocol_step(
     node["data"] = data
     new_lane_id: str | None = None
     if role_id is not None:
+        from app.services.protocols.roles import assert_role_on_protocol
+
+        await assert_role_on_protocol(db, protocol_id=protocol_id, role_id=role_id)
         new_lane_id = f"lane-{role_id}"
         old_parent_id = node.get("parentId")
         if old_parent_id != new_lane_id:
-            layout = (
-                "vertical" if graph.get("layout") == "vertical" else "horizontal"
-            )
+            layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
             node["parentId"] = new_lane_id
             # When parentId is set the position field becomes relative to
             # the parent. The previous absolute coordinates (or relative
@@ -200,7 +197,7 @@ async def update_protocol_step(
         nodes = grow_lane_to_fit(nodes, new_lane_id, graph_layout=layout)
 
     graph["nodes"] = nodes
-    protocol.graph = graph
+    wg.set_graph(graph)
     await db.flush()
     return protocol
 
@@ -233,13 +230,21 @@ async def update_protocol_metadata(
         )
         if not allowed:
             raise ValueError("You don't have edit permission on this protocol")
-    if proto.status != "DRAFT":
-        raise ValueError(
-            "Protocol is published — create a draft in the protocol editor first."
-        )
-    if name is not None:
-        proto.name = name
-    if description is not None:
-        proto.description = description
+    from app.services.protocols.draft import resolve_working_draft
+
+    wg = await resolve_working_draft(db, proto)
+    if wg.is_version_backed:
+        # Metadata edits land on the draft version row; publish-draft
+        # promotes the graph but leaves protocol name/description alone,
+        # so writing to the version mirrors the editor flow.
+        if name is not None:
+            wg.version.name = name
+        if description is not None:
+            wg.version.description = description
+    else:
+        if name is not None:
+            proto.name = name
+        if description is not None:
+            proto.description = description
     await db.flush()
     return proto

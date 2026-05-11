@@ -170,7 +170,7 @@ def validate_protocol_graph(
             if parent_id not in lane_node_ids:
                 issues.append(
                     ValidationIssue(
-                        severity="warning",
+                        severity="error",
                         code="orphaned_parent_id",
                         message=(
                             f"Step '{label}' has parentId={parent_id} but no "

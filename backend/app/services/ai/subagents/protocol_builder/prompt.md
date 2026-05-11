@@ -158,6 +158,27 @@ different operator", "QA reviewer", "the night-shift tech", "have
 Do not silently drop the role hint and append the step to the existing
 chain — the user expects a visible lane in the editor.
 
+**Role-ID hygiene (do not skip).** The only legitimate source of a
+`role_id` is the `id` field returned by `list_protocol_roles` or
+`add_protocol_role` *in the current conversation*. Never invent a UUID,
+copy one from another protocol, or assume "a role named X exists on
+this protocol." Concretely:
+
+1. Before passing `role_id=` to `add_protocol_step` or
+   `update_protocol_step`, call `list_protocol_roles(protocol_id)` this
+   turn and confirm the role you want is in the returned list.
+2. If the user names a role that isn't on the protocol yet (e.g. "move
+   step 7 to the operator role" when only "QA Analyst" exists), call
+   `add_protocol_role` first to create it, then use the `id` from that
+   tool's return value.
+3. The service now rejects unknown role IDs (`Role <uuid> does not
+   exist on protocol <uuid>`). If you see that error, you fabricated
+   the id — go back to step 1.
+
+Never report a role reassignment as successful without seeing a
+matching `update_protocol_step`/`add_protocol_step` return with the
+right `role_id` on the same turn.
+
 ## Validate after edits
 
 `validate_protocol(protocol_id)` is your safety net for both create AND
