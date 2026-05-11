@@ -60,12 +60,17 @@ def _build_model_string(
 
     if provider == "ollama":
         creds = credentials or {}
-        ollama_base = creds.get("base_url") or "http://localhost:11434"
+        ollama_base = (
+            creds.get("base_url")
+            or settings.ollama.base_url
+            or "http://localhost:11434"
+        )
         if not ollama_base.rstrip("/").endswith("/v1"):
             ollama_base = ollama_base.rstrip("/") + "/v1"
+        ollama_key = creds.get("api_key") or settings.ollama.api_key or None
         return OpenAIChatModel(
             model_name=model_name,
-            provider=OllamaProvider(base_url=ollama_base),
+            provider=OllamaProvider(base_url=ollama_base, api_key=ollama_key),
         )
 
     # Inject API key into os.environ if provided via credentials

@@ -142,6 +142,7 @@ class Settings(BaseSettings):
         "deepseek-r1": 65536,
         "command-r": 131072,
         "command-r-plus": 131072,
+        "gpt-oss": 131072,
         # Cloud providers
         "claude-3-5-sonnet": 200000,
         "claude-3-5-haiku": 200000,
