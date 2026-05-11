@@ -20,6 +20,7 @@ class ChatMessageRole(str):
     ASSISTANT = "assistant"
     SYSTEM = "system"
     SUMMARY = "summary"
+    ERROR = "error"
 
 
 class ChatSession(Base, UUIDMixin, TimestampMixin):

@@ -347,6 +347,62 @@ class TestSendChatMessage:
         messages = resp.json()["messages"]
         assert len(messages) == 4
 
+    @pytest.mark.asyncio
+    async def test_send_message_failure_persists_error_row(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        test_org: Organization,
+        db_session,
+    ):
+        """Agent crash → endpoint returns 500 with error_code; user msg + ERROR
+        msg persist; GET session hides the ERROR row from the thread."""
+        created = await _create_session(client, auth_headers)
+        session_id = created["id"]
+
+        async def _boom(*args, **kwargs):
+            raise ValueError("simulated agent failure")
+
+        with patch("app.api.endpoints.chat.send_message", new=_boom):
+            resp = await client.post(
+                f"/chat/sessions/{session_id}/messages",
+                json={"content": "this will fail"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert "error_code=" in detail
+
+        # ERROR row is in the DB
+        result = await db_session.execute(
+            ChatMessage.__table__.select().where(
+                ChatMessage.session_id == uuid.UUID(session_id),
+                ChatMessage.role == ChatMessageRole.ERROR,
+            )
+        )
+        rows = list(result.mappings())
+        assert len(rows) == 1
+        assert "simulated agent failure" in rows[0]["content"]
+        meta = rows[0]["metadata"]
+        assert meta["error_type"] == "ValueError"
+        assert "Traceback" in meta["traceback"]
+        assert meta["error_code"] in detail
+
+        # User message also persisted alongside the error
+        result = await db_session.execute(
+            ChatMessage.__table__.select().where(
+                ChatMessage.session_id == uuid.UUID(session_id),
+                ChatMessage.role == ChatMessageRole.USER,
+                ChatMessage.content == "this will fail",
+            )
+        )
+        assert len(list(result)) == 1
+
+        # GET session hides ERROR row from the thread
+        resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
+        messages = resp.json()["messages"]
+        assert all(m["role"] != "error" for m in messages)
+
 
 class TestSendChatMessageWithRAG:
     """Tests for RAG source retrieval in chat responses."""

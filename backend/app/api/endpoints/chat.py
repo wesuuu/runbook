@@ -1,4 +1,6 @@
 import logging
+import secrets
+import traceback
 import uuid
 from pathlib import Path
 
@@ -12,7 +14,8 @@ from app.core.deps import (get_current_user, get_or_404,
                            get_org_id_from_request,
                            require_active_subscription)
 from app.db.session import get_db
-from app.models.chat import ChatNotification, ChatSession
+from app.models.chat import (ChatMessage, ChatMessageRole, ChatNotification,
+                             ChatSession)
 from app.models.iam import (TIER_RANK, Organization, OrganizationMember,
                             OrgRole, SubscriptionTier, User)
 from app.schemas.chat import (ChatCompletionResponse, ChatConfigResponse,
@@ -22,13 +25,8 @@ from app.schemas.chat import (ChatCompletionResponse, ChatConfigResponse,
                               ChatSessionUpdate, ChatSkillListResponse,
                               ChatSkillResponse, ChatSourceReference,
                               NotifyAdminResponse)
-from app.services.ai import (
-    create_session,
-    delete_session,
-    get_session,
-    list_sessions,
-    send_message,
-)
+from app.services.ai import (create_session, delete_session, get_session,
+                             list_sessions, send_message)
 from app.services.ai.ai_config import (get_context_window,
                                        get_model_display_name)
 from app.services.core.rate_limit import RateLimitService
@@ -237,14 +235,18 @@ async def send_chat_message(
     _, org_roles = await _get_user_org(current_user, db)
     is_org_admin = OrgRole.ADMIN.value in org_roles
 
+    # Wrap send_message in a SAVEPOINT so a failed agent run rolls back only
+    # its own partial state — the chat session row and any other prior
+    # committed state stay intact for the forensic write below.
     try:
-        user_msg, assistant_msg, sources = await send_message(
-            db,
-            session,
-            body.content,
-            user_id=current_user.id,
-            is_org_admin=is_org_admin,
-        )
+        async with db.begin_nested():
+            user_msg, assistant_msg, sources = await send_message(
+                db,
+                session,
+                body.content,
+                user_id=current_user.id,
+                is_org_admin=is_org_admin,
+            )
         await db.commit()
         await db.refresh(user_msg)
         await db.refresh(assistant_msg)
@@ -264,11 +266,48 @@ async def send_chat_message(
                 for s in sources
             ],
         )
-    except Exception:
-        logger.exception("Chat completion failed for session %s", session_id)
+    except Exception as exc:
+        # Persist a forensic ERROR row so the failure isn't silent. The user
+        # gets a generic toast (plus this short code to reference) while the
+        # full traceback lives in postgres + the backend log.
+        error_code = secrets.token_hex(4)
+        logger.exception(
+            "Chat completion failed [error_code=%s] for session %s",
+            error_code,
+            session_id,
+        )
+        try:
+            db.add(
+                ChatMessage(
+                    session_id=session_id,
+                    role=ChatMessageRole.USER,
+                    content=body.content,
+                )
+            )
+            db.add(
+                ChatMessage(
+                    session_id=session_id,
+                    role=ChatMessageRole.ERROR,
+                    content=str(exc),
+                    metadata_={
+                        "error_code": error_code,
+                        "error_type": type(exc).__name__,
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+            )
+            await db.commit()
+        except Exception:
+            # Forensic write is best-effort — if even that fails, we still
+            # want to return the original error to the user.
+            logger.exception(
+                "Failed to persist ERROR row [error_code=%s] for session %s",
+                error_code,
+                session_id,
+            )
         raise HTTPException(
             status_code=500,
-            detail="Failed to generate AI response",
+            detail=f"Failed to generate AI response (error_code={error_code})",
         )
 
 

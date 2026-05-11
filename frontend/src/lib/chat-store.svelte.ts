@@ -1,5 +1,5 @@
 import { tick } from 'svelte';
-import { api } from '$lib/api';
+import { api, ApiError } from '$lib/api';
 import { toast } from 'svelte-sonner';
 import type { ChatSession, ChatSessionDetail, ChatMessage, ChatSourceReference, ChatSkill, ChatConfig } from '$lib/schemas/chat';
 import {
@@ -258,11 +258,19 @@ export async function sendMessage(skillId?: string): Promise<void> {
 
         await tick();
         scrollFn?.();
-    } catch {
+    } catch (err) {
         activeSession.messages = activeSession.messages.filter(
             m => m.id !== tempUserMsg.id,
         );
-        toast.error('Failed to send message');
+        const codeMatch =
+            err instanceof ApiError && typeof err.message === 'string'
+                ? err.message.match(/error_code=([a-f0-9]+)/)
+                : null;
+        toast.error(
+            codeMatch
+                ? `Failed to send message (E${codeMatch[1]})`
+                : 'Failed to send message',
+        );
     } finally {
         sending = false;
     }

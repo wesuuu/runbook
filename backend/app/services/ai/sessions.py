@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.chat import ChatSession, ChatSessionStatus
+from app.models.chat import ChatMessageRole, ChatSession, ChatSessionStatus
 
 
 async def create_session(
@@ -36,7 +36,14 @@ async def get_session(db: AsyncSession, session_id: UUID) -> Optional[ChatSessio
         .where(ChatSession.id == session_id)
         .options(selectinload(ChatSession.messages))
     )
-    return result.scalar_one_or_none()
+    session = result.scalar_one_or_none()
+    if session is not None:
+        # ERROR rows are forensic only — keep them queryable in postgres but
+        # don't surface them in the chat thread.
+        session.messages = [
+            m for m in session.messages if m.role != ChatMessageRole.ERROR
+        ]
+    return session
 
 
 async def list_sessions(
