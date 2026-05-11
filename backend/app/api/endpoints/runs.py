@@ -126,6 +126,20 @@ async def create_run(
         # the project setting at run-creation time.
         is_strict = bool(protocol.requires_approval)
 
+        # F-0066: block ad-hoc overrides on strict runs. Doing this before
+        # the Run row is added keeps the rejection cheap and side-effect-free.
+        if is_strict and run_in.overrides is not None:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "RUN_IS_STRICT",
+                    "message": (
+                        "Overrides are disabled for runs of approved "
+                        "protocols."
+                    ),
+                },
+            )
+
         # Resolve which graph to snapshot: a specific version, else current.
         if run_in.protocol_version_number is not None:
             v_result = await db.execute(
@@ -323,6 +337,28 @@ async def update_run(
     # Validate status transitions
     new_status = update_data.status.value if update_data.status else None
     current_status = current_status_str
+
+    # F-0066: strict runs (snapshotted from designated protocols) reject any
+    # graph diff that mutates a unit-op field. We reuse diff_unit_op_node so
+    # the rule stays consistent with the OVERRIDE_EDIT audit emitter below.
+    if run_obj.is_strict and update_data.graph is not None:
+        old_nodes = {n["id"]: n for n in iter_unit_op_nodes(run_obj.graph)}
+        new_nodes = {n["id"]: n for n in iter_unit_op_nodes(update_data.graph)}
+        has_override_edit = any(
+            diff_unit_op_node(old_nodes[nid], new_nodes[nid])
+            for nid in old_nodes.keys() & new_nodes.keys()
+        )
+        if has_override_edit:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "RUN_IS_STRICT",
+                    "message": (
+                        "Overrides are disabled for runs of approved "
+                        "protocols."
+                    ),
+                },
+            )
 
     # Block graph edits when the run has left PLANNED — overrides are GMP-locked
     # at that point. (F-0081)
