@@ -174,10 +174,51 @@ The validator now also reports role/lane consistency:
   ask the user which steps belong in that role, OR remove the role with
   `remove_protocol_role(role_id)` if it was added by mistake. Empty lanes
   confuse the user — never leave them in.
+- `child_outside_lane` — a step's lane-relative position would render it
+  outside its parent swimlane (the symptom: a step sitting on the edge
+  of a lane instead of inside it). Fix by re-issuing the role assignment
+  via `update_protocol_step(protocol_id, step_index, role_id=<role_id>)`
+  — that call recomputes the lane-relative slot and grows the lane to
+  fit. Do NOT try to hand-pick `position` coordinates; the tools own
+  layout.
+- `overlapping_nodes` — two steps in the same lane (or both unparented)
+  have intersecting bounding boxes. Re-trigger placement by calling
+  `update_protocol_step` with the same `role_id` on the offending step,
+  which moves it to the next empty slot in the lane. If both nodes are
+  top-level (no role), assign them to a role to get them laid out neatly.
 
 Apply the same auto-fix loop here as in the create flow: fix what you
 can without changing the user's intent, re-validate, and only stop
 when issues are zero or the remaining ones need user input.
+
+## Layout discipline — never set positions by hand
+
+Layout is owned by the tools, not by you. Specifically:
+
+- `add_protocol_step` with a `role_id` places the new step at the next
+  free lane-relative slot and grows the lane to fit. Without `role_id`
+  it falls back to a default top-level slot.
+- `update_protocol_step` with a `role_id` (different from the step's
+  current parent) re-places the step inside that lane at a fresh slot.
+- You never have a tool to write `position` directly — that's deliberate.
+  Don't ask for one.
+
+Practical rules to keep `child_outside_lane` and `overlapping_nodes`
+from firing:
+
+1. When the user mentions a different operator/role for a step, create
+   the role FIRST via `add_protocol_role`, then create the step with
+   `add_protocol_step(..., role_id=<new_role_id>)`. Don't add the step
+   into the default chain and then try to move it after — the move path
+   works but the create-with-role path is cleaner and less error-prone.
+2. When reassigning an existing step to a role, always use
+   `update_protocol_step(protocol_id, step_index, role_id=<role_id>)`.
+   That function rewrites `parentId` and recomputes a lane-relative slot
+   atomically; skipping `role_id` while expecting the lane to update is
+   the most common source of `child_outside_lane`.
+3. If `validate_protocol` reports either layout warning, the fix is
+   almost always a single `update_protocol_step` call with the
+   `role_id` you intended. Re-validate after.
 
 ## Unit op editing and scope ladder
 
@@ -212,9 +253,17 @@ the create flow's `create_protocol`/`create_unit_op`), you MUST:
 2. If it returns issues, run the auto-fix loop (Step 7 of the create
    flow) and re-validate. Repeat until clean or you genuinely need user
    input.
-3. Only then write the final reply.
+3. Include a markdown link to the protocol in your final reply so the
+   user can jump straight to it instead of navigating manually. Use the
+   protocol's name as the link text and `/protocols/<protocol_id>` as
+   the href, e.g. `[Buffer Prep v1](/protocols/abc123…)`. Drop this link
+   into your reply naturally — at the end of the summary, or inline
+   when you reference the protocol by name.
+4. Only then write the final reply.
 
 A turn that mutates the protocol but skips `validate_protocol` is a
 bug — orphaned lanes, dangling parentIds, and empty schemas slip
 through without it. No exceptions, even if the mutations "obviously
-look fine".
+look fine". A turn that finishes work on a protocol without linking to
+it forces the user to hunt for it in the sidebar — don't do that
+either.
