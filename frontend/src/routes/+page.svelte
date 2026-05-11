@@ -16,6 +16,7 @@
     import { blockDuration, listDuration } from '$lib/transitions';
     import TourModal from '$lib/onboarding/TourModal.svelte';
     import { isWelcomeEmpty, isHydrated, markAllDismissed } from '$lib/onboarding/tourStore.svelte';
+    import PendingApprovalsCard from '$lib/components/shared/PendingApprovalsCard.svelte';
 
     type RunSummary = {
         id: string;
@@ -297,6 +298,11 @@
                 {userName}'s Dashboard
             </h1>
             <p class="text-sm text-muted-foreground mt-1">What's happening across your projects today.</p>
+        </div>
+
+        <!-- Pending Approvals -->
+        <div class="mb-6">
+            <PendingApprovalsCard />
         </div>
 
         <!-- Counters -->
