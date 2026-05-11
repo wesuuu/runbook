@@ -80,17 +80,19 @@ export function createSwimLaneNode(
     role: any,
     layout: "horizontal" | "vertical",
     roleIndex: number,
+    position?: { x: number; y: number },
 ): Node {
     const laneY = roleIndex === 0 ? 0 : roleIndex * 220;
     const laneX = 0;
+    const defaultPosition =
+        layout === "horizontal"
+            ? { x: laneX, y: laneY }
+            : { x: laneY, y: laneX };
     return {
         id: `lane-${role.id}`,
         type: "swimLane",
         zIndex: -1,
-        position:
-            layout === "horizontal"
-                ? { x: laneX, y: laneY }
-                : { x: laneY, y: laneX },
+        position: position ?? defaultPosition,
         data: {
             label: role.name,
             color: role.color,

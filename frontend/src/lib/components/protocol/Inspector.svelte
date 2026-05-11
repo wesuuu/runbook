@@ -7,6 +7,12 @@
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
     import EquipmentPickerModal from "$lib/components/modals/EquipmentPickerModal.svelte";
     import { Button } from "$lib/components/ui/button";
+    import type { BranchValidationError } from "$lib/components/protocol/protocolValidation";
+    import EquipmentChipList from "$lib/components/shared/EquipmentChipList.svelte";
+    import SchemaEditor from "$lib/components/shared/SchemaEditor.svelte";
+    import type { SchemaRow } from "$lib/components/shared/SchemaEditor.svelte";
+    import ParamInput from "$lib/components/shared/ParamInput.svelte";
+    import { renderTemplate } from "$lib/utils/template";
 
     interface Equipment {
         id: string;
@@ -23,12 +29,6 @@
         equipment_id: string;
         local_id?: string;
         shareable: boolean;
-    }
-
-    interface SchemaParamRow {
-        key: string;
-        title: string;
-        type: 'string' | 'number' | 'integer';
     }
 
     interface Props {
@@ -48,9 +48,10 @@
         onSaveAsNew: (name: string, paramSchema: Record<string, any>, category: string) => Promise<void>;
         onCreateEquipment?: (data: { name: string; description: string; equipment_type: string; location: string }) => Promise<Equipment>;
         onClose: () => void;
+        branchErrors?: BranchValidationError[];
     }
 
-    let { node, allNodes, orgEquipment = [], equipmentConflicts = new Map(), onApply, onSaveAsNew, onCreateEquipment, onClose }: Props = $props();
+    let { node, allNodes, orgEquipment = [], equipmentConflicts = new Map(), onApply, onSaveAsNew, onCreateEquipment, onClose, branchErrors = [] }: Props = $props();
 
     const timelineConfig: {
         enabled: boolean;
@@ -72,7 +73,7 @@
 
     // Schema editor state
     let showSchemaEditor: boolean = $state(false);
-    let editSchemaRows: SchemaParamRow[] = $state([]);
+    let editSchemaRows: SchemaRow[] = $state([]);
 
     // Listen for onboarding tour events to script the demo.
     onMount(() => {
@@ -128,7 +129,7 @@
                 title: (prop.title as string) || key,
                 type: (['number', 'integer'].includes(prop.type as string)
                     ? prop.type
-                    : 'string') as SchemaParamRow['type'],
+                    : 'string') as SchemaRow['type'],
             }));
 
             // Reset save-as-new form
@@ -139,19 +140,6 @@
     });
 
     // --- Schema editor helpers ---
-
-    function addSchemaRow(): void {
-        editSchemaRows = [
-            ...editSchemaRows,
-            { key: '', title: '', type: 'string' },
-        ];
-        handleApply();
-    }
-
-    function removeSchemaRow(index: number): void {
-        editSchemaRows = editSchemaRows.filter((_, i) => i !== index);
-        handleApply();
-    }
 
     function buildParamSchema(): Record<string, any> {
         // Merge-and-override: preserves exotic fields (enum, x-ref-type) on existing keys
@@ -203,10 +191,6 @@
         onApply(node.id, syncedParams, editDuration, editDescription, editEquipment, newSchema, position);
     }
 
-    function getEquipmentName(equipmentId: string): string {
-        return orgEquipment.find(e => e.id === equipmentId)?.name || equipmentId.slice(0, 8);
-    }
-
     function handleEquipmentApply(equipment: SelectedEquipment[]): void {
         editEquipment = equipment;
         handleApply();
@@ -226,19 +210,6 @@
         } finally {
             saveAsNewSaving = false;
         }
-    }
-
-    // --- Template rendering ---
-    function renderTemplate(template: string, params: Record<string, any>): string {
-        return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-            const val = params[key];
-            if (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)) {
-                return match;
-            }
-            if (typeof val === 'boolean') return val ? 'Yes' : 'No';
-            if (Array.isArray(val)) return val.join(', ');
-            return String(val);
-        });
     }
 
     // --- Derived state ---
@@ -312,6 +283,25 @@
                 </div>
             </div>
         </div>
+
+        {#if branchErrors.length > 0}
+            <div class="branch-error-callout">
+                <span class="branch-error-icon">&#x26A0;</span>
+                <div>
+                    {#each branchErrors as err}
+                        <div class="branch-error-line">
+                            Branches to <strong>{err.targetNodeLabels.join(", ")}</strong>
+                            {#if err.duplicateLane === null}
+                                — at least one branch has no role assigned.
+                            {:else}
+                                — two branches share the same role.
+                            {/if}
+                            Assign distinct roles, or enable time mode and stagger them.
+                        </div>
+                    {/each}
+                </div>
+            </div>
+        {/if}
 
         <!-- Description -->
         <div class="section" data-tour="inspector-instruction">
@@ -399,26 +389,11 @@
         {#if orgEquipment.length > 0 || onCreateEquipment}
             <div class="section equipment-section">
                 <label class="section-label">Equipment</label>
-                <div class="equipment-list-container">
-                    {#if editEquipment.length > 0}
-                        {#each editEquipment as eq (eq.equipment_id)}
-                            <div class="equipment-chip" class:conflict={equipmentConflicts.get(node?.id || '')?.includes(eq.equipment_id) && !eq.shareable}>
-                                {#if eq.local_id}
-                                    <span class="chip-localid">{eq.local_id}</span>
-                                {/if}
-                                <span class="chip-name">{getEquipmentName(eq.equipment_id)}</span>
-                                {#if eq.shareable}
-                                    <span class="chip-badge">Shared</span>
-                                {/if}
-                                {#if equipmentConflicts.get(node?.id || '')?.includes(eq.equipment_id) && !eq.shareable}
-                                    <span class="chip-warning">⚠</span>
-                                {/if}
-                            </div>
-                        {/each}
-                    {:else}
-                        <div class="empty-message">No equipment assigned</div>
-                    {/if}
-                </div>
+                <EquipmentChipList
+                    equipment={editEquipment}
+                    orgEquipment={orgEquipment}
+                    conflictingIds={new Set(equipmentConflicts.get(node?.id || '') || [])}
+                />
                 <Button
                     variant="outline"
                     size="sm"
@@ -456,57 +431,13 @@
                             <label class="param-label" for="param-{key}">
                                 {prop.title || key}
                             </label>
-
-                            {#if prop["x-ref-type"] === "media_prep"}
-                                <!-- Media reference dropdown -->
-                                <select
-                                    id="param-{key}"
-                                    class="input-field"
-                                    bind:value={editParams[key]}
-                                    onchange={handleApply}
-                                >
-                                    <option value="">— Select media —</option>
-                                    {#each mediaPrepNodes as mpNode}
-                                        <option value={mpNode.id}>
-                                            {mpNode.data.label} ({mpNode.id.slice(
-                                                0,
-                                                6,
-                                            )})
-                                        </option>
-                                    {/each}
-                                </select>
-                            {:else if prop.enum}
-                                <!-- Enum dropdown -->
-                                <select
-                                    id="param-{key}"
-                                    class="input-field"
-                                    bind:value={editParams[key]}
-                                    onchange={handleApply}
-                                >
-                                    {#each prop.enum as option}
-                                        <option value={option}>{option}</option>
-                                    {/each}
-                                </select>
-                            {:else if prop.type === "number" || prop.type === "integer"}
-                                <!-- Number input -->
-                                <input
-                                    id="param-{key}"
-                                    type="number"
-                                    class="input-field"
-                                    bind:value={editParams[key]}
-                                    oninput={handleApply}
-                                    step={prop.type === "integer" ? 1 : 0.1}
-                                />
-                            {:else}
-                                <!-- Text input -->
-                                <input
-                                    id="param-{key}"
-                                    type="text"
-                                    class="input-field"
-                                    bind:value={editParams[key]}
-                                    oninput={handleApply}
-                                />
-                            {/if}
+                            <ParamInput
+                                id="param-{key}"
+                                schema={prop}
+                                value={editParams[key]}
+                                mediaPrepNodes={mediaPrepNodes.map((n) => ({ id: n.id, label: n.data.label as string }))}
+                                onChange={(v) => { editParams[key] = v; handleApply(); }}
+                            />
                         </div>
                     {/each}
                 </div>
@@ -526,59 +457,10 @@
 
             {#if showSchemaEditor}
                 <div class="schema-editor" transition:slide={{ duration: 180, easing: cubicOut }}>
-                    <!-- Column headers -->
-                    <div class="schema-header-row">
-                        <span class="col-label">Key</span>
-                        <span class="col-label">Label</span>
-                        <span class="col-label">Type</span>
-                    </div>
-
-                    <!-- Schema rows -->
-                    {#each editSchemaRows as row, i}
-                        <div class="schema-row">
-                            <input
-                                type="text"
-                                bind:value={row.key}
-                                oninput={handleApply}
-                                placeholder="key"
-                                class="input-field schema-input"
-                            />
-                            <input
-                                type="text"
-                                bind:value={row.title}
-                                oninput={handleApply}
-                                placeholder="Label"
-                                class="input-field schema-input"
-                            />
-                            <select
-                                bind:value={row.type}
-                                onchange={handleApply}
-                                class="input-field schema-input"
-                            >
-                                <option value="string">Text</option>
-                                <option value="number">Number</option>
-                                <option value="integer">Integer</option>
-                            </select>
-                            <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                class="text-muted-foreground hover:bg-red-100 hover:text-red-600 size-6"
-                                onclick={() => removeSchemaRow(i)}
-                                title="Remove parameter"
-                                aria-label="Remove parameter"
-                            >✕</Button>
-                        </div>
-                    {/each}
-
-                    <!-- Add Parameter button -->
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        class="self-start text-xs h-7 px-2.5 text-[hsl(173,58%,39%)]"
-                        onclick={addSchemaRow}
-                    >
-                        + Add Parameter
-                    </Button>
+                    <SchemaEditor
+                        rows={editSchemaRows}
+                        onChange={(next) => { editSchemaRows = next; handleApply(); }}
+                    />
 
                     <!-- Save as New Unit Op -->
                     <div class="save-as-new-area">
@@ -641,6 +523,29 @@
     .inspector-header {
         padding: 16px;
         border-bottom: 1px solid hsl(240, 5.9%, 90%);
+    }
+
+    .branch-error-callout {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 12px;
+        margin: 12px 16px 0 16px;
+        background: #fffbeb;
+        border: 1px solid #f59e0b;
+        border-radius: 6px;
+        font-size: 12px;
+        color: #92400e;
+        line-height: 1.4;
+    }
+
+    .branch-error-icon {
+        flex-shrink: 0;
+        font-size: 14px;
+    }
+
+    .branch-error-line + .branch-error-line {
+        margin-top: 4px;
     }
 
     .header-top {
@@ -847,11 +752,6 @@
         box-shadow: 0 0 0 2px hsla(173, 58%, 39%, 0.15);
     }
 
-    select.input-field {
-        cursor: pointer;
-        appearance: auto;
-    }
-
     /* --- Schema Editor --- */
     .schema-section {
         padding-top: 12px;
@@ -873,34 +773,6 @@
         display: flex;
         flex-direction: column;
         gap: 6px;
-    }
-
-    .schema-header-row {
-        display: grid;
-        grid-template-columns: 1fr 1.2fr 72px 24px;
-        gap: 4px;
-        padding: 0 2px;
-    }
-
-    .col-label {
-        font-size: 10px;
-        font-weight: 600;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-
-    .schema-row {
-        display: grid;
-        grid-template-columns: 1fr 1.2fr 72px 24px;
-        gap: 4px;
-        align-items: center;
-    }
-
-    .schema-input {
-        padding: 5px 7px !important;
-        font-size: 12px !important;
-        height: 28px !important;
     }
 
     .save-as-new-area {
@@ -933,68 +805,5 @@
         gap: 8px;
     }
 
-    .equipment-list-container {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        margin-bottom: 8px;
-        min-height: 28px;
-    }
-
-    .equipment-chip {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 10px;
-        background-color: #e0f2fe;
-        border: 1px solid #7dd3fc;
-        border-radius: 4px;
-        font-size: 12px;
-        color: #0369a1;
-    }
-
-    .equipment-chip.conflict {
-        background-color: #fef08a;
-        border-color: #fcd34d;
-        color: #92400e;
-    }
-
-    .chip-localid {
-        display: inline-block;
-        padding: 2px 6px;
-        background-color: rgba(15, 23, 42, 0.08);
-        border-radius: 3px;
-        font-size: 10px;
-        font-weight: 700;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        letter-spacing: 0.02em;
-        color: #1e293b;
-    }
-
-    .chip-name {
-        flex: 1;
-        font-weight: 500;
-    }
-
-    .chip-badge {
-        display: inline-block;
-        padding: 2px 6px;
-        background-color: rgba(255, 255, 255, 0.7);
-        border-radius: 3px;
-        font-size: 10px;
-        font-weight: 600;
-    }
-
-    .chip-warning {
-        font-size: 14px;
-        margin-left: auto;
-    }
-
-    .empty-message {
-        font-size: 12px;
-        color: #94a3b8;
-        font-style: italic;
-        padding: 8px 0;
-    }
 
 </style>

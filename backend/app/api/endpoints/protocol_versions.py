@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -10,10 +10,12 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol, ProtocolVersion
+from app.models.science import Project, Protocol, ProtocolVersion, UnitOpDefinition
+from app.services.protocols.validation import assert_no_branch_errors
 from app.schemas.science import (ProtocolApprovalAction, ProtocolResponse,
                                  ProtocolVersionListItem,
-                                 ProtocolVersionResponse)
+                                 ProtocolVersionResponse,
+                                 PublishDraftRequest)
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
@@ -58,11 +60,13 @@ async def list_protocol_versions(
             id=v.id,
             version_number=v.version_number,
             name=v.name,
+            description=v.description,
             change_summary=v.change_summary,
             created_by_name=(
                 v.created_by.full_name or v.created_by.email if v.created_by else None
             ),
             created_at=v.created_at,
+            is_draft=v.is_draft,
         )
         for v in versions
     ]
@@ -416,6 +420,7 @@ async def reject_protocol(
 async def publish_draft_version(
     protocol_id: UUID,
     version_number: int = Query(...),
+    body: Optional[PublishDraftRequest] = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
@@ -452,8 +457,21 @@ async def publish_draft_version(
     if not draft:
         raise HTTPException(status_code=404, detail="Draft version not found")
 
+    # Defense-in-depth: reject publish if branch role rule fires.
+    org_id = user.selected_org_id
+    unit_ops_result = await db.execute(
+        select(UnitOpDefinition).where(UnitOpDefinition.organization_id == org_id)
+    )
+    unit_ops = list(unit_ops_result.scalars().all())
+    assert_no_branch_errors(draft.graph or {}, unit_ops)
+
     # Mark as published (not a draft) and update main protocol
     draft.is_draft = False
+    if body is not None:
+        if body.description is not None:
+            draft.description = body.description
+        if body.change_summary is not None:
+            draft.change_summary = body.change_summary
     protocol.graph = draft.graph
     protocol.version_number = version_number
 

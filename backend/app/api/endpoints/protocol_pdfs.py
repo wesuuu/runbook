@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol
+from app.models.science import Project, Protocol, UnitOpDefinition
 from app.models.templates import DocumentTemplate
 from app.schemas.science import GraphPayload
 from app.services.core.file_storage import FileStorageService
@@ -19,6 +19,7 @@ from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import build_context, render_to_pdf
+from app.services.protocols.validation import assert_no_branch_errors
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,23 @@ async def _load_template(
         select(DocumentTemplate).where(DocumentTemplate.id == template_id)
     )
     return result.scalar_one_or_none()
+
+
+async def _build_user_signatures(
+    db: AsyncSession, user_ids: list[str | UUID]
+) -> dict[str, str]:
+    """Build {user_id: absolute_signature_path} for users with stored
+    drawn-initials signatures. Empty dict when no IDs are provided."""
+    if not user_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(User.id, User.signature_initials_path)
+            .where(User.id.in_(user_ids))
+            .where(User.signature_initials_path.is_not(None))
+        )
+    ).all()
+    return {str(uid): str(storage.resolve_path(path)) for uid, path in rows if path}
 
 
 def _resolve_template_path(template: DocumentTemplate) -> str:
@@ -60,6 +78,15 @@ def _pdf_response(
         media_type="application/pdf",
         headers=headers,
     )
+
+
+async def _assert_branch_ok(db: AsyncSession, graph: dict, org_id) -> None:
+    """Raise HTTPException(400) if the graph has branch_requires_distinct_roles errors."""
+    result = await db.execute(
+        select(UnitOpDefinition).where(UnitOpDefinition.organization_id == org_id)
+    )
+    unit_ops = list(result.scalars().all())
+    assert_no_branch_errors(graph or {}, unit_ops)
 
 
 # --- Protocol PDF ---
@@ -89,6 +116,8 @@ async def get_protocol_sop_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
+    await _assert_branch_ok(db, protocol.graph or {}, user.selected_org_id)
+
     template = await _load_template(db, template_id or protocol.sop_template_id)
     if not template:
         raise HTTPException(status_code=404, detail="SOP template not found")
@@ -100,6 +129,7 @@ async def get_protocol_sop_pdf(
     equipment_ctx, eq_warnings = await build_equipment_context(
         db, user.selected_org_id, graph
     )
+    user_signatures = await _build_user_signatures(db, [])
 
     context, unresolved = build_context(
         protocol_name=protocol.name,
@@ -112,6 +142,7 @@ async def get_protocol_sop_pdf(
         flat_steps=flat_steps,
         is_role_based=is_role_based,
         equipment_context=equipment_ctx,
+        user_signatures=user_signatures,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
@@ -157,6 +188,8 @@ async def get_protocol_batch_record_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
+    await _assert_branch_ok(db, protocol.graph or {}, user.selected_org_id)
+
     template = await _load_template(
         db, template_id or protocol.batch_record_template_id
     )
@@ -170,6 +203,7 @@ async def get_protocol_batch_record_pdf(
     equipment_ctx, eq_warnings = await build_equipment_context(
         db, user.selected_org_id, graph
     )
+    user_signatures = await _build_user_signatures(db, [])
 
     context, unresolved = build_context(
         protocol_name=protocol.name,
@@ -183,6 +217,7 @@ async def get_protocol_batch_record_pdf(
         flat_steps=flat_steps,
         is_role_based=is_role_based,
         equipment_context=equipment_ctx,
+        user_signatures=user_signatures,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
@@ -233,6 +268,8 @@ async def preview_protocol_sop_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
+    await _assert_branch_ok(db, body.graph, user.selected_org_id)
+
     template = await _load_template(db, template_id or protocol.sop_template_id)
     if not template:
         raise HTTPException(status_code=404, detail="SOP template not found")
@@ -244,6 +281,7 @@ async def preview_protocol_sop_pdf(
     equipment_ctx, eq_warnings = await build_equipment_context(
         db, user.selected_org_id, graph
     )
+    user_signatures = await _build_user_signatures(db, [])
 
     context, unresolved = build_context(
         protocol_name=protocol.name,
@@ -256,6 +294,7 @@ async def preview_protocol_sop_pdf(
         flat_steps=flat_steps,
         is_role_based=is_role_based,
         equipment_context=equipment_ctx,
+        user_signatures=user_signatures,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
@@ -303,6 +342,8 @@ async def preview_protocol_batch_record_pdf(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
+    await _assert_branch_ok(db, body.graph, user.selected_org_id)
+
     template = await _load_template(
         db, template_id or protocol.batch_record_template_id
     )
@@ -316,6 +357,7 @@ async def preview_protocol_batch_record_pdf(
     equipment_ctx, eq_warnings = await build_equipment_context(
         db, user.selected_org_id, graph
     )
+    user_signatures = await _build_user_signatures(db, [])
 
     context, unresolved = build_context(
         protocol_name=protocol.name,
@@ -329,6 +371,7 @@ async def preview_protocol_batch_record_pdf(
         flat_steps=flat_steps,
         is_role_based=is_role_based,
         equipment_context=equipment_ctx,
+        user_signatures=user_signatures,
     )
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 

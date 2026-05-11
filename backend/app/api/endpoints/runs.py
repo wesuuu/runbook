@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 import uuid as uuid_mod
 from datetime import datetime, timezone
@@ -21,20 +22,26 @@ from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Project, Protocol, Run, RunRoleAssignment
+from app.models.science import (Project, Protocol, ProtocolVersion, Run,
+                                 RunRoleAssignment, UnitOpDefinition)
 from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunCreate, RunNote, RunNoteCreate,
-                                 RunNoteListResponse, RunResponse,
-                                 RunRoleAssignmentCreate,
+                                 RunNoteListResponse, RunOverrides,
+                                 RunResponse, RunRoleAssignmentCreate,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunUpdate)
 from app.services.core.audit import log_audit
+from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
+from app.services.runs.overrides import (apply_node_overrides,
+                                         diff_unit_op_node,
+                                         snapshot_unit_op_node)
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import build_context, render_to_pdf
+from app.services.protocols.validation import assert_no_branch_errors
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +85,7 @@ async def create_run(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    initial_graph = {}
+    initial_graph: dict = {}
     if run_in.protocol_id:
         result = await db.execute(
             select(Protocol).where(Protocol.id == run_in.protocol_id)
@@ -91,7 +98,40 @@ async def create_run(
                 status_code=400,
                 detail="Cannot create run from archived protocol",
             )
-        initial_graph = protocol.graph.copy() if protocol.graph else {}
+
+        # Resolve which graph to snapshot: a specific version, else current.
+        if run_in.protocol_version_number is not None:
+            v_result = await db.execute(
+                select(ProtocolVersion).where(
+                    (ProtocolVersion.protocol_id == protocol.id)
+                    & (ProtocolVersion.version_number == run_in.protocol_version_number)
+                    & (ProtocolVersion.is_draft == False)  # noqa: E712
+                )
+            )
+            version = v_result.scalar_one_or_none()
+            if version is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        f"Protocol version {run_in.protocol_version_number} "
+                        f"not found for this protocol"
+                    ),
+                )
+            initial_graph = copy.deepcopy(version.graph or {})
+        else:
+            initial_graph = copy.deepcopy(protocol.graph or {})
+
+        unit_ops_result = await db.execute(
+            select(UnitOpDefinition).where(
+                UnitOpDefinition.organization_id == user.selected_org_id
+            )
+        )
+        unit_ops = list(unit_ops_result.scalars().all())
+        assert_no_branch_errors(initial_graph, unit_ops)
+
+        # Snapshot protocol_* mirror fields on every unit-op node.
+        for node in iter_unit_op_nodes(initial_graph):
+            snapshot_unit_op_node(node)
 
     run_obj = Run(
         name=run_in.name,
@@ -100,9 +140,24 @@ async def create_run(
         experiment_id=run_in.experiment_id,
         graph=initial_graph,
         execution_data={},
+        created_by_id=user.id,
     )
     db.add(run_obj)
     await db.flush()
+
+    # Apply overrides if provided.
+    override_diffs = []
+    if run_in.overrides is not None:
+        node_index = {n["id"]: n for n in iter_unit_op_nodes(run_obj.graph)}
+        for node_id, ov in run_in.overrides.nodes.items():
+            node = node_index.get(node_id)
+            if node is None:
+                # Unknown node id: ignore (sparse override addressing a missing
+                # node is a frontend bug, but we don't want to 500 on it).
+                continue
+            override_diffs.extend(apply_node_overrides(node, ov))
+        # Notify SQLAlchemy that we mutated the JSONB column in place.
+        flag_modified(run_obj, "graph")
 
     await log_audit(
         db,
@@ -112,6 +167,10 @@ async def create_run(
         run_obj.id,
         {"name": run_in.name},
     )
+    for d in override_diffs:
+        await log_audit(
+            db, user.id, "OVERRIDE_SET", "Run", run_obj.id, d,
+        )
 
     await db.commit()
     await db.refresh(run_obj)
@@ -135,6 +194,48 @@ async def get_run(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     return await get_or_404(db, Run, run_id)
+
+
+@router.get("/runs/{run_id}/permissions")
+async def get_run_permissions(
+    run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compute the current user's edit permissions for a run.
+
+    `can_edit_planned` is true iff the run is in PLANNED status and the user
+    can edit its setup (overrides, name, assignees). The rules mirror PUT
+    `/runs/{run_id}`: any user with EDIT on the run (org admins, project
+    admins, explicit grantees, or any org member when the parent project
+    has permissions_enabled=false), plus the run creator on
+    permissions_enabled=true projects.
+    """
+    can_view = await check_permission(
+        db, user.id, ObjectType.RUN, run_id, PermissionLevel.VIEW,
+    )
+    if not can_view:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    run_obj = await get_or_404(db, Run, run_id)
+    status_str = (
+        run_obj.status if isinstance(run_obj.status, str)
+        else run_obj.status.value
+    )
+
+    has_edit = await check_permission(
+        db, user.id, ObjectType.RUN, run_id, PermissionLevel.EDIT,
+    )
+    is_creator = run_obj.created_by_id == user.id
+
+    can_edit_planned = (
+        status_str == "PLANNED" and (has_edit or is_creator)
+    )
+
+    return {
+        "can_edit_planned": can_edit_planned,
+        "is_creator": is_creator,
+    }
 
 
 @router.get(
@@ -166,6 +267,12 @@ async def update_run(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
+    run_obj = await get_or_404(db, Run, run_id)
+    current_status_str = (
+        run_obj.status if isinstance(run_obj.status, str)
+        else run_obj.status.value
+    )
+
     allowed = await check_permission(
         db,
         user.id,
@@ -173,16 +280,29 @@ async def update_run(
         run_id,
         PermissionLevel.EDIT,
     )
+    # Run creator may always edit their own PLANNED run, even on projects
+    # with permissions_enabled=true where they don't have an explicit EDIT
+    # grant. Once the run leaves PLANNED, normal permission rules apply.
+    if (
+        not allowed
+        and current_status_str == "PLANNED"
+        and run_obj.created_by_id == user.id
+    ):
+        allowed = True
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    run_obj = await get_or_404(db, Run, run_id)
-
     # Validate status transitions
     new_status = update_data.status.value if update_data.status else None
-    current_status = (
-        run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
-    )
+    current_status = current_status_str
+
+    # Block graph edits when the run has left PLANNED — overrides are GMP-locked
+    # at that point. (F-0081)
+    if update_data.graph is not None and current_status != "PLANNED":
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot edit run graph: run must be in PLANNED status to apply overrides",
+        )
 
     if new_status and new_status != current_status:
         valid_transitions = {
@@ -232,9 +352,7 @@ async def update_run(
         elif new_status == "COMPLETED":
             # Validate all unit op steps are completed
             exec_data = update_data.execution_data or run_obj.execution_data or {}
-            graph = run_obj.graph or {}
-            nodes = graph.get("nodes", [])
-            unit_op_ids = [n["id"] for n in nodes if n.get("type") == "unitOp"]
+            unit_op_ids = [n["id"] for n in iter_unit_op_nodes(run_obj.graph)]
 
             incomplete = [
                 sid
@@ -256,11 +374,10 @@ async def update_run(
             new_exec = update_data.execution_data
 
             # Build step name + param schema lookup from graph
-            graph = run_obj.graph or {}
-            _node_map: dict[str, dict] = {}
-            for n in graph.get("nodes", []):
-                if n.get("type") == "unitOp":
-                    _node_map[n["id"]] = n.get("data", {})
+            _node_map: dict[str, dict] = {
+                n["id"]: n.get("data", {})
+                for n in iter_unit_op_nodes(run_obj.graph)
+            }
 
             for step_id, new_step in new_exec.items():
                 if not isinstance(new_step, dict):
@@ -294,9 +411,8 @@ async def update_run(
                         old_val = old_results.get(field_key)
                         new_val = new_results.get(field_key)
                         if old_val != new_val:
-                            prop = param_schema_props.get(field_key, {})
-                            field_label = (
-                                prop.get("title") or field_key.replace("_", " ").title()
+                            field_label = derive_field_label(
+                                param_schema_props, field_key,
                             )
                             await log_audit(
                                 db,
@@ -369,11 +485,10 @@ async def update_run(
         target_status = new_status or current_status
 
         # Build step name lookup from graph
-        _graph = run_obj.graph or {}
-        _name_map: dict[str, str] = {}
-        for _n in _graph.get("nodes", []):
-            if _n.get("type") == "unitOp":
-                _name_map[_n["id"]] = _n.get("data", {}).get("label", _n["id"])
+        _name_map: dict[str, str] = {
+            n["id"]: n.get("data", {}).get("label", n["id"])
+            for n in iter_unit_op_nodes(run_obj.graph)
+        }
 
         for step_id, step_data in new_exec.items():
             old_step = old_exec.get(step_id, {})
@@ -426,6 +541,17 @@ async def update_run(
                             "new_value": new_notes,
                         },
                     )
+
+    # Diff incoming graph against current Run.graph and emit OVERRIDE_EDIT
+    # audit entries per changed unit-op field. (F-0081)
+    if update_data.graph is not None:
+        old_nodes = {n["id"]: n for n in iter_unit_op_nodes(run_obj.graph)}
+        new_nodes = {n["id"]: n for n in iter_unit_op_nodes(update_data.graph)}
+        for node_id in old_nodes.keys() & new_nodes.keys():
+            for diff in diff_unit_op_node(old_nodes[node_id], new_nodes[node_id]):
+                await log_audit(
+                    db, user.id, "OVERRIDE_EDIT", "Run", run_obj.id, diff,
+                )
 
     changes = update_data.model_dump(exclude_unset=True)
     for key, value in changes.items():
@@ -658,8 +784,11 @@ async def get_run_batch_record_pdf(
         db, user.selected_org_id, graph
     )
 
-    # Build user_map for electronic initials on filled records
+    # Build user_map and user_signatures for electronic initials on
+    # filled records. user_signatures resolves to absolute paths so the
+    # render layer can build InlineImage objects (F-0080).
     user_map: dict[str, str] = {}
+    user_signatures: dict[str, str] = {}
     started_by_id_str: str | None = None
     if filled and run_obj.execution_data:
         user_ids = set()
@@ -675,9 +804,17 @@ async def get_run_batch_record_pdf(
             started_by_id_str = str(run_obj.started_by_id)
             user_ids.add(started_by_id_str)
         if user_ids:
+            sig_storage = FileStorageService()
             result = await db.execute(select(User).where(User.id.in_(user_ids)))
             for u in result.scalars().all():
                 user_map[str(u.id)] = u.full_name or u.email
+                if u.signature_initials_path:
+                    try:
+                        user_signatures[str(u.id)] = str(
+                            sig_storage.resolve_path(u.signature_initials_path)
+                        )
+                    except (ValueError, FileNotFoundError):
+                        pass
 
     run_status = _run_status_str(run_obj)
 
@@ -692,6 +829,7 @@ async def get_run_batch_record_pdf(
         is_role_based=is_role_based,
         execution_data=run_obj.execution_data if filled else None,
         user_map=user_map if filled else None,
+        user_signatures=user_signatures if filled else None,
         started_by_id=started_by_id_str,
         notes=run_obj.notes if filled else None,
         attachments=run_obj.attachments if filled else None,

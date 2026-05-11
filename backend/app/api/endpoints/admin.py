@@ -31,7 +31,7 @@ async def _require_org_admin(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user_id,
             OrganizationMember.organization_id == org_id,
-            OrganizationMember.role == OrgRole.ADMIN,
+            OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
         )
     )
     if result.scalar_one_or_none() is None:

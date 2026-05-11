@@ -55,6 +55,7 @@
 
 	let searchQuery = $state('');
 	let showCreateForm = $state(false);
+	let createSectionEl = $state<HTMLDivElement | null>(null);
 	let selectedItems = $state<Map<string, { local_id: string; shareable: boolean }>>(new Map());
 	let isCreating = $state(false);
 
@@ -74,6 +75,14 @@
 					{ local_id: e.local_id ?? '', shareable: e.shareable }
 				])
 			);
+		}
+	});
+
+	// Scroll the create form into view when it opens so the submit button is visible
+	$effect(() => {
+		if (showCreateForm && createSectionEl) {
+			// Defer to allow DOM to render the form before scrolling
+			setTimeout(() => createSectionEl?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
 		}
 	});
 
@@ -304,7 +313,7 @@
 			</div>
 
 			<!-- Create new equipment section -->
-			<div class="create-section">
+			<div class="create-section" bind:this={createSectionEl}>
 				<Button
 					variant="link"
 					size="sm"
@@ -398,6 +407,7 @@
 		gap: 1rem;
 		padding: 1rem 1.5rem;
 		max-height: 500px;
+		overflow-y: auto;
 	}
 
 	.search-bar {

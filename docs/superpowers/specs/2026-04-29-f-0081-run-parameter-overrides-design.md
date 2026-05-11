@@ -1,0 +1,463 @@
+# F-0081 — Run Parameter Overrides & Multi-Step Run Creator
+
+**Status:** Draft
+**Author:** Wesley Uykimpang
+**Date:** 2026-04-29
+**ClickUp:** [86e15ctzd](https://app.clickup.com/t/86e15ctzd)
+**Mockup:** [`mockups/F-0081-run-creator-wizard.html`](../../../mockups/F-0081-run-creator-wizard.html)
+
+## Summary
+
+Today, runs are created as a verbatim shallow-copy snapshot of `protocol.graph` — every unit op carries the protocol's default parameter values, with no way to vary them per run. This forces scientists optimizing a protocol (e.g., a DOE sweep over temperature, pH, residence time) to either fork the protocol or edit results post-hoc — neither captures the intent of the experiment.
+
+This task replaces the small `CreateRunModal` with a full-page multi-step wizard. Scientists pick a protocol and version, override values where the science demands it, swap equipment, optionally add or remove parameters, see the rendered instruction text update live, and — if any edits are made — get a single dialog before review asking whether to save the changes as a new protocol version.
+
+The data model and API are designed so a future "DOE batch" feature (generate N runs varying one or more params across a design matrix) can be layered on without rework.
+
+## Goals
+
+- Per-run parameter variation without forking protocols
+- Per-run equipment swaps (different physical asset per run)
+- Add/remove parameters per run, with an option to promote the change to a new protocol version
+- Live-rendered instruction preview so scientists verify their overrides read correctly
+- Editable while `PLANNED`; locks on transition to `ACTIVE` (existing GMP semantics)
+- API shape that a future `POST /runs/batch` can consume without restructuring
+
+## Non-goals
+
+- Building the DOE batch generator (separate feature)
+- Read-only `ProtocolEditor` canvas mode for version preview (level-3 preview is punted; level-2 compact UO list is sufficient)
+- Backfilling descriptions on existing `ProtocolVersion` rows
+- Server-side JSON Schema validation of param values (frontend pre-submit validation is sufficient for now; backend follow-up if needed)
+- Run comparison view (F-0069) — coordinates with this design but is its own feature
+
+## User Flows
+
+**Create run from a protocol (default flow)**
+
+1. From the project page, "New Run" navigates to `/projects/{projectId}/runs/new`
+2. **Step 1 · Name** — run name, optional experiment
+3. **Step 2 · Protocol & version** — pick protocol; version defaults to latest, with a "Compare versions" disclosure showing description + compact UO list
+4. **Step 3 · Parameters** — per-unit-op cards with equipment chips, parameter table (with default + override columns), live instruction preview, `+ Add parameter` / `↺ revert` / `✕ remove`
+5. On Continue, if any edits exist (value, swap, add/remove): single dialog asking "Save as new version?" with edits listed. Default focused button is **Just for this run · continue →**.
+6. **Step 4 · Review** — summary of overrides, "Create run" → POSTs `/science/runs`, redirects to the run detail page
+7. Skip override step at any time → run created identical to today's behavior
+
+**Edit while PLANNED**
+
+- On the run detail page, an `Overrides` section appears at the top while `status == PLANNED`. Same shape as the wizard's Step 3, inline.
+- Editing posts `PUT /science/runs/{id}` with the updated graph.
+- If new edits would be structural (add/remove param, equipment slot), the same save-as-version dialog can fire; otherwise a quiet save.
+
+**Lock on ACTIVE**
+
+- On transition to `ACTIVE`, the snapshot becomes immutable (existing behavior). `Overrides` section flips to read-only.
+
+## Reuse audit
+
+Before phasing details, an audit of the existing codebase against what this feature needs.
+
+### Already centralized — reuse directly, do not reimplement
+
+| Existing | Location | Use here |
+|---|---|---|
+| `renderTemplate(template, params)` | `frontend/src/lib/utils/template.ts` (tested in `template.test.ts`) | Wizard's instruction preview imports this. **No new template util.** |
+| `detectEquipmentConflicts(nodes, edges)` | `frontend/src/lib/components/protocol/protocolGraph.ts:117` | Wizard runs the same conflict detection on the run-snapshot graph to surface in-card warnings. |
+| `EquipmentPickerModal` | `frontend/src/lib/components/modals/EquipmentPickerModal.svelte` | Wizard's per-card "Swap" button opens this. |
+| `firstError`, `FieldErrors`, `flattenErrors` | `frontend/src/lib/validation.ts` | Wizard's per-field validation errors reuse this. |
+| `VersionHistoryDrawer` | `frontend/src/lib/components/analytics/VersionHistoryDrawer.svelte` | Wizard's Step 2 "Compare versions" disclosure reuses this for the version list and graph preview, instead of building a parallel UI. |
+| `RunHistory` audit-entry rendering | `frontend/src/lib/components/run/RunHistory.svelte` | New `OVERRIDE_SET` / `OVERRIDE_EDIT` actions get a render-time label entry — no new component. |
+
+### Live duplications this feature must consolidate
+
+| Pattern | Locations today | Resolution in F-0081 |
+|---|---|---|
+| `paramSchema`-driven input rendering (`prop["x-ref-type"] === "media_prep"` → media dropdown; `prop.enum` → enum dropdown; `prop.type === "number" \| "integer"` → number input; else text) | Inspector, `run/RoleWizard`, `field-mode/FieldModeRoleWizard`, `run/RunResultsSummary`, `modals/BatchRecordImportModal`, `protocol/UnitOpNode` — **6 files** | Extract a new shared `<ParamInput>` component (`lib/components/shared/ParamInput.svelte`) covering all four cases. Wizard's `RunCreatorParametersStep` uses it. **Migrating the existing 6 callsites is a separate tech-debt task** to keep this PR focused; new-code consumers must use `<ParamInput>` going forward. |
+| Schema-editor row UI (add/remove a parameter: key + label + type) | Inspector only (`addSchemaRow` / `removeSchemaRow` / `editSchemaRows`, lines 142–162, 518–562) | Extract a new shared `<SchemaEditor>` component (`lib/components/shared/SchemaEditor.svelte`) used by both Inspector and the wizard. Inspector's existing instance gets refactored to consume it (small, low-risk — it's the only callsite). |
+| Equipment-chip-list display with conflict marking | Inspector only (lines 388–402) | Extract `<EquipmentChipList>` (`lib/components/shared/EquipmentChipList.svelte`) used by Inspector and the wizard. Same Inspector refactor applies. |
+| Local `renderTemplate()` in `Inspector.svelte:231` | Inspector | Delete the local copy; import from `$lib/utils/template`. Drive-by fix in Phase 3. |
+
+These extractions live in `frontend/src/lib/components/shared/` (per `.claude/rules/conventions.md` — small cross-cutting presentational pieces).
+
+### Patterns we are not consolidating (yet)
+
+- **A generic Stepper shell.** Two wizard-like components exist (`RoleWizard`, `FieldModeRoleWizard`) but they are full feature surfaces, not reusable shells. The new `RunCreatorStepper` is its own thing. Future extraction to a generic `<Stepper>` is plausible once we have 3+ steppers; not worth doing for the second one.
+- **Migrating existing `paramSchema` consumers** to `<ParamInput>`. Six files, each with subtle variations (read-only vs. editable, with/without barcode scan, etc.). Out of scope; tracked as a follow-up tech-debt task.
+
+## Phasing
+
+| Phase | What | Why first |
+|---|---|---|
+| **1** | Surface `ProtocolVersion.description` (already in DB) via the protocol editor's publish flow | Prerequisite — version picker in the wizard needs descriptions to be useful |
+| **2** | Backend — extend run create / update to accept overrides; deep-copy graph snapshot; preserve originals; audit | Backend foundation for the wizard |
+| **3** | Frontend — full-page wizard route + step components + save-as-version dialog | The user-facing feature |
+| **4** | Run detail page integration — display + edit overrides while PLANNED | Closes the loop on the lifecycle |
+
+Each phase is independently shippable behind partial UI: Phase 1 gives the protocol editor a description input. Phase 2 unlocks the API. Phase 3 lights up the wizard. Phase 4 lights up run-page editing.
+
+---
+
+## Phase 1 — Surface `ProtocolVersion.description`
+
+### Backend
+
+`ProtocolVersion.description` and `ProtocolVersion.change_summary` already exist as nullable strings (`backend/app/models/science.py:327`). The existing `POST /protocols/{id}/publish-draft` endpoint (`backend/app/api/endpoints/protocol_versions.py:380`) does **not** accept a description today.
+
+**Change:** add an optional body to `publish-draft`:
+
+```python
+class PublishDraftRequest(BaseModel):
+    description: Optional[str] = None
+    change_summary: Optional[str] = None  # already in model
+
+@router.post("/protocols/{protocol_id}/publish-draft")
+async def publish_draft_version(
+    protocol_id: UUID,
+    version_number: int = Query(...),
+    body: Optional[PublishDraftRequest] = None,
+    ...
+):
+    ...
+    draft.is_draft = False
+    if body and body.description is not None:
+        draft.description = body.description
+    if body and body.change_summary is not None:
+        draft.change_summary = body.change_summary
+    protocol.graph = draft.graph
+    protocol.version_number = version_number
+    ...
+```
+
+The endpoint stays backwards-compatible: existing callers that don't send a body still work.
+
+### Frontend
+
+In `frontend/src/routes/protocols/[id]/+page.svelte:508`, `saveAndPublish()` currently does a draft save then publishes the draft with no metadata input. **Change:** before posting `publish-draft`, open a confirmation dialog (new component `PublishVersionDialog.svelte`) with:
+
+- **Description** (textarea, optional, placeholder "What changed in this version?")
+- **Change summary** (text input, optional, single line — for one-line changelog format if author wants)
+- Cancel / Publish actions
+
+Dialog component path: `frontend/src/lib/components/protocol/PublishVersionDialog.svelte` (lives next to `ProtocolSidebar.svelte`).
+
+Submitting fires:
+
+```typescript
+await api.post(`/science/protocols/${protocol.id}/publish-draft?version_number=${draftVersionNumber}`, {
+  description: trimmedDescription || undefined,
+  change_summary: trimmedSummary || undefined,
+});
+```
+
+### Tests
+
+- Backend integration: `POST /protocols/{id}/publish-draft` with a description body persists it on the version; without a body still works (regression).
+- Backend integration: `GET /protocols/{id}/versions` returns the description.
+- Frontend Vitest: `PublishVersionDialog` — submit with empty description sends no field; with description sends the value; cancel closes.
+
+### Out of scope (Phase 1)
+
+- Backfilling descriptions on existing versions
+- A standalone "edit version description" endpoint
+- Markdown rendering in description display (plain text for now)
+
+---
+
+## Phase 2 — Backend: run override API
+
+### Data model
+
+Overrides themselves live entirely within `Run.graph` JSONB — no DB migration is required for the override storage. Per unit-op node in the snapshot:
+
+| Field | Meaning |
+|---|---|
+| `node.data.params` | Effective values for this run (protocol defaults merged with overrides) |
+| `node.data.protocol_params` | Original protocol defaults — preserved forever, never written by overrides |
+| `node.data.equipment` | Effective equipment list for this run |
+| `node.data.protocol_equipment` | Original protocol equipment — preserved forever |
+| `node.data.paramSchema` | Effective schema for this run (reflects added/removed params) |
+| `node.data.protocol_paramSchema` | Original protocol schema — preserved forever |
+| `node.data.description` | Effective instruction template for this run (overridable) |
+| `node.data.protocol_description` | Original protocol instruction template — preserved forever |
+
+The "protocol_*" mirror fields make `effective vs. default` diffs trivial to compute downstream (relevant to F-0069 run comparison).
+
+**One small migration:** add nullable `Run.parent_batch_id: Optional[uuid.UUID]` (no FK constraint yet — just a UUID column with an index). Anticipates DOE-batch grouping so the future batch task is purely additive on the API side and doesn't need to migrate the runs table at that point.
+
+### API shape — `POST /science/runs`
+
+```python
+# backend/app/schemas/science.py
+
+class NodeOverrides(BaseModel):
+    """Sparse overrides applied to a single unit-op node in the run snapshot."""
+    params: Optional[Dict[str, Any]] = None        # sparse: only the keys being overridden
+    equipment: Optional[List[SelectedEquipment]] = None  # full replacement list (None = inherit)
+    paramSchema: Optional[Dict[str, Any]] = None   # full schema if structurally modified
+    description: Optional[str] = None              # full replacement of instruction template (None = inherit)
+
+class RunOverrides(BaseModel):
+    """Per-run edits to the protocol snapshot. Empty = use protocol defaults."""
+    nodes: Dict[str, NodeOverrides] = Field(default_factory=dict)
+    # nodeId -> NodeOverrides
+
+class RunCreate(BaseModel):
+    name: str
+    project_id: UUID
+    protocol_id: Optional[UUID] = None
+    protocol_version_number: Optional[int] = None  # defaults to current protocol.version_number
+    experiment_id: Optional[UUID] = None
+    overrides: Optional[RunOverrides] = None
+```
+
+This shape per-run-keyed-by-nodeId is what a future `POST /science/runs/batch` consumes naturally:
+
+```python
+class RunBatchCreate(BaseModel):
+    common: RunCommonFields  # name template, project_id, protocol_id, version
+    runs: List[RunBatchItem]  # each with a unique name + RunOverrides
+
+# A 32-arm DOE sweep is just a 32-element list.
+```
+
+Designing the batch endpoint is **not** in scope for F-0081, but the singleton shape must be batch-compatible — which it is.
+
+### Run-creation logic
+
+In `backend/app/api/endpoints/runs.py:53` (the existing `create_run`):
+
+1. Resolve which `ProtocolVersion.graph` to snapshot:
+   - If `protocol_version_number` is `None`, use `protocol.graph` (current published).
+   - Else, load the matching `ProtocolVersion` and use its `graph`.
+2. **Deep copy** the graph (`copy.deepcopy`) — current code does a shallow `protocol.graph.copy()` which would mutate the protocol on per-node overrides.
+3. For each node in `graph["nodes"]` of type `unitOp`:
+   - Capture originals into mirror fields: `protocol_params`, `protocol_equipment`, `protocol_paramSchema`, `protocol_description`.
+   - If `overrides.nodes[node_id]` exists:
+     - `params = {**protocol_params, **overrides.params}` (sparse merge)
+     - `equipment = overrides.equipment or protocol_equipment`
+     - `paramSchema = overrides.paramSchema or protocol_paramSchema`
+     - `description = overrides.description if overrides.description is not None else protocol_description`
+4. Persist `Run.graph` with the merged result.
+5. **Audit log** one entry per overridden field, using a new audit action `OVERRIDE_SET` (creation-time). Payload mirrors the existing `STEP_EDIT` shape at `runs.py:282-303`:
+   ```python
+   await log_audit(
+       db, user.id, "OVERRIDE_SET", "Run", run_obj.id,
+       {"step_id": node_id, "step_name": label, "field": param_key,
+        "field_label": prop_title, "old_value": protocol_default, "new_value": override_value},
+   )
+   ```
+   Equipment swaps, schema add/remove, and instruction edits get the same action with `field` set to `"equipment"`, `"paramSchema.<key>"`, or `"description"` respectively.
+6. Existing audit on run creation (`{"name": run_in.name}`) stays unchanged.
+
+### API shape — `PUT /science/runs/{id}` (edit while PLANNED)
+
+The endpoint already exists (`runs.py:153`) and accepts a full `graph` payload. **Change:** add a guard that rejects graph edits when `status != "PLANNED"`:
+
+```python
+if "graph" in changes and current_status != "PLANNED":
+    raise HTTPException(
+        status_code=422,
+        detail="Cannot edit overrides after run has started"
+    )
+```
+
+Two ways to express edits in `PUT`:
+- **Option A (chosen):** client sends the full `graph` dict (current contract). Backend diffs against `Run.graph` to write audit entries, then replaces.
+- Option B: dedicated `PUT /runs/{id}/overrides` with the same `RunOverrides` shape.
+
+Reuse Option A to minimize endpoint sprawl. Audit-diff logic lives in a new helper `_audit_graph_overrides(db, user, run, old_graph, new_graph)` so the create and update paths share it.
+
+### Tests (Phase 2)
+
+Backend integration (`backend/tests/integration/api/test_runs_overrides.py`):
+
+- `create_run` with no overrides → graph identical to today's behavior; `protocol_*` mirror fields populated
+- `create_run` with sparse value overrides → merged values applied; defaults preserved in mirrors
+- `create_run` with equipment swap → `node.data.equipment` reflects swap; `protocol_equipment` preserved
+- `create_run` with `paramSchema` override (added param) → schema mutated; new key visible in `paramSchema.properties`
+- `create_run` with `description` override → instruction template replaced; `protocol_description` mirror preserves original
+- `create_run` with overrides → audit log has one `STEP_EDIT` entry per overridden field
+- `update_run` with `graph` while `PLANNED` → 200, audit entries written
+- `update_run` with `graph` while `ACTIVE` → 422
+- `create_run` from non-current `protocol_version_number` → snapshots that version's graph, not current
+- Deep-copy regression: mutating `Run.graph.nodes[...].data.params` does not mutate `Protocol.graph`
+
+Backend unit:
+- `_audit_graph_overrides` helper: produces correct entries for added/removed/modified fields
+
+---
+
+## Phase 3 — Frontend wizard
+
+### Route + entry points
+
+- New route: `frontend/src/routes/projects/[id]/runs/new/+page.svelte` — the wizard host.
+- Entry: existing "New Run" buttons (project page, experiment detail) `goto('/projects/{id}/runs/new')` instead of opening `CreateRunModal`. Pass `experimentId` via query param when applicable.
+- `CreateRunModal.svelte` → delete after migration. (No backwards-compat shim; the button targets change in the same PR.)
+
+### Component layout
+
+All new components live under `frontend/src/lib/components/run/` (existing domain bucket per `.claude/rules/conventions.md`). Wizard shell + step components:
+
+```
+run/
+  RunCreatorPage.svelte          # the route page; holds wizard state, orchestrates
+  RunCreatorStepper.svelte       # presentational stepper (4 pills)
+  RunCreatorNameStep.svelte      # Step 1
+  RunCreatorProtocolStep.svelte  # Step 2 — protocol + version + level-2 preview
+  RunCreatorParametersStep.svelte# Step 3 — per-UO override editor
+  RunCreatorReviewStep.svelte    # Step 4
+  RunCreatorUnitOpCard.svelte    # one card inside ParametersStep
+  SaveAsNewVersionDialog.svelte  # the on-Continue prompt
+```
+
+Shared UI extractions (per the Reuse audit; created in this task and consumed by both Inspector and the wizard):
+
+- `lib/components/shared/ParamInput.svelte` — paramSchema-driven input (`x-ref-type` media dropdown / enum dropdown / number / text). Replaces inline branches across the 6 existing files (only the wizard consumes it now; existing files migrate as a separate tech-debt ticket).
+- `lib/components/shared/SchemaEditor.svelte` — add/remove parameter rows (key + label + type). Inspector refactors to consume this in the same PR (only callsite, low risk).
+- `lib/components/shared/EquipmentChipList.svelte` — equipment chip list with conflict marking. Inspector refactors to consume this in the same PR.
+
+Reused as-is (from existing code):
+- `lib/utils/template.ts::renderTemplate` — already exists; wizard imports directly. Drive-by: delete the local duplicate at `Inspector.svelte:231` and replace with the import.
+- `lib/components/protocol/protocolGraph.ts::detectEquipmentConflicts` — already exists; wizard runs against the run-snapshot graph for in-card conflict warnings.
+- `lib/components/modals/EquipmentPickerModal` — already exists; per-card "Swap" button composes it.
+- `lib/validation.ts` — already exists; wizard reuses for inline error rendering.
+
+New (purely run-creator concerns, no existing equivalent):
+- `lib/utils/runOverrides.ts` — pure helpers: `computeEdits(originalGraph, currentGraph)`, `applyOverrides(graph, overrides)`, `hasStructuralChanges(edits)`. Used by both wizard and run-detail editor.
+
+### Step 2 · Protocol + version (level-2 preview)
+
+- Protocol picker (existing `<select>` styling).
+- Version picker — defaults to "latest". `<select>` listing `vN — created date — author`.
+- Below: **Version summary card** showing `vN`, name + LATEST pill, stats line (`7 unit ops · 31 params · 4 equipment slots · created Apr 12 by Wesley`), description (or "No description").
+- Disclosure `↳ Compare versions` reveals **`VersionHistoryDrawer`** (existing component at `lib/components/analytics/VersionHistoryDrawer.svelte`). The drawer already lists versions with author/date/description and has graph-preview affordances; we reuse it instead of building a parallel UI. Selecting a row in the drawer sets the wizard's `protocol_version_number`.
+- Below the drawer (or alongside, depending on the drawer's existing layout): an **"Unit ops at-a-glance"** detail card — ordered list `UO-NN · Name · category · N params · M equipment`. Pure data, derived from the selected version's graph; no SvelteFlow render. (If `VersionHistoryDrawer` already shows enough detail per version, the at-a-glance card can be removed — TBD when consuming it.)
+
+### Step 3 · Parameters
+
+- Each unit-op node in graph order renders as a `RunCreatorUnitOpCard`:
+  - Header: UO num, name, category, badges (`N overridden`, `1 invalid`).
+  - **Equipment row** — uses `<EquipmentChipList>` (extracted shared component) showing chips for each `data.equipment[i]` with name + serial + `swap` button; conflict markers come for free from the same component. Swap opens `EquipmentPickerModal`. Swapped chips get a mint border + ◆. If swapped, show "protocol used: …" reminder text.
+  - **Parameter table** (4 columns: Parameter, Default, Override for this run, Action). One row per `paramSchema.properties` key. Override input cell composes `<ParamInput>` (extracted shared component) so the type-dispatch (number / text / enum / media-ref) lives in one place.
+  - **`+ Add parameter`** button at table foot opens `<SchemaEditor>` (extracted shared component) for the inline key + label + type form. Added rows get an amber `+ ADDED` chip.
+  - **Remove a row** (`✕`): marks the param as removed, shows struck-through with a `− REMOVED` chip. Removed rows stay visible (so the diff is readable). Restore via `↺`.
+  - **Instructions** block: collapsed by default to keep the card calm. Default state shows the rendered template (with `<mark>` highlighting on overridden values, muted-toned `<mark>` for defaults) and a `✎ Edit instructions` link. Clicking expands an inline editor: textarea pre-filled with `node.data.description`, live-rendered preview underneath that updates as the user types, and a `↺ revert to protocol default` button. If the effective `description !== protocol_description`, the header shows a small `◆ modified` chip — the block stays collapsed regardless; the chip is the only signal. Uses the shared `renderTemplate()` util.
+- Aside (sticky 320px column): live counts (Value overrides / Equipment swaps / Structural changes / Inheriting / Validation errors), diff preview list.
+- Footer action bar: `Skip · use defaults` / `Back` / `Continue to review`.
+
+### `SaveAsNewVersionDialog`
+
+Triggered on `Continue to review` if `computeEdits(originalGraph, currentGraph).length > 0`.
+
+- Lists every edit grouped by unit op: `VALUE` / `SWAP` / `ADDED` / `REMOVED` / `INSTRUCTION` tags + human-readable diff. (For `INSTRUCTION` the diff shows the first ~80 chars of old → new with ellipsis; full text on hover.)
+- Description input: optional one-liner ("e.g. Reduced pH target for DOE arm 4; swapped to Bioreactor B").
+- Three actions: `Cancel` / `Save as v{N+1}` (secondary) / **`Just for this run · continue →`** (primary, focused — Enter dismisses).
+- If "Save as v{N+1}":
+  1. POST `/science/protocols/{id}/publish-draft?version_number={N+1}` with description (Phase 1 wiring).
+  2. Update wizard state: `protocol_version_number = N+1`.
+  3. The run snapshot will now use the newly-saved version as the source — overrides reapply against the new defaults (most edits become no-ops, since they're now the protocol's values).
+  4. Continue to Step 4.
+- If "Just for this run": just continue.
+
+### Frontend tests
+
+Vitest:
+- `template.ts` — `renderTemplate` substitution, missing keys, escaping
+- `runOverrides.ts` — `computeEdits` value/equipment/schema diffs; `applyOverrides` merge; `hasStructuralChanges`
+- `RunCreatorNameStep` — validation, experiment locking
+- `RunCreatorProtocolStep` — version defaults to latest; selecting non-latest updates summary
+- `RunCreatorParametersStep` — override merge, skip path, validation surfacing, add/remove param flow
+- `SaveAsNewVersionDialog` — fires when edits exist, lists correct tags, primary action posts the right payload
+
+Playwright (`frontend/tests/e2e/run-creator.spec.ts`):
+- Full create flow: name → pick protocol/version → override two values + swap equipment + add a param → save-as-version dialog appears → "Just for this run" → review → create → land on run detail page with overrides visible
+- PLANNED-state edit flow: open run, change an override, save, audit entry created, lock on ACTIVE
+
+---
+
+## Phase 4 — Run detail page integration
+
+### Display
+
+`frontend/src/routes/runs/[id]/+page.svelte` (1032 LOC today). Add an `Overrides` section near the top:
+
+- Always visible. Empty-state message when no overrides ("This run uses every protocol default. Edit while in PLANNED to vary parameters.").
+- When overrides exist: same shape as wizard Step 3's diff aside — grouped by unit op, with VALUE/SWAP/ADDED/REMOVED chips.
+- When `status == "PLANNED"`: `Edit overrides` button → opens an inline editor modeled on `RunCreatorParametersStep` (extract a reusable `<RunOverridesEditor>` component for both surfaces).
+- When `status >= "ACTIVE"`: read-only.
+
+### Edit
+
+- Reuse `RunCreatorParametersStep`'s child component as `<RunOverridesEditor mode="edit">`.
+- Save: `PUT /science/runs/{id}` with the mutated graph. The Phase 2 audit-diff helper handles audit entries (writes `OVERRIDE_EDIT` actions).
+- If the user introduces *any* new edit relative to the protocol's current graph (matching the wizard's behavior — value, swap, add, remove all qualify), the same `SaveAsNewVersionDialog` fires before save with the same primary action ("Just for this run · save"). This keeps the wizard and run-page editing experiences identical.
+
+### Tests (Phase 4)
+
+- Vitest: `RunOverridesEditor` mounts in both wizard and run-page contexts; reset / save behavior
+- Playwright: edit-while-PLANNED end-to-end; lock-after-ACTIVE blocks edit
+
+---
+
+## Audit log
+
+Every override write emits one audit entry per `(node_id, field)` tuple. Two new audit actions are introduced (alongside the existing `STEP_EDIT`):
+
+| Action | When | Payload |
+|---|---|---|
+| `OVERRIDE_SET` | Override applied at run creation | `step_id`, `step_name`, `field`, `field_label`, `old_value` (protocol default), `new_value` |
+| `OVERRIDE_EDIT` | Override edited while `PLANNED` | Same shape; `old_value` is the previous override value |
+| `STEP_EDIT` (existing) | Post-completion edits in `EDITED` status | Unchanged |
+
+The Run history view (existing `RunHistory.svelte`) iterates audit entries by entity_id; the new actions need render-time labels ("Set at creation", "Edited while planned") added to the existing label map.
+
+---
+
+## Verification strategy
+
+Each phase has automated tests called out in its section. On top of those, we run a `qa-verify` browser session at every phase boundary that has a user-facing surface:
+
+| Phase | Automated | `qa-verify` session |
+|---|---|---|
+| **1** · ProtocolVersion description | Backend integration tests; Vitest for `PublishVersionDialog` | **Yes.** Open protocol editor → click Publish → fill description + change_summary → confirm version saves with the description; reload and verify it appears in version history. |
+| **2** · Backend override API | Backend integration tests (full coverage of merge / mirror / audit / PLANNED-only guard / version-pinned snapshot / deep-copy regression) | **No isolated session.** Phase 2 has no UI surface. Verification rolls into Phase 3's session, which exercises the API end-to-end through the wizard. Backend correctness is enforced by the test suite at this point. |
+| **3** · Wizard | Vitest per step component + `template.ts` + `runOverrides.ts`; Playwright e2e for full creation flow | **Yes.** Full wizard flow: name → protocol+version pick → parameter overrides (value, swap, add, remove, instruction edit) → save-as-version dialog appears → both branches of the dialog (Just for this run / Save as v_N+1) → review → create → land on run detail page with overrides visible. UI/UX audit specifically watching for: oversized inputs/buttons, overflow on tablet width, spacing inconsistencies in the per-UO cards, sticky-aside behavior at long scroll, validation-error legibility. |
+| **4** · Run detail integration | Vitest + Playwright | **Yes.** Open a PLANNED run → edit an override → save → verify audit entry; transition run to ACTIVE → confirm overrides flip to read-only and edit affordances disappear. |
+
+`qa-verify` sessions in Phases 1, 3, 4 must fix any FAIL or POLISH issues found before the phase is considered complete.
+
+## Open questions / risks
+
+| Question | Resolution |
+|---|---|
+| Server-side `paramSchema` validation? | **No** — frontend pre-submit validation is the contract today. Server accepts whatever shape it gets. Revisit if scientists hit edge cases. |
+| Equipment conflict logic in the wizard? | Equipment shareable/conflict logic exists in `Inspector.svelte` via `equipmentConflicts: Map`. Need to extract or replicate for the wizard. Adds ~half a day; in scope for Phase 3. |
+| What happens to overrides if the source `ProtocolVersion` is deleted? | `protocol_version_number` on the run is just an int, not an FK. The mirror fields preserve the originals — losing the ProtocolVersion row is recoverable from any run that snapshotted it. Acceptable. |
+| Schema validation server-side: enforce `enum`, `minimum`, `maximum`? | Out of scope for F-0081. Add follow-up task if needed. |
+| Should `Run.parent_batch_id` ship in this task or as part of the future batch task? | **Ship in F-0081** as a nullable column (small, decoupled migration). Means the future batch task is purely additive — no run-table migration at that point. |
+
+## Acceptance criteria mapping
+
+(From the ClickUp task description.)
+
+| AC | Where addressed |
+|---|---|
+| Run creator is a multi-step form (name → protocol → params → review) | Phase 3 |
+| Override step lists each unit op with default + override | Phase 3 (`RunCreatorParametersStep`) |
+| Visual indicator for overridden vs. inherited | Phase 3 (mint row tint, `2 overridden` badge) |
+| Skipping override step → run identical to today | Phase 3 (skip button bypasses overrides; backend with no overrides uses defaults) |
+| Param schema validation surfaces inline errors | Phase 3 (frontend uses existing `paramSchema` validators) |
+| `POST /science/runs` accepts overrides | Phase 2 |
+| Overrides merged into `Run.graph` at creation | Phase 2 |
+| Original protocol values preserved on the run | Phase 2 (`protocol_*` mirror fields) |
+| Audit log entry on run creation records overrides | Phase 2 (`OVERRIDE_SET` per field) |
+| `PUT /science/runs/{id}` allows updating overrides while PLANNED | Phase 2 (existing endpoint + new guard) |
+| Returns 422 on `ACTIVE`/`COMPLETED`/`EDITED`/`ARCHIVED` | Phase 2 (new guard) |
+| Edits append to AuditLog | Phase 2 (`OVERRIDE_EDIT` per field) |
+| Run page displays overrides; PLANNED-editable | Phase 4 |
+| API shape expresses N runs × M overrides without rework | Phase 2 (`RunOverrides.nodes` is sparse and per-run) |
+| Optional `Run.parent_batch_id` for future grouping | Phase 2 (small migration) |
+| Backend tests | Phase 2 |
+| Frontend tests | Phases 3, 4 |
+| Playwright e2e | Phases 3, 4 |

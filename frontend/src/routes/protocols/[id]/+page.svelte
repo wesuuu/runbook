@@ -20,6 +20,7 @@
     import { ProjectSchema } from "$lib/schemas";
     import type { NodeTypes } from "@xyflow/svelte";
     import ProtocolSidebar from "$lib/components/protocol/ProtocolSidebar.svelte";
+    import PublishVersionDialog from "$lib/components/protocol/PublishVersionDialog.svelte";
     import CanvasToolbar from "$lib/components/protocol/CanvasToolbar.svelte";
     import ValidationBanners from "$lib/components/protocol/ValidationBanners.svelte";
     import {
@@ -30,6 +31,8 @@
         clearTimelineSizing as clearTimeline,
         detectEquipmentConflicts as detectConflicts,
         findSwimLaneParent,
+        adoptOrphanUnitOpsToLanes,
+        applyDragStopReparenting,
     } from "$lib/components/protocol/protocolGraph";
     import {
         computeBranchValidationErrors,
@@ -97,6 +100,7 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
     let saving = $state(false);
+    let publishDialogOpen = $state(false);
 
     // Flow state
     let nodes = $state<Node[]>([]);
@@ -268,6 +272,16 @@
         },
     });
 
+    setContext("laneInfo", {
+        childCount(laneId: string): number {
+            let n = 0;
+            for (const node of nodes) {
+                if (node.parentId === laneId) n += 1;
+            }
+            return n;
+        },
+    });
+
     setContext("nodeActions", {
         setNodeHandleOrientation(nodeId: string, orientation: "horizontal" | "vertical" | null) {
             pushUndoSnapshot();
@@ -345,6 +359,11 @@
 
     function openPdfPreview() {
         if (!protocol) return;
+        const block = blockingBranchMessage();
+        if (block) {
+            toast.error(block);
+            return;
+        }
         showVersionHistory = false;
         showPdfDrawer = true;
     }
@@ -354,7 +373,13 @@
     let createModalCategory = $state("");
 
     // --- Validation (delegated to protocolValidation.ts) ---
-    const branchValidationErrors = $derived(() => computeBranchValidationErrors(nodes, edges));
+    const branchValidationErrors = $derived(() =>
+        computeBranchValidationErrors(nodes, edges, {
+            timeEnabled,
+            pixelsPerHour,
+            layout,
+        }),
+    );
     const processStartValidationErrors = $derived(() => computeProcessStartValidationErrors(nodes, edges));
 
     const branchInvalidNodeIds = $derived(() => {
@@ -364,6 +389,12 @@
         }
         return ids;
     });
+
+    function blockingBranchMessage(): string | null {
+        const errs = branchValidationErrors();
+        if (errs.length === 0) return null;
+        return `Cannot proceed: ${errs.length} branching ${errs.length === 1 ? "step needs" : "steps need"} distinct roles. See the warning banner.`;
+    }
 
     // --- Timeline helpers ---
     const totalHours = $derived(() => {
@@ -453,6 +484,12 @@
             lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
             hasUnsavedChanges = false;
             undoRedoState = createUndoRedoState();
+
+            // Populate version list so the save toast can tell whether it
+            // is creating a new draft vs editing the existing one.
+            if (id && id !== "new") {
+                await loadVersions();
+            }
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
@@ -487,13 +524,22 @@
         try {
             const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
 
+            const draftVersionNumber = versionNumber + 1;
+            const draftExisted = versions.some(
+                (v) => v.version_number === draftVersionNumber && v.is_draft,
+            );
+
             // Save as draft (creates draft version without modifying main protocol)
             const updated: any = await api.put(`/science/protocols/${protocol.id}?save_as_draft=true`, {
                 graph: graphData,
             });
             // Reload versions to show the new draft
             await loadVersions();
-            toast.success(`Draft saved (v${versionNumber + 1})`);
+            toast.success(
+                draftExisted
+                    ? `Draft v${draftVersionNumber} edited`
+                    : `Draft saved (v${draftVersionNumber})`,
+            );
             // Mark as saved and reset undo/redo
             lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
             hasUnsavedChanges = false;
@@ -520,6 +566,19 @@
             return;
         }
 
+        const block = blockingBranchMessage();
+        if (block) {
+            toast.error(block);
+            return;
+        }
+
+        // Open the dialog; actual publish happens in performPublish via onConfirm
+        publishDialogOpen = true;
+    }
+
+    async function performPublish(payload: { description: string | undefined; change_summary: string | undefined }) {
+        if (!protocol) return;
+
         saving = true;
 
         try {
@@ -531,9 +590,10 @@
             });
             const draftVersionNumber = versionNumber + 1;
 
-            // Then publish the draft
+            // Then publish the draft (with optional metadata from the dialog)
             const publishResponse: any = await api.post(
                 `/science/protocols/${protocol.id}/publish-draft?version_number=${draftVersionNumber}`,
+                payload,
             );
 
             protocolStatus = publishResponse.status || "APPROVED";
@@ -769,6 +829,22 @@
             y: (event.clientY - bounds.top - viewport.y) / viewport.zoom,
         };
 
+        if (op._nodeType === "swimLane") {
+            const role = op.role;
+            if (!role || !role.id) return;
+            if (nodes.some((n) => n.id === `lane-${role.id}`)) {
+                toast.warning(`Lane for "${role.name}" is already on the canvas`);
+                return;
+            }
+            pushUndoSnapshot();
+            const withLane = [
+                ...nodes,
+                createSwimLaneNode(role, layout, roles.length - 1, position),
+            ];
+            nodes = adoptOrphanUnitOpsToLanes(withLane);
+            return;
+        }
+
         const { parentId, adjustedPosition } = findSwimLaneParent(nodes, position);
 
         pushUndoSnapshot();
@@ -777,6 +853,13 @@
         } else {
             nodes = [...nodes, createUnitOpNode(op, adjustedPosition, parentId, timeEnabled, layout, pixelsPerHour)];
         }
+    }
+
+    function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
+        if (!targetNode) return;
+        const updated = applyDragStopReparenting(nodes, targetNode.id);
+        if (updated === nodes) return;
+        nodes = updated;
     }
 
     // --- Equipment Management ---
@@ -877,7 +960,8 @@
     function handleRoleCreated(role: any) {
         pushUndoSnapshot();
         roles = [...roles, role];
-        nodes = [...nodes, createSwimLaneNode(role, layout, roles.length - 1)];
+        const withLane = [...nodes, createSwimLaneNode(role, layout, roles.length - 1)];
+        nodes = adoptOrphanUnitOpsToLanes(withLane);
     }
 
     function handleRoleDeleted(roleId: string) {
@@ -1039,6 +1123,12 @@
     />
     {/if}
 
+    <PublishVersionDialog
+        bind:open={publishDialogOpen}
+        versionNumber={versionNumber + 1}
+        onConfirm={performPublish}
+    />
+
     <!-- ============= CANVAS ============= -->
     <div
         class="relative flex-1 bg-[hsl(240,4.8%,95.9%)]"
@@ -1127,6 +1217,7 @@
                 panOnDrag={interactionMode === "pan"}
                 snapGrid={timeEnabled ? [snapGridPx, snapGridPx] : undefined}
                 onnodedragstart={() => pushUndoSnapshot()}
+                onnodedragstop={handleNodeDragStop}
                 onconnectstart={() => { preConnectSnapshot = buildGraphSnapshot(nodes, edges); }}
                 onconnect={() => {
                     if (preConnectSnapshot) {
@@ -1164,6 +1255,7 @@
                 onSaveAsNew={handleSaveAsNew}
                 onCreateEquipment={handleCreateEquipment}
                 onClose={() => (selectedNodeId = null)}
+                branchErrors={selectedNodeId ? branchValidationErrors().filter((e) => e.sourceNodeId === selectedNodeId) : []}
             />
         {/if}
     {/if}

@@ -42,13 +42,13 @@ async def _get_user_org(
     user: User,
     db: AsyncSession,
     org_id: uuid.UUID | None = None,
-) -> tuple[uuid.UUID, str]:
-    """Return (org_id, org_role) for the user's current org (from JWT).
+) -> tuple[uuid.UUID, list[str]]:
+    """Return (org_id, roles) for the user's current org (from JWT).
 
     If org_id is provided (typically from get_org_id_from_request), uses that
     to find the specific membership. Falls back to first membership otherwise.
     """
-    stmt = select(OrganizationMember.organization_id, OrganizationMember.role).where(
+    stmt = select(OrganizationMember.organization_id, OrganizationMember.roles).where(
         OrganizationMember.user_id == user.id
     )
     if org_id is not None:
@@ -62,7 +62,7 @@ async def _get_user_org(
             status_code=403,
             detail="User is not a member of any organization",
         )
-    return row.organization_id, row.role
+    return row.organization_id, list(row.roles or [])
 
 
 # ─── Skills ───
@@ -102,9 +102,10 @@ async def list_skills(
 async def get_chat_config(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    current_org_id: uuid.UUID | None = Depends(get_org_id_from_request),
 ):
     """Return chat configuration for the current user's org."""
-    org_id, _ = await _get_user_org(current_user, db)
+    org_id, _ = await _get_user_org(current_user, db, org_id=current_org_id)
     context_window = await get_context_window("chat", db, org_id=org_id)
     model_name = await get_model_display_name("chat", db, org_id=org_id)
 
@@ -129,8 +130,9 @@ async def create_chat_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_active_subscription()),
+    current_org_id: uuid.UUID | None = Depends(get_org_id_from_request),
 ):
-    org_id, _ = await _get_user_org(current_user, db)
+    org_id, _ = await _get_user_org(current_user, db, org_id=current_org_id)
     session = await create_session(
         db,
         user_id=current_user.id,
@@ -149,8 +151,9 @@ async def list_chat_sessions(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    current_org_id: uuid.UUID | None = Depends(get_org_id_from_request),
 ):
-    org_id, _ = await _get_user_org(current_user, db)
+    org_id, _ = await _get_user_org(current_user, db, org_id=current_org_id)
     sessions, total = await list_sessions(
         db, user_id=current_user.id, org_id=org_id, limit=limit, offset=offset
     )
@@ -231,8 +234,8 @@ async def send_chat_message(
         raise HTTPException(status_code=403, detail="Not your chat session")
 
     # Resolve org role for is_org_admin
-    _, org_role = await _get_user_org(current_user, db)
-    is_org_admin = org_role == OrgRole.ADMIN
+    _, org_roles = await _get_user_org(current_user, db)
+    is_org_admin = OrgRole.ADMIN.value in org_roles
 
     try:
         user_msg, assistant_msg, sources = await send_message(
@@ -279,7 +282,7 @@ async def _get_org_admin_emails(org_id: uuid.UUID, db: AsyncSession) -> list[str
         .join(OrganizationMember, OrganizationMember.user_id == User.id)
         .where(
             OrganizationMember.organization_id == org_id,
-            OrganizationMember.role == OrgRole.ADMIN.value,
+            OrganizationMember.roles.contains([OrgRole.ADMIN.value]),
         )
     )
     return result.scalars().all()

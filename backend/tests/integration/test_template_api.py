@@ -47,7 +47,7 @@ async def member_user(db_session, test_org) -> User:
         OrganizationMember(
             user_id=user.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     await db_session.flush()

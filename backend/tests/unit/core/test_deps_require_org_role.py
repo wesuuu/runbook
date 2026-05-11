@@ -18,7 +18,7 @@ async def _replace_membership(db_session, user_id, org_id, role: str):
         OrganizationMember(
             user_id=user_id,
             organization_id=org_id,
-            role=role,
+            roles=sorted({"MEMBER", role}),
         )
     )
     await db_session.flush()
