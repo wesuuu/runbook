@@ -7,6 +7,9 @@ backend/uploads/*
 # Benchmark fixture documents (generated, not committed)
 backend/tests/benchmarks/input-to-protocol/*/document.*
 
+# docling eval artifacts (regenerate via backend/scripts/docling_eval.py)
+backend/tests/artifacts/docling_out/
+
 # Python
 __pycache__/
 *.py[cod]
