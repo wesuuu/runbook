@@ -3,6 +3,7 @@
     import { marked } from 'marked';
     import DOMPurify from 'dompurify';
     import ChatSkillButtons from '$lib/components/ai/ChatSkillButtons.svelte';
+    import ThinkingIndicator from '$lib/components/ai/ThinkingIndicator.svelte';
     import ProtocolImportModal from '$lib/components/modals/ProtocolImportModal.svelte';
     import { Button } from '$lib/components/ui/button';
     import { EmptyState } from '$lib/components/ui/empty-state';
@@ -14,7 +15,7 @@
         getChatSessions, getActiveSession, getMessageInput, isSending,
         isLoading, isCreatingSession, isSidebarCollapsed, isSourcePanelOpen,
         getActiveSources, getMessageSources, getSkills, getMessageError,
-        getStalePendingMessage,
+        getStalePendingMessage, getCurrentToolLabel,
         initChat, createSession, selectSession, deleteSession,
         sendMessage, setMessageInput, setSidebarCollapsed, setSourcePanelOpen,
         showSourcesForMessage, registerScrollFn, activateSkill,
@@ -38,6 +39,7 @@
     const skills = $derived(getSkills());
     const messageError = $derived(getMessageError());
     const stalePending = $derived(getStalePendingMessage());
+    const currentToolLabel = $derived(getCurrentToolLabel());
 
     const hasMessages = $derived(
         activeSession !== null && activeSession.messages.length > 0
@@ -350,14 +352,8 @@
                 {/each}
 
                 {#if sending && !stalePending}
-                    <div in:fade={{ duration: blockDuration() }} class="flex justify-start">
-                        <div class="bg-muted/70 rounded-xl px-4 py-3">
-                            <div class="flex items-center gap-1.5">
-                                <div class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 0ms"></div>
-                                <div class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 150ms"></div>
-                                <div class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 300ms"></div>
-                            </div>
-                        </div>
+                    <div in:fade={{ duration: blockDuration() }}>
+                        <ThinkingIndicator label={currentToolLabel} />
                     </div>
                 {/if}
 
