@@ -6,10 +6,10 @@ import {
     ChatSessionSchema,
     ChatSessionDetailSchema,
     ChatSessionListResponseSchema,
-    ChatCompletionResponseSchema,
     ChatSkillListResponseSchema,
     ChatConfigSchema,
 } from '$lib/schemas/chat';
+import { streamSse, type SseEvent } from '$lib/ai/sse-stream';
 
 // ─── Module-level state (survives navigations) ───
 
@@ -43,6 +43,17 @@ let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let staleTimer: ReturnType<typeof setTimeout> | null = null;
 let pollSessionId: string | null = null;
 let stalePendingMessage = $state<ChatMessage | null>(null);
+
+// Live label for the in-flight tool, shown in the chat thinking indicator
+// (F-0083). Cleared when the matching tool_end arrives, when the turn ends,
+// and on error. `currentToolName` is the raw tool name kept alongside so a
+// stale tool_end can't clobber a newer tool_start.
+let currentToolLabel = $state<string | null>(null);
+let currentToolName: string | null = null;
+
+export function getCurrentToolLabel(): string | null {
+    return currentToolLabel;
+}
 
 const STALE_POLL_MS = 90_000;
 
@@ -339,32 +350,69 @@ export async function sendMessage(skillId?: string): Promise<void> {
     await tick();
     scrollFn?.();
 
+    let errorCode: string | null = null;
+
     try {
         const body: Record<string, string> = { content };
         if (skillId) {
             body.skill_id = skillId;
         }
 
-        const res = await api.post(
-            `/chat/sessions/${activeSession.id}/messages`,
+        currentToolLabel = null;
+        currentToolName = null;
+
+        type DonePayload = {
+            user_message: ChatMessage;
+            assistant_message: ChatMessage;
+            sources: ChatSourceReference[];
+        };
+        let donePayload: DonePayload | null = null;
+        let errorDetail: string | null = null;
+
+        await streamSse(
+            `/chat/sessions/${activeSession.id}/messages/stream`,
             body,
-            { schema: ChatCompletionResponseSchema },
+            (event: SseEvent) => {
+                if (event.type === 'tool_start') {
+                    currentToolName = event.tool;
+                    currentToolLabel = event.label;
+                } else if (event.type === 'tool_end') {
+                    if (currentToolName === event.tool) {
+                        currentToolName = null;
+                        currentToolLabel = null;
+                    }
+                } else if (event.type === 'done') {
+                    donePayload = {
+                        user_message: event.user_message as ChatMessage,
+                        assistant_message: event.assistant_message as ChatMessage,
+                        sources: event.sources as ChatSourceReference[],
+                    };
+                } else if (event.type === 'error') {
+                    errorDetail = event.detail;
+                    errorCode = (event as { error_code?: string }).error_code ?? null;
+                }
+            },
         );
 
-        // Replace temp message with real one + assistant response
+        if (errorDetail) {
+            throw new Error(errorDetail as string);
+        }
+        if (!donePayload) {
+            throw new Error('Stream ended without a result');
+        }
+        const done = donePayload as DonePayload;
+
         activeSession.messages = [
             ...activeSession.messages.filter(m => m.id !== tempUserMsg.id),
-            res.user_message,
-            res.assistant_message,
+            done.user_message,
+            done.assistant_message,
         ];
 
-        // Show sources if any
-        if (res.sources && res.sources.length > 0) {
-            activeSources = res.sources;
+        if (done.sources && done.sources.length > 0) {
+            activeSources = done.sources;
             sourcePanelOpen = true;
         }
 
-        // Update session title in sidebar list
         const idx = sessions.findIndex(s => s.id === activeSession!.id);
         if (idx !== -1 && sessions[idx].title === 'New Chat') {
             sessions[idx] = { ...sessions[idx], title: content.slice(0, 100) };
@@ -373,20 +421,15 @@ export async function sendMessage(skillId?: string): Promise<void> {
 
         await tick();
         scrollFn?.();
-    } catch (err) {
+    } catch {
         activeSession.messages = activeSession.messages.filter(
             m => m.id !== tempUserMsg.id,
         );
-        const codeMatch =
-            err instanceof ApiError && typeof err.message === 'string'
-                ? err.message.match(/error_code=([a-f0-9]+)/)
-                : null;
-        toast.error(
-            codeMatch
-                ? `Failed to send message (E${codeMatch[1]})`
-                : 'Failed to send message',
-        );
+        const codeSuffix = errorCode ? ` (E${errorCode})` : '';
+        toast.error(`Failed to send message${codeSuffix}`);
     } finally {
+        currentToolLabel = null;
+        currentToolName = null;
         sending = false;
     }
 }
@@ -429,4 +472,9 @@ export function resetChat(): void {
     chatConfig = null;
     scrollFn = null;
     clearPoll();
+}
+
+// --- Test-only export (DO NOT USE FROM APP CODE) ---
+export function __test_setActiveSession(s: ChatSessionDetail | null): void {
+    activeSession = s;
 }
