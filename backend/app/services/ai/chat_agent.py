@@ -5,6 +5,7 @@ tuple. Per-request CompactionState is passed through a mutable _LiveState
 indirection so cached compaction hooks always read the current request's state.
 """
 
+import functools
 from pathlib import Path
 from typing import Any, Callable
 from uuid import UUID
@@ -51,6 +52,34 @@ class _LiveState:
     @property
     def state(self) -> CompactionState | None:
         return self._state
+
+
+def _wrap_tool_with_events(tool: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a subagent tool so it emits tool_start / tool_end events via
+    `ctx.deps.tool_event_callback`.
+
+    We do this at the tool layer rather than via `event_stream_handler` on the
+    subagent Agent because setting that handler forces pydantic-ai to call the
+    model in streaming mode, which some providers (e.g. Ollama's
+    gpt-oss:120b-cloud) reject with HTTP 400 on multi-turn tool dialogs.
+
+    `functools.wraps` copies `__wrapped__`, which `inspect.signature` follows
+    so pydantic-ai still derives the correct LLM-facing tool schema.
+    """
+    tool_name = getattr(tool, "__name__", None) or "unknown"
+
+    @functools.wraps(tool)
+    async def wrapped(ctx: Any, *args: Any, **kwargs: Any) -> Any:
+        cb = getattr(ctx.deps, "tool_event_callback", None)
+        if cb is not None:
+            await cb("tool_start", tool_name)
+        try:
+            return await tool(ctx, *args, **kwargs)
+        finally:
+            if cb is not None:
+                await cb("tool_end", tool_name)
+
+    return wrapped
 
 
 def _cache_key(
@@ -122,6 +151,10 @@ async def build_chat_agent(
     context_window) tuple. Two orgs that resolve to the same models share an
     Agent instance — safe because all per-request state lives in ChatDeps and
     CompactionState, not in the Agent itself.
+
+    Subagent tool functions are wrapped at cache-construction time to emit
+    tool_start / tool_end events via `ctx.deps.tool_event_callback`. The
+    callback is set per-request in `send_message_streaming`.
     """
     chat_model = await get_model("chat", db, org_id=org_id)
     subagent_model = await get_model("chat_subagent", db, org_id=org_id)
@@ -146,6 +179,15 @@ async def build_chat_agent(
             protocol_editor.build(editing_model),
             run_planner.build(subagent_model),
         ]
+
+        # Wrap each subagent's tool functions so their tool calls surface in
+        # the parent's SSE stream via ctx.deps.tool_event_callback.
+        for sub in subagents:
+            sub_kwargs = dict(sub.get("agent_kwargs") or {})
+            tools = sub_kwargs.get("tools")
+            if tools:
+                sub_kwargs["tools"] = [_wrap_tool_with_events(t) for t in tools]
+                sub["agent_kwargs"] = sub_kwargs
 
         live = _LiveState()
         on_before, on_after = _make_live_hooks(live)
@@ -178,6 +220,5 @@ async def build_chat_agent(
         _AGENT_CACHE[key] = (agent, live)
 
     agent, live = _AGENT_CACHE[key]
-    # Wire this request's CompactionState into the cached hooks
     live.set(compaction_state)
     return agent

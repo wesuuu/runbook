@@ -15,7 +15,7 @@
         getChatSessions, getActiveSession, getMessageInput, isSending,
         isLoading, isCreatingSession, isSidebarCollapsed, isSourcePanelOpen,
         getActiveSources, getMessageSources, getSkills, getMessageError,
-        getStalePendingMessage, getCurrentToolLabel,
+        getStalePendingMessage, getCurrentTool, getToolTrail,
         initChat, createSession, selectSession, deleteSession,
         sendMessage, setMessageInput, setSidebarCollapsed, setSourcePanelOpen,
         showSourcesForMessage, registerScrollFn, activateSkill,
@@ -39,7 +39,8 @@
     const skills = $derived(getSkills());
     const messageError = $derived(getMessageError());
     const stalePending = $derived(getStalePendingMessage());
-    const currentToolLabel = $derived(getCurrentToolLabel());
+    const currentTool = $derived(getCurrentTool());
+    const toolTrail = $derived(getToolTrail());
 
     const hasMessages = $derived(
         activeSession !== null && activeSession.messages.length > 0
@@ -353,7 +354,7 @@
 
                 {#if sending && !stalePending}
                     <div in:fade={{ duration: blockDuration() }}>
-                        <ThinkingIndicator label={currentToolLabel} />
+                        <ThinkingIndicator active={currentTool} trail={toolTrail} />
                     </div>
                 {/if}
 

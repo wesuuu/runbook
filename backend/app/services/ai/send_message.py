@@ -81,7 +81,42 @@ async def send_message_streaming(
         is_org_admin=is_org_admin,
     )
 
-    # ── 3. Build agent + deserialize message history ─────────────────────────
+    # ── 3. Event bridge: parent agent → asyncio.Queue ────────────────────────
+    # Two paths feed this queue:
+    #   1. Parent agent tool calls — via pydantic-ai's `event_stream_handler`
+    #      (passed to agent.run below).
+    #   2. Subagent tool calls — via `deps.tool_event_callback`, invoked from
+    #      tool wrappers in chat_agent.py. We can't use event_stream_handler
+    #      on subagents because it forces streaming mode, which some models
+    #      (Ollama gpt-oss) reject on multi-turn tool dialogs.
+    event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def _parent_event_handler(_ctx, stream):
+        async for event in stream:
+            if isinstance(event, FunctionToolCallEvent):
+                name = event.part.tool_name
+                await event_queue.put({
+                    "type": "tool_start",
+                    "tool": name,
+                    "label": resolve_tool_label(name),
+                })
+            elif isinstance(event, FunctionToolResultEvent):
+                name = event.result.tool_name
+                await event_queue.put({"type": "tool_end", "tool": name})
+
+    async def _subagent_tool_event(event_type: str, name: str) -> None:
+        if event_type == "tool_start":
+            await event_queue.put({
+                "type": "tool_start",
+                "tool": name,
+                "label": resolve_tool_label(name),
+            })
+        else:
+            await event_queue.put({"type": "tool_end", "tool": name})
+
+    deps.tool_event_callback = _subagent_tool_event
+
+    # ── 4. Build agent + deserialize message history ─────────────────────────
     agent = await build_chat_agent(db, session_org_id, state)
 
     message_history = None
@@ -98,29 +133,13 @@ async def send_message_streaming(
             )
             message_history = None
 
-    # ── 4. Event bridge: pydantic-ai event_stream_handler → asyncio.Queue ────
-    event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
-
-    async def _handler(_ctx, stream):
-        async for event in stream:
-            if isinstance(event, FunctionToolCallEvent):
-                name = event.part.tool_name
-                await event_queue.put({
-                    "type": "tool_start",
-                    "tool": name,
-                    "label": resolve_tool_label(name),
-                })
-            elif isinstance(event, FunctionToolResultEvent):
-                name = event.result.tool_name
-                await event_queue.put({"type": "tool_end", "tool": name})
-
     # ── 5. Run the agent in a background task; drain the queue ───────────────
     run_task: asyncio.Task = asyncio.create_task(
         agent.run(
             user_content,
             deps=deps,
             message_history=message_history,
-            event_stream_handler=_handler,
+            event_stream_handler=_parent_event_handler,
         )
     )
 
