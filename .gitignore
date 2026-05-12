@@ -7,7 +7,12 @@ backend/uploads/*
 # Benchmark fixture documents (generated, not committed)
 backend/tests/benchmarks/input-to-protocol/*/document.*
 
-# docling eval artifacts (regenerate via backend/scripts/docling_eval.py)
+# TD-0085 docling eval — binary inputs and generated outputs
+scripts/mocks/*
+!scripts/mocks/eval_report.md
+!scripts/mocks/.gitkeep
+
+# Leftover outputs from earlier abandoned docling eval attempt; safe to delete
 backend/tests/artifacts/docling_out/
 
 # Python
