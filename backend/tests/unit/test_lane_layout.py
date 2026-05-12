@@ -1,11 +1,15 @@
 """Tests for services/protocols/lane_layout.py."""
 
 from app.services.protocols.lane_layout import (
+    CHILD_INSET_X,
+    CHILD_INSET_Y,
     CHILD_X_STEP,
     CHILD_Y_STEP,
     LANE_DEFAULT_HORIZONTAL,
     grow_lane_to_fit,
     lane_relative_position,
+    relayout_all_lane_children,
+    relayout_lane_children,
     relayout_top_level_chain,
 )
 
@@ -219,3 +223,121 @@ def test_relayout_top_level_chain_does_not_mutate_input():
     # New list, new node dicts — input untouched.
     assert nodes[1]["position"] == {"x": 100, "y": 200}
     assert out[1]["position"] == {"x": 100 + CHILD_X_STEP, "y": 200}
+
+
+def test_relayout_lane_children_packs_horizontal():
+    """Two lane children with broken positions get re-packed at canonical
+    lane-relative slots."""
+    nodes = [
+        _lane("lane-1", "horizontal"),
+        _child("a", "lane-1"),
+        _child("b", "lane-1"),
+        _child("c", "lane-1"),
+    ]
+    # Simulate a legacy graph where children sit at bad positions.
+    nodes[1]["position"] = {"x": 0, "y": 140}
+    nodes[2]["position"] = {"x": 0, "y": 140}
+    nodes[3]["position"] = {"x": 999, "y": 999}
+    out = relayout_lane_children(nodes, "lane-1", graph_layout="horizontal")
+    a = next(n for n in out if n["id"] == "a")["position"]
+    b = next(n for n in out if n["id"] == "b")["position"]
+    c = next(n for n in out if n["id"] == "c")["position"]
+    assert a == {"x": CHILD_INSET_X, "y": CHILD_INSET_Y}
+    assert b == {"x": CHILD_INSET_X + CHILD_X_STEP, "y": CHILD_INSET_Y}
+    assert c == {"x": CHILD_INSET_X + 2 * CHILD_X_STEP, "y": CHILD_INSET_Y}
+
+
+def test_relayout_lane_children_packs_vertical():
+    nodes = [
+        _lane("lane-1", "vertical"),
+        _child("a", "lane-1"),
+        _child("b", "lane-1"),
+    ]
+    out = relayout_lane_children(nodes, "lane-1", graph_layout="vertical")
+    a = next(n for n in out if n["id"] == "a")["position"]
+    b = next(n for n in out if n["id"] == "b")["position"]
+    assert a == {"x": 30, "y": CHILD_INSET_Y}
+    assert b == {"x": 30, "y": CHILD_INSET_Y + CHILD_Y_STEP}
+
+
+def test_relayout_lane_children_ignores_other_lanes_and_top_level():
+    nodes = [
+        _lane("lane-1"),
+        _lane("lane-2"),
+        _child("a", "lane-1"),
+        _child("b", "lane-2"),
+        _top_level_uo("t", 100, 200),
+    ]
+    nodes[2]["position"] = {"x": 999, "y": 999}  # lane-1 child, broken
+    nodes[3]["position"] = {"x": 7, "y": 11}  # lane-2 child, untouched
+    out = relayout_lane_children(nodes, "lane-1", graph_layout="horizontal")
+    assert next(n for n in out if n["id"] == "a")["position"] == {
+        "x": CHILD_INSET_X,
+        "y": CHILD_INSET_Y,
+    }
+    assert next(n for n in out if n["id"] == "b")["position"] == {"x": 7, "y": 11}
+    assert next(n for n in out if n["id"] == "t")["position"] == {"x": 100, "y": 200}
+
+
+def test_relayout_lane_children_grows_lane_to_fit():
+    """Re-packing a lane with many children also grows the lane along the
+    layout axis so children don't render outside their parent."""
+    nodes = [_lane("lane-1", "horizontal")]
+    for i in range(5):
+        nodes.append(_child(f"c{i}", "lane-1"))
+    out = relayout_lane_children(nodes, "lane-1", graph_layout="horizontal")
+    lane = next(n for n in out if n["id"] == "lane-1")
+    # 5 children at 240px spacing + insets need ~1260; the lane must grow
+    # past the default 800.
+    assert lane["width"] >= CHILD_INSET_X + 5 * CHILD_X_STEP
+
+
+def test_relayout_lane_children_missing_lane_is_noop():
+    nodes = [_top_level_uo("t", 100, 200)]
+    out = relayout_lane_children(nodes, "lane-1", graph_layout="horizontal")
+    assert out == nodes
+
+
+def test_relayout_lane_children_does_not_mutate_input():
+    nodes = [_lane("lane-1"), _child("a", "lane-1")]
+    nodes[1]["position"] = {"x": 999, "y": 999}
+    out = relayout_lane_children(nodes, "lane-1", graph_layout="horizontal")
+    assert nodes[1]["position"] == {"x": 999, "y": 999}
+    assert next(n for n in out if n["id"] == "a")["position"] == {
+        "x": CHILD_INSET_X,
+        "y": CHILD_INSET_Y,
+    }
+
+
+def test_relayout_all_lane_children_packs_every_lane():
+    nodes = [
+        _lane("lane-1"),
+        _lane("lane-2"),
+        _child("a", "lane-1"),
+        _child("b", "lane-1"),
+        _child("c", "lane-2"),
+        _top_level_uo("t", 100, 200),
+    ]
+    nodes[2]["position"] = {"x": 999, "y": 999}
+    nodes[3]["position"] = {"x": 999, "y": 999}
+    nodes[4]["position"] = {"x": 999, "y": 999}
+    out = relayout_all_lane_children(nodes, graph_layout="horizontal")
+    assert next(n for n in out if n["id"] == "a")["position"] == {
+        "x": CHILD_INSET_X,
+        "y": CHILD_INSET_Y,
+    }
+    assert next(n for n in out if n["id"] == "b")["position"] == {
+        "x": CHILD_INSET_X + CHILD_X_STEP,
+        "y": CHILD_INSET_Y,
+    }
+    assert next(n for n in out if n["id"] == "c")["position"] == {
+        "x": CHILD_INSET_X,
+        "y": CHILD_INSET_Y,
+    }
+    # Top-level node is untouched.
+    assert next(n for n in out if n["id"] == "t")["position"] == {"x": 100, "y": 200}
+
+
+def test_relayout_all_lane_children_empty_graph_is_noop():
+    out = relayout_all_lane_children([], graph_layout="horizontal")
+    assert out == []

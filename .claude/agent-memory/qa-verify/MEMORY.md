@@ -6,3 +6,7 @@
 - [QA test accounts](project_qa_accounts.md) — qa-empty-1776464192@test.com is the clean empty-state test account (0 runs/projects/docs/chats)
 - [EmptyState component patterns](project_empty_state_component.md) — TD-0072 shared component locations, per-site padding values, icon/button rules, export URL param is ?runs= not ?runIds=
 - [F-0075 Unit Op Library QA](project_f0075_unit_op_library.md) — API endpoints, sidebar hierarchy specs, search logic, settings reload button, pre-existing 403 console error for non-admins
+- [F-0081 Run Creator Wizard QA](project_f0081_run_creator_wizard.md) — 5 critical bugs fixed: graph source, mirror fields, equipment endpoint, save-as-version two-step, equipment picker gate
+- [TD-0084 Multi-Role Membership QA](project_td0084_multi_role_membership.md) — last-admin guard missing in PATCH endpoint (fixed); MemberRolesPicker chip+trigger flex layout fix
+- [QA-0006 Branch Role Validation env notes](project_qa0006_branch_role_validation.md) — shared DB schema mismatch (role→roles) blocks browser QA; also qa-verify-driver.mjs accidentally committed
+- [QA-0007 Equipment ID Interpolation](project_qa0007_equipment_interpolation.md) — equipment chips, template tokens, PDF X-Unresolved-Placeholders header; canvas node overlap makes dup-ID testing tricky via Playwright
