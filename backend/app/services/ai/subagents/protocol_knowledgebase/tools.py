@@ -7,9 +7,21 @@ protocol_creator after a human-in-the-loop approval.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import re
+import time
+import urllib.parse
+from collections import deque
 from dataclasses import dataclass, field
+from typing import Callable
+from uuid import UUID
+
+import httpx
+from pydantic_ai import RunContext
+
+from app.core.config import settings
+from app.services.ai.deps import ChatDeps
 
 # ─── Result dataclasses ────────────────────────────────────────────────────────
 
@@ -201,3 +213,176 @@ def parse_openwetware_wikitext(
         license=_LICENSE,
         attribution=f"OpenWetWare contributors, {displaytitle}",
     )
+
+
+# ─── HTTP tools + rate limit ───────────────────────────────────────────────────
+
+# Human-readable labels for the chat thinking indicator (F-0083). Adding a
+# tool here MUST also update the entry — enforced by
+# tests/unit/test_tool_labels.py.
+TOOL_LABELS: dict[str, str] = {
+    "search_openwetware": "Searching OpenWetWare…",
+    "fetch_openwetware_protocol": "Reading external protocol…",
+}
+
+_OWW_HOST = "openwetware.org"
+_OWW_API = "https://openwetware.org/wiki/api.php"
+
+# Test-injectable monotonic clock — tests override this.
+_now: Callable[[], float] = time.monotonic
+
+# In-process token bucket — per-org timestamps for the last 60s window.
+# Single-replica deploy assumption; revisit when we go multi-worker.
+_RECENT_REQUESTS: dict[UUID, deque[float]] = {}
+_LIMIT_LOCK = asyncio.Lock()
+
+
+def _require_enabled() -> None:
+    if not settings.features.external_protocols.enabled:
+        raise ValueError(
+            "External protocols feature is disabled. Ask an admin to enable "
+            "BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__ENABLED."
+        )
+
+
+async def _check_rate_limit(org_id: UUID) -> None:
+    limit = settings.features.external_protocols.rate_limit_per_minute
+    async with _LIMIT_LOCK:
+        now = _now()
+        bucket = _RECENT_REQUESTS.setdefault(org_id, deque())
+        cutoff = now - 60.0
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            raise ValueError(
+                f"OpenWetWare rate limit hit ({limit}/min). Try again in a minute."
+            )
+        bucket.append(now)
+
+
+def _require_oww_url(url: str) -> None:
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+    except Exception as exc:
+        raise ValueError(f"Invalid URL: {url}") from exc
+    # Allow exact host or `www.` subdomain.
+    if host != _OWW_HOST and host != f"www.{_OWW_HOST}":
+        raise ValueError(f"URL must be on openwetware.org (got {host!r}).")
+
+
+def _page_title_from_url(url: str) -> str:
+    """`/wiki/Some:Page_Title` → `Some:Page Title`."""
+    path = urllib.parse.urlparse(url).path
+    leaf = path.rsplit("/", 1)[-1]
+    return urllib.parse.unquote(leaf).replace("_", " ")
+
+
+async def search_openwetware(
+    ctx: RunContext[ChatDeps],
+    query: str,
+    limit: int = 5,
+) -> OpenWetWareSearchResult:
+    """Search OpenWetWare for protocol pages matching a free-text query.
+
+    Returns up to `limit` candidate hits (title, URL, snippet). Use this
+    first; pass each interesting URL to ``fetch_openwetware_protocol`` to
+    get the structured payload.
+
+    Args:
+        ctx: Run context with shared deps.
+        query: Free-text search query (e.g. "heat shock transformation").
+        limit: Maximum number of hits to return (default 5, capped at 10).
+    """
+    _require_enabled()
+    await _check_rate_limit(ctx.deps.org_id)
+
+    limit = max(1, min(int(limit), 10))
+    timeout = settings.features.external_protocols.request_timeout_seconds
+    params = {
+        "action": "opensearch",
+        "search": query,
+        "limit": str(limit),
+        "format": "json",
+        "namespace": "0",
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(_OWW_API, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+
+    # MediaWiki opensearch returns [query, titles[], descriptions[], urls[]].
+    titles = data[1] if len(data) > 1 else []
+    snippets = data[2] if len(data) > 2 else []
+    urls = data[3] if len(data) > 3 else []
+    hits = [
+        OpenWetWareHit(
+            title=t,
+            url=u,
+            snippet=(snippets[i] if i < len(snippets) else ""),
+        )
+        for i, (t, u) in enumerate(zip(titles, urls))
+    ]
+
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "search_openwetware",
+            "subagent": "protocol_knowledgebase",
+            "query": query,
+            "results": len(hits),
+        }
+    )
+
+    if not hits:
+        return OpenWetWareSearchResult(total=0, message="No OpenWetWare results.")
+    return OpenWetWareSearchResult(total=len(hits), hits=hits)
+
+
+async def fetch_openwetware_protocol(
+    ctx: RunContext[ChatDeps],
+    url: str,
+) -> ExternalProtocolPayload:
+    """Fetch a single OpenWetWare protocol page and parse it into a structured payload.
+
+    The URL must point to openwetware.org (host allowlist enforced).
+    Steps are copied verbatim from the page; do not paraphrase before
+    handoff to protocol_creator.
+
+    Args:
+        ctx: Run context with shared deps.
+        url: Full URL of an OpenWetWare wiki page (returned by search_openwetware).
+    """
+    _require_enabled()
+    _require_oww_url(url)
+    await _check_rate_limit(ctx.deps.org_id)
+
+    page_title = _page_title_from_url(url)
+    timeout = settings.features.external_protocols.request_timeout_seconds
+    params = {
+        "action": "parse",
+        "page": page_title,
+        "prop": "wikitext|displaytitle",
+        "format": "json",
+        "formatversion": "1",
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(_OWW_API, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+
+    parse = data.get("parse") or {}
+    displaytitle = parse.get("displaytitle") or page_title
+    wikitext = ((parse.get("wikitext") or {}).get("*")) or ""
+
+    payload = parse_openwetware_wikitext(
+        wikitext=wikitext, displaytitle=displaytitle, source_url=url
+    )
+
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "fetch_openwetware_protocol",
+            "subagent": "protocol_knowledgebase",
+            "source_url": url,
+            "steps": len(payload.steps),
+        }
+    )
+    return payload
