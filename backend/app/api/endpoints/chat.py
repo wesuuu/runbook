@@ -26,7 +26,7 @@ from app.schemas.chat import (ChatCompletionResponse, ChatConfigResponse,
                               ChatSkillResponse, ChatSourceReference,
                               NotifyAdminResponse)
 from app.services.ai import (create_session, delete_session, get_session,
-                             list_sessions, send_message)
+                             list_sessions, send_message_streaming)
 from app.services.ai.ai_config import (get_context_window,
                                        get_model_display_name)
 from app.services.core.rate_limit import RateLimitService
