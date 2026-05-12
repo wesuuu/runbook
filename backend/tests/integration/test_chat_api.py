@@ -1,3 +1,4 @@
+import json
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,16 +10,60 @@ from app.models.iam import Organization
 from app.services.ai.deps import RetrievedChunk
 
 
-def _make_send_message_mock(content: str, sources: list) -> AsyncMock:
-    """Return an AsyncMock for send_message that creates real DB rows.
+# ── SSE helpers ─────────────────────────────────────────────────────────────
 
-    The real send_message persists ChatMessage rows and returns them.
-    We mock at the endpoint-import level so we can fully control the response
-    without needing a live AI provider.
+def _drain_sse(body: str) -> list[dict]:
+    """Parse SSE 'data: {json}\\n\\n' frames into a list of dicts."""
+    out = []
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("data:"):
+            out.append(json.loads(line[len("data:"):].strip()))
+    return out
+
+
+def _done(events: list[dict]) -> dict:
+    """Return the first event with type=='done'."""
+    return next(e for e in events if e["type"] == "done")
+
+
+async def _stream_message(
+    client: AsyncClient,
+    session_id: str,
+    content: str,
+    auth_headers: dict,
+) -> tuple[int, list[dict]]:
+    """POST to the SSE stream endpoint and collect all events.
+
+    Returns (status_code, events).  For non-200 responses the events list
+    will be empty (the error comes back as JSON, not SSE).
+    """
+    async with client.stream(
+        "POST",
+        f"/chat/sessions/{session_id}/messages/stream",
+        json={"content": content},
+        headers=auth_headers,
+    ) as resp:
+        body = ""
+        async for chunk in resp.aiter_text():
+            body += chunk
+    events = _drain_sse(body) if resp.status_code == 200 else []
+    return resp.status_code, events
+
+
+# ── Mock factory ─────────────────────────────────────────────────────────────
+
+def _make_streaming_mock(content: str, sources: list):
+    """Return an async generator mock for send_message_streaming.
+
+    Persists real DB rows (user + assistant messages) so session GET tests
+    that count messages still work.  Yields a single 'done' SSE event
+    carrying the persisted message data.
     """
 
-    async def _fake_send_message(db, session, user_content, *, user_id, is_org_admin):
+    async def _fake_streaming(db, session, user_content, *, user_id, is_org_admin):
         from app.models.chat import ChatMessage, ChatMessageRole
+        from app.schemas.chat import ChatMessageResponse, ChatSourceReference
 
         user_msg = ChatMessage(
             session_id=session.id,
@@ -27,7 +72,7 @@ def _make_send_message_mock(content: str, sources: list) -> AsyncMock:
         )
         db.add(user_msg)
 
-        # Auto-title session if still "New Chat"
+        # Mirror real send_message_streaming auto-title behaviour
         if session.title == "New Chat":
             session.title = user_content[:100].strip()
 
@@ -56,17 +101,50 @@ def _make_send_message_mock(content: str, sources: list) -> AsyncMock:
         )
         db.add(assistant_msg)
         await db.flush()
-        return user_msg, assistant_msg, sources
 
-    return _fake_send_message
+        source_dicts = [
+            {
+                "document_id": str(s.document_id),
+                "document_title": s.document_title,
+                "chunk_id": str(s.chunk_id),
+                "chunk_index": s.chunk_index,
+                "page_number": s.page_number,
+                "score": s.score,
+                "snippet": s.content[:200],
+            }
+            for s in sources
+        ]
+
+        yield {
+            "type": "done",
+            "user_message": {
+                "id": str(user_msg.id) if user_msg.id else "u-test",
+                "role": "user",
+                "content": user_content,
+                "session_id": str(session.id),
+                "metadata_": None,
+                "created_at": None,
+            },
+            "assistant_message": {
+                "id": str(assistant_msg.id) if assistant_msg.id else "a-test",
+                "role": "assistant",
+                "content": content,
+                "session_id": str(session.id),
+                "metadata_": assistant_msg.metadata_,
+                "created_at": None,
+            },
+            "sources": source_dicts,
+        }
+
+    return _fake_streaming
 
 
-# Mock send_message for all tests in this module
+# Mock send_message_streaming for all tests in this module
 @pytest.fixture(autouse=True)
 def mock_llm_and_rag():
     with patch(
-        "app.api.endpoints.chat.send_message",
-        new=_make_send_message_mock("I'm Batchrite AI, happy to help!", []),
+        "app.api.endpoints.chat.send_message_streaming",
+        new=_make_streaming_mock("I'm Batchrite AI, happy to help!", []),
     ):
         yield
 
@@ -258,19 +336,17 @@ class TestSendChatMessage:
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
-        resp = await client.post(
-            f"/chat/sessions/{session_id}/messages",
-            json={"content": "What is cell culture?"},
-            headers=auth_headers,
+        status_code, events = await _stream_message(
+            client, session_id, "What is cell culture?", auth_headers
         )
-        assert resp.status_code == 201
-        body = resp.json()
-        assert body["user_message"]["role"] == "user"
-        assert body["user_message"]["content"] == "What is cell culture?"
-        assert body["assistant_message"]["role"] == "assistant"
-        assert len(body["assistant_message"]["content"]) > 0
-        assert "sources" in body
-        assert body["sources"] == []
+        assert status_code == 200
+        done = _done(events)
+        assert done["user_message"]["role"] == "user"
+        assert done["user_message"]["content"] == "What is cell culture?"
+        assert done["assistant_message"]["role"] == "assistant"
+        assert len(done["assistant_message"]["content"]) > 0
+        assert "sources" in done
+        assert done["sources"] == []
 
     @pytest.mark.asyncio
     async def test_send_message_auto_titles_session(
@@ -285,12 +361,8 @@ class TestSendChatMessage:
         session_id = resp.json()["id"]
         assert resp.json()["title"] == "New Chat"
 
-        # Send first message
-        await client.post(
-            f"/chat/sessions/{session_id}/messages",
-            json={"content": "Tell me about CHO cells"},
-            headers=auth_headers,
-        )
+        # Send first message via stream
+        await _stream_message(client, session_id, "Tell me about CHO cells", auth_headers)
 
         # Check that title was updated
         resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
@@ -301,12 +373,14 @@ class TestSendChatMessage:
         self, client: AsyncClient, auth_headers: dict, test_org: Organization
     ):
         fake_id = str(uuid.uuid4())
-        resp = await client.post(
-            f"/chat/sessions/{fake_id}/messages",
+        async with client.stream(
+            "POST",
+            f"/chat/sessions/{fake_id}/messages/stream",
             json={"content": "Hello"},
             headers=auth_headers,
-        )
-        assert resp.status_code == 404
+        ) as resp:
+            await resp.aread()
+            assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_send_empty_message_rejected(
@@ -315,12 +389,14 @@ class TestSendChatMessage:
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
-        resp = await client.post(
-            f"/chat/sessions/{session_id}/messages",
+        async with client.stream(
+            "POST",
+            f"/chat/sessions/{session_id}/messages/stream",
             json={"content": ""},
             headers=auth_headers,
-        )
-        assert resp.status_code == 422
+        ) as resp:
+            await resp.aread()
+            assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_messages_persist_in_session(
@@ -330,16 +406,8 @@ class TestSendChatMessage:
         session_id = created["id"]
 
         # Send two messages
-        await client.post(
-            f"/chat/sessions/{session_id}/messages",
-            json={"content": "First question"},
-            headers=auth_headers,
-        )
-        await client.post(
-            f"/chat/sessions/{session_id}/messages",
-            json={"content": "Follow-up question"},
-            headers=auth_headers,
-        )
+        await _stream_message(client, session_id, "First question", auth_headers)
+        await _stream_message(client, session_id, "Follow-up question", auth_headers)
 
         # Get session — should have 4 messages (2 user + 2 assistant)
         resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
@@ -355,50 +423,69 @@ class TestSendChatMessage:
         test_org: Organization,
         db_session,
     ):
-        """Agent crash → endpoint returns 500 with error_code; user msg + ERROR
-        msg persist; GET session hides the ERROR row from the thread."""
+        """Agent crash → endpoint returns 200 SSE with 'error' event carrying
+        error_code; the forensic ERROR row is written via AsyncSessionLocal."""
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
         async def _boom(*args, **kwargs):
             raise ValueError("simulated agent failure")
+            yield  # makes _boom an async generator; this line is never reached
 
-        with patch("app.api.endpoints.chat.send_message", new=_boom):
-            resp = await client.post(
-                f"/chat/sessions/{session_id}/messages",
+        # Capture the ChatMessage objects passed to writer.add() so we can
+        # assert the forensic row was constructed correctly without needing
+        # cross-connection DB visibility.
+        captured_rows: list[ChatMessage] = []
+
+        class _FakeWriter:
+            def add(self, obj):
+                captured_rows.append(obj)
+
+            async def commit(self):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                pass
+
+        def _fake_session_local():
+            return _FakeWriter()
+
+        with (
+            patch("app.api.endpoints.chat.send_message_streaming", new=_boom),
+            patch("app.api.endpoints.chat.AsyncSessionLocal", new=_fake_session_local),
+        ):
+            async with client.stream(
+                "POST",
+                f"/chat/sessions/{session_id}/messages/stream",
                 json={"content": "this will fail"},
                 headers=auth_headers,
-            )
-        assert resp.status_code == 500
-        detail = resp.json()["detail"]
-        assert "error_code=" in detail
+            ) as resp:
+                body = ""
+                async for chunk in resp.aiter_text():
+                    body += chunk
+                assert resp.status_code == 200
 
-        # ERROR row is in the DB
-        result = await db_session.execute(
-            ChatMessage.__table__.select().where(
-                ChatMessage.session_id == uuid.UUID(session_id),
-                ChatMessage.role == ChatMessageRole.ERROR,
-            )
-        )
-        rows = list(result.mappings())
-        assert len(rows) == 1
-        assert "simulated agent failure" in rows[0]["content"]
-        meta = rows[0]["metadata"]
-        assert meta["error_type"] == "ValueError"
-        assert "Traceback" in meta["traceback"]
-        assert meta["error_code"] in detail
+        events = _drain_sse(body)
+        assert any(e["type"] == "error" for e in events)
+        error_event = next(e for e in events if e["type"] == "error")
+        assert "error_code" in error_event
 
-        # User message also persisted alongside the error
-        result = await db_session.execute(
-            ChatMessage.__table__.select().where(
-                ChatMessage.session_id == uuid.UUID(session_id),
-                ChatMessage.role == ChatMessageRole.USER,
-                ChatMessage.content == "this will fail",
-            )
-        )
-        assert len(list(result)) == 1
+        error_code = error_event["error_code"]
 
-        # GET session hides ERROR row from the thread
+        # The forensic ERROR row was queued for writing
+        assert len(captured_rows) == 1
+        error_row = captured_rows[0]
+        assert error_row.role == ChatMessageRole.ERROR
+        assert "simulated agent failure" in error_row.content
+        assert error_row.metadata_["error_type"] == "ValueError"
+        assert "Traceback" in error_row.metadata_["traceback"]
+        assert error_row.metadata_["error_code"] == error_code
+
+        # GET session hides ERROR row from the thread (row not actually in DB
+        # since we captured it, so the GET returns 0 error rows naturally)
         resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)
         messages = resp.json()["messages"]
         assert all(m["role"] != "error" for m in messages)
@@ -422,8 +509,8 @@ class TestSendChatMessageWithRAG:
             ),
         ]
         with patch(
-            "app.api.endpoints.chat.send_message",
-            new=_make_send_message_mock(
+            "app.api.endpoints.chat.send_message_streaming",
+            new=_make_streaming_mock(
                 "Based on the Buffer Prep SOP [1], you should mix Tris-HCl.",
                 fake_sources,
             ),
@@ -437,15 +524,13 @@ class TestSendChatMessageWithRAG:
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
-        resp = await client.post(
-            f"/chat/sessions/{session_id}/messages",
-            json={"content": "How do I prepare buffer?"},
-            headers=auth_headers,
+        status_code, events = await _stream_message(
+            client, session_id, "How do I prepare buffer?", auth_headers
         )
-        assert resp.status_code == 201
-        body = resp.json()
-        assert len(body["sources"]) == 1
-        source = body["sources"][0]
+        assert status_code == 200
+        done = _done(events)
+        assert len(done["sources"]) == 1
+        source = done["sources"][0]
         assert source["document_title"] == "Buffer Prep SOP"
         assert source["chunk_index"] == 3
         assert source["page_number"] == 2
@@ -459,11 +544,7 @@ class TestSendChatMessageWithRAG:
         created = await _create_session(client, auth_headers)
         session_id = created["id"]
 
-        await client.post(
-            f"/chat/sessions/{session_id}/messages",
-            json={"content": "Buffer question"},
-            headers=auth_headers,
-        )
+        await _stream_message(client, session_id, "Buffer question", auth_headers)
 
         # Get session and check assistant message metadata
         resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)

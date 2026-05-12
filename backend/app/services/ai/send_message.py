@@ -1,62 +1,57 @@
-"""send_message orchestration — ties together sessions, compaction, agent, persistence.
+"""send_message_streaming — orchestrates a chat turn as an async event stream.
 
-This module is the single entry-point for chat message handling and replaces the
-_call_llm + send_message pair in chat_service.py (see Task 19 for the cutover).
+Yields a sequence of dicts:
+  {"type": "tool_start", "tool": <name>, "label": <human label>}
+  {"type": "tool_end",   "tool": <name>}
+  ... (repeats per tool) ...
+  {"type": "done", "user_message": {...}, "assistant_message": {...}, "sources": [...]}
+
+Or, on failure:
+  {"type": "error", "detail": <str>}
+
+Resilience pattern (preserved from the pre-streaming send_message):
+  - The user message is committed on the request `db` *before* the LLM call so
+    a slow/failed tool can't poison the SQLAlchemy session.
+  - The assistant message + optional SUMMARY row + ai_message_history update
+    are written on a fresh AsyncSessionLocal() writer session, so even if
+    `db` was poisoned by a tool's asyncpg error, chat history still lands.
+
+The caller (chat SSE endpoint) serializes each dict as an SSE `data:` line.
 """
 
+import asyncio
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 from uuid import UUID
 
-from pydantic_ai.messages import ModelMessagesTypeAdapter
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    ModelMessagesTypeAdapter,
+)
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession
+from app.schemas.chat import ChatMessageResponse, ChatSourceReference
 from app.services.ai.chat_agent import build_chat_agent
 from app.services.ai.deps import ChatDeps, RetrievedChunk
 from app.services.ai.runtime.compaction import CompactionState
 from app.services.ai.runtime.sanitize import sanitize_output
+from app.services.ai.tool_labels import resolve_tool_label
 
 logger = logging.getLogger(__name__)
 
 
-async def send_message(
+async def send_message_streaming(
     db: AsyncSession,
     session: ChatSession,
     user_content: str,
     user_id: UUID,
     is_org_admin: bool,
-) -> tuple[ChatMessage, ChatMessage, list[RetrievedChunk]]:
-    """Send a user message and get an AI response.
-
-    Orchestrates:
-    1. Persist user message, auto-title session if "New Chat".
-    2. Build CompactionState + ChatDeps.
-    3. Build agent via build_chat_agent, deserialize message history.
-    4. Run the agent.
-    5. If compaction triggered, write a ChatMessage(role=SUMMARY) row.
-    6. Persist ai_message_history on session.
-    7. De-dup sources by chunk_id.
-    8. Sanitize output, persist assistant message with metadata.
-    9. Return (user_msg, assistant_msg, sources).
-
-    Args:
-        db: Database session.
-        session: The chat session ORM object.
-        user_content: The raw user message text.
-        user_id: Authenticated user ID.
-        is_org_admin: Whether the user is an org admin.
-
-    Returns:
-        Tuple of (user_message, assistant_message, deduplicated_sources).
-    """
-    # Capture session identity into locals up front. After the LLM call, a
-    # failed tool can poison `db`; if our subsequent rollback also fails, the
-    # ORM `session` object's attributes become unreloadable and any access
-    # raises PendingRollbackError. Reading these into locals now means the
-    # post-LLM path never has to touch the ORM object again.
+) -> AsyncIterator[dict[str, Any]]:
+    """Stream a chat turn as SSE-shaped event dicts. See module docstring."""
     session_pk: UUID = session.id
     session_org_id: UUID = session.org_id
     existing_history = session.ai_message_history
@@ -70,18 +65,12 @@ async def send_message(
     db.add(user_msg)
     await db.flush()
 
-    # Auto-title from first message
     if session.title == "New Chat":
         session.title = user_content[:100].strip()
         await db.flush()
 
-    # Commit before the LLM call so the asyncpg connection isn't holding an
-    # open transaction during a network round-trip that can take 30s+. If
-    # postgres/the proxy kills the idle conn mid-call, an open txn prevents
-    # SQLAlchemy from recovering — flushes afterward fail with
-    # PendingRollbackError. Committing here releases the txn; the next flush
-    # transparently re-checks-out a fresh conn from the pool.
     await db.commit()
+    await db.refresh(user_msg)
 
     # ── 2. Build CompactionState + ChatDeps ──────────────────────────────────
     state = CompactionState()
@@ -92,7 +81,42 @@ async def send_message(
         is_org_admin=is_org_admin,
     )
 
-    # ── 3. Build agent + deserialize message history ─────────────────────────
+    # ── 3. Event bridge: parent agent → asyncio.Queue ────────────────────────
+    # Two paths feed this queue:
+    #   1. Parent agent tool calls — via pydantic-ai's `event_stream_handler`
+    #      (passed to agent.run below).
+    #   2. Subagent tool calls — via `deps.tool_event_callback`, invoked from
+    #      tool wrappers in chat_agent.py. We can't use event_stream_handler
+    #      on subagents because it forces streaming mode, which some models
+    #      (Ollama gpt-oss) reject on multi-turn tool dialogs.
+    event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def _parent_event_handler(_ctx, stream):
+        async for event in stream:
+            if isinstance(event, FunctionToolCallEvent):
+                name = event.part.tool_name
+                await event_queue.put({
+                    "type": "tool_start",
+                    "tool": name,
+                    "label": resolve_tool_label(name),
+                })
+            elif isinstance(event, FunctionToolResultEvent):
+                name = event.result.tool_name
+                await event_queue.put({"type": "tool_end", "tool": name})
+
+    async def _subagent_tool_event(event_type: str, name: str) -> None:
+        if event_type == "tool_start":
+            await event_queue.put({
+                "type": "tool_start",
+                "tool": name,
+                "label": resolve_tool_label(name),
+            })
+        else:
+            await event_queue.put({"type": "tool_end", "tool": name})
+
+    deps.tool_event_callback = _subagent_tool_event
+
+    # ── 4. Build agent + deserialize message history ─────────────────────────
     agent = await build_chat_agent(db, session_org_id, state)
 
     message_history = None
@@ -109,14 +133,51 @@ async def send_message(
             )
             message_history = None
 
-    # ── 4. Run the agent ─────────────────────────────────────────────────────
-    result = await agent.run(
-        user_content,
-        deps=deps,
-        message_history=message_history,
+    # ── 5. Run the agent in a background task; drain the queue ───────────────
+    run_task: asyncio.Task = asyncio.create_task(
+        agent.run(
+            user_content,
+            deps=deps,
+            message_history=message_history,
+            event_stream_handler=_parent_event_handler,
+        )
     )
 
-    # ── 5. De-dup sources by chunk_id ─────────────────────────────────────────
+    try:
+        while not run_task.done() or not event_queue.empty():
+            queue_get = asyncio.create_task(event_queue.get())
+            done_set, _pending = await asyncio.wait(
+                {queue_get, run_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if queue_get in done_set:
+                ev = queue_get.result()
+                if ev is not None:
+                    yield ev
+            else:
+                queue_get.cancel()
+        result = await run_task
+    except Exception:
+        logger.exception("Chat agent run failed for session %s", session_pk)
+        if not run_task.done():
+            run_task.cancel()
+        yield {"type": "error", "detail": "Failed to generate AI response"}
+        return
+
+    # ── 6. Finalize tool side effects on the original session ────────────────
+    try:
+        await db.commit()
+    except Exception as exc:
+        logger.warning(
+            "Tool-call session commit failed (%s); rolling back.",
+            exc.__class__.__name__,
+        )
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception("Rollback of poisoned tool-call session failed")
+
+    # ── 7. De-dup sources by chunk_id ─────────────────────────────────────────
     seen_chunk_ids: set[UUID] = set()
     unique_sources: list[RetrievedChunk] = []
     for source in deps.sources:
@@ -124,7 +185,7 @@ async def send_message(
             seen_chunk_ids.add(source.chunk_id)
             unique_sources.append(source)
 
-    # ── 6. Sanitize output + assemble assistant message ───────────────────────
+    # ── 8. Sanitize output + assemble assistant message ───────────────────────
     assistant_content = sanitize_output(result.output)
 
     meta: dict[str, Any] = {}
@@ -150,38 +211,10 @@ async def send_message(
         content=assistant_content,
         metadata_=meta if meta else None,
     )
-
     history_payload = ModelMessagesTypeAdapter.dump_python(
         result.all_messages(), mode="json"
     )
 
-    # Finalize any tool side effects on the original session. If a tool
-    # poisoned the txn (raised after partial work) or the conn was killed,
-    # rolling back keeps the endpoint's outer commit from re-raising. Tool
-    # writes that succeeded fully are preserved by commit; partial writes
-    # are correctly discarded by rollback.
-    try:
-        await db.commit()
-    except Exception as exc:
-        logger.warning(
-            "Tool-call session commit failed (%s); rolling back. "
-            "User-facing chat history will still be persisted via a fresh "
-            "session.",
-            exc.__class__.__name__,
-        )
-        try:
-            await db.rollback()
-        except Exception:
-            logger.exception("Rollback of poisoned tool-call session failed")
-
-    # ── 7. Persist post-LLM writes on a FRESH session ────────────────────────
-    # The original `db` was used by subagent tool calls during agent.run().
-    # If any tool query raised an asyncpg error, the implicit transaction is
-    # poisoned (PendingRollbackError on next flush). Even when nothing failed,
-    # the conn may have been killed by pgbouncer / idle_in_transaction_session
-    # _timeout while the LLM was thinking. Using a clean session for the
-    # ChatMessage rows + ai_message_history update guarantees the user's chat
-    # history is saved regardless of what happened to `db` inside tools.
     summary_msg: ChatMessage | None = None
     if state.triggered and state.summary_text:
         summary_msg = ChatMessage(
@@ -191,6 +224,7 @@ async def send_message(
             metadata_=state.audit_metadata(),
         )
 
+    # ── 9. Fresh writer session for assistant + summary + history ────────────
     async with AsyncSessionLocal() as writer:
         if summary_msg is not None:
             writer.add(summary_msg)
@@ -205,18 +239,33 @@ async def send_message(
         if summary_msg is not None:
             await writer.refresh(summary_msg)
 
-    # Keep the in-memory ChatSession instance consistent with what we just
-    # wrote, so any caller that still reads from `session` sees current data.
-    # Guarded against ORM expiry: if `db` was poisoned and rollback also failed,
-    # the assignment below would trigger a load before the SET. Skip silently —
-    # the row in DB is correct; in-memory consistency is best-effort.
     try:
         session.ai_message_history = history_payload
     except Exception:
         logger.debug(
-            "Could not refresh in-memory session.ai_message_history (db likely "
-            "poisoned). DB row is correct; returning to caller.",
+            "Could not refresh in-memory session.ai_message_history "
+            "(db likely poisoned); DB row is correct.",
         )
 
-    # ── 8. Return ─────────────────────────────────────────────────────────────
-    return user_msg, assistant_msg, unique_sources
+    # ── 10. Emit done event ──────────────────────────────────────────────────
+    yield {
+        "type": "done",
+        "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(
+            mode="json"
+        ),
+        "assistant_message": ChatMessageResponse.model_validate(
+            assistant_msg
+        ).model_dump(mode="json"),
+        "sources": [
+            ChatSourceReference(
+                document_id=s.document_id,
+                document_title=s.document_title,
+                chunk_id=s.chunk_id,
+                chunk_index=s.chunk_index,
+                page_number=s.page_number,
+                score=s.score,
+                snippet=s.content[:200],
+            ).model_dump(mode="json")
+            for s in unique_sources
+        ],
+    }

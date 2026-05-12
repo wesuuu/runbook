@@ -1,3 +1,4 @@
+import json
 import logging
 import secrets
 import traceback
@@ -6,6 +7,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,12 +15,12 @@ from app.core.config import settings
 from app.core.deps import (get_current_user, get_or_404,
                            get_org_id_from_request,
                            require_active_subscription)
-from app.db.session import get_db
+from app.db.session import AsyncSessionLocal, get_db
 from app.models.chat import (ChatMessage, ChatMessageRole, ChatNotification,
                              ChatSession)
 from app.models.iam import (TIER_RANK, Organization, OrganizationMember,
                             OrgRole, SubscriptionTier, User)
-from app.schemas.chat import (ChatCompletionResponse, ChatConfigResponse,
+from app.schemas.chat import (ChatConfigResponse,
                               ChatMessageCreate, ChatSessionCreate,
                               ChatSessionDetailResponse,
                               ChatSessionListResponse, ChatSessionResponse,
@@ -26,7 +28,7 @@ from app.schemas.chat import (ChatCompletionResponse, ChatConfigResponse,
                               ChatSkillResponse, ChatSourceReference,
                               NotifyAdminResponse)
 from app.services.ai import (create_session, delete_session, get_session,
-                             list_sessions, send_message)
+                             list_sessions, send_message_streaming)
 from app.services.ai.ai_config import (get_context_window,
                                        get_model_display_name)
 from app.services.core.rate_limit import RateLimitService
@@ -213,103 +215,68 @@ async def delete_chat_session(
 # ─── Messages ───
 
 
-@router.post(
-    "/sessions/{session_id}/messages",
-    response_model=ChatCompletionResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def send_chat_message(
+@router.post("/sessions/{session_id}/messages/stream")
+async def stream_chat_message(
     session_id: uuid.UUID,
     body: ChatMessageCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_active_subscription()),
 ):
+    """Stream a chat turn as SSE: emits tool_start/tool_end events live and
+    a final `done` event carrying user_message, assistant_message, sources.
+
+    See docs/superpowers/specs/2026-05-11-f-0083-chat-tool-indicator-design.md.
+    """
     session = await get_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     if session.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not your chat session")
 
-    # Resolve org role for is_org_admin
     _, org_roles = await _get_user_org(current_user, db)
     is_org_admin = OrgRole.ADMIN.value in org_roles
 
-    # Wrap send_message in a SAVEPOINT so a failed agent run rolls back only
-    # its own partial state — the chat session row and any other prior
-    # committed state stay intact for the forensic write below.
-    try:
-        user_msg, assistant_msg, sources = await send_message(
-            db,
-            session,
-            body.content,
-            user_id=current_user.id,
-            is_org_admin=is_org_admin,
-        )
-        # send_message handles its own commits (user_msg on `db`, assistant_msg
-        # + summary + history on a fresh session) so chat persistence is robust
-        # against asyncpg connections killed during long LLM round-trips.
-        # Both returned instances already carry refreshed DB-side fields
-        # (id, created_at).
-        return ChatCompletionResponse(
-            user_message=user_msg,
-            assistant_message=assistant_msg,
-            sources=[
-                ChatSourceReference(
-                    document_id=s.document_id,
-                    document_title=s.document_title,
-                    chunk_id=s.chunk_id,
-                    chunk_index=s.chunk_index,
-                    page_number=s.page_number,
-                    score=s.score,
-                    snippet=s.content[:200],
-                )
-                for s in sources
-            ],
-        )
-    except Exception as exc:
-        # Persist a forensic ERROR row so the failure isn't silent. The user
-        # gets a generic toast (plus this short code to reference) while the
-        # full traceback lives in postgres + the backend log.
-        error_code = secrets.token_hex(4)
-        logger.exception(
-            "Chat completion failed [error_code=%s] for session %s",
-            error_code,
-            session_id,
-        )
+    async def _sse_iter():
         try:
-            db.add(
-                ChatMessage(
-                    session_id=session_id,
-                    role=ChatMessageRole.USER,
-                    content=body.content,
-                )
-            )
-            db.add(
-                ChatMessage(
-                    session_id=session_id,
-                    role=ChatMessageRole.ERROR,
-                    content=str(exc),
-                    metadata_={
-                        "error_code": error_code,
-                        "error_type": type(exc).__name__,
-                        "traceback": traceback.format_exc(),
-                    },
-                )
-            )
-            await db.commit()
-        except Exception:
-            # Forensic write is best-effort — if even that fails, we still
-            # want to return the original error to the user.
+            async for event in send_message_streaming(
+                db,
+                session,
+                body.content,
+                user_id=current_user.id,
+                is_org_admin=is_org_admin,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:
+            error_code = secrets.token_hex(4)
             logger.exception(
-                "Failed to persist ERROR row [error_code=%s] for session %s",
+                "Chat stream failed [error_code=%s] for session %s",
                 error_code,
                 session_id,
             )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate AI response (error_code={error_code})",
-        )
+            try:
+                async with AsyncSessionLocal() as writer:
+                    writer.add(
+                        ChatMessage(
+                            session_id=session_id,
+                            role=ChatMessageRole.ERROR,
+                            content=str(exc),
+                            metadata_={
+                                "error_code": error_code,
+                                "error_type": type(exc).__name__,
+                                "traceback": traceback.format_exc(),
+                            },
+                        )
+                    )
+                    await writer.commit()
+            except Exception:
+                logger.exception("Failed to persist forensic ERROR row")
+            yield (
+                f'data: {{"type": "error", "detail": "Failed to generate AI '
+                f'response", "error_code": "{error_code}"}}\n\n'
+            )
+
+    return StreamingResponse(_sse_iter(), media_type="text/event-stream")
 
 
 # ─── Admin Notifications ───

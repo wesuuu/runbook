@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization, User
 from app.services.ai.deps import RetrievedChunk
-from app.services.ai.send_message import send_message
+from app.services.ai.send_message import send_message_streaming
 from app.services.ai.sessions import create_session
 
 
@@ -62,7 +62,7 @@ async def test_sequential_runs_do_not_share_sources(
 
     call_count = {"n": 0}
 
-    async def fake_run(prompt, deps, message_history=None):
+    async def fake_run(prompt, deps, message_history=None, **kwargs):
         call_count["n"] += 1
         if call_count["n"] == 1:
             deps.sources.append(fake_chunk_a)
@@ -79,15 +79,17 @@ async def test_sequential_runs_do_not_share_sources(
     async def fake_build(*args, **kwargs):
         return fake_agent
 
+    async def drain(session):
+        async for _ in send_message_streaming(
+            db_session, session, "q", user_id=session.user_id, is_org_admin=False
+        ):
+            pass
+
     with patch("app.services.ai.send_message.build_chat_agent", fake_build):
         # Run sequentially — single-connection test sessions can't handle
         # concurrent awaits on the same session (SAVEPOINT deadlock).
-        await send_message(
-            db_session, sess1, "q1", user_id=test_user.id, is_org_admin=False
-        )
-        await send_message(
-            db_session, sess2, "q2", user_id=second_user.id, is_org_admin=False
-        )
+        await drain(sess1)
+        await drain(sess2)
 
     from sqlalchemy import select
 

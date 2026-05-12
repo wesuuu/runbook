@@ -150,6 +150,23 @@ async def my_tool(ctx: RunContext[ChatDeps], arg: str) -> MyResult:
 
 Keep tools **thin**: argument mapping + service delegation + `tool_calls` audit. No business logic. If logic is non-trivial, put it in `services/<domain>/` and have the tool call it. Use `@dataclass` (or pydantic) result types — pydantic-ai serializes them.
 
+### Tool labels (`tool_labels.py`)
+
+Every tool must have a user-facing label shown in the chat thinking indicator while it runs. Labels live **next to the tool definitions**: each `tools.py` exports a module-level `TOOL_LABELS: dict[str, str]` mapping `tool_name -> "Verb-ing object…"` (present continuous, ellipsis suffix). `services/ai/tool_labels.py` aggregates all per-module dicts into a single registry and exposes `resolve_tool_label(name) -> str` (falls back to `"Working…"` for unmapped tools). When you add a new tool, add its entry to the local `TOOL_LABELS` in the same file and the aggregator picks it up automatically — never create a separate parallel registry.
+
+## Streaming chat responses
+
+`send_message_streaming()` (in `send_message.py`) is an `AsyncIterator[dict]` that drives the agent and yields SSE event dicts:
+
+- `{"type": "tool_start", "tool": ..., "label": ...}` — emitted on each pydantic-ai `FunctionToolCallEvent`
+- `{"type": "tool_end", "tool": ...}` — emitted on each `FunctionToolResultEvent`
+- `{"type": "done", "user_message": ..., "assistant_message": ..., "sources": [...]}` — final result
+- `{"type": "error", "detail": ..., "error_code": ...}` — terminal error
+
+The endpoint `POST /sessions/{id}/messages/stream` returns these as `text/event-stream` (one `data: {json}\n\n` frame per event). The same chat resilience invariants apply as before: capture session identity locals before any `await`, commit the user message before invoking the agent, and use a fresh `AsyncSessionLocal()` writer session for the assistant row so cancellations can't corrupt state.
+
+Internally, the agent's `event_stream_handler` pushes events into an `asyncio.Queue` so the generator can yield them. Only parent-agent tool calls surface this way — calls inside subagents are not forwarded (they appear to the parent as a single `task` dispatch event).
+
 ## API Key Injection
 
 `_build_model_string()` injects keys into `os.environ` on demand. The `_PROVIDER_ENV_KEYS` dict maps provider → env var name. Resolution order: `credentials` kwarg from DB → `settings.<provider>.api_key`. Both paths must be covered for new providers.

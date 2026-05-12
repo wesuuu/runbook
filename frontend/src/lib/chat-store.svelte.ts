@@ -6,10 +6,10 @@ import {
     ChatSessionSchema,
     ChatSessionDetailSchema,
     ChatSessionListResponseSchema,
-    ChatCompletionResponseSchema,
     ChatSkillListResponseSchema,
     ChatConfigSchema,
 } from '$lib/schemas/chat';
+import { streamSse, type SseEvent } from '$lib/ai/sse-stream';
 
 // ─── Module-level state (survives navigations) ───
 
@@ -43,6 +43,82 @@ let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let staleTimer: ReturnType<typeof setTimeout> | null = null;
 let pollSessionId: string | null = null;
 let stalePendingMessage = $state<ChatMessage | null>(null);
+
+// Live tool indicator for the chat thinking row (F-0083). Tool events stream
+// in faster than humans can read, so each tool is held for at least
+// MIN_LABEL_DISPLAY_MS — incoming tool_start events queue up and advance after
+// the current one has been shown long enough. When the active tool advances
+// out, it's pushed onto `toolTrail` (most-recent first) so the UI can render a
+// stacked stream of recently-completed tools.
+export interface ToolEvent {
+    id: number;
+    name: string;
+    label: string;
+}
+
+const MIN_LABEL_DISPLAY_MS = 1000;
+const TRAIL_CAP = 6;
+let nextToolId = 0;
+let currentTool = $state<ToolEvent | null>(null);
+let toolTrail = $state<ToolEvent[]>([]);
+let labelQueue: ToolEvent[] = [];
+let labelShownAt: number = 0;
+let labelTimer: ReturnType<typeof setTimeout> | null = null;
+
+function advanceLabel(): void {
+    if (labelTimer) {
+        clearTimeout(labelTimer);
+        labelTimer = null;
+    }
+    if (currentTool !== null) {
+        toolTrail = [currentTool, ...toolTrail].slice(0, TRAIL_CAP);
+    }
+    const next = labelQueue.shift() ?? null;
+    currentTool = next;
+    labelShownAt = next === null ? 0 : Date.now();
+    if (next !== null && labelQueue.length > 0) {
+        labelTimer = setTimeout(advanceLabel, MIN_LABEL_DISPLAY_MS);
+    }
+}
+
+function enqueueLabel(name: string, label: string): void {
+    const ev: ToolEvent = { id: nextToolId++, name, label };
+    if (currentTool === null) {
+        currentTool = ev;
+        labelShownAt = Date.now();
+        return;
+    }
+    labelQueue.push(ev);
+    if (labelTimer !== null) return;
+    const elapsed = Date.now() - labelShownAt;
+    const wait = Math.max(0, MIN_LABEL_DISPLAY_MS - elapsed);
+    labelTimer = setTimeout(advanceLabel, wait);
+}
+
+function resetLabelQueue(): void {
+    if (labelTimer) {
+        clearTimeout(labelTimer);
+        labelTimer = null;
+    }
+    labelQueue = [];
+    currentTool = null;
+    toolTrail = [];
+    labelShownAt = 0;
+}
+
+export function getCurrentTool(): ToolEvent | null {
+    return currentTool;
+}
+
+export function getToolTrail(): ToolEvent[] {
+    return toolTrail;
+}
+
+// Backwards-compat getter — preserved for callers that only need the label
+// string (e.g. tests, simple consumers).
+export function getCurrentToolLabel(): string | null {
+    return currentTool?.label ?? null;
+}
 
 const STALE_POLL_MS = 90_000;
 
@@ -339,32 +415,66 @@ export async function sendMessage(skillId?: string): Promise<void> {
     await tick();
     scrollFn?.();
 
+    let errorCode: string | null = null;
+
     try {
         const body: Record<string, string> = { content };
         if (skillId) {
             body.skill_id = skillId;
         }
 
-        const res = await api.post(
-            `/chat/sessions/${activeSession.id}/messages`,
+        resetLabelQueue();
+
+        type DonePayload = {
+            user_message: ChatMessage;
+            assistant_message: ChatMessage;
+            sources: ChatSourceReference[];
+        };
+        let donePayload: DonePayload | null = null;
+        let errorDetail: string | null = null;
+
+        await streamSse(
+            `/chat/sessions/${activeSession.id}/messages/stream`,
             body,
-            { schema: ChatCompletionResponseSchema },
+            (event: SseEvent) => {
+                if (event.type === 'tool_start') {
+                    enqueueLabel(event.tool, event.label);
+                } else if (event.type === 'tool_end') {
+                    // No-op: labels stay on screen for at least
+                    // MIN_LABEL_DISPLAY_MS so the user can read them. The
+                    // queue advances on its own timer.
+                } else if (event.type === 'done') {
+                    donePayload = {
+                        user_message: event.user_message as ChatMessage,
+                        assistant_message: event.assistant_message as ChatMessage,
+                        sources: event.sources as ChatSourceReference[],
+                    };
+                } else if (event.type === 'error') {
+                    errorDetail = event.detail;
+                    errorCode = (event as { error_code?: string }).error_code ?? null;
+                }
+            },
         );
 
-        // Replace temp message with real one + assistant response
+        if (errorDetail) {
+            throw new Error(errorDetail as string);
+        }
+        if (!donePayload) {
+            throw new Error('Stream ended without a result');
+        }
+        const done = donePayload as DonePayload;
+
         activeSession.messages = [
             ...activeSession.messages.filter(m => m.id !== tempUserMsg.id),
-            res.user_message,
-            res.assistant_message,
+            done.user_message,
+            done.assistant_message,
         ];
 
-        // Show sources if any
-        if (res.sources && res.sources.length > 0) {
-            activeSources = res.sources;
+        if (done.sources && done.sources.length > 0) {
+            activeSources = done.sources;
             sourcePanelOpen = true;
         }
 
-        // Update session title in sidebar list
         const idx = sessions.findIndex(s => s.id === activeSession!.id);
         if (idx !== -1 && sessions[idx].title === 'New Chat') {
             sessions[idx] = { ...sessions[idx], title: content.slice(0, 100) };
@@ -373,20 +483,14 @@ export async function sendMessage(skillId?: string): Promise<void> {
 
         await tick();
         scrollFn?.();
-    } catch (err) {
+    } catch {
         activeSession.messages = activeSession.messages.filter(
             m => m.id !== tempUserMsg.id,
         );
-        const codeMatch =
-            err instanceof ApiError && typeof err.message === 'string'
-                ? err.message.match(/error_code=([a-f0-9]+)/)
-                : null;
-        toast.error(
-            codeMatch
-                ? `Failed to send message (E${codeMatch[1]})`
-                : 'Failed to send message',
-        );
+        const codeSuffix = errorCode ? ` (E${errorCode})` : '';
+        toast.error(`Failed to send message${codeSuffix}`);
     } finally {
+        resetLabelQueue();
         sending = false;
     }
 }
@@ -429,4 +533,9 @@ export function resetChat(): void {
     chatConfig = null;
     scrollFn = null;
     clearPoll();
+}
+
+// --- Test-only export (DO NOT USE FROM APP CODE) ---
+export function __test_setActiveSession(s: ChatSessionDetail | null): void {
+    activeSession = s;
 }

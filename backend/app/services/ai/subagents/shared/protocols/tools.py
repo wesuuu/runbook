@@ -50,6 +50,39 @@ from app.services.protocols.validation import (ValidationIssue,
 
 logger = logging.getLogger(__name__)
 
+# Human-readable labels for each tool, shown live in the chat thinking
+# indicator while the tool is in flight (F-0083). Adding a new tool in this
+# file MUST also add an entry here — enforced by
+# tests/unit/test_tool_labels.py.
+TOOL_LABELS: dict[str, str] = {
+    # Discovery / read
+    "list_protocols": "Listing protocols…",
+    "get_protocol": "Reading the protocol…",
+    "list_projects": "Listing projects…",
+    "list_unit_ops": "Listing unit ops…",
+    "list_protocol_roles": "Listing protocol roles…",
+    # Draft / metadata
+    "create_draft": "Creating a draft…",
+    "create_protocol": "Drafting a protocol…",
+    "update_protocol_metadata": "Updating protocol details…",
+    "validate_protocol": "Validating the protocol…",
+    # Steps
+    "add_protocol_step": "Adding a step…",
+    "update_protocol_step": "Updating a step…",
+    "remove_protocol_step": "Removing a step…",
+    "reorder_protocol_steps": "Reordering steps…",
+    "replace_step_unit_op": "Swapping a step's unit op…",
+    "set_node_position": "Repositioning a step…",
+    # Roles
+    "add_protocol_role": "Adding a role…",
+    "update_protocol_role": "Updating a role…",
+    "remove_protocol_role": "Removing a role…",
+    # Unit ops
+    "create_unit_op": "Creating a unit op…",
+    "update_unit_op": "Updating a unit op…",
+    "elevate_unit_op_scope": "Promoting a unit op…",
+}
+
 # ─── Result Models ─────────────────────────────────────────────────────────────
 
 
