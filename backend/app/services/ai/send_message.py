@@ -20,6 +20,7 @@ The caller (chat SSE endpoint) serializes each dict as an SSE `data:` line.
 """
 
 import asyncio
+import json
 import logging
 from typing import Any, AsyncIterator
 from uuid import UUID
@@ -29,6 +30,7 @@ from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
 )
+from pydantic_ai.tools import DeferredToolRequests
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,22 +97,26 @@ async def send_message_streaming(
         async for event in stream:
             if isinstance(event, FunctionToolCallEvent):
                 name = event.part.tool_name
-                await event_queue.put({
-                    "type": "tool_start",
-                    "tool": name,
-                    "label": resolve_tool_label(name),
-                })
+                await event_queue.put(
+                    {
+                        "type": "tool_start",
+                        "tool": name,
+                        "label": resolve_tool_label(name),
+                    }
+                )
             elif isinstance(event, FunctionToolResultEvent):
                 name = event.result.tool_name
                 await event_queue.put({"type": "tool_end", "tool": name})
 
     async def _subagent_tool_event(event_type: str, name: str) -> None:
         if event_type == "tool_start":
-            await event_queue.put({
-                "type": "tool_start",
-                "tool": name,
-                "label": resolve_tool_label(name),
-            })
+            await event_queue.put(
+                {
+                    "type": "tool_start",
+                    "tool": name,
+                    "label": resolve_tool_label(name),
+                }
+            )
         else:
             await event_queue.put({"type": "tool_end", "tool": name})
 
@@ -122,9 +128,7 @@ async def send_message_streaming(
     message_history = None
     if existing_history:
         try:
-            message_history = ModelMessagesTypeAdapter.validate_python(
-                existing_history
-            )
+            message_history = ModelMessagesTypeAdapter.validate_python(existing_history)
         except Exception:
             logger.warning(
                 "Failed to deserialize ai_message_history for session %s, "
@@ -184,6 +188,97 @@ async def send_message_streaming(
         if source.chunk_id not in seen_chunk_ids:
             seen_chunk_ids.add(source.chunk_id)
             unique_sources.append(source)
+
+    # ── 7b. Branch: deferred-tool approval gate? ─────────────────────────────
+    deferred = (
+        result.output if isinstance(result.output, DeferredToolRequests) else None
+    )
+    pending_approval_call = (
+        deferred.approvals[0] if deferred and deferred.approvals else None
+    )
+
+    if pending_approval_call is not None:
+        args = pending_approval_call.args or {}
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except (json.JSONDecodeError, ValueError):
+                args = {}
+        title = str(args.get("title") or "")
+        source_url = str(args.get("source_url") or "")
+        payload_raw = args.get("payload_json") or "{}"
+        try:
+            payload = (
+                json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+            )
+        except (json.JSONDecodeError, ValueError):
+            payload = {}
+
+        steps = payload.get("steps") if isinstance(payload, dict) else None
+        step_count = len(steps) if isinstance(steps, list) else 0
+        durations = [
+            s.get("duration_min") for s in (steps or []) if isinstance(s, dict)
+        ]
+        duration_min_total = sum(d for d in durations if isinstance(d, int)) or None
+
+        payload_preview = {
+            "title": title,
+            "source_url": source_url,
+            "step_count": step_count,
+            "duration_min_total": duration_min_total,
+            "license": (payload.get("license") if isinstance(payload, dict) else None)
+            or "CC BY-SA 3.0",
+            "deviations": [],
+        }
+
+        history_payload = ModelMessagesTypeAdapter.dump_python(
+            result.all_messages(), mode="json"
+        )
+        placeholder_meta: dict[str, Any] = {
+            "pending_approval": {
+                "tool_call_id": pending_approval_call.tool_call_id,
+                "tool_name": pending_approval_call.tool_name,
+                "title": title,
+                "source_url": source_url,
+                "payload_preview": payload_preview,
+            }
+        }
+        if deps.tool_calls:
+            placeholder_meta["tool_calls"] = deps.tool_calls
+
+        placeholder = ChatMessage(
+            session_id=session_pk,
+            role=ChatMessageRole.ASSISTANT,
+            content="Awaiting your approval to draft the selected protocol.",
+            metadata_=placeholder_meta,
+        )
+        async with AsyncSessionLocal() as writer:
+            writer.add(placeholder)
+            await writer.execute(
+                update(ChatSession)
+                .where(ChatSession.id == session_pk)
+                .values(ai_message_history=history_payload)
+            )
+            await writer.commit()
+            await writer.refresh(placeholder)
+
+        try:
+            session.ai_message_history = history_payload
+        except Exception:
+            logger.debug(
+                "Could not refresh in-memory session.ai_message_history",
+            )
+
+        yield {
+            "type": "approval_required",
+            "tool_call_id": pending_approval_call.tool_call_id,
+            "tool_name": pending_approval_call.tool_name,
+            "title": title,
+            "source_url": source_url,
+            "payload_preview": payload_preview,
+            "assistant_message_id": str(placeholder.id),
+        }
+        return
 
     # ── 8. Sanitize output + assemble assistant message ───────────────────────
     assistant_content = sanitize_output(result.output)
