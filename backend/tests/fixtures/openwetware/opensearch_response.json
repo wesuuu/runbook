@@ -1,6 +1,17 @@
-[
-  "transformation of e. coli",
-  ["Sauer:Heat shock transformation of E. coli"],
-  ["Standard heat-shock transformation"],
-  ["https://openwetware.org/wiki/Sauer:Heat_shock_transformation_of_E._coli"]
-]
+{
+  "batchcomplete": "",
+  "query": {
+    "searchinfo": {"totalhits": 1},
+    "search": [
+      {
+        "ns": 0,
+        "title": "Sauer:Heat shock transformation of E. coli",
+        "pageid": 12345,
+        "size": 4096,
+        "wordcount": 600,
+        "snippet": "Standard <span class=\"searchmatch\">heat-shock</span> transformation procedure",
+        "timestamp": "2024-01-01T00:00:00Z"
+      }
+    ]
+  }
+}

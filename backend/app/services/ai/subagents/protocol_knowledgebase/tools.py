@@ -292,16 +292,27 @@ def _page_title_from_url(url: str) -> str:
     return urllib.parse.unquote(leaf).replace("_", " ")
 
 
+_SNIPPET_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _title_to_url(title: str) -> str:
+    """`Agarose gel electrophoresis` → full openwetware.org/wiki URL."""
+    slug = urllib.parse.quote(title.replace(" ", "_"), safe=":/_")
+    return f"https://openwetware.org/wiki/{slug}"
+
+
 async def search_openwetware(
     ctx: RunContext[ChatDeps],
     query: str,
     limit: int = 5,
 ) -> OpenWetWareSearchResult:
-    """Search OpenWetWare for protocol pages matching a free-text query.
+    """Search OpenWetWare protocol pages matching a free-text query.
 
-    Returns up to `limit` candidate hits (title, URL, snippet). Use this
-    first; pass each interesting URL to ``fetch_openwetware_protocol`` to
-    get the structured payload.
+    Uses MediaWiki full-text `list=search` constrained to
+    `Category:Protocol`, which excludes review/survey articles. Returns
+    up to `limit` candidate hits (title, URL, snippet). Pass each
+    interesting URL to ``fetch_openwetware_protocol`` to get the
+    structured payload.
 
     Args:
         ctx: Run context with shared deps.
@@ -314,28 +325,29 @@ async def search_openwetware(
     limit = max(1, min(int(limit), 10))
     timeout = settings.features.external_protocols.request_timeout_seconds
     params = {
-        "action": "opensearch",
-        "search": query,
-        "limit": str(limit),
+        "action": "query",
+        "list": "search",
+        "srsearch": f"{query} incategory:Protocol",
+        "srlimit": str(limit),
+        "srnamespace": "0",
+        "srprop": "snippet",
         "format": "json",
-        "namespace": "0",
+        "formatversion": "1",
     }
     async with httpx.AsyncClient() as client:
         resp = await client.get(_OWW_API, params=params, timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
 
-    # MediaWiki opensearch returns [query, titles[], descriptions[], urls[]].
-    titles = data[1] if len(data) > 1 else []
-    snippets = data[2] if len(data) > 2 else []
-    urls = data[3] if len(data) > 3 else []
+    raw_hits = (data.get("query") or {}).get("search") or []
     hits = [
         OpenWetWareHit(
-            title=t,
-            url=u,
-            snippet=(snippets[i] if i < len(snippets) else ""),
+            title=h.get("title", ""),
+            url=_title_to_url(h.get("title", "")),
+            snippet=_SNIPPET_TAG_RE.sub("", h.get("snippet", "")).strip(),
         )
-        for i, (t, u) in enumerate(zip(titles, urls))
+        for h in raw_hits
+        if h.get("title")
     ]
 
     ctx.deps.tool_calls.append(
@@ -348,7 +360,9 @@ async def search_openwetware(
     )
 
     if not hits:
-        return OpenWetWareSearchResult(total=0, message="No OpenWetWare results.")
+        return OpenWetWareSearchResult(
+            total=0, message="No OpenWetWare protocol pages match this query."
+        )
     return OpenWetWareSearchResult(total=len(hits), hits=hits)
 
 
@@ -385,7 +399,9 @@ async def fetch_openwetware_protocol(
         data = resp.json()
 
     parse = data.get("parse") or {}
-    displaytitle = parse.get("displaytitle") or page_title
+    raw_displaytitle = parse.get("displaytitle") or page_title
+    # MediaWiki wraps modern displaytitle in <span> markup — strip tags.
+    displaytitle = _HTML_TAG_RE.sub("", raw_displaytitle).strip() or page_title
     wikitext = ((parse.get("wikitext") or {}).get("*")) or ""
 
     payload = parse_openwetware_wikitext(

@@ -4,15 +4,17 @@ right now is OpenWetWare.
 ## What you do
 
 1. **Search OpenWetWare**: call `search_openwetware(query, limit)`.
-   OpenWetWare's search matches **page titles, prefix-first**. Use short,
-   title-shaped queries — 1-3 words, no filler:
-   - GOOD: "agarose gel", "heat shock transformation", "miniprep", "PCR"
-   - BAD: "DNA agarose gel electrophoresis protocol",
-     "protocol for transforming E. coli with plasmid"
-   Strip filler words ("protocol", "method", "for", "DNA", "RNA") unless
-   they're part of an actual technique name ("DNA extraction"). If the
-   first query returns nothing, drop a word and retry — don't add words.
-   After 3 empty searches, give up and tell the user.
+   The tool already restricts results to `Category:Protocol`, so you
+   never get review/survey pages. The query is full-text (not just
+   titles), so natural-language queries work — but keep them focused on
+   the technique:
+   - GOOD: "agarose gel electrophoresis", "heat shock transformation",
+     "miniprep plasmid", "PCR cleanup"
+   - BAD: "protocol for transforming E. coli with plasmid DNA from a
+     ligation reaction"
+   Drop filler words ("protocol", "method", "how to"). If the first
+   query returns nothing, paraphrase once with different technique terms.
+   After 2 empty searches, give up and tell the user.
 
 2. **Fetch up to 3 promising hits**: call
    `fetch_openwetware_protocol(url)` on each. If the returned `steps`
