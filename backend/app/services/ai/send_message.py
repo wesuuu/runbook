@@ -25,12 +25,10 @@ import logging
 from typing import Any, AsyncIterator
 from uuid import UUID
 
-from pydantic_ai.messages import (
-    FunctionToolCallEvent,
-    FunctionToolResultEvent,
-    ModelMessagesTypeAdapter,
-)
-from pydantic_ai.tools import DeferredToolRequests
+from pydantic_ai.messages import (FunctionToolCallEvent,
+                                  FunctionToolResultEvent,
+                                  ModelMessagesTypeAdapter)
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -351,6 +349,209 @@ async def send_message_streaming(
         "assistant_message": ChatMessageResponse.model_validate(
             assistant_msg
         ).model_dump(mode="json"),
+        "sources": [
+            ChatSourceReference(
+                document_id=s.document_id,
+                document_title=s.document_title,
+                chunk_id=s.chunk_id,
+                chunk_index=s.chunk_index,
+                page_number=s.page_number,
+                score=s.score,
+                snippet=s.content[:200],
+            ).model_dump(mode="json")
+            for s in unique_sources
+        ],
+    }
+
+
+async def resume_message_streaming(
+    db: AsyncSession,
+    session: ChatSession,
+    placeholder: ChatMessage,
+    tool_call_id: str,
+    approved: bool,
+    user_id: UUID,
+    is_org_admin: bool,
+) -> AsyncIterator[dict[str, Any]]:
+    """Resume a chat turn that paused on a DeferredToolRequests gate.
+
+    Persists the user's approval/rejection as a USER ChatMessage, then resumes
+    ``agent.run`` with ``deferred_tool_results=DeferredToolResults(...)`` and
+    the session's existing message history. The placeholder ASSISTANT row is
+    updated in place with the final content — no duplicate is created.
+    """
+    session_pk: UUID = session.id
+    session_org_id: UUID = session.org_id
+    existing_history = session.ai_message_history
+
+    decision_text = (
+        "Approved external protocol conversion."
+        if approved
+        else "Rejected the external protocol conversion."
+    )
+    user_msg = ChatMessage(
+        session_id=session_pk,
+        role=ChatMessageRole.USER,
+        content=decision_text,
+    )
+    db.add(user_msg)
+    await db.flush()
+    await db.commit()
+    await db.refresh(user_msg)
+
+    state = CompactionState()
+    deps = ChatDeps(
+        db=db,
+        org_id=session_org_id,
+        user_id=user_id,
+        is_org_admin=is_org_admin,
+    )
+
+    event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def _parent_event_handler(_ctx, stream):
+        async for event in stream:
+            if isinstance(event, FunctionToolCallEvent):
+                name = event.part.tool_name
+                await event_queue.put(
+                    {
+                        "type": "tool_start",
+                        "tool": name,
+                        "label": resolve_tool_label(name),
+                    }
+                )
+            elif isinstance(event, FunctionToolResultEvent):
+                name = event.result.tool_name
+                await event_queue.put({"type": "tool_end", "tool": name})
+
+    async def _subagent_tool_event(event_type: str, name: str) -> None:
+        if event_type == "tool_start":
+            await event_queue.put(
+                {
+                    "type": "tool_start",
+                    "tool": name,
+                    "label": resolve_tool_label(name),
+                }
+            )
+        else:
+            await event_queue.put({"type": "tool_end", "tool": name})
+
+    deps.tool_event_callback = _subagent_tool_event
+
+    agent = await build_chat_agent(db, session_org_id, state)
+
+    message_history = None
+    if existing_history:
+        try:
+            message_history = ModelMessagesTypeAdapter.validate_python(existing_history)
+        except Exception:
+            logger.warning(
+                "Failed to deserialize ai_message_history for session %s on resume",
+                session_pk,
+            )
+
+    deferred_results = DeferredToolResults(approvals={tool_call_id: approved})
+
+    run_task: asyncio.Task = asyncio.create_task(
+        agent.run(
+            deps=deps,
+            message_history=message_history,
+            event_stream_handler=_parent_event_handler,
+            deferred_tool_results=deferred_results,
+        )
+    )
+
+    try:
+        while not run_task.done() or not event_queue.empty():
+            queue_get = asyncio.create_task(event_queue.get())
+            done_set, _pending = await asyncio.wait(
+                {queue_get, run_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if queue_get in done_set:
+                ev = queue_get.result()
+                if ev is not None:
+                    yield ev
+            else:
+                queue_get.cancel()
+        result = await run_task
+    except Exception:
+        logger.exception("Chat agent resume failed for session %s", session_pk)
+        if not run_task.done():
+            run_task.cancel()
+        yield {"type": "error", "detail": "Failed to resume AI response"}
+        return
+
+    try:
+        await db.commit()
+    except Exception as exc:
+        logger.warning(
+            "Tool-call session commit failed on resume (%s); rolling back.",
+            exc.__class__.__name__,
+        )
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception("Rollback of poisoned session failed on resume")
+
+    seen: set[UUID] = set()
+    unique_sources: list[RetrievedChunk] = []
+    for s in deps.sources:
+        if s.chunk_id not in seen:
+            seen.add(s.chunk_id)
+            unique_sources.append(s)
+
+    assistant_content = sanitize_output(result.output)
+    meta: dict[str, Any] = {}
+    if unique_sources:
+        meta["sources"] = [
+            {
+                "document_id": str(s.document_id),
+                "document_title": s.document_title,
+                "chunk_id": str(s.chunk_id),
+                "chunk_index": s.chunk_index,
+                "page_number": s.page_number,
+                "score": s.score,
+                "snippet": s.content[:200],
+            }
+            for s in unique_sources
+        ]
+    if deps.tool_calls:
+        meta["tool_calls"] = deps.tool_calls
+
+    history_payload = ModelMessagesTypeAdapter.dump_python(
+        result.all_messages(), mode="json"
+    )
+
+    async with AsyncSessionLocal() as writer:
+        await writer.execute(
+            update(ChatMessage)
+            .where(ChatMessage.id == placeholder.id)
+            .values(content=assistant_content, metadata_=meta or None)
+        )
+        await writer.execute(
+            update(ChatSession)
+            .where(ChatSession.id == session_pk)
+            .values(ai_message_history=history_payload)
+        )
+        await writer.commit()
+
+    try:
+        session.ai_message_history = history_payload
+    except Exception:
+        logger.debug("Could not refresh in-memory session.ai_message_history on resume")
+
+    placeholder.content = assistant_content
+    placeholder.metadata_ = meta or None
+
+    yield {
+        "type": "done",
+        "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(
+            mode="json"
+        ),
+        "assistant_message": ChatMessageResponse.model_validate(placeholder).model_dump(
+            mode="json"
+        ),
         "sources": [
             ChatSourceReference(
                 document_id=s.document_id,
