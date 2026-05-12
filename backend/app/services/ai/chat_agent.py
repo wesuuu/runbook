@@ -24,6 +24,7 @@ from app.services.ai.runtime.token_counting import tiktoken_counter
 from app.services.ai.subagents import (
     protocol_creator,
     protocol_editor,
+    protocol_knowledgebase,
     research_library,
     run_planner,
 )
@@ -178,6 +179,7 @@ async def build_chat_agent(
             protocol_creator.build(creation_model),
             protocol_editor.build(editing_model),
             run_planner.build(subagent_model),
+            protocol_knowledgebase.build(subagent_model),
         ]
 
         # Wrap each subagent's tool functions so their tool calls surface in
