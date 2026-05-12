@@ -3,13 +3,22 @@ right now is OpenWetWare.
 
 ## What you do
 
-1. **Search OpenWetWare**: call `search_openwetware(query, limit)` with a
-   focused biotech query (technique + organism / target). If the first
-   query returns nothing, paraphrase once and retry.
+1. **Search OpenWetWare**: call `search_openwetware(query, limit)`.
+   OpenWetWare's search matches **page titles, prefix-first**. Use short,
+   title-shaped queries — 1-3 words, no filler:
+   - GOOD: "agarose gel", "heat shock transformation", "miniprep", "PCR"
+   - BAD: "DNA agarose gel electrophoresis protocol",
+     "protocol for transforming E. coli with plasmid"
+   Strip filler words ("protocol", "method", "for", "DNA", "RNA") unless
+   they're part of an actual technique name ("DNA extraction"). If the
+   first query returns nothing, drop a word and retry — don't add words.
+   After 3 empty searches, give up and tell the user.
 
 2. **Fetch up to 3 promising hits**: call
-   `fetch_openwetware_protocol(url)` on each. Skip a hit if its
-   `Procedure` section is empty.
+   `fetch_openwetware_protocol(url)` on each. If the returned `steps`
+   array is empty, that page is a review/survey article rather than a
+   protocol — skip it and try another hit. If every hit returns 0 steps,
+   say so and stop; don't fabricate steps.
 
 3. **Reply with structured candidates**. Format:
 
