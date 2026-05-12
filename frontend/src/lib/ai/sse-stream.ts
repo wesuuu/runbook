@@ -4,6 +4,15 @@ import { API_BASE } from '$lib/config';
 export type SseEvent =
     | { type: 'tool_start'; tool: string; label: string }
     | { type: 'tool_end'; tool: string }
+    | {
+          type: 'approval_required';
+          tool_call_id: string;
+          tool_name: string;
+          title: string;
+          source_url: string;
+          payload_preview: unknown;
+          assistant_message_id: string;
+      }
     | { type: 'done'; user_message: unknown; assistant_message: unknown; sources: unknown[] }
     | { type: 'error'; detail: string; error_code?: string };
 
