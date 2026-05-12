@@ -1,6 +1,7 @@
 """Tests for send_message orchestration (Task 18 — TD-0081)."""
 
 import uuid
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,6 +23,28 @@ def _make_session(**kwargs):
     s.title = kwargs.get("title", "New Chat")
     s.ai_message_history = kwargs.get("ai_message_history", None)
     return s
+
+
+@contextmanager
+def _patch_writer_session(added_objects: list | None = None):
+    """Patch AsyncSessionLocal so send_message's post-LLM writes don't touch
+    a real DB. Captures objects added via `writer.add(...)` into
+    ``added_objects`` if provided.
+    """
+    writer = AsyncMock()
+    writer.add = MagicMock(
+        side_effect=(added_objects.append if added_objects is not None else None)
+    )
+    writer.execute = AsyncMock()
+    writer.commit = AsyncMock()
+    writer.refresh = AsyncMock()
+
+    ctx = AsyncMock()
+    ctx.__aenter__.return_value = writer
+    ctx.__aexit__.return_value = False
+    factory = MagicMock(return_value=ctx)
+    with patch("app.services.ai.send_message.AsyncSessionLocal", factory):
+        yield writer
 
 
 def _make_chunk(**kwargs):
@@ -73,6 +96,7 @@ async def test_send_message_happy_path():
             "app.services.ai.send_message.sanitize_output",
             return_value="Hello, world!",
         ),
+        _patch_writer_session(),
     ):
         fake_agent = AsyncMock()
         fake_agent.run = AsyncMock(return_value=fake_result)
@@ -143,6 +167,7 @@ async def test_auto_title_on_new_chat():
             "app.services.ai.send_message.sanitize_output",
             return_value="Response text.",
         ),
+        _patch_writer_session(),
     ):
         fake_agent = AsyncMock()
         fake_agent.run = AsyncMock(return_value=fake_result)
@@ -174,8 +199,7 @@ async def test_writes_summary_row_when_compaction_triggered():
     from app.services.ai.send_message import send_message
 
     db = AsyncMock()
-    added_objects: list = []
-    db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+    db.add = MagicMock()
     db.flush = AsyncMock()
 
     session = _make_session(title="Existing Title")
@@ -191,6 +215,7 @@ async def test_writes_summary_row_when_compaction_triggered():
     fake_result.output = "Agent response after compaction."
     fake_result.all_messages.return_value = []
 
+    writer_added: list = []
     with (
         patch(
             "app.services.ai.send_message.build_chat_agent", new_callable=AsyncMock
@@ -204,6 +229,7 @@ async def test_writes_summary_row_when_compaction_triggered():
             "app.services.ai.send_message.sanitize_output",
             return_value="Agent response after compaction.",
         ),
+        _patch_writer_session(writer_added),
     ):
         fake_agent = AsyncMock()
         fake_agent.run = AsyncMock(return_value=fake_result)
@@ -221,7 +247,7 @@ async def test_writes_summary_row_when_compaction_triggered():
 
     summary_rows = [
         o
-        for o in added_objects
+        for o in writer_added
         if isinstance(o, ChatMessage) and o.role == ChatMessageRole.SUMMARY
     ]
     assert len(summary_rows) == 1

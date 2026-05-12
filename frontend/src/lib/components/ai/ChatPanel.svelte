@@ -12,6 +12,7 @@
         isSending,
         getMessageSources,
         getSkills,
+        getStalePendingMessage,
         openPanel,
         closePanel,
         togglePanel,
@@ -20,6 +21,8 @@
         clearConversation,
         registerScrollFn,
         activateSkill,
+        retryStalePending,
+        dismissStalePending,
     } from "$lib/chat-store.svelte";
 
     let { showFab = true } = $props();
@@ -43,6 +46,7 @@
     const messageInput = $derived(getMessageInput());
     const sending = $derived(isSending());
     const skills = $derived(getSkills());
+    const stalePending = $derived(getStalePendingMessage());
 
     const hasMessages = $derived(
         activeSession !== null && activeSession.messages.length > 0,
@@ -407,7 +411,7 @@
                     </div>
                 {/each}
 
-                {#if sending}
+                {#if sending && !stalePending}
                     <div class="flex justify-start">
                         <div class="bg-muted/70 rounded-xl px-3.5 py-2.5">
                             <div class="flex items-center gap-1.5">
@@ -423,6 +427,29 @@
                                     class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce"
                                     style="animation-delay: 300ms"
                                 ></div>
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+
+                {#if stalePending}
+                    <div class="flex justify-start">
+                        <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3.5 py-2.5 text-xs max-w-[85%]">
+                            <p class="text-amber-700 dark:text-amber-300 mb-2">
+                                No reply yet — the request may have been interrupted.
+                            </p>
+                            <div class="flex gap-2">
+                                <button
+                                    type="button"
+                                    class="text-amber-700 dark:text-amber-300 underline underline-offset-2 hover:brightness-125 cursor-pointer transition-all duration-150"
+                                    onclick={retryStalePending}
+                                >Resend</button>
+                                <span class="text-amber-700/50 dark:text-amber-300/50">·</span>
+                                <button
+                                    type="button"
+                                    class="text-amber-700/70 dark:text-amber-300/70 hover:brightness-125 cursor-pointer transition-all duration-150"
+                                    onclick={dismissStalePending}
+                                >Keep waiting</button>
                             </div>
                         </div>
                     </div>

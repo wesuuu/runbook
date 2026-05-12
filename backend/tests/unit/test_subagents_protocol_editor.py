@@ -12,6 +12,8 @@ EXPECTED_TOOL_NAMES = {
     "list_protocol_roles",
     # Validation
     "validate_protocol",
+    # Draft lifecycle
+    "create_draft",
     # Metadata
     "update_protocol_metadata",
     # Step mutations
@@ -44,4 +46,4 @@ def test_protocol_editor_tool_set():
     assert tool_names == EXPECTED_TOOL_NAMES, (
         f"Expected exactly {EXPECTED_TOOL_NAMES}, got {tool_names}"
     )
-    assert len(tool_names) == 17
+    assert len(tool_names) == 18

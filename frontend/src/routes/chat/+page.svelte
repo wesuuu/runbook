@@ -14,9 +14,11 @@
         getChatSessions, getActiveSession, getMessageInput, isSending,
         isLoading, isCreatingSession, isSidebarCollapsed, isSourcePanelOpen,
         getActiveSources, getMessageSources, getSkills, getMessageError,
+        getStalePendingMessage,
         initChat, createSession, selectSession, deleteSession,
         sendMessage, setMessageInput, setSidebarCollapsed, setSourcePanelOpen,
         showSourcesForMessage, registerScrollFn, activateSkill,
+        retryStalePending, dismissStalePending,
     } from '$lib/chat-store.svelte';
     import type { ChatMessage } from '$lib/schemas/chat';
     import { fade } from 'svelte/transition';
@@ -35,6 +37,7 @@
     const activeSources = $derived(getActiveSources());
     const skills = $derived(getSkills());
     const messageError = $derived(getMessageError());
+    const stalePending = $derived(getStalePendingMessage());
 
     const hasMessages = $derived(
         activeSession !== null && activeSession.messages.length > 0
@@ -346,13 +349,36 @@
                     </div>
                 {/each}
 
-                {#if sending}
+                {#if sending && !stalePending}
                     <div in:fade={{ duration: blockDuration() }} class="flex justify-start">
                         <div class="bg-muted/70 rounded-xl px-4 py-3">
                             <div class="flex items-center gap-1.5">
                                 <div class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 0ms"></div>
                                 <div class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 150ms"></div>
                                 <div class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 300ms"></div>
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+
+                {#if stalePending}
+                    <div in:fade={{ duration: blockDuration() }} class="flex justify-start">
+                        <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 max-w-[85%] text-sm">
+                            <p class="text-amber-700 dark:text-amber-300 mb-2">
+                                No reply yet — the request may have been interrupted.
+                            </p>
+                            <div class="flex gap-3 text-xs">
+                                <button
+                                    type="button"
+                                    class="text-amber-700 dark:text-amber-300 underline underline-offset-2 hover:brightness-125 cursor-pointer transition-all duration-150"
+                                    onclick={retryStalePending}
+                                >Resend</button>
+                                <span class="text-amber-700/40 dark:text-amber-300/40">·</span>
+                                <button
+                                    type="button"
+                                    class="text-amber-700/70 dark:text-amber-300/70 hover:brightness-125 cursor-pointer transition-all duration-150"
+                                    onclick={dismissStalePending}
+                                >Keep waiting</button>
                             </div>
                         </div>
                     </div>

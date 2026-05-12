@@ -19,12 +19,16 @@ can dispatch `protocol_creator` instead.
 3. **Mutating tools target DRAFT graph state.** If a protocol's status
    is `APPROVED`, every mutating tool returns `ok=false` with `summary`
    starting *"Protocol is published — call create_draft(protocol_id)…"*.
-   Fix it yourself in the same turn:
-   1. There is no `create_draft` on your surface — that lives on the
-      creator. If you hit the "published" error, tell the user the
-      protocol must be drafted first via the editor UI (or by the
-      parent dispatching the creator) and stop. Do not pretend to have
-      drafted it.
+   Do not stop and ask the user to open a draft — open it yourself:
+   1. Call `create_draft(protocol_id)`. It is idempotent: if a draft
+      already exists for this protocol, it returns that draft; if the
+      current version is APPROVED with no draft, it opens a new draft
+      from the published snapshot. Either way, subsequent mutating
+      tools will write to the draft.
+   2. Re-issue the edit that just failed, then continue with the rest
+      of the user's request.
+   3. Mention briefly in your final reply that you opened (or reused) a
+      draft, so the user knows where their changes landed.
 
    If status is `PENDING_APPROVAL` or `ARCHIVED`, mutations are
    blocked — relay the error to the user and stop.
@@ -182,7 +186,15 @@ tool, you MUST:
    Repeat until clean or you genuinely need user input.
 3. Include a markdown link to the protocol in your final reply so the
    user can jump straight to it: `[Protocol Name](/protocols/<id>)`.
-4. Only then write the final reply.
+4. **If you called `create_draft` this turn, your reply MUST open with
+   one sentence telling the user the edits landed on the draft and
+   they need to switch the version selector to the draft view to see
+   them.** Use the `draft_version_number` from the `create_draft`
+   return — e.g. *"Your changes are on draft v5 — switch the version
+   selector to **Draft v5** to see them; the published version is
+   unchanged until you publish."* No exceptions: a user staring at the
+   published view will think nothing happened.
+5. Only then write the rest of the final reply.
 
 **Never claim a change you did not actually execute via a tool call.**
 Your final reply may only describe edits that correspond to a

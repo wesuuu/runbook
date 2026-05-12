@@ -239,17 +239,18 @@ async def send_chat_message(
     # its own partial state — the chat session row and any other prior
     # committed state stay intact for the forensic write below.
     try:
-        async with db.begin_nested():
-            user_msg, assistant_msg, sources = await send_message(
-                db,
-                session,
-                body.content,
-                user_id=current_user.id,
-                is_org_admin=is_org_admin,
-            )
-        await db.commit()
-        await db.refresh(user_msg)
-        await db.refresh(assistant_msg)
+        user_msg, assistant_msg, sources = await send_message(
+            db,
+            session,
+            body.content,
+            user_id=current_user.id,
+            is_org_admin=is_org_admin,
+        )
+        # send_message handles its own commits (user_msg on `db`, assistant_msg
+        # + summary + history on a fresh session) so chat persistence is robust
+        # against asyncpg connections killed during long LLM round-trips.
+        # Both returned instances already carry refreshed DB-side fields
+        # (id, created_at).
         return ChatCompletionResponse(
             user_message=user_msg,
             assistant_message=assistant_msg,

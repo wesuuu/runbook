@@ -171,6 +171,14 @@ class Settings(BaseSettings):
         "gemini-1.5-pro": 1048576,
         "gemini-1.5-flash": 1048576,
         "gemini-2.0-flash": 1048576,
+        "moonshotai/kimi-k2": 131072,
+        "kimi-k2:1t-cloud": 131072,
+        "kimi-k2.6:cloud": 131072,
+        "gemma4:31b-cloud": 131072,
+        "qwen3-coder:480b-cloud": 262144,
+        "deepseek-v3.1:671b-cloud": 131072,
+        "minimax-m2.7:cloud": 200000,
+        "qwen3.6:35b": 131072,
     }
 
     # Debug mode — enables dev-only endpoints (webhook echo, etc.)

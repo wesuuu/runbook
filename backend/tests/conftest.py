@@ -152,11 +152,33 @@ async def db_session(test_engine):
     async def _begin_nested():
         return conn.begin_nested()
 
-    yield session
+    # send_message opens a separate `AsyncSessionLocal()` for post-LLM writes
+    # so production chat is resilient to connections killed during long
+    # cloud-LLM round-trips (see app/services/ai/send_message.py). In tests,
+    # the fixture's outer transaction is uncommitted, so a brand-new session
+    # can't see fixture data and FK lookups fail. Bind the writer factory to
+    # the SAME connection used by `db_session` for the duration of the test.
+    import importlib
 
-    await session.close()
-    await txn.rollback()
-    await conn.close()
+    _send_message_module = importlib.import_module(
+        "app.services.ai.send_message"
+    )
+
+    test_writer_factory = async_sessionmaker(
+        bind=conn,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    real_factory = _send_message_module.AsyncSessionLocal
+    _send_message_module.AsyncSessionLocal = test_writer_factory
+
+    try:
+        yield session
+    finally:
+        _send_message_module.AsyncSessionLocal = real_factory
+        await session.close()
+        await txn.rollback()
+        await conn.close()
 
 
 @pytest_asyncio.fixture(scope="function")

@@ -10,6 +10,7 @@ from app.services.ai.cache_settings import CHAT_AGENT_MODEL_SETTINGS
 from app.services.ai.subagents.shared.protocols.tools import (
     add_protocol_role,
     add_protocol_step,
+    create_draft,
     elevate_unit_op_scope,
     get_protocol,
     list_projects,
@@ -61,6 +62,8 @@ def build(model: str) -> SubAgentConfig:
                 list_protocol_roles,
                 # Validation
                 validate_protocol,
+                # Draft lifecycle
+                create_draft,
                 # Metadata
                 update_protocol_metadata,
                 # Step mutations

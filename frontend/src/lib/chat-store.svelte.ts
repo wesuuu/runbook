@@ -32,6 +32,113 @@ let messageError = $state<string | null>(null);
 // Scroll callback — set by the component that owns the DOM ref
 let scrollFn: (() => void) | null = null;
 
+// Poll handle for the "awaiting assistant reply" recovery loop.
+// When a session is loaded and its trailing turn is a user message with no
+// assistant reply yet (typically after a page refresh during a slow LLM call),
+// we keep `sending = true` and re-fetch the session every few seconds until
+// the assistant message lands. After STALE_POLL_MS without resolution we
+// surface a retry affordance — the original request may have been orphaned
+// (backend restart, crash, or a cancellation we can't detect from the client).
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let staleTimer: ReturnType<typeof setTimeout> | null = null;
+let pollSessionId: string | null = null;
+let stalePendingMessage = $state<ChatMessage | null>(null);
+
+const STALE_POLL_MS = 90_000;
+
+function trailingUserMessage(detail: ChatSessionDetail | null): ChatMessage | null {
+    if (!detail || detail.messages.length === 0) return null;
+    for (let i = detail.messages.length - 1; i >= 0; i--) {
+        const msg = detail.messages[i];
+        if (msg.role === 'summary') continue;
+        return msg.role === 'user' ? msg : null;
+    }
+    return null;
+}
+
+function clearPoll(): void {
+    if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+    }
+    if (staleTimer) {
+        clearTimeout(staleTimer);
+        staleTimer = null;
+    }
+    pollSessionId = null;
+    stalePendingMessage = null;
+}
+
+async function pollForAssistantReply(sessionId: string): Promise<void> {
+    if (pollSessionId !== sessionId) return;
+    try {
+        const detail = await api.get(`/chat/sessions/${sessionId}`, {
+            schema: ChatSessionDetailSchema,
+        });
+        if (pollSessionId !== sessionId) return;
+        const pending = trailingUserMessage(detail);
+        if (pending) {
+            pollTimer = setTimeout(() => pollForAssistantReply(sessionId), 2500);
+            return;
+        }
+        activeSession = detail;
+        sending = false;
+        clearPoll();
+        await tick();
+        scrollFn?.();
+        void loadSessions();
+    } catch {
+        pollTimer = setTimeout(() => pollForAssistantReply(sessionId), 5000);
+    }
+}
+
+function maybeStartAwaitingPoll(detail: ChatSessionDetail): void {
+    const pending = trailingUserMessage(detail);
+    if (!pending) {
+        clearPoll();
+        return;
+    }
+    clearPoll();
+    sending = true;
+    pollSessionId = detail.id;
+    pollTimer = setTimeout(() => pollForAssistantReply(detail.id), 2500);
+
+    // Use the orphan message's age — if it was sent before this page even
+    // opened (e.g. backend was restarted while a request was in flight) we
+    // want to surface the retry option immediately, not 90s from now.
+    const ageMs = Math.max(0, Date.now() - new Date(pending.created_at).getTime());
+    const remaining = Math.max(0, STALE_POLL_MS - ageMs);
+    staleTimer = setTimeout(() => {
+        if (pollSessionId !== detail.id) return;
+        stalePendingMessage = pending;
+    }, remaining);
+}
+
+export function getStalePendingMessage(): ChatMessage | null {
+    return stalePendingMessage;
+}
+
+export async function retryStalePending(): Promise<void> {
+    const orphan = stalePendingMessage;
+    if (!orphan) return;
+    const content = orphan.content;
+    clearPoll();
+    sending = false;
+    messageInput = content;
+    await sendMessage();
+}
+
+export function dismissStalePending(): void {
+    // "Keep waiting" — hide the retry banner but leave the poll running so a
+    // late reply still resolves the dots. Won't reappear unless the session
+    // is reloaded.
+    if (staleTimer) {
+        clearTimeout(staleTimer);
+        staleTimer = null;
+    }
+    stalePendingMessage = null;
+}
+
 // ─── Getters (reactive reads) ───
 
 export function getChatSessions(): ChatSession[] { return sessions; }
@@ -143,11 +250,14 @@ export async function createSession(): Promise<void> {
 }
 
 export async function selectSession(sessionId: string): Promise<void> {
+    clearPoll();
+    sending = false;
     try {
         const detail = await api.get(`/chat/sessions/${sessionId}`, {
             schema: ChatSessionDetailSchema,
         });
         activeSession = detail;
+        maybeStartAwaitingPoll(detail);
         await tick();
         scrollFn?.();
     } catch {
@@ -161,6 +271,8 @@ export async function deleteSession(sessionId: string): Promise<void> {
         sessions = sessions.filter(s => s.id !== sessionId);
         if (activeSession?.id === sessionId) {
             activeSession = null;
+            clearPoll();
+            sending = false;
         }
         toast.success('Chat deleted');
     } catch {
@@ -177,6 +289,8 @@ export async function clearConversation(): Promise<void> {
         messageInput = '';
         activeSources = [];
         sourcePanelOpen = false;
+        clearPoll();
+        sending = false;
         toast.success('Conversation cleared');
     } catch {
         toast.error('Failed to clear conversation');
@@ -209,6 +323,7 @@ export async function sendMessage(skillId?: string): Promise<void> {
     }
 
     messageInput = '';
+    clearPoll();
     sending = true;
 
     // Optimistic: add user message immediately
@@ -313,4 +428,5 @@ export function resetChat(): void {
     skillsLoaded = false;
     chatConfig = null;
     scrollFn = null;
+    clearPoll();
 }
