@@ -10,3 +10,4 @@
 - [TD-0084 Multi-Role Membership QA](project_td0084_multi_role_membership.md) — last-admin guard missing in PATCH endpoint (fixed); MemberRolesPicker chip+trigger flex layout fix
 - [QA-0006 Branch Role Validation env notes](project_qa0006_branch_role_validation.md) — shared DB schema mismatch (role→roles) blocks browser QA; also qa-verify-driver.mjs accidentally committed
 - [QA-0007 Equipment ID Interpolation](project_qa0007_equipment_interpolation.md) — equipment chips, template tokens, PDF X-Unresolved-Placeholders header; canvas node overlap makes dup-ID testing tricky via Playwright
+- [F-0083 Chat Tool Indicator QA](project_f0083_chat_tool_indicator.md) — SSE stream, "Thinking…" label, subagent tools don't surface parent events; worktree needs .env+settings.yaml copy and CORS entry
