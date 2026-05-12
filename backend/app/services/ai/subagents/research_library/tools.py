@@ -19,6 +19,16 @@ from app.services.documents.retrieval import retrieve_relevant_chunks
 
 logger = logging.getLogger(__name__)
 
+# Human-readable labels for each tool, shown live in the chat thinking
+# indicator while the tool is in flight (F-0083). Adding a new tool in this
+# file MUST also add an entry here — enforced by
+# tests/unit/test_tool_labels.py.
+TOOL_LABELS: dict[str, str] = {
+    "search_documents": "Searching documents…",
+    "read_section": "Reading document section…",
+    "list_documents": "Listing documents…",
+}
+
 # ─── Result Models ─────────────────────────────────────────────────────────────
 
 
