@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -20,7 +20,7 @@ from app.models.chat import (ChatMessage, ChatMessageRole, ChatNotification,
                              ChatSession)
 from app.models.iam import (TIER_RANK, Organization, OrganizationMember,
                             OrgRole, SubscriptionTier, User)
-from app.schemas.chat import (ChatConfigResponse,
+from app.schemas.chat import (ApprovalRequest, ChatConfigResponse,
                               ChatMessageCreate, ChatSessionCreate,
                               ChatSessionDetailResponse,
                               ChatSessionListResponse, ChatSessionResponse,
@@ -28,7 +28,8 @@ from app.schemas.chat import (ChatConfigResponse,
                               ChatSkillResponse, ChatSourceReference,
                               NotifyAdminResponse)
 from app.services.ai import (create_session, delete_session, get_session,
-                             list_sessions, send_message_streaming)
+                             list_sessions, resume_message_streaming,
+                             send_message_streaming)
 from app.services.ai.ai_config import (get_context_window,
                                        get_model_display_name)
 from app.services.core.rate_limit import RateLimitService
@@ -273,6 +274,89 @@ async def stream_chat_message(
                 logger.exception("Failed to persist forensic ERROR row")
             yield (
                 f'data: {{"type": "error", "detail": "Failed to generate AI '
+                f'response", "error_code": "{error_code}"}}\n\n'
+            )
+
+    return StreamingResponse(_sse_iter(), media_type="text/event-stream")
+
+
+@router.post("/sessions/{session_id}/messages/approve")
+async def approve_chat_message(
+    session_id: uuid.UUID,
+    body: ApprovalRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_active_subscription()),
+):
+    """Resume a chat turn that paused on a DeferredToolRequests gate (F-0084).
+
+    Streams SSE events (tool_start/tool_end/done/error) just like the regular
+    streaming endpoint — the difference is the prelude: a USER row capturing
+    the user's approve/reject decision and the deferred-tool resume.
+    """
+    session = await get_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your chat session")
+
+    placeholder = await db.scalar(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session_id)
+        .where(ChatMessage.role == ChatMessageRole.ASSISTANT)
+        .order_by(desc(ChatMessage.created_at))
+        .limit(1)
+    )
+    pending = (
+        (placeholder.metadata_ or {}).get("pending_approval") if placeholder else None
+    )
+    if not pending or pending.get("tool_call_id") != body.tool_call_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "no_pending_approval"},
+        )
+
+    _, org_roles = await _get_user_org(current_user, db)
+    is_org_admin = OrgRole.ADMIN.value in org_roles
+
+    async def _sse_iter():
+        try:
+            async for event in resume_message_streaming(
+                db=db,
+                session=session,
+                placeholder=placeholder,
+                tool_call_id=body.tool_call_id,
+                approved=body.approved,
+                user_id=current_user.id,
+                is_org_admin=is_org_admin,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:
+            error_code = secrets.token_hex(4)
+            logger.exception(
+                "Chat approve failed [error_code=%s] for session %s",
+                error_code,
+                session_id,
+            )
+            try:
+                async with AsyncSessionLocal() as writer:
+                    writer.add(
+                        ChatMessage(
+                            session_id=session_id,
+                            role=ChatMessageRole.ERROR,
+                            content=str(exc),
+                            metadata_={
+                                "error_code": error_code,
+                                "error_type": type(exc).__name__,
+                                "traceback": traceback.format_exc(),
+                            },
+                        )
+                    )
+                    await writer.commit()
+            except Exception:
+                logger.exception("Failed to persist forensic ERROR row")
+            yield (
+                f'data: {{"type": "error", "detail": "Failed to resume AI '
                 f'response", "error_code": "{error_code}"}}\n\n'
             )
 
