@@ -1,7 +1,15 @@
 import { tick } from 'svelte';
 import { api, ApiError } from '$lib/api';
 import { toast } from 'svelte-sonner';
-import type { ChatSession, ChatSessionDetail, ChatMessage, ChatSourceReference, ChatSkill, ChatConfig } from '$lib/schemas/chat';
+import type {
+    ChatSession,
+    ChatSessionDetail,
+    ChatMessage,
+    ChatSourceReference,
+    ChatSkill,
+    ChatConfig,
+    ExternalProtocolPayloadPreview,
+} from '$lib/schemas/chat';
 import {
     ChatSessionSchema,
     ChatSessionDetailSchema,
@@ -28,6 +36,22 @@ let skills = $state<ChatSkill[]>([]);
 let skillsLoaded = $state(false);
 let chatConfig = $state<ChatConfig | null>(null);
 let messageError = $state<string | null>(null);
+
+// F-0084: external-protocol approval handoff. When the agent emits an
+// `approval_required` SSE event, the stream closes and we hold the preview
+// here until the user approves or rejects via `submitApproval`. Survives
+// reload — `selectSession` rehydrates from the placeholder message's
+// `metadata_.pending_approval`.
+export interface PendingApproval {
+    tool_call_id: string;
+    tool_name: string;
+    title: string;
+    source_url: string;
+    payload_preview: ExternalProtocolPayloadPreview;
+    assistant_message_id: string;
+}
+let pendingApproval = $state<PendingApproval | null>(null);
+let submittingApproval = $state(false);
 
 // Scroll callback — set by the component that owns the DOM ref
 let scrollFn: (() => void) | null = null;
@@ -168,6 +192,35 @@ async function pollForAssistantReply(sessionId: string): Promise<void> {
     }
 }
 
+function rehydratePendingApproval(detail: ChatSessionDetail): void {
+    // The placeholder assistant message persisted by send_message_streaming
+    // carries the approval preview in `metadata_.pending_approval`. After a
+    // reload (or moving between sessions) we re-surface the approval card
+    // from that record.
+    pendingApproval = null;
+    if (!detail.messages.length) return;
+    const last = detail.messages[detail.messages.length - 1];
+    if (last.role !== 'assistant') return;
+    const meta = last.metadata_ as Record<string, unknown> | null;
+    const raw = meta?.pending_approval as Record<string, unknown> | undefined;
+    if (!raw) return;
+    pendingApproval = {
+        tool_call_id: String(raw.tool_call_id ?? ''),
+        tool_name: String(raw.tool_name ?? ''),
+        title: String(raw.title ?? ''),
+        source_url: String(raw.source_url ?? ''),
+        payload_preview:
+            (raw.payload_preview as ExternalProtocolPayloadPreview) ?? {
+                title: '',
+                source_url: '',
+                step_count: 0,
+                license: 'CC BY-SA 3.0',
+                deviations: [],
+            },
+        assistant_message_id: last.id,
+    };
+}
+
 function maybeStartAwaitingPoll(detail: ChatSessionDetail): void {
     const pending = trailingUserMessage(detail);
     if (!pending) {
@@ -231,6 +284,8 @@ export function getActiveSources(): ChatSourceReference[] { return activeSources
 export function getSkills(): ChatSkill[] { return skills; }
 export function getChatConfig(): ChatConfig | null { return chatConfig; }
 export function getMessageError(): string | null { return messageError; }
+export function getPendingApproval(): PendingApproval | null { return pendingApproval; }
+export function isSubmittingApproval(): boolean { return submittingApproval; }
 
 // ─── Panel state actions ───
 
@@ -333,6 +388,7 @@ export async function selectSession(sessionId: string): Promise<void> {
             schema: ChatSessionDetailSchema,
         });
         activeSession = detail;
+        rehydratePendingApproval(detail);
         maybeStartAwaitingPoll(detail);
         await tick();
         scrollFn?.();
@@ -432,6 +488,7 @@ export async function sendMessage(skillId?: string): Promise<void> {
         };
         let donePayload: DonePayload | null = null;
         let errorDetail: string | null = null;
+        let captured: PendingApproval | null = null;
 
         await streamSse(
             `/chat/sessions/${activeSession.id}/messages/stream`,
@@ -443,6 +500,16 @@ export async function sendMessage(skillId?: string): Promise<void> {
                     // No-op: labels stay on screen for at least
                     // MIN_LABEL_DISPLAY_MS so the user can read them. The
                     // queue advances on its own timer.
+                } else if (event.type === 'approval_required') {
+                    captured = {
+                        tool_call_id: event.tool_call_id,
+                        tool_name: event.tool_name,
+                        title: event.title,
+                        source_url: event.source_url,
+                        payload_preview:
+                            event.payload_preview as ExternalProtocolPayloadPreview,
+                        assistant_message_id: event.assistant_message_id,
+                    };
                 } else if (event.type === 'done') {
                     donePayload = {
                         user_message: event.user_message as ChatMessage,
@@ -458,6 +525,28 @@ export async function sendMessage(skillId?: string): Promise<void> {
 
         if (errorDetail) {
             throw new Error(errorDetail as string);
+        }
+        if (captured) {
+            // HITL pause — drop the temp user message; the persisted user
+            // message + placeholder assistant will arrive after the resume.
+            // For now, surface the approval card and reload so the persisted
+            // turn shows up in the message list.
+            activeSession.messages = activeSession.messages.filter(
+                m => m.id !== tempUserMsg.id,
+            );
+            pendingApproval = captured;
+            try {
+                const detail = await api.get<ChatSessionDetail>(
+                    `/chat/sessions/${activeSession.id}`,
+                    { schema: ChatSessionDetailSchema },
+                );
+                if (detail) activeSession = detail;
+            } catch {
+                // Non-fatal — placeholder will appear on next navigation.
+            }
+            await tick();
+            scrollFn?.();
+            return;
         }
         if (!donePayload) {
             throw new Error('Stream ended without a result');
@@ -491,6 +580,74 @@ export async function sendMessage(skillId?: string): Promise<void> {
         toast.error(`Failed to send message${codeSuffix}`);
     } finally {
         resetLabelQueue();
+        sending = false;
+    }
+}
+
+export async function submitApproval(approved: boolean): Promise<void> {
+    if (!pendingApproval || !activeSession) return;
+    if (submittingApproval) return;
+    const session = activeSession;
+    const pending = pendingApproval;
+
+    submittingApproval = true;
+    sending = true;
+
+    type DonePayload = {
+        user_message: ChatMessage;
+        assistant_message: ChatMessage;
+        sources: ChatSourceReference[];
+    };
+    let donePayload: DonePayload | null = null;
+    let errorDetail: string | null = null;
+
+    try {
+        resetLabelQueue();
+        await streamSse(
+            `/chat/sessions/${session.id}/messages/approve`,
+            { tool_call_id: pending.tool_call_id, approved },
+            (event: SseEvent) => {
+                if (event.type === 'tool_start') {
+                    enqueueLabel(event.tool, event.label);
+                } else if (event.type === 'tool_end') {
+                    // no-op
+                } else if (event.type === 'done') {
+                    donePayload = {
+                        user_message: event.user_message as ChatMessage,
+                        assistant_message: event.assistant_message as ChatMessage,
+                        sources: event.sources as ChatSourceReference[],
+                    };
+                } else if (event.type === 'error') {
+                    errorDetail = event.detail;
+                }
+            },
+        );
+        if (errorDetail) throw new Error(errorDetail as string);
+        if (!donePayload) throw new Error('Approval stream ended without a result');
+        const done = donePayload as DonePayload;
+
+        // Replace placeholder assistant message with the resolved one, and
+        // append the persisted user message describing the decision.
+        activeSession.messages = [
+            ...activeSession.messages.filter(
+                m => m.id !== pending.assistant_message_id,
+            ),
+            done.user_message,
+            done.assistant_message,
+        ];
+
+        if (done.sources && done.sources.length > 0) {
+            activeSources = done.sources;
+            sourcePanelOpen = true;
+        }
+        pendingApproval = null;
+        await tick();
+        scrollFn?.();
+    } catch {
+        toast.error(approved ? 'Failed to approve' : 'Failed to reject');
+    } finally {
+        resetLabelQueue();
+        submittingApproval = false;
         sending = false;
     }
 }
@@ -531,6 +688,8 @@ export function resetChat(): void {
     skills = [];
     skillsLoaded = false;
     chatConfig = null;
+    pendingApproval = null;
+    submittingApproval = false;
     scrollFn = null;
     clearPoll();
 }
