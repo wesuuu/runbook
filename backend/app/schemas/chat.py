@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -93,3 +93,36 @@ class ChatConfigResponse(BaseModel):
 class NotifyAdminResponse(BaseModel):
     message: str
     user_notified_at: datetime
+
+
+# --- External protocol approval (F-0084) ---
+
+
+class ExternalProtocolPayloadPreview(BaseModel):
+    """Compact preview of an ExternalProtocolPayload for the approval card."""
+
+    title: str
+    source_url: str
+    step_count: int
+    duration_min_total: Optional[int] = None
+    license: str = "CC BY-SA 3.0"
+    deviations: list[str] = []
+
+
+class ApprovalRequiredEvent(BaseModel):
+    """SSE event yielded when agent.run terminates on a deferred tool call."""
+
+    type: Literal["approval_required"]
+    tool_call_id: str
+    tool_name: str
+    title: str
+    source_url: str
+    payload_preview: ExternalProtocolPayloadPreview
+    assistant_message_id: UUID
+
+
+class ApprovalRequest(BaseModel):
+    """Body for ``POST /sessions/{id}/messages/approve``."""
+
+    tool_call_id: str
+    approved: bool
