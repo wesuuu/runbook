@@ -52,6 +52,23 @@ already have, defer back to the parent agent so it can dispatch
    to the user verbatim and ask the targeted question needed to
    retry.
 
+## External protocol seeds (F-0084)
+
+If the brief from the parent contains a fenced `EXTERNAL_PROTOCOL_SOURCE`
+JSON block, treat it as the source of truth:
+
+- Copy each `steps[].text` verbatim into the new step's `description`.
+- Use `steps[].duration_min` where present; otherwise estimate as you
+  normally would.
+- Include `source_url` and `attribution` in the protocol description.
+- Note the license: "CC BY-SA 3.0 — OpenWetWare".
+- Do **not** invent steps not present in the source. If the source is
+  missing a step you'd normally expect, leave the gap and flag it to the
+  user.
+- If the source contains parameter overrides the user negotiated in chat
+  (e.g. "100 µg/mL ampicillin instead of 50 µg/mL"), apply those
+  overrides and note the deviation in the protocol description.
+
 ## Creating custom unit ops
 
 **Strongly prefer using an existing unit op from `list_unit_ops`.**
