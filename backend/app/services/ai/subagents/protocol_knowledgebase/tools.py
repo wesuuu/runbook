@@ -226,7 +226,9 @@ TOOL_LABELS: dict[str, str] = {
 }
 
 _OWW_HOST = "openwetware.org"
-_OWW_API = "https://openwetware.org/wiki/api.php"
+# OpenWetWare's MediaWiki API lives under /mediawiki/, not /wiki/. The
+# `/wiki/` path is for human-readable pages and 404s the api.php script.
+_OWW_API = "https://openwetware.org/mediawiki/api.php"
 
 # Test-injectable monotonic clock — tests override this.
 _now: Callable[[], float] = time.monotonic
