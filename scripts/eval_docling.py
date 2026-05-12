@@ -26,7 +26,7 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import ImageRefMode
 
-VARIANTS = ("default", "no-ocr", "cpu")
+VARIANTS = ("default", "no-ocr", "cpu", "with-images")
 
 
 def _dir_bytes(path: Path) -> int:
@@ -75,10 +75,13 @@ def format_bytes(n: int) -> str:
 def build_converter(variant: str) -> DocumentConverter:
     """Construct a DocumentConverter wired for the given variant.
 
-    - default: AUTO accelerator, OCR on (baseline)
-    - no-ocr:  AUTO accelerator, OCR off (text-native PDFs)
-    - cpu:     forced CPU, OCR on (worst-case for no-GPU containers)
+    - default:     AUTO accelerator, OCR on (baseline)
+    - no-ocr:      AUTO accelerator, OCR off (text-native PDFs)
+    - cpu:         forced CPU, OCR on (worst-case for no-GPU containers)
+    - with-images: default + generate_picture_images=True (extracts figure
+      bitmaps so export_to_html(ImageRefMode.EMBEDDED) embeds them as base64)
     """
+    generate_picture_images = False
     if variant == "default":
         device = AcceleratorDevice.AUTO
         do_ocr = True
@@ -88,11 +91,16 @@ def build_converter(variant: str) -> DocumentConverter:
     elif variant == "cpu":
         device = AcceleratorDevice.CPU
         do_ocr = True
+    elif variant == "with-images":
+        device = AcceleratorDevice.AUTO
+        do_ocr = True
+        generate_picture_images = True
     else:
         raise ValueError(f"unknown variant: {variant}")
 
     pdf_options = PdfPipelineOptions()
     pdf_options.do_ocr = do_ocr
+    pdf_options.generate_picture_images = generate_picture_images
     pdf_options.accelerator_options = AcceleratorOptions(
         num_threads=4, device=device
     )
