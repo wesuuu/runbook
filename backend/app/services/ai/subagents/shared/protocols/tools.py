@@ -29,6 +29,8 @@ from app.services.protocols.graph import remove_step as remove_step_service
 from app.services.protocols.graph import reorder_steps as reorder_steps_service
 from app.services.protocols.graph import \
     replace_step_unit_op as replace_step_unit_op_service
+from app.services.protocols.graph import \
+    set_node_position as set_node_position_service
 from app.services.protocols.lookup import ProtocolFull
 from app.services.protocols.lookup import \
     get_protocol_full as get_protocol_full_service
@@ -965,6 +967,63 @@ async def replace_step_unit_op(
         ok=True,
         protocol_id=protocol_id,
         summary=f"Replaced step {step_index} unit op with '{new_unit_op_name}'.",
+    )
+
+
+async def set_node_position(
+    ctx: RunContext[ChatDeps],
+    protocol_id: str,
+    node_id: str,
+    x: float,
+    y: float,
+) -> ProtocolMutationResult:
+    """Move a single node to ``(x, y)`` on a DRAFT protocol.
+
+    Use as a fallback when the placement primitives (``add_protocol_step``
+    with ``role_id``, ``update_protocol_step`` with a new ``role_id``) leave
+    a step in the wrong spot — for example when ``validate_protocol``
+    reports ``chain_direction_violation``, ``step_outside_chain_band``, or
+    ``chain_crosses_lane`` and the fix is to nudge one node along the
+    layout axis.
+
+    Top-level nodes (no ``parentId``) take an absolute world position.
+    Children of a swimLane (``parentId="lane-…"``) take a lane-relative
+    position — the same coordinate frame xyflow uses to render them. The
+    lane grows along the layout axis to fit if needed.
+    """
+    pid = UUID(protocol_id)
+    try:
+        await set_node_position_service(
+            ctx.deps.db,
+            user_id=ctx.deps.user_id,
+            protocol_id=pid,
+            node_id=node_id,
+            x=x,
+            y=y,
+        )
+    except ValueError as e:
+        ctx.deps.tool_calls.append(
+            {
+                "tool": "set_node_position",
+                "subagent": "protocol_builder",
+                "error": str(e),
+            }
+        )
+        return _mutation_error(protocol_id, e)
+    ctx.deps.tool_calls.append(
+        {
+            "tool": "set_node_position",
+            "subagent": "protocol_builder",
+            "protocol_id": protocol_id,
+            "node_id": node_id,
+            "x": x,
+            "y": y,
+        }
+    )
+    return ProtocolMutationResult(
+        ok=True,
+        protocol_id=protocol_id,
+        summary=f"Moved node {node_id} to ({x}, {y}).",
     )
 
 

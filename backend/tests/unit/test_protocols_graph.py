@@ -498,3 +498,212 @@ async def test_relayout_chain_fixes_legacy_overlap(
     ]
     xs = [n["position"]["x"] for n in top_level]
     assert xs == [100, 100 + CHILD_X_STEP]
+
+
+# ─── set_node_position ────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_set_node_position_top_level_writes_absolute(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    """Top-level (no parentId) node: write absolute x/y as given."""
+    from app.services.protocols.graph import set_node_position
+
+    target_id = next(
+        n["id"] for n in draft_proto.graph["nodes"] if n.get("type") == "unitOp"
+    )
+    updated = await set_node_position(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        node_id=target_id,
+        x=425,
+        y=275,
+    )
+    moved = next(n for n in updated.graph["nodes"] if n["id"] == target_id)
+    assert moved["position"] == {"x": 425, "y": 275}
+    # Untouched nodes stay where they were.
+    other_unit_ops = [
+        n
+        for n in updated.graph["nodes"]
+        if n.get("type") == "unitOp" and n["id"] != target_id
+    ]
+    for n in other_unit_ops:
+        assert n["position"]["x"] != 425 or n["position"]["y"] != 275
+
+
+@pytest.mark.asyncio
+async def test_set_node_position_lane_child_writes_lane_relative(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    """A child of a swimlane already carries lane-relative coords. The
+    position the agent passes is interpreted in that same lane-relative
+    frame — the service writes it through verbatim."""
+    from app.services.protocols.graph import set_node_position
+
+    role_id = uuid.uuid4()
+    role = ProtocolRole(
+        id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0
+    )
+    db_session.add(role)
+    await db_session.flush()
+    g = dict(draft_proto.graph)
+    g["nodes"] = list(g["nodes"]) + [
+        {
+            "id": f"lane-{role_id}",
+            "type": "swimLane",
+            "position": {"x": 0, "y": 400},
+            "width": 800,
+            "height": 200,
+            "data": {
+                "label": "Op",
+                "roleId": str(role_id),
+                "orientation": "horizontal",
+            },
+        }
+    ]
+    draft_proto.graph = g
+    await db_session.flush()
+
+    from app.services.protocols.graph import add_step
+
+    await add_step(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        name="Lane child",
+        unit_op_name="X",
+        role_id=role_id,
+    )
+    await db_session.refresh(draft_proto)
+    child = next(
+        n for n in draft_proto.graph["nodes"] if n.get("data", {}).get("label") == "Lane child"
+    )
+    updated = await set_node_position(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        node_id=child["id"],
+        x=260,
+        y=60,
+    )
+    moved = next(n for n in updated.graph["nodes"] if n["id"] == child["id"])
+    assert moved["position"] == {"x": 260, "y": 60}
+    assert moved.get("parentId") == f"lane-{role_id}"
+
+
+@pytest.mark.asyncio
+async def test_set_node_position_grows_lane_when_child_extends_past(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    """If the requested lane-relative position would push the child past
+    the lane's current bounds, the lane grows along the layout axis to fit."""
+    from app.services.protocols.graph import add_step, set_node_position
+
+    role_id = uuid.uuid4()
+    role = ProtocolRole(
+        id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0
+    )
+    db_session.add(role)
+    await db_session.flush()
+    g = dict(draft_proto.graph)
+    g["nodes"] = list(g["nodes"]) + [
+        {
+            "id": f"lane-{role_id}",
+            "type": "swimLane",
+            "position": {"x": 0, "y": 400},
+            "width": 800,
+            "height": 200,
+            "data": {
+                "label": "Op",
+                "roleId": str(role_id),
+                "orientation": "horizontal",
+            },
+        }
+    ]
+    draft_proto.graph = g
+    await db_session.flush()
+    await add_step(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        name="Lane child",
+        unit_op_name="X",
+        role_id=role_id,
+    )
+    await db_session.refresh(draft_proto)
+    child = next(
+        n for n in draft_proto.graph["nodes"] if n.get("data", {}).get("label") == "Lane child"
+    )
+    # x=900 + default node width 220 → 1120, beyond initial lane width 800.
+    updated = await set_node_position(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=draft_proto.id,
+        node_id=child["id"],
+        x=900,
+        y=60,
+    )
+    lane = next(
+        n for n in updated.graph["nodes"] if n["id"] == f"lane-{role_id}"
+    )
+    assert lane["width"] >= 1120
+
+
+@pytest.mark.asyncio
+async def test_set_node_position_unknown_node_raises(
+    db_session: AsyncSession, test_user: User, draft_proto: Protocol
+):
+    from app.services.protocols.graph import set_node_position
+
+    with pytest.raises(ValueError, match="not found"):
+        await set_node_position(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=draft_proto.id,
+            node_id="node-does-not-exist",
+            x=0,
+            y=0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_node_position_refuses_on_published(
+    db_session: AsyncSession, test_org: Organization, test_user: User
+):
+    from app.services.protocols.graph import set_node_position
+
+    proj = Project(
+        name="g3", organization_id=test_org.id, owner_id=test_user.id
+    )
+    db_session.add(proj)
+    await db_session.flush()
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=test_user.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=proj.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
+    proto = Protocol(
+        name="Pub",
+        project_id=proj.id,
+        status="APPROVED",
+        version_number=1,
+        graph=_seed_graph_with_n_steps(1),
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    target = next(n["id"] for n in proto.graph["nodes"] if n.get("type") == "unitOp")
+    with pytest.raises(ValueError, match="published"):
+        await set_node_position(
+            db_session,
+            user_id=test_user.id,
+            protocol_id=proto.id,
+            node_id=target,
+            x=10,
+            y=10,
+        )

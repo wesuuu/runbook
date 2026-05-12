@@ -21,6 +21,7 @@ from app.services.ai.subagents.shared.protocols.tools import (
     remove_protocol_step,
     reorder_protocol_steps,
     replace_step_unit_op,
+    set_node_position,
     update_protocol_metadata,
     update_protocol_role,
     update_protocol_step,
@@ -72,6 +73,7 @@ def build(model: str) -> SubAgentConfig:
                 remove_protocol_step,
                 reorder_protocol_steps,
                 replace_step_unit_op,
+                set_node_position,
                 # Role mutations
                 add_protocol_role,
                 update_protocol_role,

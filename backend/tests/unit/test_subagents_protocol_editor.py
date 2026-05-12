@@ -22,6 +22,7 @@ EXPECTED_TOOL_NAMES = {
     "remove_protocol_step",
     "reorder_protocol_steps",
     "replace_step_unit_op",
+    "set_node_position",
     # Role mutations
     "add_protocol_role",
     "update_protocol_role",
@@ -46,4 +47,4 @@ def test_protocol_editor_tool_set():
     assert tool_names == EXPECTED_TOOL_NAMES, (
         f"Expected exactly {EXPECTED_TOOL_NAMES}, got {tool_names}"
     )
-    assert len(tool_names) == 18
+    assert len(tool_names) == 19

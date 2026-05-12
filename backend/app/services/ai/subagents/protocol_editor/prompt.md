@@ -128,22 +128,68 @@ The validator reports:
   to that role via `update_protocol_step(..., role_id=<role_id>)`.
 - `insufficient_node_spacing` — sibling steps closer than 10px. Same
   fix as `overlapping_nodes`.
+- `chain_direction_violation` — a chain edge runs backwards on the
+  layout axis (e.g. step `b` is to the LEFT of `a` in horizontal
+  layout). Fix by moving the offending node past its predecessor with
+  `set_node_position(protocol_id, node_id, x, y)`.
+- `step_outside_chain_band` — a chain target sits more than ~30px off
+  its predecessor on the cross-axis (the y-axis in horizontal layout,
+  x-axis in vertical). Fix by re-aligning with `set_node_position`,
+  matching the predecessor's cross-axis coordinate.
+- `chain_crosses_lane` — a top-level chain edge threads through an
+  unrelated swimlane. Fix by either routing one of the endpoints
+  around the lane via `set_node_position`, or assigning one endpoint
+  to that role with `update_protocol_step(..., role_id=…)`.
+- `lane_order_violation` — a downstream lane is positioned before its
+  source lane along the cross-axis (above for horizontal layout, left
+  for vertical). The chain forces the reader to jump backwards. Fix
+  by calling `set_node_position` on the **lane node** itself (its id
+  is `lane-<role-uuid>`, available via `get_protocol`'s graph) to
+  move it past its source lane along the cross-axis.
 
 **Auto-fix loop.** Fix what you can without changing the user's
 intent. Re-validate after each fix. Stop only when issues are zero or
 the remaining ones need user input you cannot infer.
 
-## Layout discipline — never set positions by hand
+## Layout discipline
 
-Layout is owned by the tools, not by you:
+The placement primitives (`add_protocol_step` with `role_id`,
+`update_protocol_step` with a new `role_id`) handle the common cases:
+they pick a fresh lane-relative slot and grow the lane to fit. Use
+them first.
 
-- `add_protocol_step` with a `role_id` places the new step at the
-  next free lane-relative slot and grows the lane to fit. Without
-  `role_id` it falls back to a default top-level slot.
-- `update_protocol_step` with a different `role_id` re-places the
-  step inside the new lane at a fresh slot.
-- You never have a tool to write `position` directly — that's
-  deliberate. Don't ask for one.
+`set_node_position(protocol_id, node_id, x, y)` is the escape hatch
+for layout that the primitives can't fix on their own — almost always
+in response to a `validate_protocol` warning.
+
+What "good" looks like:
+
+- **Chain reads in one direction.** Horizontal layout: each step's
+  `x` is greater than its predecessor's. Vertical layout: greater
+  `y`. The chain reads left-to-right or top-to-bottom like a book.
+- **Chain peers share a row/column.** Within ~30px on the cross-axis
+  (`y` for horizontal, `x` for vertical). Ragged staircases are hard
+  to scan.
+- **Steps inside their lane.** A step's `parentId` matches its lane;
+  its `position` (lane-relative) lands inside the lane bounds.
+- **Edges don't thread through unrelated lanes.** A top-level chain
+  going from one end of the canvas to the other shouldn't visually
+  cross a swimlane that owns neither endpoint.
+- **Lanes are ordered by chain flow.** When the chain crosses lanes,
+  the downstream lane must sit further along the cross-axis than its
+  source: below for horizontal layout (lanes stack top-to-bottom),
+  to the right for vertical (lanes stack left-to-right). Reading
+  order goes top-to-bottom, left-to-right — your lanes should too.
+
+Coordinate frames for `set_node_position`:
+
+- **Top-level node** (no `parentId`): `(x, y)` is absolute world
+  position. The protocol canvas origin is top-left; bigger `x` is
+  right, bigger `y` is down.
+- **Child of a swimlane** (`parentId="lane-…"`): `(x, y)` is
+  lane-relative — the same frame the lane uses to render the child.
+  Stay within the lane's `width`/`height` (use `get_protocol` to read
+  them) or the lane will grow along the layout axis.
 
 Practical rules:
 
@@ -152,9 +198,9 @@ Practical rules:
    step with `role_id` set.
 2. When reassigning an existing step to a role, always use
    `update_protocol_step(protocol_id, step_index, role_id=<role_id>)`.
-3. If `validate_protocol` reports a layout warning, the fix is almost
-   always a single `update_protocol_step` call with the intended
-   `role_id`. Re-validate after.
+3. After a `validate_protocol` layout warning, fix it with
+   `set_node_position` (or `update_protocol_step` if the issue is a
+   missing `role_id`), then re-validate.
 
 ## Unit op editing and scope ladder
 

@@ -630,3 +630,437 @@ def test_overlap_takes_precedence_over_spacing():
     codes = [i.code for i in result.issues]
     assert "overlapping_nodes" in codes
     assert "insufficient_node_spacing" not in codes
+
+
+# ─── chain_direction_violation ────────────────────────────────────────────────
+
+
+def test_chain_direction_violation_horizontal_top_level():
+    """Top-level chain a→b where b sits to the LEFT of a in horizontal layout
+    is an unreadable backwards chain. Should fire a warning."""
+    op = _unit_op()
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 600, "y": 100}
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 200, "y": 100}  # to the LEFT of a
+    graph = {
+        "nodes": [_ps("ps"), a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op])
+    issue = next(
+        (i for i in result.issues if i.code == "chain_direction_violation"), None
+    )
+    assert issue is not None
+    assert issue.severity == "warning"
+    # The downstream node is the one out of place — flag it.
+    assert issue.node_id == "b"
+    assert result.ok is True
+
+
+def test_chain_direction_violation_vertical_top_level():
+    """Vertical layout: target above source on y-axis is backwards."""
+    op = _unit_op()
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 100, "y": 600}
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 100, "y": 200}  # ABOVE a
+    graph = {
+        "nodes": [_ps("ps"), a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "vertical",
+    }
+    result = validate_protocol_graph(graph, [op])
+    codes = [i.code for i in result.issues]
+    assert "chain_direction_violation" in codes
+
+
+def test_chain_direction_violation_within_lane():
+    """Same rule applies inside a lane (lane-relative positions)."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role, width=2000)
+    a = _child_step("a", lane["id"], x=500, y=60)
+    b = _child_step("b", lane["id"], x=20, y=60)  # left of a
+    a["data"]["unitOpId"] = str(op.id)
+    b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "chain_direction_violation" in codes
+
+
+def test_chain_in_correct_direction_no_warning():
+    op = _unit_op()
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 100, "y": 100}
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 400, "y": 100}
+    graph = {
+        "nodes": [_ps("ps"), a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op])
+    codes = [i.code for i in result.issues]
+    assert "chain_direction_violation" not in codes
+
+
+def test_chain_direction_skips_cross_frame_edges():
+    """When source and target are in different parent frames (e.g. a top-level
+    Process Start feeding into a lane child), we can't compare positions
+    directly — coordinate spaces differ. Skip those edges."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    lane["position"] = {"x": 500, "y": 400}  # lane far to the right
+    child = _child_step("c", lane["id"], x=20, y=60)  # lane-relative (20, 60)
+    child["data"]["unitOpId"] = str(op.id)
+    ps = _ps("ps")
+    ps["position"] = {"x": 100, "y": 100}
+    graph = {
+        "nodes": [ps, lane, child],
+        # ps top-level → child inside lane: cross-frame edge, must not flag.
+        "edges": [{"id": "e1", "source": "ps", "target": "c"}],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "chain_direction_violation" not in codes
+
+
+# ─── chain_crosses_lane ───────────────────────────────────────────────────────
+
+
+def test_top_level_chain_edge_crossing_lane_warns():
+    """A chain edge between two top-level steps whose visual line cuts through
+    an unrelated swimlane is an unreadable graph — flag it."""
+    op = _unit_op()
+    role = _role("Operator")
+    lane = _horizontal_lane(role)
+    lane["position"] = {"x": 200, "y": 200}  # bbox 200..1000 x 200..400
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 100, "y": 300}  # left of lane, within lane y-range
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 1100, "y": 300}  # right of lane, same y-range
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    issue = next((i for i in result.issues if i.code == "chain_crosses_lane"), None)
+    assert issue is not None
+    assert issue.severity == "warning"
+    assert result.ok is True
+
+
+def test_top_level_chain_edge_clear_of_lane_no_warning():
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    lane["position"] = {"x": 0, "y": 600}  # lane low on canvas
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 100, "y": 100}
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 500, "y": 100}  # both well above the lane
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "chain_crosses_lane" not in codes
+
+
+def test_chain_within_same_lane_does_not_fire_chain_crosses_lane():
+    """Both endpoints inside the same lane — that's normal."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role, width=2000)
+    a = _child_step("a", lane["id"], x=20, y=60)
+    b = _child_step("b", lane["id"], x=260, y=60)
+    a["data"]["unitOpId"] = str(op.id)
+    b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "chain_crosses_lane" not in codes
+
+
+# ─── step_outside_chain_band ──────────────────────────────────────────────────
+
+
+def test_chain_neighbors_far_apart_on_cross_axis_warn():
+    """Top-level chain neighbours should sit in a single row (horizontal) or
+    column (vertical) — diverging by more than ~30px on the cross axis is
+    visually messy."""
+    op = _unit_op()
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 100, "y": 100}
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 400, "y": 350}  # 250px below a
+    graph = {
+        "nodes": [_ps("ps"), a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op])
+    issue = next(
+        (i for i in result.issues if i.code == "step_outside_chain_band"), None
+    )
+    assert issue is not None
+    assert issue.severity == "warning"
+    assert issue.node_id == "b"
+
+
+def test_chain_neighbors_aligned_no_warning():
+    op = _unit_op()
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 100, "y": 100}
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 400, "y": 110}  # 10px diff — within band
+    graph = {
+        "nodes": [_ps("ps"), a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op])
+    codes = [i.code for i in result.issues]
+    assert "step_outside_chain_band" not in codes
+
+
+def test_chain_band_uses_layout_axis_for_vertical():
+    """Vertical layout: cross-axis is x, not y."""
+    op = _unit_op()
+    a = _step("a", unit_op_id=op.id, label="a")
+    a["position"] = {"x": 100, "y": 100}
+    b = _step("b", unit_op_id=op.id, label="b")
+    b["position"] = {"x": 400, "y": 300}  # 300px right of a, fine on y
+    graph = {
+        "nodes": [_ps("ps"), a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "vertical",
+    }
+    result = validate_protocol_graph(graph, [op])
+    codes = [i.code for i in result.issues]
+    assert "step_outside_chain_band" in codes
+
+
+def test_chain_band_skips_cross_frame_edges():
+    """Edges that cross parent frames don't share a coordinate space — skip."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    child = _child_step("c", lane["id"], x=20, y=60)
+    child["data"]["unitOpId"] = str(op.id)
+    ps = _ps("ps")
+    ps["position"] = {"x": 100, "y": 100}
+    graph = {
+        "nodes": [ps, lane, child],
+        "edges": [{"id": "e1", "source": "ps", "target": "c"}],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "step_outside_chain_band" not in codes
+
+
+# ─── lane_order_violation ─────────────────────────────────────────────────────
+
+
+def test_horizontal_chain_into_lane_above_source_lane_warns():
+    """Horizontal layout: a chain edge from a step in lane-A to a step in
+    lane-B where lane-B is *above* lane-A on the canvas reads backwards.
+    The reader sweeps left-to-right through lane-A then has to jump UP to
+    lane-B for the next step. Lanes should be ordered by chain flow."""
+    op = _unit_op()
+    role_eng = _role("Process Engineer")
+    role_qa = _role("QA Analyst")
+    # QA lane sits ABOVE Engineer lane (smaller y).
+    lane_qa = _horizontal_lane(role_qa)
+    lane_qa["position"] = {"x": 0, "y": 100}
+    lane_eng = _horizontal_lane(role_eng)
+    lane_eng["position"] = {"x": 0, "y": 400}
+    # Chain: ps → eng_step → qa_step. The downstream (qa) lane is above
+    # the source (eng) lane → violation.
+    eng_step = _child_step("eng-1", lane_eng["id"], x=20, y=60)
+    qa_step = _child_step("qa-1", lane_qa["id"], x=20, y=60)
+    eng_step["data"]["unitOpId"] = str(op.id)
+    qa_step["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane_qa, lane_eng, eng_step, qa_step],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "eng-1"},
+            {"id": "e2", "source": "eng-1", "target": "qa-1"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role_eng, role_qa])
+    issue = next(
+        (i for i in result.issues if i.code == "lane_order_violation"), None
+    )
+    assert issue is not None
+    assert issue.severity == "warning"
+    # The downstream lane is the one out of order — flag it so the agent
+    # knows what to move with set_node_position.
+    assert issue.node_id == lane_qa["id"]
+    assert "QA Analyst" in issue.message
+    assert "Process Engineer" in issue.message
+    assert result.ok is True
+
+
+def test_horizontal_chain_into_lane_below_source_lane_passes():
+    """The well-ordered case: target lane sits below source lane → reads
+    top-to-bottom across the chain. No warning."""
+    op = _unit_op()
+    role_eng = _role("Process Engineer")
+    role_qa = _role("QA Analyst")
+    lane_eng = _horizontal_lane(role_eng)
+    lane_eng["position"] = {"x": 0, "y": 100}
+    lane_qa = _horizontal_lane(role_qa)
+    lane_qa["position"] = {"x": 0, "y": 400}
+    eng_step = _child_step("eng-1", lane_eng["id"], x=20, y=60)
+    qa_step = _child_step("qa-1", lane_qa["id"], x=20, y=60)
+    eng_step["data"]["unitOpId"] = str(op.id)
+    qa_step["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane_eng, lane_qa, eng_step, qa_step],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "eng-1"},
+            {"id": "e2", "source": "eng-1", "target": "qa-1"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role_eng, role_qa])
+    codes = [i.code for i in result.issues]
+    assert "lane_order_violation" not in codes
+
+
+def test_vertical_chain_into_lane_left_of_source_lane_warns():
+    """Vertical layout stacks lanes side-by-side. Chain advancing into a
+    lane that sits to the LEFT of its source lane reads right-to-left,
+    which is backwards for left-to-right readers."""
+    op = _unit_op()
+    role_a = _role("Lane A")
+    role_b = _role("Lane B")
+    lane_b = {
+        "id": f"lane-{role_b.id}",
+        "type": "swimLane",
+        "position": {"x": 100, "y": 0},
+        "width": 220,
+        "height": 500,
+        "data": {
+            "label": role_b.name,
+            "roleId": str(role_b.id),
+            "orientation": "vertical",
+        },
+    }
+    lane_a = {
+        "id": f"lane-{role_a.id}",
+        "type": "swimLane",
+        "position": {"x": 400, "y": 0},
+        "width": 220,
+        "height": 500,
+        "data": {
+            "label": role_a.name,
+            "roleId": str(role_a.id),
+            "orientation": "vertical",
+        },
+    }
+    a_step = _child_step("a-1", lane_a["id"], x=30, y=60)
+    b_step = _child_step("b-1", lane_b["id"], x=30, y=60)
+    a_step["data"]["unitOpId"] = str(op.id)
+    b_step["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane_b, lane_a, a_step, b_step],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a-1"},
+            {"id": "e2", "source": "a-1", "target": "b-1"},
+        ],
+        "layout": "vertical",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role_a, role_b])
+    codes = [i.code for i in result.issues]
+    assert "lane_order_violation" in codes
+
+
+def test_chain_within_same_lane_does_not_fire_lane_order():
+    """Edges that don't cross lanes have no lane order to violate."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role, width=2000)
+    a = _child_step("a", lane["id"], x=20, y=60)
+    b = _child_step("b", lane["id"], x=260, y=60)
+    a["data"]["unitOpId"] = str(op.id)
+    b["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, a, b],
+        "edges": [
+            {"id": "e1", "source": "ps", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+        ],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "lane_order_violation" not in codes
+
+
+def test_top_level_to_lane_does_not_fire_lane_order():
+    """Process Start → first step in a lane is normal: source isn't in
+    any lane, so there's no lane ordering to compare."""
+    op = _unit_op()
+    role = _role()
+    lane = _horizontal_lane(role)
+    lane["position"] = {"x": 0, "y": 100}
+    child = _child_step("c", lane["id"], x=20, y=60)
+    child["data"]["unitOpId"] = str(op.id)
+    graph = {
+        "nodes": [_ps("ps"), lane, child],
+        "edges": [{"id": "e1", "source": "ps", "target": "c"}],
+        "layout": "horizontal",
+    }
+    result = validate_protocol_graph(graph, [op], roles=[role])
+    codes = [i.code for i in result.issues]
+    assert "lane_order_violation" not in codes

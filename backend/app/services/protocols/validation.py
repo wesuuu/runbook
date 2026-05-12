@@ -27,6 +27,10 @@ _LANE_DEFAULT_VERTICAL = (220, 500)
 # (lane_layout.CHILD_X_STEP / CHILD_Y_STEP) leaves ~20px; anything tighter
 # than this threshold reads as crowded.
 _MIN_SIBLING_GAP = 10.0
+# Chain peers (consecutive unit ops in the same parent frame) should sit
+# in roughly a single row (horizontal) or column (vertical). Cross-axis
+# drift beyond this threshold makes the chain hard to read.
+_CHAIN_BAND_TOLERANCE = 30.0
 
 _STYLE_DIM_RE = re.compile(r"\s*(width|height)\s*:\s*([0-9]+)\s*px\s*;?", re.IGNORECASE)
 
@@ -512,6 +516,214 @@ def _layout_quality_issues(
                             ),
                         )
                     )
+
+    issues.extend(_chain_layout_issues(nodes, graph))
+    return issues
+
+
+def _chain_layout_issues(
+    nodes: list[dict[str, Any]],
+    graph: dict[str, Any],
+) -> list[ValidationIssue]:
+    """Rules that look at chain *edges* rather than node bboxes alone:
+    the chain advances along the layout axis, sibling chain steps share a
+    row/column, and the chain doesn't visually thread through unrelated
+    swimlanes. All warnings — they don't block usability but the chat
+    agent should re-place nodes (typically via ``set_node_position``) to
+    clear them."""
+    issues: list[ValidationIssue] = []
+    edges = list(graph.get("edges", []))
+    graph_layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
+    nodes_by_id = {n.get("id"): n for n in nodes if n.get("id")}
+    unit_op_nodes = [n for n in nodes if n.get("type") == "unitOp"]
+    unit_op_ids = {n.get("id") for n in unit_op_nodes if n.get("id")}
+    lane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
+
+    def _frame_axis(node: dict[str, Any]) -> str:
+        """Layout axis for a node's parent frame (lane orientation if parented)."""
+        parent_id = node.get("parentId")
+        if isinstance(parent_id, str) and parent_id.startswith("lane-"):
+            lane = nodes_by_id.get(parent_id)
+            if lane is not None:
+                orientation = (lane.get("data") or {}).get("orientation")
+                if orientation in ("horizontal", "vertical"):
+                    return orientation
+        return graph_layout
+
+    def _label(n: dict[str, Any]) -> str:
+        return (n.get("data") or {}).get("label") or "<unnamed>"
+
+    reported_direction: set[tuple[str, str]] = set()
+    reported_band: set[tuple[str, str]] = set()
+    for e in edges:
+        src_id = e.get("source")
+        tgt_id = e.get("target")
+        if src_id not in unit_op_ids or tgt_id not in unit_op_ids:
+            continue
+        src = nodes_by_id.get(src_id)
+        tgt = nodes_by_id.get(tgt_id)
+        if src is None or tgt is None:
+            continue
+        if src.get("parentId") != tgt.get("parentId"):
+            # Cross-frame edges (e.g. a top-level step into a lane child)
+            # don't share a coordinate space — comparing positions would be
+            # noise.
+            continue
+        axis = _frame_axis(tgt)
+        src_pos = src.get("position") or {}
+        tgt_pos = tgt.get("position") or {}
+        sx = float(src_pos.get("x", 0))
+        sy = float(src_pos.get("y", 0))
+        tx = float(tgt_pos.get("x", 0))
+        ty = float(tgt_pos.get("y", 0))
+        if axis == "vertical":
+            forward = ty > sy
+            cross_drift = abs(tx - sx)
+        else:
+            forward = tx > sx
+            cross_drift = abs(ty - sy)
+        pair_key = (str(src_id), str(tgt_id))
+        if not forward and pair_key not in reported_direction:
+            reported_direction.add(pair_key)
+            arrow = "downwards" if axis == "vertical" else "rightwards"
+            issues.append(
+                ValidationIssue(
+                    severity="warning",
+                    code="chain_direction_violation",
+                    node_id=str(tgt_id),
+                    message=(
+                        f"Step '{_label(tgt)}' sits before its predecessor "
+                        f"'{_label(src)}' on the {axis} layout axis — the "
+                        f"chain should read {arrow}. Move '{_label(tgt)}' "
+                        "past its predecessor (use set_node_position)."
+                    ),
+                )
+            )
+        if cross_drift > _CHAIN_BAND_TOLERANCE and pair_key not in reported_band:
+            reported_band.add(pair_key)
+            cross_label = "x" if axis == "vertical" else "y"
+            issues.append(
+                ValidationIssue(
+                    severity="warning",
+                    code="step_outside_chain_band",
+                    node_id=str(tgt_id),
+                    message=(
+                        f"Step '{_label(tgt)}' is offset {int(cross_drift)}px "
+                        f"on the {cross_label}-axis from its chain predecessor "
+                        f"'{_label(src)}'. Chain peers should sit in a single "
+                        f"row/column (within {int(_CHAIN_BAND_TOLERANCE)}px) so "
+                        "the protocol reads cleanly."
+                    ),
+                )
+            )
+
+    # lane_order_violation: a chain edge crossing from lane-A to lane-B
+    # where lane-B is positioned BEFORE lane-A along the layout's
+    # cross-axis (above for horizontal, left for vertical) — the chain
+    # forces the reader to backtrack against natural reading order.
+    cross_axis = "y" if graph_layout == "horizontal" else "x"
+    reported_lane_order: set[tuple[str, str]] = set()
+    for e in edges:
+        src_id = e.get("source")
+        tgt_id = e.get("target")
+        if src_id not in unit_op_ids or tgt_id not in unit_op_ids:
+            continue
+        src = nodes_by_id.get(src_id)
+        tgt = nodes_by_id.get(tgt_id)
+        if src is None or tgt is None:
+            continue
+        src_parent = src.get("parentId")
+        tgt_parent = tgt.get("parentId")
+        if not (
+            isinstance(src_parent, str)
+            and src_parent.startswith("lane-")
+            and isinstance(tgt_parent, str)
+            and tgt_parent.startswith("lane-")
+            and src_parent != tgt_parent
+        ):
+            continue
+        src_lane = nodes_by_id.get(src_parent)
+        tgt_lane = nodes_by_id.get(tgt_parent)
+        if src_lane is None or tgt_lane is None:
+            continue
+        src_axis = float((src_lane.get("position") or {}).get(cross_axis, 0))
+        tgt_axis = float((tgt_lane.get("position") or {}).get(cross_axis, 0))
+        if tgt_axis >= src_axis:
+            continue
+        pair_key = (str(src_parent), str(tgt_parent))
+        if pair_key in reported_lane_order:
+            continue
+        reported_lane_order.add(pair_key)
+        src_label = (src_lane.get("data") or {}).get("label") or "<lane>"
+        tgt_label = (tgt_lane.get("data") or {}).get("label") or "<lane>"
+        direction = "above" if graph_layout == "horizontal" else "to the left of"
+        reorder_hint = (
+            "below" if graph_layout == "horizontal" else "to the right of"
+        )
+        issues.append(
+            ValidationIssue(
+                severity="warning",
+                code="lane_order_violation",
+                node_id=str(tgt_parent),
+                message=(
+                    f"Lane '{tgt_label}' sits {direction} '{src_label}' but "
+                    f"the chain flows from '{src_label}' into '{tgt_label}' — "
+                    "the reader has to backtrack. Move the downstream lane "
+                    f"'{tgt_label}' {reorder_hint} the source lane "
+                    f"'{src_label}' (use set_node_position on the lane node) "
+                    "so lanes are ordered by chain flow."
+                ),
+            )
+        )
+
+    # chain_crosses_lane: top-level chain edges (both endpoints unparented)
+    # whose midpoint lands inside an unrelated lane bbox. Visually the edge
+    # threads through the lane — confusing. Children of any lane already
+    # produce step_overlaps_lane / child_outside_lane signals if they stray.
+    for e in edges:
+        src_id = e.get("source")
+        tgt_id = e.get("target")
+        if src_id not in unit_op_ids or tgt_id not in unit_op_ids:
+            continue
+        src = nodes_by_id.get(src_id)
+        tgt = nodes_by_id.get(tgt_id)
+        if src is None or tgt is None:
+            continue
+        if src.get("parentId") or tgt.get("parentId"):
+            continue
+        sw, sh = _node_dims(src)
+        tw, th = _node_dims(tgt)
+        s_pos = src.get("position") or {}
+        t_pos = tgt.get("position") or {}
+        s_cx = float(s_pos.get("x", 0)) + sw / 2
+        s_cy = float(s_pos.get("y", 0)) + sh / 2
+        t_cx = float(t_pos.get("x", 0)) + tw / 2
+        t_cy = float(t_pos.get("y", 0)) + th / 2
+        mid_x = (s_cx + t_cx) / 2
+        mid_y = (s_cy + t_cy) / 2
+        for lane in lane_nodes:
+            lane_pos = lane.get("position") or {}
+            lx = float(lane_pos.get("x", 0))
+            ly = float(lane_pos.get("y", 0))
+            lw, lh = _lane_dims(lane, graph_layout)
+            if lx <= mid_x <= lx + lw and ly <= mid_y <= ly + lh:
+                lane_label = (lane.get("data") or {}).get("label") or "<lane>"
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="chain_crosses_lane",
+                        node_id=str(tgt_id),
+                        message=(
+                            f"The edge from '{_label(src)}' to '{_label(tgt)}' "
+                            f"passes through the '{lane_label}' swimlane but "
+                            "neither step belongs to it. Either route the chain "
+                            "around the lane (use set_node_position to nudge a "
+                            "step) or assign one of the steps to that role so "
+                            "the edge no longer crosses unrelated territory."
+                        ),
+                    )
+                )
+                break
 
     return issues
 

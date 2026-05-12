@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Protocol
 from app.services.core.permissions import check_permission
-from app.services.protocols.lane_layout import (TOP_LEVEL_DEFAULT_X,
+from app.services.protocols.lane_layout import (LANE_DEFAULT_HORIZONTAL,
+                                                LANE_DEFAULT_VERTICAL,
+                                                TOP_LEVEL_DEFAULT_X,
                                                 TOP_LEVEL_DEFAULT_Y,
                                                 grow_lane_to_fit,
                                                 lane_relative_position,
@@ -288,6 +290,124 @@ async def replace_step_unit_op(
     data["paramSchema"] = op.param_schema or {}
     node["data"] = data
     nodes[node_pos] = node
+    graph["nodes"] = nodes
+    wg.set_graph(graph)
+    await db.flush()
+    return wg.protocol
+
+
+_DEFAULT_CHILD_W = 220
+_DEFAULT_CHILD_H = 100
+
+
+def _grow_lane_for_child_bbox(
+    nodes: list[dict[str, Any]],
+    lane_id: str,
+    *,
+    graph_layout: str,
+) -> list[dict[str, Any]]:
+    """Grow a lane so every parented child's bbox stays inside its bounds.
+
+    `grow_lane_to_fit` only handles the count-based floor; this complements
+    it by considering actual child positions/dimensions. Idempotent — never
+    shrinks the lane.
+    """
+    out = list(nodes)
+    lane_idx = next(
+        (i for i, n in enumerate(out) if n.get("id") == lane_id), None
+    )
+    if lane_idx is None:
+        return out
+    lane = out[lane_idx]
+    if lane.get("type") != "swimLane":
+        return out
+    children = [c for c in out if c.get("parentId") == lane_id]
+    if not children:
+        return out
+    max_right = 0.0
+    max_bottom = 0.0
+    for c in children:
+        pos = c.get("position") or {}
+        cx = float(pos.get("x", 0))
+        cy = float(pos.get("y", 0))
+        w_prop = c.get("width")
+        h_prop = c.get("height")
+        cw = float(w_prop) if isinstance(w_prop, (int, float)) else _DEFAULT_CHILD_W
+        ch = float(h_prop) if isinstance(h_prop, (int, float)) else _DEFAULT_CHILD_H
+        max_right = max(max_right, cx + cw)
+        max_bottom = max(max_bottom, cy + ch)
+    orientation = (lane.get("data") or {}).get("orientation")
+    if orientation not in ("horizontal", "vertical"):
+        orientation = graph_layout
+    current_w = lane.get("width")
+    current_h = lane.get("height")
+    cw = (
+        float(current_w)
+        if isinstance(current_w, (int, float))
+        else float(
+            LANE_DEFAULT_VERTICAL[0]
+            if orientation == "vertical"
+            else LANE_DEFAULT_HORIZONTAL[0]
+        )
+    )
+    ch = (
+        float(current_h)
+        if isinstance(current_h, (int, float))
+        else float(
+            LANE_DEFAULT_VERTICAL[1]
+            if orientation == "vertical"
+            else LANE_DEFAULT_HORIZONTAL[1]
+        )
+    )
+    new_w = max(cw, max_right + 20)
+    new_h = max(ch, max_bottom + 20)
+    updated = dict(lane)
+    updated["width"] = int(new_w)
+    updated["height"] = int(new_h)
+    out[lane_idx] = updated
+    return out
+
+
+async def set_node_position(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    protocol_id: UUID,
+    node_id: str,
+    x: float,
+    y: float,
+) -> Protocol:
+    """Move a single node to ``(x, y)``.
+
+    Top-level nodes (no ``parentId``) get an absolute world position.
+    Children of a swimLane (``parentId="lane-…"``) get a lane-relative
+    position — xyflow renders them inside the lane's coordinate frame, so
+    the agent should pass coordinates in that same frame. After the move,
+    if the node lives inside a lane, the lane is grown along the layout
+    axis to fit (idempotent — never shrinks below the user's manual size).
+    Other nodes are not touched.
+    """
+    wg = await _load_and_guard(db, user_id, protocol_id)
+    graph = dict(wg.graph)
+    nodes = list(graph.get("nodes", []))
+    target_index = next(
+        (i for i, n in enumerate(nodes) if n.get("id") == node_id), None
+    )
+    if target_index is None:
+        raise ValueError(f"Node {node_id!r} not found in protocol graph")
+    moved = dict(nodes[target_index])
+    moved["position"] = {"x": x, "y": y}
+    nodes[target_index] = moved
+    parent_id = moved.get("parentId")
+    if isinstance(parent_id, str) and parent_id.startswith("lane-"):
+        layout = "vertical" if graph.get("layout") == "vertical" else "horizontal"
+        # `grow_lane_to_fit` sizes by child count, which is the right answer
+        # when steps land on the canonical CHILD_*_STEP grid. A direct
+        # `set_node_position` can place a child anywhere, so first ensure the
+        # lane is at least big enough to enclose the actual child bbox; then
+        # let `grow_lane_to_fit` apply the count-based floor.
+        nodes = _grow_lane_for_child_bbox(nodes, parent_id, graph_layout=layout)
+        nodes = grow_lane_to_fit(nodes, parent_id, graph_layout=layout)
     graph["nodes"] = nodes
     wg.set_graph(graph)
     await db.flush()
