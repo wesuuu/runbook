@@ -16,6 +16,7 @@
 
 **Files:**
 - Modify: `backend/app/core/config.py`
+- Modify: `backend/settings.example.yaml`
 - Test: `backend/tests/unit/test_settings_external_protocols.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -76,10 +77,31 @@ class FeaturesConfig(BaseModel):
 Run: `cd backend && pytest tests/unit/test_settings_external_protocols.py -v`
 Expected: PASS (both tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Document the flag in `backend/settings.example.yaml`**
+
+Append a commented-out section at the bottom of `backend/settings.example.yaml` so operators can copy it into their `settings.yaml`:
+
+```yaml
+# --- Features ---
+# Feature flags follow nested env-var form:
+#   BATCHRITE_FEATURES__<FEATURE>__<FIELD>=value
+# YAML keys use snake_case under `features:`.
+#
+# features:
+#   external_protocols:
+#     # Enable the protocol_knowledgebase chat subagent + HITL approval gate.
+#     # Talks to OpenWetWare's MediaWiki API; requires outbound HTTPS. (F-0084)
+#     enabled: false
+#     # Hard timeout for any single MediaWiki request, in seconds.
+#     request_timeout_seconds: 10.0
+#     # Per-org token-bucket cap on outbound OpenWetWare requests.
+#     rate_limit_per_minute: 10
+```
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/core/config.py backend/tests/unit/test_settings_external_protocols.py
+git add backend/app/core/config.py backend/settings.example.yaml backend/tests/unit/test_settings_external_protocols.py
 git commit -m "feat(config): add external_protocols feature flag (F-0084)"
 ```
 
@@ -3024,9 +3046,19 @@ Start dev servers (worktree ports if applicable). With `BATCHRITE_FEATURES__EXTE
 
 If any UI/UX issues surface (oversized inputs, overflow, layout shifts when the card appears), dispatch the `qa-verify` agent with the specific symptoms.
 
-- [ ] **Step 5: Stop, report acceptance to user**
+- [ ] **Step 5: Hand off to the user for final acceptance test**
 
-Summarise to the user: files changed, tests added, browser flow verified. Wait for explicit "looks good" before the task is closed and committed in ClickUp.
+Stop driving the keyboard. Post a summary message to the user listing: files changed, tests added, what to try (the same five scenarios from Step 4), and the env var they need set (`BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__ENABLED=true`). Explicitly ask them to walk through the flow themselves and confirm everything works.
+
+Do not proceed to closing the ClickUp task until the user replies with explicit approval (e.g. "looks good", "ship it", "confirmed"). If they report any issue, treat the task as still in-progress — re-open the failing step, fix, re-test, and ask again.
+
+- [ ] **Step 6: Close out (only after user confirmation)**
+
+After explicit user sign-off:
+1. Update `.claude/rules/*.md` / `CLAUDE.md` if any conventions changed during implementation that weren't already captured in Task 17.
+2. Post a summary comment on ClickUp task `86e1b8ud1` listing files modified and tests added.
+3. Set the ClickUp task status to `complete`.
+4. Exit the worktree with `ExitWorktree` action `keep` (so the commits stay on the branch for integration).
 
 ---
 
