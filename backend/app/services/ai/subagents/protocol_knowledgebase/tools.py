@@ -151,25 +151,40 @@ def _parse_duration_minutes(text: str) -> int | None:
     return max(1, math.ceil(minutes))
 
 
+def _find_matching_section(
+    sections: dict[str, str], synonyms: set[str]
+) -> str | None:
+    """Return the body of the first section whose normalized heading
+    contains any synonym as a substring. Real OWW pages use names like
+    "General Procedure" or "Casting Gels" — exact equality misses them.
+    """
+    for heading, body in sections.items():
+        if not heading:
+            continue
+        if any(syn in heading for syn in synonyms):
+            return body
+    return None
+
+
 def parse_openwetware_wikitext(
     wikitext: str, displaytitle: str, source_url: str
 ) -> ExternalProtocolPayload:
     """Parse an OpenWetWare wiki-text page into a structured payload.
 
     Lossy by design — the loose dataclass shape is what protocol_creator
-    expects as a seed. Section names matched via the synonym sets above;
-    pages that defy all synonyms still return a populated `summary`,
-    `license`, and `attribution`.
+    expects as a seed. Section names matched via substring against the
+    synonym sets above. If no procedure-like section matches, falls back
+    to scanning the whole page for top-level numbered items so semantic
+    headings (e.g. "Phusion", "Casting Gels") still yield steps.
     """
     sections = _split_sections(wikitext)
 
     # Summary: explicit summary-like section if present, else the first
     # non-empty body line of the page (pre-heading).
     summary = ""
-    for key in _SUMMARY_HEADINGS:
-        if key in sections and sections[key]:
-            summary = _clean_wiki_inline(sections[key].split("\n\n")[0])
-            break
+    body = _find_matching_section(sections, _SUMMARY_HEADINGS)
+    if body:
+        summary = _clean_wiki_inline(body.split("\n\n")[0])
     if not summary:
         pre = sections.get("", "")
         if pre:
@@ -180,28 +195,26 @@ def parse_openwetware_wikitext(
                     break
 
     materials: list[str] = []
-    for key in _MATERIAL_HEADINGS:
-        if key in sections:
-            materials = _bulleted_items(sections[key])
-            if materials:
-                break
+    mat_body = _find_matching_section(sections, _MATERIAL_HEADINGS)
+    if mat_body is not None:
+        materials = _bulleted_items(mat_body)
 
     step_texts: list[str] = []
-    for key in _PROCEDURE_HEADINGS:
-        if key in sections:
-            step_texts = _numbered_items(sections[key])
-            if step_texts:
-                break
+    proc_body = _find_matching_section(sections, _PROCEDURE_HEADINGS)
+    if proc_body is not None:
+        step_texts = _numbered_items(proc_body)
+    if not step_texts:
+        # Fallback: gather every top-level # line across the whole page.
+        step_texts = _numbered_items(wikitext)
     steps = [
         ExternalProtocolStep(text=t, duration_min=_parse_duration_minutes(t))
         for t in step_texts
     ]
 
     notes_text: str | None = None
-    for key in _NOTES_HEADINGS:
-        if key in sections and sections[key]:
-            notes_text = _clean_wiki_inline(sections[key])
-            break
+    notes_body = _find_matching_section(sections, _NOTES_HEADINGS)
+    if notes_body:
+        notes_text = _clean_wiki_inline(notes_body)
 
     return ExternalProtocolPayload(
         title=displaytitle,

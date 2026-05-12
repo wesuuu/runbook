@@ -68,3 +68,57 @@ def test_parser_handles_missing_sections_gracefully():
     assert p.steps == []
     assert "stub" in p.summary
     assert p.license == "CC BY-SA 3.0"
+
+
+# ─── Real-world OpenWetWare page (Agarose gel electrophoresis) ─────────────────
+# Section names on real OWW pages aren't bare synonyms — they're things like
+# "General Procedure", "Casting Gels", "Phusion". The parser must match via
+# substring (heading contains a synonym word) and fall back to scanning the
+# whole page when no section matches.
+
+AGAROSE_FIXTURE = (
+    Path(__file__).parent.parent
+    / "fixtures"
+    / "openwetware"
+    / "agarose_gel_electrophoresis.wikitext"
+).read_text()
+AGAROSE_URL = "https://openwetware.org/wiki/Agarose_gel_electrophoresis"
+
+
+def test_parser_matches_general_procedure_section_by_substring():
+    p = parse_openwetware_wikitext(
+        AGAROSE_FIXTURE,
+        displaytitle="Agarose gel electrophoresis",
+        source_url=AGAROSE_URL,
+    )
+    # "General Procedure" contains "procedure" → must match.
+    assert len(p.steps) >= 5
+    texts = [s.text for s in p.steps]
+    assert any("Cast a gel" in t for t in texts)
+    assert any("Image the gel" in t for t in texts)
+
+
+def test_parser_extracts_summary_from_preamble():
+    p = parse_openwetware_wikitext(
+        AGAROSE_FIXTURE,
+        displaytitle="Agarose gel electrophoresis",
+        source_url=AGAROSE_URL,
+    )
+    assert "separate DNA" in p.summary or "agarose" in p.summary.lower()
+
+
+def test_parser_fallback_when_no_section_matches():
+    # No procedure-flavoured heading anywhere, but a numbered list exists.
+    wt = (
+        "Some intro paragraph.\n\n"
+        "== Phusion ==\n"
+        "# Add primers\n"
+        "# Add template\n"
+        "# Run PCR\n"
+    )
+    p = parse_openwetware_wikitext(wt, "Cloning Protocol", AGAROSE_URL)
+    # No section name matches "procedure/method/protocol/steps/instructions",
+    # so the parser must fall back to gathering top-level # items across the
+    # whole page rather than returning steps=[].
+    assert len(p.steps) == 3
+    assert p.steps[0].text == "Add primers"
