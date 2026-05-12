@@ -15,6 +15,9 @@ from app.services.ai.subagents.research_library.tools import (
 from app.services.ai.subagents.shared.protocols.tools import (
     TOOL_LABELS as _PROTOCOL_LABELS,
 )
+from app.services.ai.tools.external_protocols import (
+    TOOL_LABELS as _EXTERNAL_PROTOCOL_TOOL_LABELS,
+)
 
 FALLBACK_LABEL = "Working…"
 
@@ -30,6 +33,7 @@ _ALL_LABELS: dict[str, str] = {
     **_RESEARCH_LIBRARY_LABELS,
     **_PROTOCOL_LABELS,
     **_PROTOCOL_KB_LABELS,
+    **_EXTERNAL_PROTOCOL_TOOL_LABELS,
     **_DISPATCH_LABELS,
 }
 
