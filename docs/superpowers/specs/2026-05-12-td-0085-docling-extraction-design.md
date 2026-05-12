@@ -121,24 +121,37 @@ Kept:
 
 ### Phase A — eval spike
 
-Goal: prove docling is good enough on a real-world textbook before any production code lands.
+Goal: prove docling is good enough on a real-world textbook before any production code lands. Phase A is intentionally **standalone** — no backend code touches `app/`. Integration decisions (settings surface, container warmup, worktree dev setup) are deferred until after the user reviews the eval report.
+
+What we know from the docs:
+- Default pipeline is fully local (layout: RT-DETR/DocLayNet, table: TableFormer, OCR: EasyOCR when `do_ocr=True`). No API keys.
+- GPU not required; `AcceleratorOptions(device=AUTO|CPU|CUDA|MPS|XPU)` controls it (AUTO probes CUDA→MPS→XPU→CPU).
+- Models cached to `~/.cache/docling/models/` on first call. `docling-tools models download` pre-fetches.
+- Per-page latency from arXiv 2408.09869: ~0.8s median on 8-core x86 CPU, with a long tail (16s @ p95) on figure-heavy pages.
+
+Steps:
 
 1. Add `docling` to `backend/pyproject.toml` and `poetry install` in the worktree venv.
-2. Add `scripts/mocks/` to `.gitignore` (convention dir for big binary eval inputs).
+2. Add `scripts/mocks/` to `.gitignore` except `eval_report.md`.
 3. Make the textbook visible inside the worktree (symlink from `/home/wesuuu/Code/trellisbio/scripts/mocks/animal-culture-textbook.pdf`).
 4. Build `scripts/eval_docling.py`:
-   - CLI takes one or more file paths.
-   - For each input: time `DocumentConverter().convert(...)`; emit `<basename>.md`, `<basename>.html` (`ImageRefMode.EMBEDDED`), `<basename>.json` into `scripts/mocks/out/`.
-   - Log per-doc: file size, page count, conversion latency, markdown char count, HTML char count. Record model download size on first run.
-5. Run on the textbook. Open the HTML in a browser. Read the markdown.
-6. **Pass criteria (manual sign-off):**
+   - CLI takes one or more file paths plus a `--variant` flag (`default`, `no-ocr`, `cpu`).
+   - For each input × variant: time `DocumentConverter().convert(...)`; emit `<basename>.<variant>.md`, `<basename>.<variant>.html` (`ImageRefMode.EMBEDDED`), `<basename>.<variant>.json` into `scripts/mocks/out/`.
+   - Log per-run: file size, page count, total conversion latency, per-page mean, markdown char count, HTML char count, accelerator device chosen by AUTO, peak RSS if easy to grab.
+   - On first run only, log model download size (delta of `~/.cache/docling/models/` before/after).
+5. Run on the textbook in this order:
+   - Variant 1: `default` (AUTO accelerator, OCR on) — baseline.
+   - Variant 2: `no-ocr` (AUTO accelerator, `do_ocr=False`) — textbooks are text-native; this likely dominates latency savings.
+   - Variant 3: `cpu` (forced CPU, OCR on) — establishes the worst-case latency we'd see in a no-GPU container.
+6. Open each `<variant>.html` in a browser side-by-side. Read each `<variant>.md`.
+7. **Pass criteria (manual sign-off):**
    - HTML renders the textbook readably (figures, tables, headings present).
    - Markdown is chunk-ready (no obvious garbage, sections preserved).
-   - Latency on the 27MB textbook is acceptable for a background job (≲ ~2 min on dev machine).
-7. If pass: run a second pass on an image-heavy / scanned PDF (sourced ad-hoc) to confirm OCR fallback.
-8. Commit `scripts/mocks/eval_report.md` with the numbers + verdict + warmup recommendation (lazy on first upload vs. startup warm).
+   - At least one variant completes the textbook within an acceptable background-job window (≲ ~5 min on dev machine).
+8. If textbook passes: run an image-heavy / scanned PDF on the winning variant to confirm OCR fallback is needed and works.
+9. Commit `scripts/mocks/eval_report.md`. Required sections: per-variant numbers table, recommended variant, recommended warmup strategy (lazy vs. pre-fetch via `docling-tools models download`), and integration-shape proposals (which `PdfPipelineOptions` to expose as settings, default device, default OCR setting).
 
-Exit gate: explicit user approval of the report before Phase B begins. If textbook fails, plan stops and we re-evaluate (tune `PdfPipelineOptions`, or fall back to comparing datalab/marker).
+Exit gate: explicit user approval of the report before Phase B begins. Spec is amended (or rewritten) post-Phase-A based on the report's recommendations. If textbook fails on all three variants, plan stops and we re-evaluate (tune `PdfPipelineOptions` further, or fall back to comparing datalab/marker).
 
 ### Phase B — extraction module
 
@@ -213,7 +226,8 @@ Tests cover: PDF roundtrip on a small fixture, DOCX roundtrip, HTML contains exp
 | Risk | Mitigation |
 | --- | --- |
 | HTML payload 5–50 MB | Lazy endpoint isolates from detail page. If a doc's HTML exceeds the threshold set after eval (likely 25 MB), skip persistence and log; chunk-list fallback handles render. |
-| Docling model cache lost on container restart | Eval spike measures download size and time. Decision (bake into image vs. lazy-warm vs. startup-warm) flows from the report. |
+| Docling model cache lost on container restart | Eval spike measures download size and time. Decision (bake into image with `docling-tools models download` vs. lazy-warm vs. startup-warm) flows from the report. |
+| CPU-only host on figure-heavy pages hits 16s/page p95 | Eval spike measures real numbers on the textbook; `do_ocr=False` variant tests if disabling OCR is sufficient for text-native PDFs. If CPU latency is unworkable for production, plan adds a settings switch + ADR for GPU infra (post-Phase A). |
 | Quality parity is subjective | Eval criteria are explicit (HTML readable + markdown chunk-ready + ≲2 min). User signs off on the report before Phase B starts. |
 | Deleting `process_document` is irreversible | All three legacy job types route to `build_book` in recovery. Existing `structure_metadata` rows stay queryable; nothing is destroyed, just orphaned. |
 | `{@html ...}` is XSS-prone | Render inside `<iframe sandbox="allow-same-origin">` regardless. |
