@@ -16,8 +16,7 @@ from app.services.core.file_storage import FileStorageService
 from app.services.core.task_runner import get_task_runner
 from app.services.data.text_chunker import PageData, chunk_text
 from app.services.documents.markdown_chunker import (chunk_by_pages,
-                                                     chunk_markdown,
-                                                     rechunk_with_structure)
+                                                     chunk_markdown)
 
 logger = logging.getLogger(__name__)
 
@@ -706,7 +705,7 @@ async def enrich_document(document_id: UUID, db_url: str) -> None:
                 1,
             )
 
-            new_chunks = await runner.run_sync(rechunk_with_structure, pages, structure)
+            new_chunks = await runner.run_sync(chunk_by_pages, pages)
 
             if new_chunks:
                 # Delete existing chunks and insert structure-aware ones
@@ -1113,10 +1112,10 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                 1,
             )
 
-            if is_pdf and structure and structure.pages:
-                # Structure-aware re-chunking
+            if is_pdf and pages:
+                # Legacy re-chunking (document_processor is scheduled for deletion)
                 new_chunks = await runner.run_sync(
-                    rechunk_with_structure, pages, structure
+                    chunk_by_pages, pages
                 )
 
                 if new_chunks:
