@@ -29,10 +29,10 @@ SUPPORTED_CAPABILITIES = (
     "vision",
     "text",
     "embedding",
-    "doc_structure",
     "chat",
     "chat_subagent",
     "chat_summary",
+    "document_refinement",
     "protocol_creation",
     "protocol_editing",
     "protocol_generation",
@@ -53,10 +53,6 @@ DEFAULT_CONFIGS = {
         "provider": "ollama",
         "model_name": "nomic-embed-text:latest",
     },
-    "doc_structure": {
-        "provider": "ollama",
-        "model_name": "llama3.2-vision:11b",
-    },
     "chat": {
         "provider": "openrouter",
         "model_name": "anthropic/claude-sonnet-4",
@@ -68,6 +64,10 @@ DEFAULT_CONFIGS = {
     "chat_summary": {
         "provider": "openrouter",
         "model_name": "anthropic/claude-sonnet-4",
+    },
+    "document_refinement": {
+        "provider": "anthropic",
+        "model_name": "claude-sonnet-4-5-20250929",
     },
     "protocol_creation": {
         "provider": "ollama",
