@@ -21,13 +21,10 @@ STALE_PROCESSING_SECONDS = 300  # 5 minutes
 ALLOWED_DOCUMENT_TYPES = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-    "text/markdown",
-    "application/rtf",
     "image/jpeg",
     "image/png",
-    "image/heic",
-    "text/html",
+    "image/tiff",
+    "image/webp",
 }
 
 MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -39,13 +36,10 @@ MIME_EXTENSION_MAP = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
         ".docx",
     },
-    "text/plain": {".txt", ".text"},
-    "text/markdown": {".md", ".markdown"},
-    "application/rtf": {".rtf"},
     "image/jpeg": {".jpg", ".jpeg"},
     "image/png": {".png"},
-    "image/heic": {".heic"},
-    "text/html": {".html", ".htm"},
+    "image/tiff": {".tiff", ".tif"},
+    "image/webp": {".webp"},
 }
 
 # Magic byte signatures for file validation
@@ -59,11 +53,15 @@ MAGIC_BYTES = {
 class DocumentStatus(str, enum.Enum):
     UPLOADED = "UPLOADED"
     QUEUED = "QUEUED"
-    PROCESSING = "PROCESSING"
-    INDEXED = "INDEXED"  # Legacy — treated as READY
-    ENRICHED = "ENRICHED"  # Legacy — treated as READY
+    EXTRACTING = "EXTRACTING"
+    AWAITING_REFINEMENT = "AWAITING_REFINEMENT"
+    INDEXING = "INDEXING"
     READY = "READY"
     FAILED = "FAILED"
+    # Legacy values preserved (treated as READY by viewers)
+    PROCESSING = "PROCESSING"
+    INDEXED = "INDEXED"
+    ENRICHED = "ENRICHED"
 
 
 # Statuses that indicate a document is viewable (has content)
@@ -72,6 +70,19 @@ VIEWABLE_STATUSES = {
     DocumentStatus.ENRICHED.value,
     DocumentStatus.READY.value,
 }
+
+
+class DocumentSourceFormat(str, enum.Enum):
+    PDF = "PDF"
+    DOCX = "DOCX"
+    IMAGE = "IMAGE"
+
+
+class RefinementStatus(str, enum.Enum):
+    NOT_REQUIRED = "NOT_REQUIRED"
+    PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETE = "COMPLETE"
 
 
 def validate_file_content(content: bytes, claimed_mime: str) -> bool:
@@ -135,6 +146,25 @@ class Document(Base, UUIDMixin, TimestampMixin):
     )
     structure_metadata: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSONB, nullable=True
+    )
+    source_format: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    stored_markdown: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    images_dir: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    refinement_status: Mapped[str] = mapped_column(
+        String,
+        default=RefinementStatus.PENDING.value,
+        server_default="NOT_REQUIRED",  # existing rows get NOT_REQUIRED
+        nullable=False,
+    )
+    refinement_flags: Mapped[list[Any]] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
+    ocr_engine: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    refined_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    refined_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     # Relationships
