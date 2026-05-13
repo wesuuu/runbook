@@ -56,5 +56,6 @@ Some features are gated by env vars so we can ship with them disabled and flip t
 | Flag | Backend | Frontend | Default | Notes |
 | --- | --- | --- | --- | --- |
 | Offline / PWA | `features.offline_mode.enabled` (yaml) or `BATCHRITE_FEATURES__OFFLINE_MODE__ENABLED` (env) | `VITE_OFFLINE_ENABLED` | `false` | Offline field-mode session, IndexedDB cache, sync queue, "Go Offline" flow. (TD-0082) |
+| External protocols | `features.external_protocols.enabled` (yaml) or `BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__ENABLED` (env) | n/a — server-gated | `false` | `protocol_knowledgebase` chat subagent searches OpenWetWare; conversion is HITL-gated via `requires_approval`. Sibling fields `request_timeout_seconds`, `rate_limit_per_minute`. (F-0084) |
 
-Flags must be set on **both** sides to take effect end-to-end. Flipping only the frontend leaves the UI live but the backend will 404 on `/offline/*` and `/sync/*`; flipping only the backend leaves the routes mounted but unreachable from the UI.
+For flags with a frontend half, they must be set on **both** sides to take effect end-to-end. Server-gated flags (no `VITE_*`) only need the backend toggle; the chat UI surfaces or hides the capability based on what the agent emits.

@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import UUID
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, Tool
+from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai_summarization import ContextManagerCapability
 from sqlalchemy.ext.asyncio import AsyncSession
 from subagents_pydantic_ai import SubAgentCapability
@@ -24,8 +25,12 @@ from app.services.ai.runtime.token_counting import tiktoken_counter
 from app.services.ai.subagents import (
     protocol_creator,
     protocol_editor,
+    protocol_knowledgebase,
     research_library,
     run_planner,
+)
+from app.services.ai.tools.external_protocols import (
+    create_protocol_from_external_source,
 )
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -143,7 +148,7 @@ async def build_chat_agent(
     db: AsyncSession,
     org_id: UUID,
     compaction_state: CompactionState,
-) -> Agent[ChatDeps, str]:
+) -> Agent[ChatDeps, str | DeferredToolRequests]:
     """Build (or return cached) the chat agent, wired to the current request's
     CompactionState via _LiveState indirection.
 
@@ -178,6 +183,7 @@ async def build_chat_agent(
             protocol_creator.build(creation_model),
             protocol_editor.build(editing_model),
             run_planner.build(subagent_model),
+            protocol_knowledgebase.build(subagent_model),
         ]
 
         # Wrap each subagent's tool functions so their tool calls surface in
@@ -192,7 +198,7 @@ async def build_chat_agent(
         live = _LiveState()
         on_before, on_after = _make_live_hooks(live)
 
-        agent: Agent[ChatDeps, str] = Agent(
+        agent: Agent[ChatDeps, str | DeferredToolRequests] = Agent(
             chat_model,
             instructions=_CHAT_PROMPT,
             deps_type=ChatDeps,
@@ -215,7 +221,13 @@ async def build_chat_agent(
                     on_after_compress=on_after,
                 ),
             ],
-            tools=[],
+            tools=[
+                Tool(
+                    create_protocol_from_external_source,
+                    requires_approval=True,
+                ),
+            ],
+            output_type=[str, DeferredToolRequests],
         )
         _AGENT_CACHE[key] = (agent, live)
 

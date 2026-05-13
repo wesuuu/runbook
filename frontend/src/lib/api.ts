@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation';
+import { streamSse, type SseEvent } from '$lib/ai/sse-stream';
 import { getToken, logout } from '$lib/auth.svelte';
 import { API_BASE } from '$lib/config';
 import { _validateResponse, type RequestOptions } from '$lib/apiValidation';
@@ -8,6 +9,7 @@ import {
     type SubscriptionState,
     type PortalSessionResponse,
 } from '$lib/schemas/billing';
+import type { ApprovalRequest } from '$lib/schemas/chat';
 import { ProtocolSchema, type Protocol } from '$lib/schemas/protocols';
 import {
     ProtocolApprovalEventListSchema,
@@ -325,3 +327,18 @@ export const billingApi = {
     createPortalSession: (returnUrl?: string): Promise<PortalSessionResponse> =>
         api.post<PortalSessionResponse>('/billing/portal-session', { return_url: returnUrl }, { schema: PortalSessionResponseSchema }),
 };
+
+// --- External-protocol approval (F-0084) ---
+
+/**
+ * Approve or reject a pending external-protocol conversion. The response is
+ * an SSE stream of the resumed turn — pass `onEvent` to react to events
+ * (tool_start/tool_end/done/error).
+ */
+export async function streamApprovalDecision(
+    sessionId: string,
+    body: ApprovalRequest,
+    onEvent: (event: SseEvent) => void,
+): Promise<void> {
+    return streamSse(`/chat/sessions/${sessionId}/messages/approve`, body, onEvent);
+}

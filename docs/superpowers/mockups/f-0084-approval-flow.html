@@ -1,0 +1,1500 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>F-0084 — External-protocol approval flow</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link
+            rel="preconnect"
+            href="https://fonts.googleapis.com"
+        />
+        <link
+            rel="preconnect"
+            href="https://fonts.gstatic.com"
+            crossorigin
+        />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            :root {
+                /* Match Batchrite chat palette (light) */
+                --background: #ffffff;
+                --foreground: #0a0a0a;
+                --muted: #f4f4f5;
+                --muted-foreground: #71717a;
+                --primary: #18181b;
+                --primary-foreground: #fafafa;
+                --border: #e4e4e7;
+                --ring: #18181b;
+                --accent: #2563eb;
+                --warning: #d97706;
+                --success: #16a34a;
+                --danger: #dc2626;
+            }
+            * {
+                font-feature-settings:
+                    "ss01" on,
+                    "cv11" on;
+            }
+            html,
+            body {
+                background: #faf9f6;
+                color: var(--foreground);
+                font-family: "Inter", system-ui, sans-serif;
+            }
+            .display {
+                font-family: "Fraunces", serif;
+                font-optical-sizing: auto;
+                letter-spacing: -0.025em;
+            }
+            .mono {
+                font-family: "JetBrains Mono", monospace;
+            }
+            /* Subtle grain texture on background */
+            body::before {
+                content: "";
+                position: fixed;
+                inset: 0;
+                background-image: radial-gradient(
+                    circle at 1px 1px,
+                    rgba(0, 0, 0, 0.04) 1px,
+                    transparent 0
+                );
+                background-size: 16px 16px;
+                pointer-events: none;
+                z-index: 0;
+            }
+            .frame {
+                position: relative;
+                z-index: 1;
+            }
+            /* Chat panel shell */
+            .chat-shell {
+                width: 380px;
+                height: 640px;
+                background: var(--background);
+                border: 1px solid var(--border);
+                border-radius: 20px;
+                box-shadow:
+                    0 1px 2px rgba(0, 0, 0, 0.04),
+                    0 24px 48px -16px rgba(0, 0, 0, 0.16);
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .msg-user {
+                background: var(--primary);
+                color: var(--primary-foreground);
+                border-radius: 14px 14px 4px 14px;
+            }
+            .msg-assistant {
+                background: rgba(244, 244, 245, 0.7);
+                color: var(--foreground);
+                border-radius: 14px 14px 14px 4px;
+            }
+            /* Approval card — distinctive amber tint, sets it apart from regular bubbles */
+            .approval-card {
+                background: linear-gradient(
+                    180deg,
+                    #fffaf0 0%,
+                    #fff7e6 100%
+                );
+                border: 1px solid #fde68a;
+                border-radius: 14px;
+                box-shadow:
+                    inset 0 0 0 1px rgba(217, 119, 6, 0.05),
+                    0 1px 2px rgba(217, 119, 6, 0.08);
+            }
+            .approval-card .label-row {
+                background: #fef3c7;
+                border-bottom: 1px solid #fde68a;
+                color: #92400e;
+            }
+            .tool-call-line {
+                color: var(--muted-foreground);
+                font-size: 11px;
+                font-style: italic;
+            }
+            .pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 2px 8px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 500;
+                line-height: 1.4;
+            }
+            .pill-primary {
+                background: rgba(24, 24, 27, 0.08);
+                color: var(--primary);
+            }
+            .pill-warn {
+                background: rgba(217, 119, 6, 0.12);
+                color: #92400e;
+            }
+            .pill-success {
+                background: rgba(22, 163, 74, 0.12);
+                color: #166534;
+            }
+            .pill-mono {
+                font-family: "JetBrains Mono", monospace;
+                font-size: 10px;
+                letter-spacing: -0.01em;
+            }
+            .btn-primary {
+                background: var(--primary);
+                color: var(--primary-foreground);
+                border-radius: 8px;
+                padding: 7px 14px;
+                font-size: 12.5px;
+                font-weight: 600;
+                transition: filter 150ms ease;
+            }
+            .btn-primary:hover {
+                filter: brightness(0.92);
+            }
+            .btn-secondary {
+                background: transparent;
+                color: var(--foreground);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 7px 14px;
+                font-size: 12.5px;
+                font-weight: 500;
+                transition: background 150ms ease;
+            }
+            .btn-secondary:hover {
+                background: var(--muted);
+            }
+            .btn-ghost-danger {
+                color: var(--danger);
+                background: transparent;
+                border: 1px solid #fecaca;
+                border-radius: 8px;
+                padding: 7px 14px;
+                font-size: 12.5px;
+                font-weight: 500;
+                transition: background 150ms ease;
+            }
+            .btn-ghost-danger:hover {
+                background: #fef2f2;
+            }
+            .dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 9999px;
+                background: var(--muted-foreground);
+                opacity: 0.45;
+            }
+            @keyframes b1 {
+                0%,
+                80%,
+                100% {
+                    transform: translateY(0);
+                    opacity: 0.4;
+                }
+                40% {
+                    transform: translateY(-3px);
+                    opacity: 0.9;
+                }
+            }
+            .bouncer {
+                animation: b1 1.2s infinite ease-in-out;
+            }
+            .bouncer:nth-child(2) {
+                animation-delay: 0.15s;
+            }
+            .bouncer:nth-child(3) {
+                animation-delay: 0.3s;
+            }
+            @keyframes pulseRing {
+                0%,
+                100% {
+                    box-shadow:
+                        0 0 0 0 rgba(217, 119, 6, 0.4),
+                        inset 0 0 0 1px rgba(217, 119, 6, 0.05);
+                }
+                50% {
+                    box-shadow:
+                        0 0 0 6px rgba(217, 119, 6, 0),
+                        inset 0 0 0 1px rgba(217, 119, 6, 0.05);
+                }
+            }
+            .approval-card.live {
+                animation: pulseRing 2.2s ease-in-out infinite;
+            }
+            .source-link {
+                color: var(--accent);
+                text-decoration: underline;
+                text-decoration-color: rgba(37, 99, 235, 0.3);
+                text-underline-offset: 2px;
+            }
+            .panel-num {
+                font-family: "Fraunces", serif;
+                font-size: 72px;
+                font-weight: 500;
+                line-height: 1;
+                color: rgba(0, 0, 0, 0.08);
+                letter-spacing: -0.04em;
+            }
+            .panel-cap {
+                font-family: "JetBrains Mono", monospace;
+                font-size: 10.5px;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                color: var(--muted-foreground);
+            }
+            .panel-title {
+                font-family: "Fraunces", serif;
+                font-size: 22px;
+                font-weight: 700;
+                letter-spacing: -0.02em;
+                color: var(--foreground);
+            }
+            .sse-tag {
+                font-family: "JetBrains Mono", monospace;
+                font-size: 10px;
+                padding: 2px 6px;
+                background: #18181b;
+                color: #fafafa;
+                border-radius: 4px;
+                letter-spacing: 0.02em;
+            }
+            .arrow {
+                color: rgba(0, 0, 0, 0.18);
+                font-size: 32px;
+            }
+            .deviation-chip {
+                background: rgba(220, 38, 38, 0.08);
+                color: #991b1b;
+                border: 1px dashed rgba(220, 38, 38, 0.3);
+                padding: 2px 8px;
+                border-radius: 6px;
+                font-size: 11px;
+            }
+            /* Mirror of F-0083 ThinkingIndicator shimmer */
+            .shimmer {
+                background: linear-gradient(
+                    100deg,
+                    transparent 30%,
+                    rgba(24, 24, 27, 0.1) 50%,
+                    transparent 70%
+                );
+                transform: translateX(-100%);
+                animation: shimmer 2.4s ease-in-out infinite;
+            }
+            @keyframes shimmer {
+                0% {
+                    transform: translateX(-100%);
+                }
+                60% {
+                    transform: translateX(120%);
+                }
+                100% {
+                    transform: translateX(120%);
+                }
+            }
+        </style>
+    </head>
+    <body class="min-h-screen frame">
+        <main class="max-w-[1680px] mx-auto px-10 py-14">
+            <!-- Header -->
+            <header class="mb-12 flex items-end justify-between gap-8">
+                <div>
+                    <p class="panel-cap mb-2">
+                        Feature F-0084 · Mockup
+                    </p>
+                    <h1
+                        class="display text-5xl font-bold leading-none mb-3"
+                    >
+                        Protocol knowledgebase
+                        <span style="color: var(--muted-foreground)"
+                            >→ HITL approval</span
+                        >
+                    </h1>
+                    <p
+                        class="text-sm max-w-2xl"
+                        style="color: var(--muted-foreground)"
+                    >
+                        A turn that pauses for a human before it drafts.
+                        The agent finds a public OpenWetWare protocol,
+                        previews what it will import, and waits — the
+                        scientist owns the decision before anything
+                        lands in their workspace.
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="sse-tag">POST /messages/stream</span>
+                    <span class="arrow">↓</span>
+                    <span class="sse-tag">POST /messages/approve</span>
+                </div>
+            </header>
+
+            <!-- Storyboard: 4 panels -->
+            <section
+                class="grid grid-cols-1 xl:grid-cols-2 gap-x-10 gap-y-14"
+            >
+                <!-- Panel 1 ----------------------------------------- -->
+                <article>
+                    <div
+                        class="flex items-end justify-between mb-4"
+                    >
+                        <div>
+                            <span class="panel-cap">Step 01</span>
+                            <h2 class="panel-title">
+                                The ask lands
+                            </h2>
+                        </div>
+                        <span class="panel-num">01</span>
+                    </div>
+                    <div class="chat-shell mx-auto">
+                        <!-- Header -->
+                        <div
+                            class="px-4 py-3 border-b flex items-center justify-between"
+                            style="border-color: var(--border)"
+                        >
+                            <div
+                                class="flex items-center gap-2"
+                            >
+                                <div
+                                    class="w-7 h-7 rounded-lg flex items-center justify-center"
+                                    style="background: rgba(24,24,27,0.06)"
+                                >
+                                    <svg
+                                        class="w-4 h-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97c-.474-.065 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z"
+                                        />
+                                    </svg>
+                                </div>
+                                <span class="text-sm font-semibold"
+                                    >Trellis AI</span
+                                >
+                            </div>
+                            <span
+                                class="pill pill-mono"
+                                style="
+                                    background: rgba(34, 197, 94, 0.1);
+                                    color: #166534;
+                                "
+                            >
+                                <span
+                                    class="w-1.5 h-1.5 rounded-full"
+                                    style="background: #16a34a"
+                                ></span>
+                                streaming
+                            </span>
+                        </div>
+                        <!-- Messages -->
+                        <div
+                            class="flex-1 px-4 py-4 space-y-3 overflow-hidden"
+                        >
+                            <div class="flex justify-end">
+                                <div
+                                    class="max-w-[85%] msg-user px-3.5 py-2.5 text-[13px] leading-relaxed"
+                                >
+                                    Find me a heat-shock
+                                    transformation protocol on
+                                    OpenWetWare and add it to my
+                                    library.
+                                    <div
+                                        class="text-[10px] mt-1 opacity-60"
+                                    >
+                                        10:42 AM
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex justify-start">
+                                <div
+                                    class="max-w-[85%] msg-assistant px-3.5 py-2.5 text-[13px] leading-relaxed"
+                                >
+                                    <div
+                                        class="flex flex-col gap-1 mb-2 pb-2 border-b border-black/10"
+                                    >
+                                        <span
+                                            class="tool-call-line flex items-center gap-1.5"
+                                        >
+                                            <svg
+                                                class="w-3 h-3"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    d="m21 21-5.197-5.197a7.5 7.5 0 1 0-10.607-10.607 7.5 7.5 0 0 0 10.607 10.607Z"
+                                                />
+                                            </svg>
+                                            Dispatched
+                                            <span class="mono"
+                                                >protocol_knowledgebase</span
+                                            >
+                                        </span>
+                                        <span
+                                            class="tool-call-line flex items-center gap-1.5"
+                                        >
+                                            <svg
+                                                class="w-3 h-3"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    d="M3.75 5.25h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5"
+                                                />
+                                            </svg>
+                                            Searched OpenWetWare for
+                                            "heat shock
+                                            transformation" (4
+                                            matches)
+                                        </span>
+                                        <span
+                                            class="tool-call-line flex items-center gap-1.5"
+                                        >
+                                            <svg
+                                                class="w-3 h-3 animate-spin"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                viewBox="0 0 24 24"
+                                                style="
+                                                    animation-duration: 1.6s;
+                                                "
+                                            >
+                                                <path
+                                                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+                                                />
+                                            </svg>
+                                            Reading top match…
+                                        </span>
+                                    </div>
+                                    <div class="flex gap-1 items-center">
+                                        <div class="dot bouncer"></div>
+                                        <div class="dot bouncer"></div>
+                                        <div class="dot bouncer"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Input -->
+                        <div
+                            class="px-3 pb-3 pt-2 border-t"
+                            style="border-color: var(--border)"
+                        >
+                            <div
+                                class="flex items-center gap-2 px-3 py-2 rounded-xl"
+                                style="
+                                    background: var(--muted);
+                                    border: 1px solid var(--border);
+                                "
+                            >
+                                <span
+                                    class="text-[12.5px] flex-1 opacity-40"
+                                    >Message Trellis…</span
+                                >
+                                <span
+                                    class="pill-mono"
+                                    style="color: var(--muted-foreground)"
+                                    >⌘J</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    <p
+                        class="mt-4 text-xs text-center max-w-md mx-auto"
+                        style="color: var(--muted-foreground)"
+                    >
+                        Stream so far: <span class="mono"
+                            >tool_start → tool_end × n</span
+                        >. The subagent's progress shows up as
+                        italic tool lines, same pattern as
+                        existing search tools.
+                    </p>
+                </article>
+
+                <!-- Panel 2 ----------------------------------------- -->
+                <article>
+                    <div
+                        class="flex items-end justify-between mb-4"
+                    >
+                        <div>
+                            <span class="panel-cap"
+                                >Step 02 · pause</span
+                            >
+                            <h2 class="panel-title">
+                                Approval gate
+                            </h2>
+                        </div>
+                        <span class="panel-num">02</span>
+                    </div>
+                    <div class="chat-shell mx-auto">
+                        <div
+                            class="px-4 py-3 border-b flex items-center justify-between"
+                            style="border-color: var(--border)"
+                        >
+                            <div
+                                class="flex items-center gap-2"
+                            >
+                                <div
+                                    class="w-7 h-7 rounded-lg flex items-center justify-center"
+                                    style="background: rgba(24,24,27,0.06)"
+                                >
+                                    <svg
+                                        class="w-4 h-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM21 12c0 4.556-4.03 8.25-9 8.25S3 16.556 3 12s4.03-8.25 9-8.25 9 3.694 9 8.25Z"
+                                        />
+                                    </svg>
+                                </div>
+                                <span class="text-sm font-semibold"
+                                    >Trellis AI</span
+                                >
+                            </div>
+                            <span class="pill pill-warn">
+                                <svg
+                                    class="w-3 h-3"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
+                                    />
+                                </svg>
+                                awaiting you
+                            </span>
+                        </div>
+                        <div
+                            class="flex-1 px-4 py-4 space-y-3 overflow-y-auto"
+                        >
+                            <div class="flex justify-end">
+                                <div
+                                    class="max-w-[85%] msg-user px-3.5 py-2.5 text-[13px]"
+                                >
+                                    Find me a heat-shock
+                                    transformation protocol on
+                                    OpenWetWare and add it to my
+                                    library.
+                                </div>
+                            </div>
+
+                            <div class="flex justify-start">
+                                <div
+                                    class="max-w-[88%] msg-assistant px-3.5 py-2.5 text-[13px] leading-relaxed"
+                                >
+                                    <div
+                                        class="flex flex-col gap-1 mb-2 pb-2 border-b border-black/10"
+                                    >
+                                        <span
+                                            class="tool-call-line flex items-center gap-1.5"
+                                        >
+                                            ✓ Searched OpenWetWare
+                                            (4 results)
+                                        </span>
+                                        <span
+                                            class="tool-call-line flex items-center gap-1.5"
+                                        >
+                                            ✓ Read
+                                            <span
+                                                class="source-link mono text-[11px]"
+                                                >Sauer:Heat shock
+                                                transformation</span
+                                            >
+                                        </span>
+                                    </div>
+                                    Here's the closest match — a
+                                    classic CC-licensed protocol
+                                    from the Sauer lab at MIT. It's
+                                    a faithful copy with no
+                                    modifications. Confirm to draft
+                                    it as a new protocol in your
+                                    library.
+                                </div>
+                            </div>
+
+                            <!-- THE APPROVAL CARD -->
+                            <div
+                                class="approval-card live overflow-hidden"
+                            >
+                                <!-- header strip -->
+                                <div
+                                    class="label-row px-3 py-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider"
+                                >
+                                    <svg
+                                        class="w-3.5 h-3.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2.2"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            d="M12 9v3.75M11.401 3.003c.262-.464.937-.464 1.198 0l8.612 15.31c.255.453-.07 1.005-.59 1.005H3.378c-.521 0-.846-.552-.591-1.004L11.4 3.003ZM12 17.25h.007v.008H12v-.008Z"
+                                        />
+                                    </svg>
+                                    External protocol · review
+                                    before import
+                                </div>
+                                <!-- body -->
+                                <div class="px-3.5 py-3 space-y-3">
+                                    <div>
+                                        <div
+                                            class="text-[10.5px] mono uppercase tracking-wider mb-0.5"
+                                            style="color: #92400e"
+                                        >
+                                            Title
+                                        </div>
+                                        <div
+                                            class="display text-[16px] font-bold leading-tight"
+                                        >
+                                            Heat-shock
+                                            transformation of
+                                            competent E. coli
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        class="grid grid-cols-3 gap-2 text-[12px]"
+                                    >
+                                        <div>
+                                            <div
+                                                class="text-[10.5px] mono uppercase tracking-wider mb-0.5"
+                                                style="color: #92400e"
+                                            >
+                                                Steps
+                                            </div>
+                                            <div
+                                                class="font-semibold text-[15px]"
+                                            >
+                                                7
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div
+                                                class="text-[10.5px] mono uppercase tracking-wider mb-0.5"
+                                                style="color: #92400e"
+                                            >
+                                                Total time
+                                            </div>
+                                            <div
+                                                class="font-semibold text-[15px]"
+                                            >
+                                                ~110 min
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div
+                                                class="text-[10.5px] mono uppercase tracking-wider mb-0.5"
+                                                style="color: #92400e"
+                                            >
+                                                License
+                                            </div>
+                                            <div
+                                                class="font-semibold text-[12.5px] mono"
+                                            >
+                                                CC BY-SA 3.0
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div
+                                            class="text-[10.5px] mono uppercase tracking-wider mb-1"
+                                            style="color: #92400e"
+                                        >
+                                            Source
+                                        </div>
+                                        <a
+                                            class="source-link text-[12px] break-all mono"
+                                            href="#"
+                                            >openwetware.org/wiki/Sauer:Heat_shock_transformation_of_E._coli</a
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <div
+                                            class="text-[10.5px] mono uppercase tracking-wider mb-1"
+                                            style="color: #92400e"
+                                        >
+                                            Deviations
+                                        </div>
+                                        <div
+                                            class="flex flex-wrap gap-1.5"
+                                        >
+                                            <span
+                                                class="pill pill-success"
+                                            >
+                                                <svg
+                                                    class="w-3 h-3"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2.4"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        d="m4.5 12.75 6 6 9-13.5"
+                                                    />
+                                                </svg>
+                                                None — copied
+                                                verbatim
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <!-- buttons -->
+                                    <div
+                                        class="flex items-center justify-end gap-2 pt-1.5"
+                                    >
+                                        <button
+                                            class="btn-ghost-danger"
+                                        >
+                                            Reject
+                                        </button>
+                                        <button
+                                            class="btn-primary inline-flex items-center gap-1.5"
+                                        >
+                                            <svg
+                                                class="w-3.5 h-3.5"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2.2"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    d="m4.5 12.75 6 6 9-13.5"
+                                                />
+                                            </svg>
+                                            Approve & draft
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div
+                            class="px-3 pb-3 pt-2 border-t"
+                            style="border-color: var(--border)"
+                        >
+                            <div
+                                class="flex items-center gap-2 px-3 py-2 rounded-xl opacity-50"
+                                style="
+                                    background: var(--muted);
+                                    border: 1px solid var(--border);
+                                "
+                            >
+                                <span class="text-[12.5px] flex-1"
+                                    >Input paused until you
+                                    decide…</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    <p
+                        class="mt-4 text-xs text-center max-w-md mx-auto"
+                        style="color: var(--muted-foreground)"
+                    >
+                        SSE delivers
+                        <span class="mono"
+                            >{ type: "approval_required" }</span
+                        >. Stream closes cleanly. Card persists
+                        across reload — pending state lives in
+                        <span class="mono">metadata_</span> on the
+                        placeholder message.
+                    </p>
+                </article>
+
+                <!-- Panel 3 ----------------------------------------- -->
+                <article>
+                    <div
+                        class="flex items-end justify-between mb-4"
+                    >
+                        <div>
+                            <span class="panel-cap"
+                                >Step 03 · resume</span
+                            >
+                            <h2 class="panel-title">
+                                Drafting via protocol_creator
+                            </h2>
+                        </div>
+                        <span class="panel-num">03</span>
+                    </div>
+                    <div class="chat-shell mx-auto">
+                        <div
+                            class="px-4 py-3 border-b flex items-center justify-between"
+                            style="border-color: var(--border)"
+                        >
+                            <div
+                                class="flex items-center gap-2"
+                            >
+                                <div
+                                    class="w-7 h-7 rounded-lg flex items-center justify-center"
+                                    style="background: rgba(24,24,27,0.06)"
+                                >
+                                    <svg
+                                        class="w-4 h-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+                                        />
+                                    </svg>
+                                </div>
+                                <span class="text-sm font-semibold"
+                                    >Trellis AI</span
+                                >
+                            </div>
+                            <span
+                                class="pill"
+                                style="
+                                    background: rgba(34, 197, 94, 0.1);
+                                    color: #166534;
+                                "
+                            >
+                                <span
+                                    class="w-1.5 h-1.5 rounded-full"
+                                    style="background: #16a34a"
+                                ></span>
+                                resuming
+                            </span>
+                        </div>
+                        <div
+                            class="flex-1 px-4 py-4 space-y-3 overflow-y-auto"
+                        >
+                            <div class="flex justify-end">
+                                <div
+                                    class="max-w-[80%] msg-user px-3.5 py-2 text-[13px]"
+                                >
+                                    Find me a heat-shock
+                                    transformation protocol…
+                                </div>
+                            </div>
+
+                            <!-- The approval card collapses into a compact decided state -->
+                            <div
+                                class="rounded-xl px-3 py-2 text-[12px] flex items-center gap-2.5"
+                                style="
+                                    background: rgba(22, 163, 74, 0.06);
+                                    border: 1px solid rgba(22, 163, 74, 0.18);
+                                "
+                            >
+                                <svg
+                                    class="w-4 h-4 flex-shrink-0"
+                                    fill="none"
+                                    stroke="#166534"
+                                    stroke-width="2.4"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        d="m4.5 12.75 6 6 9-13.5"
+                                    />
+                                </svg>
+                                <div class="flex-1">
+                                    <div
+                                        class="font-semibold"
+                                        style="color: #166534"
+                                    >
+                                        Approved
+                                    </div>
+                                    <div
+                                        class="text-[11px]"
+                                        style="color: #166534; opacity: 0.7"
+                                    >
+                                        Heat-shock transformation
+                                        · CC BY-SA 3.0
+                                    </div>
+                                </div>
+                                <span
+                                    class="pill-mono text-[10px]"
+                                    style="color: #166534; opacity: 0.7"
+                                    >call_abc</span
+                                >
+                            </div>
+
+                            <!-- F-0083 ThinkingIndicator: stacked tool stream
+                                 (active card + completed trail). Reused as-is. -->
+                            <div class="flex justify-start">
+                                <div
+                                    class="flex flex-col gap-1.5 w-full max-w-[320px]"
+                                >
+                                    <!-- ACTIVE card -->
+                                    <div
+                                        class="thinking-active relative overflow-hidden rounded-lg px-3 py-2.5"
+                                        style="
+                                            background: var(--background);
+                                            border: 1px solid rgba(24, 24, 27, 0.4);
+                                            box-shadow:
+                                                0 0 0 1px rgba(24, 24, 27, 0.08),
+                                                0 1px 2px rgba(0, 0, 0, 0.04);
+                                        "
+                                    >
+                                        <div class="shimmer pointer-events-none absolute inset-0"></div>
+                                        <div
+                                            class="relative flex items-center gap-3"
+                                        >
+                                            <div
+                                                class="grid place-items-center w-7 h-7 rounded-md shrink-0"
+                                                style="
+                                                    background: var(--primary);
+                                                    color: var(--primary-foreground);
+                                                "
+                                            >
+                                                <!-- sparkles -->
+                                                <svg
+                                                    class="w-3.5 h-3.5 animate-pulse"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="2"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        d="m12 3-1.9 5.8L4.5 10l5.6 1.9L12 17.5l1.9-5.6 5.6-1.9-5.6-1.9L12 3Zm7 13-.8 2.2-2.2.8 2.2.8.8 2.2.8-2.2 2.2-.8-2.2-.8L19 16Z"
+                                                    />
+                                                </svg>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <div
+                                                    class="text-sm font-medium truncate"
+                                                >
+                                                    Drafting protocol from external source
+                                                </div>
+                                                <div
+                                                    class="mono text-[10.5px] tracking-wider truncate"
+                                                    style="color: var(--muted-foreground)"
+                                                >
+                                                    protocol_creator
+                                                </div>
+                                            </div>
+                                            <div
+                                                class="mono text-xs tabular-nums shrink-0"
+                                                style="color: var(--primary)"
+                                            >
+                                                1.4s
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- TRAIL: completed tools demoted -->
+                                    <div
+                                        class="flex items-center gap-3 rounded-lg px-3 py-2"
+                                        style="
+                                            border: 1px solid var(--border);
+                                            background: transparent;
+                                            color: var(--muted-foreground);
+                                        "
+                                    >
+                                        <div
+                                            class="grid place-items-center w-7 h-7 rounded-md shrink-0"
+                                            style="
+                                                background: var(--muted);
+                                                color: var(--muted-foreground);
+                                            "
+                                        >
+                                            <svg
+                                                class="w-3.5 h-3.5"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2.2"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="m4.5 12.75 6 6 9-13.5"
+                                                />
+                                            </svg>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <div
+                                                class="text-sm truncate"
+                                                style="
+                                                    text-decoration: line-through;
+                                                    text-decoration-color: rgba(113, 113, 122, 0.3);
+                                                    text-decoration-thickness: 0.75px;
+                                                "
+                                            >
+                                                Read external protocol
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="flex items-center gap-3 rounded-lg px-3 py-2"
+                                        style="
+                                            border: 1px solid var(--border);
+                                            background: transparent;
+                                            color: var(--muted-foreground);
+                                        "
+                                    >
+                                        <div
+                                            class="grid place-items-center w-7 h-7 rounded-md shrink-0"
+                                            style="
+                                                background: var(--muted);
+                                                color: var(--muted-foreground);
+                                            "
+                                        >
+                                            <svg
+                                                class="w-3.5 h-3.5"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2.2"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="m4.5 12.75 6 6 9-13.5"
+                                                />
+                                            </svg>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <div
+                                                class="text-sm truncate"
+                                                style="
+                                                    text-decoration: line-through;
+                                                    text-decoration-color: rgba(113, 113, 122, 0.3);
+                                                    text-decoration-thickness: 0.75px;
+                                                "
+                                            >
+                                                Searched OpenWetWare
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div
+                            class="px-3 pb-3 pt-2 border-t"
+                            style="border-color: var(--border)"
+                        >
+                            <div
+                                class="flex items-center gap-2 px-3 py-2 rounded-xl opacity-50"
+                                style="
+                                    background: var(--muted);
+                                    border: 1px solid var(--border);
+                                "
+                            >
+                                <span class="text-[12.5px] flex-1"
+                                    >Message Trellis…</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    <p
+                        class="mt-4 text-xs text-center max-w-md mx-auto"
+                        style="color: var(--muted-foreground)"
+                    >
+                        Reuses the existing F-0083 ThinkingIndicator —
+                        same shimmering active card + completed trail
+                        you already see during a normal turn. The
+                        approval card just collapses into a green
+                        "decided" chip above it.
+                    </p>
+                </article>
+
+                <!-- Panel 4 ----------------------------------------- -->
+                <article>
+                    <div
+                        class="flex items-end justify-between mb-4"
+                    >
+                        <div>
+                            <span class="panel-cap"
+                                >Step 04 · done</span
+                            >
+                            <h2 class="panel-title">Protocol ready</h2>
+                        </div>
+                        <span class="panel-num">04</span>
+                    </div>
+                    <div class="chat-shell mx-auto">
+                        <div
+                            class="px-4 py-3 border-b flex items-center justify-between"
+                            style="border-color: var(--border)"
+                        >
+                            <div
+                                class="flex items-center gap-2"
+                            >
+                                <div
+                                    class="w-7 h-7 rounded-lg flex items-center justify-center"
+                                    style="background: rgba(24,24,27,0.06)"
+                                >
+                                    <svg
+                                        class="w-4 h-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+                                        />
+                                    </svg>
+                                </div>
+                                <span class="text-sm font-semibold"
+                                    >Trellis AI</span
+                                >
+                            </div>
+                            <span
+                                class="pill pill-success"
+                            >
+                                <svg
+                                    class="w-3 h-3"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2.4"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        d="m4.5 12.75 6 6 9-13.5"
+                                    />
+                                </svg>
+                                done
+                            </span>
+                        </div>
+                        <div
+                            class="flex-1 px-4 py-4 space-y-3 overflow-y-auto"
+                        >
+                            <div class="flex justify-end">
+                                <div
+                                    class="max-w-[80%] msg-user px-3.5 py-2 text-[13px] opacity-70"
+                                >
+                                    Find me a heat-shock
+                                    transformation protocol…
+                                </div>
+                            </div>
+
+                            <div
+                                class="rounded-xl px-3 py-2 text-[12px] flex items-center gap-2.5 opacity-70"
+                                style="
+                                    background: rgba(22, 163, 74, 0.06);
+                                    border: 1px solid rgba(22, 163, 74, 0.18);
+                                "
+                            >
+                                <svg
+                                    class="w-4 h-4 flex-shrink-0"
+                                    fill="none"
+                                    stroke="#166534"
+                                    stroke-width="2.4"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        d="m4.5 12.75 6 6 9-13.5"
+                                    />
+                                </svg>
+                                <div class="flex-1">
+                                    <div
+                                        class="font-semibold"
+                                        style="color: #166534"
+                                    >
+                                        Approved
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex justify-start">
+                                <div
+                                    class="max-w-[88%] msg-assistant px-3.5 py-2.5 text-[13px] leading-relaxed"
+                                >
+                                    <div
+                                        class="flex flex-col gap-1 mb-2 pb-2 border-b border-black/10"
+                                    >
+                                        <span
+                                            class="tool-call-line flex items-center gap-1.5"
+                                        >
+                                            ✓ protocol_creator
+                                            built 7 steps
+                                        </span>
+                                        <span
+                                            class="tool-call-line flex items-center gap-1.5"
+                                        >
+                                            ✓ Saved as draft in your
+                                            library
+                                        </span>
+                                    </div>
+                                    <p class="mb-2">
+                                        Drafted
+                                        <span class="font-semibold"
+                                            >Heat-shock
+                                            transformation</span
+                                        >
+                                        with 7 steps (~110 min).
+                                        Source preserved as a
+                                        citation on every step.
+                                        Open it to review or
+                                        deviate before locking.
+                                    </p>
+                                    <div
+                                        class="flex flex-wrap gap-2 mt-2"
+                                    >
+                                        <a
+                                            class="btn-primary inline-flex items-center gap-1.5"
+                                            href="#"
+                                        >
+                                            <svg
+                                                class="w-3.5 h-3.5"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M14 3h7v7m0-7L10 14m-4-4v10a2 2 0 0 0 2 2h10"
+                                                />
+                                            </svg>
+                                            Open protocol
+                                        </a>
+                                        <a
+                                            class="btn-secondary inline-flex items-center gap-1.5"
+                                            href="#"
+                                        >
+                                            View source
+                                        </a>
+                                    </div>
+                                    <div
+                                        class="flex flex-wrap gap-1.5 mt-3"
+                                    >
+                                        <a
+                                            href="#"
+                                            class="pill pill-primary"
+                                            style="
+                                                background: rgba(37, 99, 235, 0.1);
+                                                color: #1e3a8a;
+                                            "
+                                        >
+                                            <svg
+                                                class="w-3 h-3"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"
+                                                />
+                                            </svg>
+                                            OpenWetWare ·
+                                            Sauer lab
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div
+                            class="px-3 pb-3 pt-2 border-t"
+                            style="border-color: var(--border)"
+                        >
+                            <div
+                                class="flex items-center gap-2 px-3 py-2 rounded-xl"
+                                style="
+                                    background: var(--muted);
+                                    border: 1px solid var(--border);
+                                "
+                            >
+                                <span
+                                    class="text-[12.5px] flex-1 opacity-40"
+                                    >Message Trellis…</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    <p
+                        class="mt-4 text-xs text-center max-w-md mx-auto"
+                        style="color: var(--muted-foreground)"
+                    >
+                        SSE delivers final
+                        <span class="mono"
+                            >{ type: "done", assistant_message: …
+                            }</span
+                        >. Existing
+                        <span class="mono">create_protocol</span>
+                        CTA renderer kicks in — no new render path.
+                    </p>
+                </article>
+            </section>
+
+            <!-- Rejection path strip -->
+            <section class="mt-20">
+                <div class="mb-5 flex items-end gap-6">
+                    <div>
+                        <span class="panel-cap">Variant</span>
+                        <h2 class="panel-title">If they reject</h2>
+                    </div>
+                    <p
+                        class="text-xs flex-1 max-w-xl"
+                        style="color: var(--muted-foreground)"
+                    >
+                        Same handshake; the resume turn responds with a
+                        short acknowledgment rather than calling
+                        protocol_creator. No draft is created.
+                    </p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl">
+                    <div
+                        class="rounded-2xl p-5"
+                        style="
+                            background: var(--background);
+                            border: 1px solid var(--border);
+                            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+                        "
+                    >
+                        <div class="flex justify-end mb-2">
+                            <div
+                                class="rounded-xl px-3 py-1.5 text-[12px] flex items-center gap-2"
+                                style="
+                                    background: rgba(220, 38, 38, 0.07);
+                                    border: 1px solid rgba(220, 38, 38, 0.2);
+                                    color: #991b1b;
+                                "
+                            >
+                                <svg
+                                    class="w-3.5 h-3.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2.4"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path d="M6 18 18 6M6 6l12 12" />
+                                </svg>
+                                Rejected · call_abc
+                            </div>
+                        </div>
+                        <div class="flex justify-start">
+                            <div
+                                class="max-w-[85%] msg-assistant px-3.5 py-2.5 text-[13px] leading-relaxed"
+                            >
+                                Skipped the import. Want me to search
+                                for a different protocol, or build one
+                                from your own notes?
+                            </div>
+                        </div>
+                    </div>
+                    <div
+                        class="rounded-2xl p-5 text-[12px]"
+                        style="
+                            background: rgba(24, 24, 27, 0.02);
+                            border: 1px dashed var(--border);
+                            color: var(--muted-foreground);
+                        "
+                    >
+                        <div
+                            class="mono text-[11px] mb-2"
+                            style="color: var(--foreground)"
+                        >
+                            // SSE contract
+                        </div>
+                        <pre class="mono text-[11px] whitespace-pre-wrap leading-relaxed">POST /chat/sessions/:id/messages/approve
+{ tool_call_id, approved: false }
+→ data: { type: "done", assistant_message }</pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Component anatomy -->
+            <section class="mt-20">
+                <div class="mb-5">
+                    <span class="panel-cap">Anatomy</span>
+                    <h2 class="panel-title">
+                        ApprovalCard — what it owns
+                    </h2>
+                </div>
+                <div
+                    class="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-6xl"
+                >
+                    <div
+                        class="rounded-2xl p-5 text-[12.5px] leading-relaxed"
+                        style="
+                            background: var(--background);
+                            border: 1px solid var(--border);
+                        "
+                    >
+                        <div
+                            class="display text-[18px] font-bold mb-1"
+                        >
+                            Props
+                        </div>
+                        <pre class="mono text-[11px] leading-relaxed whitespace-pre-wrap" style="color: var(--muted-foreground)">{
+  toolCallId,
+  toolName,
+  title,
+  sourceUrl,
+  payloadPreview: {
+    step_count,
+    duration_min_total?,
+    license,
+    deviations: string[]
+  },
+  onApprove(id),
+  onReject(id),
+}</pre>
+                    </div>
+                    <div
+                        class="rounded-2xl p-5 text-[12.5px] leading-relaxed"
+                        style="
+                            background: var(--background);
+                            border: 1px solid var(--border);
+                        "
+                    >
+                        <div
+                            class="display text-[18px] font-bold mb-1"
+                        >
+                            Behavior
+                        </div>
+                        <ul class="space-y-1.5">
+                            <li>· Renders inline as a chat message bubble — same column as assistant messages</li>
+                            <li>· Stays visible after decision (collapses to chip in scrollback)</li>
+                            <li>· Buttons disable while resume stream is in-flight</li>
+                            <li>· Survives reload — placeholder.metadata_.pending_approval rehydrates it</li>
+                        </ul>
+                    </div>
+                    <div
+                        class="rounded-2xl p-5 text-[12.5px] leading-relaxed"
+                        style="
+                            background: var(--background);
+                            border: 1px solid var(--border);
+                        "
+                    >
+                        <div
+                            class="display text-[18px] font-bold mb-1"
+                        >
+                            Why amber
+                        </div>
+                        <p>
+                            The chat is mostly neutral grayscale.
+                            Amber marks "your call, not the AI's" —
+                            distinct from primary buttons, never used
+                            elsewhere in the chat, immediately
+                            scannable from across the panel.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <footer
+                class="mt-20 text-[11px] text-center pb-6"
+                style="color: var(--muted-foreground)"
+            >
+                Trellisbio · Batchrite · F-0084 protocol_knowledgebase
+                handoff mockup
+            </footer>
+        </main>
+    </body>
+</html>

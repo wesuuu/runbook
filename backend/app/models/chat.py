@@ -42,6 +42,14 @@ class ChatSession(Base, UUIDMixin, TimestampMixin):
     ai_message_history: Mapped[Optional[list[Any]]] = mapped_column(
         JSONB, nullable=True, default=None
     )
+    # Maps source_url -> payload JSON string for protocols fetched by the
+    # protocol_knowledgebase subagent in this session. Persisted out-of-band
+    # from ai_message_history because pydantic-ai compaction elides large
+    # tool returns, and LLMs sometimes drop fence labels — so parsing the
+    # payload out of message history is unreliable.
+    external_protocol_cache: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
 
     # Relationships
     messages: Mapped[list["ChatMessage"]] = relationship(

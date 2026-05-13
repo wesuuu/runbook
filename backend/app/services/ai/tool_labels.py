@@ -6,11 +6,17 @@ hardcoded entry for the auto-injected subagent-dispatch toolset (task,
 check_task, answer_subagent) from subagents-pydantic-ai.
 """
 
+from app.services.ai.subagents.protocol_knowledgebase.tools import (
+    TOOL_LABELS as _PROTOCOL_KB_LABELS,
+)
 from app.services.ai.subagents.research_library.tools import (
     TOOL_LABELS as _RESEARCH_LIBRARY_LABELS,
 )
 from app.services.ai.subagents.shared.protocols.tools import (
     TOOL_LABELS as _PROTOCOL_LABELS,
+)
+from app.services.ai.tools.external_protocols import (
+    TOOL_LABELS as _EXTERNAL_PROTOCOL_TOOL_LABELS,
 )
 
 FALLBACK_LABEL = "Working…"
@@ -26,6 +32,8 @@ _DISPATCH_LABELS: dict[str, str] = {
 _ALL_LABELS: dict[str, str] = {
     **_RESEARCH_LIBRARY_LABELS,
     **_PROTOCOL_LABELS,
+    **_PROTOCOL_KB_LABELS,
+    **_EXTERNAL_PROTOCOL_TOOL_LABELS,
     **_DISPATCH_LABELS,
 }
 

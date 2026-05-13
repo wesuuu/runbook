@@ -3,6 +3,7 @@
     import { marked } from "marked";
     import DOMPurify from "dompurify";
     import ChatSkillButtons from "$lib/components/ai/ChatSkillButtons.svelte";
+    import ApprovalCard from "$lib/components/ai/ApprovalCard.svelte";
     import { Button, buttonVariants } from "$lib/components/ui/button";
     import { scale, fly } from "svelte/transition";
     import {
@@ -23,6 +24,9 @@
         activateSkill,
         retryStalePending,
         dismissStalePending,
+        getPendingApproval,
+        isSubmittingApproval,
+        submitApproval,
     } from "$lib/chat-store.svelte";
 
     let { showFab = true } = $props();
@@ -47,6 +51,8 @@
     const sending = $derived(isSending());
     const skills = $derived(getSkills());
     const stalePending = $derived(getStalePendingMessage());
+    const pendingApproval = $derived(getPendingApproval());
+    const submittingApproval = $derived(isSubmittingApproval());
 
     const hasMessages = $derived(
         activeSession !== null && activeSession.messages.length > 0,
@@ -287,6 +293,22 @@
                 </div>
             {:else}
                 {#each activeSession.messages as msg (msg.id)}
+                    {#if msg.role === "assistant" && pendingApproval && msg.id === pendingApproval.assistant_message_id}
+                        <div class="flex justify-start">
+                            <div class="max-w-[88%] w-full">
+                                <ApprovalCard
+                                    toolCallId={pendingApproval.tool_call_id}
+                                    toolName={pendingApproval.tool_name}
+                                    title={pendingApproval.title}
+                                    sourceUrl={pendingApproval.source_url}
+                                    payloadPreview={pendingApproval.payload_preview}
+                                    pending={submittingApproval}
+                                    onApprove={(_id, submission) => submitApproval(true, submission)}
+                                    onReject={() => submitApproval(false)}
+                                />
+                            </div>
+                        </div>
+                    {:else}
                     <div
                         class="flex {msg.role === 'user'
                             ? 'justify-end'
@@ -409,6 +431,7 @@
                             </p>
                         </div>
                     </div>
+                    {/if}
                 {/each}
 
                 {#if sending && !stalePending}

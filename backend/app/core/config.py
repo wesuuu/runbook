@@ -17,6 +17,14 @@ class OfflineModeFeatureConfig(BaseModel):
     enabled: bool = False
 
 
+class ExternalProtocolsFeatureConfig(BaseModel):
+    """External protocol knowledgebase feature flag (F-0084)."""
+
+    enabled: bool = False
+    request_timeout_seconds: float = 10.0
+    rate_limit_per_minute: int = 10
+
+
 class FeaturesConfig(BaseModel):
     """Top-level feature-flag namespace.
 
@@ -25,6 +33,9 @@ class FeaturesConfig(BaseModel):
     """
 
     offline_mode: OfflineModeFeatureConfig = OfflineModeFeatureConfig()
+    external_protocols: ExternalProtocolsFeatureConfig = (
+        ExternalProtocolsFeatureConfig()
+    )
 
 
 class Settings(BaseSettings):

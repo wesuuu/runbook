@@ -68,3 +68,46 @@ export const ChatConfigSchema = z.object({
     compaction_threshold: z.number(),
 }).passthrough();
 export type ChatConfig = z.infer<typeof ChatConfigSchema>;
+
+// --- External-protocol approval (F-0084) ---
+
+export const ExternalProtocolStepPreviewSchema = z.object({
+    text: z.string(),
+    duration_min: z.number().int().nullable().optional(),
+});
+export type ExternalProtocolStepPreview = z.infer<
+    typeof ExternalProtocolStepPreviewSchema
+>;
+
+export const ExternalProtocolPayloadPreviewSchema = z.object({
+    title: z.string(),
+    source_url: z.string().url(),
+    project_name: z.string().nullable().optional(),
+    step_count: z.number().int().nonnegative(),
+    duration_min_total: z.number().int().nullable().optional(),
+    license: z.string().default('CC BY-SA 3.0'),
+    deviations: z.array(z.string()).default([]),
+    steps: z.array(ExternalProtocolStepPreviewSchema).default([]),
+});
+export type ExternalProtocolPayloadPreview = z.infer<
+    typeof ExternalProtocolPayloadPreviewSchema
+>;
+
+export const ApprovalRequiredEventSchema = z.object({
+    type: z.literal('approval_required'),
+    tool_call_id: z.string(),
+    tool_name: z.string(),
+    title: z.string(),
+    source_url: z.string().url(),
+    payload_preview: ExternalProtocolPayloadPreviewSchema,
+    assistant_message_id: z.string().uuid(),
+});
+export type ApprovalRequiredEvent = z.infer<typeof ApprovalRequiredEventSchema>;
+
+export const ApprovalRequestSchema = z.object({
+    tool_call_id: z.string(),
+    approved: z.boolean(),
+    edited_steps: z.array(ExternalProtocolStepPreviewSchema).nullable().optional(),
+    deviations: z.array(z.string()).nullable().optional(),
+});
+export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;

@@ -1,0 +1,24 @@
+'''Sauer: Heat-shock transformation of competent ''E. coli'''''
+
+==Description==
+Standard CaCl<sub>2</sub>-prepared chemically competent ''E. coli'' transformation
+by 42 °C heat shock. Used by the Sauer lab for routine cloning.
+
+==Materials==
+* 100 µL chemically competent DH5α cells (on ice)
+* 1–5 µL plasmid DNA (10–100 ng total)
+* 900 µL SOC medium, prewarmed to 37 °C
+* LB agar plates with 50 µg/mL ampicillin
+
+==Procedure==
+# Thaw competent cells on ice for 10 min.
+# Add 1–5 µL plasmid DNA, mix gently, incubate on ice for 30 min.
+# Heat shock at 42 °C for 90 s. Do not vortex.
+# Return tubes to ice for 2 min.
+# Add 900 µL prewarmed SOC, recover at 37 °C with shaking for 60 min.
+# Plate 100 µL on LB+amp; incubate inverted at 37 °C overnight.
+# Count colonies the next day.
+
+==Notes==
+* Yields vary 10× across competent-cell preps. Always include a no-DNA control.
+* For ligation reactions, plate 200 µL undiluted.

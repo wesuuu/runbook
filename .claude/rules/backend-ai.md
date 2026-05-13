@@ -158,14 +158,26 @@ Every tool must have a user-facing label shown in the chat thinking indicator wh
 
 `send_message_streaming()` (in `send_message.py`) is an `AsyncIterator[dict]` that drives the agent and yields SSE event dicts:
 
-- `{"type": "tool_start", "tool": ..., "label": ...}` — emitted on each pydantic-ai `FunctionToolCallEvent`
-- `{"type": "tool_end", "tool": ...}` — emitted on each `FunctionToolResultEvent`
+- `{"type": "tool_start", "tool": ..., "label": ...}` — pydantic-ai `FunctionToolCallEvent`
+- `{"type": "tool_end", "tool": ...}` — `FunctionToolResultEvent`
+- `{"type": "approval_required", "tool_call_id", "tool_name", "title", "source_url", "payload_preview", "assistant_message_id"}` — HITL pause (see below)
 - `{"type": "done", "user_message": ..., "assistant_message": ..., "sources": [...]}` — final result
 - `{"type": "error", "detail": ..., "error_code": ...}` — terminal error
 
-The endpoint `POST /sessions/{id}/messages/stream` returns these as `text/event-stream` (one `data: {json}\n\n` frame per event). The same chat resilience invariants apply as before: capture session identity locals before any `await`, commit the user message before invoking the agent, and use a fresh `AsyncSessionLocal()` writer session for the assistant row so cancellations can't corrupt state.
+The endpoint `POST /sessions/{id}/messages/stream` returns these as `text/event-stream` (one `data: {json}\n\n` frame per event). The same chat resilience invariants apply: capture session identity locals before any `await`, commit the user message before invoking the agent, and use a fresh `AsyncSessionLocal()` writer session for the assistant row so cancellations can't corrupt state.
 
 Internally, the agent's `event_stream_handler` pushes events into an `asyncio.Queue` so the generator can yield them. Only parent-agent tool calls surface this way — calls inside subagents are not forwarded (they appear to the parent as a single `task` dispatch event).
+
+## Human-in-the-loop tool approvals (F-0084)
+
+Some parent-agent tools pause the turn for human approval (e.g. `create_protocol_from_external_source`). Pattern:
+
+1. Tool is registered with pydantic-ai `Tool(..., requires_approval=True)`. When the model calls it, the run raises `DeferredToolRequests`.
+2. `send_message_streaming()` catches it, persists a placeholder `ChatMessage(role=ASSISTANT, content="")` with `metadata_={"pending_approval": {...preview...}}`, yields `approval_required`, and ends the stream.
+3. Frontend renders an approval card from the placeholder and POSTs to `/sessions/{id}/messages/approve` with `{tool_call_id, approved: bool}`.
+4. The endpoint loads the placeholder, calls `resume_message_streaming()`, which feeds `DeferredToolResults(approvals={call_id: approved})` back into the agent, lets the run finish, and overwrites the placeholder with the final assistant content. Same SSE event vocabulary as the initial stream.
+
+Both endpoints share the same forensic-ERROR-row + final `error` SSE on exceptions, and the resume turn writes the persisted user message describing the decision ("Approved external protocol conversion." / "Rejected the external protocol conversion.").
 
 ## API Key Injection
 

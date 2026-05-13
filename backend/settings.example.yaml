@@ -82,3 +82,18 @@
 # max_message_length: 10000
 # compaction_threshold: 0.6
 # template_convert_max_tool_calls: 25
+
+# --- Features ---
+# Feature flags follow nested env-var form:
+#   BATCHRITE_FEATURES__<FEATURE>__<FIELD>=value
+# YAML keys use snake_case under `features:`.
+#
+# features:
+#   external_protocols:
+#     # Enable the protocol_knowledgebase chat subagent + HITL approval gate.
+#     # Talks to OpenWetWare's MediaWiki API; requires outbound HTTPS. (F-0084)
+#     enabled: false
+#     # Hard timeout for any single MediaWiki request, in seconds.
+#     request_timeout_seconds: 10.0
+#     # Per-org token-bucket cap on outbound OpenWetWare requests.
+#     rate_limit_per_minute: 10

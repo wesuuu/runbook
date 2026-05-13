@@ -63,3 +63,11 @@ def test_subagent_dispatch_tools_have_labels():
 
 def test_unknown_tool_falls_back():
     assert resolve_tool_label("nonexistent_tool_xyz") == FALLBACK_LABEL
+
+
+def test_resolves_protocol_knowledgebase_labels():
+    assert resolve_tool_label("search_openwetware") == "Searching OpenWetWare…"
+    assert (
+        resolve_tool_label("fetch_openwetware_protocol")
+        == "Reading external protocol…"
+    )
