@@ -161,7 +161,7 @@ class Document(Base, UUIDMixin, TimestampMixin):
     )
     ocr_engine: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     refined_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     refined_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
