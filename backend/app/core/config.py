@@ -1,4 +1,5 @@
 import warnings
+from pathlib import Path
 
 from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
@@ -92,8 +93,8 @@ class Settings(BaseSettings):
     ai_text_model: str = ""
     ai_embedding_provider: str = ""
     ai_embedding_model: str = ""
-    ai_doc_structure_provider: str = ""
-    ai_doc_structure_model: str = ""
+    ai_document_refinement_provider: str = ""
+    ai_document_refinement_model: str = ""
     ai_chat_provider: str = ""
     ai_chat_model: str = ""
     ai_chat_subagent_provider: str = ""
@@ -122,6 +123,30 @@ class Settings(BaseSettings):
     # Task runner backend: "thread" (default) — future: "kubernetes", "celery"
     task_runner_backend: str = "thread"
     task_runner_pool_size: int = 4
+
+    # Background-job dispatch (TD-0085).
+    # "local" runs jobs in-process via the TaskRunner;
+    # "cloud-gpu" will dispatch to a dedicated GPU service.
+    background_handler: str = "local"  # "local" | "cloud-gpu"
+
+    # Docling extractor (TD-0085) — paths to the standalone ext/ project's
+    # interpreter and CLI entrypoint. Defaults assume the repo layout
+    # (backend/ and ext/ are siblings); override via env vars in deploy.
+    docling_script_python: str = str(
+        Path(__file__).resolve().parents[3]
+        / "ext"
+        / "docling-extractor"
+        / ".venv"
+        / "bin"
+        / "python"
+    )
+    docling_script_path: str = str(
+        Path(__file__).resolve().parents[3]
+        / "ext"
+        / "docling-extractor"
+        / "extract.py"
+    )
+    docling_num_threads: int = 4
 
     # Chat agent skills directory
     skills_dir: str = "skills"
