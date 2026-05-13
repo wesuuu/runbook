@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,7 @@ from app.models.library import (Document, DocumentSourceFormat, DocumentStatus,
 from app.services.core.background_handler import register_job
 from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService
+from app.services.documents.extraction.heartbeat_watchdog import HeartbeatWatchdog
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,8 @@ async def _load_and_claim_document(
     doc.processing_started_at = datetime.now(timezone.utc)
     doc.source_format = _MIME_TO_FORMAT[doc.mime_type].value
     doc.ocr_engine = "easyocr"
+    doc.heartbeat_token = secrets.token_urlsafe(32)
+    doc.last_heartbeat_at = None
     await session.commit()
     return doc, job
 
@@ -98,7 +102,19 @@ async def _persist_success(
 
     Transitions status to AWAITING_REFINEMENT. Sets refinement_status to
     PENDING when docling flagged content concerns, NOT_REQUIRED otherwise.
+
+    Late-discard: if the watchdog already marked the document FAILED while
+    the subprocess was finishing up, we drop the artifacts and return so we
+    don't overwrite the FAILED state.
     """
+    # Re-read terminal state inside our session — the watchdog may have
+    # already marked us FAILED while the subprocess was finishing up.
+    await session.refresh(doc)
+    if doc.status == DocumentStatus.FAILED.value:
+        # Watchdog won the race. Drop the artifacts and bail.
+        shutil.rmtree(output_dir, ignore_errors=True)
+        return
+
     result_payload: dict[str, Any] = json.loads(
         (output_dir / "result.json").read_text()
     )
@@ -118,6 +134,7 @@ async def _persist_success(
     )
     doc.status = DocumentStatus.AWAITING_REFINEMENT.value
     doc.processing_started_at = None
+    doc.heartbeat_token = None
 
     await BackgroundJobService.complete(
         session, job,
@@ -148,6 +165,7 @@ async def _persist_failure(
         doc.status = DocumentStatus.FAILED.value
         doc.error_message = f"Extraction error: {message[:500]}"
         doc.processing_started_at = None
+        doc.heartbeat_token = None
     if job is not None:
         job_result = await session.execute(
             select(BackgroundJob).where(BackgroundJob.id == job.id)
@@ -178,16 +196,49 @@ async def run_extraction(document_id: UUID) -> None:
                 shutil.rmtree(output_dir, ignore_errors=True)
             output_dir.mkdir(parents=True, exist_ok=True)
 
+            heartbeat_url = (
+                f"{settings.extraction_heartbeat_base_url.rstrip('/')}"
+                f"/internal/extraction/{document_id}/heartbeat"
+            )
+
             proc = await asyncio.create_subprocess_exec(
                 settings.docling_script_python,
                 settings.docling_script_path,
                 "--input", str(input_path),
                 "--output-dir", str(output_dir),
                 "--num-threads", str(settings.docling_num_threads),
+                "--heartbeat-url", heartbeat_url,
+                "--heartbeat-token", doc.heartbeat_token,
+                "--heartbeat-interval-seconds",
+                str(settings.extraction_heartbeat_interval_seconds),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+
+            watchdog = HeartbeatWatchdog(
+                document_id=document_id,
+                proc=proc,
+                interval_seconds=settings.extraction_heartbeat_interval_seconds,
+                max_misses=settings.extraction_heartbeat_max_misses,
+                session_factory=session_factory,
+            )
+            watchdog_task = asyncio.create_task(watchdog.run_until_dead_or_done())
+
+            try:
+                stdout, stderr = await proc.communicate()
+            finally:
+                watchdog.stop()
+                await watchdog_task
+
+            if watchdog.timed_out:
+                await _persist_failure(
+                    session, document_id, job,
+                    "Extraction process became unresponsive "
+                    f"(no heartbeat for "
+                    f"{settings.extraction_heartbeat_interval_seconds * settings.extraction_heartbeat_max_misses}s)",
+                )
+                return
+
             if proc.returncode != 0:
                 msg = stderr.decode(errors="replace") or stdout.decode(errors="replace")
                 logger.error(

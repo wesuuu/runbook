@@ -2,6 +2,8 @@ import os
 
 os.environ["BATCHRITE_AUTH_ENABLED"] = "true"
 
+import uuid
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -17,6 +19,7 @@ from app.main import app
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             Team, TeamMember, User)
+from app.models.library import Document, DocumentStatus
 from app.models.science import Project
 from app.models.templates import DocumentTemplate  # noqa: F401
 from app.services.billing import stripe_client as _stripe_client
@@ -318,3 +321,53 @@ async def test_project(db_session, test_org, test_user) -> Project:
     )
     await db_session.flush()
     return project
+
+
+# ── async_session alias ──────────────────────────────────────────────
+# Some tests (heartbeat watchdog, endpoint) were written against the
+# `async_session` fixture name.  This alias keeps them working without
+# touching the canonical `db_session` fixture.
+
+@pytest_asyncio.fixture
+async def async_session(db_session: AsyncSession) -> AsyncSession:
+    """Alias for db_session — used by heartbeat / watchdog tests."""
+    return db_session
+
+
+# ── seed_document_extracting ─────────────────────────────────────────
+
+@pytest_asyncio.fixture
+async def seed_document_extracting(db_session: AsyncSession) -> Document:
+    """Yield a Document row in EXTRACTING status.
+
+    Creates the minimum required foreign-key rows (Organization + User)
+    inline so this fixture is self-contained and can be used by any unit
+    test that needs an active extraction row.
+    """
+    org = Organization(name=f"hb-test-org-{uuid.uuid4().hex[:8]}")
+    db_session.add(org)
+    await db_session.flush()
+
+    user = User(
+        email=f"hb-{uuid.uuid4().hex[:8]}@test.local",
+        hashed_password="!locked!",
+        full_name="Heartbeat Test User",
+        selected_org_id=org.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    doc = Document(
+        org_id=org.id,
+        uploaded_by_id=user.id,
+        title="Heartbeat Test Doc",
+        original_filename="test.pdf",
+        mime_type="application/pdf",
+        file_size_bytes=1024,
+        file_path="uploads/test.pdf",
+        status=DocumentStatus.EXTRACTING.value,
+    )
+    db_session.add(doc)
+    await db_session.flush()
+    return doc

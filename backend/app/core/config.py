@@ -232,6 +232,13 @@ class Settings(BaseSettings):
     loops_base_url: str = "https://app.loops.so/api/v1"
     loops_request_timeout_seconds: float = 5.0
 
+    # Extraction heartbeat (TD-0085). The subprocess posts to the backend
+    # every interval_seconds; after max_misses consecutive missed beats the
+    # watchdog kills the process and marks the document FAILED.
+    extraction_heartbeat_interval_seconds: int = 10
+    extraction_heartbeat_max_misses: int = 3
+    extraction_heartbeat_base_url: str = "http://localhost:8000"
+
     model_config = {
         "env_prefix": "BATCHRITE_",
         "env_file": ".env",

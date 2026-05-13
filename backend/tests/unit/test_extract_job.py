@@ -1,10 +1,13 @@
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 
+from app.models.library import DocumentStatus
 from app.services.documents.extraction import extract_job
 
 
@@ -22,6 +25,25 @@ def _write_artifacts(output_dir: Path, *, markdown: str, image_count: int,
         "ocr_engine": "easyocr",
         "source_format": "PDF",
     }))
+
+
+def _make_fake_asyncio(fake_exec):
+    """Build a fake asyncio namespace for patching extract_job.asyncio.
+
+    Provides create_subprocess_exec, create_task (returns an awaitable
+    no-op future), subprocess.PIPE, and wait_for (passes through to real
+    asyncio so HeartbeatWatchdog's internal wait_for still works when the
+    watchdog module is patched separately).
+    """
+    fake = MagicMock()
+    fake.create_subprocess_exec = AsyncMock(side_effect=fake_exec)
+    fake.subprocess = MagicMock()
+    fake.subprocess.PIPE = -1
+    # create_task must return an awaitable (asyncio.Future resolving None)
+    fake.create_task = lambda coro: asyncio.ensure_future(coro)
+    fake.TimeoutError = asyncio.TimeoutError
+    fake.wait_for = asyncio.wait_for
+    return fake
 
 
 @pytest.mark.asyncio
@@ -43,23 +65,23 @@ async def test_run_extraction_invokes_subprocess_with_expected_args(tmp_path):
         id=uuid4(), mime_type="application/pdf",
         file_path="uploads/x.pdf",
         page_count=None, status="UPLOADED",
+        heartbeat_token="tok",
     )
 
-    with patch.object(extract_job, "asyncio") as fake_asyncio, \
+    with patch.object(extract_job, "asyncio", _make_fake_asyncio(_fake_exec)), \
          patch.object(extract_job, "_load_and_claim_document",
                       AsyncMock(return_value=(fake_doc, MagicMock()))), \
          patch.object(extract_job, "_persist_success", AsyncMock()) as persist, \
          patch.object(extract_job, "_resolve_paths",
                       return_value=(Path("/tmp/in.pdf"), tmp_path / "out")):
-        fake_asyncio.create_subprocess_exec = AsyncMock(side_effect=_fake_exec)
-        fake_asyncio.subprocess = MagicMock()
-        fake_asyncio.subprocess.PIPE = -1
         await extract_job.run_extraction(fake_doc.id)
 
     argv = captured["argv"]
     assert "--input" in argv
     assert "--output-dir" in argv
     assert "--num-threads" in argv
+    assert "--heartbeat-url" in argv
+    assert "--heartbeat-token" in argv
     persist.assert_awaited()
 
 
@@ -74,19 +96,47 @@ async def test_run_extraction_marks_failed_on_nonzero_exit(tmp_path):
     fake_doc = MagicMock(
         id=uuid4(), mime_type="application/pdf",
         file_path="uploads/x.pdf", status="UPLOADED",
+        heartbeat_token="tok",
     )
 
-    with patch.object(extract_job, "asyncio") as fake_asyncio, \
+    with patch.object(extract_job, "asyncio", _make_fake_asyncio(_fake_exec)), \
          patch.object(extract_job, "_load_and_claim_document",
                       AsyncMock(return_value=(fake_doc, MagicMock()))), \
          patch.object(extract_job, "_persist_failure", AsyncMock()) as fail, \
          patch.object(extract_job, "_persist_success", AsyncMock()) as ok, \
          patch.object(extract_job, "_resolve_paths",
                       return_value=(Path("/tmp/in.pdf"), tmp_path / "out")):
-        fake_asyncio.create_subprocess_exec = AsyncMock(side_effect=_fake_exec)
-        fake_asyncio.subprocess = MagicMock()
-        fake_asyncio.subprocess.PIPE = -1
         await extract_job.run_extraction(fake_doc.id)
 
     fail.assert_awaited()
     ok.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_late_success_is_discarded_if_watchdog_already_failed(
+    async_session, seed_document_extracting, tmp_path
+):
+    """Subprocess finishes rc=0 but the doc was already marked FAILED
+    by the watchdog. The artifacts should be removed and the row left
+    in its FAILED state."""
+    doc = seed_document_extracting
+    doc.status = DocumentStatus.FAILED.value
+    doc.heartbeat_token = None  # watchdog already cleared it
+    await async_session.commit()
+
+    output_dir = tmp_path / str(doc.id)
+    output_dir.mkdir()
+    (output_dir / "refined.md").write_text("# hello")
+    (output_dir / "result.json").write_text(
+        '{"page_count": 1, "image_count": 0, "flags": [],'
+        ' "ocr_engine": "easyocr", "source_format": "pdf"}'
+    )
+    (output_dir / "images").mkdir()
+
+    await extract_job._persist_success(
+        async_session, doc, job=None, output_dir=output_dir
+    )
+
+    await async_session.refresh(doc)
+    assert doc.status == DocumentStatus.FAILED.value
+    assert not output_dir.exists()

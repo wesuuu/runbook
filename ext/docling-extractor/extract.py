@@ -17,6 +17,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from docling_extractor.heartbeat import HeartbeatPoster
 from docling_extractor.image_externalizer import (externalize_images,
                                                   rewrite_markdown_image_refs)
 from docling_extractor.pipeline import run_pipeline
@@ -41,6 +42,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--input", required=True, type=Path)
     p.add_argument("--output-dir", required=True, type=Path)
     p.add_argument("--num-threads", type=int, default=4)
+    # heartbeat (all three required together; all-optional means "no heartbeat")
+    p.add_argument("--heartbeat-url", type=str, default=None)
+    p.add_argument("--heartbeat-token", type=str, default=None)
+    p.add_argument("--heartbeat-interval-seconds", type=float, default=10.0)
     return p.parse_args(argv)
 
 
@@ -52,31 +57,44 @@ def main() -> int:
         print(f"input not found: {args.input}", file=sys.stderr)
         return 2
 
+    poster: HeartbeatPoster | None = None
+    if args.heartbeat_url and args.heartbeat_token:
+        poster = HeartbeatPoster(
+            url=args.heartbeat_url,
+            token=args.heartbeat_token,
+            interval_seconds=args.heartbeat_interval_seconds,
+        )
+        poster.start()
+
     try:
-        result = run_pipeline(args.input, num_threads=args.num_threads)
-    except Exception as exc:  # noqa: BLE001
-        print(f"extraction failed: {exc}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        return 1
+        try:
+            result = run_pipeline(args.input, num_threads=args.num_threads)
+        except Exception as exc:  # noqa: BLE001
+            print(f"extraction failed: {exc}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            return 1
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    images_dir = args.output_dir / "images"
-    externalize_images(result.pictures, images_dir)
-    refined_md = rewrite_markdown_image_refs(result.markdown, result.pictures)
-    (args.output_dir / "refined.md").write_text(refined_md)
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        images_dir = args.output_dir / "images"
+        externalize_images(result.pictures, images_dir)
+        refined_md = rewrite_markdown_image_refs(result.markdown, result.pictures)
+        (args.output_dir / "refined.md").write_text(refined_md)
 
-    source_format = _EXT_TO_SOURCE_FORMAT.get(
-        args.input.suffix.lower(), "PDF"
-    )
-    payload = {
-        "page_count": result.page_count,
-        "image_count": len(result.pictures),
-        "flags": result.flags,
-        "ocr_engine": "easyocr",
-        "source_format": source_format,
-    }
-    (args.output_dir / "result.json").write_text(json.dumps(payload, indent=2))
-    return 0
+        source_format = _EXT_TO_SOURCE_FORMAT.get(
+            args.input.suffix.lower(), "PDF"
+        )
+        payload = {
+            "page_count": result.page_count,
+            "image_count": len(result.pictures),
+            "flags": result.flags,
+            "ocr_engine": "easyocr",
+            "source_format": source_format,
+        }
+        (args.output_dir / "result.json").write_text(json.dumps(payload, indent=2))
+        return 0
+    finally:
+        if poster is not None:
+            poster.stop()
 
 
 if __name__ == "__main__":

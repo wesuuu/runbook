@@ -166,6 +166,10 @@ class Document(Base, UUIDMixin, TimestampMixin):
     refined_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    heartbeat_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     chunks: Mapped[List["DocumentChunk"]] = relationship(
