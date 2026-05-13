@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import Callable
 from uuid import UUID
@@ -33,7 +34,7 @@ class HeartbeatWatchdog:
         proc,  # asyncio.subprocess.Process — typed loosely for testability
         interval_seconds: float,
         max_misses: int,
-        session_factory: Callable[[], AsyncSession],
+        session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]],
     ) -> None:
         self._document_id = document_id
         self._proc = proc
@@ -73,16 +74,18 @@ class HeartbeatWatchdog:
                 self.timed_out = True
                 try:
                     self._proc.kill()
-                except ProcessLookupError:
+                except OSError:
+                    # Process already exited or vanished between our check and kill().
                     pass
                 return
 
     async def _read_heartbeat(self) -> datetime | None:
-        session = self._session_factory()
-        try:
+        # `async with` ensures the session is returned to the pool on every
+        # poll — otherwise a long extraction would exhaust the pool.
+        async with self._session_factory() as session:
             # expire_all() clears the identity map cache so we always
             # get a fresh read from the DB (important when the factory
-            # returns the same session across multiple calls, e.g. in tests).
+            # yields a shared session across multiple calls, e.g. in tests).
             session.expire_all()
             result = await session.execute(
                 select(Document.last_heartbeat_at).where(
@@ -90,7 +93,3 @@ class HeartbeatWatchdog:
                 )
             )
             return result.scalar_one_or_none()
-        finally:
-            # Tests pass an existing session; the production caller creates one per call.
-            # We never close the session here — ownership belongs to the factory.
-            pass
