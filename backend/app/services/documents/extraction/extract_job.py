@@ -46,6 +46,13 @@ _MIME_TO_FORMAT = {
 
 
 def _resolve_paths(doc: Document) -> tuple[Path, Path]:
+    """Return (input_file_path, output_dir) for a document.
+
+    The output_dir is per-document, under the storage root, so the
+    refined.md / images/ / result.json artifacts land in a predictable
+    place that the read endpoints (and the user-facing image URL) can
+    point at.
+    """
     storage = FileStorageService()
     input_path = storage.resolve_path(doc.file_path)
     output_dir = storage.storage_root / "documents" / str(doc.id)
@@ -55,12 +62,22 @@ def _resolve_paths(doc: Document) -> tuple[Path, Path]:
 async def _load_and_claim_document(
     session: AsyncSession, document_id: UUID
 ) -> tuple[Document | None, BackgroundJob | None]:
+    """Lock the document row + create the BackgroundJob in one transaction.
+
+    Uses SELECT ... FOR UPDATE SKIP LOCKED so a second worker that picks
+    up the same document concurrently sees no row and exits cleanly.
+    """
     result = await session.execute(
         select(Document).where(Document.id == document_id).with_for_update(skip_locked=True)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
         return None, None
+
+    if doc.mime_type not in _MIME_TO_FORMAT:
+        raise ValueError(
+            f"Unsupported MIME type for extraction: {doc.mime_type!r}"
+        )
 
     job = await BackgroundJobService.create(
         session, "document_extract", "document", document_id,
@@ -77,6 +94,11 @@ async def _load_and_claim_document(
 async def _persist_success(
     session: AsyncSession, doc: Document, job: BackgroundJob, output_dir: Path,
 ) -> None:
+    """Read artifacts from output_dir and write them to the Document row.
+
+    Transitions status to AWAITING_REFINEMENT. Sets refinement_status to
+    PENDING when docling flagged content concerns, NOT_REQUIRED otherwise.
+    """
     result_payload: dict[str, Any] = json.loads(
         (output_dir / "result.json").read_text()
     )
@@ -111,6 +133,12 @@ async def _persist_success(
 async def _persist_failure(
     session: AsyncSession, document_id: UUID, job: BackgroundJob | None, message: str,
 ) -> None:
+    """Rollback any dirty state, re-query the document, mark it FAILED.
+
+    The rollback-then-re-query pattern is required because _persist_success
+    may have made partial writes before raising; we need a clean session
+    to write the FAILED status atomically.
+    """
     await session.rollback()
     result = await session.execute(
         select(Document).where(Document.id == document_id)
@@ -138,18 +166,18 @@ async def run_extraction(document_id: UUID) -> None:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with session_factory() as session:
-        doc, job = await _load_and_claim_document(session, document_id)
-        if doc is None:
-            logger.info("Document %s not found or locked", document_id)
-            await engine.dispose()
-            return
-
-        input_path, output_dir = _resolve_paths(doc)
-        if output_dir.exists():
-            shutil.rmtree(output_dir, ignore_errors=True)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
+        job: BackgroundJob | None = None
         try:
+            doc, job = await _load_and_claim_document(session, document_id)
+            if doc is None:
+                logger.info("Document %s not found or locked", document_id)
+                return
+
+            input_path, output_dir = _resolve_paths(doc)
+            if output_dir.exists():
+                shutil.rmtree(output_dir, ignore_errors=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
             proc = await asyncio.create_subprocess_exec(
                 settings.docling_script_python,
                 settings.docling_script_path,
