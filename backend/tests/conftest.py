@@ -334,6 +334,74 @@ async def async_session(db_session: AsyncSession) -> AsyncSession:
     return db_session
 
 
+# ── fresh_document / extracted_document ──────────────────────────────
+# Used by test_library_docling.py integration tests.
+
+
+@pytest_asyncio.fixture
+async def fresh_document(db_session: AsyncSession, test_org, test_user) -> Document:
+    """A Document row with status=UPLOADED and no stored_markdown."""
+    from app.models.library import RefinementStatus
+
+    doc = Document(
+        org_id=test_org.id,
+        uploaded_by_id=test_user.id,
+        title="Fresh Doc",
+        original_filename="fresh.pdf",
+        mime_type="application/pdf",
+        file_size_bytes=1024,
+        file_path="uploads/fresh.pdf",
+        status=DocumentStatus.UPLOADED.value,
+        stored_markdown=None,
+        refinement_status=RefinementStatus.NOT_REQUIRED.value,
+    )
+    db_session.add(doc)
+    await db_session.flush()
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER.value,
+            principal_id=test_user.id,
+            object_type=ObjectType.DOCUMENT.value,
+            object_id=doc.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
+    await db_session.flush()
+    return doc
+
+
+@pytest_asyncio.fixture
+async def extracted_document(db_session: AsyncSession, test_org, test_user) -> Document:
+    """A Document row with status=AWAITING_REFINEMENT and stored markdown."""
+    from app.models.library import RefinementStatus
+
+    doc = Document(
+        org_id=test_org.id,
+        uploaded_by_id=test_user.id,
+        title="Extracted Doc",
+        original_filename="extracted.pdf",
+        mime_type="application/pdf",
+        file_size_bytes=2048,
+        file_path="uploads/extracted.pdf",
+        status=DocumentStatus.AWAITING_REFINEMENT.value,
+        stored_markdown="# Heading\n\nBody\n",
+        refinement_status=RefinementStatus.PENDING.value,
+    )
+    db_session.add(doc)
+    await db_session.flush()
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER.value,
+            principal_id=test_user.id,
+            object_type=ObjectType.DOCUMENT.value,
+            object_id=doc.id,
+            permission_level=PermissionLevel.EDIT.value,
+        )
+    )
+    await db_session.flush()
+    return doc
+
+
 # ── seed_document_extracting ─────────────────────────────────────────
 
 @pytest_asyncio.fixture

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
 class DocumentResponse(BaseModel):
@@ -26,6 +26,11 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     can_delete: bool = False
+    source_format: Optional[str] = None
+    refinement_status: Optional[str] = None
+    refinement_flags: Optional[List[Any]] = None
+    refined_by_id: Optional[UUID] = None
+    refined_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -95,3 +100,34 @@ class SearchResponse(BaseModel):
     items: List[SearchResultGroup]
     total: int
     search_mode: str  # "hybrid", "semantic", "keyword"
+
+
+class MarkdownPayload(BaseModel):
+    markdown: str
+
+
+class RefineAiRequest(BaseModel):
+    scope: str = Field(..., pattern="^(selection|block|document)$")
+    selection_markdown: str
+    instruction: str
+    surrounding_context_markdown: Optional[str] = None
+    page: Optional[int] = None
+    bbox: Optional[list[float]] = None
+
+    @field_validator("bbox")
+    @classmethod
+    def _bbox_len(cls, v):
+        if v is None:
+            return v
+        if len(v) != 4:
+            raise ValueError("bbox must be [x0,y0,x1,y1]")
+        return v
+
+
+class RefineAiResponse(BaseModel):
+    suggested_markdown: str
+    model_used: str
+
+
+class RefineCompleteRequest(BaseModel):
+    reopen: bool = False

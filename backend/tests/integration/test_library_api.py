@@ -10,12 +10,16 @@ from app.models.library import Document, DocumentStatus
 from app.models.science import Project
 
 
-# Mock the background processor to avoid async task issues in tests
+# Mock the background handler to avoid async task issues in tests
 @pytest.fixture(autouse=True)
 def mock_processor():
+    class _FakeHandler:
+        async def launch(self, job, **kwargs):
+            pass
+
     with patch(
-        "app.api.endpoints.library.process_document",
-        new_callable=AsyncMock,
+        "app.api.endpoints.library.get_background_handler",
+        return_value=_FakeHandler(),
     ):
         yield
 
