@@ -17,9 +17,6 @@ import sys
 import traceback
 from pathlib import Path
 
-# Re-exported so tests can patch `extract.DocumentConverter`.
-from docling.document_converter import DocumentConverter  # noqa: F401
-
 from docling_extractor.image_externalizer import (externalize_images,
                                                   rewrite_markdown_image_refs)
 from docling_extractor.pipeline import run_pipeline

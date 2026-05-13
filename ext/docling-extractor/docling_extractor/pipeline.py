@@ -45,11 +45,7 @@ def build_converter(num_threads: int) -> DocumentConverter:
         device=AcceleratorDevice.AUTO,
     )
 
-    # Resolve via the ``extract`` module so tests can patch
-    # ``extract.DocumentConverter`` and intercept construction.
-    import extract  # local import avoids circular import at module load
-
-    return extract.DocumentConverter(
+    return DocumentConverter(
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options),
         }

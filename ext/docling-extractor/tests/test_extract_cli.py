@@ -21,7 +21,7 @@ def _run_cli(input_path: Path, output_dir: Path, num_threads: int = 4):
     convert_result = MagicMock()
     convert_result.document = _fake_docling_doc("# Title\n\nBody.", 3)
 
-    with patch.object(extract, "DocumentConverter") as ConverterCls:
+    with patch("docling_extractor.pipeline.DocumentConverter") as ConverterCls:
         ConverterCls.return_value.convert.return_value = convert_result
         argv = [
             "extract.py",
