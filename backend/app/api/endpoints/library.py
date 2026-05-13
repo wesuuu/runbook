@@ -843,7 +843,14 @@ async def get_document_markdown(
         )
     )
     doc = result.scalar_one_or_none()
-    if doc is None or doc.stored_markdown is None:
+    if doc is None:
+        raise HTTPException(404, "Markdown not available")
+    allowed = await check_permission(
+        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(403, "Insufficient permissions")
+    if doc.stored_markdown is None:
         raise HTTPException(404, "Markdown not available")
     return {"markdown": doc.stored_markdown}
 
@@ -883,20 +890,28 @@ async def refine_with_ai(
     current_user: User = Depends(get_current_user),
 ):
     org_id = await _get_user_org_id(current_user, db)
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(404, "Document not found")
     allowed = await check_permission(
         db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.EDIT
     )
     if not allowed:
         raise HTTPException(403, "Insufficient permissions")
-    result = await apply_ai_fix(
+    ai_result = await apply_ai_fix(
         db,
         document_id,
         org_id,
         RefineAiPayload(**payload.model_dump()),
     )
     return RefineAiResponse(
-        suggested_markdown=result.suggested_markdown,
-        model_used=result.model_used,
+        suggested_markdown=ai_result.suggested_markdown,
+        model_used=ai_result.model_used,
     )
 
 
@@ -955,14 +970,21 @@ async def get_document_image(
         raise HTTPException(400, "Invalid image filename")
     org_id = await _get_user_org_id(current_user, db)
     result = await db.execute(
-        select(Document.images_dir).where(
+        select(Document).where(
             Document.id == document_id, Document.org_id == org_id
         )
     )
-    images_dir = result.scalar_one_or_none()
-    if images_dir is None:
+    doc = result.scalar_one_or_none()
+    if doc is None:
         raise HTTPException(404, "Image not found")
-    path = FileStorageService().storage_root / images_dir / filename
+    allowed = await check_permission(
+        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(403, "Insufficient permissions")
+    if doc.images_dir is None:
+        raise HTTPException(404, "Image not found")
+    path = FileStorageService().storage_root / doc.images_dir / filename
     if not path.exists():
         raise HTTPException(404, "Image not found")
     return FileResponse(path, media_type="image/png")
@@ -982,7 +1004,14 @@ async def get_document_source_page(
         )
     )
     doc = result.scalar_one_or_none()
-    if doc is None or doc.mime_type != "application/pdf":
+    if doc is None:
+        raise HTTPException(404, "Source page not available")
+    allowed = await check_permission(
+        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(403, "Insufficient permissions")
+    if doc.mime_type != "application/pdf":
         raise HTTPException(404, "Source page not available")
     path = FileStorageService().resolve_path(doc.file_path)
     try:
