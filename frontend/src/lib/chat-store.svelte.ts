@@ -9,6 +9,7 @@ import type {
     ChatSkill,
     ChatConfig,
     ExternalProtocolPayloadPreview,
+    ExternalProtocolStepPreview,
 } from '$lib/schemas/chat';
 import {
     ChatSessionSchema,
@@ -572,19 +573,32 @@ export async function sendMessage(skillId?: string): Promise<void> {
 
         await tick();
         scrollFn?.();
-    } catch {
+    } catch (err) {
         activeSession.messages = activeSession.messages.filter(
             m => m.id !== tempUserMsg.id,
         );
-        const codeSuffix = errorCode ? ` (E${errorCode})` : '';
-        toast.error(`Failed to send message${codeSuffix}`);
+        const detail = err instanceof Error ? err.message : '';
+        if (detail) {
+            toast.error(detail);
+        } else {
+            const codeSuffix = errorCode ? ` (${errorCode})` : '';
+            toast.error(`Failed to send message${codeSuffix}`);
+        }
     } finally {
         resetLabelQueue();
         sending = false;
     }
 }
 
-export async function submitApproval(approved: boolean): Promise<void> {
+export interface ApprovalSubmission {
+    editedSteps?: ExternalProtocolStepPreview[];
+    deviations?: string[];
+}
+
+export async function submitApproval(
+    approved: boolean,
+    submission?: ApprovalSubmission,
+): Promise<void> {
     if (!pendingApproval || !activeSession) return;
     if (submittingApproval) return;
     const session = activeSession;
@@ -601,11 +615,27 @@ export async function submitApproval(approved: boolean): Promise<void> {
     let donePayload: DonePayload | null = null;
     let errorDetail: string | null = null;
 
+    const body: {
+        tool_call_id: string;
+        approved: boolean;
+        edited_steps?: ExternalProtocolStepPreview[];
+        deviations?: string[];
+    } = {
+        tool_call_id: pending.tool_call_id,
+        approved,
+    };
+    if (approved && submission?.editedSteps) {
+        body.edited_steps = submission.editedSteps;
+    }
+    if (approved && submission?.deviations && submission.deviations.length > 0) {
+        body.deviations = submission.deviations;
+    }
+
     try {
         resetLabelQueue();
         await streamSse(
             `/chat/sessions/${session.id}/messages/approve`,
-            { tool_call_id: pending.tool_call_id, approved },
+            body,
             (event: SseEvent) => {
                 if (event.type === 'tool_start') {
                     enqueueLabel(event.tool, event.label);

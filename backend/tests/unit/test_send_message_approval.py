@@ -26,13 +26,9 @@ async def test_emits_approval_required_when_deferred(monkeypatch):
     call_part = ToolCallPart(
         tool_name="create_protocol_from_external_source",
         args={
-            "payload_json": (
-                '{"title":"X",'
-                '"source_url":"https://openwetware.org/wiki/X",'
-                '"steps":[]}'
-            ),
             "title": "X",
             "source_url": "https://openwetware.org/wiki/X",
+            "project_name": "Cell Culture",
         },
         tool_call_id="call_abc",
     )
@@ -43,6 +39,14 @@ async def test_emits_approval_required_when_deferred(monkeypatch):
     )
 
     async def _fake_run(*a, **kw):
+        # Simulate the subagent having cached the payload server-side before
+        # the parent reached the approval gate.
+        deps = kw.get("deps")
+        if deps is not None:
+            deps.external_protocol_cache["https://openwetware.org/wiki/X"] = (
+                '{"title":"X","source_url":"https://openwetware.org/wiki/X",'
+                '"steps":[{"text":"s1"}]}'
+            )
         return fake_result
 
     fake_agent = SimpleNamespace(run=_fake_run)
@@ -98,3 +102,13 @@ async def test_emits_approval_required_when_deferred(monkeypatch):
     assert approval["title"] == "X"
     assert approval["source_url"] == "https://openwetware.org/wiki/X"
     assert "assistant_message_id" in approval
+    # Preview's step_count comes from the server cache, not the tool args.
+    assert approval["payload_preview"]["step_count"] == 1
+    # Project name from the tool args surfaces on the approval card.
+    assert approval["payload_preview"]["project_name"] == "Cell Culture"
+    # Placeholder metadata must persist the cached payload so resume can
+    # rehydrate the cache for the deferred tool body.
+    persisted_meta = placeholder_holder["msg"].metadata_
+    pending = persisted_meta["pending_approval"]
+    assert "payload_json" in pending
+    assert "https://openwetware.org/wiki/X" in pending["payload_json"]

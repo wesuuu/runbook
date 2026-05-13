@@ -24,6 +24,7 @@ class _FakeDeps:
     is_org_admin: bool = False
     sources: list = field(default_factory=list)
     tool_calls: list = field(default_factory=list)
+    external_protocol_cache: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -101,6 +102,25 @@ async def test_fetch_returns_payload_and_audits(_enabled):
     assert payload.steps[2].duration_min == 2  # 90 s -> ceil(1.5)
     assert ctx.deps.tool_calls[-1]["tool"] == "fetch_openwetware_protocol"
     assert ctx.deps.tool_calls[-1]["source_url"] == url
+
+
+@pytest.mark.asyncio
+async def test_fetch_populates_external_protocol_cache(_enabled):
+    """Regression: payload is a @dataclass — serialisation must use
+    ``dataclasses.asdict`` + ``json.dumps``, not ``model_dump_json``.
+    The latter silently raises AttributeError and was being swallowed,
+    leaving the cache empty and the approval card showing 0 steps."""
+    ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
+    url = "https://openwetware.org/wiki/Sauer:Heat_shock_transformation_of_E._coli"
+    with patch("httpx.AsyncClient.get", new=_fake_get(FIX_DIR / "parse_response.json")):
+        await kb.fetch_openwetware_protocol(ctx, url)
+    assert url in ctx.deps.external_protocol_cache
+    cached_json = ctx.deps.external_protocol_cache[url]
+    cached = json.loads(cached_json)
+    assert cached["source_url"] == url
+    assert isinstance(cached["steps"], list)
+    assert len(cached["steps"]) == 7
+    assert "text" in cached["steps"][0]
 
 
 @pytest.mark.asyncio

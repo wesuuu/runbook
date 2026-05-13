@@ -1,4 +1,4 @@
-"""Tools for the protocol_knowledgebase subagent (F-0084).
+"""Tools for the protocol_knowledgebase subagent.
 
 v1 scope: OpenWetWare only. Searches and fetches public protocols, parses
 the wiki-text into a structured payload the parent agent can hand off to
@@ -8,12 +8,13 @@ protocol_creator after a human-in-the-loop approval.
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import re
 import time
 import urllib.parse
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Callable
 from uuid import UUID
 
@@ -78,7 +79,16 @@ _WIKI_LINK_RE = re.compile(r"\[\[([^\]|]+\|)?([^\]]+)\]\]")
 _BOLD_ITALIC_RE = re.compile(r"'{2,5}")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _REF_RE = re.compile(r"<ref[^>]*>.*?</ref>", re.DOTALL)
+# Biblio blocks contain `#cite-id pmid=...` entries that look like top-level
+# numbered steps to a naive scan — strip them before extracting steps.
+_BIBLIO_RE = re.compile(r"<biblio[^>]*>.*?</biblio>", re.DOTALL | re.IGNORECASE)
 _TEMPLATE_RE = re.compile(r"\{\{[^}]+\}\}")
+
+# A *top-level* numbered list item is exactly one `#` followed by whitespace
+# or a word character — `#*`, `#:`, `##`, `#;` are sub-items / non-step
+# markup and must be skipped. The whitespace optional class catches lines
+# like `#Grow…` (OWW frequently omits the space).
+_TOP_LEVEL_NUMBERED_RE = re.compile(r"^#(?:\s+|[A-Za-z0-9])")
 
 
 def _clean_wiki_inline(text: str) -> str:
@@ -126,11 +136,15 @@ def _bulleted_items(body: str) -> list[str]:
 
 
 def _numbered_items(body: str) -> list[str]:
-    """Pull top-level `# …` lines; nested `##` sub-steps are skipped."""
+    """Pull top-level ``# …`` lines. Sub-items (``##``, ``#*``, ``#:``,
+    ``#;``) are skipped, and ``<biblio>`` blocks are stripped first so their
+    ``#cite-id pmid=…`` entries don't masquerade as steps.
+    """
+    cleaned_body = _BIBLIO_RE.sub("", body)
     out: list[str] = []
-    for raw in body.splitlines():
+    for raw in cleaned_body.splitlines():
         stripped = raw.lstrip()
-        if stripped.startswith("#") and not stripped.startswith("##"):
+        if _TOP_LEVEL_NUMBERED_RE.match(stripped):
             out.append(_clean_wiki_inline(stripped.lstrip("#").strip()))
     return [s for s in out if s]
 
@@ -151,9 +165,7 @@ def _parse_duration_minutes(text: str) -> int | None:
     return max(1, math.ceil(minutes))
 
 
-def _find_matching_section(
-    sections: dict[str, str], synonyms: set[str]
-) -> str | None:
+def _find_matching_section(sections: dict[str, str], synonyms: set[str]) -> str | None:
     """Return the body of the first section whose normalized heading
     contains any synonym as a substring. Real OWW pages use names like
     "General Procedure" or "Casting Gels" — exact equality misses them.
@@ -230,8 +242,8 @@ def parse_openwetware_wikitext(
 
 # ─── HTTP tools + rate limit ───────────────────────────────────────────────────
 
-# Human-readable labels for the chat thinking indicator (F-0083). Adding a
-# tool here MUST also update the entry — enforced by
+# Human-readable labels for the chat thinking indicator. Adding a tool
+# here MUST also update the entry — enforced by
 # tests/unit/test_tool_labels.py.
 TOOL_LABELS: dict[str, str] = {
     "search_openwetware": "Searching OpenWetWare…",
@@ -398,15 +410,43 @@ async def fetch_openwetware_protocol(
         resp.raise_for_status()
         data = resp.json()
 
+    # MediaWiki returns 200 with {"error": {...}} on missingtitle, invalid
+    # params, etc. Surface those so the agent can pick a different URL
+    # instead of handing the parent an empty payload.
+    error = data.get("error")
+    if isinstance(error, dict):
+        info = error.get("info") or error.get("code") or "unknown error"
+        raise ValueError(
+            f"OpenWetWare fetch failed for {url!r}: {info}. Pick a URL from "
+            "search_openwetware results — do not guess wiki page slugs."
+        )
     parse = data.get("parse") or {}
     raw_displaytitle = parse.get("displaytitle") or page_title
     # MediaWiki wraps modern displaytitle in <span> markup — strip tags.
     displaytitle = _HTML_TAG_RE.sub("", raw_displaytitle).strip() or page_title
     wikitext = ((parse.get("wikitext") or {}).get("*")) or ""
+    if not wikitext.strip():
+        raise ValueError(
+            f"OpenWetWare page at {url!r} has no wiki-text content. Pick "
+            "a URL from search_openwetware results — do not guess slugs."
+        )
 
     payload = parse_openwetware_wikitext(
         wikitext=wikitext, displaytitle=displaytitle, source_url=url
     )
+    if not payload.steps:
+        raise ValueError(
+            f"OpenWetWare page at {url!r} parsed to 0 steps — likely a "
+            "stub, navigation page, or non-protocol article. Try a "
+            "different result from search_openwetware."
+        )
+
+    # Cache the canonical payload so the approval tool can read it directly
+    # without the LLM re-serializing multi-KB JSON. The payload is a
+    # @dataclass, not a pydantic model — asdict() is the right serializer.
+    cache = getattr(ctx.deps, "external_protocol_cache", None)
+    if cache is not None:
+        cache[url] = json.dumps(asdict(payload))
 
     ctx.deps.tool_calls.append(
         {

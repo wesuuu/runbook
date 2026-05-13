@@ -44,6 +44,134 @@ from app.services.ai.tool_labels import resolve_tool_label
 logger = logging.getLogger(__name__)
 
 
+def _build_approval_payload_preview(
+    pending_approval_call: Any,
+    deps: ChatDeps,
+) -> tuple[str, str, str, dict[str, Any], str]:
+    """Extract args + assemble the payload preview for an approval pause.
+
+    Returns ``(title, source_url, project_name, payload_preview, payload_raw)``.
+    Shared by the initial-turn pause in ``send_message_streaming`` and the
+    re-pause case in ``resume_message_streaming`` (e.g. when the agent redrafts
+    after a rejection-with-reason).
+    """
+    args = pending_approval_call.args or {}
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except (json.JSONDecodeError, ValueError):
+            args = {}
+    title = str(args.get("title") or "")
+    source_url = str(args.get("source_url") or "")
+    project_name = str(args.get("project_name") or "").strip()
+    # Deviations are computed by the frontend from the user's inline edits
+    # to the approval card; on the initial pause the LLM has not seen any
+    # edits yet, so this is always empty here.
+    user_deviations: list[str] = []
+    payload_raw = deps.external_protocol_cache.get(source_url)
+    if not payload_raw and len(deps.external_protocol_cache) == 1:
+        payload_raw = next(iter(deps.external_protocol_cache.values()))
+    payload_raw = payload_raw or "{}"
+    if payload_raw == "{}":
+        logger.warning(
+            "External protocol payload cache miss for source_url=%r "
+            "(cache keys: %s). Approval card will show 0 steps.",
+            source_url,
+            list(deps.external_protocol_cache.keys()),
+        )
+    try:
+        payload = json.loads(payload_raw)
+    except (json.JSONDecodeError, ValueError):
+        payload = {}
+
+    steps = payload.get("steps") if isinstance(payload, dict) else None
+    step_count = len(steps) if isinstance(steps, list) else 0
+    durations = [s.get("duration_min") for s in (steps or []) if isinstance(s, dict)]
+    duration_min_total = sum(d for d in durations if isinstance(d, int)) or None
+    step_previews: list[dict[str, Any]] = []
+    for step in steps or []:
+        if not isinstance(step, dict):
+            continue
+        text = step.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        duration = step.get("duration_min")
+        step_previews.append(
+            {
+                "text": text.strip(),
+                "duration_min": duration if isinstance(duration, int) else None,
+            }
+        )
+
+    payload_preview = {
+        "title": title,
+        "source_url": source_url,
+        "project_name": project_name or None,
+        "step_count": step_count,
+        "duration_min_total": duration_min_total,
+        "license": (payload.get("license") if isinstance(payload, dict) else None)
+        or "CC BY-SA 3.0",
+        "deviations": user_deviations,
+        "steps": step_previews,
+    }
+    return title, source_url, project_name, payload_preview, payload_raw
+
+
+# Hard cap on cached entries per session, applied at flush time. Average
+# sessions never hit this; long-running ones won't bloat the row.
+_EXTERNAL_PROTOCOL_CACHE_MAX = 50
+
+
+def _trim_external_protocol_cache(cache: dict[str, str]) -> dict[str, str]:
+    """Drop the oldest entries when the cache exceeds the per-session cap.
+
+    Python dicts preserve insertion order, and Postgres JSONB round-trips
+    that order, so the first keys are the oldest fetches.
+    """
+    if len(cache) <= _EXTERNAL_PROTOCOL_CACHE_MAX:
+        return cache
+    overflow = len(cache) - _EXTERNAL_PROTOCOL_CACHE_MAX
+    keys = list(cache.keys())
+    for k in keys[:overflow]:
+        cache.pop(k, None)
+    return cache
+
+
+def _apply_edited_steps(
+    cached_payload: str,
+    edited_steps: list[dict[str, Any]] | None,
+    session_pk: UUID,
+) -> str:
+    """Rewrite the cached payload's ``steps`` with the user's edited list.
+
+    Returns the original cached string when there's nothing to apply or the
+    payload doesn't parse — the approval tool then sees the unedited
+    procedure, which is the safe fallback.
+    """
+    if not edited_steps:
+        return cached_payload
+    try:
+        parsed = json.loads(cached_payload)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning(
+            "Could not parse cached payload to apply edited_steps for "
+            "session %s; falling back to original.",
+            session_pk,
+        )
+        return cached_payload
+    if not isinstance(parsed, dict):
+        return cached_payload
+    parsed["steps"] = [
+        {
+            "text": str(s.get("text", "")),
+            "duration_min": s.get("duration_min"),
+        }
+        for s in edited_steps
+        if isinstance(s, dict) and str(s.get("text", "")).strip()
+    ]
+    return json.dumps(parsed)
+
+
 async def send_message_streaming(
     db: AsyncSession,
     session: ChatSession,
@@ -80,6 +208,12 @@ async def send_message_streaming(
         user_id=user_id,
         is_org_admin=is_org_admin,
     )
+    # ChatDeps is per-request, so the external_protocol_cache populated by the
+    # subagent in an earlier turn is gone by the time the user confirms and the
+    # parent agent calls create_protocol_from_external_source. Load the
+    # session's persisted cache (stored out-of-band from ai_message_history
+    # because pydantic-ai compaction elides large tool returns).
+    deps.external_protocol_cache = dict(session.external_protocol_cache or {})
 
     # ── 3. Event bridge: parent agent → asyncio.Queue ────────────────────────
     # Two paths feed this queue:
@@ -196,38 +330,36 @@ async def send_message_streaming(
     )
 
     if pending_approval_call is not None:
-        args = pending_approval_call.args or {}
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except (json.JSONDecodeError, ValueError):
-                args = {}
-        title = str(args.get("title") or "")
-        source_url = str(args.get("source_url") or "")
-        payload_raw = args.get("payload_json") or "{}"
-        try:
-            payload = (
-                json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+        (
+            title,
+            source_url,
+            _project_name,
+            payload_preview,
+            payload_raw,
+        ) = _build_approval_payload_preview(pending_approval_call, deps)
+
+        # Refuse to render an empty approval card. This happens when the LLM
+        # synthesizes a source_url that the subagent never fetched (cache
+        # miss + ambiguous fallback). Better to surface a clear error so the
+        # user re-prompts than to show a 0-step card the user can't act on.
+        if payload_preview.get("step_count", 0) == 0:
+            logger.warning(
+                "Refusing to emit approval_required for source_url=%r "
+                "because cached payload has 0 steps. Cache keys: %s",
+                source_url,
+                list(deps.external_protocol_cache.keys()),
             )
-        except (json.JSONDecodeError, ValueError):
-            payload = {}
-
-        steps = payload.get("steps") if isinstance(payload, dict) else None
-        step_count = len(steps) if isinstance(steps, list) else 0
-        durations = [
-            s.get("duration_min") for s in (steps or []) if isinstance(s, dict)
-        ]
-        duration_min_total = sum(d for d in durations if isinstance(d, int)) or None
-
-        payload_preview = {
-            "title": title,
-            "source_url": source_url,
-            "step_count": step_count,
-            "duration_min_total": duration_min_total,
-            "license": (payload.get("license") if isinstance(payload, dict) else None)
-            or "CC BY-SA 3.0",
-            "deviations": [],
-        }
+            yield {
+                "type": "error",
+                "detail": (
+                    f"I tried to import {title or source_url!r} but couldn't "
+                    "find any steps in the cached source. The URL probably "
+                    "wasn't one of the candidates I fetched — ask me to "
+                    "search OpenWetWare for that protocol first."
+                ),
+                "error_code": "EXTERNAL_PROTOCOL_EMPTY",
+            }
+            return
 
         history_payload = ModelMessagesTypeAdapter.dump_python(
             result.all_messages(), mode="json"
@@ -239,6 +371,9 @@ async def send_message_streaming(
                 "title": title,
                 "source_url": source_url,
                 "payload_preview": payload_preview,
+                # Persist the cached payload so resume can rehydrate
+                # deps.external_protocol_cache and the tool body can return it.
+                "payload_json": payload_raw,
             }
         }
         if deps.tool_calls:
@@ -255,7 +390,12 @@ async def send_message_streaming(
             await writer.execute(
                 update(ChatSession)
                 .where(ChatSession.id == session_pk)
-                .values(ai_message_history=history_payload)
+                .values(
+                    ai_message_history=history_payload,
+                    external_protocol_cache=_trim_external_protocol_cache(
+                        deps.external_protocol_cache
+                    ),
+                )
             )
             await writer.commit()
             await writer.refresh(placeholder)
@@ -325,7 +465,12 @@ async def send_message_streaming(
         await writer.execute(
             update(ChatSession)
             .where(ChatSession.id == session_pk)
-            .values(ai_message_history=history_payload)
+            .values(
+                ai_message_history=history_payload,
+                external_protocol_cache=_trim_external_protocol_cache(
+                    deps.external_protocol_cache
+                ),
+            )
         )
         await writer.commit()
         await writer.refresh(assistant_msg)
@@ -372,6 +517,8 @@ async def resume_message_streaming(
     approved: bool,
     user_id: UUID,
     is_org_admin: bool,
+    edited_steps: list[dict[str, Any]] | None = None,
+    deviations: list[str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Resume a chat turn that paused on a DeferredToolRequests gate.
 
@@ -379,16 +526,22 @@ async def resume_message_streaming(
     ``agent.run`` with ``deferred_tool_results=DeferredToolResults(...)`` and
     the session's existing message history. The placeholder ASSISTANT row is
     updated in place with the final content — no duplicate is created.
+
+    On approval, the frontend may pass ``edited_steps`` (user's inline
+    edits to the procedure) and ``deviations`` (a human-readable diff like
+    ``["Removed step: spin 5 min"]``). We rewrite the cached payload's
+    ``steps`` with the edited list and stash ``deviations`` on
+    ``deps.user_deviations`` so the approval tool body folds them into its
+    sentinel + audit row. Both are ignored on rejection.
     """
     session_pk: UUID = session.id
     session_org_id: UUID = session.org_id
     existing_history = session.ai_message_history
 
-    decision_text = (
-        "Approved external protocol conversion."
-        if approved
-        else "Rejected the external protocol conversion."
-    )
+    if approved:
+        decision_text = "Approved external protocol conversion."
+    else:
+        decision_text = "Rejected the external protocol conversion."
     user_msg = ChatMessage(
         session_id=session_pk,
         role=ChatMessageRole.USER,
@@ -406,6 +559,29 @@ async def resume_message_streaming(
         user_id=user_id,
         is_org_admin=is_org_admin,
     )
+
+    # Seed from the session's persisted cache first, then layer the placeholder
+    # metadata on top (it may contain the user's edited steps applied below).
+    deps.external_protocol_cache = dict(session.external_protocol_cache or {})
+
+    # Rehydrate the server-side payload cache from the placeholder metadata so
+    # the approval tool body (which runs during this resume) finds the payload
+    # that was originally fetched in the initial turn.
+    pending = (placeholder.metadata_ or {}).get("pending_approval") or {}
+    cached_url = pending.get("source_url")
+    cached_payload = pending.get("payload_json")
+    if cached_url and cached_payload:
+        payload_for_cache = _apply_edited_steps(
+            cached_payload,
+            edited_steps if approved else None,
+            session_pk,
+        )
+        deps.external_protocol_cache[cached_url] = payload_for_cache
+
+    if approved and deviations:
+        deps.user_deviations = [
+            d.strip() for d in deviations if isinstance(d, str) and d.strip()
+        ]
 
     event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
@@ -532,7 +708,12 @@ async def resume_message_streaming(
         await writer.execute(
             update(ChatSession)
             .where(ChatSession.id == session_pk)
-            .values(ai_message_history=history_payload)
+            .values(
+                ai_message_history=history_payload,
+                external_protocol_cache=_trim_external_protocol_cache(
+                    deps.external_protocol_cache
+                ),
+            )
         )
         await writer.commit()
 

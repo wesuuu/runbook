@@ -1,0 +1,50 @@
+{{back to protocols}}
+==Materials==
+*Plate of cells to be made competent
+*[[TSS|TSS buffer]]
+*[[LB|LB media]]
+*Ice
+==Glassware & Equipment==
+*Falcon tubes
+*500&mu;l Eppendorf tubes, on ice
+*200ml conical flask
+*200&mu;l pipetman or repeating pipettor
+*5ml pipette
+
+==Preparation==
+#Grow a 5 mL [[Bacterial cell culture|seed culture]] of cells in LB medium to saturation.  Dilute this culture back into 25–50 mL fresh LB in a 200 mL conical flask.  You should aim to dilute the seed culture by at least 1/100.
+#Grow the diluted culture at 30-37C and 250-400 RPM to an OD<sub>600</sub> = 0.2–0.5. (You will get a very small pellet if you grow 25 mL to OD<sub>600</sub> = 0.2)
+#Put eppendorf tubes on ice now so that they are cold when cells are aliquotted into them later.  If your culture is X ml, you will need X tubes.  At this point you should also make sure that your [[TSS]] is being chilled (it should be stored at 4°C but if you have just made it fresh then put it in an ice bath).
+#*<small>250 µL PCR tubes also work when aliquotting ≈50 µL cells. They save space and can be heat/cold-shocked on a thermocycler. 3 volumes recovery medium can be added directly to the tube and incubated stationary without apparent efficiency loss ([[User:Shyam_Bhakta|Dueber & Bennett Labs]]).</small>
+#Split the culture into two 50 mL falcon tubes and incubate on ice for 10 min.
+'''All subsequent steps should be carried out at 4°C and the cells should be kept on ice wherever possible'''
+#Centrifuge for 10 min at 3000 rpm and 4°C.
+#Remove supernatant.  The cell pellets should be sufficiently solid that you can just pour off the supernatant if you are careful.  Pipette out any remaining media.
+#Resuspend cells in chilled [[TSS]] buffer.  The volume of [[TSS]] to use is 10% of the culture volume that you spun down.  You may need to vortex gently to fully resuspend the culture, keep an eye out for small cell aggregates even after the pellet is completely off the wall.
+#*Higher concentrations of cells (2–3×) are found to enhance efficiency, requiring cell resuspension in 3–5% culture volume of TSS instead of 10% ([[User:Shyam_Bhakta|Dueber & Bennett Lab]]).
+#Add 100 µL aliquots to your chilled eppendorfs and store at -80°C.
+#*The original paper <cite> chung </cite> suggests freezing the cells immediately using a dry ice bath.  I ([[Barry Canton|BC]]) have used liquid nitrogen quite successfully instead of dry ice. Simply placing the cells at -80°C also seems to work well ([[User:Jkm|Jkm]]).
+#*If you run a control every time you clone (i.e. a vector-only ligation), you can as well freeze cells in 200 µL aliquots. Unused cells can be frozen back once and reused, albeit with some loss of competence.
+#It is a good idea to run a positive control on the cells.
+#*The [[Endy Lab]] is trying to use a standard positive control to better compare (and hopefully improve) the transformation efficiencies in the lab, you can check it out [[Endy:Standard transformation positive control|here]].
+
+==Notes==
+*Note1: CT Chung paper recommends long storage of TSS competent cells at -70˚C, while people have been using a wide range of temperatures from -20˚C to -140˚C for long term storage.
+
+==Related topics & References==
+*[[TSS|Preparing TSS buffer]]
+*[[Transforming chemically competent cells]]''
+*[[Electrocompetent cells|Preparing electrocompetent cells]]
+*[[Electroporation]]
+*[[Bacterial cell culture]]
+
+Based on a protocol from [[Kathleen McGinness]], annotated by [[Josh Michener]] & [[Barry Canton]].  Original protocol published by Chung et al.<cite>chung </cite> <cite> chung2</cite>
+
+<biblio>
+#chung pmid=2648393
+#chung2 pmid=8510550
+</biblio>
+
+[[Category:Protocol]]
+[[Category:In vivo]]
+[[Category:Escherichia coli]]

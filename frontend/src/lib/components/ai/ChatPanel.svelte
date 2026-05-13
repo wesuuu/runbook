@@ -303,7 +303,7 @@
                                     sourceUrl={pendingApproval.source_url}
                                     payloadPreview={pendingApproval.payload_preview}
                                     pending={submittingApproval}
-                                    onApprove={() => submitApproval(true)}
+                                    onApprove={(_id, submission) => submitApproval(true, submission)}
                                     onReject={() => submitApproval(false)}
                                 />
                             </div>

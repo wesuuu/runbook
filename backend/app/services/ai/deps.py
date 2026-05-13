@@ -33,11 +33,16 @@ class ChatDeps:
     sources: list[RetrievedChunk] = field(default_factory=list)
     tool_calls: list[dict] = field(default_factory=list)
     subagents: dict[str, Any] = field(default_factory=dict)
-    # Per-request callback that emits ("tool_start", name) / ("tool_end", name)
-    # events to the chat SSE stream. Subagent tool wrappers invoke this so
-    # inner tool calls surface in the thinking indicator (F-0083). Setting
-    # `event_stream_handler` on a subagent forces streaming mode, which some
-    # models (e.g. Ollama gpt-oss) reject — hence the deps-callback route.
+    # Cache of external protocol payloads keyed by source URL — the LLM
+    # would otherwise round-trip multi-KB JSON and sometimes truncates it,
+    # dropping steps.
+    external_protocol_cache: dict[str, str] = field(default_factory=dict)
+    # Human-readable deviation strings from the user's inline edits on the
+    # approval card. Stashed by the resume path so the approval tool body
+    # can fold them into the sentinel + audit row.
+    user_deviations: list[str] = field(default_factory=list)
+    # Setting event_stream_handler on a subagent forces streaming mode, which
+    # some models (Ollama gpt-oss) reject — hence the deps-callback route.
     tool_event_callback: Callable[[str, str], Awaitable[None]] | None = None
 
     def clone_for_subagent(self, max_depth: int = 0) -> "ChatDeps":
@@ -59,5 +64,7 @@ class ChatDeps:
             sources=self.sources,
             tool_calls=self.tool_calls,
             subagents={} if max_depth <= 0 else self.subagents,
+            external_protocol_cache=self.external_protocol_cache,
+            user_deviations=self.user_deviations,
             tool_event_callback=self.tool_event_callback,
         )

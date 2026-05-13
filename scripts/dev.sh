@@ -22,7 +22,9 @@ trap cleanup EXIT INT TERM
 (
   cd "$ROOT/backend"
   source .venv/bin/activate
-  exec uvicorn app.main:app --reload --host 0.0.0.0
+  # --reload-include '*.md' so prompt edits (chat_agent.md, subagent
+  # prompt.md) take effect without a manual restart.
+  exec uvicorn app.main:app --reload --reload-include '*.md' --host 0.0.0.0
 ) &
 BACKEND_PID=$!
 

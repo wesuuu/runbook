@@ -1,4 +1,12 @@
-"""Approval tool: feature flag gating + audit row + sentinel return string."""
+"""Approval tool: feature flag gating + audit row + sentinel return string.
+
+The approval tool no longer accepts ``payload_json`` from the LLM — the
+canonical payload is cached server-side on
+``ChatDeps.external_protocol_cache`` (keyed by ``source_url``) and the
+tool body looks it up. User-requested deviations also come server-side
+on ``ChatDeps.user_deviations`` (computed by the frontend from inline
+edits to the approval card), not from LLM-passed args.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +32,8 @@ class _FakeDeps:
     is_org_admin: bool = False
     sources: list = field(default_factory=list)
     tool_calls: list = field(default_factory=list)
+    external_protocol_cache: dict[str, str] = field(default_factory=dict)
+    user_deviations: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -37,47 +47,101 @@ def _enable(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_returns_sentinel_with_payload():
-    payload = {
-        "title": "X",
-        "source_url": "https://openwetware.org/wiki/X",
-        "steps": [],
-    }
-    ctx = _FakeCtx(deps=_FakeDeps())
+async def test_returns_sentinel_with_cached_payload_and_project():
+    url = "https://openwetware.org/wiki/X"
+    payload = {"title": "X", "source_url": url, "steps": []}
+    deps = _FakeDeps()
+    deps.external_protocol_cache[url] = json.dumps(payload)
+    ctx = _FakeCtx(deps=deps)
+
     result = await create_protocol_from_external_source(
-        ctx,
-        payload_json=json.dumps(payload),
-        title="X",
-        source_url="https://openwetware.org/wiki/X",
+        ctx, source_url=url, title="X", project_name="Cell Culture"
     )
+
     assert result.startswith(APPROVED_SENTINEL)
-    assert "https://openwetware.org/wiki/X" in result
-    assert ctx.deps.tool_calls[-1]["tool"] == "create_protocol_from_external_source"
-    assert ctx.deps.tool_calls[-1]["approved"] is True
+    sentinel, project_line, deviations_line, body = result.split("\n", 3)
+    assert project_line == "Cell Culture"
+    assert json.loads(deviations_line) == []
+    assert json.loads(body)["source_url"] == url
+    audit = ctx.deps.tool_calls[-1]
+    assert audit["tool"] == "create_protocol_from_external_source"
+    assert audit["approved"] is True
+    assert audit["project_name"] == "Cell Culture"
+    assert audit["deviations"] == []
+
+
+@pytest.mark.asyncio
+async def test_threads_user_deviations_from_deps_into_sentinel_and_audit():
+    """The frontend computes deviation strings from the user's inline
+    edits to the approval card and posts them to /approve, where
+    resume_message_streaming stashes them on deps.user_deviations. The
+    tool body folds them into the sentinel + audit row."""
+    url = "https://openwetware.org/wiki/X"
+    deps = _FakeDeps()
+    deps.external_protocol_cache[url] = json.dumps({"title": "X", "steps": []})
+    deps.user_deviations = [
+        "Removed step: spin 5 min",
+        "  ",
+        "Edited step: ~~heat 60s~~ heat 30s",
+    ]
+    ctx = _FakeCtx(deps=deps)
+
+    result = await create_protocol_from_external_source(
+        ctx, source_url=url, title="X", project_name="Cell Culture"
+    )
+
+    sentinel, project_line, deviations_line, _body = result.split("\n", 3)
+    assert sentinel == APPROVED_SENTINEL
+    assert json.loads(deviations_line) == [
+        "Removed step: spin 5 min",
+        "Edited step: ~~heat 60s~~ heat 30s",
+    ]
+    audit = ctx.deps.tool_calls[-1]
+    assert audit["deviations"] == [
+        "Removed step: spin 5 min",
+        "Edited step: ~~heat 60s~~ heat 30s",
+    ]
 
 
 @pytest.mark.asyncio
 async def test_raises_when_feature_disabled(monkeypatch):
     monkeypatch.setattr(settings.features.external_protocols, "enabled", False)
-    ctx = _FakeCtx(deps=_FakeDeps())
+    deps = _FakeDeps()
+    deps.external_protocol_cache["https://openwetware.org/wiki/X"] = "{}"
+    ctx = _FakeCtx(deps=deps)
     with pytest.raises(ValueError, match="disabled"):
         await create_protocol_from_external_source(
             ctx,
-            payload_json="{}",
-            title="X",
             source_url="https://openwetware.org/wiki/X",
+            title="X",
+            project_name="P",
         )
 
 
 @pytest.mark.asyncio
-async def test_rejects_payload_json_that_does_not_parse():
+async def test_raises_when_payload_not_cached():
     ctx = _FakeCtx(deps=_FakeDeps())
-    with pytest.raises(ValueError, match="payload_json"):
+    with pytest.raises(ValueError, match="cache"):
         await create_protocol_from_external_source(
             ctx,
-            payload_json="not-json",
-            title="X",
-            source_url="https://openwetware.org/wiki/X",
+            source_url="https://openwetware.org/wiki/missing",
+            title="missing",
+            project_name="P",
+        )
+
+
+@pytest.mark.asyncio
+async def test_raises_when_project_name_missing():
+    """The user must pick a destination project before approval — surfaced
+    on the approval card. Blank/whitespace `project_name` is a hard error.
+    """
+    url = "https://openwetware.org/wiki/X"
+    deps = _FakeDeps()
+    deps.external_protocol_cache[url] = json.dumps({"title": "X", "steps": []})
+    ctx = _FakeCtx(deps=deps)
+    with pytest.raises(ValueError, match="project_name"):
+        await create_protocol_from_external_source(
+            ctx, source_url=url, title="X", project_name="   "
         )
 
 

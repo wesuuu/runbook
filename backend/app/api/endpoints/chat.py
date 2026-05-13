@@ -329,6 +329,12 @@ async def approve_chat_message(
                 approved=body.approved,
                 user_id=current_user.id,
                 is_org_admin=is_org_admin,
+                edited_steps=(
+                    [s.model_dump() for s in body.edited_steps]
+                    if body.edited_steps is not None
+                    else None
+                ),
+                deviations=body.deviations,
             ):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as exc:
