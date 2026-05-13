@@ -1,0 +1,177 @@
+"""Background coroutine that runs the ext/ docling extractor against one document.
+
+The actual docling/torch/easyocr work runs in a subprocess against the
+standalone ``ext/docling-extractor/`` project's venv. This module owns
+the DB session lifecycle, BackgroundJob row, status transitions, and
+artifact ingestion — it never imports docling itself.
+
+Registers under the name "document_extract" via @register_job.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
+
+from app.core.config import settings
+from app.models.jobs import BackgroundJob
+from app.models.library import (Document, DocumentSourceFormat, DocumentStatus,
+                                 RefinementStatus)
+from app.services.core.background_handler import register_job
+from app.services.core.background_jobs import BackgroundJobService
+from app.services.core.file_storage import FileStorageService
+
+logger = logging.getLogger(__name__)
+
+
+_MIME_TO_FORMAT = {
+    "application/pdf": DocumentSourceFormat.PDF,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        DocumentSourceFormat.DOCX,
+    "image/jpeg": DocumentSourceFormat.IMAGE,
+    "image/png": DocumentSourceFormat.IMAGE,
+    "image/tiff": DocumentSourceFormat.IMAGE,
+    "image/webp": DocumentSourceFormat.IMAGE,
+}
+
+
+def _resolve_paths(doc: Document) -> tuple[Path, Path]:
+    storage = FileStorageService()
+    input_path = storage.resolve_path(doc.file_path)
+    output_dir = storage.storage_root / "documents" / str(doc.id)
+    return input_path, output_dir
+
+
+async def _load_and_claim_document(
+    session: AsyncSession, document_id: UUID
+) -> tuple[Document | None, BackgroundJob | None]:
+    result = await session.execute(
+        select(Document).where(Document.id == document_id).with_for_update(skip_locked=True)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        return None, None
+
+    job = await BackgroundJobService.create(
+        session, "document_extract", "document", document_id,
+        input_data={"mime_type": doc.mime_type},
+    )
+    doc.status = DocumentStatus.EXTRACTING.value
+    doc.processing_started_at = datetime.now(timezone.utc)
+    doc.source_format = _MIME_TO_FORMAT[doc.mime_type].value
+    doc.ocr_engine = "easyocr"
+    await session.commit()
+    return doc, job
+
+
+async def _persist_success(
+    session: AsyncSession, doc: Document, job: BackgroundJob, output_dir: Path,
+) -> None:
+    result_payload: dict[str, Any] = json.loads(
+        (output_dir / "result.json").read_text()
+    )
+    refined = (output_dir / "refined.md").read_text()
+    storage = FileStorageService()
+
+    doc.stored_markdown = refined
+    doc.images_dir = str(
+        (output_dir / "images").relative_to(storage.storage_root)
+    )
+    doc.page_count = result_payload.get("page_count")
+    doc.refinement_flags = result_payload.get("flags", [])
+    flags = doc.refinement_flags
+    doc.refinement_status = (
+        RefinementStatus.PENDING.value if flags
+        else RefinementStatus.NOT_REQUIRED.value
+    )
+    doc.status = DocumentStatus.AWAITING_REFINEMENT.value
+    doc.processing_started_at = None
+
+    await BackgroundJobService.complete(
+        session, job,
+        output_data={
+            "page_count": doc.page_count,
+            "flag_count": len(flags),
+            "image_count": result_payload.get("image_count", 0),
+        },
+    )
+    await session.commit()
+
+
+async def _persist_failure(
+    session: AsyncSession, document_id: UUID, job: BackgroundJob | None, message: str,
+) -> None:
+    await session.rollback()
+    result = await session.execute(
+        select(Document).where(Document.id == document_id)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is not None:
+        doc.status = DocumentStatus.FAILED.value
+        doc.error_message = f"Extraction error: {message[:500]}"
+        doc.processing_started_at = None
+    if job is not None:
+        job_result = await session.execute(
+            select(BackgroundJob).where(BackgroundJob.id == job.id)
+        )
+        job = job_result.scalar_one_or_none()
+        if job is not None:
+            await BackgroundJobService.fail(session, job, message[:500])
+    await session.commit()
+
+
+@register_job("document_extract")
+async def run_extraction(document_id: UUID) -> None:
+    import app.db.base  # noqa: F401
+
+    engine = create_async_engine(settings.database_url)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        doc, job = await _load_and_claim_document(session, document_id)
+        if doc is None:
+            logger.info("Document %s not found or locked", document_id)
+            await engine.dispose()
+            return
+
+        input_path, output_dir = _resolve_paths(doc)
+        if output_dir.exists():
+            shutil.rmtree(output_dir, ignore_errors=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                settings.docling_script_python,
+                settings.docling_script_path,
+                "--input", str(input_path),
+                "--output-dir", str(output_dir),
+                "--num-threads", str(settings.docling_num_threads),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                msg = stderr.decode(errors="replace") or stdout.decode(errors="replace")
+                logger.error(
+                    "docling subprocess failed (rc=%s) for %s: %s",
+                    proc.returncode, document_id, msg[:500],
+                )
+                await _persist_failure(session, document_id, job, msg)
+                return
+
+            await _persist_success(session, doc, job, output_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Extraction failed for document %s", document_id)
+            await _persist_failure(session, document_id, job, str(exc))
+        finally:
+            await engine.dispose()
