@@ -24,12 +24,15 @@ def mock_processor():
         yield
 
 
+_PDF_CONTENT = b"%PDF-1.4\n%minimal\n"
+
+
 def _make_upload(
     client: AsyncClient,
     auth_headers: dict,
-    content: bytes = b"Hello, world!",
-    filename: str = "test.txt",
-    mime_type: str = "text/plain",
+    content: bytes = _PDF_CONTENT,
+    filename: str = "test.pdf",
+    mime_type: str = "application/pdf",
     title: str = "Test Document",
     project_id: str | None = None,
     tags: str | None = None,
@@ -53,15 +56,18 @@ def _make_upload(
 
 
 @pytest.mark.asyncio
-async def test_upload_txt_document_returns_201(
+async def test_upload_rejects_text_plain(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
-    resp = await _make_upload(client, auth_headers)
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["title"] == "Test Document"
-    assert body["mime_type"] == "text/plain"
-    assert body["status"] == "UPLOADED"
+    """text/plain is no longer an allowed document type (Task 5 / TD-0085)."""
+    resp = await _make_upload(
+        client,
+        auth_headers,
+        content=b"Hello, world!",
+        filename="test.txt",
+        mime_type="text/plain",
+    )
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -92,8 +98,9 @@ async def test_upload_sets_correct_response_fields(
     body = resp.json()
     assert "id" in body
     assert body["title"] == "My Doc"
-    assert body["original_filename"] == "test.txt"
-    assert body["file_size_bytes"] == len(b"Hello, world!")
+    assert body["original_filename"] == "test.pdf"
+    assert body["mime_type"] == "application/pdf"
+    assert body["file_size_bytes"] == len(_PDF_CONTENT)
     assert body["status"] == "UPLOADED"
     assert "created_at" in body
     assert "updated_at" in body
@@ -105,7 +112,7 @@ async def test_upload_writes_file_to_disk(
 ):
     from app.services.core.file_storage import FileStorageService
 
-    resp = await _make_upload(client, auth_headers, content=b"disk check")
+    resp = await _make_upload(client, auth_headers, content=b"%PDF-1.4\ndisk check")
     assert resp.status_code == 201
     body = resp.json()
     # The file_path is now a relative path resolved via FileStorageService
@@ -474,8 +481,9 @@ async def test_upload_rejects_path_traversal_filename(
     resp = await _make_upload(
         client,
         auth_headers,
-        filename="../../../etc/passwd",
-        mime_type="text/plain",
+        content=_PDF_CONTENT,
+        filename="../../../etc/passwd.pdf",
+        mime_type="application/pdf",
     )
     # Should succeed but the filename should be sanitized
     assert resp.status_code == 201
