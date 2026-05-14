@@ -341,6 +341,11 @@ async def get_document(
         can_delete=can_delete,
         processing_progress=progress,
         table_of_contents=toc_entries,
+        source_format=doc.source_format,
+        refinement_status=doc.refinement_status,
+        refinement_flags=doc.refinement_flags,
+        refined_by_id=doc.refined_by_id,
+        refined_at=doc.refined_at,
     )
 
 
