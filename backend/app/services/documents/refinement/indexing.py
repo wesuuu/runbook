@@ -12,18 +12,12 @@ from uuid import UUID
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.library import (EMBEDDING_DIMENSIONS, Document, DocumentChunk,
-                                DocumentStatus)
+from app.models.library import Document, DocumentChunk, DocumentStatus
 from app.services.ai.embedding import embed_texts
+from app.services.documents.document_processor import _pad_embedding
 from app.services.documents.markdown_chunker import chunk_markdown
 
 logger = logging.getLogger(__name__)
-
-
-def _pad_embedding(vec: list[float]) -> list[float]:
-    if len(vec) >= EMBEDDING_DIMENSIONS:
-        return vec[:EMBEDDING_DIMENSIONS]
-    return list(vec) + [0.0] * (EMBEDDING_DIMENSIONS - len(vec))
 
 
 async def index_refined_document(
