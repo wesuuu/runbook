@@ -9,7 +9,7 @@ Create Date: 2026-05-13
 from alembic import op
 import sqlalchemy as sa
 
-revision = "f0042_add_extraction_heartbeat_columns"
+revision = "f0042_add_heartbeat_columns"
 down_revision = "f0041_docling_document_columns"
 branch_labels = None
 depends_on = None

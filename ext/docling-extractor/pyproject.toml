@@ -9,6 +9,7 @@ package-mode = false
 python = "^3.11"
 docling = "^2.93"
 pillow = "^10.0"
+easyocr = "^1.7"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
