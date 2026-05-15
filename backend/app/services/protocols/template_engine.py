@@ -13,6 +13,69 @@ from typing import Any
 from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage, RichText
 
+# SOP typography (raw half-points; see "Pt()" footnote below the RichText
+# helpers in this file). Body 11pt, meta 10pt, role header 14pt.
+_BODY_HP = 22
+_META_HP = 20
+_ROLE_HP = 28
+_INK = "#1F2937"
+_INK_DEEP = "#0F172A"
+_INK_MUTED = "#64748B"
+_SERIF = "Cambria"
+_SANS = "Calibri"
+
+
+def _build_sop_body(
+    step_number: int,
+    name: str,
+    desc: str,
+    param_sentence: str,
+    duration_min: int | None,
+) -> RichText:
+    """Compose a SOP procedure step as a single paragraph with soft
+    line breaks. Hanging indent + tab stop on the template paragraph
+    aligns the number column; wrapped lines hang under the step text.
+
+    Layout:
+        N.<TAB><bold step name>
+                <description>
+                <param sentence>
+                Allow N minutes for this step.
+    """
+    rt = RichText()
+    # Number column — sans, distinct from prose
+    rt.add(
+        f"{step_number}.\t",
+        bold=True,
+        size=_BODY_HP,
+        color=_INK_DEEP,
+        font=_SANS,
+    )
+    if name:
+        rt.add(name, bold=True, size=_BODY_HP, color=_INK_DEEP, font=_SERIF)
+    if desc:
+        rt.add("\n")
+        rt.add(desc, size=_BODY_HP, color=_INK, font=_SERIF)
+    if param_sentence:
+        rt.add("\n")
+        rt.add(
+            param_sentence,
+            italic=True,
+            size=_META_HP,
+            color=_INK_MUTED,
+            font=_SERIF,
+        )
+    if duration_min:
+        rt.add("\n")
+        rt.add(
+            f"Allow {duration_min} minutes for this step.",
+            italic=True,
+            size=_META_HP,
+            color=_INK_MUTED,
+            font=_SERIF,
+        )
+    return rt
+
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.documents.pdf_base import (_build_param_sentence,
                                              _format_value,
@@ -285,10 +348,11 @@ def build_context(
             if sid:
                 figure_map.setdefault(sid, []).append(fig_counter)
 
-    # Build step contexts for the flat step list (batch record table)
+    # Build step contexts for the flat step list (batch record table
+    # and flat-mode SOP procedure)
     step_contexts = []
     _cumulative_min = 0
-    for step in flat_steps or []:
+    for _flat_idx, step in enumerate(flat_steps or [], start=1):
         step_id = step.get("id", "")
         sd = exec_data.get(step_id, {})
         results = sd.get("results", {})
@@ -438,6 +502,17 @@ def build_context(
                 parts.append(figure_refs)
             notes_display = "  ".join(parts)
 
+        # sop_body is consumed by the flat-mode SOP procedure section.
+        # Role-based SOP uses the per-role sop_steps built below; this
+        # one is for the {%p else %} branch of the procedure template.
+        flat_sop_body = _build_sop_body(
+            step_number=_flat_idx,
+            name=step.get("name", ""),
+            desc=desc,
+            param_sentence=param_sentence,
+            duration_min=step.get("duration_min"),
+        )
+
         step_ctx = {
             "_step_id": step_id,
             "name": step.get("name", ""),
@@ -457,6 +532,7 @@ def build_context(
             "notes_text": step_notes_text,
             "figure_refs": figure_refs,
             "notes_display": notes_display,
+            "sop_body": flat_sop_body,
         }
         # Per-step scheduling on the global timeline.
         _cumulative_min = _apply_step_timing(
@@ -485,7 +561,7 @@ def build_context(
         br_steps = []
         # Per-role timeline restarts at start_time.
         _cumulative_min = 0
-        for s in role_data.get("steps", []):
+        for step_idx, s in enumerate(role_data.get("steps", []), start=1):
             # SOP-style step
             desc = s.get("description", "") or ""
             params = s.get("params") or {}
@@ -497,33 +573,13 @@ def build_context(
             if not has_templates:
                 param_sentence = _build_param_sentence(params, param_schema)
 
-            # Pre-compute step body as RichText to avoid empty
-            # conditional paragraphs in the Word output. First line
-            # carries the bold step name so the procedure reads as a
-            # numbered list of instructions; sub-lines (param sentence,
-            # duration hint) hang indented underneath.
-            sop_body = RichText()
-            step_name = s.get("name", "")
-            if step_name:
-                sop_body.add(step_name, bold=True, size=20, color="#0F172A")
-            if desc:
-                if step_name:
-                    sop_body.add(" — ", size=20, color="#0F172A")
-                sop_body.add(desc, size=20, color="#334155")
-            if param_sentence:
-                if step_name or desc:
-                    sop_body.add("\a")
-                sop_body.add(f"    {param_sentence}", size=20, color="#334155")
-            duration = s.get("duration_min")
-            if duration:
-                if step_name or desc or param_sentence:
-                    sop_body.add("\a")
-                sop_body.add(
-                    f"    Allow {duration} minutes for this step.",
-                    size=20,
-                    color="#64748B",
-                    italic=True,
-                )
+            sop_body = _build_sop_body(
+                step_number=step_idx,
+                name=s.get("name", ""),
+                desc=desc,
+                param_sentence=param_sentence,
+                duration_min=s.get("duration_min"),
+            )
 
             sop_steps.append(
                 {
@@ -576,18 +632,32 @@ def build_context(
         process_desc = role_data.get("process_description", "")
         header_name = process_name or role_name
 
+        # Role header \u2014 a single paragraph the template paragraph wraps
+        # with a bottom border, so we don't draw a Unicode rule inline.
+        # process_desc (if any) sits on a soft line break in the same
+        # paragraph, italicized and muted; \f forces a page break before
+        # non-first roles so each role's procedure starts on its own page.
         sop_header = RichText()
         is_first_role = len(role_contexts) == 0
-        # Page break before non-first roles
         if not is_first_role:
             sop_header.add("\f")
         if header_name:
-            sop_header.add(header_name, bold=True, size=28)
+            sop_header.add(
+                header_name,
+                bold=True,
+                size=_ROLE_HP,
+                color=_INK_DEEP,
+                font=_SANS,
+            )
             if process_desc:
-                sop_header.add("\a")  # new paragraph
-                sop_header.add(process_desc, size=20, color="#64748B")
-            sop_header.add("\a")
-            sop_header.add("\u2500" * 50, size=12, color="#C8C8C8")
+                sop_header.add("\n")
+                sop_header.add(
+                    process_desc,
+                    italic=True,
+                    size=_META_HP,
+                    color=_INK_MUTED,
+                    font=_SERIF,
+                )
 
         # Pre-compute batch record header (page break + role name)
         br_header = RichText()

@@ -178,15 +178,16 @@ def build_p1() -> BuiltPermutation:
         per_template_expected_on={
             "sop": [
                 "Kitchen Sink", "SOP-CC-001",
-                # Section headings — each gated on the matching field
-                "Purpose", "Scope", "Definitions", "References",
+                # Section headings render uppercase per the SOP design;
+                # match the rendered casing so the assertion is stable.
+                "PURPOSE", "SCOPE", "DEFINITIONS", "REFERENCES",
                 # Body text from the populated metadata fields
                 "Define the cell culture", "Applies to clone PD-7",
                 "CIP = clean-in-place", "ICH Q7",
                 # Revision history table
-                "Revision History", "Initial release", "Tightened acceptance",
+                "REVISION HISTORY", "Initial release", "Tightened acceptance",
                 # Equipment + Approval + Procedure structural sections
-                "Equipment", "Bioreactor", "Procedure", "Approval",
+                "EQUIPMENT", "Bioreactor", "PROCEDURE", "APPROVAL",
             ],
             "batch_record": [
                 "Kitchen Sink",
