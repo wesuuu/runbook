@@ -122,6 +122,14 @@ async def create_protocol(
         graph=protocol.graph,
         sop_template_id=sop_tpl_id,
         batch_record_template_id=br_tpl_id,
+        # QA-0008: GxP metadata
+        doc_number=protocol.doc_number,
+        effective_date=protocol.effective_date,
+        supersedes_date=protocol.supersedes_date,
+        purpose=protocol.purpose,
+        scope=protocol.scope,
+        references=protocol.references,
+        definitions=protocol.definitions,
     )
     db.add(new_protocol)
     await db.flush()

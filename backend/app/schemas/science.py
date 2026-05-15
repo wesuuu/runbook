@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
@@ -85,6 +85,14 @@ class ProtocolBase(BaseModel):
 class ProtocolCreate(ProtocolBase):
     project_id: Optional[UUID] = None
     organization_id: Optional[UUID] = None
+    # QA-0008: GxP metadata
+    doc_number: Optional[str] = None
+    effective_date: Optional[date] = None
+    supersedes_date: Optional[date] = None
+    purpose: Optional[str] = None
+    scope: Optional[str] = None
+    references: Optional[str] = None
+    definitions: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -94,6 +102,14 @@ class ProtocolUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     graph: Optional[Dict[str, Any]] = None
+    # QA-0008: GxP metadata
+    doc_number: Optional[str] = None
+    effective_date: Optional[date] = None
+    supersedes_date: Optional[date] = None
+    purpose: Optional[str] = None
+    scope: Optional[str] = None
+    references: Optional[str] = None
+    definitions: Optional[str] = None
 
 
 class ProtocolResponse(ProtocolBase):
@@ -113,6 +129,14 @@ class ProtocolResponse(ProtocolBase):
     latest_signature_statement: Optional[str] = None
     latest_approval_comment: Optional[str] = None
     roles: List[ProtocolRoleResponse] = []
+    # QA-0008: GxP metadata
+    doc_number: Optional[str] = None
+    effective_date: Optional[date] = None
+    supersedes_date: Optional[date] = None
+    purpose: Optional[str] = None
+    scope: Optional[str] = None
+    references: Optional[str] = None
+    definitions: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -354,6 +378,9 @@ class RunCreate(BaseModel):
     protocol_version_number: Optional[int] = None
     experiment_id: Optional[UUID] = None
     overrides: Optional["RunOverrides"] = None
+    # QA-0008: GxP execution metadata
+    lot_number: Optional[str] = None
+    batch_number: Optional[str] = None
 
 
 class RunUpdate(BaseModel):
@@ -361,6 +388,9 @@ class RunUpdate(BaseModel):
     status: Optional[RunStatus] = None
     graph: Optional[Dict[str, Any]] = None
     execution_data: Optional[Dict[str, Any]] = None
+    # QA-0008: GxP execution metadata
+    lot_number: Optional[str] = None
+    batch_number: Optional[str] = None
 
 
 class RunResponse(RunBase):
@@ -373,6 +403,9 @@ class RunResponse(RunBase):
     is_strict: bool = False
     notes: list[RunNote] = Field(default_factory=list)
     attachments: list[RunAttachment] = Field(default_factory=list)
+    # QA-0008: GxP execution metadata
+    lot_number: Optional[str] = None
+    batch_number: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
