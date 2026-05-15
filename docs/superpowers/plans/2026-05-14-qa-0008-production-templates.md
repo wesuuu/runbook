@@ -1986,6 +1986,8 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 The filenames (`sop_default.docx`, `batch_record_default.docx`) are unchanged; this task verifies the seeder still works against the regenerated files and the system DocumentTemplate rows still point at them.
 
+> **Rollout note:** This task verifies seeder *copy* behavior under a temp dir. The live `<storage_root>/system/document_templates/` is **not** touched here — Task 21 handles that, gated on user verification. Phase 4 tests read the new templates directly from the repo path (`SOP_PATH`, `BR_PATH` constants), so end-to-end validation runs without disturbing the running app or its file storage.
+
 **Files:**
 - Modify (if needed): `backend/app/services/protocols/template_seeder.py`.
 - Test: `backend/tests/integration/test_template_seeder.py`.
@@ -2735,16 +2737,110 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
+### Task 21: User verification gate + filestorage refresh
+
+This task is **gated on explicit user approval** of the rendered artifacts produced by Task 20. Do not run any of the steps below until the user has reviewed the side-by-side PDFs under `tests/fixtures/template-permutations/rendered/` and given the go-ahead.
+
+Up to this point, every Phase 3 / Phase 4 change has lived in the repo: tests read templates from `backend/app/services/documents/templates/*.docx` directly, so we have full coverage without disturbing the running app or its `<storage_root>/system/document_templates/` files. The seeder only copies-on-startup; until the backend is restarted (or this task runs an explicit refresh), users of the running app still see the *old* templates.
+
+**Files:**
+- No new files. Operates on `<storage_root>/system/document_templates/`.
+
+- [ ] **Step 1: Pause for user verification**
+
+Before continuing, present the user with:
+- The path to rendered artifacts (`tests/fixtures/template-permutations/rendered/`).
+- The gap log (`tests/fixtures/template-permutations/gap-log.md`).
+- A summary of the catalog coverage matrix from the spec.
+
+Ask explicitly: "Approve replacing the live system-default templates at `<storage_root>/system/document_templates/`?"
+
+If they request changes → file new tasks, return to Phase 3 / 4 iteration, do not proceed.
+
+If they approve → continue.
+
+- [ ] **Step 2: Identify the live storage root**
+
+```bash
+# Default for local dev (unless BATCHRITE_STORAGE_ROOT is set):
+echo "${BATCHRITE_STORAGE_ROOT:-./uploads}"
+ls -la "${BATCHRITE_STORAGE_ROOT:-./uploads}/system/document_templates/"
+```
+
+Confirm the directory contains `sop_default.docx` and `batch_record_default.docx`. If it doesn't, the seeder hasn't run yet — Step 4 below covers that case.
+
+- [ ] **Step 3: Back up the existing live templates**
+
+```bash
+STORAGE_ROOT="${BATCHRITE_STORAGE_ROOT:-./uploads}"
+TEMPLATES_DIR="${STORAGE_ROOT}/system/document_templates"
+BACKUP_DIR="${TEMPLATES_DIR}/_backup_$(date +%Y%m%d-%H%M%S)"
+mkdir -p "${BACKUP_DIR}"
+cp "${TEMPLATES_DIR}/sop_default.docx" "${BACKUP_DIR}/"
+cp "${TEMPLATES_DIR}/batch_record_default.docx" "${BACKUP_DIR}/"
+ls -la "${BACKUP_DIR}"
+```
+
+This creates an out-of-band backup so the swap is reversible without touching git. Quote the backup path back to the user.
+
+- [ ] **Step 4: Replace the live templates**
+
+Two options — pick one based on whether the backend can be restarted in this environment.
+
+**Option A — Restart the backend (preferred if a restart is acceptable):**
+
+```bash
+# Stop the running backend (kill the uvicorn process), then restart it:
+cd backend && source .venv/bin/activate
+uvicorn app.main:app --reload
+```
+
+The seeder runs in the FastAPI lifespan and re-copies the new files from `backend/app/services/documents/templates/` into `<storage_root>/system/document_templates/`.
+
+**Option B — Direct copy (no restart needed):**
+
+```bash
+STORAGE_ROOT="${BATCHRITE_STORAGE_ROOT:-./uploads}"
+TEMPLATES_DIR="${STORAGE_ROOT}/system/document_templates"
+cp backend/app/services/documents/templates/sop_default.docx "${TEMPLATES_DIR}/"
+cp backend/app/services/documents/templates/batch_record_default.docx "${TEMPLATES_DIR}/"
+```
+
+- [ ] **Step 5: Smoke-check in the app**
+
+Have the user load the protocol editor → preview the SOP and Batch Record for an existing protocol. Confirm the new structure renders and no Jinja tokens leak. If a regression surfaces, copy the backup back over the live files (Step 3's `BACKUP_DIR`).
+
+- [ ] **Step 6: File the follow-up F-tickets**
+
+Per the Follow-up F-tickets list below, file each in ClickUp with this plan as the linked reference:
+- Protocol metadata form on the Protocol settings page.
+- Reviewer-signature button + endpoint to write `execution_data[step].reviewed_by_user_id`.
+- `Equipment.serial_number` field + migration.
+- Endpoint to write `execution_data[step].started_at`.
+
+- [ ] **Step 7: Close the ClickUp task**
+
+Mark QA-0008 complete with a comment summarizing:
+- The new template surface (link to spec).
+- Path to the rendered artifacts.
+- Backup path from Step 3 (for rollback reference).
+- F-ticket IDs created in Step 6.
+
+No commit for this task — the actions are operational, not code changes. Commits are already in place from Tasks 1–20.
+
+---
+
 ## Stop condition
 
-Done when **all four** are true:
+Done when **all five** are true:
 
 1. Catalog coverage matrix in the spec (Section 4.3) green: every catalog row exercised by ≥1 of P1–P6, both ON and OFF where conditional.
 2. `pytest backend/tests/integration/test_template_permutations.py` green for all 10 parametrized cases + P1 endpoint test.
 3. `unresolved == []` returned by `build_context()` for every permutation.
 4. User signoff on the side-by-side review of the rendered PDFs.
+5. Task 21 complete: live templates in `<storage_root>/system/document_templates/` replaced, backup preserved, smoke-checked in the running app.
 
-## Follow-up F-tickets (file after Task 20)
+## Follow-up F-tickets (file in Task 21 Step 6)
 
 - **F-XXXX**: Frontend Protocol metadata form (doc_number, effective_date, supersedes_date, purpose, scope, references, definitions inputs on the Protocol settings page).
 - **F-XXXX**: Reviewer-signature button on completed steps in the run UI; endpoint to set `execution_data[step].reviewed_by_user_id` and `reviewed_at`.
