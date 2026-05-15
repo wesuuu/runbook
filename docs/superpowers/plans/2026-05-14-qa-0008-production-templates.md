@@ -18,12 +18,12 @@
 
 - `backend/alembic/versions/<rev>_add_protocol_gxp_metadata.py` — Migration A.
 - `backend/alembic/versions/<rev>_add_run_production_metadata.py` — Migration B.
-- `backend/tests/integration/fixtures/qa0008/__init__.py` — package marker.
-- `backend/tests/integration/fixtures/qa0008/builders.py` — pure-Python permutation builders (`build_p1()` … `build_p6()`). Returns `BuiltPermutation` dataclasses with `(build_context_kwargs, expected_on, expected_off)`.
-- `backend/tests/integration/test_qa0008_templates.py` — the 6-permutation test suite + P1 endpoint test.
-- `scripts/build_qa0008_templates.py` — python-docx authoring script. Idempotent, produces `sop_default.docx` and `batch_record_default.docx`.
-- `tests/fixtures/qa-0008/gap-log.md` — narrative audit log.
-- `tests/fixtures/qa-0008/rendered/.gitkeep` — output sink for `--write-artifacts`.
+- `backend/tests/integration/fixtures/template_permutations/__init__.py` — package marker.
+- `backend/tests/integration/fixtures/template_permutations/builders.py` — pure-Python permutation builders (`build_p1()` … `build_p6()`). Returns `BuiltPermutation` dataclasses with `(build_context_kwargs, expected_on, expected_off)`.
+- `backend/tests/integration/test_template_permutations.py` — the 6-permutation test suite + P1 endpoint test.
+- `scripts/build_default_templates.py` — python-docx authoring script. Idempotent, produces `sop_default.docx` and `batch_record_default.docx`.
+- `tests/fixtures/template-permutations/gap-log.md` — narrative audit log.
+- `tests/fixtures/template-permutations/rendered/.gitkeep` — output sink for `--write-artifacts`.
 
 ### Backend — modified
 
@@ -310,11 +310,11 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `backend/app/schemas/science.py`.
-- Test: `backend/tests/unit/test_schemas_qa0008.py`.
+- Test: `backend/tests/unit/test_protocol_run_schemas.py`.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `backend/tests/unit/test_schemas_qa0008.py`:
+Create `backend/tests/unit/test_protocol_run_schemas.py`:
 
 ```python
 """Unit tests for QA-0008 schema additions."""
@@ -379,7 +379,7 @@ def test_protocol_response_carries_gxp_fields():
 
 - [ ] **Step 2: Run test — expect FAIL**
 
-Run: `cd backend && source .venv/bin/activate && pytest tests/unit/test_schemas_qa0008.py -v`
+Run: `cd backend && source .venv/bin/activate && pytest tests/unit/test_protocol_run_schemas.py -v`
 Expected: FAIL — fields missing from one or more schemas.
 
 - [ ] **Step 3: Extend `ProtocolCreate`**
@@ -442,7 +442,7 @@ For `Protocol` create/update endpoints — same pattern for the seven GxP fields
 
 - [ ] **Step 7: Run test — expect PASS**
 
-Run: `cd backend && source .venv/bin/activate && pytest tests/unit/test_schemas_qa0008.py -v`
+Run: `cd backend && source .venv/bin/activate && pytest tests/unit/test_protocol_run_schemas.py -v`
 Expected: PASS.
 
 - [ ] **Step 8: Run integration tests touching protocol/run endpoints**
@@ -456,7 +456,7 @@ Expected: green. Investigate any failures introduced.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add backend/app/schemas/science.py backend/app/api/endpoints/science.py backend/tests/unit/test_schemas_qa0008.py
+git add backend/app/schemas/science.py backend/app/api/endpoints/science.py backend/tests/unit/test_protocol_run_schemas.py
 git commit -m "feat(schemas): expose Protocol GxP + Run lot/batch fields via API (QA-0008)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1124,12 +1124,12 @@ REQUIRED = {
 }
 
 
-def test_known_variables_contains_qa0008_surface():
+def test_known_variables_covers_expected_surface():
     missing = REQUIRED - KNOWN_VARIABLES
     assert missing == set(), f"missing from KNOWN_VARIABLES: {missing}"
 
 
-def test_parse_template_accepts_qa0008_tokens():
+def test_parse_template_accepts_extended_tokens():
     template = "\n".join(f"{{{{ {v} }}}}" for v in sorted(REQUIRED))
     result = parse_template(template)
     # parse_template returns (recognized, unrecognized) or similar; assert no unrecognized.
@@ -1508,13 +1508,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 13: Author `sop_default.docx` via python-docx script
 
 **Files:**
-- Create: `scripts/build_qa0008_templates.py` (Phase A: SOP only; Phase B in next task extends it).
+- Create: `scripts/build_default_templates.py` (Phase A: SOP only; Phase B in next task extends it).
 - Replaces: `backend/app/services/documents/templates/sop_default.docx`.
-- Test: `backend/tests/integration/test_qa0008_sop_template_smoke.py`.
+- Test: `backend/tests/integration/test_sop_template_smoke.py`.
 
 - [ ] **Step 1: Write the failing smoke test**
 
-Create `backend/tests/integration/test_qa0008_sop_template_smoke.py`:
+Create `backend/tests/integration/test_sop_template_smoke.py`:
 
 ```python
 """QA-0008: smoke test that the new SOP template parses and renders.
@@ -1571,17 +1571,17 @@ def test_sop_template_omits_optional_sections_when_blank():
 
 - [ ] **Step 2: Run test — expect FAIL** (template doesn't yet contain new sections)
 
-Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_qa0008_sop_template_smoke.py -v`
+Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_sop_template_smoke.py -v`
 
 - [ ] **Step 3: Create the SOP author script**
 
-Create `scripts/build_qa0008_templates.py`:
+Create `scripts/build_default_templates.py`:
 
 ```python
 """Build QA-0008 production-grade SOP + Batch Record .docx templates.
 
 Run from repo root:
-    python scripts/build_qa0008_templates.py
+    python scripts/build_default_templates.py
 
 Writes:
     backend/app/services/documents/templates/sop_default.docx
@@ -1719,7 +1719,7 @@ if __name__ == "__main__":
 
 ```bash
 cd /home/wesuuu/Code/trellisbio
-python scripts/build_qa0008_templates.py
+python scripts/build_default_templates.py
 ```
 Expected: prints `wrote .../sop_default.docx`. Verify the file exists and is > 0 bytes.
 
@@ -1727,7 +1727,7 @@ Expected: prints `wrote .../sop_default.docx`. Verify the file exists and is > 0
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/integration/test_qa0008_sop_template_smoke.py -v
+pytest tests/integration/test_sop_template_smoke.py -v
 ```
 Expected: both tests PASS.
 
@@ -1736,9 +1736,9 @@ If `test_sop_template_omits_optional_sections_when_blank` fails because the empt
 - [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/build_qa0008_templates.py \
+git add scripts/build_default_templates.py \
         backend/app/services/documents/templates/sop_default.docx \
-        backend/tests/integration/test_qa0008_sop_template_smoke.py
+        backend/tests/integration/test_sop_template_smoke.py
 git commit -m "feat(templates): production-grade SOP.docx system default (QA-0008)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1749,13 +1749,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 14: Author `batch_record_default.docx` via python-docx script
 
 **Files:**
-- Modify: `scripts/build_qa0008_templates.py` — add `build_batch_record()` function and call it from `__main__`.
+- Modify: `scripts/build_default_templates.py` — add `build_batch_record()` function and call it from `__main__`.
 - Replaces: `backend/app/services/documents/templates/batch_record_default.docx`.
-- Test: `backend/tests/integration/test_qa0008_br_template_smoke.py`.
+- Test: `backend/tests/integration/test_br_template_smoke.py`.
 
 - [ ] **Step 1: Write the failing smoke test**
 
-Create `backend/tests/integration/test_qa0008_br_template_smoke.py`:
+Create `backend/tests/integration/test_br_template_smoke.py`:
 
 ```python
 """QA-0008: smoke test that the new Batch Record template renders cleanly."""
@@ -1805,11 +1805,11 @@ def test_br_template_renders_mock_context_without_unresolved_tokens():
 
 - [ ] **Step 2: Run test — expect FAIL**
 
-Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_qa0008_br_template_smoke.py -v`
+Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_br_template_smoke.py -v`
 
 - [ ] **Step 3: Append `build_batch_record()` to the script**
 
-Edit `scripts/build_qa0008_templates.py` and add this function above `if __name__ == "__main__":` :
+Edit `scripts/build_default_templates.py` and add this function above `if __name__ == "__main__":` :
 
 ```python
 def build_batch_record(output_path: Path) -> None:
@@ -1957,14 +1957,14 @@ if __name__ == "__main__":
 
 ```bash
 cd /home/wesuuu/Code/trellisbio
-python scripts/build_qa0008_templates.py
+python scripts/build_default_templates.py
 ```
 
 - [ ] **Step 5: Run the smoke test — expect PASS**
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/integration/test_qa0008_br_template_smoke.py -v
+pytest tests/integration/test_br_template_smoke.py -v
 ```
 
 If a `{%tr%}` / `{%tc%}` row directive lands in the wrong cell, edit the cell mapping in the script and re-run Step 4 + 5 until the test is green. The script regenerates the file each run, so iteration is fast.
@@ -1972,9 +1972,9 @@ If a `{%tr%}` / `{%tc%}` row directive lands in the wrong cell, edit the cell ma
 - [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/build_qa0008_templates.py \
+git add scripts/build_default_templates.py \
         backend/app/services/documents/templates/batch_record_default.docx \
-        backend/tests/integration/test_qa0008_br_template_smoke.py
+        backend/tests/integration/test_br_template_smoke.py
 git commit -m "feat(templates): production-grade BatchRecord.docx system default (QA-0008)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1988,11 +1988,11 @@ The filenames (`sop_default.docx`, `batch_record_default.docx`) are unchanged; t
 
 **Files:**
 - Modify (if needed): `backend/app/services/protocols/template_seeder.py`.
-- Test: `backend/tests/integration/test_template_seeder_qa0008.py`.
+- Test: `backend/tests/integration/test_template_seeder.py`.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `backend/tests/integration/test_template_seeder_qa0008.py`:
+Create `backend/tests/integration/test_template_seeder.py`:
 
 ```python
 """QA-0008: seeder re-installs the new system defaults at app startup."""
@@ -2004,7 +2004,7 @@ import pytest
 from app.services.protocols.template_seeder import seed_system_templates
 
 
-def test_seed_copies_new_qa0008_defaults_to_storage(tmp_path):
+def test_seed_copies_default_templates_to_storage(tmp_path):
     seed_system_templates(storage_root=str(tmp_path))
     dest = tmp_path / "system" / "document_templates"
     sop = dest / "sop_default.docx"
@@ -2015,7 +2015,7 @@ def test_seed_copies_new_qa0008_defaults_to_storage(tmp_path):
 
 - [ ] **Step 2: Run test — expect PASS (file paths unchanged)**
 
-Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_template_seeder_qa0008.py -v`
+Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_template_seeder.py -v`
 
 If it passes immediately (likely — filenames are unchanged), skip the seeder edit and proceed to Step 4.
 
@@ -2026,7 +2026,7 @@ If it fails — e.g. seeder logic uses a manifest the script doesn't update — 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add backend/tests/integration/test_template_seeder_qa0008.py \
+git add backend/tests/integration/test_template_seeder.py \
         backend/app/services/protocols/template_seeder.py
 git commit -m "chore(seed): verify seeder points at QA-0008 default templates (QA-0008)
 
@@ -2041,9 +2041,9 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `backend/tests/conftest.py` — add `pytest_addoption`.
-- Create: `backend/tests/integration/fixtures/qa0008/__init__.py`.
-- Create: `backend/tests/integration/fixtures/qa0008/builders.py` — shared types.
-- Create: `tests/fixtures/qa-0008/rendered/.gitkeep`.
+- Create: `backend/tests/integration/fixtures/template_permutations/__init__.py`.
+- Create: `backend/tests/integration/fixtures/template_permutations/builders.py` — shared types.
+- Create: `tests/fixtures/template-permutations/rendered/.gitkeep`.
 
 - [ ] **Step 1: Add `pytest_addoption` to `backend/tests/conftest.py`**
 
@@ -2055,7 +2055,7 @@ def pytest_addoption(parser):
         "--write-artifacts",
         action="store_true",
         default=False,
-        help="QA-0008: write rendered .docx and .pdf into tests/fixtures/qa-0008/rendered/",
+        help="QA-0008: write rendered .docx and .pdf into tests/fixtures/template-permutations/rendered/",
     )
 
 
@@ -2068,13 +2068,13 @@ If `pytest` isn't imported at the top of `conftest.py`, add `import pytest`.
 
 - [ ] **Step 2: Create the fixtures package skeleton**
 
-Create `backend/tests/integration/fixtures/qa0008/__init__.py`:
+Create `backend/tests/integration/fixtures/template_permutations/__init__.py`:
 
 ```python
 """QA-0008 permutation fixtures."""
 ```
 
-Create `backend/tests/integration/fixtures/qa0008/builders.py`:
+Create `backend/tests/integration/fixtures/template_permutations/builders.py`:
 
 ```python
 """QA-0008: shared types and helpers for permutation fixtures.
@@ -2101,17 +2101,17 @@ class BuiltPermutation:
 - [ ] **Step 3: Create the rendered output directory**
 
 ```bash
-mkdir -p tests/fixtures/qa-0008/rendered
-touch tests/fixtures/qa-0008/rendered/.gitkeep
+mkdir -p tests/fixtures/template-permutations/rendered
+touch tests/fixtures/template-permutations/rendered/.gitkeep
 ```
 
-Add `tests/fixtures/qa-0008/rendered/*.docx` and `*.pdf` to `.gitignore` (preserve the `.gitkeep`):
+Add `tests/fixtures/template-permutations/rendered/*.docx` and `*.pdf` to `.gitignore` (preserve the `.gitkeep`):
 
 ```
 # QA-0008 rendered artifacts (regenerated by --write-artifacts)
-tests/fixtures/qa-0008/rendered/*.docx
-tests/fixtures/qa-0008/rendered/*.pdf
-!tests/fixtures/qa-0008/rendered/.gitkeep
+tests/fixtures/template-permutations/rendered/*.docx
+tests/fixtures/template-permutations/rendered/*.pdf
+!tests/fixtures/template-permutations/rendered/.gitkeep
 ```
 
 - [ ] **Step 4: Smoke-check the flag**
@@ -2123,9 +2123,9 @@ Expected: no errors. The flag is now wired up.
 
 ```bash
 git add backend/tests/conftest.py \
-        backend/tests/integration/fixtures/qa0008/__init__.py \
-        backend/tests/integration/fixtures/qa0008/builders.py \
-        tests/fixtures/qa-0008/rendered/.gitkeep \
+        backend/tests/integration/fixtures/template_permutations/__init__.py \
+        backend/tests/integration/fixtures/template_permutations/builders.py \
+        tests/fixtures/template-permutations/rendered/.gitkeep \
         .gitignore
 git commit -m "test(qa-0008): conftest --write-artifacts flag + fixture skeleton (QA-0008)
 
@@ -2139,11 +2139,11 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 Each `build_pN()` is a pure function returning a `BuiltPermutation`. All 6 land in one commit because they share types and references; the per-permutation tests in Task 18 verify each individually.
 
 **Files:**
-- Modify: `backend/tests/integration/fixtures/qa0008/builders.py` — add 6 builder functions.
+- Modify: `backend/tests/integration/fixtures/template_permutations/builders.py` — add 6 builder functions.
 
 - [ ] **Step 1: Add `build_p1` through `build_p6` to `builders.py`**
 
-Append to `backend/tests/integration/fixtures/qa0008/builders.py`:
+Append to `backend/tests/integration/fixtures/template_permutations/builders.py`:
 
 ```python
 # ---------- Shared step factory ----------
@@ -2394,14 +2394,14 @@ def build_p6() -> BuiltPermutation:
 
 ```bash
 cd backend && source .venv/bin/activate
-python -c "from tests.integration.fixtures.qa0008 import builders; [builders.__dict__[f'build_p{i}']() for i in range(1,7)]; print('ok')"
+python -c "from tests.integration.fixtures.template_permutations import builders; [builders.__dict__[f'build_p{i}']() for i in range(1,7)]; print('ok')"
 ```
 Expected: `ok` printed, no exceptions.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add backend/tests/integration/fixtures/qa0008/builders.py
+git add backend/tests/integration/fixtures/template_permutations/builders.py
 git commit -m "test(qa-0008): P1-P6 permutation builders (QA-0008)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2412,11 +2412,11 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 18: Permutation test suite
 
 **Files:**
-- Create: `backend/tests/integration/test_qa0008_templates.py`.
+- Create: `backend/tests/integration/test_template_permutations.py`.
 
 - [ ] **Step 1: Write the test module**
 
-Create `backend/tests/integration/test_qa0008_templates.py`:
+Create `backend/tests/integration/test_template_permutations.py`:
 
 ```python
 """QA-0008 permutation suite.
@@ -2425,7 +2425,7 @@ Each Pn renders against the templates it's configured for, then asserts
 that expected_on substrings appear and expected_off substrings do not.
 
 Pass `--write-artifacts` to also emit .docx + .pdf into
-tests/fixtures/qa-0008/rendered/<Pn>/.
+tests/fixtures/template-permutations/rendered/<Pn>/.
 """
 from __future__ import annotations
 
@@ -2439,11 +2439,11 @@ from docx import Document
 from docxtpl import DocxTemplate
 
 from app.services.protocols.template_engine import build_context, render_to_docx
-from tests.integration.fixtures.qa0008 import builders
+from tests.integration.fixtures.template_permutations import builders
 
 SOP_PATH = "backend/app/services/documents/templates/sop_default.docx"
 BR_PATH = "backend/app/services/documents/templates/batch_record_default.docx"
-ARTIFACT_ROOT = Path("tests/fixtures/qa-0008/rendered")
+ARTIFACT_ROOT = Path("tests/fixtures/template-permutations/rendered")
 
 
 def _doc_text(blob: bytes) -> str:
@@ -2511,7 +2511,7 @@ def test_permutation_renders(builder_name, template_key, template_path,
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/integration/test_qa0008_templates.py -v
+pytest tests/integration/test_template_permutations.py -v
 ```
 Expected: all parametrized cases PASS. If a permutation's `expected_on` substring is missing because of a template typo or context-shape mismatch, fix it inline (template script or builder) and re-run. Iterate until green.
 
@@ -2519,14 +2519,14 @@ Expected: all parametrized cases PASS. If a permutation's `expected_on` substrin
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/integration/test_qa0008_templates.py --write-artifacts -v
+pytest tests/integration/test_template_permutations.py --write-artifacts -v
 ```
-Expected: 10 .docx files (and PDFs, if LibreOffice is on PATH) under `tests/fixtures/qa-0008/rendered/P*/`.
+Expected: 10 .docx files (and PDFs, if LibreOffice is on PATH) under `tests/fixtures/template-permutations/rendered/P*/`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add backend/tests/integration/test_qa0008_templates.py
+git add backend/tests/integration/test_template_permutations.py
 git commit -m "test(qa-0008): permutation suite for SOP + Batch Record templates (QA-0008)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2537,11 +2537,11 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 19: P1 end-to-end endpoint integration test
 
 **Files:**
-- Modify: `backend/tests/integration/test_qa0008_templates.py` — append the endpoint test.
+- Modify: `backend/tests/integration/test_template_permutations.py` — append the endpoint test.
 
 - [ ] **Step 1: Append the endpoint test**
 
-Add to `backend/tests/integration/test_qa0008_templates.py`:
+Add to `backend/tests/integration/test_template_permutations.py`:
 
 ```python
 import uuid
@@ -2649,14 +2649,14 @@ If `sample_org`, `sample_project`, `sample_user`, `client`, or `auth_headers` fi
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/integration/test_qa0008_templates.py::test_p1_endpoint_renders_batch_record_pdf -v
+pytest tests/integration/test_template_permutations.py::test_p1_endpoint_renders_batch_record_pdf -v
 ```
 Expected: PASS.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add backend/tests/integration/test_qa0008_templates.py
+git add backend/tests/integration/test_template_permutations.py
 git commit -m "test(qa-0008): P1 endpoint integration test through /pdf/batch-record (QA-0008)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2667,11 +2667,11 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ### Task 20: Gap log + side-by-side review
 
 **Files:**
-- Create: `tests/fixtures/qa-0008/gap-log.md`.
+- Create: `tests/fixtures/template-permutations/gap-log.md`.
 
 - [ ] **Step 1: Author the initial gap log**
 
-Create `tests/fixtures/qa-0008/gap-log.md`:
+Create `tests/fixtures/template-permutations/gap-log.md`:
 
 ```markdown
 # QA-0008 Gap Log
@@ -2701,10 +2701,10 @@ Run once before requesting signoff:
 
 ```bash
 cd backend && source ../.venv/bin/activate
-pytest tests/integration/test_qa0008_templates.py --write-artifacts -v
+pytest tests/integration/test_template_permutations.py --write-artifacts -v
 ```
 
-Then visually inspect each rendered PDF under `tests/fixtures/qa-0008/rendered/P*/batch_record.pdf` (and `sop.pdf` where applicable). For each permutation, walk through:
+Then visually inspect each rendered PDF under `tests/fixtures/template-permutations/rendered/P*/batch_record.pdf` (and `sop.pdf` where applicable). For each permutation, walk through:
 
 - P1 — all features on. Verify Reviewer column populated, Scheduled column populated, Lot Number visible, Equipment Used table present, Approval block present (or unapproved warning), Deviations table present, Notes section present, Revision History present.
 - P2 — all features off. Verify the absence of Reviewer column, Scheduled column, Lot Number, Equipment Used table.
@@ -2720,14 +2720,14 @@ Any rendering surprise → log a `G<n>` block above and file a fix.
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/integration/test_qa0008_templates.py --write-artifacts -v
+pytest tests/integration/test_template_permutations.py --write-artifacts -v
 ```
 Expected: green.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/fixtures/qa-0008/gap-log.md
+git add tests/fixtures/template-permutations/gap-log.md
 git commit -m "docs(qa-0008): gap log + side-by-side review checklist (QA-0008)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2740,7 +2740,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 Done when **all four** are true:
 
 1. Catalog coverage matrix in the spec (Section 4.3) green: every catalog row exercised by ≥1 of P1–P6, both ON and OFF where conditional.
-2. `pytest backend/tests/integration/test_qa0008_templates.py` green for all 10 parametrized cases + P1 endpoint test.
+2. `pytest backend/tests/integration/test_template_permutations.py` green for all 10 parametrized cases + P1 endpoint test.
 3. `unresolved == []` returned by `build_context()` for every permutation.
 4. User signoff on the side-by-side review of the rendered PDFs.
 
