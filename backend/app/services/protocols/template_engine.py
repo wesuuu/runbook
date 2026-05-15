@@ -111,6 +111,38 @@ def _compute_scheduled_at(start_time: str, prior_minutes: int) -> str:
     return f"{(total // 60) % 24:02d}:{total % 60:02d}"
 
 
+def _apply_step_reviewer(
+    step_ctx: dict[str, Any],
+    *,
+    step_id: str,
+    execution_data: dict[str, Any],
+    user_map: dict[str, str],
+) -> None:
+    """Mutate ``step_ctx`` with reviewer fields from execution data.
+
+    Populates ``reviewer_initials`` (up to 3 uppercase initials derived
+    from the reviewer's display name), ``reviewed_at`` (ISO timestamp),
+    and the underscore-prefixed ``_reviewer_user_id`` /
+    ``_reviewer_name`` audit fields. All fields default to empty
+    strings when the step has not been reviewed.
+
+    Callers responsible for any aliasing must shallow-copy the dict
+    before passing it in.
+    """
+    exec_row = execution_data.get(step_id, {})
+    reviewer_uid = exec_row.get("reviewed_by_user_id", "")
+    reviewer_name = user_map.get(reviewer_uid, "") if reviewer_uid else ""
+    step_ctx["_reviewer_user_id"] = reviewer_uid
+    step_ctx["_reviewer_name"] = reviewer_name
+    step_ctx["reviewed_at"] = exec_row.get("reviewed_at", "")
+    if reviewer_uid and reviewer_name:
+        step_ctx["reviewer_initials"] = "".join(
+            p[0].upper() for p in reviewer_name.split() if p
+        )[:3]
+    else:
+        step_ctx["reviewer_initials"] = ""
+
+
 def _apply_step_timing(
     step_ctx: dict[str, Any],
     *,
@@ -408,6 +440,12 @@ def build_context(
             prior_minutes=_cumulative_min,
             execution_data=exec_data,
         )
+        _apply_step_reviewer(
+            step_ctx,
+            step_id=step_id,
+            execution_data=exec_data,
+            user_map=umap,
+        )
         step_contexts.append(step_ctx)
 
     # Build role contexts — each role contains both SOP-style steps
@@ -489,6 +527,12 @@ def build_context(
                 start_time=start_time,
                 prior_minutes=_cumulative_min,
                 execution_data=exec_data,
+            )
+            _apply_step_reviewer(
+                br_step,
+                step_id=step_id,
+                execution_data=exec_data,
+                user_map=umap,
             )
             br_steps.append(br_step)
 
