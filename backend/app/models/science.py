@@ -1,10 +1,10 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import (Boolean, CheckConstraint, DateTime, Enum, ForeignKey,
-                        Index, Integer, String, UniqueConstraint, desc, func,
-                        text)
+from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, Enum,
+                        ForeignKey, Index, Integer, String, Text,
+                        UniqueConstraint, desc, func, text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -108,6 +108,13 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String)
+    doc_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    effective_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    supersedes_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scope: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    references: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definitions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("projects.id"), nullable=True
     )
@@ -381,6 +388,13 @@ class ProtocolVersion(Base, UUIDMixin, TimestampMixin):
     graph: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String)
+    doc_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    effective_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    supersedes_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scope: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    references: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definitions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
