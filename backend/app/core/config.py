@@ -127,6 +127,12 @@ class Settings(BaseSettings):
     # "cloud-gpu" will dispatch to a dedicated GPU service.
     background_handler: str = "local"  # "local" | "cloud-gpu"
 
+    # Phase 3: how often the recovery loop sweeps for stalled jobs/docs.
+    # The startup sweep still runs once on lifespan boot; this loop adds
+    # in-process polling for autoscaled deployments where new pods don't
+    # boot frequently. Set to 0 to disable the loop entirely.
+    recovery_interval_seconds: int = 90
+
     # Docling extractor (TD-0085) — paths to the standalone ext/ project's
     # interpreter and CLI entrypoint. Defaults assume the repo layout
     # (backend/ and ext/ are siblings); override via env vars in deploy.

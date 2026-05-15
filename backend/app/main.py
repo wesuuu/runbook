@@ -285,6 +285,33 @@ async def _recover_stalled_documents() -> None:
         await engine.dispose()
 
 
+async def _recovery_loop() -> None:
+    """Periodically re-run the stalled-jobs and stalled-docs sweeps.
+
+    The startup sweep covers cold boots; this loop covers steady-state
+    autoscaled deployments where new pods don't boot for hours. Each
+    sweep is independent — exceptions inside one don't kill the other,
+    and don't kill the loop.
+
+    Set BATCHRITE_RECOVERY_INTERVAL_SECONDS=0 to disable.
+    """
+    interval = settings.recovery_interval_seconds
+    if not interval or interval <= 0:
+        logger.info("Recovery loop disabled (interval <= 0)")
+        return
+
+    while True:
+        try:
+            await _recover_stalled_jobs()
+        except Exception:
+            logger.exception("Recovery loop: job sweep failed")
+        try:
+            await _recover_stalled_documents()
+        except Exception:
+            logger.exception("Recovery loop: doc sweep failed")
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: recover stalled work and start heartbeat."""
@@ -342,6 +369,7 @@ async def lifespan(app: FastAPI):
 
     # Start the heartbeat background task
     heartbeat_task = asyncio.create_task(_heartbeat_loop())
+    recovery_task = asyncio.create_task(_recovery_loop())
 
     yield
 
@@ -349,6 +377,11 @@ async def lifespan(app: FastAPI):
     heartbeat_task.cancel()
     try:
         await heartbeat_task
+    except asyncio.CancelledError:
+        pass
+    recovery_task.cancel()
+    try:
+        await recovery_task
     except asyncio.CancelledError:
         pass
 
