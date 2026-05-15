@@ -87,8 +87,54 @@
             onSelectionChange?.({ markdown, context: `${before}${markdown}${after}` });
         };
         ed.on('selectionUpdate', handleSelection);
+
+        // Belt-and-suspenders for the upstream filter in
+        // ``ext/docling-extractor/`` — already-extracted documents may
+        // still contain degenerate sub-32px "figure" PNGs that Tiptap
+        // renders and the browser stretches into column-width blurry
+        // artifacts. Hide them as they load. Tiptap inserts/updates
+        // image nodes dynamically, so we observe the editor DOM rather
+        // than scanning once.
+        const MIN_IMAGE_DIMENSION = 32;
+        const hideIfTiny = (img: HTMLImageElement) => {
+            if (
+                img.naturalWidth > 0 &&
+                img.naturalWidth < MIN_IMAGE_DIMENSION &&
+                img.naturalHeight < MIN_IMAGE_DIMENSION
+            ) {
+                img.style.display = 'none';
+            }
+        };
+        const bindImage = (img: HTMLImageElement) => {
+            if (img.complete) {
+                hideIfTiny(img);
+            } else {
+                img.addEventListener('load', () => hideIfTiny(img), { once: true });
+            }
+        };
+        const root = ed.view.dom;
+        for (const img of Array.from(root.querySelectorAll('img'))) {
+            bindImage(img as HTMLImageElement);
+        }
+        const observer = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+                for (const node of Array.from(m.addedNodes)) {
+                    if (!(node instanceof HTMLElement)) continue;
+                    if (node instanceof HTMLImageElement) {
+                        bindImage(node);
+                    } else {
+                        for (const img of Array.from(node.querySelectorAll('img'))) {
+                            bindImage(img as HTMLImageElement);
+                        }
+                    }
+                }
+            }
+        });
+        observer.observe(root, { childList: true, subtree: true });
+
         return () => {
             ed.off('selectionUpdate', handleSelection);
+            observer.disconnect();
         };
     });
 
