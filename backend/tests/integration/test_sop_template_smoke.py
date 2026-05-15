@@ -13,8 +13,8 @@ from docxtpl import DocxTemplate
 from app.services.protocols.template_engine import build_context, get_mock_context
 
 SOP_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "backend/app/services/documents/templates/sop_default.docx"
+    Path(__file__).resolve().parents[2]
+    / "app/services/documents/templates/sop_default.docx"
 )
 
 
