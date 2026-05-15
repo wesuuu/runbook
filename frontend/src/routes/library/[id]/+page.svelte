@@ -211,6 +211,10 @@
             case 'EXTRACTING':
                 return 'stage: parse';
             case 'INDEXING':
+                // Pre-progress fallback. Once the document_index job
+                // calls update_progress, processing_progress takes
+                // precedence (handled by the earlier branch).
+                return 'stage: chunking';
             case 'PROCESSING':
                 return 'stage: indexing';
             default:
