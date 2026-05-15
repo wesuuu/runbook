@@ -10,7 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from docx.shared import Mm, Pt
+from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage, RichText
 
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
@@ -391,7 +391,10 @@ def build_context(
         # Pre-computed value display as RichText (supports strikethrough
         # for GMP edits). Use {{r step.value_display}} in template.
         # Font size matches the template cell's 8pt.
-        VS = Pt(8)  # value font size — must match template cell
+        # docxtpl RichText.add(size=…) expects raw half-points
+        # (Word's w:sz), not EMU. Pt() returns EMU and silently
+        # produces ~half-point*6350× sizes when passed through.
+        VS = 16  # 8pt — matches template cell font size
         rt = RichText()
         if len(editable) > 1:
             for idx, pd in enumerate(param_details):
@@ -498,18 +501,18 @@ def build_context(
             # conditional paragraphs in the Word output
             sop_body = RichText()
             if desc:
-                sop_body.add(f"    {desc}", size=Pt(10), color="#334155")
+                sop_body.add(f"    {desc}", size=20, color="#334155")
             if param_sentence:
                 if desc:
                     sop_body.add("\a")
-                sop_body.add(f"    {param_sentence}", size=Pt(10), color="#334155")
+                sop_body.add(f"    {param_sentence}", size=20, color="#334155")
             duration = s.get("duration_min")
             if duration:
                 if desc or param_sentence:
                     sop_body.add("\a")
                 sop_body.add(
                     f"    Allow {duration} minutes for this step.",
-                    size=Pt(10),
+                    size=20,
                     color="#64748B",
                     italic=True,
                 )
@@ -571,19 +574,19 @@ def build_context(
         if not is_first_role:
             sop_header.add("\f")
         if header_name:
-            sop_header.add(header_name, bold=True, size=Pt(14))
+            sop_header.add(header_name, bold=True, size=28)
             if process_desc:
                 sop_header.add("\a")  # new paragraph
-                sop_header.add(process_desc, size=Pt(10), color="#64748B")
+                sop_header.add(process_desc, size=20, color="#64748B")
             sop_header.add("\a")
-            sop_header.add("\u2500" * 50, size=Pt(6), color="#C8C8C8")
+            sop_header.add("\u2500" * 50, size=12, color="#C8C8C8")
 
         # Pre-compute batch record header (page break + role name)
         br_header = RichText()
         if not is_first_role:
             br_header.add("\f")  # page break before non-first roles
         if header_name:
-            br_header.add(header_name, bold=True, size=Pt(14))
+            br_header.add(header_name, bold=True, size=28)
 
         role_contexts.append(
             {
@@ -658,12 +661,12 @@ def build_context(
     protocol_subtitle = RichText()
     if run_name:
         protocol_subtitle.add(
-            f"Run: {run_name}", bold=True, size=Pt(10), color="#334155"
+            f"Run: {run_name}", bold=True, size=20, color="#334155"
         )
     if protocol_description:
         if run_name:
             protocol_subtitle.add("\a")
-        protocol_subtitle.add(protocol_description, size=Pt(10), color="#64748B")
+        protocol_subtitle.add(protocol_description, size=20, color="#64748B")
 
     context: dict[str, Any] = {
         "protocol_name": protocol_name,
