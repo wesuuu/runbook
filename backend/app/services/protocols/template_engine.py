@@ -171,6 +171,7 @@ def build_context(
     definitions: str = "",
     lot_number: str = "",
     batch_number: str = "",
+    revision_history: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Assemble the Jinja2 context dict for template rendering.
 
@@ -649,6 +650,19 @@ def build_context(
         ]
     else:
         context["responsibilities"] = []
+
+    context["revision_history"] = list(revision_history or [])
+
+    # Deviations: subset of notes where flags include "anomaly"
+    context["deviations"] = [
+        n for n in (notes or []) if "anomaly" in (n.get("flags") or [])
+    ]
+
+    # reviewer_enabled: True if any step has reviewed_by_user_id in execution_data
+    _exec = execution_data or {}
+    context["reviewer_enabled"] = any(
+        bool((_exec.get(sid) or {}).get("reviewed_by_user_id")) for sid in _exec
+    )
 
     return context, unresolved_all
 
