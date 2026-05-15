@@ -22,6 +22,12 @@ class ExtractedPicture:
     index: int
     png_bytes: bytes
     caption: str = ""
+    # When ``skip`` is True the picture was detected by docling but
+    # rejected (e.g. degenerate sub-50px figure regions). We keep it in
+    # the list — preserving 1:1 alignment between docling's pictures and
+    # the ``<!-- image -->`` placeholders in the markdown — but neither
+    # write its bytes nor emit a markdown reference for it.
+    skip: bool = False
 
 
 def externalize_images(
@@ -29,6 +35,8 @@ def externalize_images(
 ) -> None:
     images_dir.mkdir(parents=True, exist_ok=True)
     for pic in pictures:
+        if pic.skip:
+            continue
         (images_dir / f"{pic.index}.png").write_bytes(pic.png_bytes)
 
 
@@ -41,6 +49,8 @@ def rewrite_markdown_image_refs(
         try:
             pic = next(iterator)
         except StopIteration:
+            return ""
+        if pic.skip:
             return ""
         caption = pic.caption or ""
         return f"![{caption}](images/{pic.index}.png)"

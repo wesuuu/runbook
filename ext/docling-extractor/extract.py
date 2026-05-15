@@ -85,7 +85,7 @@ def main() -> int:
         )
         payload = {
             "page_count": result.page_count,
-            "image_count": len(result.pictures),
+            "image_count": sum(1 for p in result.pictures if not p.skip),
             "flags": result.flags,
             "ocr_engine": "easyocr",
             "source_format": source_format,

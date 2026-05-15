@@ -23,6 +23,12 @@ from .image_externalizer import ExtractedPicture
 
 logger = logging.getLogger(__name__)
 
+# Docling occasionally classifies degenerate sub-50px regions (page
+# background samples, sub-glyph crops, decorative rules) as "pictures".
+# Stretched into a column they render as massive blurry artifacts. We
+# reject anything whose larger dimension is below this threshold.
+_MIN_PICTURE_MAX_DIMENSION = 48
+
 
 @dataclass
 class ExtractionResult:
@@ -52,17 +58,41 @@ def build_converter(num_threads: int) -> DocumentConverter:
     )
 
 
+def _picture_too_small(pil_image: Any, png_bytes: bytes) -> bool:
+    """Decide whether to drop a docling-detected picture as degenerate.
+
+    We prefer the PIL image's ``size`` (no decode cost) and fall back to
+    decoding the PNG bytes only if needed. Any failure returns False so
+    we never drop a picture we can't measure.
+    """
+    width = height = 0
+    size = getattr(pil_image, "size", None) if pil_image is not None else None
+    if size and len(size) == 2:
+        width, height = size
+    elif png_bytes:
+        try:
+            from PIL import Image  # type: ignore
+
+            with Image.open(BytesIO(png_bytes)) as probe:
+                width, height = probe.size
+        except Exception:  # noqa: BLE001
+            return False
+    if width <= 0 or height <= 0:
+        return False
+    return max(width, height) < _MIN_PICTURE_MAX_DIMENSION
+
+
 def _iter_pictures(doc: Any) -> List[ExtractedPicture]:
     pictures: List[ExtractedPicture] = []
     for idx, item in enumerate(getattr(doc, "pictures", []) or []):
         image = getattr(item, "image", None)
         if image is None:
             continue
+        pil_image = getattr(image, "pil_image", None)
         png = getattr(image, "to_bytes", None)
         if callable(png):
             data = png()
         else:
-            pil_image = getattr(image, "pil_image", None)
             if pil_image is None:
                 continue
             buf = BytesIO()
@@ -75,8 +105,17 @@ def _iter_pictures(doc: Any) -> List[ExtractedPicture]:
             first = captions[0]
             caption = getattr(first, "text", "") or str(first)
 
+        skip = _picture_too_small(pil_image, data)
+        if skip:
+            logger.debug(
+                "Dropping degenerate docling picture #%d (max-dim < %dpx)",
+                idx, _MIN_PICTURE_MAX_DIMENSION,
+            )
+
         pictures.append(
-            ExtractedPicture(index=idx, png_bytes=data, caption=caption)
+            ExtractedPicture(
+                index=idx, png_bytes=data, caption=caption, skip=skip
+            )
         )
     return pictures
 
