@@ -194,7 +194,6 @@
                 id: 'extract',
                 label: 'Extracting',
                 state: 'pending',
-                sub: 'docling + easyocr',
             },
             { id: 'refine', label: 'Awaiting refinement', state: 'pending' },
             { id: 'index', label: 'Indexing', state: 'pending' },
@@ -205,7 +204,7 @@
             // upload done; extract is queued but hasn't started — leave pending
         } else if (s === 'EXTRACTING') {
             steps[1].state = 'now';
-            steps[1].sub = 'docling + easyocr · running';
+            steps[1].sub = 'running';
         } else if (s === 'AWAITING_REFINEMENT') {
             steps[1].state = 'done';
             steps[2].state = 'now';
@@ -243,7 +242,7 @@
             case 'QUEUED':
                 return 'stage: queued';
             case 'EXTRACTING':
-                return 'stage: docling parse';
+                return 'stage: parse';
             case 'INDEXING':
             case 'PROCESSING':
                 return 'stage: indexing';
