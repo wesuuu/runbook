@@ -256,14 +256,34 @@
         switch (document.status) {
             case 'UPLOADED':
             case 'QUEUED':
-                return 'Queued for extraction';
             case 'EXTRACTING':
+                // From the user's POV the doc is "extracting" the whole time
+                // it sits in this live-polling state — the UPLOADED → QUEUED
+                // → EXTRACTING walk is an internal worker handoff.
                 return 'Extraction in progress';
             case 'INDEXING':
             case 'PROCESSING':
                 return 'Indexing for search';
             default:
                 return 'Working…';
+        }
+    });
+
+    // Short chip label that matches liveTitle: the user sees "Extracting"
+    // for the entire pre-refinement live phase, not the internal status
+    // string ("Uploaded" / "Queued").
+    const displayStatusLabel = $derived.by(() => {
+        if (!document) return '';
+        switch (document.status) {
+            case 'UPLOADED':
+            case 'QUEUED':
+            case 'EXTRACTING':
+                return 'Extracting';
+            case 'INDEXING':
+            case 'PROCESSING':
+                return 'Indexing';
+            default:
+                return getStatusLabel(document.status);
         }
     });
 
@@ -444,7 +464,7 @@
                 <div class="flex flex-wrap items-center gap-2 text-xs">
                     <!-- Status chip — pulses while live -->
                     <span class="chip" class:chip-live={isLiveExtraction} class:chip-done={document.status === 'INDEXED' || document.status === 'READY' || document.status === 'ENRICHED'} class:chip-failed={document.status === 'FAILED'} class:chip-refine={document.status === 'AWAITING_REFINEMENT'}>
-                        <span class="dot"></span>{getStatusLabel(document.status)}
+                        <span class="dot"></span>{displayStatusLabel}
                     </span>
                     <span class="chip"><span class="dot"></span>{getFileTypeLabel(document.mime_type)}</span>
                     <span class="chip"><span class="dot"></span>{formatFileSize(document.file_size_bytes)}</span>
