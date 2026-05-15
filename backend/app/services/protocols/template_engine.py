@@ -162,6 +162,15 @@ def build_context(
     equipment_context: dict[str, str] | None = None,
     time_enabled: bool = False,
     start_time: str = "",
+    doc_number: str = "",
+    effective_date: str = "",
+    supersedes_date: str = "",
+    purpose: str = "",
+    scope: str = "",
+    references: str = "",
+    definitions: str = "",
+    lot_number: str = "",
+    batch_number: str = "",
 ) -> tuple[dict[str, Any], list[str]]:
     """Assemble the Jinja2 context dict for template rendering.
 
@@ -589,33 +598,59 @@ def build_context(
             protocol_subtitle.add("\a")
         protocol_subtitle.add(protocol_description, size=Pt(10), color="#64748B")
 
-    return (
-        {
-            "protocol_name": protocol_name,
-            "protocol_subtitle": protocol_subtitle,
-            "protocol_description": protocol_description,
-            "version_number": version_number,
-            "created_at": created_at,
-            "run_name": run_name or "",
-            "run_status": run_status or "",
-            "started_at": started_at or "",
-            "completed_at": completed_at or "",
-            "project_name": project_name,
-            "organization_name": organization_name,
-            "is_role_based": is_role_based,
-            "time_enabled": bool(time_enabled),
-            "start_time": start_time or "",
-            "page_break": RichText("\f"),
-            "steps": step_contexts,
-            "roles": role_contexts,
-            "equipment_summary": list(_equipment_index.values()),
-            "notes": note_contexts,
-            "figures": figure_contexts,
-            "non_image_attachments": non_image_att_contexts,
-            "_user_signatures": sigmap,
-        },
-        unresolved_all,
-    )
+    context: dict[str, Any] = {
+        "protocol_name": protocol_name,
+        "protocol_subtitle": protocol_subtitle,
+        "protocol_description": protocol_description,
+        "version_number": version_number,
+        "created_at": created_at,
+        "run_name": run_name or "",
+        "run_status": run_status or "",
+        "started_at": started_at or "",
+        "completed_at": completed_at or "",
+        "project_name": project_name,
+        "organization_name": organization_name,
+        "is_role_based": is_role_based,
+        "time_enabled": bool(time_enabled),
+        "start_time": start_time or "",
+        "page_break": RichText("\f"),
+        "steps": step_contexts,
+        "roles": role_contexts,
+        "equipment_summary": list(_equipment_index.values()),
+        "notes": note_contexts,
+        "figures": figure_contexts,
+        "non_image_attachments": non_image_att_contexts,
+        "_user_signatures": sigmap,
+    }
+
+    for _k in (
+        "doc_number",
+        "effective_date",
+        "supersedes_date",
+        "purpose",
+        "scope",
+        "references",
+        "definitions",
+        "lot_number",
+        "batch_number",
+    ):
+        context[_k] = locals()[_k] or ""
+
+    # Responsibilities matrix (role-based only)
+    if is_role_based:
+        context["responsibilities"] = [
+            {
+                "role_name": role.get("role_name", ""),
+                "step_summary": "; ".join(
+                    s.get("name", "") for s in role.get("steps", []) if s.get("name")
+                ),
+            }
+            for role in (roles_with_steps or [])
+        ]
+    else:
+        context["responsibilities"] = []
+
+    return context, unresolved_all
 
 
 def render_to_docx(
