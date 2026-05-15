@@ -66,6 +66,8 @@
 
     let runName = $state('');
     let experimentId = $state<string | null>(null);
+    let lotNumber = $state('');
+    let batchNumber = $state('');
 
     let protocolId = $state<string | null>(null);
     let protocolVersionNumber = $state<number | null>(null);
@@ -124,6 +126,8 @@
     function resetState() {
         runName = '';
         experimentId = forExperiment?.id ?? null;
+        lotNumber = '';
+        batchNumber = '';
         protocolId = null;
         protocolVersionNumber = null;
         originalGraph = null;
@@ -365,6 +369,8 @@
                 protocol_id: protocolId,
             };
             if (experimentId) payload.experiment_id = experimentId;
+            if (lotNumber) payload.lot_number = lotNumber;
+            if (batchNumber) payload.batch_number = batchNumber;
             if (protocolVersionNumber) payload.protocol_version_number = protocolVersionNumber;
             const overrides = buildOverridesPayload(edits, currentGraph);
             if (overrides) payload.overrides = overrides;
@@ -403,7 +409,9 @@
                             {experimentId}
                             {experiments}
                             lockedExperiment={forExperiment}
-                            onChange={(v) => { runName = v.name; experimentId = v.experimentId; }}
+                            {lotNumber}
+                            {batchNumber}
+                            onChange={(v) => { runName = v.name; experimentId = v.experimentId; lotNumber = v.lotNumber; batchNumber = v.batchNumber; }}
                             onValidate={(v) => { nameValid = v; }}
                         />
                     {:else if currentStep === 2}

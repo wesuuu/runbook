@@ -2,6 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import RunCreatorNameStep from './RunCreatorNameStep.svelte';
 
+interface ChangePayload {
+    name: string;
+    experimentId: string | null;
+    lotNumber: string;
+    batchNumber: string;
+}
+
 const EXPERIMENTS = [
     { id: 'e1', name: 'Pilot', status: 'ACTIVE' },
     { id: 'e2', name: 'Archived', status: 'ARCHIVED' },
@@ -62,17 +69,66 @@ describe('RunCreatorNameStep', () => {
     });
 
     it('emits onChange when user types name', async () => {
-        let captured: { name: string; experimentId: string | null } | null = null;
+        let captured: ChangePayload = {
+            name: '',
+            experimentId: null,
+            lotNumber: '',
+            batchNumber: '',
+        };
         const { container } = render(RunCreatorNameStep, {
             name: '',
             experimentId: null,
             experiments: EXPERIMENTS,
             lockedExperiment: null,
-            onChange: (next: { name: string; experimentId: string | null }) => { captured = next; },
+            onChange: (next: ChangePayload) => { captured = next; },
             onValidate: () => {},
         });
         const input = container.querySelector('input[type="text"]') as HTMLInputElement;
         await fireEvent.input(input, { target: { value: 'New' } });
-        expect(captured?.name).toBe('New');
+        expect(captured.name).toBe('New');
+    });
+
+    it('renders lot number and batch number inputs', () => {
+        const { container } = render(RunCreatorNameStep, {
+            name: '',
+            experimentId: null,
+            experiments: EXPERIMENTS,
+            lockedExperiment: null,
+            lotNumber: '',
+            batchNumber: '',
+            onChange: () => {},
+            onValidate: () => {},
+        });
+        const lotInput = container.querySelector('#run-lot') as HTMLInputElement | null;
+        const batchInput = container.querySelector('#run-batch') as HTMLInputElement | null;
+        expect(lotInput).not.toBeNull();
+        expect(batchInput).not.toBeNull();
+    });
+
+    it('emits onChange with lotNumber and batchNumber when those inputs are edited', async () => {
+        let captured: ChangePayload = {
+            name: 'Run X',
+            experimentId: null,
+            lotNumber: '',
+            batchNumber: '',
+        };
+        const { container } = render(RunCreatorNameStep, {
+            name: 'Run X',
+            experimentId: null,
+            experiments: EXPERIMENTS,
+            lockedExperiment: null,
+            lotNumber: '',
+            batchNumber: '',
+            onChange: (next: ChangePayload) => { captured = next; },
+            onValidate: () => {},
+        });
+        const lotInput = container.querySelector('#run-lot') as HTMLInputElement;
+        await fireEvent.input(lotInput, { target: { value: 'LOT-001' } });
+        expect(captured.lotNumber).toBe('LOT-001');
+        expect(captured.batchNumber).toBe('');
+
+        const batchInput = container.querySelector('#run-batch') as HTMLInputElement;
+        await fireEvent.input(batchInput, { target: { value: 'BATCH-42' } });
+        expect(captured.batchNumber).toBe('BATCH-42');
     });
 });

@@ -48,6 +48,8 @@ export const RunSchema = z.object({
     graph: z.record(z.string(), z.unknown()).default({}),
     execution_data: z.record(z.string(), z.unknown()).default({}),
     experiment_id: z.string().nullable().optional(),
+    lot_number: z.string().nullable().optional(),
+    batch_number: z.string().nullable().optional(),
     started_by_id: z.string().nullable().optional(),
     created_by_id: z.string().nullable().optional(),
     notes: z.array(RunNoteSchema).default([]),
@@ -103,6 +105,8 @@ export const RunCreatePayloadSchema = z.object({
     protocol_id: z.string(),
     protocol_version_number: z.number().int().positive().optional(),
     experiment_id: z.string().optional(),
+    lot_number: z.string().optional(),
+    batch_number: z.string().optional(),
     overrides: RunOverridesSchema.optional(),
 });
 
