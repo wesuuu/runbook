@@ -49,6 +49,28 @@ KNOWN_VARIABLES = {
     "approval",
     "approval_history",
     "unapproved_warning",
+    # Time axis
+    "time_enabled",
+    "start_time",
+    # Reviewer
+    "reviewer_enabled",
+    # Equipment / revisions / responsibilities / deviations
+    "equipment_summary",
+    "revision_history",
+    "responsibilities",
+    "deviations",
+    # Document metadata
+    "doc_number",
+    "effective_date",
+    "supersedes_date",
+    # SOP sections
+    "purpose",
+    "scope",
+    "references",
+    "definitions",
+    # Run identifiers
+    "lot_number",
+    "batch_number",
 }
 
 
