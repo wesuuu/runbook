@@ -106,3 +106,96 @@ async def test_refine_complete_transitions_to_indexing(
     ]
 
 
+async def test_refine_complete_twice_returns_409(
+    client: AsyncClient, auth_headers, extracted_document
+):
+    """Second refine/complete on an already-completed doc must be
+    rejected with 409 — not silently re-launch the index job."""
+    launched: list = []
+
+    class _FakeHandler:
+        async def launch(self, job, **kwargs):
+            launched.append((job, kwargs))
+
+    with patch(
+        "app.api.endpoints.library.get_background_handler",
+        return_value=_FakeHandler(),
+    ):
+        first = await client.post(
+            f"/library/documents/{extracted_document.id}/refine/complete",
+            json={},
+            headers=auth_headers,
+        )
+        assert first.status_code == 200
+
+        second = await client.post(
+            f"/library/documents/{extracted_document.id}/refine/complete",
+            json={},
+            headers=auth_headers,
+        )
+
+    assert second.status_code == 409
+    # Only the first call should have queued a job.
+    assert len(launched) == 1
+
+
+async def test_refine_complete_reopen_resets_to_awaiting_refinement(
+    client: AsyncClient, auth_headers, extracted_document
+):
+    """reopen=True on a COMPLETE doc flips it back to AWAITING_REFINEMENT
+    without launching a new index job."""
+    launched: list = []
+
+    class _FakeHandler:
+        async def launch(self, job, **kwargs):
+            launched.append((job, kwargs))
+
+    with patch(
+        "app.api.endpoints.library.get_background_handler",
+        return_value=_FakeHandler(),
+    ):
+        # First complete it
+        complete_resp = await client.post(
+            f"/library/documents/{extracted_document.id}/refine/complete",
+            json={},
+            headers=auth_headers,
+        )
+        assert complete_resp.status_code == 200
+        assert complete_resp.json()["status"] == "INDEXING"
+
+        # Now reopen
+        reopen_resp = await client.post(
+            f"/library/documents/{extracted_document.id}/refine/complete",
+            json={"reopen": True},
+            headers=auth_headers,
+        )
+
+    assert reopen_resp.status_code == 200, reopen_resp.text
+    body = reopen_resp.json()
+    assert body["status"] == "AWAITING_REFINEMENT"
+    assert body["refinement_status"] == "IN_PROGRESS"
+    # Reopen must NOT queue another index job.
+    assert len(launched) == 1
+
+
+async def test_refine_complete_reopen_on_non_complete_returns_409(
+    client: AsyncClient, auth_headers, extracted_document
+):
+    """reopen=True on a doc that was never completed must 409."""
+    class _FakeHandler:
+        async def launch(self, job, **kwargs):
+            pass
+
+    with patch(
+        "app.api.endpoints.library.get_background_handler",
+        return_value=_FakeHandler(),
+    ):
+        resp = await client.post(
+            f"/library/documents/{extracted_document.id}/refine/complete",
+            json={"reopen": True},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 409
+
+

@@ -6,7 +6,7 @@ import pytest
 
 from app.models.library import DocumentStatus, RefinementStatus
 from app.services.documents.refinement.refinement_service import (
-    mark_complete, mark_in_progress, save_markdown)
+    mark_complete, mark_in_progress, reopen, save_markdown)
 
 
 def _doc(refinement_status=RefinementStatus.PENDING.value):
@@ -66,3 +66,27 @@ async def test_mark_complete_rejects_already_complete():
     doc = _doc(refinement_status=RefinementStatus.COMPLETE.value)
     with pytest.raises(ValueError, match="already complete"):
         await mark_complete(db, doc, user_id=uuid4())
+
+
+@pytest.mark.asyncio
+async def test_reopen_resets_complete_doc_to_awaiting_refinement():
+    db = AsyncMock()
+    doc = _doc(refinement_status=RefinementStatus.COMPLETE.value)
+    doc.status = DocumentStatus.READY.value
+    doc.refined_by_id = uuid4()
+    doc.refined_at = datetime.now(timezone.utc)
+
+    await reopen(db, doc)
+
+    assert doc.refinement_status == RefinementStatus.IN_PROGRESS.value
+    assert doc.status == DocumentStatus.AWAITING_REFINEMENT.value
+    assert doc.refined_by_id is None
+    assert doc.refined_at is None
+
+
+@pytest.mark.asyncio
+async def test_reopen_rejects_non_complete_doc():
+    db = AsyncMock()
+    doc = _doc(refinement_status=RefinementStatus.IN_PROGRESS.value)
+    with pytest.raises(ValueError, match="Only completed refinements"):
+        await reopen(db, doc)
