@@ -99,6 +99,44 @@ def _resolve_initials(
     return _get_initials(name)
 
 
+def _compute_scheduled_at(start_time: str, prior_minutes: int) -> str:
+    """Add ``prior_minutes`` to an ``HH:MM`` start time, returning ``HH:MM``."""
+    if not start_time:
+        return ""
+    try:
+        hh, mm = start_time.split(":")
+        total = int(hh) * 60 + int(mm) + max(0, int(prior_minutes))
+    except (ValueError, AttributeError):
+        return ""
+    return f"{(total // 60) % 24:02d}:{total % 60:02d}"
+
+
+def _apply_step_timing(
+    step_ctx: dict[str, Any],
+    *,
+    start_time: str,
+    prior_minutes: int,
+    execution_data: dict[str, Any],
+) -> int:
+    """Mutate ``step_ctx`` in place with scheduled/actual timestamps.
+
+    Sets ``scheduled_at`` (derived from ``start_time`` + ``prior_minutes``)
+    and ``actual_started_at`` / ``actual_completed_at`` (looked up by the
+    step's ``id`` in ``execution_data``). Returns the new cumulative
+    minutes including this step's duration so callers can advance their
+    timeline counter.
+
+    Callers responsible for any aliasing must shallow-copy the dict
+    before passing it in.
+    """
+    step_ctx["scheduled_at"] = _compute_scheduled_at(start_time, prior_minutes)
+    step_id = step_ctx.get("_step_id") or step_ctx.get("id", "")
+    exec_row = execution_data.get(step_id, {})
+    step_ctx["actual_started_at"] = exec_row.get("started_at", "")
+    step_ctx["actual_completed_at"] = exec_row.get("completed_at", "")
+    return prior_minutes + int(step_ctx.get("duration_min") or 0)
+
+
 def build_context(
     *,
     protocol_name: str = "",
@@ -122,6 +160,8 @@ def build_context(
     attachments: list[dict[str, Any]] | None = None,
     storage: FileStorageService | None = None,
     equipment_context: dict[str, str] | None = None,
+    time_enabled: bool = False,
+    start_time: str = "",
 ) -> tuple[dict[str, Any], list[str]]:
     """Assemble the Jinja2 context dict for template rendering.
 
@@ -138,9 +178,7 @@ def build_context(
     unresolved_all: list[str] = []
     _seen_unresolved: set[str] = set()
 
-    def _merge_and_render(
-        desc: str, params: dict[str, Any] | None
-    ) -> str:
+    def _merge_and_render(desc: str, params: dict[str, Any] | None) -> str:
         merged = {**eq_ctx, **(params or {})}
         rendered, unresolved = _render_template(desc, merged)
         for tok in unresolved:
@@ -162,6 +200,7 @@ def build_context(
 
     # Build step contexts for the flat step list (batch record table)
     step_contexts = []
+    _cumulative_min = 0
     for step in flat_steps or []:
         step_id = step.get("id", "")
         sd = exec_data.get(step_id, {})
@@ -328,6 +367,13 @@ def build_context(
             "figure_refs": figure_refs,
             "notes_display": notes_display,
         }
+        # Per-step scheduling on the global timeline.
+        _cumulative_min = _apply_step_timing(
+            step_ctx,
+            start_time=start_time,
+            prior_minutes=_cumulative_min,
+            execution_data=exec_data,
+        )
         step_contexts.append(step_ctx)
 
     # Build role contexts — each role contains both SOP-style steps
@@ -340,6 +386,8 @@ def build_context(
     for role_data in roles_with_steps or []:
         sop_steps = []
         br_steps = []
+        # Per-role timeline restarts at start_time.
+        _cumulative_min = 0
         for s in role_data.get("steps", []):
             # SOP-style step
             desc = s.get("description", "") or ""
@@ -379,27 +427,35 @@ def build_context(
                 }
             )
 
-            # Batch-record-style step (reuse from step_contexts if available)
+            # Batch-record-style step (reuse from step_contexts if available).
+            # Shallow-copy so the per-role timeline doesn't mutate the shared
+            # step_ctx dict already appended to the global step_contexts list.
             step_id = s.get("id", "")
-            br_step = step_ctx_by_id.get(step_id)
-            if br_step:
-                br_steps.append(br_step)
+            shared = step_ctx_by_id.get(step_id)
+            if shared:
+                br_step = dict(shared)
             else:
                 # Fallback: build a minimal step context from role step data
-                br_steps.append(
-                    {
-                        "_step_id": step_id,
-                        "name": s.get("name", ""),
-                        "description": desc or param_sentence or "--",
-                        "duration_min": s.get("duration_min"),
-                        "role_name": role_data.get("role_name", ""),
-                        "value_display": "",
-                        "initials": "",
-                        "_initials_user_id": "",
-                        "_initials_name": "",
-                        "notes_display": "",
-                    }
-                )
+                br_step = {
+                    "_step_id": step_id,
+                    "name": s.get("name", ""),
+                    "description": desc or param_sentence or "--",
+                    "duration_min": s.get("duration_min"),
+                    "role_name": role_data.get("role_name", ""),
+                    "value_display": "",
+                    "initials": "",
+                    "_initials_user_id": "",
+                    "_initials_name": "",
+                    "notes_display": "",
+                }
+            # Per-step scheduling on the per-role timeline.
+            _cumulative_min = _apply_step_timing(
+                br_step,
+                start_time=start_time,
+                prior_minutes=_cumulative_min,
+                execution_data=exec_data,
+            )
+            br_steps.append(br_step)
 
         # Pre-compute role header as RichText to avoid empty
         # conditional paragraphs that create whitespace gaps in Word
@@ -522,6 +578,8 @@ def build_context(
             "project_name": project_name,
             "organization_name": organization_name,
             "is_role_based": is_role_based,
+            "time_enabled": bool(time_enabled),
+            "start_time": start_time or "",
             "page_break": RichText("\f"),
             "steps": step_contexts,
             "roles": role_contexts,
