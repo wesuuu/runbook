@@ -386,18 +386,22 @@ async def test_delete_document_returns_204(
 async def test_delete_document_removes_file(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
-    import os
+    from app.services.core.file_storage import FileStorageService
 
     upload_resp = await _make_upload(client, auth_headers)
     body = upload_resp.json()
     doc_id = body["id"]
-    file_path = body["file_path"]
+    relative_path = body["file_path"]
 
-    assert os.path.exists(file_path)
+    # file_path on the response is storage-relative; resolve to absolute
+    # via the storage service so the test isn't CWD-sensitive.
+    storage = FileStorageService()
+    full_path = storage.resolve_path(relative_path)
+    assert full_path.exists()
 
     resp = await client.delete(f"/library/documents/{doc_id}", headers=auth_headers)
     assert resp.status_code == 204
-    assert not os.path.exists(file_path)
+    assert not full_path.exists()
 
 
 @pytest.mark.asyncio

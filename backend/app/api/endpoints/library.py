@@ -523,10 +523,14 @@ async def retry_processing(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if doc.status in (DocumentStatus.PROCESSING.value,):
+    # Retry is only meaningful for failed documents. Anything still in
+    # flight (QUEUED/EXTRACTING/INDEXING/PROCESSING/AWAITING_REFINEMENT)
+    # or already terminal-successful (READY/INDEXED/ENRICHED/UPLOADED)
+    # is rejected — the user should wait, delete, or just re-upload.
+    if doc.status != DocumentStatus.FAILED.value:
         raise HTTPException(
             status_code=409,
-            detail="Document is currently processing",
+            detail=f"Document is not in a failed state (status={doc.status})",
         )
 
     # Reset status
