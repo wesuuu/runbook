@@ -145,17 +145,20 @@ def build_sop(output_path: Path) -> None:
 
     # Procedure (always present; branches on is_role_based)
     # Use {%p if/for/endfor/endif %} for paragraph-level control flow.
+    # {{ loop.index }} prefixes each step with its 1-based ordinal — the
+    # role-based inner loop restarts numbering per role, the flat loop
+    # numbers sequentially across the whole procedure.
     _p(doc, "Procedure", bold=True, size=14)
     _p(doc, "{%p if is_role_based %}")
     _p(doc, "{%p for role in roles %}")
     _p(doc, "{{r role.sop_header }}")
     _p(doc, "{%p for step in role.sop_steps %}")
-    _p(doc, "{{r step.sop_body }}")
+    _p(doc, "{{ loop.index }}. {{r step.sop_body }}")
     _p(doc, "{%p endfor %}")
     _p(doc, "{%p endfor %}")
     _p(doc, "{%p else %}")
     _p(doc, "{%p for step in steps %}")
-    _p(doc, "{{r step.sop_body }}")
+    _p(doc, "{{ loop.index }}. {{r step.sop_body }}")
     _p(doc, "{%p endfor %}")
     _p(doc, "{%p endif %}")
 

@@ -498,17 +498,25 @@ def build_context(
                 param_sentence = _build_param_sentence(params, param_schema)
 
             # Pre-compute step body as RichText to avoid empty
-            # conditional paragraphs in the Word output
+            # conditional paragraphs in the Word output. First line
+            # carries the bold step name so the procedure reads as a
+            # numbered list of instructions; sub-lines (param sentence,
+            # duration hint) hang indented underneath.
             sop_body = RichText()
+            step_name = s.get("name", "")
+            if step_name:
+                sop_body.add(step_name, bold=True, size=20, color="#0F172A")
             if desc:
-                sop_body.add(f"    {desc}", size=20, color="#334155")
+                if step_name:
+                    sop_body.add(" — ", size=20, color="#0F172A")
+                sop_body.add(desc, size=20, color="#334155")
             if param_sentence:
-                if desc:
+                if step_name or desc:
                     sop_body.add("\a")
                 sop_body.add(f"    {param_sentence}", size=20, color="#334155")
             duration = s.get("duration_min")
             if duration:
-                if desc or param_sentence:
+                if step_name or desc or param_sentence:
                     sop_body.add("\a")
                 sop_body.add(
                     f"    Allow {duration} minutes for this step.",
