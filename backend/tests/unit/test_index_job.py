@@ -253,3 +253,87 @@ def test_job_registered_under_canonical_name():
 
     assert "document_index" in JOB_REGISTRY
     assert JOB_REGISTRY["document_index"].__name__ == "run_index"
+
+
+@pytest.mark.asyncio
+async def test_persist_success_drops_claim_if_watchdog_won_race(
+    db_session, test_org, test_user
+):
+    """If the watchdog (or another sweep) marked the doc FAILED while the
+    indexer was running, _persist_success must NOT overwrite that with
+    READY — it should bail without touching state."""
+    from app.services.core.background_jobs import BackgroundJobService
+    from app.services.documents.refinement import index_job
+
+    doc = _make_doc(test_org, test_user, DocumentStatus.INDEXING)
+    db_session.add(doc)
+    await db_session.flush()
+    job = await BackgroundJobService.create(
+        db_session, "document_index", "document", doc.id,
+    )
+    await db_session.flush()
+
+    # Simulate watchdog winning the race: status flipped to FAILED in DB.
+    doc.status = DocumentStatus.FAILED.value
+    doc.error_message = "watchdog: stale heartbeat"
+    await db_session.flush()
+
+    await index_job._persist_success(db_session, doc, job)
+
+    from sqlalchemy import select
+    fresh = await db_session.scalar(
+        select(Document).where(Document.id == doc.id)
+    )
+    assert fresh.status == DocumentStatus.FAILED.value
+    assert fresh.error_message == "watchdog: stale heartbeat"
+
+
+@pytest.mark.asyncio
+async def test_run_index_routes_unexpected_exception_to_persist_failure(
+    db_session, test_org, test_user
+):
+    """A non-IndexingError crash inside the indexer must still route to
+    _persist_failure, with the message prefixed 'unexpected error' so
+    operators can tell it apart from a real IndexingError."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.core.background_jobs import BackgroundJobService
+    from app.services.documents.refinement import index_job
+
+    doc = _make_doc(test_org, test_user, DocumentStatus.INDEXING)
+    db_session.add(doc)
+    await db_session.flush()
+    job = await BackgroundJobService.create(
+        db_session, "document_index", "document", doc.id,
+    )
+    await db_session.flush()
+
+    fake_factory = MagicMock()
+    fake_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
+    fake_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    persist_failure = AsyncMock()
+
+    # NOTE: patch the symbol where it's *used* (index_job module), not
+    # where it's defined — index_job imports the name at module-load.
+    with patch.object(
+        index_job, "index_refined_document",
+        AsyncMock(side_effect=RuntimeError("disk on fire")),
+    ), patch.object(
+        index_job, "_load_and_claim_document",
+        AsyncMock(return_value=(doc, job)),
+    ), patch.object(
+        index_job, "_persist_failure", persist_failure,
+    ), patch.object(
+        index_job, "create_async_engine",
+        MagicMock(return_value=AsyncMock()),
+    ), patch.object(
+        index_job, "async_sessionmaker",
+        MagicMock(return_value=fake_factory),
+    ):
+        await index_job.run_index(document_id=doc.id)
+
+    persist_failure.assert_awaited_once()
+    message = persist_failure.await_args.args[3]
+    assert "unexpected error" in message
+    assert "disk on fire" in message
