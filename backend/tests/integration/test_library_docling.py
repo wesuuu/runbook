@@ -80,16 +80,29 @@ async def test_put_markdown_saves_and_marks_in_progress(
 async def test_refine_complete_transitions_to_indexing(
     client: AsyncClient, auth_headers, extracted_document
 ):
+    """POST /refine/complete returns INDEXING immediately and queues the
+    document_index background job (TD-0085 Phase 3 — indexing is no
+    longer inline)."""
+    launched: list = []
+
+    class _FakeHandler:
+        async def launch(self, job, **kwargs):
+            launched.append((job, kwargs))
+
     with patch(
-        "app.api.endpoints.library.index_refined_document",
-        AsyncMock(),
+        "app.api.endpoints.library.get_background_handler",
+        return_value=_FakeHandler(),
     ):
         resp = await client.post(
             f"/library/documents/{extracted_document.id}/refine/complete",
             json={},
             headers=auth_headers,
         )
-    assert resp.status_code == 200
-    assert resp.json()["status"] in ("INDEXING", "READY")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "INDEXING"
+    assert launched == [
+        ("document_index", {"document_id": extracted_document.id})
+    ]
 
 

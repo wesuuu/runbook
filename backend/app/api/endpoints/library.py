@@ -34,10 +34,10 @@ from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
 from app.services.core.background_handler import get_background_handler
-# Side-effect import: @register_job decorator populates JOB_REGISTRY.
+# Side-effect imports: @register_job decorators populate JOB_REGISTRY.
 from app.services.documents.extraction import extract_job  # noqa: F401
+from app.services.documents.refinement import index_job  # noqa: F401
 from app.services.documents.extraction.source_page import render_source_page
-from app.services.documents.refinement.indexing import index_refined_document
 from app.services.documents.refinement.refinement_service import (mark_complete,
                                                                    reopen,
                                                                    save_markdown)
@@ -941,8 +941,15 @@ async def refine_complete(
         await mark_complete(db, doc, user_id=current_user.id)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
-    await index_refined_document(db, doc)
     await db.commit()
+
+    # Indexing now runs as a background job so the user gets the live
+    # shimmer card and the doc survives worker restarts via the
+    # heartbeat / recovery machinery. See document_index in
+    # services/documents/refinement/index_job.py.
+    handler = get_background_handler()
+    await handler.launch("document_index", document_id=doc.id)
+
     await db.refresh(doc)
     return DocumentResponse.model_validate(doc)
 
