@@ -101,7 +101,9 @@
     {#if EdraEditor && EdraToolBar}
         {@const ToolBar = EdraToolBar}
         {@const Editor = EdraEditor}
-        <ToolBar {editor} class="border-b border-border" />
+        {#if editor}
+            <ToolBar {editor} class="border-b border-border" />
+        {/if}
         <div class="min-h-0 flex-1 overflow-y-auto">
             <Editor
                 bind:editor
