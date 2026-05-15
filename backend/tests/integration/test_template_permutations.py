@@ -11,10 +11,13 @@ from __future__ import annotations
 import io
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from docx import Document
 
+from app.models.science import Protocol
+from app.models.templates import DocumentTemplate
 from app.services.protocols.template_engine import build_context, render_to_docx
 from tests.integration.fixtures.template_permutations import builders
 
@@ -94,3 +97,108 @@ def test_permutation_renders(builder_name, template_key, template_path, write_ar
         docx_path = outdir / f"{template_key}.docx"
         docx_path.write_bytes(docx_bytes)
         _convert_to_pdf(docx_path)
+
+
+def _graph_from_p1() -> dict:
+    """Translate P1's roles_with_steps into the swim-lane graph shape
+    that ``_parse_graph_roles_and_steps`` recognises (role lanes wrap
+    their member steps via ``parentId``)."""
+    built = builders.build_p1()
+    kw = built.kwargs
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    for role in kw["roles_with_steps"]:
+        lane_id = f"lane-{role['role_name']}"
+        nodes.append({
+            "id": lane_id,
+            "type": "swimLane",
+            "data": {"role_name": role["role_name"]},
+            "position": {"x": 0, "y": 0},
+        })
+        for step in role["steps"]:
+            nodes.append({
+                "id": step["id"],
+                "type": "unitOp",
+                "parentId": lane_id,
+                "data": {
+                    "label": step["name"],
+                    "duration_min": step["duration_min"],
+                    "params": step["params"],
+                    "paramSchema": step["param_schema"],
+                    "equipment": step.get("equipment", []),
+                },
+                "position": {"x": 100, "y": 100},
+            })
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "timeEnabled": kw.get("time_enabled", False),
+        "startTime": kw.get("start_time", ""),
+    }
+
+
+async def test_p1_endpoint_renders_batch_record_pdf(
+    client, db_session, test_user, test_org, test_project, auth_headers
+):
+    """End-to-end: a real Protocol row + the system BR template renders
+    a PDF through ``/science/protocols/{id}/pdf/batch-record`` with no
+    leaked Jinja tokens.
+
+    Persists a Protocol carrying P1's kitchen-sink metadata and graph;
+    skips Run persistence because the GET endpoint runs preview mode
+    (``run_name="Preview"``) and never queries a Run row.
+    """
+    template = DocumentTemplate(
+        name="BR System Default",
+        template_type="BATCH_RECORD",
+        file_path="system/document_templates/batch_record_default.docx",
+        original_filename="batch_record_default.docx",
+        mime_type=(
+            "application/vnd.openxmlformats-officedocument"
+            ".wordprocessingml.document"
+        ),
+        file_size_bytes=BR_PATH.stat().st_size,
+        org_id=test_org.id,
+        is_system=True,
+        is_default=True,
+    )
+    db_session.add(template)
+    await db_session.flush()
+
+    built = builders.build_p1()
+    kw = built.kwargs
+    protocol = Protocol(
+        name=kw["protocol_name"],
+        description=kw.get("protocol_description", ""),
+        project_id=test_project.id,
+        version_number=kw.get("version_number", 1),
+        graph=_graph_from_p1(),
+        batch_record_template_id=template.id,
+        doc_number=kw.get("doc_number"),
+        purpose=kw.get("purpose"),
+        scope=kw.get("scope"),
+        references=kw.get("references"),
+        definitions=kw.get("definitions"),
+    )
+    db_session.add(protocol)
+    await db_session.flush()
+
+    # Storage paths resolve through FileStorageService against the live
+    # uploads dir; in the test we substitute the bundled template path
+    # so the endpoint reads the system default directly.
+    with patch(
+        "app.api.endpoints.protocol_pdfs._resolve_template_path",
+        return_value=str(BR_PATH),
+    ):
+        resp = await client.get(
+            f"/science/protocols/{protocol.id}/pdf/batch-record",
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("application/pdf")
+    # No unresolved {{token}} should leak through with P1's metadata.
+    leak = resp.headers.get("X-Unresolved-Placeholders", "")
+    assert leak == "", f"unresolved placeholders leaked: {leak}"
+    # PDF body is non-trivial (LibreOffice min-output is several KB).
+    assert len(resp.content) > 1000
