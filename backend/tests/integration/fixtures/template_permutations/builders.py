@@ -192,8 +192,11 @@ def build_p1() -> BuiltPermutation:
             "batch_record": [
                 "Kitchen Sink",
                 "Lot Number: LOT-2026-001", "Batch Number: BAT-7",
-                "Robin", "Olivia", "Reviewer", "Scheduled",
-                "Equipment", "Bioreactor",
+                "Robin", "Olivia",
+                # Step-card column captions render uppercase per the
+                # new design — assert on the rendered casing.
+                "REVIEWER", "SCHEDULED",
+                "EQUIPMENT USED", "Bioreactor",
             ],
         },
         per_template_expected_off={
@@ -269,7 +272,7 @@ def build_p4() -> BuiltPermutation:
             is_role_based=False, flat_steps=steps,
             time_enabled=True, start_time="08:00",
         ),
-        expected_on=["Flat Timed", "Scheduled"],
+        expected_on=["Flat Timed", "SCHEDULED"],
         # BR only: "Scheduled" is a static column header in the BR execution
         # table (always present) so expected_on passes.  "Reviewer" is also
         # a static BR column header, so it cannot be in expected_off.
@@ -311,7 +314,7 @@ def build_p5() -> BuiltPermutation:
                  "author_id": "u-3", "author_name": "Sam", "created_at": "t3"},
             ],
         ),
-        expected_on=["Unapproved", "Deviations", "Reviewer"],
+        expected_on=["Unapproved", "DEVIATIONS", "REVIEWER"],
         expected_off=["Lot Number"],
         renders_against=("batch_record",),
         # unapproved_warning is not set by build_context; inject it manually

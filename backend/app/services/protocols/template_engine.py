@@ -76,6 +76,47 @@ def _build_sop_body(
         )
     return rt
 
+
+def _build_br_card_header(
+    step_number: int,
+    name: str,
+    duration_min: int | None,
+) -> RichText:
+    """Compose a Batch Record step-card header as a single paragraph.
+
+    Layout (two tab stops: 0.4in left, ~5.8in right):
+        NN.<TAB><bold step name><TAB><italic muted duration>
+
+    The number column is sans for distinction from the serif body; the
+    name is bold serif; the duration sits on a right-tab in muted sans
+    italic so it reads as metadata, not as part of the step name.
+    """
+    rt = RichText()
+    rt.add(
+        f"{step_number:02d}.\t",
+        bold=True,
+        size=_BODY_HP,
+        color=_INK_DEEP,
+        font=_SANS,
+    )
+    rt.add(
+        name or "Step",
+        bold=True,
+        size=_BODY_HP,
+        color=_INK_DEEP,
+        font=_SERIF,
+    )
+    if duration_min:
+        rt.add(
+            f"\t{duration_min} min",
+            italic=True,
+            size=_META_HP,
+            color=_INK_MUTED,
+            font=_SANS,
+        )
+    return rt
+
+
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.documents.pdf_base import (_build_param_sentence,
                                              _format_value,
@@ -458,28 +499,43 @@ def build_context(
         # docxtpl RichText.add(size=…) expects raw half-points
         # (Word's w:sz), not EMU. Pt() returns EMU and silently
         # produces ~half-point*6350× sizes when passed through.
-        VS = 16  # 8pt — matches template cell font size
+        # Editorial pairing: Calibri sans label + Cambria serif value,
+        # deep ink for label, body ink for value, muted ink for edit
+        # annotations. 10pt body inside the step card.
+        VS = 20  # 10pt
         rt = RichText()
         if len(editable) > 1:
             for idx, pd in enumerate(param_details):
                 if idx > 0:
                     rt.add("\a")  # new paragraph between params
-                rt.add(f"{pd['label']}: ", bold=True, size=VS)
+                rt.add(
+                    f"{pd['label']}  ",
+                    bold=True,
+                    size=VS,
+                    color=_INK_DEEP,
+                    font=_SANS,
+                )
                 if pd["is_edited"]:
                     rt.add(
                         pd["original_value"],
                         strike=True,
-                        color="#A0A0A0",
                         size=VS,
+                        color=_INK_MUTED,
+                        font=_SERIF,
                     )
                     annotation = ""
                     if pd["editor"] or pd["edited_at"]:
                         parts = [p for p in (pd["editor"], pd["edited_at"]) if p]
                         annotation = " " + " ".join(parts)
-                    rt.add(f"{annotation} \u2192 ", size=VS, color="#64748B")
-                rt.add(pd["value"], size=VS)
+                    rt.add(
+                        f"{annotation} \u2192 ",
+                        size=VS,
+                        color=_INK_MUTED,
+                        font=_SERIF,
+                    )
+                rt.add(pd["value"], size=VS, color=_INK, font=_SERIF)
         elif single_value:
-            rt.add(single_value, size=VS)
+            rt.add(single_value, size=VS, color=_INK, font=_SERIF)
         value_display = rt
 
         # Per-step notes text (from execution_data)
@@ -513,6 +569,15 @@ def build_context(
             duration_min=step.get("duration_min"),
         )
 
+        # Batch-record step-card header — defaults to the flat numbering.
+        # The role-based branch overwrites this with per-role numbering
+        # in the role loop below.
+        card_header = _build_br_card_header(
+            step_number=_flat_idx,
+            name=step.get("name", ""),
+            duration_min=step.get("duration_min"),
+        )
+
         step_ctx = {
             "_step_id": step_id,
             "name": step.get("name", ""),
@@ -533,6 +598,7 @@ def build_context(
             "figure_refs": figure_refs,
             "notes_display": notes_display,
             "sop_body": flat_sop_body,
+            "card_header": card_header,
         }
         # Per-step scheduling on the global timeline.
         _cumulative_min = _apply_step_timing(
@@ -609,6 +675,7 @@ def build_context(
                     "_initials_user_id": "",
                     "_initials_name": "",
                     "notes_display": "",
+                    "card_header": RichText(),
                 }
             # Per-step scheduling on the per-role timeline.
             _cumulative_min = _apply_step_timing(
@@ -622,6 +689,13 @@ def build_context(
                 step_id=step_id,
                 execution_data=exec_data,
                 user_map=umap,
+            )
+            # Per-role step numbering for the BR card header (replaces
+            # the global flat-mode card_header inherited from step_ctx).
+            br_step["card_header"] = _build_br_card_header(
+                step_number=step_idx,
+                name=s.get("name", ""),
+                duration_min=s.get("duration_min"),
             )
             br_steps.append(br_step)
 
@@ -659,12 +733,20 @@ def build_context(
                     font=_SERIF,
                 )
 
-        # Pre-compute batch record header (page break + role name)
+        # Pre-compute batch record header (page break + uppercase role
+        # name in Calibri). The template paragraph adds the bottom rule
+        # and keep_with_next semantics.
         br_header = RichText()
         if not is_first_role:
             br_header.add("\f")  # page break before non-first roles
         if header_name:
-            br_header.add(header_name, bold=True, size=28)
+            br_header.add(
+                header_name.upper(),
+                bold=True,
+                size=_ROLE_HP,
+                color=_INK_DEEP,
+                font=_SANS,
+            )
 
         role_contexts.append(
             {
