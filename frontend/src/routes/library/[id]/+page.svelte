@@ -19,7 +19,7 @@
     import { API_BASE } from '$lib/config';
     import { getToken } from '$lib/auth.svelte';
     import { Input } from '$lib/components/ui/input';
-    import { ArrowLeft, RotateCcw, Trash2, ExternalLink, Search, X, ChevronDown, ChevronRight, List } from 'lucide-svelte';
+    import { ArrowLeft, RotateCcw, Trash2, ExternalLink, Search, X, ChevronDown, ChevronRight, List, FileText, BookOpen } from 'lucide-svelte';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
@@ -102,6 +102,11 @@
     // PDF viewer ref for page navigation
     let pdfIframe = $state<HTMLIFrameElement | null>(null);
 
+    // Post-refinement view mode: 'refined' shows the cleaned markdown
+    // reader, 'source' shows the original PDF. Only meaningful when both
+    // exist (PDF + indexed); non-PDFs render the reader unconditionally.
+    let viewMode = $state<'refined' | 'source'>('refined');
+
     const documentId = $derived($page.params.id);
     const isPdf = $derived(document?.mime_type === 'application/pdf');
     const isEnriched = $derived(
@@ -110,13 +115,29 @@
     const isViewable = $derived(
         document ? VIEWABLE_STATUSES.has(document.status) : false
     );
+    // True once the doc is past refinement — controls whether the
+    // refined/source toggle is offered.
+    const isPostRefinement = $derived(
+        document?.status === 'INDEXED' ||
+        document?.status === 'READY' ||
+        document?.status === 'ENRICHED',
+    );
+    const canToggleView = $derived(isPdf && isPostRefinement);
+    // Render decision: only swap to the PDF iframe when the user has
+    // explicitly asked for "Source" on a PDF that's actually viewable.
+    const isShowingSource = $derived(
+        canToggleView && viewMode === 'source' && isViewable,
+    );
 
-    // Build section nav for sidebar
+    // Build section nav for sidebar. Keyed off `isShowingSource` rather
+    // than `isPdf` so the TOC re-targets correctly when the user flips
+    // a PDF between the refined reader and the iframe source view.
     const sectionNav = $derived.by<SectionNav[]>(() => {
         if (!document) return [];
 
-        // For PDFs: only use API TOC (chunk-based fallbacks don't work for iframe viewer)
-        if (isPdf) {
+        // Source-PDF view: only API TOC is useful (we jump pages in the
+        // iframe; chunk-based fallbacks don't apply).
+        if (isShowingSource) {
             if (document.table_of_contents && document.table_of_contents.length > 0) {
                 return document.table_of_contents
                     .filter((e: TOCEntry) => e.page_number != null)
@@ -128,7 +149,8 @@
             return [];
         }
 
-        // For non-PDFs: prefer API TOC, then enriched chunk metadata, then fallback
+        // Refined-reader view (both non-PDFs and PDFs flipped to refined):
+        // prefer API TOC, then enriched chunk metadata, then fallback.
         if (document.table_of_contents && document.table_of_contents.length > 0) {
             return document.table_of_contents
                 .filter((e: TOCEntry) => e.chunk_index != null)
@@ -147,14 +169,6 @@
     }
 
     // ─── Workbench derived values ──────────────────────────────────
-    type PipelineState = 'done' | 'now' | 'pending' | 'failed';
-    interface PipelineStep {
-        id: string;
-        label: string;
-        state: PipelineState;
-        sub?: string;
-    }
-
     const shortDocId = $derived(
         document
             ? `${document.id.slice(0, 8)}…${document.id.slice(-7)}`
@@ -179,53 +193,6 @@
             s === 'PROCESSING' ||
             (s === 'INDEXED' && hasActiveProgress)
         );
-    });
-
-    const pipelineSteps = $derived.by<PipelineStep[]>(() => {
-        const s = document?.status ?? '';
-        const steps: PipelineStep[] = [
-            {
-                id: 'upload',
-                label: 'Uploaded',
-                state: 'done',
-                sub: document ? formatDate(document.created_at) : undefined,
-            },
-            {
-                id: 'extract',
-                label: 'Extracting',
-                state: 'pending',
-            },
-            { id: 'refine', label: 'Awaiting refinement', state: 'pending' },
-            { id: 'index', label: 'Indexing', state: 'pending' },
-            { id: 'ready', label: 'Ready', state: 'pending' },
-        ];
-
-        if (s === 'UPLOADED' || s === 'QUEUED') {
-            // upload done; extract is queued but hasn't started — leave pending
-        } else if (s === 'EXTRACTING') {
-            steps[1].state = 'now';
-            steps[1].sub = 'running';
-        } else if (s === 'AWAITING_REFINEMENT') {
-            steps[1].state = 'done';
-            steps[2].state = 'now';
-        } else if (s === 'INDEXING' || s === 'PROCESSING') {
-            steps[1].state = 'done';
-            steps[2].state = 'done';
-            steps[3].state = 'now';
-        } else if (s === 'INDEXED' || s === 'READY' || s === 'ENRICHED') {
-            steps[1].state = 'done';
-            steps[2].state = 'done';
-            steps[3].state = 'done';
-            steps[4].state = 'done';
-        }
-
-        if (s === 'FAILED') {
-            // Mark whichever step would currently be "now" as failed.
-            const activeIdx = steps.findIndex(st => st.state === 'pending');
-            const failIdx = activeIdx === -1 ? steps.length - 1 : activeIdx;
-            steps[failIdx].state = 'failed';
-        }
-        return steps;
     });
 
     const liveStageText = $derived.by(() => {
@@ -413,7 +380,9 @@
     }
 
     function handleSidebarClick(index: number) {
-        if (isPdf) {
+        // In source lens, the TOC carries page numbers; in the refined
+        // reader (default and non-PDF case) it carries chunk indices.
+        if (isShowingSource) {
             navigatePdfToPage(index);
         } else {
             scrollToChunk(index);
@@ -499,6 +468,31 @@
                     <a href="/library/documents/{document.id}/refine">
                         <Button size="sm">Refine document</Button>
                     </a>
+                {:else if canToggleView}
+                    <!-- Lens toggle: flip the main column between the cleaned
+                         refined reader and the raw PDF source. -->
+                    <div class="view-toggle" role="tablist" aria-label="Document view">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={viewMode === 'refined'}
+                            class:active={viewMode === 'refined'}
+                            onclick={() => (viewMode = 'refined')}
+                        >
+                            <BookOpen class="h-3.5 w-3.5" />
+                            Refined
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={viewMode === 'source'}
+                            class:active={viewMode === 'source'}
+                            onclick={() => (viewMode = 'source')}
+                        >
+                            <FileText class="h-3.5 w-3.5" />
+                            Source PDF
+                        </button>
+                    </div>
                 {:else if !isLiveExtraction && document.status !== 'FAILED'}
                     <Button size="sm" variant="outline" disabled>Refined</Button>
                 {:else}
@@ -523,23 +517,6 @@
 
             <!-- ─── Left rail ─── -->
             <aside in:fade={{ duration: blockDuration() }} class="flex flex-col gap-5">
-
-                <!-- Pipeline -->
-                <section class="rounded-[var(--radius)] border border-border bg-card px-4 py-4">
-                    <h3 class="text-[11px] uppercase tracking-[0.09em] text-muted-foreground font-medium mb-3.5">Pipeline</h3>
-                    <ol class="pipeline">
-                        {#each pipelineSteps as step (step.id)}
-                            <li class={step.state}>
-                                <span class="node">
-                                    {#if step.state === 'done'}✓{:else if step.state === 'now'}●{:else if step.state === 'failed'}!{/if}
-                                </span>
-                                <span class="label">{step.label}
-                                    {#if step.sub}<span class="sub">{step.sub}</span>{/if}
-                                </span>
-                            </li>
-                        {/each}
-                    </ol>
-                </section>
 
                 <!-- Details -->
                 <section class="rounded-[var(--radius)] border border-border bg-card px-4 py-4">
@@ -667,8 +644,8 @@
                         </div>
                     </div>
 
-                {:else if isPdf}
-                    <!-- PDF viewer -->
+                {:else if isShowingSource}
+                    <!-- PDF viewer (source lens) -->
                     <div in:fade={{ duration: blockDuration() }} class="rounded-[var(--radius)] border border-border bg-card overflow-hidden">
                         {#if isViewable}
                             <div class="w-full" style="height: calc(100vh - 14rem);">
@@ -907,76 +884,43 @@
         100% { box-shadow: 0 0 0 0   hsla(38 92% 50% / 0); }
     }
 
-    /* ─── Pipeline list in rail ────────────────────────────────── */
-    .pipeline { list-style: none; padding: 0; margin: 0; position: relative; }
-    .pipeline li {
-        display: grid;
-        grid-template-columns: 24px 1fr;
-        gap: 12px;
-        align-items: start;
-        padding: 5px 0;
-        position: relative;
+    /* ─── View-mode segmented toggle ───────────────────────────── */
+    .view-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px;
+        border: 1px solid var(--border);
+        background: var(--muted);
+        border-radius: calc(var(--radius) - 2px);
     }
-    .pipeline li + li::before {
-        content: '';
-        position: absolute;
-        left: 11px;
-        top: -10px;
-        height: 14px;
-        width: 2px;
-        background: var(--border);
-    }
-    .pipeline li.done + li::before,
-    .pipeline li.done + li.now::before,
-    .pipeline li.done + li.failed::before {
-        background: var(--accent);
-    }
-    .pipeline .node {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        background: var(--card);
-        border: 2px solid var(--border);
-        display: grid;
-        place-items: center;
-        font-size: 11px;
-        color: var(--muted-fg);
+    .view-toggle button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        font-size: 12.5px;
         line-height: 1;
-    }
-    .pipeline .done .node {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: var(--accent-fg);
-    }
-    .pipeline .now .node {
-        background: var(--card);
-        border-color: hsl(38 92% 50%);
-        color: hsl(38 92% 50%);
-        animation: chip-pulse 1.4s infinite;
-    }
-    .pipeline .failed .node {
-        background: var(--card);
-        border-color: var(--destructive);
-        color: var(--destructive);
-        font-weight: 700;
-    }
-    .pipeline .pending .node { color: transparent; }
-    .pipeline .label {
-        font-size: 13px;
-        line-height: 1.35;
-        color: var(--fg);
         font-weight: 500;
-    }
-    .pipeline .label .sub {
-        display: block;
-        font-size: 11.5px;
-        font-weight: 400;
         color: var(--muted-fg);
-        margin-top: 2px;
+        background: transparent;
+        border: 0;
+        border-radius: calc(var(--radius) - 4px);
+        cursor: pointer;
+        transition: background-color 150ms ease, color 150ms ease;
+        white-space: nowrap;
     }
-    .pipeline .pending .label {
-        color: var(--muted-fg);
-        font-weight: 400;
+    .view-toggle button:hover {
+        color: var(--fg);
+    }
+    .view-toggle button.active {
+        background: var(--card);
+        color: var(--fg);
+        box-shadow: 0 1px 2px hsl(195 30% 20% / 0.06);
+    }
+    .view-toggle button:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 1px;
     }
 
     /* ─── Live extraction card ─────────────────────────────────── */
