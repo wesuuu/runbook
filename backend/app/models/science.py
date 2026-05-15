@@ -239,6 +239,11 @@ class Run(Base, UUIDMixin, TimestampMixin):
         Boolean, default=False, server_default="false", nullable=False
     )
 
+    # Production metadata (QA-0008): lot/batch identifiers for GxP traceability.
+    # Nullable because experiment-style runs may not have a manufacturing lot.
+    lot_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    batch_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="runs")
     protocol: Mapped["Protocol"] = relationship(back_populates="runs")
