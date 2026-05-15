@@ -1011,4 +1011,50 @@ def get_mock_context() -> dict[str, Any]:
             },
         ],
     )
+    ctx["time_enabled"] = True
+    ctx["start_time"] = "08:00"
+    ctx["reviewer_enabled"] = True
+    ctx["doc_number"] = "SOP-DEMO-001"
+    ctx["effective_date"] = "2026-01-01"
+    ctx["supersedes_date"] = "2025-01-01"
+    ctx["purpose"] = "Demonstrate the end-to-end template surface."
+    ctx["scope"] = "Applies to preview rendering only."
+    ctx["references"] = "ICH Q7; internal SOP-CORE-001"
+    ctx["definitions"] = "CIP = clean-in-place. SOP = Standard Operating Procedure."
+    ctx["lot_number"] = "LOT-DEMO-2026-001"
+    ctx["batch_number"] = "BAT-DEMO-7"
+    ctx["equipment_summary"] = [
+        {
+            "local_id": "E-001",
+            "name": "5L Bioreactor",
+            "description": "Sartorius BioStat B Plus",
+        },
+        {
+            "local_id": "E-002",
+            "name": "Peristaltic Pump",
+            "description": "Cole-Parmer Masterflex",
+        },
+    ]
+    ctx["revision_history"] = [
+        {
+            "version_number": 1,
+            "created_at": "2025-12-01",
+            "created_by": "Alice Author",
+            "change_summary": "Initial release",
+        },
+        {
+            "version_number": 2,
+            "created_at": "2026-01-15",
+            "created_by": "Bob Editor",
+            "change_summary": "Tightened acceptance criteria",
+        },
+    ]
+    ctx["responsibilities"] = [
+        {"role_name": "Operator", "step_summary": "Prep buffer; seed culture; harvest"},
+        {"role_name": "Reviewer", "step_summary": "Verify pH; verify volume; sign off"},
+    ]
+    ctx["deviations"] = []
+    ctx.setdefault("approval", None)
+    ctx.setdefault("approval_history", [])
+    ctx.setdefault("unapproved_warning", "")
     return ctx
