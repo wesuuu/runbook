@@ -161,7 +161,12 @@
             allChunks = doc.chunks_preview;
 
             const hasActiveProgress = doc.processing_progress && doc.processing_progress.stage !== '';
-            const shouldPoll = doc.status === 'PROCESSING' || doc.status === 'QUEUED' || (doc.status === 'INDEXED' && hasActiveProgress);
+            const shouldPoll =
+                doc.status === 'PROCESSING' ||
+                doc.status === 'QUEUED' ||
+                doc.status === 'EXTRACTING' ||
+                doc.status === 'INDEXING' ||
+                (doc.status === 'INDEXED' && hasActiveProgress);
             if (shouldPoll && !pollTimer) {
                 pollTimer = setInterval(loadDocument, 3000);
             } else if (!shouldPoll && pollTimer) {
@@ -347,6 +352,13 @@
 
         <!-- Action bar -->
         <div class="flex items-center gap-2">
+            {#if document.status === 'AWAITING_REFINEMENT'}
+                <a href="/library/documents/{document.id}/refine">
+                    <Button size="sm">
+                        Refine document
+                    </Button>
+                </a>
+            {/if}
             {#if document.status === 'FAILED' || document.status === 'QUEUED'}
                 <Button variant="outline" size="sm" onclick={handleRetry} disabled={retrying}>
                     <RotateCcw class="mr-2 h-4 w-4" />
@@ -382,6 +394,23 @@
                 </div>
                 <p class="text-xs text-blue-600/70 mt-2">
                     The document is queued and will be processed when the AI service becomes available.
+                </p>
+            </div>
+        {/if}
+
+        <!-- Extraction / awaiting-refinement banner -->
+        {#if document.status === 'EXTRACTING'}
+            <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-md">
+                <div class="flex items-center gap-3">
+                    <div class="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin shrink-0"></div>
+                    <span class="text-sm font-medium">Extracting document content…</span>
+                </div>
+            </div>
+        {:else if document.status === 'AWAITING_REFINEMENT'}
+            <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-md">
+                <p class="text-sm font-medium">This document needs refinement before it can be searched.</p>
+                <p class="text-xs text-amber-700/70 mt-1">
+                    Open the refinement editor to review the extracted text and fix any artifacts.
                 </p>
             </div>
         {/if}
