@@ -769,10 +769,26 @@ def render_to_docx(
                 docx=doc,
             )
 
+    def _swap_reviewer(steps_list):
+        for step in steps_list or []:
+            uid = step.get("_reviewer_user_id")
+            name = step.get("_reviewer_name", "")
+            if not uid:
+                continue
+            step["reviewer_initials"] = _resolve_initials(
+                user_id=uid,
+                name=name,
+                user_signatures=user_signatures,
+                docx=doc,
+            )
+
     _swap(context.get("steps"))
+    _swap_reviewer(context.get("steps"))
     for role in context.get("roles", []) or []:
         _swap(role.get("steps"))
         _swap(role.get("br_steps"))
+        _swap_reviewer(role.get("steps"))
+        _swap_reviewer(role.get("br_steps"))
 
     # F-0066 — swap approval.signature_image_path to an InlineImage so
     # the template can render `{{ approval.signature_image }}`. Mirrors
