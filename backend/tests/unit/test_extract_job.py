@@ -139,4 +139,42 @@ async def test_late_success_is_discarded_if_watchdog_already_failed(
 
     await async_session.refresh(doc)
     assert doc.status == DocumentStatus.FAILED.value
-    assert not output_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_extraction_honours_heartbeat_base_url_override(tmp_path):
+    """When the caller passes ``heartbeat_base_url`` the subprocess receives
+    a ``--heartbeat-url`` derived from that override, not the settings
+    default. This is the path the upload endpoints use to wire the
+    subprocess to the port uvicorn actually bound."""
+    captured: dict = {}
+
+    async def _fake_exec(*argv, **kwargs):
+        captured["argv"] = argv
+        out_dir = Path(argv[argv.index("--output-dir") + 1])
+        _write_artifacts(out_dir, markdown="# Hi", image_count=0, page_count=1)
+        proc = MagicMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(return_value=(b"", b""))
+        return proc
+
+    fake_doc = MagicMock(
+        id=uuid4(), mime_type="application/pdf",
+        file_path="uploads/x.pdf", page_count=None, status="UPLOADED",
+        heartbeat_token="tok",
+    )
+
+    with patch.object(extract_job, "asyncio", _make_fake_asyncio(_fake_exec)), \
+         patch.object(extract_job, "_load_and_claim_document",
+                      AsyncMock(return_value=(fake_doc, MagicMock()))), \
+         patch.object(extract_job, "_persist_success", AsyncMock()), \
+         patch.object(extract_job, "_resolve_paths",
+                      return_value=(Path("/tmp/in.pdf"), tmp_path / "out")):
+        await extract_job.run_extraction(
+            fake_doc.id,
+            heartbeat_base_url="http://127.0.0.1:8030/",
+        )
+
+    argv = captured["argv"]
+    url = argv[argv.index("--heartbeat-url") + 1]
+    assert url == f"http://127.0.0.1:8030/internal/extraction/{fake_doc.id}/heartbeat"

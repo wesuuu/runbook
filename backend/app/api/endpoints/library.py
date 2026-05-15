@@ -104,6 +104,7 @@ def _validate_extension_matches_mime(filename: str, mime_type: str) -> bool:
 
 @router.post("/documents", response_model=DocumentResponse, status_code=201)
 async def upload_document(
+    request: Request,
     file: UploadFile,
     title: str = Form(...),
     project_id: Optional[uuid.UUID] = Form(None),
@@ -209,8 +210,14 @@ async def upload_document(
     await db.commit()
     await db.refresh(doc)
 
-    # Trigger background processing via background handler
-    await get_background_handler().launch("document_extract", document_id=doc.id)
+    # Trigger background processing via background handler. Pass the live
+    # base URL so the docling subprocess heartbeats back to whatever port
+    # this process actually bound (not whatever was in settings).
+    await get_background_handler().launch(
+        "document_extract",
+        document_id=doc.id,
+        heartbeat_base_url=str(request.base_url).rstrip("/"),
+    )
 
     resp = DocumentResponse.model_validate(doc)
     resp.can_delete = True  # Uploader always has ADMIN
@@ -505,6 +512,7 @@ async def delete_document(
 )
 async def retry_processing(
     document_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_active_subscription()),
@@ -531,8 +539,13 @@ async def retry_processing(
     await db.commit()
     await db.refresh(doc)
 
-    # Re-trigger processing via background handler
-    await get_background_handler().launch("document_extract", document_id=doc.id)
+    # Re-trigger processing via background handler. See upload_document for
+    # the rationale on passing ``heartbeat_base_url``.
+    await get_background_handler().launch(
+        "document_extract",
+        document_id=doc.id,
+        heartbeat_base_url=str(request.base_url).rstrip("/"),
+    )
 
     return doc
 
@@ -804,6 +817,7 @@ async def backfill_embeddings(
 )
 async def import_document_from_url(
     body: ImportUrlRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_active_subscription()),
@@ -829,8 +843,13 @@ async def import_document_from_url(
     await db.commit()
     await db.refresh(doc)
 
-    # Trigger background processing via background handler
-    await get_background_handler().launch("document_extract", document_id=doc.id)
+    # Trigger background processing via background handler. See
+    # upload_document for the rationale on passing ``heartbeat_base_url``.
+    await get_background_handler().launch(
+        "document_extract",
+        document_id=doc.id,
+        heartbeat_base_url=str(request.base_url).rstrip("/"),
+    )
 
     return doc
 

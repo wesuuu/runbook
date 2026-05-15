@@ -177,7 +177,19 @@ async def _persist_failure(
 
 
 @register_job("document_extract")
-async def run_extraction(document_id: UUID) -> None:
+async def run_extraction(
+    document_id: UUID,
+    heartbeat_base_url: str | None = None,
+) -> None:
+    """Run the docling extraction subprocess for ``document_id``.
+
+    ``heartbeat_base_url`` overrides ``settings.extraction_heartbeat_base_url``
+    when provided. The upload endpoints pass the live ``Request.base_url`` so
+    the subprocess always posts back to the port the backend actually bound,
+    independent of how the operator configured the settings default. The
+    settings value remains the fallback for restart-recovery paths where no
+    request context is available.
+    """
     import app.db.base  # noqa: F401
 
     engine = create_async_engine(settings.database_url)
@@ -196,9 +208,12 @@ async def run_extraction(document_id: UUID) -> None:
                 shutil.rmtree(output_dir, ignore_errors=True)
             output_dir.mkdir(parents=True, exist_ok=True)
 
+            base_url = (
+                heartbeat_base_url
+                or settings.extraction_heartbeat_base_url
+            ).rstrip("/")
             heartbeat_url = (
-                f"{settings.extraction_heartbeat_base_url.rstrip('/')}"
-                f"/internal/extraction/{document_id}/heartbeat"
+                f"{base_url}/internal/extraction/{document_id}/heartbeat"
             )
 
             proc = await asyncio.create_subprocess_exec(
