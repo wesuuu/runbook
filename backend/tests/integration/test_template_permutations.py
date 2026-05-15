@@ -56,6 +56,7 @@ def _convert_to_pdf(docx_path: Path) -> Path | None:
 
 
 @pytest.mark.parametrize("builder_name,template_key,template_path", [
+    ("build_p1", "sop", str(SOP_PATH)),
     ("build_p1", "batch_record", str(BR_PATH)),
     ("build_p2", "sop", str(SOP_PATH)),
     ("build_p3", "sop", str(SOP_PATH)),
@@ -80,9 +81,11 @@ def test_permutation_renders(builder_name, template_key, template_path, write_ar
     docx_bytes = render_to_docx(template_path, ctx)
     text = _doc_text(docx_bytes)
 
-    for needle in built.expected_on:
+    expected_on = built.per_template_expected_on.get(template_key, built.expected_on)
+    expected_off = built.per_template_expected_off.get(template_key, built.expected_off)
+    for needle in expected_on:
         assert needle in text, f"{built.name}/{template_key}: missing '{needle}'"
-    for needle in built.expected_off:
+    for needle in expected_off:
         assert needle not in text, f"{built.name}/{template_key}: unexpected '{needle}'"
 
     if write_artifacts:

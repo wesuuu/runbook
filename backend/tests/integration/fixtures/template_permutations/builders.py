@@ -10,6 +10,10 @@ Each ``build_pN()`` returns a :class:`BuiltPermutation`:
   ``"batch_record"``) the permutation is configured to render against.
 - ``context_overrides`` is an optional dict merged into the context after
   ``build_context()`` returns (e.g. to inject ``unapproved_warning``).
+- ``per_template_expected_on`` / ``per_template_expected_off`` (optional)
+  override ``expected_on`` / ``expected_off`` for a specific template key
+  when one permutation renders against multiple templates with different
+  surfaces. The base lists apply when no per-template entry exists.
 """
 from __future__ import annotations
 
@@ -24,6 +28,8 @@ class BuiltPermutation:
     expected_off: list[str] = field(default_factory=list)
     renders_against: tuple[str, ...] = ("sop", "batch_record")
     context_overrides: dict | None = None
+    per_template_expected_on: dict[str, list[str]] = field(default_factory=dict)
+    per_template_expected_off: dict[str, list[str]] = field(default_factory=dict)
 
 
 # ---------- Shared step factory ----------
@@ -163,16 +169,42 @@ def build_p1() -> BuiltPermutation:
                  "author_id": "u-1", "author_name": "Olivia", "created_at": "2026-05-15T09:00:00Z"},
             ],
         ),
-        expected_on=[
-            "Kitchen Sink", "SOP-CC-001", "Lot Number: LOT-2026-001",
-            "Batch Number: BAT-7", "Robin", "Olivia",
-            "Reviewer", "Scheduled", "Equipment", "Bioreactor",
-        ],
+        expected_on=["Kitchen Sink"],
         expected_off=[],
-        # Rendered against batch record only: "Lot Number", "Batch Number",
-        # person names from execution_data, and "Scheduled" are all
-        # batch-record-specific fields that the SOP template does not emit.
-        renders_against=("batch_record",),
+        renders_against=("sop", "batch_record"),
+        # P1 is the catalog-coverage kitchen-sink permutation; SOP and BR
+        # each render a different subset of the populated fields, so the
+        # per-template overrides describe what each side must surface.
+        per_template_expected_on={
+            "sop": [
+                "Kitchen Sink", "SOP-CC-001",
+                # Section headings — each gated on the matching field
+                "Purpose", "Scope", "Definitions", "References",
+                # Body text from the populated metadata fields
+                "Define the cell culture", "Applies to clone PD-7",
+                "CIP = clean-in-place", "ICH Q7",
+                # Revision history table
+                "Revision History", "Initial release", "Tightened acceptance",
+                # Equipment + Approval + Procedure structural sections
+                "Equipment", "Bioreactor", "Procedure", "Approval",
+            ],
+            "batch_record": [
+                "Kitchen Sink",
+                "Lot Number: LOT-2026-001", "Batch Number: BAT-7",
+                "Robin", "Olivia", "Reviewer", "Scheduled",
+                "Equipment", "Bioreactor",
+            ],
+        },
+        per_template_expected_off={
+            # SOP never renders run-execution or lot/batch fields.
+            # Note: P1 has a role named "Reviewer" so the bare string
+            # "Reviewer" legitimately appears in the SOP procedure
+            # section's role-header loop — only lot/batch and the
+            # batch-record-only "Scheduled" column are unambiguously
+            # absent from SOP renders.
+            "sop": ["Lot Number", "Batch Number", "Scheduled"],
+            "batch_record": [],
+        },
     )
 
 
