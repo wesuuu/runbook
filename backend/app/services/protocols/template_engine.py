@@ -178,6 +178,29 @@ def build_context(
     unresolved_all: list[str] = []
     _seen_unresolved: set[str] = set()
 
+    # Aggregate equipment referenced by individual steps into an ordered-
+    # unique summary list keyed by ``local_id``. Per-step entries always
+    # carry the lookup key + display name; the summary preserves the
+    # first description encountered.
+    _equipment_index: dict[str, dict[str, Any]] = {}
+
+    def _collect_equipment(
+        node_equipment: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for entry in node_equipment or []:
+            local_id = entry.get("local_id") or ""
+            if not local_id:
+                continue
+            if local_id not in _equipment_index:
+                _equipment_index[local_id] = {
+                    "local_id": local_id,
+                    "name": entry.get("name", ""),
+                    "description": entry.get("description", ""),
+                }
+            out.append({"local_id": local_id, "name": entry.get("name", "")})
+        return out
+
     def _merge_and_render(desc: str, params: dict[str, Any] | None) -> str:
         merged = {**eq_ctx, **(params or {})}
         rendered, unresolved = _render_template(desc, merged)
@@ -355,6 +378,7 @@ def build_context(
             "duration_min": step.get("duration_min"),
             "role_name": step.get("role_name", ""),
             "params": params,
+            "equipment": _collect_equipment(step.get("equipment")),
             "param_details": param_details,
             "has_multi_params": len(editable) > 1,
             "single_value": single_value,
@@ -442,6 +466,7 @@ def build_context(
                     "description": desc or param_sentence or "--",
                     "duration_min": s.get("duration_min"),
                     "role_name": role_data.get("role_name", ""),
+                    "equipment": _collect_equipment(s.get("equipment")),
                     "value_display": "",
                     "initials": "",
                     "_initials_user_id": "",
@@ -583,6 +608,7 @@ def build_context(
             "page_break": RichText("\f"),
             "steps": step_contexts,
             "roles": role_contexts,
+            "equipment_summary": list(_equipment_index.values()),
             "notes": note_contexts,
             "figures": figure_contexts,
             "non_image_attachments": non_image_att_contexts,
