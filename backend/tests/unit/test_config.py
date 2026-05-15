@@ -14,13 +14,14 @@ def test_background_handler_and_docling_settings_have_sensible_defaults():
     )
 
 
-def test_document_refinement_capability_env_fields_exist():
-    s = Settings()
-    assert s.ai_document_refinement_provider == ""
-    assert s.ai_document_refinement_model == ""
-
-
 def test_doc_structure_capability_fields_removed():
     s = Settings()
     assert not hasattr(s, "ai_doc_structure_provider")
     assert not hasattr(s, "ai_doc_structure_model")
+
+
+def test_document_refinement_capability_fields_removed():
+    """Dropped along with the AI-fix feature."""
+    s = Settings()
+    assert not hasattr(s, "ai_document_refinement_provider")
+    assert not hasattr(s, "ai_document_refinement_model")

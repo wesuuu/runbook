@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
     DocumentResponseSchema,
     MarkdownResponseSchema,
-    RefineAiResponseSchema,
     RefinementFlagSchema,
 } from './documents';
 
@@ -61,13 +60,8 @@ describe('documents schemas', () => {
         expect(parsed.refinement_flags?.[0].source_text).toBe('NaHzPO4119.98');
     });
 
-    it('parses the markdown and AI response shapes', () => {
+    it('parses the markdown response shape', () => {
         expect(MarkdownResponseSchema.parse({ markdown: '# Title' }).markdown).toBe('# Title');
-        const ai = RefineAiResponseSchema.parse({
-            suggested_markdown: 'NaH2PO4 119.98',
-            model_used: 'claude-sonnet-4-6',
-        });
-        expect(ai.model_used).toBe('claude-sonnet-4-6');
     });
 
     it('rejects a flag missing its id', () => {

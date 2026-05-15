@@ -53,12 +53,3 @@ export const MarkdownResponseSchema = z
     })
     .passthrough();
 export type MarkdownResponse = z.infer<typeof MarkdownResponseSchema>;
-
-/** POST /library/documents/{id}/refine/ai */
-export const RefineAiResponseSchema = z
-    .object({
-        suggested_markdown: z.string(),
-        model_used: z.string(),
-    })
-    .passthrough();
-export type RefineAiResponse = z.infer<typeof RefineAiResponseSchema>;

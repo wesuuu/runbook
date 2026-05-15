@@ -32,7 +32,6 @@ SUPPORTED_CAPABILITIES = (
     "chat",
     "chat_subagent",
     "chat_summary",
-    "document_refinement",
     "protocol_creation",
     "protocol_editing",
     "protocol_generation",
@@ -64,10 +63,6 @@ DEFAULT_CONFIGS = {
     "chat_summary": {
         "provider": "openrouter",
         "model_name": "anthropic/claude-sonnet-4",
-    },
-    "document_refinement": {
-        "provider": "anthropic",
-        "model_name": "claude-sonnet-4-5-20250929",
     },
     "protocol_creation": {
         "provider": "ollama",

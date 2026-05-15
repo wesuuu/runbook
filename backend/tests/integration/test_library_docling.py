@@ -93,28 +93,3 @@ async def test_refine_complete_transitions_to_indexing(
     assert resp.json()["status"] in ("INDEXING", "READY")
 
 
-async def test_refine_ai_returns_suggested_markdown(
-    client: AsyncClient, auth_headers, extracted_document
-):
-    from app.services.documents.refinement.ai_fix import RefineAiResult
-
-    with patch(
-        "app.api.endpoints.library.apply_ai_fix",
-        AsyncMock(return_value=RefineAiResult(
-            suggested_markdown="fixed",
-            model_used="claude-sonnet-4-5-20250929",
-        )),
-    ):
-        resp = await client.post(
-            f"/library/documents/{extracted_document.id}/refine/ai",
-            json={
-                "scope": "selection",
-                "selection_markdown": "bad",
-                "instruction": "fix it",
-            },
-            headers=auth_headers,
-        )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["suggested_markdown"] == "fixed"
-    assert body["model_used"].startswith("claude")

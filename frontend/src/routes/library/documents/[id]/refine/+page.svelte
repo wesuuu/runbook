@@ -24,9 +24,6 @@
     import { toStoredMarkdown } from '$lib/utils/document-markdown';
     import RefinementSidebar from '$lib/components/document-refinement/RefinementSidebar.svelte';
     import RefinementQueue from '$lib/components/document-refinement/RefinementQueue.svelte';
-    import RefinementAiPanel, {
-        type AiSelection,
-    } from '$lib/components/document-refinement/RefinementAiPanel.svelte';
     import RefinementEditor from '$lib/components/document-refinement/RefinementEditor.svelte';
 
     const documentId = $derived($page.params.id as string);
@@ -39,7 +36,6 @@
 
     // Editor bridge (bound from RefinementEditor).
     let getMarkdown = $state<(() => string) | undefined>(undefined);
-    let applyToSelection = $state<((md: string) => void) | undefined>(undefined);
     let scrollToAnchor = $state<((anchor: string) => void) | undefined>(undefined);
 
     // Save state.
@@ -50,8 +46,7 @@
     let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
     let agoTimer: ReturnType<typeof setInterval> | null = null;
 
-    // Right rail state.
-    let aiSelection = $state<AiSelection | null>(null);
+    // Right rail state — flag list only; clicking a flag scrolls the editor.
     let activeFlagId = $state<string | null>(null);
 
     // Complete dialog.
@@ -146,44 +141,9 @@
         else savedAgoLabel = `saved ${Math.round(secs / 60)} min ago`;
     }
 
-    function handleSelectionChange(payload: {
-        markdown: string;
-        context: string;
-    }): void {
-        if (payload.markdown.trim()) {
-            aiSelection = {
-                scope: 'selection',
-                markdown: payload.markdown,
-                context: payload.context,
-            };
-            activeFlagId = null;
-        }
-    }
-
     function handleFlagClick(flag: RefinementFlag): void {
         activeFlagId = flag.id;
         if (flag.block_anchor) scrollToAnchor?.(flag.block_anchor);
-        if (flag.source_text) {
-            aiSelection = {
-                scope: 'block',
-                markdown: flag.source_text,
-                context: flag.source_text,
-                page: flag.page ?? undefined,
-                bbox: (flag.bbox as [number, number, number, number]) ?? undefined,
-            };
-        }
-    }
-
-    function handleAiAccept(suggested: string): void {
-        applyToSelection?.(suggested);
-        aiSelection = null;
-        activeFlagId = null;
-        handleEditorUpdate();
-    }
-
-    function handleAiCancel(): void {
-        aiSelection = null;
-        activeFlagId = null;
     }
 
     async function handleComplete(): Promise<void> {
@@ -301,8 +261,15 @@
             </div>
         </div>
 
-        <!-- Three-column workspace -->
-        <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)_320px]">
+        <!-- Workspace: sidebar + editor, plus a flag-queue rail when there are flags to triage. -->
+        <div
+            class={[
+                'grid gap-4',
+                flags.length > 0
+                    ? 'lg:grid-cols-[260px_minmax(0,1fr)_320px]'
+                    : 'lg:grid-cols-[260px_minmax(0,1fr)]',
+            ]}
+        >
             <RefinementSidebar
                 documentId={doc.id}
                 mimeType={doc.mime_type}
@@ -317,26 +284,20 @@
                     documentId={doc.id}
                     {initialMarkdown}
                     onUpdate={handleEditorUpdate}
-                    onSelectionChange={handleSelectionChange}
                     bind:getMarkdown
-                    bind:applyToSelection
                     bind:scrollToAnchor
                 />
             </div>
 
-            <div class="space-y-4">
-                <RefinementQueue
-                    {flags}
-                    {activeFlagId}
-                    onFlagClick={handleFlagClick}
-                />
-                <RefinementAiPanel
-                    documentId={doc.id}
-                    selection={aiSelection}
-                    onAccept={handleAiAccept}
-                    onCancel={handleAiCancel}
-                />
-            </div>
+            {#if flags.length > 0}
+                <div class="space-y-4">
+                    <RefinementQueue
+                        {flags}
+                        {activeFlagId}
+                        onFlagClick={handleFlagClick}
+                    />
+                </div>
+            {/if}
         </div>
     {/if}
 </div>

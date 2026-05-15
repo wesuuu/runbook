@@ -4,10 +4,8 @@ import { API_BASE } from '$lib/config';
 import {
     DocumentResponseSchema,
     MarkdownResponseSchema,
-    RefineAiResponseSchema,
     type DocumentResponse,
     type MarkdownResponse,
-    type RefineAiResponse,
 } from '$lib/schemas/documents';
 
 /** GET the raw stored markdown. 404s until extraction has completed. */
@@ -26,34 +24,6 @@ export function updateDocumentMarkdown(
         `/library/documents/${documentId}/markdown`,
         { markdown },
         { schema: DocumentResponseSchema },
-    );
-}
-
-export interface RefineAiParams {
-    scope: 'selection' | 'block' | 'document';
-    selectionMarkdown: string;
-    instruction: string;
-    surroundingContextMarkdown?: string;
-    page?: number;
-    bbox?: [number, number, number, number];
-}
-
-/** POST a selection-scoped AI fix request; returns the suggested replacement. */
-export function refineDocumentWithAi(
-    documentId: string,
-    params: RefineAiParams,
-): Promise<RefineAiResponse> {
-    return api.post(
-        `/library/documents/${documentId}/refine/ai`,
-        {
-            scope: params.scope,
-            selection_markdown: params.selectionMarkdown,
-            instruction: params.instruction,
-            surrounding_context_markdown: params.surroundingContextMarkdown ?? null,
-            page: params.page ?? null,
-            bbox: params.bbox ?? null,
-        },
-        { schema: RefineAiResponseSchema },
     );
 }
 

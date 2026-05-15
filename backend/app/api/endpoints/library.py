@@ -27,7 +27,6 @@ from app.schemas.jobs import ProcessingProgress
 from app.schemas.library import (DocumentChunkResponse, DocumentDetailResponse,
                                  DocumentListResponse, DocumentResponse,
                                  ImportUrlRequest, MarkdownPayload,
-                                 RefineAiRequest, RefineAiResponse,
                                  RefineCompleteRequest, SearchResponse,
                                  SearchResultGroup, SearchResultItem, TOCEntry)
 from app.services.core.audit import log_audit
@@ -38,8 +37,6 @@ from app.services.core.background_handler import get_background_handler
 # Side-effect import: @register_job decorator populates JOB_REGISTRY.
 from app.services.documents.extraction import extract_job  # noqa: F401
 from app.services.documents.extraction.source_page import render_source_page
-from app.services.documents.refinement.ai_fix import (RefineAiPayload,
-                                                       apply_ai_fix)
 from app.services.documents.refinement.indexing import index_refined_document
 from app.services.documents.refinement.refinement_service import (mark_complete,
                                                                    reopen,
@@ -904,39 +901,6 @@ async def put_document_markdown(
     await db.commit()
     await db.refresh(doc)
     return DocumentResponse.model_validate(doc)
-
-
-@router.post("/documents/{document_id}/refine/ai", response_model=RefineAiResponse)
-async def refine_with_ai(
-    document_id: uuid.UUID,
-    payload: RefineAiRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    org_id = await _get_user_org_id(current_user, db)
-    result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
-    )
-    doc = result.scalar_one_or_none()
-    if doc is None:
-        raise HTTPException(404, "Document not found")
-    allowed = await check_permission(
-        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.EDIT
-    )
-    if not allowed:
-        raise HTTPException(403, "Insufficient permissions")
-    ai_result = await apply_ai_fix(
-        db,
-        document_id,
-        org_id,
-        RefineAiPayload(**payload.model_dump()),
-    )
-    return RefineAiResponse(
-        suggested_markdown=ai_result.suggested_markdown,
-        model_used=ai_result.model_used,
-    )
 
 
 @router.post(

@@ -93,8 +93,6 @@ class Settings(BaseSettings):
     ai_text_model: str = ""
     ai_embedding_provider: str = ""
     ai_embedding_model: str = ""
-    ai_document_refinement_provider: str = ""
-    ai_document_refinement_model: str = ""
     ai_chat_provider: str = ""
     ai_chat_model: str = ""
     ai_chat_subagent_provider: str = ""

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class DocumentResponse(BaseModel):
@@ -104,29 +104,6 @@ class SearchResponse(BaseModel):
 
 class MarkdownPayload(BaseModel):
     markdown: str
-
-
-class RefineAiRequest(BaseModel):
-    scope: str = Field(..., pattern="^(selection|block|document)$")
-    selection_markdown: str
-    instruction: str
-    surrounding_context_markdown: Optional[str] = None
-    page: Optional[int] = None
-    bbox: Optional[list[float]] = None
-
-    @field_validator("bbox")
-    @classmethod
-    def _bbox_len(cls, v):
-        if v is None:
-            return v
-        if len(v) != 4:
-            raise ValueError("bbox must be [x0,y0,x1,y1]")
-        return v
-
-
-class RefineAiResponse(BaseModel):
-    suggested_markdown: str
-    model_used: str
 
 
 class RefineCompleteRequest(BaseModel):

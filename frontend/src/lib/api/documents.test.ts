@@ -10,7 +10,6 @@ import {
     documentImageUrl,
     documentSourcePageUrl,
     getDocumentMarkdown,
-    refineDocumentWithAi,
     updateDocumentMarkdown,
 } from './documents';
 
@@ -63,28 +62,6 @@ describe('documents API client', () => {
         const init = fetchMock.mock.calls[0][1];
         expect(init?.method).toBe('PUT');
         expect(JSON.parse(init?.body as string)).toEqual({ markdown: '# Edited' });
-    });
-
-    it('POSTs an AI refine request mapping camelCase to snake_case', async () => {
-        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-            jsonResponse({ suggested_markdown: 'fixed', model_used: 'claude-sonnet-4-6' }),
-        );
-        const res = await refineDocumentWithAi('doc-1', {
-            scope: 'selection',
-            selectionMarkdown: 'NaHzPO4',
-            instruction: 'fix the formula',
-            surroundingContextMarkdown: 'before NaHzPO4 after',
-        });
-        expect(res.suggested_markdown).toBe('fixed');
-        const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
-        expect(body).toEqual({
-            scope: 'selection',
-            selection_markdown: 'NaHzPO4',
-            instruction: 'fix the formula',
-            surrounding_context_markdown: 'before NaHzPO4 after',
-            page: null,
-            bbox: null,
-        });
     });
 
     it('POSTs refine/complete with reopen:false', async () => {
