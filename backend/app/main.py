@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.services.core.background_handler import get_background_handler
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,7 @@ async def _recover_stalled_jobs() -> None:
                 # so _recover_stalled_documents will re-fire the new extractor.
                 if job.job_type in (
                     "document_extract",
+                    "document_index",
                     "document_process",
                     "document_enrich",
                 ):
@@ -196,7 +198,6 @@ async def _recover_stalled_documents() -> None:
     """
     from app.models.library import (STALE_PROCESSING_SECONDS, Document,
                                     DocumentStatus)
-    from app.services.core.background_handler import get_background_handler
 
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -225,6 +226,13 @@ async def _recover_stalled_documents() -> None:
                                 | (Document.processing_started_at < stale_cutoff)
                             )
                         ),
+                        (
+                            (Document.status == DocumentStatus.INDEXING.value)
+                            & (
+                                (Document.processing_started_at == None)  # noqa: E711
+                                | (Document.processing_started_at < stale_cutoff)
+                            )
+                        ),
                     )
                 )
                 .with_for_update(skip_locked=True)
@@ -241,23 +249,38 @@ async def _recover_stalled_documents() -> None:
                 [str(d.id) for d in stalled_docs],
             )
 
-            # Reset stale EXTRACTING/PROCESSING docs back to UPLOADED so
-            # the new extractor treats them as fresh
+            # Categorize before re-firing — INDEXING docs go back through
+            # document_index, everything else through document_extract.
+            extracting_docs: list[Document] = []
+            indexing_docs: list[Document] = []
             for doc in stalled_docs:
-                if doc.status in (
-                    DocumentStatus.EXTRACTING.value,
-                    DocumentStatus.PROCESSING.value,
-                ):
-                    doc.status = DocumentStatus.UPLOADED.value
+                if doc.status == DocumentStatus.INDEXING.value:
+                    # Release the claim; keep status=INDEXING so the
+                    # job picks up where the previous attempt left off
+                    # (indexer is idempotent — drops prior chunks first).
                     doc.processing_started_at = None
                     doc.heartbeat_token = None
+                    indexing_docs.append(doc)
+                else:
+                    # UPLOADED / EXTRACTING / PROCESSING all re-enter the
+                    # extraction pipeline. Reset to UPLOADED for a fresh fire.
+                    if doc.status in (
+                        DocumentStatus.EXTRACTING.value,
+                        DocumentStatus.PROCESSING.value,
+                    ):
+                        doc.status = DocumentStatus.UPLOADED.value
+                        doc.processing_started_at = None
+                        doc.heartbeat_token = None
+                    extracting_docs.append(doc)
             await session.commit()
 
-            # Re-fire extraction for each stalled document
             handler = get_background_handler()
-            for doc in stalled_docs:
+            for doc in extracting_docs:
                 await handler.launch("document_extract", document_id=doc.id)
                 logger.info("Re-fired extraction for document %s", doc.id)
+            for doc in indexing_docs:
+                await handler.launch("document_index", document_id=doc.id)
+                logger.info("Re-fired indexing for document %s", doc.id)
     finally:
         await engine.dispose()
 
