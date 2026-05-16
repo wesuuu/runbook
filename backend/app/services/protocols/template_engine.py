@@ -48,6 +48,7 @@ KNOWN_VARIABLES = {
     # Manual/optional loops — populated only when data is wired
     "materials",
     "equipment",
+    "target_yield",
     # Approval (F-0066)
     "approval",
     "approval_history",
@@ -125,6 +126,9 @@ def build_context(
     attachments: list[dict[str, Any]] | None = None,
     storage: FileStorageService | None = None,
     equipment_context: dict[str, str] | None = None,
+    materials: list[dict[str, Any]] | None = None,
+    equipment: list[dict[str, Any]] | None = None,
+    target_yield: str = "",
 ) -> tuple[dict[str, Any], list[str]]:
     """Assemble the Jinja2 context dict for template rendering.
 
@@ -531,6 +535,9 @@ def build_context(
             "notes": note_contexts,
             "figures": figure_contexts,
             "non_image_attachments": non_image_att_contexts,
+            "materials": materials or [],
+            "equipment": equipment or [],
+            "target_yield": target_yield,
             "_user_signatures": sigmap,
         },
         unresolved_all,
