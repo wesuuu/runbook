@@ -45,6 +45,9 @@ KNOWN_VARIABLES = {
     "notes",
     "figures",
     "non_image_attachments",
+    # Manual/optional loops — populated only when data is wired
+    "materials",
+    "equipment",
     # Approval (F-0066)
     "approval",
     "approval_history",
