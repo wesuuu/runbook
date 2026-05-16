@@ -551,9 +551,11 @@ def render_to_docx(
     """Render a .docx template with context, return .docx bytes."""
     doc = DocxTemplate(str(template_path))
 
-    # Convert figure file paths to InlineImage objects
+    # Convert figure file paths to InlineImage objects. Keep `_file_path`
+    # so the context dict can be reused across multiple render calls
+    # (each call must bind a fresh InlineImage to the current DocxTemplate).
     for fig in context.get("figures", []):
-        fpath_str = fig.pop("_file_path", None)
+        fpath_str = fig.get("_file_path")
         if fpath_str:
             fpath = Path(fpath_str)
             if fpath.exists():
@@ -565,7 +567,7 @@ def render_to_docx(
     # signature, or a cursive RichText fallback. Mirrors the figure
     # handling above: build_context puts placeholders, render_to_docx
     # finalizes them against the open DocxTemplate.
-    user_signatures = context.pop("_user_signatures", {}) or {}
+    user_signatures = context.get("_user_signatures") or {}
 
     def _swap(steps_list):
         for step in steps_list or []:
