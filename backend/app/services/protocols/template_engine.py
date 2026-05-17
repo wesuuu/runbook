@@ -175,6 +175,14 @@ KNOWN_VARIABLES = {
     # Run identifiers
     "lot_number",
     "batch_number",
+    # SOP time-course mode (bioreactor-style sampling SOPs)
+    "critical_requirement",
+    "is_time_based",
+    "time_points",
+    # Batch record GxP loops
+    "target_yield",
+    "materials",
+    "equipment",
 }
 
 
@@ -330,6 +338,12 @@ def build_context(
     lot_number: str = "",
     batch_number: str = "",
     revision_history: list[dict[str, Any]] | None = None,
+    critical_requirement: str = "",
+    is_time_based: bool = False,
+    time_points: list[dict[str, Any]] | None = None,
+    target_yield: str = "",
+    materials: list[dict[str, Any]] | None = None,
+    equipment: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Assemble the Jinja2 context dict for template rendering.
 
@@ -881,6 +895,12 @@ def build_context(
         context["responsibilities"] = []
 
     context["revision_history"] = list(revision_history or [])
+    context["critical_requirement"] = critical_requirement or ""
+    context["is_time_based"] = bool(is_time_based)
+    context["time_points"] = list(time_points or [])
+    context["target_yield"] = target_yield or ""
+    context["materials"] = list(materials or [])
+    context["equipment"] = list(equipment or [])
 
     # Deviations: subset of notes where flags include "anomaly"
     context["deviations"] = [
@@ -903,15 +923,35 @@ def render_to_docx(
     """Render a .docx template with context, return .docx bytes."""
     doc = DocxTemplate(str(template_path))
 
-    # Convert figure file paths to InlineImage objects
+    # Convert figure file paths to InlineImage objects. We .get() rather
+    # than .pop() the path so render_to_pdf can call us twice — popping
+    # would leave the second pass with stale InlineImage refs pointing at
+    # the previous DocxTemplate, which Word silently renders as invisible.
     for fig in context.get("figures", []):
-        fpath_str = fig.pop("_file_path", None)
+        fpath_str = fig.get("_file_path")
         if fpath_str:
             fpath = Path(fpath_str)
             if fpath.exists():
                 fig["image"] = InlineImage(doc, str(fpath), width=Mm(150))
             else:
                 fig["image"] = f"[Image not found: {fpath.name}]"
+        elif "image" not in fig:
+            fig["image"] = ""
+
+    # Same handling for per-time-point figures (SOP time-course mode).
+    for tp in context.get("time_points", []) or []:
+        fig = tp.get("figure")
+        if not isinstance(fig, dict):
+            continue
+        fpath_str = fig.get("_file_path")
+        if fpath_str:
+            fpath = Path(fpath_str)
+            if fpath.exists():
+                fig["image"] = InlineImage(doc, str(fpath), width=Mm(120))
+            else:
+                fig["image"] = f"[Image not found: {fpath.name}]"
+        elif "image" not in fig:
+            fig["image"] = ""
 
     # F-0080 — swap step.initials to an InlineImage of the user's drawn
     # signature, or a cursive RichText fallback. Mirrors the figure
