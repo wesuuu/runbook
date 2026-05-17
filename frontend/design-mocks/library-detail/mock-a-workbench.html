@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Library detail — Workbench mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap"
+  rel="stylesheet"
+/>
+<style>
+    /* ── Tokens lifted from app.css so the mock matches production ── */
+    :root {
+        --bg:           hsl(200 25% 97%);
+        --fg:           hsl(215 40% 12%);
+        --card:         hsl(0 0% 100%);
+        --card-fg:      hsl(215 40% 12%);
+        --muted:        hsl(205 25% 94%);
+        --muted-fg:     hsl(215 15% 42%);
+        --primary:      hsl(195 85% 22%);
+        --primary-fg:   hsl(195 30% 98%);
+        --accent:       hsl(155 70% 38%);
+        --accent-fg:    hsl(155 30% 98%);
+        --destructive:  hsl(355 75% 50%);
+        --border:       hsl(205 22% 87%);
+        --ring:         hsl(195 85% 22%);
+        --warn:         hsl(38 92% 50%);
+        --radius: 0.625rem;
+        --radius-sm: 0.25rem;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'DM Sans', system-ui, sans-serif;
+        font-feature-settings: 'ss01', 'ss02';
+        -webkit-font-smoothing: antialiased;
+    }
+    .mono { font-family: 'DM Mono', ui-monospace, monospace; }
+    /* ── Layout ── */
+    .shell { max-width: 1280px; margin: 0 auto; padding: 24px 32px 64px; }
+    .topbar {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 13px; color: var(--muted-fg);
+        margin-bottom: 28px;
+    }
+    .crumbs a {
+        color: var(--muted-fg);
+        text-decoration: none;
+        transition: color 120ms ease;
+    }
+    .crumbs a:hover { color: var(--fg); }
+    .crumbs .sep { padding: 0 8px; opacity: .5; }
+    .crumbs .here { color: var(--fg); font-weight: 500; }
+
+    /* ── Header block ── */
+    .header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: end;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border);
+    }
+    h1 {
+        font-size: 30px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+        margin: 0 0 8px;
+        line-height: 1.15;
+    }
+    .meta-row {
+        display: flex; flex-wrap: wrap; gap: 8px;
+        align-items: center;
+        font-size: 12px;
+    }
+    .chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 4px 9px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        border-radius: 999px;
+        color: var(--muted-fg);
+    }
+    .chip .dot {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--muted-fg);
+    }
+    .chip.status {
+        color: hsl(28 75% 32%);
+        background: hsl(38 92% 96%);
+        border-color: hsl(38 70% 80%);
+    }
+    .chip.status .dot {
+        background: var(--warn);
+        box-shadow: 0 0 0 0 hsla(38 92% 50% / 0.6);
+        animation: pulse 1.4s infinite;
+    }
+    @keyframes pulse {
+        0%   { box-shadow: 0 0 0 0   hsla(38 92% 50% / 0.55); }
+        70%  { box-shadow: 0 0 0 6px hsla(38 92% 50% / 0); }
+        100% { box-shadow: 0 0 0 0   hsla(38 92% 50% / 0); }
+    }
+    .actions { display: flex; gap: 8px; }
+    .btn {
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        padding: 8px 14px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        cursor: pointer;
+        transition: background 120ms ease, border-color 120ms ease;
+    }
+    .btn:hover { background: var(--muted); }
+    .btn.primary {
+        background: var(--primary);
+        color: var(--primary-fg);
+        border-color: var(--primary);
+    }
+    .btn.primary:hover { filter: brightness(1.08); }
+    .btn.primary[disabled] {
+        background: var(--muted);
+        color: var(--muted-fg);
+        border-color: var(--border);
+        cursor: not-allowed;
+    }
+    .btn.ghost {
+        background: transparent;
+        border-color: transparent;
+        color: var(--muted-fg);
+    }
+    .btn.ghost:hover { color: var(--destructive); background: hsl(355 75% 96%); }
+
+    /* ── Body grid ── */
+    .body {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 28px;
+        margin-top: 28px;
+    }
+
+    /* ── Left rail: status pipeline + metadata ── */
+    .rail {
+        display: flex; flex-direction: column; gap: 20px;
+    }
+    .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+    }
+    .card-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--muted-fg);
+        margin: 0 0 14px;
+        font-weight: 500;
+    }
+    .pipeline { list-style: none; padding: 0; margin: 0; position: relative; }
+    .pipeline li {
+        display: grid;
+        grid-template-columns: 24px 1fr;
+        gap: 12px;
+        align-items: start;
+        padding: 6px 0;
+        position: relative;
+    }
+    .pipeline li + li::before {
+        content: ''; position: absolute;
+        left: 11px; top: -8px; bottom: calc(100% - 14px);
+        width: 2px;
+        background: var(--border);
+    }
+    .pipeline li.done + li::before,
+    .pipeline li.done + li.now::before { background: var(--accent); }
+    .pipeline .node {
+        width: 24px; height: 24px; border-radius: 50%;
+        background: var(--card);
+        border: 2px solid var(--border);
+        display: grid; place-items: center;
+        font-size: 11px; color: var(--muted-fg);
+    }
+    .pipeline .done .node {
+        background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+    }
+    .pipeline .now .node {
+        background: var(--card); border-color: var(--warn); color: var(--warn);
+        animation: pulse 1.4s infinite;
+    }
+    .pipeline .label {
+        font-size: 13px; line-height: 1.35;
+        color: var(--fg); font-weight: 500;
+    }
+    .pipeline .sub {
+        display: block;
+        font-size: 11.5px;
+        font-weight: 400;
+        color: var(--muted-fg);
+        margin-top: 2px;
+    }
+    .pipeline .pending .node {
+        color: transparent;
+    }
+    .pipeline .pending .label { color: var(--muted-fg); font-weight: 400; }
+
+    /* metadata grid */
+    .meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 16px; row-gap: 12px;
+    }
+    .meta-grid dt {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--muted-fg);
+        font-weight: 500;
+        margin: 0 0 2px;
+    }
+    .meta-grid dd { margin: 0; font-size: 13px; }
+    .meta-grid dd.mono { font-family: 'DM Mono', ui-monospace, monospace; }
+
+    /* ── Main: live extraction panel ── */
+    .main { display: flex; flex-direction: column; gap: 18px; }
+    .live {
+        position: relative;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+    }
+    .live::after {
+        /* grain texture */
+        content: '';
+        position: absolute; inset: 0;
+        background-image:
+            radial-gradient(hsl(195 30% 60% / 0.05) 1px, transparent 1px);
+        background-size: 4px 4px;
+        pointer-events: none;
+    }
+    .live-head {
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 12px;
+        background: linear-gradient(180deg, hsl(200 25% 99%), var(--card));
+    }
+    .live-head h2 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 500;
+    }
+    .live-head .stage {
+        font-family: 'DM Mono', ui-monospace, monospace;
+        font-size: 11.5px;
+        color: var(--muted-fg);
+    }
+    .live-head .stage strong { color: var(--fg); font-weight: 500; }
+
+    .progress {
+        height: 3px;
+        background: var(--muted);
+        position: relative;
+        overflow: hidden;
+    }
+    .progress::after {
+        content: '';
+        position: absolute; inset: 0;
+        background: linear-gradient(90deg,
+            transparent 0%,
+            var(--primary) 40%,
+            var(--primary) 60%,
+            transparent 100%);
+        width: 40%;
+        animation: slide 1.6s ease-in-out infinite;
+    }
+    @keyframes slide {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+    }
+
+    /* Shimmering markdown skeleton — placeholder for the document content */
+    .skeleton {
+        padding: 28px 32px 40px;
+        display: flex; flex-direction: column; gap: 14px;
+        position: relative;
+    }
+    .skeleton .h { height: 22px; width: 55%; }
+    .skeleton .h.small { height: 16px; width: 38%; margin-top: 12px; }
+    .skeleton .p { height: 11px; }
+    .skeleton .p.w90 { width: 92%; }
+    .skeleton .p.w70 { width: 71%; }
+    .skeleton .p.w80 { width: 82%; }
+    .skeleton .p.w50 { width: 48%; }
+    .skeleton .fig {
+        height: 110px; width: 65%;
+        border-radius: var(--radius-sm);
+    }
+    .skeleton .h, .skeleton .p, .skeleton .fig {
+        background:
+            linear-gradient(90deg,
+              hsl(205 22% 91%),
+              hsl(205 22% 95%),
+              hsl(205 22% 91%));
+        background-size: 200% 100%;
+        border-radius: 3px;
+        animation: shimmer 1.8s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+        0%   { background-position: 100% 0; }
+        100% { background-position: -100% 0; }
+    }
+    .footnote {
+        font-size: 12px;
+        color: var(--muted-fg);
+        padding: 12px 20px;
+        border-top: 1px solid var(--border);
+        display: flex; justify-content: space-between; align-items: center;
+        background: linear-gradient(0deg, hsl(200 25% 98%), var(--card));
+    }
+    .footnote .mono { color: var(--fg); }
+
+    /* small tip card */
+    .tip {
+        padding: 14px 18px;
+        border-radius: var(--radius);
+        background: hsl(195 80% 96%);
+        border: 1px solid hsl(195 50% 80%);
+        font-size: 12.5px;
+        color: hsl(195 70% 18%);
+        display: flex; gap: 10px; align-items: flex-start;
+    }
+    .tip svg { flex: 0 0 auto; color: var(--primary); margin-top: 1px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <nav class="crumbs">
+      <a href="#">Library</a>
+      <span class="sep">/</span>
+      <span class="here">animal-culture-textbook</span>
+    </nav>
+    <span class="mono" style="font-size:11.5px;">doc · 0caa2e39…dff2b3a</span>
+  </div>
+
+  <header class="header">
+    <div>
+      <h1>animal-culture-textbook</h1>
+      <div class="meta-row">
+        <span class="chip status"><span class="dot"></span>Queued for extraction</span>
+        <span class="chip"><span class="dot"></span>PDF</span>
+        <span class="chip"><span class="dot"></span>20.1&nbsp;MB</span>
+        <span class="chip"><span class="dot"></span>est. 482 pages</span>
+        <span class="chip"><span class="dot"></span>Uploaded just now</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn">Re-extract</button>
+      <button class="btn primary" disabled>Refine document</button>
+      <button class="btn ghost" title="Delete">Delete</button>
+    </div>
+  </header>
+
+  <main class="body">
+
+    <aside class="rail">
+      <section class="card">
+        <h3 class="card-title">Pipeline</h3>
+        <ol class="pipeline">
+          <li class="done">
+            <span class="node">✓</span>
+            <span class="label">Uploaded
+              <span class="sub">04:54 AM · 20.1 MB</span></span>
+          </li>
+          <li class="now">
+            <span class="node">●</span>
+            <span class="label">Extracting
+              <span class="sub">docling + easyocr · running</span></span>
+          </li>
+          <li class="pending">
+            <span class="node"></span>
+            <span class="label">Awaiting refinement</span>
+          </li>
+          <li class="pending">
+            <span class="node"></span>
+            <span class="label">Indexing</span>
+          </li>
+          <li class="pending">
+            <span class="node"></span>
+            <span class="label">Ready</span>
+          </li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">Details</h3>
+        <dl class="meta-grid">
+          <div>
+            <dt>Type</dt>
+            <dd class="mono">application/pdf</dd>
+          </div>
+          <div>
+            <dt>Size</dt>
+            <dd class="mono">20.1 MB</dd>
+          </div>
+          <div>
+            <dt>Pages</dt>
+            <dd class="mono">482</dd>
+          </div>
+          <div>
+            <dt>OCR</dt>
+            <dd class="mono">easyocr</dd>
+          </div>
+          <div>
+            <dt>Project</dt>
+            <dd>Unassigned</dd>
+          </div>
+          <div>
+            <dt>Uploaded by</dt>
+            <dd>you</dd>
+          </div>
+        </dl>
+      </section>
+
+      <div class="tip">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <span>Heartbeats stream from the extractor every 10&nbsp;s. You can navigate away — we’ll keep working in the background.</span>
+      </div>
+    </aside>
+
+    <section class="main">
+      <div class="live">
+        <div class="live-head">
+          <h2>Extraction in progress</h2>
+          <span class="stage">stage: <strong>parse_layout</strong> · page <strong>34</strong> of <strong>482</strong></span>
+        </div>
+        <div class="progress"></div>
+
+        <div class="skeleton" aria-hidden="true">
+          <div class="h"></div>
+          <div class="p w90"></div>
+          <div class="p w80"></div>
+          <div class="p w50"></div>
+
+          <div class="h small"></div>
+          <div class="p w90"></div>
+          <div class="p w70"></div>
+          <div class="fig"></div>
+          <div class="p w80"></div>
+          <div class="p w90"></div>
+          <div class="p w50"></div>
+        </div>
+
+        <div class="footnote">
+          <span>Preview will appear here once the first page finishes.</span>
+          <span class="mono">eta &lt; 6 min</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+</body>
+</html>

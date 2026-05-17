@@ -350,6 +350,140 @@ def test_sop_process_based():
     _assert_valid_pdf(pdf)
 
 
+TIME_COURSE_POINTS = [
+    {
+        "name": "Hour 0 (T=0) — Inoculation Sampling",
+        "preamble": (
+            "Reference time point. Sample drawn immediately after "
+            "inoculation establishes baseline viability and metabolite "
+            "concentration."
+        ),
+        "figure": {
+            "caption": "Figure 1: Inoculation sampling port (post-CIP).",
+            "description": (
+                "Annotated photograph of the bioreactor sampling port "
+                "showing the sterile septum and integrated luer fitting."
+            ),
+        },
+        "actions": [
+            {
+                "time": "T=0 min",
+                "action": (
+                    "Aseptically draw 5 mL via sterile sampling port into "
+                    "pre-labelled 15 mL conical."
+                ),
+                "output": "Sample S-0 logged in eBR; cap torque verified.",
+            },
+            {
+                "time": "T+10 min",
+                "action": (
+                    "Perform trypan-blue viability count (Cellometer K2, "
+                    "1:1 dilution)."
+                ),
+                "output": "Viable cell density (cells/mL); viability %.",
+            },
+            {
+                "time": "T+15 min",
+                "action": "Submit retained aliquot to in-process QC (pH, glucose).",
+                "output": "pH, glucose (g/L) recorded; sample chain-of-custody signed.",
+            },
+        ],
+    },
+    {
+        "name": "Hour 3 (T=3) — Foam & Growth Check",
+        "preamble": (
+            "Inspection only — no draw unless foam height exceeds the "
+            "documented limit."
+        ),
+        "figure": {
+            "caption": "Figure 2: Acceptable vs. excessive foam.",
+            "description": (
+                "Side-by-side comparison of acceptable headspace foam "
+                "(<10 mm) and the rejection threshold."
+            ),
+        },
+        "actions": [
+            {
+                "time": "T=3 h",
+                "action": (
+                    "Visually inspect headspace foam height; compare to "
+                    "Figure 2."
+                ),
+                "output": "PASS / FAIL noted in eBR; foam height (mm).",
+            },
+            {
+                "time": "T=3 h +5 min",
+                "action": (
+                    "If FAIL: add 0.5 mL sterile antifoam-C via dedicated "
+                    "addition port and re-inspect."
+                ),
+                "output": "Antifoam lot, volume, and post-add foam height logged.",
+            },
+        ],
+    },
+    {
+        "name": "Hour 6 (T=6) — Feed Initiation Sampling",
+        "preamble": (
+            "Sample drawn immediately prior to bolus feed addition; "
+            "establishes the pre-feed metabolic profile."
+        ),
+        "figure": None,
+        "actions": [
+            {
+                "time": "T=6 h",
+                "action": (
+                    "Aseptically draw 10 mL into pre-labelled tube; split "
+                    "into viability and metabolite aliquots."
+                ),
+                "output": "Sample S-6 logged; aliquots routed to bench + QC.",
+            },
+            {
+                "time": "T=6 h +20 min",
+                "action": (
+                    "Initiate bolus feed (Feed-A, 50 mL) via peristaltic "
+                    "pump P-02."
+                ),
+                "output": "Feed start time, pump RPM, and totaliser reading.",
+            },
+        ],
+    },
+]
+
+
+def test_sop_time_based():
+    ctx, _ = build_context(
+        protocol_name="Time-Course Bioreactor Sampling and Viability Analysis",
+        version_number=2,
+        document_number="SOP-BR-014",
+        effective_date="May 1, 2026",
+        organization_name="Trellis Bioworks",
+        project_name="CHO-K1 Fed-Batch Optimization",
+        created_at="May 17, 2026",
+        purpose_text=(
+            "Standardise the time-course sampling and in-process viability "
+            "analysis of CHO-K1 fed-batch cultures across the 2 L Sartorius "
+            "Biostat platform so that inter-operator and inter-batch results "
+            "are directly comparable."
+        ),
+        scope_text=(
+            "Applies to all GLP fed-batch development runs performed in "
+            "Suite 2B on the Biostat A 2 L vessels (BR-201 through BR-204). "
+            "Does not cover seed-train shake-flask sampling."
+        ),
+        critical_requirement=(
+            "All sampling MUST occur within ±5 min of the nominal time "
+            "point. Deviations >5 min require an in-process deviation "
+            "(IPD) report before the next time point."
+        ),
+        is_time_based=True,
+        time_points=TIME_COURSE_POINTS,
+    )
+    docx = render_to_docx(SOP_TEMPLATE, ctx)
+    pdf = render_to_pdf(SOP_TEMPLATE, ctx)
+    _write_artifact("sop_time_based", docx, pdf)
+    _assert_valid_pdf(pdf)
+
+
 # ── Batch Record Tests ──
 
 

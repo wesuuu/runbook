@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "batchrite-docling-extractor"
+version = "0.1.0"
+description = "Standalone docling-based document extractor for Batchrite (TD-0085). Invoked as a subprocess by the backend; ships with its own venv so docling/torch stay out of the backend image."
+authors = ["Batchrite"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+docling = "^2.93"
+pillow = "^10.0"
+easyocr = "^1.7"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

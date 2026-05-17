@@ -7,6 +7,7 @@ export * from './iam';
 export * from './science';
 export * from './ai';
 export * from './chat';
+export * from './documents';
 export * from './templates';
 export * from './batchRecordImport';
 export * from './billing';

@@ -1,6 +1,7 @@
 """Integration tests for hybrid document search (keyword + vector)."""
 
 import io
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -11,39 +12,56 @@ from app.models.iam import Organization
 from app.models.library import Document, DocumentChunk, DocumentStatus
 
 
-# Mock the background processor globally for this module
+# Mock the background handler globally for this module
 @pytest.fixture(autouse=True)
 def mock_processor():
+    class _FakeHandler:
+        async def launch(self, job, **kwargs):
+            pass
+
     with patch(
-        "app.api.endpoints.library.process_document",
-        new_callable=AsyncMock,
+        "app.api.endpoints.library.get_background_handler",
+        return_value=_FakeHandler(),
     ):
         yield
 
 
 async def _upload_and_index(client, auth_headers, db_session, title, content_text):
-    """Upload a document and manually create indexed chunks for testing."""
-    resp = await client.post(
-        "/library/documents",
-        files={"file": ("test.txt", io.BytesIO(content_text.encode()), "text/plain")},
-        data={"title": title},
-        headers=auth_headers,
+    """Insert a document and indexed chunk directly (no HTTP upload).
+
+    Previously used HTTP upload with text/plain; text/plain is no longer
+    an allowed MIME type, so we insert rows directly via db_session.
+    """
+    from app.models.iam import (ObjectPermission, ObjectType, PermissionLevel,
+                                PrincipalType, OrganizationMember)
+    from sqlalchemy import select as sa_select
+
+    # Resolve org_id from the existing session/member rows via test_user token
+    # We read the Authorization header to get user_id then query org membership.
+    # Simpler: use a fixed org from test_org — but we don't have it here.
+    # Instead, pull org from existing OrganizationMember rows.
+    result = await db_session.execute(
+        sa_select(OrganizationMember).limit(1)
     )
-    assert resp.status_code == 201
-    doc_id = resp.json()["id"]
+    member = result.scalar_one_or_none()
+    org_id = member.organization_id
+    user_id = member.user_id
 
-    # Manually update status and add chunks (bypassing background processor)
-    from sqlalchemy import update
-
-    await db_session.execute(
-        update(Document)
-        .where(Document.id == doc_id)
-        .values(status=DocumentStatus.INDEXED.value)
+    doc = Document(
+        org_id=org_id,
+        uploaded_by_id=user_id,
+        title=title,
+        original_filename="test.txt",
+        mime_type="text/plain",
+        file_size_bytes=len(content_text.encode()),
+        file_path=f"uploads/{uuid.uuid4().hex}.txt",
+        status=DocumentStatus.INDEXED.value,
     )
+    db_session.add(doc)
+    await db_session.flush()
 
-    # Add a chunk with the content
     chunk = DocumentChunk(
-        document_id=doc_id,
+        document_id=doc.id,
         chunk_index=0,
         content=content_text,
         token_count=len(content_text.split()),
@@ -51,7 +69,7 @@ async def _upload_and_index(client, auth_headers, db_session, title, content_tex
     db_session.add(chunk)
     await db_session.flush()
 
-    return doc_id
+    return str(doc.id)
 
 
 class TestKeywordSearch:
@@ -164,34 +182,31 @@ class TestResultGrouping:
     async def test_multiple_chunks_grouped_into_one_result(
         self, client: AsyncClient, auth_headers, test_org, db_session
     ):
-        # Upload a doc
-        resp = await client.post(
-            "/library/documents",
-            files={
-                "file": (
-                    "test.txt",
-                    io.BytesIO(b"placeholder"),
-                    "text/plain",
-                )
-            },
-            data={"title": "Multi-Chunk Doc"},
-            headers=auth_headers,
-        )
-        doc_id = resp.json()["id"]
+        from app.models.iam import OrganizationMember
+        from sqlalchemy import select as sa_select
 
-        from sqlalchemy import update
+        result = await db_session.execute(sa_select(OrganizationMember).limit(1))
+        member = result.scalar_one_or_none()
 
-        await db_session.execute(
-            update(Document)
-            .where(Document.id == doc_id)
-            .values(status=DocumentStatus.INDEXED.value)
+        doc = Document(
+            org_id=member.organization_id,
+            uploaded_by_id=member.user_id,
+            title="Multi-Chunk Doc",
+            original_filename="multi.txt",
+            mime_type="text/plain",
+            file_size_bytes=100,
+            file_path=f"uploads/{uuid.uuid4().hex}.txt",
+            status=DocumentStatus.INDEXED.value,
         )
+        db_session.add(doc)
+        await db_session.flush()
+        doc_id = str(doc.id)
 
         # Add multiple chunks with the same keyword
         for i in range(3):
             db_session.add(
                 DocumentChunk(
-                    document_id=doc_id,
+                    document_id=doc.id,
                     chunk_index=i,
                     content=f"The bioreactor temperature was measured at {20 + i} degrees",
                     token_count=10,

@@ -149,6 +149,18 @@ KNOWN_VARIABLES = {
     "notes",
     "figures",
     "non_image_attachments",
+    # Manual/optional loops — populated only when data is wired
+    "materials",
+    "equipment",
+    "target_yield",
+    # SOP-specific fields (time-course bioreactor SOP template)
+    "document_number",
+    "effective_date",
+    "purpose_text",
+    "scope_text",
+    "critical_requirement",
+    "is_time_based",
+    "time_points",
     # Approval (F-0066)
     "approval",
     "approval_history",
@@ -953,11 +965,26 @@ def render_to_docx(
         elif "image" not in fig:
             fig["image"] = ""
 
+    # Same handling for per-time-point figures in SOP time-course mode.
+    for tp in context.get("time_points", []) or []:
+        fig = tp.get("figure")
+        if not isinstance(fig, dict):
+            continue
+        fpath_str = fig.get("_file_path")
+        if fpath_str:
+            fpath = Path(fpath_str)
+            if fpath.exists():
+                fig["image"] = InlineImage(doc, str(fpath), width=Mm(120))
+            else:
+                fig["image"] = f"[Image not found: {fpath.name}]"
+        elif "image" not in fig:
+            fig["image"] = ""
+
     # F-0080 — swap step.initials to an InlineImage of the user's drawn
     # signature, or a cursive RichText fallback. Mirrors the figure
     # handling above: build_context puts placeholders, render_to_docx
     # finalizes them against the open DocxTemplate.
-    user_signatures = context.pop("_user_signatures", {}) or {}
+    user_signatures = context.get("_user_signatures") or {}
 
     def _swap(steps_list):
         for step in steps_list or []:

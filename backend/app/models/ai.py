@@ -29,7 +29,6 @@ SUPPORTED_CAPABILITIES = (
     "vision",
     "text",
     "embedding",
-    "doc_structure",
     "chat",
     "chat_subagent",
     "chat_summary",
@@ -52,10 +51,6 @@ DEFAULT_CONFIGS = {
     "embedding": {
         "provider": "ollama",
         "model_name": "nomic-embed-text:latest",
-    },
-    "doc_structure": {
-        "provider": "ollama",
-        "model_name": "llama3.2-vision:11b",
     },
     "chat": {
         "provider": "openrouter",

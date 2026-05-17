@@ -6,6 +6,7 @@ import {
     formatFileSize,
     getFileTypeLabel,
     getStatusColor,
+    getStatusLabel,
     sanitizeHighlight,
     MAX_FILE_SIZE_BYTES,
     deriveIndexingState,
@@ -317,5 +318,24 @@ describe('deriveIndexingState', () => {
             embedded_count: 0,
         });
         expect(state.kind).toBe('unknown');
+    });
+});
+
+describe('document-utils new-pipeline statuses', () => {
+    it('labels the docling pipeline statuses', () => {
+        expect(getStatusLabel('EXTRACTING')).toBe('Extracting');
+        expect(getStatusLabel('AWAITING_REFINEMENT')).toBe('Needs refinement');
+        expect(getStatusLabel('INDEXING')).toBe('Indexing');
+    });
+
+    it('colors AWAITING_REFINEMENT as a warning, others as secondary/default', () => {
+        expect(getStatusColor('AWAITING_REFINEMENT')).toBe('warning');
+        expect(getStatusColor('EXTRACTING')).toBe('secondary');
+        expect(getStatusColor('INDEXING')).toBe('secondary');
+    });
+
+    it('still handles legacy statuses', () => {
+        expect(getStatusLabel('ENRICHED')).toBe('Ready');
+        expect(getStatusColor('FAILED')).toBe('destructive');
     });
 });
