@@ -44,12 +44,16 @@ OUT = (
 HEADER_FILL = "ECF0F1"      # cool light gray — KV / table headers
 FIGURE_FILL = "FDFDFD"       # near-white — figure box interior
 TEXT_BLACK = "000000"
-TEXT_HEADING = "1F3A5F"      # navy blue — section headings
+TEXT_HEADING = "2C3E50"      # dark charcoal-navy — section headings
 TEXT_MUTED = "5F6368"
 TEXT_FIGURE_CAP = "5F6368"   # caption color
 BORDER_GRAY = "BFBFBF"
 RULE_GRAY = "D1D5DB"
 FONT_NAME = "Arial"
+
+# Vertical padding inside cells (twentieths of a point — w:tcMar units).
+CELL_PAD_HEADER = 140        # ~7 pt top + bottom — table header rows
+CELL_PAD_BODY = 100          # ~5 pt — KV + body rows
 
 
 def _set_cell_shading(cell, hex_fill: str) -> None:
@@ -73,6 +77,30 @@ def _set_cell_border(cell, color: str = BORDER_GRAY, sz: int = 4) -> None:
     tc_pr.append(tc_borders)
 
 
+def _set_cell_margins(cell, *, top: int, bottom: int,
+                      left: int = 100, right: int = 100) -> None:
+    """Per-cell top/bottom/left/right margins in 1/20 pt (w:tcMar).
+
+    Word ignores paragraph spacing inside table cells once they're laid
+    out, so the only reliable way to "pad" a header row is via the cell
+    margins element.
+    """
+    tc_pr = cell._tc.get_or_add_tcPr()
+    existing = tc_pr.find(qn("w:tcMar"))
+    if existing is not None:
+        tc_pr.remove(existing)
+    tc_mar = OxmlElement("w:tcMar")
+    for edge, val in (
+        ("top", top), ("bottom", bottom),
+        ("left", left), ("right", right),
+    ):
+        m = OxmlElement(f"w:{edge}")
+        m.set(qn("w:w"), str(val))
+        m.set(qn("w:type"), "dxa")
+        tc_mar.append(m)
+    tc_pr.append(tc_mar)
+
+
 def _apply_font(run, *, size: int = 10, bold: bool = False,
                 italic: bool = False, color: str = TEXT_BLACK):
     run.font.name = FONT_NAME
@@ -92,7 +120,7 @@ def _apply_font(run, *, size: int = 10, bold: bool = False,
 
 def _style_cell(cell, text: str = "", *, bold: bool = False, size: int = 10,
                 color: str = TEXT_BLACK, fill: str | None = None,
-                align=None):
+                align=None, pad: int = CELL_PAD_BODY):
     cell.text = ""
     p = cell.paragraphs[0]
     if align is not None:
@@ -102,6 +130,7 @@ def _style_cell(cell, text: str = "", *, bold: bool = False, size: int = 10,
     if fill:
         _set_cell_shading(cell, fill)
     _set_cell_border(cell)
+    _set_cell_margins(cell, top=pad, bottom=pad)
     cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
 
@@ -344,7 +373,8 @@ def build() -> Document:
     _set_table_layout(tp_tbl, [110, 240, 140])
     for ci, h in enumerate(["Time Target", "Action", "Expected Output / Log"]):
         _style_cell(tp_tbl.rows[0].cells[ci], h, bold=True,
-                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER)
+                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER,
+                    pad=CELL_PAD_HEADER)
     _style_cell(tp_tbl.rows[1].cells[0],
                 "{%tr for act in tp.actions %}", size=8,
                 color=TEXT_MUTED)
@@ -373,7 +403,8 @@ def build() -> Document:
     _set_table_layout(role_tbl, [40, 130, 240, 80])
     for ci, h in enumerate(["Step", "Name", "Instruction", "Duration"]):
         _style_cell(role_tbl.rows[0].cells[ci], h, bold=True,
-                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER)
+                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER,
+                    pad=CELL_PAD_HEADER)
     _style_cell(role_tbl.rows[1].cells[0],
                 "{%tr for step in role.steps %}", size=8,
                 color=TEXT_MUTED)
@@ -398,7 +429,8 @@ def build() -> Document:
     _set_table_layout(flat_tbl, [40, 130, 240, 80])
     for ci, h in enumerate(["Step", "Name", "Instruction", "Duration"]):
         _style_cell(flat_tbl.rows[0].cells[ci], h, bold=True,
-                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER)
+                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER,
+                    pad=CELL_PAD_HEADER)
     _style_cell(flat_tbl.rows[1].cells[0],
                 "{%tr for step in steps %}", size=8, color=TEXT_MUTED)
     for i in range(1, 4):
@@ -452,7 +484,7 @@ def build() -> Document:
     _set_table_layout(hist_tbl, [140, 130, 220])
     for ci, h in enumerate(["Timestamp", "Action", "Actor"]):
         _style_cell(hist_tbl.rows[0].cells[ci], h, bold=True,
-                    fill=HEADER_FILL)
+                    fill=HEADER_FILL, pad=CELL_PAD_HEADER)
     _style_cell(hist_tbl.rows[1].cells[0],
                 "{%tr for ev in approval_history %}", size=8,
                 color=TEXT_MUTED)
