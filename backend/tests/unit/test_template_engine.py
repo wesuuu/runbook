@@ -454,18 +454,18 @@ def test_sop_time_based():
     ctx, _ = build_context(
         protocol_name="Time-Course Bioreactor Sampling and Viability Analysis",
         version_number=2,
-        document_number="SOP-BR-014",
+        doc_number="SOP-BR-014",
         effective_date="May 1, 2026",
         organization_name="Trellis Bioworks",
         project_name="CHO-K1 Fed-Batch Optimization",
         created_at="May 17, 2026",
-        purpose_text=(
+        purpose=(
             "Standardise the time-course sampling and in-process viability "
             "analysis of CHO-K1 fed-batch cultures across the 2 L Sartorius "
             "Biostat platform so that inter-operator and inter-batch results "
             "are directly comparable."
         ),
-        scope_text=(
+        scope=(
             "Applies to all GLP fed-batch development runs performed in "
             "Suite 2B on the Biostat A 2 L vessels (BR-201 through BR-204). "
             "Does not cover seed-train shake-flask sampling."
