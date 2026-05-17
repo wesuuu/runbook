@@ -16,8 +16,6 @@
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import {
         getFileTypeLabel,
-        getStatusColor,
-        getStatusLabel,
         formatFileSize,
         extractSectionNav,
         extractFallbackSectionNav,
@@ -32,6 +30,10 @@
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
     import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
+    import IndexingStatusBadge from '$lib/components/library/IndexingStatusBadge.svelte';
+    import IndexingPipeline from '$lib/components/library/IndexingPipeline.svelte';
+    import IndexingStatusBanner from '$lib/components/library/IndexingStatusBanner.svelte';
+    import ProcessingAuditCard from '$lib/components/library/ProcessingAuditCard.svelte';
     import { z } from 'zod';
 
     // --- Schemas ---
@@ -76,6 +78,7 @@
         error_message: z.string().nullable(),
         tags: z.array(z.string()),
         chunk_count: z.number(),
+        embedded_count: z.number().default(0),
         chunks_preview: z.array(DocumentChunkSchema),
         structure_metadata: z.record(z.string(), z.unknown()).nullable(),
         processing_progress: ProcessingProgressSchema.nullable(),
@@ -96,6 +99,7 @@
     let deleting = $state(false);
     let retrying = $state(false);
     let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let auditRefreshKey = $state(0);
     const CHUNKS_PER_PAGE = 50;
 
     // In-document search (non-PDF only)
@@ -110,7 +114,7 @@
     // PDF viewer ref for page navigation
     let pdfIframe = $state<HTMLIFrameElement | null>(null);
 
-    const documentId = $derived($page.params.id);
+    const documentId = $derived($page.params.id ?? '');
     const isPdf = $derived(document?.mime_type === 'application/pdf');
     const isEnriched = $derived(
         document?.status === 'ENRICHED' || document?.status === 'READY'
@@ -161,7 +165,13 @@
             allChunks = doc.chunks_preview;
 
             const hasActiveProgress = doc.processing_progress && doc.processing_progress.stage !== '';
-            const shouldPoll = doc.status === 'PROCESSING' || doc.status === 'QUEUED' || (doc.status === 'INDEXED' && hasActiveProgress);
+            const isReadyStatus =
+                doc.status === 'INDEXED' || doc.status === 'READY' || doc.status === 'ENRICHED';
+            const shouldPoll =
+                doc.status === 'PROCESSING' ||
+                doc.status === 'QUEUED' ||
+                doc.status === 'UPLOADED' ||
+                (isReadyStatus && hasActiveProgress);
             if (shouldPoll && !pollTimer) {
                 pollTimer = setInterval(loadDocument, 3000);
             } else if (!shouldPoll && pollTimer) {
@@ -201,6 +211,7 @@
             await api.post(`/library/documents/${documentId}/retry`, {});
             toast.success('Reprocessing started');
             await loadDocument();
+            auditRefreshKey += 1;
         } catch (e: unknown) {
             toast.error(e instanceof Error ? e.message : 'Retry failed');
         } finally {
@@ -321,14 +332,27 @@
             <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <Badge variant="outline">{getFileTypeLabel(document.mime_type)}</Badge>
                 <span>{formatFileSize(document.file_size_bytes)}</span>
-                <Badge variant={getStatusColor(document.status) as any}>
-                    {getStatusLabel(document.status)}
-                </Badge>
+                <IndexingStatusBadge document={document} verbose />
                 <span>Uploaded {formatDate(document.created_at)}</span>
                 {#if document.page_count}
                     <span>&middot; {document.page_count} pages</span>
                 {/if}
             </div>
+            <div class="rounded-md border border-border bg-card/50 px-4 py-3">
+                <p class="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
+                    Indexing pipeline
+                </p>
+                <IndexingPipeline
+                    document={document}
+                    progress={document.processing_progress}
+                />
+            </div>
+            <IndexingStatusBanner
+                document={document}
+                errorMessage={document.error_message}
+                onRetry={handleRetry}
+                {retrying}
+            />
             {#if document.source_url}
                 <p class="text-sm text-muted-foreground">
                     Imported from:
@@ -365,59 +389,29 @@
             {/if}
         </div>
 
-        <!-- Error banner -->
-        {#if document.status === 'FAILED' && document.error_message}
-            <div class="bg-destructive/10 border border-destructive/20 text-destructive p-4 rounded-md">
-                <p class="font-medium">Processing failed</p>
-                <p class="text-sm mt-1">{document.error_message}</p>
-            </div>
-        {/if}
-
-        <!-- Queued banner -->
-        {#if document.status === 'QUEUED'}
-            <div class="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-md">
-                <div class="flex items-center gap-3">
-                    <div class="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0"></div>
-                    <span class="text-sm font-medium">Waiting for AI processing...</span>
-                </div>
-                <p class="text-xs text-blue-600/70 mt-2">
-                    The document is queued and will be processed when the AI service becomes available.
-                </p>
-            </div>
-        {/if}
-
-        <!-- Processing progress -->
+        <!-- Processing progress bar (active-stage detail) -->
         {@const activeProgress = document.processing_progress && document.processing_progress.stage !== ''}
-        {#if document.status === 'PROCESSING' || (document.status === 'INDEXED' && activeProgress)}
+        {#if (document.status === 'PROCESSING' || document.status === 'INDEXED') && activeProgress}
             {@const progress = document.processing_progress}
-            {@const isEnrichmentPhase = document.status === 'INDEXED'}
-            <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-md space-y-3">
-                <div class="flex items-center gap-3">
-                    <div class="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin shrink-0"></div>
-                    <span class="text-sm font-medium">
-                        {#if progress && progress.stage_label}
-                            {progress.stage_label}
-                            {#if progress.total > 0}
-                                ({progress.current} / {progress.total})
-                            {/if}
-                        {:else if isEnrichmentPhase}
-                            Analyzing document structure...
-                        {:else}
-                            Processing document...
-                        {/if}
-                    </span>
-                </div>
-                {#if progress && progress.total > 0}
-                    <div class="w-full bg-amber-200 rounded-full h-2 overflow-hidden">
+            {#if progress && progress.total > 0}
+                <div class="rounded-md border border-border bg-card px-4 py-3 space-y-2">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="text-muted-foreground">
+                            {progress.stage_label || 'Processing'} ({progress.current}/{progress.total})
+                        </span>
+                        <span class="text-muted-foreground">{progress.percent}%</span>
+                    </div>
+                    <div class="w-full bg-muted rounded-full h-1.5 overflow-hidden">
                         <div
-                            class="bg-amber-600 h-2 rounded-full transition-all duration-500 ease-out"
+                            class="bg-primary h-1.5 rounded-full transition-all duration-500 ease-out"
                             style="width: {progress.percent}%"
                         ></div>
                     </div>
-                    <p class="text-xs text-amber-700/70">{progress.percent}% complete</p>
-                {/if}
-            </div>
+                </div>
+            {/if}
         {/if}
+
+        <ProcessingAuditCard documentId={documentId} refreshKey={auditRefreshKey} />
 
         <!-- Content area with optional section nav -->
         <div class="flex gap-6">

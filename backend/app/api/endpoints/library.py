@@ -26,7 +26,8 @@ from app.models.library import (ALLOWED_DOCUMENT_TYPES,
 from app.schemas.jobs import ProcessingProgress
 from app.schemas.library import (DocumentChunkResponse, DocumentDetailResponse,
                                  DocumentListResponse, DocumentResponse,
-                                 ImportUrlRequest, SearchResponse,
+                                 ImportUrlRequest, ProcessingAuditResponse,
+                                 ProcessingJobAudit, SearchResponse,
                                  SearchResultGroup, SearchResultItem, TOCEntry)
 from app.services.core.audit import log_audit
 from app.services.core.background_jobs import BackgroundJobService
@@ -237,11 +238,32 @@ async def list_documents(
     result = await db.execute(query)
     documents = list(result.scalars().all())
 
+    # Compute chunk + embedding coverage per document in one round-trip.
+    doc_ids = [doc.id for doc in documents]
+    counts: dict[uuid.UUID, tuple[int, int]] = {}
+    if doc_ids:
+        counts_result = await db.execute(
+            select(
+                DocumentChunk.document_id,
+                func.count().label("chunks"),
+                func.count(DocumentChunk.embedding).label("embedded"),
+            )
+            .where(DocumentChunk.document_id.in_(doc_ids))
+            .group_by(DocumentChunk.document_id)
+        )
+        counts = {
+            row.document_id: (row.chunks, row.embedded)
+            for row in counts_result.all()
+        }
+
     # Compute can_delete for each document
     items = []
     for doc in documents:
         resp = DocumentResponse.model_validate(doc)
         resp.can_delete = await _can_delete_document(db, current_user.id, doc.id)
+        chunk_total, embedded_total = counts.get(doc.id, (0, 0))
+        resp.chunk_count = chunk_total
+        resp.embedded_count = embedded_total
         items.append(resp)
 
     return DocumentListResponse(items=items, total=total)
@@ -268,11 +290,14 @@ async def get_document(
 
     # Efficient count instead of loading all chunks into memory
     count_result = await db.execute(
-        select(func.count())
-        .select_from(DocumentChunk)
-        .where(DocumentChunk.document_id == document_id)
+        select(
+            func.count().label("chunks"),
+            func.count(DocumentChunk.embedding).label("embedded"),
+        ).where(DocumentChunk.document_id == document_id)
     )
-    chunk_count = count_result.scalar() or 0
+    count_row = count_result.one()
+    chunk_count = count_row.chunks or 0
+    embedded_count = count_row.embedded or 0
 
     # Only load the first 5 chunks for preview (exclude embeddings)
     preview_result = await db.execute(
@@ -328,6 +353,7 @@ async def get_document(
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         chunk_count=chunk_count,
+        embedded_count=embedded_count,
         chunks_preview=chunks_preview,
         can_delete=can_delete,
         processing_progress=progress,
@@ -364,6 +390,82 @@ async def get_document_chunks(
         .options(defer(DocumentChunk.embedding))
     )
     return list(result.scalars().all())
+
+
+@router.get(
+    "/documents/{document_id}/processing",
+    response_model=ProcessingAuditResponse,
+)
+async def get_processing_audit(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the indexing/processing job history for a document plus the
+    current chunk + embedding counts. Used by the UI to surface partial
+    indexing state and recent failures.
+    """
+    from app.models.jobs import BackgroundJob
+
+    org_id = await _get_user_org_id(current_user, db)
+
+    doc_result = await db.execute(
+        select(Document.id, Document.status).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    row = doc_result.one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    doc_status = row.status
+
+    count_result = await db.execute(
+        select(
+            func.count().label("chunks"),
+            func.count(DocumentChunk.embedding).label("embedded"),
+        ).where(DocumentChunk.document_id == document_id)
+    )
+    counts = count_result.one()
+
+    jobs_result = await db.execute(
+        select(BackgroundJob)
+        .where(
+            BackgroundJob.entity_type == "document",
+            BackgroundJob.entity_id == document_id,
+        )
+        .order_by(
+            BackgroundJob.created_at.desc(),
+            BackgroundJob.started_at.desc().nullslast(),
+        )
+    )
+    jobs = []
+    for job in jobs_result.scalars().all():
+        od = job.output_data or {}
+        jobs.append(
+            ProcessingJobAudit(
+                id=job.id,
+                job_type=job.job_type,
+                status=job.status,
+                started_at=job.started_at,
+                completed_at=job.completed_at,
+                heartbeat_at=job.heartbeat_at,
+                attempts=job.attempts,
+                error_message=job.error_message,
+                stage=od.get("stage"),
+                stage_label=od.get("stage_label"),
+                current=od.get("current"),
+                total=od.get("total"),
+                percent=od.get("percent"),
+            )
+        )
+
+    return ProcessingAuditResponse(
+        document_id=document_id,
+        document_status=doc_status,
+        chunk_count=counts.chunks or 0,
+        embedded_count=counts.embedded or 0,
+        jobs=jobs,
+    )
 
 
 async def _get_user_for_download(

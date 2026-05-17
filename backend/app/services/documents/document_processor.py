@@ -1147,8 +1147,11 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                     toc = _assign_toc_chunk_indices(toc, new_chunks, pages)
                     chunks_for_embed = new_chunks
                 else:
-                    # Fallback to page-level chunking
-                    chunks_for_embed = await runner.run_sync(chunk_by_pages, pages)
+                    # Fallback to recursive text chunking (hard cap on size)
+                    joined = "\n\n".join(p.text for p in pages if p.text.strip())
+                    chunks_for_embed = await runner.run_sync(
+                        chunk_text, joined, 400, 80, None
+                    )
                     for chunk in chunks_for_embed:
                         db_chunk = DocumentChunk(
                             document_id=document_id,
@@ -1160,8 +1163,11 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                         )
                         session.add(db_chunk)
             elif is_pdf:
-                # PDF without structure — page-level chunking
-                chunks_for_embed = await runner.run_sync(chunk_by_pages, pages)
+                # PDF without structure — recursive text chunking
+                joined = "\n\n".join(p.text for p in pages if p.text.strip())
+                chunks_for_embed = await runner.run_sync(
+                    chunk_text, joined, 400, 80, None
+                )
                 for chunk in chunks_for_embed:
                     db_chunk = DocumentChunk(
                         document_id=document_id,
@@ -1198,57 +1204,66 @@ async def build_book(document_id: UUID, db_url: str) -> None:
                     session.add(db_chunk)
 
             # ─── Stage 5: Generate embeddings ──────────────────────
+            # Embed in batches, applying + committing per batch so the UI
+            # progress badge climbs (e.g. 100/1461 → 200/1461 → …) instead
+            # of staying at 0/N until the very end. BackgroundJobService
+            # .update_progress commits the session, so once a batch's
+            # embeddings are assigned to chunks it persists them along
+            # with the progress row.
+            from app.services.ai.embedding import BATCH_SIZE, embed_texts
+
+            total_chunks = len(chunks_for_embed)
             await BackgroundJobService.update_progress(
                 session,
                 job,
                 "embedding",
                 "Generating embeddings",
                 0,
-                len(chunks_for_embed),
+                total_chunks,
             )
 
-            embeddings: list[list[float]] = []
-            try:
-                from app.services.ai.embedding import embed_texts
+            # Flush so we can re-fetch chunk rows ordered by chunk_index.
+            await session.flush()
+            chunk_result = await session.execute(
+                select(DocumentChunk)
+                .where(DocumentChunk.document_id == document_id)
+                .order_by(DocumentChunk.chunk_index)
+            )
+            db_chunks = list(chunk_result.scalars().all())
 
-                async def _emb_progress(current: int, total: int) -> None:
+            chunk_texts = [c.content for c in chunks_for_embed]
+            embedded_so_far = 0
+            try:
+                for start in range(0, total_chunks, BATCH_SIZE):
+                    batch_texts = chunk_texts[start : start + BATCH_SIZE]
+                    batch_embeddings = await embed_texts(
+                        batch_texts,
+                        session,
+                        on_progress=None,
+                        org_id=doc.org_id,
+                    )
+                    for j, emb in enumerate(batch_embeddings):
+                        idx = start + j
+                        if idx < len(db_chunks):
+                            db_chunks[idx].embedding = _pad_embedding(emb)
+                    embedded_so_far = start + len(batch_embeddings)
                     await BackgroundJobService.update_progress(
                         session,
                         job,
                         "embedding",
                         "Generating embeddings",
-                        current,
-                        total,
+                        embedded_so_far,
+                        total_chunks,
                     )
-
-                chunk_texts = [c.content for c in chunks_for_embed]
-                embeddings = await embed_texts(
-                    chunk_texts,
-                    session,
-                    on_progress=_emb_progress,
-                    org_id=doc.org_id,
-                )
             except Exception as emb_err:
                 logger.warning(
-                    "Embedding generation failed for document %s: %s",
+                    "Embedding generation failed for document %s "
+                    "after %d/%d chunks: %s",
                     document_id,
+                    embedded_so_far,
+                    total_chunks,
                     str(emb_err)[:200],
                 )
-
-            # Apply embeddings to chunks already added to session
-            if embeddings:
-                # Flush to get the chunks into the session
-                await session.flush()
-                # Fetch chunks back to apply embeddings
-                chunk_result = await session.execute(
-                    select(DocumentChunk)
-                    .where(DocumentChunk.document_id == document_id)
-                    .order_by(DocumentChunk.chunk_index)
-                )
-                db_chunks = list(chunk_result.scalars().all())
-                for i, db_chunk in enumerate(db_chunks):
-                    if i < len(embeddings):
-                        db_chunk.embedding = _pad_embedding(embeddings[i])
 
             # ─── Finalize ──────────────────────────────────────────
             doc.status = DocumentStatus.READY.value

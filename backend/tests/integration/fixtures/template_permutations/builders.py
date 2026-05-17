@@ -178,35 +178,42 @@ def build_p1() -> BuiltPermutation:
         per_template_expected_on={
             "sop": [
                 "Kitchen Sink", "SOP-CC-001",
-                # Section headings render uppercase per the SOP design;
-                # match the rendered casing so the assertion is stable.
-                "PURPOSE", "SCOPE", "DEFINITIONS", "REFERENCES",
+                # Numbered headings from the GLP/bioreactor-style SOP layout
+                "1.0 Purpose", "2.0 Scope", "3.0 Procedure",
                 # Body text from the populated metadata fields
                 "Define the cell culture", "Applies to clone PD-7",
-                "CIP = clean-in-place", "ICH Q7",
-                # Revision history table
-                "REVISION HISTORY", "Initial release", "Tightened acceptance",
-                # Equipment + Approval + Procedure structural sections
-                "EQUIPMENT", "Bioreactor", "PROCEDURE", "APPROVAL",
+                # Role subsection headers (3.1, 3.2 ...) — P1 has two roles
+                "Operator", "Reviewer",
+                # Step rows from the procedure table
+                "Weigh media", "Mix buffer", "Verify pH",
             ],
             "batch_record": [
                 "Kitchen Sink",
-                "Lot Number: LOT-2026-001", "Batch Number: BAT-7",
+                # GLP-style numbered section headers
+                "1. General Information",
+                "2. Bill of Materials (BOM)",
+                "3. Equipment Log",
+                "4. Execution: Unit Operations",
+                "5. Deviations and Process Comments",
+                "6. Final Disposition & Signatures",
+                # Run identifiers (run_name shows in Batch / Lot Number cell)
+                "Batch / Lot Number", "P1 Run",
+                # Notes appear in the Deviations section
                 "Robin", "Olivia",
-                # Step-card column captions render uppercase per the
-                # new design — assert on the rendered casing.
-                "REVIEWER", "SCHEDULED",
-                "EQUIPMENT USED", "Bioreactor",
+                # Step-execution table column captions
+                "Verifier", "Operator",
+                # Step rows from the execution table
+                "Weigh media", "Mix buffer", "Verify pH",
             ],
         },
         per_template_expected_off={
-            # SOP never renders run-execution or lot/batch fields.
-            # Note: P1 has a role named "Reviewer" so the bare string
-            # "Reviewer" legitimately appears in the SOP procedure
-            # section's role-header loop — only lot/batch and the
-            # batch-record-only "Scheduled" column are unambiguously
-            # absent from SOP renders.
-            "sop": ["Lot Number", "Batch Number", "Scheduled"],
+            # SOP never renders run-execution or lot/batch fields, and the
+            # GLP-style BR section headers are absent from SOP renders.
+            "sop": [
+                "Batch / Lot Number",
+                "Bill of Materials",
+                "Wet-Ink Sign-Off",
+            ],
             "batch_record": [],
         },
     )
@@ -224,11 +231,15 @@ def build_p2() -> BuiltPermutation:
             project_name="Demo", organization_name="Trellis",
             is_role_based=False, flat_steps=steps,
         ),
-        expected_on=["Minimal Experiment"],
-        # Rendered against SOP only: BR always emits "Reviewer" and "Scheduled"
-        # as static table column headers regardless of data, so these
-        # expected_off assertions would fail on a BR render.
-        expected_off=["Lot Number", "Reviewer", "Scheduled", "Equipment Used"],
+        expected_on=["Minimal Experiment", "1.0 Purpose", "Pipette sample"],
+        # Rendered against SOP only: the GLP-style BR-only sections / fields
+        # must not appear in the SOP render.
+        expected_off=[
+            "Batch / Lot Number",
+            "Bill of Materials",
+            "Verifier",
+            "Wet-Ink Sign-Off",
+        ],
         renders_against=("sop",),
     )
 
@@ -250,11 +261,17 @@ def build_p3() -> BuiltPermutation:
             is_role_based=True, roles_with_steps=roles,
             time_enabled=False,
         ),
-        expected_on=["Harvest", "Centrifuge"],
-        # SOP only: BR always emits "Reviewer" and "Scheduled" as static
-        # table column headers, so those expected_off assertions would fail
-        # on a BR render.
-        expected_off=["Scheduled", "Reviewer"],
+        # The SOP layout does not surface per-step equipment names — assert
+        # on what is actually rendered: the protocol name (which contains
+        # "Harvest") and the always-present procedure heading.
+        expected_on=["Harvest", "3.0 Procedure"],
+        # SOP-only render: BR-only sections / fields must be absent.
+        expected_off=[
+            "Batch / Lot Number",
+            "Bill of Materials",
+            "Verifier",
+            "Wet-Ink Sign-Off",
+        ],
         renders_against=("sop",),
     )
 
@@ -272,14 +289,18 @@ def build_p4() -> BuiltPermutation:
             is_role_based=False, flat_steps=steps,
             time_enabled=True, start_time="08:00",
         ),
-        expected_on=["Flat Timed", "SCHEDULED"],
-        # BR only: "Scheduled" is a static column header in the BR execution
-        # table (always present) so expected_on passes.  "Reviewer" is also
-        # a static BR column header, so it cannot be in expected_off.
-        # expected_off assertions are restricted to things not in the BR:
-        # "Equipment Used" heading only appears when equipment_summary is
-        # non-empty; "Lot Number" only appears when lot_number is set.
-        expected_off=["Equipment Used", "Lot Number"],
+        # GLP-style BR no longer has a "Scheduled" column. Assert on the
+        # protocol title plus always-present skeleton headings + the step
+        # rows that actually render.
+        expected_on=[
+            "Flat Timed",
+            "4. Execution: Unit Operations",
+            "Pre-warm",
+            "Inoculate",
+        ],
+        # SOP-style headings ("1.0 Purpose", "2.0 Scope") are absent from
+        # BR renders — useful as cross-template negative checks.
+        expected_off=["1.0 Purpose", "2.0 Scope", "Standard Operating Procedure"],
         renders_against=("batch_record",),
     )
 
@@ -314,8 +335,18 @@ def build_p5() -> BuiltPermutation:
                  "author_id": "u-3", "author_name": "Sam", "created_at": "t3"},
             ],
         ),
-        expected_on=["Unapproved", "DEVIATIONS", "REVIEWER"],
-        expected_off=["Lot Number"],
+        # "Unapproved" matches via the protocol title; the GLP BR layout
+        # renders "Deviations and Process Comments" as a section heading
+        # and "Lead Reviewer Sign-off" as a deviations-table column.
+        expected_on=[
+            "Unapproved",
+            "Deviations and Process Comments",
+            "Lead Reviewer",
+            # The unapproved warning banner uses the en-dash em-dash
+            # variant; assert on the substring that is locale-stable.
+            "UNAPPROVED",
+        ],
+        expected_off=["1.0 Purpose", "Standard Operating Procedure"],
         renders_against=("batch_record",),
         # unapproved_warning is not set by build_context; inject it manually
         # so the template's conditional block renders the warning text.
@@ -337,10 +368,14 @@ def build_p6() -> BuiltPermutation:
             time_enabled=True, start_time="08:00",
             lot_number="LOT-2026-006",
         ),
-        expected_on=["Multi-event Approval", "Lot Number: LOT-2026-006"],
-        # "Reviewer" is a static column header in the BR execution table and
-        # always appears regardless of whether any step was reviewed —
-        # dropping it from expected_off to avoid a false failure.
-        expected_off=[],
+        # The GLP BR layout surfaces ``run_name`` (not ``lot_number``) in
+        # the Batch / Lot Number cell, so assert on the always-present
+        # section structure rather than the literal lot string.
+        expected_on=[
+            "Multi-event Approval",
+            "Batch / Lot Number",
+            "6. Final Disposition & Signatures",
+        ],
+        expected_off=["1.0 Purpose", "Standard Operating Procedure"],
         renders_against=("batch_record",),
     )

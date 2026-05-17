@@ -65,6 +65,75 @@ export function getStatusColor(status: string): string {
 /** Statuses that indicate the document content is viewable. */
 export const VIEWABLE_STATUSES = new Set(['INDEXED', 'ENRICHED', 'READY']);
 
+/** Statuses where extraction is considered finished (chunks should exist). */
+const FINAL_READY_STATUSES = new Set(['INDEXED', 'ENRICHED', 'READY']);
+
+/**
+ * Derived indexing state for a document — combines persistence status
+ * with chunk + embedding counts so the UI can distinguish "fully indexed"
+ * from "indexed but embeddings failed" (a silent failure mode in
+ * document_processor where embedding errors are caught and the doc still
+ * lands in READY with zero embeddings).
+ */
+export type IndexingState =
+    | { kind: 'queued'; label: 'Queued' }
+    | {
+          kind: 'processing';
+          label: 'Indexing';
+          chunkCount: number;
+          embeddedCount: number;
+      }
+    | { kind: 'indexed'; label: 'Indexed'; coverage: 100 }
+    | {
+          kind: 'partial';
+          label: 'Partially indexed';
+          coverage: number;
+          missing: number;
+      }
+    | { kind: 'failed'; label: 'Failed' }
+    | { kind: 'unknown'; label: string };
+
+export function deriveIndexingState(doc: {
+    status: string;
+    chunk_count: number;
+    embedded_count: number;
+}): IndexingState {
+    switch (doc.status) {
+        case 'UPLOADED':
+        case 'QUEUED':
+            return { kind: 'queued', label: 'Queued' };
+        case 'PROCESSING':
+            return {
+                kind: 'processing',
+                label: 'Indexing',
+                chunkCount: doc.chunk_count,
+                embeddedCount: doc.embedded_count,
+            };
+        case 'FAILED':
+            return { kind: 'failed', label: 'Failed' };
+        default:
+            if (FINAL_READY_STATUSES.has(doc.status)) {
+                if (
+                    doc.chunk_count > 0 &&
+                    doc.embedded_count >= doc.chunk_count
+                ) {
+                    return { kind: 'indexed', label: 'Indexed', coverage: 100 };
+                }
+                const coverage =
+                    doc.chunk_count > 0
+                        ? Math.round((doc.embedded_count / doc.chunk_count) * 100)
+                        : 0;
+                return {
+                    kind: 'partial',
+                    label: 'Partially indexed',
+                    coverage,
+                    missing: Math.max(doc.chunk_count - doc.embedded_count, 0),
+                };
+            }
+            return { kind: 'unknown', label: doc.status || 'Unknown' };
+    }
+}
+
 export function getStatusLabel(status: string): string {
     switch (status) {
         case 'UPLOADED':

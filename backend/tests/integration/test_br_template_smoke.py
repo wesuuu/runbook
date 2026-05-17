@@ -1,9 +1,9 @@
 """Smoke test: new Batch Record template parses and renders correctly.
 
 Asserts the rendered .docx text contains expected section headings when fed
-get_mock_context(), and that no Jinja tokens leak through. Verifies that
-conditional columns (Reviewer, Scheduled) appear when the mock context has
-reviewer_enabled=True and time_enabled=True.
+get_mock_context(), and that no Jinja tokens leak through. Verifies the
+GLP-style numbered sections (1. General Information through 6. Final
+Disposition) and the always-present Verifier column appear.
 """
 import io
 from pathlib import Path
@@ -38,13 +38,16 @@ def test_br_template_renders_mock_context_without_unresolved_tokens():
     tpl.save(buf)
     text = _doc_text(buf.getvalue())
 
-    # Section headers (introduced in this template)
+    # GLP-style numbered section headers
     for heading in (
-        "Batch Record",
-        "Equipment Used",
-        "Procedure Execution",
-        "Notes",
-        "Approval",
+        "Batch Manufacturing Record",
+        "1. General Information",
+        "2. Bill of Materials (BOM)",
+        "3. Equipment Log",
+        "4. Execution: Unit Operations",
+        "5. Deviations and Process Comments",
+        "6. Final Disposition & Signatures",
+        "Wet-Ink Sign-Off",
     ):
         assert heading in text, f"missing section: {heading}"
 
@@ -52,7 +55,7 @@ def test_br_template_renders_mock_context_without_unresolved_tokens():
     assert "{{" not in text
     assert "{%" not in text
 
-    # When mock context has time_enabled and reviewer_enabled, columns appear
-    assert "Reviewer" in text
-    assert "Scheduled" in text
-    assert "Lot Number" in text or "Lot:" in text
+    # Step-execution column headers are always present in BR layout.
+    assert "Verifier" in text
+    assert "Operator" in text
+    assert "Batch / Lot Number" in text
