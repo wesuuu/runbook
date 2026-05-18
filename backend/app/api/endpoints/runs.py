@@ -34,7 +34,8 @@ from app.schemas.science import (GlpSignoffCreate, GlpSignoffResponse,
                                  RunOverrides, RunReopenRequest, RunResponse,
                                  RunRoleAssignmentCreate,
                                  RunRoleAssignmentListResponse,
-                                 RunRoleAssignmentResponse, RunUpdate)
+                                 RunRoleAssignmentResponse, RunStateUpdate,
+                                 RunUpdate)
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
@@ -47,7 +48,9 @@ from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
 from app.services.runs.overrides import (apply_node_overrides,
                                          diff_unit_op_node,
                                          snapshot_unit_op_node)
-from app.services.runs.validation import assert_run_can_close
+from app.services.runs.validation import (assert_can_edit_completed_run,
+                                          assert_no_unjustified_edit_errors,
+                                          assert_run_can_close)
 from app.services.signoffs.queries import (invalidate_active_signoffs,
                                            list_active_signoffs)
 from app.services.signoffs.service import create_signoff
@@ -1814,6 +1817,91 @@ async def reopen_run(
         run.id,
         {"reason": payload.reason},
     )
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
+# --- Run state lifecycle (F-0087 Task 17) ----------------------------------
+
+
+_RUN_STATE_TRANSITIONS = {
+    "PLANNED": {"ACTIVE"},
+    "ACTIVE": {"COMPLETED", "EDITED"},
+    "COMPLETED": {"EDITED"},
+    "EDITED": {"EDITED", "COMPLETED"},
+}
+
+
+@router.patch(
+    "/runs/{run_id}/state",
+    response_model=RunResponse,
+)
+async def patch_run_state(
+    run_id: UUID,
+    payload: RunStateUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Transition a run's lifecycle state with GLP audit-trail inputs.
+
+    Any -> EDITED requires a non-blank ``edit_reason`` for each modified
+    step in ``execution_data_delta``; reasons are persisted onto the
+    matching ``execution_data[step_id].edit_reason`` so downstream readers
+    (PDFs, audit log views) can render them. A COMPLETED run with active
+    sign-offs cannot be edited without first reopening it.
+    """
+    run = await get_or_404(db, Run, run_id)
+    current_status = _run_status_str(run)
+    new_status = payload.state
+
+    if new_status is not None and new_status != current_status:
+        allowed_next = _RUN_STATE_TRANSITIONS.get(current_status, set())
+        if new_status not in allowed_next:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"Cannot transition from {current_status} to {new_status}"),
+            )
+
+    if new_status == "EDITED":
+        delta = payload.execution_data_delta or {}
+        reasons = payload.edit_reasons or {}
+        merged = {
+            sid: {**fields, "edit_reason": reasons.get(sid)}
+            for sid, fields in delta.items()
+        }
+        assert_no_unjustified_edit_errors(merged)
+        await assert_can_edit_completed_run(db, run)
+
+        # Persist the edit_reason into execution_data[sid].edit_reason and
+        # apply the per-step field delta so the audit trail stays consistent
+        # with the request payload.
+        exec_data = dict(run.execution_data or {})
+        for sid, fields in delta.items():
+            step = dict(exec_data.get(sid) or {})
+            for key, value in fields.items():
+                step[key] = value
+            step["edit_reason"] = reasons.get(sid)
+            exec_data[sid] = step
+        run.execution_data = exec_data
+        flag_modified(run, "execution_data")
+
+    if new_status is not None and new_status != current_status:
+        run.status = new_status
+
+    await log_audit(
+        db,
+        user.id,
+        "run.state",
+        "run",
+        run.id,
+        {
+            "from": current_status,
+            "to": new_status,
+            "edit_reasons": payload.edit_reasons or {},
+        },
+    )
+
     await db.commit()
     await db.refresh(run)
     return RunResponse.model_validate(run)

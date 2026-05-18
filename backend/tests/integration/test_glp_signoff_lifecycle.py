@@ -404,3 +404,43 @@ async def test_list_run_signoffs_includes_invalidated_when_requested(
     )
     assert res_active.status_code == 200, res_active.text
     assert res_active.json() == []
+
+
+# --- Task 17: PATCH /runs/{id}/state with edit_reasons ---------------------
+
+
+@pytest.mark.asyncio
+async def test_edited_transition_requires_edit_reason_per_modified_step(
+    client,
+    auth_headers,
+    sample_active_run,
+):
+    res = await client.patch(
+        f"/science/runs/{sample_active_run.id}/state",
+        headers=auth_headers,
+        json={
+            "state": "EDITED",
+            "edit_reasons": {},
+            "execution_data_delta": {"step1": {"value": 7}},
+        },
+    )
+    assert res.status_code == 400, res.text
+    assert res.json()["detail"]["error"] == "EDIT_REASON_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_edited_transition_passes_when_reasons_provided(
+    client,
+    auth_headers,
+    sample_active_run,
+):
+    res = await client.patch(
+        f"/science/runs/{sample_active_run.id}/state",
+        headers=auth_headers,
+        json={
+            "state": "EDITED",
+            "edit_reasons": {"step1": "probe drift"},
+            "execution_data_delta": {"step1": {"value": 7}},
+        },
+    )
+    assert res.status_code == 200, res.text

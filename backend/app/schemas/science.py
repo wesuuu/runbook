@@ -364,6 +364,20 @@ class RunUpdate(BaseModel):
     execution_data: Optional[Dict[str, Any]] = None
 
 
+class RunStateUpdate(BaseModel):
+    """Body for PATCH /runs/{id}/state (F-0087).
+
+    ``state`` drives a run-level lifecycle transition (PLANNED -> ACTIVE,
+    ACTIVE/COMPLETED -> EDITED, etc.). ``edit_reasons`` and
+    ``execution_data_delta`` are the GLP audit-trail inputs when entering
+    the EDITED state: every modified step must carry a non-blank reason.
+    """
+
+    state: Optional[str] = None
+    edit_reasons: Optional[Dict[str, str]] = None
+    execution_data_delta: Optional[Dict[str, Dict[str, Any]]] = None
+
+
 class RunResponse(RunBase):
     id: UUID
     project_id: UUID
