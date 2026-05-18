@@ -26,10 +26,11 @@ from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import (Project, Protocol, ProtocolVersion, Run,
                                 RunRoleAssignment, UnitOpDefinition)
-from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
-                                 RunCreate, RunNote, RunNoteCreate,
-                                 RunNoteListResponse, RunOverrides,
-                                 RunResponse, RunRoleAssignmentCreate,
+from app.schemas.science import (CheckLotNumberResponse, RunAttachment,
+                                 RunAttachmentListResponse, RunCreate, RunNote,
+                                 RunNoteCreate, RunNoteListResponse,
+                                 RunOverrides, RunResponse,
+                                 RunRoleAssignmentCreate,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunUpdate,
                                  SuggestLotNumberRequest,
@@ -284,6 +285,37 @@ async def suggest_lot_number(
             continue
     next_seq = max_seq + 1
     return SuggestLotNumberResponse(lot_number=f"LOT-{next_seq:06d}")
+
+
+@router.get(
+    "/runs/check-lot-number",
+    response_model=CheckLotNumberResponse,
+)
+async def check_lot_number(
+    project_id: UUID = Query(...),
+    lot_number: str = Query(..., min_length=1),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Org-scoped duplicate-existence check for soft warnings in the UI."""
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, project_id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    project = await get_or_404(db, Project, project_id)
+
+    stmt = (
+        select(func.count(Run.id))
+        .join(Project, Run.project_id == Project.id)
+        .where(
+            Project.organization_id == project.organization_id,
+            Run.lot_number == lot_number,
+        )
+    )
+    count = int((await db.execute(stmt)).scalar() or 0)
+    return CheckLotNumberResponse(exists=count > 0, count=count)
 
 
 @router.get("/runs/{run_id}", response_model=RunResponse)

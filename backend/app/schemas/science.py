@@ -450,6 +450,11 @@ class SuggestLotNumberResponse(BaseModel):
     lot_number: str
 
 
+class CheckLotNumberResponse(BaseModel):
+    exists: bool
+    count: int
+
+
 RunCreate.model_rebuild()
 
 

@@ -190,3 +190,49 @@ async def test_suggest_lot_number_ignores_non_matching_values(
         json={"project_id": str(test_project.id)},
     )
     assert resp.json() == {"lot_number": "LOT-000001"}
+
+
+@pytest.mark.asyncio
+async def test_check_lot_number_not_exists(
+    client: AsyncClient, auth_headers, test_project
+):
+    resp = await client.get(
+        "/science/runs/check-lot-number",
+        headers=auth_headers,
+        params={"project_id": str(test_project.id), "lot_number": "NEW-1"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"exists": False, "count": 0}
+
+
+@pytest.mark.asyncio
+async def test_check_lot_number_exists_within_org(
+    client: AsyncClient, auth_headers, test_project
+):
+    await client.post(
+        "/science/runs",
+        headers=auth_headers,
+        json={
+            "name": "dup-1",
+            "project_id": str(test_project.id),
+            "produces_lot": True,
+            "lot_number": "DUP-1",
+        },
+    )
+    await client.post(
+        "/science/runs",
+        headers=auth_headers,
+        json={
+            "name": "dup-2",
+            "project_id": str(test_project.id),
+            "produces_lot": True,
+            "lot_number": "DUP-1",
+        },
+    )
+    resp = await client.get(
+        "/science/runs/check-lot-number",
+        headers=auth_headers,
+        params={"project_id": str(test_project.id), "lot_number": "DUP-1"},
+    )
+    body = resp.json()
+    assert body == {"exists": True, "count": 2}
