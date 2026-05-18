@@ -239,6 +239,12 @@ class Run(Base, UUIDMixin, TimestampMixin):
         Boolean, default=False, server_default="false", nullable=False
     )
 
+    # F-0086: explicit designation that this run produces a manufacturing lot.
+    # Drives validation (lot_number required when true) and the runs-list filter.
+    produces_lot: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False, index=True
+    )
+
     # Production metadata (QA-0008): lot/batch identifiers for GxP traceability.
     # Nullable because experiment-style runs may not have a manufacturing lot.
     lot_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
