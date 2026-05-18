@@ -574,7 +574,7 @@ class Site(Base, UUIDMixin, TimestampMixin):
             "uq_sites_org_is_default",
             "organization_id",
             unique=True,
-            postgresql_where=text("is_default = true"),
+            postgresql_where=text("is_default = true AND archived_at IS NULL"),
         ),
     )
 
