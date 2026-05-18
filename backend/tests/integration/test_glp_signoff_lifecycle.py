@@ -444,3 +444,43 @@ async def test_edited_transition_passes_when_reasons_provided(
         },
     )
     assert res.status_code == 200, res.text
+
+
+# --- Task 18: PLANNED -> ACTIVE stamps started_at --------------------------
+
+
+@pytest_asyncio.fixture
+async def sample_planned_run(
+    db_session: AsyncSession, test_project, sample_active_protocol
+) -> Run:
+    """A PLANNED run linked to a protocol with empty glpSettings."""
+    run = Run(
+        name="Run Lifecycle Planned",
+        project_id=test_project.id,
+        protocol_id=sample_active_protocol.id,
+        status="PLANNED",
+        graph={"nodes": [], "edges": []},
+        execution_data={},
+        notes=[],
+        attachments=[],
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest.mark.asyncio
+async def test_active_transition_sets_started_at(
+    client,
+    auth_headers,
+    sample_planned_run,
+):
+    res = await client.patch(
+        f"/science/runs/{sample_planned_run.id}/state",
+        headers=auth_headers,
+        json={"state": "ACTIVE"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["started_at"] is not None
+    assert body["started_by_id"] is not None

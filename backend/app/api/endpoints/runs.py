@@ -1822,7 +1822,7 @@ async def reopen_run(
     return RunResponse.model_validate(run)
 
 
-# --- Run state lifecycle (F-0087 Task 17) ----------------------------------
+# --- Run state lifecycle (F-0087 Tasks 17-18) ------------------------------
 
 
 _RUN_STATE_TRANSITIONS = {
@@ -1845,6 +1845,7 @@ async def patch_run_state(
 ) -> RunResponse:
     """Transition a run's lifecycle state with GLP audit-trail inputs.
 
+    PLANNED -> ACTIVE stamps ``started_at`` and ``started_by_id``.
     Any -> EDITED requires a non-blank ``edit_reason`` for each modified
     step in ``execution_data_delta``; reasons are persisted onto the
     matching ``execution_data[step_id].edit_reason`` so downstream readers
@@ -1887,6 +1888,10 @@ async def patch_run_state(
         flag_modified(run, "execution_data")
 
     if new_status is not None and new_status != current_status:
+        if new_status == "ACTIVE" and current_status == "PLANNED":
+            # F-0087 Task 18: stamp run-start metadata.
+            run.started_at = datetime.now(timezone.utc)
+            run.started_by_id = user.id
         run.status = new_status
 
     await log_audit(
