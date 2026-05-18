@@ -1,10 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from enum import Enum as _PyEnum
 from typing import Any, List, Optional
 
-from sqlalchemy import (Boolean, CheckConstraint, DateTime, Enum, ForeignKey,
-                        Index, Integer, String, UniqueConstraint, desc, func,
-                        text)
+from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, Enum,
+                        ForeignKey, Index, Integer, String, Text,
+                        UniqueConstraint, desc, func, text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +40,27 @@ class ProtocolApprovalRequestStatus(str, Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     WITHDRAWN = "WITHDRAWN"
+
+
+class GlpRole(str, _PyEnum):
+    """21 CFR Part 58 roles used across protocol approval and run sign-off."""
+
+    SPONSOR = "SPONSOR"  # §58.10, §58.120(a)
+    STUDY_DIRECTOR = "STUDY_DIRECTOR"  # §58.33
+    QAU = "QAU"  # §58.35
+    OPERATOR = "OPERATOR"  # §58.29
+
+
+class GlpSignoffAction(str, _PyEnum):
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    REQUESTED_CHANGES = "REQUESTED_CHANGES"
+
+
+class RunOutcome(str, _PyEnum):
+    COMPLETED_NORMAL = "COMPLETED_NORMAL"
+    COMPLETED_WITH_DEVIATIONS = "COMPLETED_WITH_DEVIATIONS"
+    ABORTED = "ABORTED"
 
 
 class Project(Base, UUIDMixin, TimestampMixin):
@@ -185,6 +207,7 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
 
 class Run(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "runs"
+    __table_args__ = (Index("ix_runs_outcome", "outcome"),)
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -231,6 +254,16 @@ class Run(Base, UUIDMixin, TimestampMixin):
     is_strict: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
+
+    # GLP run lifecycle timestamps and outcome (21 CFR Part 58)
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    outcome: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    outcome_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="runs")
@@ -414,6 +447,14 @@ class Equipment(Base, UUIDMixin, TimestampMixin):
     description: Mapped[Optional[str]] = mapped_column(String)
     equipment_type: Mapped[Optional[str]] = mapped_column(String)
     location: Mapped[Optional[str]] = mapped_column(String)
+
+    # Calibration tracking (21 CFR Part 58 §58.63)
+    serial_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_calibration_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    next_calibration_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    calibration_certificate_path: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
 
 
 class ProtocolApprovalEvent(Base, UUIDMixin, TimestampMixin):
