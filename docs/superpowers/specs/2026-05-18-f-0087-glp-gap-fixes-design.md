@@ -37,7 +37,7 @@ Implement the GLP gap fixes from audit Section P that land under F-0087. Scope i
 | 8 | Run outcome block (Run.outcome, outcome_notes) | L5 |
 | 9 | Immutability gate (block edits after QAU sign-off; reopen-with-reason) | J1 |
 | 10 | Deprecation shim — old `POST /protocols/{id}/approval-events` route delegates to new unified endpoint for one release | H5, K2 |
-| 11 | Template default cleanup | N1–N5 |
+| 11 | Default template updates — variable migration (`approval.*` → `protocol_approvals.*` per-role; add `signoffs.*`, `run.outcome`, `step.actual_value_block`) + layout cleanup + render/golden tests + back-compat aliases for user-uploaded templates | N1–N5 |
 
 Bucket 2 (F-0066 refactor) is the highest-regression-risk piece because F-0066 just shipped. Requires thorough integration-test coverage; planned for first or second slot in implementation order so it surfaces issues early.
 
@@ -298,17 +298,72 @@ Per the bucket placement rule in `conventions.md`:
 Frontend validation utilities:
 - `frontend/src/lib/runValidation.ts` — `validateCanCloseRun(run, glpSettings)` mirror of backend `assert_run_can_close`; disables close button pre-flight
 
-### Template default cleanup (backend/app/services/documents/templates/)
+### Default template updates (`backend/app/services/documents/templates/`)
 
-| ID | File | Action |
+Two `.docx` files need both **variable updates** (to consume the unified `GlpSignoff`-backed context) and **layout edits** (audit N1-N5). The templates use Jinja-style placeholders via `docxtpl`. Edits must preserve the current visual flow — sectioning, table column widths, font sizing, and the existing approval/header layout — so users with custom branding don't see jarring changes when they re-render.
+
+#### Current state (verified by inspecting the .docx XML)
+
+`sop_default.docx` already contains: `doc_number`, `version_number`, `effective_date`, `created_at`, `purpose`, `scope`, `protocol_name`, `project_name`, `organization_name`, `critical_requirement`, role/time/step iteration, and a single-approver block (`approval.*`) plus an `approval_history` loop using `ev.signature_statement`. **No run-level fields are present** — audit N2 risk is theoretical for the default, but the cleanup pass still verifies (`grep` for forbidden vars during render-test).
+
+`batch_record_default.docx` contains all SOP-shared fields plus run-level fields: `run_name`, `run_status`, `started_at`, `completed_at`, `target_yield`, `step.value_display` (the cell N3 replaces), materials/equipment/attachments/notes/figures loops, and the same single-approver `approval.*` block.
+
+#### Variable migration (both files)
+
+| Old (F-0066 single-approver) | New (unified GlpSignoff) | Location |
 |---|---|---|
-| N1 | `batch_record_default.docx` | Strip `target_yield` cell from header table |
-| N2 | `sop_default.docx` | Remove all run-specific fields (`{{ run.* }}`, `lot_number`, `batch_number`, `started_at`, `completed_at`, `started_by`, `execution_data`); keep protocol-level fields only |
-| N3 | `batch_record_default.docx` | Replace `actual_value` cell with `{{r step.actual_value_block }}` |
-| N4 | both | Scan unzipped DOCX XML for `pixelsPerHour` / `layout` references; strip if present |
-| N5 | both | Verify `figure_refs` resolves through `figure_map`; no raw IDs leak |
+| `approval.approver_name` / `.approver_email` / `.signature_image` / `.signature_statement` / `.approved_at` / `.protocol_version` | Replaced by per-role blocks: `protocol_approvals.sponsor.{name,email,signature_image,attestation,signed_at}`, `.study_director.{...}`, `.qau.{...}` | Approval section near doc end |
+| `approval_history` loop with `ev.signature_statement` | Removed. The three per-role blocks replace the chronological event list. A short revision-history line ("last edited YYYY-MM-DD by …") stays via existing `created_at` / `version_number`. | Approval section |
+| `unapproved_warning` flag | Kept; now triggered when *any* required role per `glpSettings.require_*` lacks an active APPROVED sign-off. | Top banner |
 
-DOCX edits land alongside golden-file regression tests (`tests/integration/documents/test_template_rendering.py`).
+Each per-role block is gated by `{%p if protocol_approvals.<role> %}` so a protocol that only requires QAU (the default) doesn't render empty Sponsor/SD sections. The shape of each block matches the old `approval.*` block (name + signature image + attestation + date) so column widths and row heights carry over.
+
+#### Batch Record additions
+
+| Variable | Where to add | Visual treatment |
+|---|---|---|
+| `signoffs.operator.{name,signature_image,attestation,signed_at,initials}` | New "Run sign-offs" section directly after the existing approval block | Same 2-column layout as `approval.*` (label / value) so it sits below visually contiguous. |
+| `signoffs.study_director.{...}` | Same section, conditional on `glpSettings.require_study_director` | Each role rendered only if that signoff exists; otherwise the entire row is suppressed via `{%tr if %}` so we don't leave empty rows. |
+| `signoffs.qau.{...}` | Same section, conditional on `glpSettings.require_qau` | Same. |
+| `run.outcome` | New row in the existing header table, replacing the cell vacated by N1 (`target_yield` removal) | Single cell; rendered as the enum label ("Completed normally" / "Completed with deviations" / "Aborted") via a Python-side display map. |
+| `run.outcome_notes` | New conditional paragraph directly under the header table | `{%p if run.outcome_notes %}` so empty runs don't show a blank "Notes:" label. |
+| `run.started_at`, `run.completed_at` | Already present (`started_at`, `completed_at`); rename context keys to namespace under `run.` for consistency — keep the bare names as aliases for one release to avoid breaking custom templates. | Same cells, no layout change. |
+| `step.actual_value_block` (replaces `step.value_display` per N3) | The recorded-value cell in the per-step row | Stacked RichText: line 1 "Target: {target} {unit}", line 2 "Recorded: {value} {unit} [Δ if out of tolerance]", line 3 "{initials} • {timestamp}". Renders via `{{r step.actual_value_block }}` (RichText), matches existing cell width so the per-step table doesn't reflow. |
+| `step.edit_reason` | Appended into the existing strikethrough RichText annotation for edited values | Inline: "42 → 50 *(corrected unit conversion, WU 2026-05-18)*" — italic in parentheses, same cell, no new column. |
+
+#### SOP cleanup
+
+| Action | Detail |
+|---|---|
+| Variable migration | Single-approver block → three per-role blocks (above). SOPs in F-0087 surface `protocol_approvals.*` only; `signoffs.*` are run-scoped and never appear on an SOP. |
+| Verify N2 | Grep rendered output for forbidden run-level variables (`lot_number`, `batch_number`, `run_name`, `run_status`, `started_at`, `completed_at`, `started_by`, `execution_data`). Render test fails if any appear. |
+| Verify N4 | Grep template XML for `pixelsPerHour` / `layout`. None present today; test enforces. |
+| Verify N5 | Render with mock `figure_refs` and assert output contains "Figure 1" not a raw UUID. Existing `figure_map` is expected to handle this already. |
+
+#### Layout-preservation discipline
+
+When editing the `.docx` files:
+
+1. **Edit via the existing files** — open in Word/LibreOffice, modify in place, save. Do not regenerate from scratch. This preserves implicit XML (style IDs, theme references, custom number formats).
+2. **Diff before commit** — `unzip` the before/after `document.xml`, diff with `xmllint --format` first to make the structural change visible. The diff should show only the runs/cells touched.
+3. **Keep tags inside paragraph runs**, not stitched across them — `docxtpl` requires `{{ var }}` to live entirely within one `<w:r>` to expand correctly. The current templates already follow this; a render test catches regressions.
+4. **Mirror to `backend/uploads/system/document_templates/`** — the same two files are seeded into the system-org uploads on bootstrap. Re-copy after editing the source-of-truth file under `services/documents/templates/`. A pytest fixture asserts the two pairs are byte-identical.
+
+#### Render tests
+
+`tests/integration/documents/test_template_rendering.py` (existing) gains four cases — two per file:
+
+1. **`test_sop_default_renders_with_unified_signoff_context`** — feed a Protocol with QAU-only `glpSettings`, one approved `GlpSignoff(role=QAU)`, assert: rendered DOCX contains the QAU name and attestation; does *not* contain SD or Sponsor sections; does *not* contain any of the forbidden run-level variable names listed in N2.
+2. **`test_sop_default_renders_with_three_roles`** — feed a Protocol with `require_study_director=true` and `require_qau=true`, three `GlpSignoff` rows (sponsor + SD + QAU), assert all three blocks render in order.
+3. **`test_batch_record_renders_with_run_signoffs_and_outcome`** — completed Run with operator + QAU `GlpSignoff` rows, `outcome=COMPLETED_WITH_DEVIATIONS`, one edited step with `edit_reason`. Assert: outcome label rendered, `actual_value_block` shows target/recorded/Δ/initials/timestamp, edit_reason appears in the strikethrough annotation, no `target_yield` cell in the header.
+4. **`test_batch_record_layout_preserved`** — golden-file byte comparison of the rendered output against a committed fixture (`tests/artifacts/golden/batch_record_after_f0087.docx`). The golden fixture is generated once during implementation, reviewed visually, and committed. Subsequent edits that change layout must update the golden file in the same commit.
+
+#### Backward compatibility for user-uploaded templates
+
+Orgs may have uploaded customized copies of these templates referencing `approval.*` and `step.value_display`. To avoid breaking them at the moment F-0087 ships:
+
+- The template context for the **first release** populates *both* the new keys (`protocol_approvals.*`, `signoffs.*`, `step.actual_value_block`) and back-compat aliases (`approval`, `step.value_display`) — alias picks the QAU approval / first available sign-off / legacy single-value rendering, respectively.
+- Aliases are dropped one release later. Banner in the Documents UI in the interim: "Template uses deprecated variable `{name}` — please update."
 
 ## Data flow
 
