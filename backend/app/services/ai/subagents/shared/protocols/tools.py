@@ -15,7 +15,8 @@ from uuid import UUID
 from pydantic_ai import RunContext
 from sqlalchemy import select
 
-from app.models.science import Project, Protocol, ProtocolRole, UnitOpDefinition
+from app.models.science import (Project, Protocol, ProtocolRole,
+                                UnitOpDefinition)
 from app.services.ai.deps import ChatDeps
 from app.services.protocols.creation import ProtocolSpec, ProtocolStep
 from app.services.protocols.creation import \

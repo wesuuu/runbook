@@ -115,13 +115,13 @@ def _branching_invalid_graph() -> dict:
 
 def _assert_branch_role_error(resp) -> None:
     """Assert the response is 400 with branch_requires_distinct_roles detail."""
-    assert resp.status_code == 400, (
-        f"Expected 400, got {resp.status_code}. Body: {resp.text}"
-    )
+    assert (
+        resp.status_code == 400
+    ), f"Expected 400, got {resp.status_code}. Body: {resp.text}"
     detail = resp.json().get("detail", {})
-    assert detail.get("error") == "branch_requires_distinct_roles", (
-        f"Expected error='branch_requires_distinct_roles', got: {detail}"
-    )
+    assert (
+        detail.get("error") == "branch_requires_distinct_roles"
+    ), f"Expected error='branch_requires_distinct_roles', got: {detail}"
 
 
 async def _create_protocol_with_draft(

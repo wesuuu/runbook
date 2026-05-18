@@ -5,6 +5,7 @@ fixture, so by the time these tests execute the column already exists.
 We exercise the resulting schema: rows can carry multi-role arrays, the
 CHECK constraint rejects unknown values, and ARRAY containment works.
 """
+
 import uuid
 
 import pytest
@@ -21,8 +22,7 @@ async def test_backfill_admin_member_includes_member_and_admin(
     org = Organization(name="Backfill Test")
     db_session.add(org)
     await db_session.flush()
-    user = User(email=f"backfill-{uuid.uuid4().hex[:8]}@example.com",
-                full_name="A")
+    user = User(email=f"backfill-{uuid.uuid4().hex[:8]}@example.com", full_name="A")
     db_session.add(user)
     await db_session.flush()
 
@@ -54,8 +54,7 @@ async def test_check_constraint_rejects_unknown_role(
     org = Organization(name="Check Constraint Test")
     db_session.add(org)
     await db_session.flush()
-    user = User(email=f"check-{uuid.uuid4().hex[:8]}@example.com",
-                full_name="C")
+    user = User(email=f"check-{uuid.uuid4().hex[:8]}@example.com", full_name="C")
     db_session.add(user)
     await db_session.flush()
 

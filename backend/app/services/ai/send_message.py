@@ -24,11 +24,9 @@ import logging
 from typing import Any, AsyncIterator
 from uuid import UUID
 
-from pydantic_ai.messages import (
-    FunctionToolCallEvent,
-    FunctionToolResultEvent,
-    ModelMessagesTypeAdapter,
-)
+from pydantic_ai.messages import (FunctionToolCallEvent,
+                                  FunctionToolResultEvent,
+                                  ModelMessagesTypeAdapter)
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,22 +93,26 @@ async def send_message_streaming(
         async for event in stream:
             if isinstance(event, FunctionToolCallEvent):
                 name = event.part.tool_name
-                await event_queue.put({
-                    "type": "tool_start",
-                    "tool": name,
-                    "label": resolve_tool_label(name),
-                })
+                await event_queue.put(
+                    {
+                        "type": "tool_start",
+                        "tool": name,
+                        "label": resolve_tool_label(name),
+                    }
+                )
             elif isinstance(event, FunctionToolResultEvent):
                 name = event.result.tool_name
                 await event_queue.put({"type": "tool_end", "tool": name})
 
     async def _subagent_tool_event(event_type: str, name: str) -> None:
         if event_type == "tool_start":
-            await event_queue.put({
-                "type": "tool_start",
-                "tool": name,
-                "label": resolve_tool_label(name),
-            })
+            await event_queue.put(
+                {
+                    "type": "tool_start",
+                    "tool": name,
+                    "label": resolve_tool_label(name),
+                }
+            )
         else:
             await event_queue.put({"type": "tool_end", "tool": name})
 
@@ -122,9 +124,7 @@ async def send_message_streaming(
     message_history = None
     if existing_history:
         try:
-            message_history = ModelMessagesTypeAdapter.validate_python(
-                existing_history
-            )
+            message_history = ModelMessagesTypeAdapter.validate_python(existing_history)
         except Exception:
             logger.warning(
                 "Failed to deserialize ai_message_history for session %s, "

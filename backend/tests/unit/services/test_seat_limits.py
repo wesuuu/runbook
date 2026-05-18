@@ -64,7 +64,10 @@ async def test_check_seat_capacity_blocks_when_at_cap(db_session, test_org, test
         await db_session.flush()
         db_session.add(
             OrganizationMember(
-                user_id=u.id, organization_id=test_org.id, roles=["MEMBER"], archived=False
+                user_id=u.id,
+                organization_id=test_org.id,
+                roles=["MEMBER"],
+                archived=False,
             )
         )
     await db_session.flush()
@@ -90,7 +93,10 @@ async def test_check_seat_capacity_allows_enterprise_at_any_count(
         await db_session.flush()
         db_session.add(
             OrganizationMember(
-                user_id=u.id, organization_id=test_org.id, roles=["MEMBER"], archived=False
+                user_id=u.id,
+                organization_id=test_org.id,
+                roles=["MEMBER"],
+                archived=False,
             )
         )
     await db_session.flush()

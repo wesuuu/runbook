@@ -9,8 +9,8 @@ from app.models.chat import ChatMessage, ChatMessageRole, ChatSession
 from app.models.iam import Organization
 from app.services.ai.deps import RetrievedChunk
 
-
 # ── SSE helpers ─────────────────────────────────────────────────────────────
+
 
 def _drain_sse(body: str) -> list[dict]:
     """Parse SSE 'data: {json}\\n\\n' frames into a list of dicts."""
@@ -18,7 +18,7 @@ def _drain_sse(body: str) -> list[dict]:
     for line in body.splitlines():
         line = line.strip()
         if line.startswith("data:"):
-            out.append(json.loads(line[len("data:"):].strip()))
+            out.append(json.loads(line[len("data:") :].strip()))
     return out
 
 
@@ -52,6 +52,7 @@ async def _stream_message(
 
 
 # ── Mock factory ─────────────────────────────────────────────────────────────
+
 
 def _make_streaming_mock(content: str, sources: list):
     """Return an async generator mock for send_message_streaming.
@@ -362,7 +363,9 @@ class TestSendChatMessage:
         assert resp.json()["title"] == "New Chat"
 
         # Send first message via stream
-        await _stream_message(client, session_id, "Tell me about CHO cells", auth_headers)
+        await _stream_message(
+            client, session_id, "Tell me about CHO cells", auth_headers
+        )
 
         # Check that title was updated
         resp = await client.get(f"/chat/sessions/{session_id}", headers=auth_headers)

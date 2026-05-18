@@ -3,6 +3,7 @@
 
 def test_snapshot_populates_mirror_fields():
     from app.services.runs.overrides import snapshot_unit_op_node
+
     node = {
         "id": "n1",
         "type": "unitOp",
@@ -24,6 +25,7 @@ def test_snapshot_populates_mirror_fields():
 
 def test_snapshot_is_idempotent():
     from app.services.runs.overrides import snapshot_unit_op_node
+
     node = {
         "id": "n1",
         "data": {
@@ -37,9 +39,10 @@ def test_snapshot_is_idempotent():
 
 
 def test_apply_value_overrides_merges_sparsely():
+    from app.schemas.science import NodeOverrides
     from app.services.runs.overrides import (apply_node_overrides,
                                              snapshot_unit_op_node)
-    from app.schemas.science import NodeOverrides
+
     node = {
         "id": "n1",
         "data": {
@@ -68,9 +71,10 @@ def test_apply_value_overrides_merges_sparsely():
 
 
 def test_apply_equipment_swap_emits_one_diff():
+    from app.schemas.science import NodeOverrides
     from app.services.runs.overrides import (apply_node_overrides,
                                              snapshot_unit_op_node)
-    from app.schemas.science import NodeOverrides
+
     node = {
         "id": "n1",
         "data": {
@@ -84,16 +88,19 @@ def test_apply_equipment_swap_emits_one_diff():
         NodeOverrides(equipment=[{"id": "eq-B", "name": "Centrifuge B"}]),
     )
     assert node["data"]["equipment"] == [{"id": "eq-B", "name": "Centrifuge B"}]
-    assert node["data"]["protocol_equipment"] == [{"id": "eq-A", "name": "Centrifuge A"}]
+    assert node["data"]["protocol_equipment"] == [
+        {"id": "eq-A", "name": "Centrifuge A"}
+    ]
     assert len(diffs) == 1
     assert diffs[0]["field"] == "equipment"
     assert diffs[0]["field_label"] == "Equipment"
 
 
 def test_apply_paramSchema_replacement_emits_one_diff():
+    from app.schemas.science import NodeOverrides
     from app.services.runs.overrides import (apply_node_overrides,
                                              snapshot_unit_op_node)
-    from app.schemas.science import NodeOverrides
+
     node = {
         "id": "n1",
         "data": {
@@ -115,9 +122,10 @@ def test_apply_paramSchema_replacement_emits_one_diff():
 
 
 def test_apply_description_override_emits_one_diff():
+    from app.schemas.science import NodeOverrides
     from app.services.runs.overrides import (apply_node_overrides,
                                              snapshot_unit_op_node)
-    from app.schemas.science import NodeOverrides
+
     node = {
         "id": "n1",
         "data": {
@@ -127,7 +135,8 @@ def test_apply_description_override_emits_one_diff():
     }
     snapshot_unit_op_node(node)
     diffs = apply_node_overrides(
-        node, NodeOverrides(description="Adjust to {{pH}} using 1M HCl"),
+        node,
+        NodeOverrides(description="Adjust to {{pH}} using 1M HCl"),
     )
     assert node["data"]["description"] == "Adjust to {{pH}} using 1M HCl"
     assert node["data"]["protocol_description"] == "Mix until pH={{pH}}"
@@ -136,9 +145,10 @@ def test_apply_description_override_emits_one_diff():
 
 
 def test_apply_no_override_returns_no_diffs():
+    from app.schemas.science import NodeOverrides
     from app.services.runs.overrides import (apply_node_overrides,
                                              snapshot_unit_op_node)
-    from app.schemas.science import NodeOverrides
+
     node = {"id": "n1", "data": {"label": "X", "params": {"a": 1}}}
     snapshot_unit_op_node(node)
     diffs = apply_node_overrides(node, NodeOverrides())  # all fields None
@@ -148,12 +158,17 @@ def test_apply_no_override_returns_no_diffs():
 
 def test_apply_same_value_emits_no_diff():
     """If override equals current value, no audit entry should be produced."""
+    from app.schemas.science import NodeOverrides
     from app.services.runs.overrides import (apply_node_overrides,
                                              snapshot_unit_op_node)
-    from app.schemas.science import NodeOverrides
+
     node = {
         "id": "n1",
-        "data": {"label": "X", "params": {"pH": 7.4}, "paramSchema": {"properties": {"pH": {}}}},
+        "data": {
+            "label": "X",
+            "params": {"pH": 7.4},
+            "paramSchema": {"properties": {"pH": {}}},
+        },
     }
     snapshot_unit_op_node(node)
     diffs = apply_node_overrides(node, NodeOverrides(params={"pH": 7.4}))
@@ -162,6 +177,7 @@ def test_apply_same_value_emits_no_diff():
 
 def test_diff_unit_op_node_detects_param_change():
     from app.services.runs.overrides import diff_unit_op_node
+
     old = {"id": "n1", "data": {"label": "X", "params": {"pH": 7.4}}}
     new = {"id": "n1", "data": {"label": "X", "params": {"pH": 6.8}}}
     diffs = diff_unit_op_node(old, new)
@@ -173,6 +189,7 @@ def test_diff_unit_op_node_detects_param_change():
 
 def test_diff_unit_op_node_detects_added_param():
     from app.services.runs.overrides import diff_unit_op_node
+
     old = {"id": "n1", "data": {"label": "X", "params": {"pH": 7.4}}}
     new = {"id": "n1", "data": {"label": "X", "params": {"pH": 7.4, "lot": "L42"}}}
     diffs = diff_unit_op_node(old, new)
@@ -184,6 +201,7 @@ def test_diff_unit_op_node_detects_added_param():
 
 def test_diff_unit_op_node_detects_equipment_swap():
     from app.services.runs.overrides import diff_unit_op_node
+
     old = {"id": "n1", "data": {"label": "X", "equipment": [{"id": "eq-A"}]}}
     new = {"id": "n1", "data": {"label": "X", "equipment": [{"id": "eq-B"}]}}
     diffs = diff_unit_op_node(old, new)
@@ -193,6 +211,7 @@ def test_diff_unit_op_node_detects_equipment_swap():
 
 def test_diff_unit_op_node_no_diff_when_unchanged():
     from app.services.runs.overrides import diff_unit_op_node
+
     node_a = {"id": "n1", "data": {"label": "X", "params": {"pH": 7.4}}}
     node_b = {"id": "n1", "data": {"label": "X", "params": {"pH": 7.4}}}
     diffs = diff_unit_op_node(node_a, node_b)

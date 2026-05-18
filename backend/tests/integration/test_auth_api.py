@@ -534,7 +534,8 @@ async def test_update_preferences_persists_theme(
 
 @pytest.mark.asyncio
 async def test_update_preferences_rejects_unknown_theme(
-    client: AsyncClient, auth_headers: dict,
+    client: AsyncClient,
+    auth_headers: dict,
 ):
     resp = await client.put(
         "/auth/me/preferences",

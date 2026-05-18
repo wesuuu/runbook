@@ -5,6 +5,7 @@ under app/services/ai/subagents/ (excluding the legacy, unwired
 protocol_builder package) has a corresponding TOOL_LABELS entry and resolves
 to a non-fallback human label.
 """
+
 import re
 from pathlib import Path
 
@@ -13,8 +14,7 @@ import pytest
 from app.services.ai.tool_labels import FALLBACK_LABEL, resolve_tool_label
 
 SUBAGENTS_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "app" / "services" / "ai" / "subagents"
+    Path(__file__).resolve().parents[2] / "app" / "services" / "ai" / "subagents"
 )
 _TOOL_AUDIT_RE = re.compile(r'"tool"\s*:\s*"([a-z_][a-z0-9_]*)"')
 
@@ -36,9 +36,9 @@ def _audited_tool_names() -> set[str]:
 def test_audited_tools_discovered():
     """Sanity: the scan finds the known tools from the active subagents."""
     names = _audited_tool_names()
-    assert "search_documents" in names           # research_library
-    assert "create_protocol" in names            # shared/protocols
-    assert "set_node_position" in names          # shared/protocols (post-TD-0086)
+    assert "search_documents" in names  # research_library
+    assert "create_protocol" in names  # shared/protocols
+    assert "set_node_position" in names  # shared/protocols (post-TD-0086)
     # research_library (3) + shared/protocols (21) = 24+
     assert len(names) >= 24
 

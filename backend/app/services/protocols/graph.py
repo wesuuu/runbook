@@ -313,9 +313,7 @@ def _grow_lane_for_child_bbox(
     shrinks the lane.
     """
     out = list(nodes)
-    lane_idx = next(
-        (i for i, n in enumerate(out) if n.get("id") == lane_id), None
-    )
+    lane_idx = next((i for i, n in enumerate(out) if n.get("id") == lane_id), None)
     if lane_idx is None:
         return out
     lane = out[lane_idx]

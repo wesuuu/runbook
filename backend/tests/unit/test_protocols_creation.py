@@ -303,9 +303,7 @@ async def test_update_protocol_step_repositions_into_lane(
     )
     db_session.add(proto)
     await db_session.flush()
-    role = ProtocolRole(
-        id=role_id, protocol_id=proto.id, name="Op", sort_order=0
-    )
+    role = ProtocolRole(id=role_id, protocol_id=proto.id, name="Op", sort_order=0)
     db_session.add(role)
     await db_session.flush()
 
@@ -369,9 +367,7 @@ async def test_update_protocol_step_grows_lane_for_many_children(
     )
     db_session.add(proto)
     await db_session.flush()
-    role = ProtocolRole(
-        id=role_id, protocol_id=proto.id, name="Op", sort_order=0
-    )
+    role = ProtocolRole(id=role_id, protocol_id=proto.id, name="Op", sort_order=0)
     db_session.add(role)
     await db_session.flush()
 

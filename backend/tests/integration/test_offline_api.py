@@ -1,15 +1,18 @@
 """Tests for offline field mode endpoints: session creation, prefetch, revocation."""
 
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
-from uuid import uuid4
 
 from app.api.endpoints import offline as _offline_endpoints
 from app.api.endpoints import sync as _sync_endpoints
-from app.core.security import hash_password, create_access_token, create_offline_token
+from app.core.security import (create_access_token, create_offline_token,
+                               hash_password)
 from app.main import app as _app
 from app.models.iam import User
-from app.models.science import Run, RunStatus, RunRoleAssignment, Project, UnitOpDefinition
+from app.models.science import (Project, Run, RunRoleAssignment, RunStatus,
+                                UnitOpDefinition)
 
 # TD-0082: offline + sync routers are gated off by default. These tests need
 # them registered. Idempotent: only register if not already present.
@@ -28,7 +31,11 @@ async def run_with_assignment(db_session, test_user, test_project):
         status=RunStatus.ACTIVE,
         graph={
             "nodes": [
-                {"id": "step-1", "type": "unitOp", "data": {"label": "Seeding", "unitOpId": None}},
+                {
+                    "id": "step-1",
+                    "type": "unitOp",
+                    "data": {"label": "Seeding", "unitOpId": None},
+                },
             ],
             "edges": [],
         },
@@ -50,7 +57,10 @@ async def run_with_assignment(db_session, test_user, test_project):
 
 # --- POST /auth/offline-session ---
 
-async def test_create_offline_session_success(client, auth_headers, test_user, run_with_assignment):
+
+async def test_create_offline_session_success(
+    client, auth_headers, test_user, run_with_assignment
+):
     resp = await client.post(
         "/auth/offline-session",
         json={"run_id": str(run_with_assignment.id), "password": "testpass"},
@@ -63,7 +73,9 @@ async def test_create_offline_session_success(client, auth_headers, test_user, r
     assert "expires_at" in data
 
 
-async def test_create_offline_session_wrong_password(client, auth_headers, run_with_assignment):
+async def test_create_offline_session_wrong_password(
+    client, auth_headers, run_with_assignment
+):
     resp = await client.post(
         "/auth/offline-session",
         json={"run_id": str(run_with_assignment.id), "password": "wrongpass"},
@@ -73,7 +85,9 @@ async def test_create_offline_session_wrong_password(client, auth_headers, run_w
     assert "Invalid password" in resp.json()["detail"]
 
 
-async def test_create_offline_session_planned_run(client, auth_headers, test_user, test_project, db_session):
+async def test_create_offline_session_planned_run(
+    client, auth_headers, test_user, test_project, db_session
+):
     """PLANNED runs should allow offline session creation (pre-run prep)."""
     run = Run(
         name="Planned Run",
@@ -85,8 +99,10 @@ async def test_create_offline_session_planned_run(client, auth_headers, test_use
     db_session.add(run)
     await db_session.flush()
     assignment = RunRoleAssignment(
-        run_id=run.id, lane_node_id="__run__",
-        role_name="Operator", user_id=test_user.id,
+        run_id=run.id,
+        lane_node_id="__run__",
+        role_name="Operator",
+        user_id=test_user.id,
     )
     db_session.add(assignment)
     await db_session.flush()
@@ -102,7 +118,9 @@ async def test_create_offline_session_planned_run(client, auth_headers, test_use
     assert data["run_id"] == str(run.id)
 
 
-async def test_create_offline_session_completed_run_rejected(client, auth_headers, test_user, test_project, db_session):
+async def test_create_offline_session_completed_run_rejected(
+    client, auth_headers, test_user, test_project, db_session
+):
     """COMPLETED runs should not allow offline session creation."""
     run = Run(
         name="Completed Run",
@@ -114,8 +132,10 @@ async def test_create_offline_session_completed_run_rejected(client, auth_header
     db_session.add(run)
     await db_session.flush()
     assignment = RunRoleAssignment(
-        run_id=run.id, lane_node_id="__run__",
-        role_name="Operator", user_id=test_user.id,
+        run_id=run.id,
+        lane_node_id="__run__",
+        role_name="Operator",
+        user_id=test_user.id,
     )
     db_session.add(assignment)
     await db_session.flush()
@@ -129,7 +149,9 @@ async def test_create_offline_session_completed_run_rejected(client, auth_header
     assert "PLANNED or ACTIVE" in resp.json()["detail"]
 
 
-async def test_create_offline_session_no_role(client, auth_headers, test_project, db_session):
+async def test_create_offline_session_no_role(
+    client, auth_headers, test_project, db_session
+):
     run = Run(
         name="No Role Run",
         project_id=test_project.id,
@@ -160,6 +182,7 @@ async def test_create_offline_session_run_not_found(client, auth_headers):
 
 # --- GET /offline/runs/{run_id}/prefetch ---
 
+
 async def test_prefetch_run_data(client, auth_headers, run_with_assignment):
     resp = await client.get(
         f"/offline/runs/{run_with_assignment.id}/prefetch",
@@ -176,7 +199,9 @@ async def test_prefetch_run_data(client, auth_headers, run_with_assignment):
     assert data["role_assignments"][0]["role_name"] == "Operator"
 
 
-async def test_prefetch_includes_unit_op_defs(client, auth_headers, test_project, test_user, db_session):
+async def test_prefetch_includes_unit_op_defs(
+    client, auth_headers, test_project, test_user, db_session
+):
     # Create a unit op definition
     uod = UnitOpDefinition(
         name="Buffer Mix",
@@ -192,7 +217,11 @@ async def test_prefetch_includes_unit_op_defs(client, auth_headers, test_project
         status=RunStatus.ACTIVE,
         graph={
             "nodes": [
-                {"id": "s1", "type": "unitOp", "data": {"label": "Mix", "unitOpId": str(uod.id)}},
+                {
+                    "id": "s1",
+                    "type": "unitOp",
+                    "data": {"label": "Mix", "unitOpId": str(uod.id)},
+                },
             ],
             "edges": [],
         },
@@ -200,10 +229,14 @@ async def test_prefetch_includes_unit_op_defs(client, auth_headers, test_project
     )
     db_session.add(run)
     await db_session.flush()
-    db_session.add(RunRoleAssignment(
-        run_id=run.id, lane_node_id="__run__",
-        role_name="Operator", user_id=test_user.id,
-    ))
+    db_session.add(
+        RunRoleAssignment(
+            run_id=run.id,
+            lane_node_id="__run__",
+            role_name="Operator",
+            user_id=test_user.id,
+        )
+    )
     await db_session.flush()
 
     resp = await client.get(f"/offline/runs/{run.id}/prefetch", headers=auth_headers)
@@ -220,6 +253,7 @@ async def test_prefetch_run_not_found(client, auth_headers):
 
 # --- DELETE /auth/offline-session/{jti} ---
 
+
 async def test_revoke_offline_token(client, auth_headers, run_with_assignment):
     # First create an offline session
     resp = await client.post(
@@ -231,6 +265,7 @@ async def test_revoke_offline_token(client, auth_headers, run_with_assignment):
 
     # Decode to get JTI
     from app.core.security import decode_offline_token
+
     payload = decode_offline_token(token_data["offline_token"])
     jti = payload["jti"]
 
@@ -262,8 +297,11 @@ async def test_revoke_already_revoked(client, auth_headers, run_with_assignment)
         headers=auth_headers,
     )
     from app.core.security import decode_offline_token
+
     jti = decode_offline_token(resp.json()["offline_token"])["jti"]
 
     await client.request("DELETE", f"/auth/offline-session/{jti}", headers=auth_headers)
-    resp2 = await client.request("DELETE", f"/auth/offline-session/{jti}", headers=auth_headers)
+    resp2 = await client.request(
+        "DELETE", f"/auth/offline-session/{jti}", headers=auth_headers
+    )
     assert resp2.status_code == 409

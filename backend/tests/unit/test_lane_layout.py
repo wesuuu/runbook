@@ -1,17 +1,13 @@
 """Tests for services/protocols/lane_layout.py."""
 
-from app.services.protocols.lane_layout import (
-    CHILD_INSET_X,
-    CHILD_INSET_Y,
-    CHILD_X_STEP,
-    CHILD_Y_STEP,
-    LANE_DEFAULT_HORIZONTAL,
-    grow_lane_to_fit,
-    lane_relative_position,
-    relayout_all_lane_children,
-    relayout_lane_children,
-    relayout_top_level_chain,
-)
+from app.services.protocols.lane_layout import (CHILD_INSET_X, CHILD_INSET_Y,
+                                                CHILD_X_STEP, CHILD_Y_STEP,
+                                                LANE_DEFAULT_HORIZONTAL,
+                                                grow_lane_to_fit,
+                                                lane_relative_position,
+                                                relayout_all_lane_children,
+                                                relayout_lane_children,
+                                                relayout_top_level_chain)
 
 
 def _lane(lane_id: str = "lane-1", orientation: str = "horizontal") -> dict:

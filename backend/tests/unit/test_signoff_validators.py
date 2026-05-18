@@ -555,7 +555,9 @@ async def test_validate_signoff_role_assignable_operator_checks_run_edit():
 
     captured_args: dict = {}
 
-    async def fake_check_permission(db, user_id, object_type, object_id, required_level):
+    async def fake_check_permission(
+        db, user_id, object_type, object_id, required_level
+    ):
         captured_args["object_type"] = object_type
         captured_args["object_id"] = object_id
         captured_args["required_level"] = required_level
@@ -596,7 +598,9 @@ async def test_validate_signoff_role_assignable_sponsor_uses_project_admin():
 
     captured_args: dict = {}
 
-    async def fake_check_permission(db, user_id, object_type, object_id, required_level):
+    async def fake_check_permission(
+        db, user_id, object_type, object_id, required_level
+    ):
         captured_args["object_type"] = object_type
         captured_args["object_id"] = object_id
         captured_args["required_level"] = required_level

@@ -657,9 +657,7 @@ def _chain_layout_issues(
         src_label = (src_lane.get("data") or {}).get("label") or "<lane>"
         tgt_label = (tgt_lane.get("data") or {}).get("label") or "<lane>"
         direction = "above" if graph_layout == "horizontal" else "to the left of"
-        reorder_hint = (
-            "below" if graph_layout == "horizontal" else "to the right of"
-        )
+        reorder_hint = "below" if graph_layout == "horizontal" else "to the right of"
         issues.append(
             ValidationIssue(
                 severity="warning",

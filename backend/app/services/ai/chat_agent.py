@@ -21,12 +21,8 @@ from app.services.ai.cache_settings import CHAT_AGENT_MODEL_SETTINGS
 from app.services.ai.deps import ChatDeps
 from app.services.ai.runtime.compaction import CompactionState
 from app.services.ai.runtime.token_counting import tiktoken_counter
-from app.services.ai.subagents import (
-    protocol_creator,
-    protocol_editor,
-    research_library,
-    run_planner,
-)
+from app.services.ai.subagents import (protocol_creator, protocol_editor,
+                                       research_library, run_planner)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _CHAT_PROMPT = (_PROMPTS_DIR / "chat_agent.md").read_text()

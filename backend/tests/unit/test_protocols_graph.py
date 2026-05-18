@@ -6,21 +6,12 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    ObjectPermission,
-    ObjectType,
-    Organization,
-    PermissionLevel,
-    PrincipalType,
-    User,
-)
-from app.models.science import Project, Protocol, ProtocolRole, UnitOpDefinition
-from app.services.protocols.graph import (
-    add_step,
-    remove_step,
-    reorder_steps,
-    replace_step_unit_op,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            PermissionLevel, PrincipalType, User)
+from app.models.science import (Project, Protocol, ProtocolRole,
+                                UnitOpDefinition)
+from app.services.protocols.graph import (add_step, remove_step, reorder_steps,
+                                          replace_step_unit_op)
 
 
 def _seed_graph_with_n_steps(n: int) -> dict:
@@ -543,9 +534,7 @@ async def test_set_node_position_lane_child_writes_lane_relative(
     from app.services.protocols.graph import set_node_position
 
     role_id = uuid.uuid4()
-    role = ProtocolRole(
-        id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0
-    )
+    role = ProtocolRole(id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0)
     db_session.add(role)
     await db_session.flush()
     g = dict(draft_proto.graph)
@@ -578,7 +567,9 @@ async def test_set_node_position_lane_child_writes_lane_relative(
     )
     await db_session.refresh(draft_proto)
     child = next(
-        n for n in draft_proto.graph["nodes"] if n.get("data", {}).get("label") == "Lane child"
+        n
+        for n in draft_proto.graph["nodes"]
+        if n.get("data", {}).get("label") == "Lane child"
     )
     updated = await set_node_position(
         db_session,
@@ -602,9 +593,7 @@ async def test_set_node_position_grows_lane_when_child_extends_past(
     from app.services.protocols.graph import add_step, set_node_position
 
     role_id = uuid.uuid4()
-    role = ProtocolRole(
-        id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0
-    )
+    role = ProtocolRole(id=role_id, protocol_id=draft_proto.id, name="Op", sort_order=0)
     db_session.add(role)
     await db_session.flush()
     g = dict(draft_proto.graph)
@@ -634,7 +623,9 @@ async def test_set_node_position_grows_lane_when_child_extends_past(
     )
     await db_session.refresh(draft_proto)
     child = next(
-        n for n in draft_proto.graph["nodes"] if n.get("data", {}).get("label") == "Lane child"
+        n
+        for n in draft_proto.graph["nodes"]
+        if n.get("data", {}).get("label") == "Lane child"
     )
     # x=900 + default node width 220 → 1120, beyond initial lane width 800.
     updated = await set_node_position(
@@ -645,9 +636,7 @@ async def test_set_node_position_grows_lane_when_child_extends_past(
         x=900,
         y=60,
     )
-    lane = next(
-        n for n in updated.graph["nodes"] if n["id"] == f"lane-{role_id}"
-    )
+    lane = next(n for n in updated.graph["nodes"] if n["id"] == f"lane-{role_id}")
     assert lane["width"] >= 1120
 
 
@@ -674,9 +663,7 @@ async def test_set_node_position_refuses_on_published(
 ):
     from app.services.protocols.graph import set_node_position
 
-    proj = Project(
-        name="g3", organization_id=test_org.id, owner_id=test_user.id
-    )
+    proj = Project(name="g3", organization_id=test_org.id, owner_id=test_user.id)
     db_session.add(proj)
     await db_session.flush()
     db_session.add(

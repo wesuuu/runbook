@@ -640,10 +640,13 @@ async def test_resolver_multi_role_member_has_admin_access(db_session: AsyncSess
     db_session.add(project)
     await db_session.flush()
 
-    assert await check_permission(
-        db_session,
-        user.id,
-        ObjectType.PROJECT,
-        project.id,
-        PermissionLevel.ADMIN,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.ADMIN,
+        )
+        is True
+    )

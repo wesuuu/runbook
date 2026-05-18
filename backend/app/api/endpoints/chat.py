@@ -20,9 +20,8 @@ from app.models.chat import (ChatMessage, ChatMessageRole, ChatNotification,
                              ChatSession)
 from app.models.iam import (TIER_RANK, Organization, OrganizationMember,
                             OrgRole, SubscriptionTier, User)
-from app.schemas.chat import (ChatConfigResponse,
-                              ChatMessageCreate, ChatSessionCreate,
-                              ChatSessionDetailResponse,
+from app.schemas.chat import (ChatConfigResponse, ChatMessageCreate,
+                              ChatSessionCreate, ChatSessionDetailResponse,
                               ChatSessionListResponse, ChatSessionResponse,
                               ChatSessionUpdate, ChatSkillListResponse,
                               ChatSkillResponse, ChatSourceReference,

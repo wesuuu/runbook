@@ -166,8 +166,11 @@ async def create_unit_op(
             )
 
         allowed = await check_permission(
-            db, user.id, ObjectType.PROJECT,
-            unit_op.project_id, PermissionLevel.EDIT,
+            db,
+            user.id,
+            ObjectType.PROJECT,
+            unit_op.project_id,
+            PermissionLevel.EDIT,
         )
         if not allowed:
             raise HTTPException(

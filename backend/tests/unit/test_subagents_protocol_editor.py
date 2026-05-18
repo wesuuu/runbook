@@ -2,7 +2,6 @@
 
 from app.services.ai.subagents import protocol_editor
 
-
 EXPECTED_TOOL_NAMES = {
     # Reads
     "list_projects",
@@ -44,7 +43,7 @@ def test_protocol_editor_build_returns_subagent_config():
 def test_protocol_editor_tool_set():
     config = protocol_editor.build("openai:gpt-4.1-mini")
     tool_names = {fn.__name__ for fn in config["agent_kwargs"]["tools"]}
-    assert tool_names == EXPECTED_TOOL_NAMES, (
-        f"Expected exactly {EXPECTED_TOOL_NAMES}, got {tool_names}"
-    )
+    assert (
+        tool_names == EXPECTED_TOOL_NAMES
+    ), f"Expected exactly {EXPECTED_TOOL_NAMES}, got {tool_names}"
     assert len(tool_names) == 19

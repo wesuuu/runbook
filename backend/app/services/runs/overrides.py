@@ -4,6 +4,7 @@ These functions are intentionally I/O-free (no DB, no HTTP, no logging) so
 they can be unit-tested directly. Callers are responsible for emitting the
 returned diffs as audit entries.
 """
+
 import copy
 from typing import Any, List, TypedDict
 
@@ -13,6 +14,7 @@ from app.services.runs.graph import derive_field_label
 
 class FieldDiff(TypedDict):
     """One field-level change. Shape matches existing STEP_EDIT audit payload."""
+
     step_id: str
     step_name: str
     field: str
@@ -58,54 +60,62 @@ def apply_node_overrides(node: dict, ov: NodeOverrides) -> List[FieldDiff]:
             old_val = current.get(key)
             if old_val == new_val:
                 continue
-            diffs.append({
-                "step_id": step_id,
-                "step_name": step_name,
-                "field": key,
-                "field_label": derive_field_label(schema_props, key),
-                "old_value": old_val,
-                "new_value": new_val,
-            })
+            diffs.append(
+                {
+                    "step_id": step_id,
+                    "step_name": step_name,
+                    "field": key,
+                    "field_label": derive_field_label(schema_props, key),
+                    "old_value": old_val,
+                    "new_value": new_val,
+                }
+            )
         data["params"] = {**current, **ov.params}
 
     if ov.equipment is not None:
         old_eq = data.get("equipment") or []
         new_eq = ov.equipment
         if old_eq != new_eq:
-            diffs.append({
-                "step_id": step_id,
-                "step_name": step_name,
-                "field": "equipment",
-                "field_label": "Equipment",
-                "old_value": old_eq,
-                "new_value": new_eq,
-            })
+            diffs.append(
+                {
+                    "step_id": step_id,
+                    "step_name": step_name,
+                    "field": "equipment",
+                    "field_label": "Equipment",
+                    "old_value": old_eq,
+                    "new_value": new_eq,
+                }
+            )
             data["equipment"] = new_eq
 
     if ov.paramSchema is not None:
         old_schema = data.get("paramSchema") or {}
         if old_schema != ov.paramSchema:
-            diffs.append({
-                "step_id": step_id,
-                "step_name": step_name,
-                "field": "paramSchema",
-                "field_label": "Parameter schema",
-                "old_value": old_schema,
-                "new_value": ov.paramSchema,
-            })
+            diffs.append(
+                {
+                    "step_id": step_id,
+                    "step_name": step_name,
+                    "field": "paramSchema",
+                    "field_label": "Parameter schema",
+                    "old_value": old_schema,
+                    "new_value": ov.paramSchema,
+                }
+            )
             data["paramSchema"] = ov.paramSchema
 
     if ov.description is not None:
         old_desc = data.get("description", "")
         if old_desc != ov.description:
-            diffs.append({
-                "step_id": step_id,
-                "step_name": step_name,
-                "field": "description",
-                "field_label": "Instructions",
-                "old_value": old_desc,
-                "new_value": ov.description,
-            })
+            diffs.append(
+                {
+                    "step_id": step_id,
+                    "step_name": step_name,
+                    "field": "description",
+                    "field_label": "Instructions",
+                    "old_value": old_desc,
+                    "new_value": ov.description,
+                }
+            )
             data["description"] = ov.description
 
     return diffs
@@ -128,43 +138,51 @@ def diff_unit_op_node(old_node: dict, new_node: dict) -> List[FieldDiff]:
     new_params = new_data.get("params") or {}
     for key in set(old_params) | set(new_params):
         if old_params.get(key) != new_params.get(key):
-            diffs.append({
-                "step_id": step_id,
-                "step_name": step_name,
-                "field": key,
-                "field_label": derive_field_label(schema_props, key),
-                "old_value": old_params.get(key),
-                "new_value": new_params.get(key),
-            })
+            diffs.append(
+                {
+                    "step_id": step_id,
+                    "step_name": step_name,
+                    "field": key,
+                    "field_label": derive_field_label(schema_props, key),
+                    "old_value": old_params.get(key),
+                    "new_value": new_params.get(key),
+                }
+            )
 
     if (old_data.get("equipment") or []) != (new_data.get("equipment") or []):
-        diffs.append({
-            "step_id": step_id,
-            "step_name": step_name,
-            "field": "equipment",
-            "field_label": "Equipment",
-            "old_value": old_data.get("equipment") or [],
-            "new_value": new_data.get("equipment") or [],
-        })
+        diffs.append(
+            {
+                "step_id": step_id,
+                "step_name": step_name,
+                "field": "equipment",
+                "field_label": "Equipment",
+                "old_value": old_data.get("equipment") or [],
+                "new_value": new_data.get("equipment") or [],
+            }
+        )
 
     if (old_data.get("paramSchema") or {}) != (new_data.get("paramSchema") or {}):
-        diffs.append({
-            "step_id": step_id,
-            "step_name": step_name,
-            "field": "paramSchema",
-            "field_label": "Parameter schema",
-            "old_value": old_data.get("paramSchema") or {},
-            "new_value": new_data.get("paramSchema") or {},
-        })
+        diffs.append(
+            {
+                "step_id": step_id,
+                "step_name": step_name,
+                "field": "paramSchema",
+                "field_label": "Parameter schema",
+                "old_value": old_data.get("paramSchema") or {},
+                "new_value": new_data.get("paramSchema") or {},
+            }
+        )
 
     if (old_data.get("description") or "") != (new_data.get("description") or ""):
-        diffs.append({
-            "step_id": step_id,
-            "step_name": step_name,
-            "field": "description",
-            "field_label": "Instructions",
-            "old_value": old_data.get("description") or "",
-            "new_value": new_data.get("description") or "",
-        })
+        diffs.append(
+            {
+                "step_id": step_id,
+                "step_name": step_name,
+                "field": "description",
+                "field_label": "Instructions",
+                "old_value": old_data.get("description") or "",
+                "new_value": new_data.get("description") or "",
+            }
+        )
 
     return diffs

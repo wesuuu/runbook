@@ -24,9 +24,11 @@ async def _fake_run_with_events(events_to_emit):
 
     async def _run(*args, event_stream_handler=None, **kwargs):
         if event_stream_handler is not None:
+
             async def _gen():
                 for ev in events_to_emit:
                     yield ev
+
             await event_stream_handler(MagicMock(), _gen())
         result = MagicMock()
         result.output = "ok"
@@ -49,7 +51,9 @@ def _tool_result_event(tool_name: str, call_id: str = "c1"):
 
     return FunctionToolResultEvent(
         result=ToolReturnPart(
-            tool_name=tool_name, content="ok", tool_call_id=call_id,
+            tool_name=tool_name,
+            content="ok",
+            tool_call_id=call_id,
         ),
     )
 
@@ -79,7 +83,11 @@ def _patch_schema_serialization():
     """Patch ChatMessageResponse and ChatSourceReference so tests don't need
     real ORM objects with DB-populated fields (id, created_at, etc.)."""
     fake_msg_resp = MagicMock()
-    fake_msg_resp.model_dump.return_value = {"id": str(uuid.uuid4()), "role": "user", "content": "hi"}
+    fake_msg_resp.model_dump.return_value = {
+        "id": str(uuid.uuid4()),
+        "role": "user",
+        "content": "hi",
+    }
 
     mock_cmr = MagicMock()
     mock_cmr.model_validate.return_value = fake_msg_resp
@@ -131,8 +139,13 @@ async def test_emits_tool_start_end_then_done():
         mock_build.return_value = fake_agent
 
         emitted = [
-            ev async for ev in send_message_streaming(
-                db, session, "hi", user_id=uuid.uuid4(), is_org_admin=False,
+            ev
+            async for ev in send_message_streaming(
+                db,
+                session,
+                "hi",
+                user_id=uuid.uuid4(),
+                is_org_admin=False,
             )
         ]
 
@@ -181,8 +194,13 @@ async def test_done_only_when_no_tool_calls():
         mock_build.return_value = fake_agent
 
         emitted = [
-            ev async for ev in send_message_streaming(
-                db, session, "hi", user_id=uuid.uuid4(), is_org_admin=False,
+            ev
+            async for ev in send_message_streaming(
+                db,
+                session,
+                "hi",
+                user_id=uuid.uuid4(),
+                is_org_admin=False,
             )
         ]
 
@@ -210,9 +228,11 @@ async def test_user_message_committed_before_agent_run():
     async def _record_run(*a, event_stream_handler=None, **kw):
         call_order.append("agent.run")
         if event_stream_handler is not None:
+
             async def _gen():
                 if False:
                     yield None
+
             await event_stream_handler(MagicMock(), _gen())
         r = MagicMock()
         r.output = "ok"
@@ -241,8 +261,13 @@ async def test_user_message_committed_before_agent_run():
         mock_build.return_value = fake_agent
 
         _ = [
-            ev async for ev in send_message_streaming(
-                db, session, "hi", user_id=uuid.uuid4(), is_org_admin=False,
+            ev
+            async for ev in send_message_streaming(
+                db,
+                session,
+                "hi",
+                user_id=uuid.uuid4(),
+                is_org_admin=False,
             )
         ]
 
@@ -279,8 +304,13 @@ async def test_agent_error_yields_error_event():
         mock_build.return_value = fake_agent
 
         emitted = [
-            ev async for ev in send_message_streaming(
-                db, session, "hi", user_id=uuid.uuid4(), is_org_admin=False,
+            ev
+            async for ev in send_message_streaming(
+                db,
+                session,
+                "hi",
+                user_id=uuid.uuid4(),
+                is_org_admin=False,
             )
         ]
 

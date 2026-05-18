@@ -28,7 +28,9 @@ async def _setup_locked_out_org(db_session, status: str = "canceled"):
     await db_session.flush()
     db_session.add(
         OrganizationMember(
-            user_id=user.id, organization_id=org.id, roles=["MEMBER", OrgRole.ADMIN.value]
+            user_id=user.id,
+            organization_id=org.id,
+            roles=["MEMBER", OrgRole.ADMIN.value],
         )
     )
     await db_session.flush()
