@@ -53,6 +53,7 @@
     }
 
     let selectedRunIds = $state<Set<string>>(new Set());
+    let lotProducerFilter = $state(false);
 
     const exportableRuns = $derived(
         runs.filter((r: any) => r.status === 'COMPLETED' || r.status === 'EDITED')
@@ -67,11 +68,18 @@
         }))
     );
 
+    const visibleRuns = $derived.by(() => {
+        return lotProducerFilter ? enrichedRuns.filter((r: any) => r.produces_lot) : enrichedRuns;
+    });
+
     const columns = $derived.by(() => {
         const cols: any[] = [
             { key: 'id', label: 'ID', hideBelow: 'lg' as const },
             { key: 'name', label: 'Run Name', sortable: true },
         ];
+        if (lotProducerFilter) {
+            cols.push({ key: 'lot_number', label: 'Lot #', sortable: true });
+        }
         if (!hideExperimentColumn) {
             cols.push({ key: 'experiment_name', label: 'Experiment', sortable: true, hideBelow: 'md' as const });
         }
@@ -118,7 +126,7 @@
 </script>
 
 <ProjectDataTable
-    items={enrichedRuns}
+    items={visibleRuns}
     {columns}
     filterPlaceholder="Filter runs..."
     {filterFn}
@@ -126,6 +134,19 @@
     rowClass={(r) => selectedRunIds.has(r.id) ? 'bg-blue-50/50' : ''}
 >
     {#snippet toolbar()}
+        <button
+            type="button"
+            data-testid="lot-producer-filter"
+            onclick={() => { lotProducerFilter = !lotProducerFilter; }}
+            class={lotProducerFilter
+                ? 'inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium'
+                : 'inline-flex items-center gap-1 rounded-full border border-border text-foreground/70 hover:bg-muted px-2.5 py-1 text-xs font-medium'}
+        >
+            Lot producer only
+            {#if lotProducerFilter}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            {/if}
+        </button>
         {#if !hideExportColumn && selectedRunIds.size > 0}
             <Button
                 size="sm"
@@ -159,6 +180,9 @@
     {#snippet cells(r)}
         <td class="hidden lg:table-cell py-3 px-4 pl-6 sm:pl-10 text-xs text-slate-400 font-mono whitespace-nowrap">{shortId(r.id)}</td>
         <td class="py-3 px-4 text-sm font-medium text-slate-800">{r.name}</td>
+        {#if lotProducerFilter}
+            <td class="py-3 px-4 text-sm font-mono text-teal-600 whitespace-nowrap">{r.lot_number ?? ''}</td>
+        {/if}
         {#if !hideExperimentColumn}
             <td class="hidden md:table-cell py-3 px-4 text-sm text-slate-800 whitespace-nowrap">
                 {#if r.experiment_id}

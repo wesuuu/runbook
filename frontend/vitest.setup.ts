@@ -34,6 +34,16 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
     };
 }
 
+// jsdom also lacks Element.getAnimations, which Svelte's animate:flip uses.
+// Without this, animate:flip throws and leaves the DOM in an inconsistent
+// state when keyed-{#each} blocks update.
+if (typeof Element !== 'undefined' && !(Element.prototype as any).getAnimations) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (Element.prototype as any).getAnimations = function getAnimationsStub() {
+        return [];
+    };
+}
+
 afterEach(() => {
     cleanup();
 });
