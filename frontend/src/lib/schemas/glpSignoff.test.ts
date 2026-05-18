@@ -4,6 +4,8 @@ import {
     GlpSignoffActionSchema,
     ApprovalActorRefSchema,
     GlpSignoffResponseSchema,
+    GlpSignoffCreateSchema,
+    GlpSettingsSchema,
     AwaitingApprovalItemSchema,
 } from './glpSignoff';
 
@@ -94,6 +96,72 @@ describe('GlpSignoffResponseSchema', () => {
                 created_at: '2026-05-10T13:00:00Z',
                 updated_at: '2026-05-10T13:00:00Z',
             }),
+        ).toThrow();
+    });
+});
+
+describe('GlpSignoffCreateSchema', () => {
+    it('parses a minimal create payload', () => {
+        const payload = GlpSignoffCreateSchema.parse({
+            role: 'OPERATOR',
+            action: 'APPROVED',
+        });
+        expect(payload.role).toBe('OPERATOR');
+        expect(payload.action).toBe('APPROVED');
+    });
+
+    it('parses a full create payload with optional fields', () => {
+        const payload = GlpSignoffCreateSchema.parse({
+            role: 'QAU',
+            action: 'APPROVED',
+            attestation: 'I have reviewed this.',
+            signature_image_path: 'system/sigs/x.png',
+            signoff_request_id: '770e8400-e29b-41d4-a716-446655440000',
+        });
+        expect(payload.attestation).toBe('I have reviewed this.');
+        expect(payload.signoff_request_id).toBe(
+            '770e8400-e29b-41d4-a716-446655440000',
+        );
+    });
+
+    it('rejects an unknown role on create', () => {
+        expect(() =>
+            GlpSignoffCreateSchema.parse({
+                role: 'CREATOR',
+                action: 'APPROVED',
+            }),
+        ).toThrow();
+    });
+});
+
+describe('GlpSettingsSchema', () => {
+    it('applies defaults when fields are omitted', () => {
+        const settings = GlpSettingsSchema.parse({});
+        expect(settings.require_study_director).toBe(false);
+        expect(settings.require_qau).toBe(true);
+        expect(settings.operator_attestation_text).toBe('');
+        expect(settings.study_director_attestation_text).toBe('');
+        expect(settings.qau_attestation_text).toBe('');
+        expect(settings.step_attestation_text).toBe('');
+    });
+
+    it('parses a fully specified settings payload', () => {
+        const settings = GlpSettingsSchema.parse({
+            require_study_director: true,
+            require_qau: false,
+            operator_attestation_text: 'Operator attestation.',
+            study_director_attestation_text: 'SD attestation.',
+            qau_attestation_text: 'QAU attestation.',
+            step_attestation_text: 'Step attestation.',
+        });
+        expect(settings.require_study_director).toBe(true);
+        expect(settings.require_qau).toBe(false);
+        expect(settings.operator_attestation_text).toBe('Operator attestation.');
+    });
+
+    it('rejects non-boolean require_qau', () => {
+        expect(() =>
+            GlpSettingsSchema.parse({ require_qau: 'yes' }),
         ).toThrow();
     });
 });

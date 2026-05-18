@@ -58,6 +58,16 @@ export const GlpSignoffCreateSchema = z.object({
 });
 export type GlpSignoffCreate = z.infer<typeof GlpSignoffCreateSchema>;
 
+export const GlpSettingsSchema = z.object({
+    require_study_director: z.boolean().default(false),
+    require_qau: z.boolean().default(true),
+    operator_attestation_text: z.string().default(''),
+    study_director_attestation_text: z.string().default(''),
+    qau_attestation_text: z.string().default(''),
+    step_attestation_text: z.string().default(''),
+});
+export type GlpSettings = z.infer<typeof GlpSettingsSchema>;
+
 // Awaiting-approval list (used by /protocols/awaiting-my-approval).
 export const AwaitingApprovalItemSchema = z
     .object({

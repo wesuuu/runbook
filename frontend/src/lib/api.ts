@@ -10,8 +10,11 @@ import {
 } from '$lib/schemas/billing';
 import { ProtocolSchema, type Protocol } from '$lib/schemas/protocols';
 import {
+    GlpSignoffResponseSchema,
     GlpSignoffResponseListSchema,
     AwaitingApprovalListSchema,
+    type GlpSignoffCreate,
+    type GlpSignoffResponse,
     type GlpSignoffResponseList,
     type AwaitingApprovalList,
     type ApproveProtocolRequest,
@@ -309,6 +312,63 @@ export function getAwaitingMyApproval(): Promise<AwaitingApprovalList> {
     );
 }
 
+export function listRunSignoffs(
+    runId: string,
+    activeOnly = false,
+): Promise<GlpSignoffResponseList> {
+    return api.get<GlpSignoffResponseList>(
+        `/science/runs/${runId}/signoffs?active=${activeOnly}`,
+        { schema: GlpSignoffResponseListSchema },
+    );
+}
+
+export function createRunSignoff(
+    runId: string,
+    payload: GlpSignoffCreate,
+): Promise<GlpSignoffResponse> {
+    return api.post<GlpSignoffResponse>(
+        `/science/runs/${runId}/signoffs`,
+        payload,
+        { schema: GlpSignoffResponseSchema },
+    );
+}
+
+export function listProtocolSignoffs(
+    protocolId: string,
+    activeOnly = false,
+): Promise<GlpSignoffResponseList> {
+    return api.get<GlpSignoffResponseList>(
+        `/science/protocols/${protocolId}/signoffs?active=${activeOnly}`,
+        { schema: GlpSignoffResponseListSchema },
+    );
+}
+
+export function createProtocolSignoff(
+    protocolId: string,
+    payload: GlpSignoffCreate,
+): Promise<GlpSignoffResponse> {
+    return api.post<GlpSignoffResponse>(
+        `/science/protocols/${protocolId}/signoffs`,
+        payload,
+        { schema: GlpSignoffResponseSchema },
+    );
+}
+
+export function completeRun(
+    runId: string,
+    outcome: string,
+    outcomeNotes?: string,
+): Promise<unknown> {
+    return api.post<unknown>(`/science/runs/${runId}/complete`, {
+        outcome,
+        outcome_notes: outcomeNotes,
+    });
+}
+
+export function reopenRun(runId: string, reason: string): Promise<unknown> {
+    return api.post<unknown>(`/science/runs/${runId}/reopen`, { reason });
+}
+
 export const glpSignoffApi = {
     designate: designateProtocolApproval,
     submit: submitProtocolForApproval,
@@ -316,6 +376,12 @@ export const glpSignoffApi = {
     reject: rejectProtocol,
     signoffs: getProtocolSignoffs,
     awaitingMine: getAwaitingMyApproval,
+    listRunSignoffs,
+    createRunSignoff,
+    listProtocolSignoffs,
+    createProtocolSignoff,
+    completeRun,
+    reopenRun,
 };
 
 export const billingApi = {
