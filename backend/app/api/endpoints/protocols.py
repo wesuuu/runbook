@@ -16,7 +16,7 @@ from app.core.deps import (get_current_user, get_or_404,
 from app.db.session import get_db
 from app.models.iam import (ObjectType, OrganizationMember, OrgRole,
                             PermissionLevel, User)
-from app.models.science import (Project, Protocol, ProtocolRole,
+from app.models.science import (GlpSignoff, Project, Protocol, ProtocolRole,
                                 ProtocolVersion, Run)
 from app.schemas.science import (DesignateApprovalRequest, GlpSignoffCreate,
                                  GlpSignoffResponse, ProtocolCreate,
@@ -32,6 +32,7 @@ from app.services.core.permissions import check_permission
 from app.services.protocols.lookup import get_protocol_full, list_protocols
 from app.services.protocols.roles import (add_role, list_roles, remove_role,
                                           update_role)
+from app.services.signoffs.queries import list_active_signoffs
 from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
@@ -1077,3 +1078,31 @@ async def create_protocol_signoff(
         ) from exc
 
     return GlpSignoffResponse.model_validate(signoff)
+
+
+@router.get(
+    "/protocols/{protocol_id}/signoffs",
+    response_model=List[GlpSignoffResponse],
+)
+async def list_protocol_signoffs(
+    protocol_id: UUID,
+    active: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> List[GlpSignoffResponse]:
+    """List sign-offs on a protocol.
+
+    ``active=true`` returns only non-invalidated APPROVED rows (the live
+    sign-off set). ``active=false`` (default) returns the full audit trail
+    including invalidated rows, ordered by ``signed_at`` ascending.
+    """
+    if active:
+        rows = await list_active_signoffs(db, "protocol", protocol_id)
+    else:
+        result = await db.execute(
+            select(GlpSignoff)
+            .where(GlpSignoff.protocol_id == protocol_id)
+            .order_by(GlpSignoff.signed_at)
+        )
+        rows = result.scalars().all()
+    return [GlpSignoffResponse.model_validate(r) for r in rows]

@@ -25,8 +25,8 @@ from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import (Project, Protocol, ProtocolVersion, Run,
-                                RunRoleAssignment, UnitOpDefinition)
+from app.models.science import (GlpSignoff, Project, Protocol, ProtocolVersion,
+                                Run, RunRoleAssignment, UnitOpDefinition)
 from app.schemas.science import (GlpSignoffCreate, GlpSignoffResponse,
                                  RunAttachment, RunAttachmentListResponse,
                                  RunCompleteRequest, RunCreate, RunNote,
@@ -48,7 +48,8 @@ from app.services.runs.overrides import (apply_node_overrides,
                                          diff_unit_op_node,
                                          snapshot_unit_op_node)
 from app.services.runs.validation import assert_run_can_close
-from app.services.signoffs.queries import invalidate_active_signoffs
+from app.services.signoffs.queries import (invalidate_active_signoffs,
+                                           list_active_signoffs)
 from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
@@ -1816,3 +1817,34 @@ async def reopen_run(
     await db.commit()
     await db.refresh(run)
     return RunResponse.model_validate(run)
+
+
+# --- Sign-off listing (F-0087 Task 16) -------------------------------------
+
+
+@router.get(
+    "/runs/{run_id}/signoffs",
+    response_model=List[GlpSignoffResponse],
+)
+async def list_run_signoffs(
+    run_id: UUID,
+    active: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> List[GlpSignoffResponse]:
+    """List sign-offs on a run.
+
+    ``active=true`` returns only non-invalidated APPROVED rows (the live
+    sign-off set). ``active=false`` (default) returns the full audit trail
+    including invalidated rows, ordered by ``signed_at`` ascending.
+    """
+    if active:
+        rows = await list_active_signoffs(db, "run", run_id)
+    else:
+        result = await db.execute(
+            select(GlpSignoff)
+            .where(GlpSignoff.run_id == run_id)
+            .order_by(GlpSignoff.signed_at)
+        )
+        rows = result.scalars().all()
+    return [GlpSignoffResponse.model_validate(r) for r in rows]

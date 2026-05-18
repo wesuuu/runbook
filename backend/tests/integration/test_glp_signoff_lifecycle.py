@@ -1,11 +1,13 @@
 """Integration tests for GLP sign-off lifecycle endpoints.
 
-Tasks 12, 13, 14, and 15 of F-0087 GLP Gap Fixes:
+Tasks 12, 13, 14, 15, and 16 of F-0087 GLP Gap Fixes:
 
 * ``POST /science/runs/{run_id}/signoffs``
 * ``POST /science/protocols/{protocol_id}/signoffs``
 * ``POST /science/runs/{run_id}/complete``
 * ``POST /science/runs/{run_id}/reopen``
+* ``GET  /science/runs/{run_id}/signoffs``
+* ``GET  /science/protocols/{protocol_id}/signoffs``
 """
 
 from __future__ import annotations
@@ -368,3 +370,37 @@ async def test_reopen_requires_reason(
         json={"reason": ""},
     )
     assert res.status_code in (400, 422), res.text
+
+
+# --- Task 16: GET /science/runs|protocols/{id}/signoffs --------------------
+
+
+@pytest.mark.asyncio
+async def test_list_run_signoffs_includes_invalidated_when_requested(
+    client,
+    auth_headers,
+    completed_run_with_signoffs,
+):
+    """After reopen, active=false returns invalidated rows; active=true is empty."""
+    res = await client.post(
+        f"/science/runs/{completed_run_with_signoffs.id}/reopen",
+        headers=auth_headers,
+        json={"reason": "fix step 8"},
+    )
+    assert res.status_code == 200, res.text
+
+    res_all = await client.get(
+        f"/science/runs/{completed_run_with_signoffs.id}/signoffs",
+        headers=auth_headers,
+    )
+    assert res_all.status_code == 200, res_all.text
+    rows = res_all.json()
+    assert len(rows) >= 2
+    assert any(r["invalidated_at"] is not None for r in rows)
+
+    res_active = await client.get(
+        f"/science/runs/{completed_run_with_signoffs.id}/signoffs?active=true",
+        headers=auth_headers,
+    )
+    assert res_active.status_code == 200, res_active.text
+    assert res_active.json() == []
