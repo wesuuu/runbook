@@ -1,6 +1,10 @@
-from app.models.library import (ALLOWED_DOCUMENT_TYPES, Document,
-                                DocumentSourceFormat, DocumentStatus,
-                                RefinementStatus)
+from app.models.library import (
+    ALLOWED_DOCUMENT_TYPES,
+    Document,
+    DocumentSourceFormat,
+    DocumentStatus,
+    RefinementStatus,
+)
 
 
 def test_new_status_values_present():
@@ -22,7 +26,10 @@ def test_source_format_enum():
 def test_refinement_status_enum():
     values = {s.value for s in RefinementStatus}
     assert values == {
-        "NOT_REQUIRED", "PENDING", "IN_PROGRESS", "COMPLETE",
+        "NOT_REQUIRED",
+        "PENDING",
+        "IN_PROGRESS",
+        "COMPLETE",
     }
 
 

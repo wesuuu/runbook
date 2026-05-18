@@ -32,17 +32,21 @@ async def _upload_and_index(client, auth_headers, db_session, title, content_tex
     Previously used HTTP upload with text/plain; text/plain is no longer
     an allowed MIME type, so we insert rows directly via db_session.
     """
-    from app.models.iam import (ObjectPermission, ObjectType, PermissionLevel,
-                                PrincipalType, OrganizationMember)
     from sqlalchemy import select as sa_select
+
+    from app.models.iam import (
+        ObjectPermission,
+        ObjectType,
+        OrganizationMember,
+        PermissionLevel,
+        PrincipalType,
+    )
 
     # Resolve org_id from the existing session/member rows via test_user token
     # We read the Authorization header to get user_id then query org membership.
     # Simpler: use a fixed org from test_org — but we don't have it here.
     # Instead, pull org from existing OrganizationMember rows.
-    result = await db_session.execute(
-        sa_select(OrganizationMember).limit(1)
-    )
+    result = await db_session.execute(sa_select(OrganizationMember).limit(1))
     member = result.scalar_one_or_none()
     org_id = member.organization_id
     user_id = member.user_id
@@ -182,8 +186,9 @@ class TestResultGrouping:
     async def test_multiple_chunks_grouped_into_one_result(
         self, client: AsyncClient, auth_headers, test_org, db_session
     ):
-        from app.models.iam import OrganizationMember
         from sqlalchemy import select as sa_select
+
+        from app.models.iam import OrganizationMember
 
         result = await db_session.execute(sa_select(OrganizationMember).limit(1))
         member = result.scalar_one_or_none()

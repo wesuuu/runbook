@@ -6,13 +6,22 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            PermissionLevel, PrincipalType, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
 from app.models.science import Project, Protocol, ProtocolRole
-from app.services.protocols.creation import (ProtocolSpec, ProtocolStep,
-                                             create_protocol_from_spec,
-                                             update_protocol_metadata,
-                                             update_protocol_step)
+from app.services.protocols.creation import (
+    ProtocolSpec,
+    ProtocolStep,
+    create_protocol_from_spec,
+    update_protocol_metadata,
+    update_protocol_step,
+)
 
 
 @pytest_asyncio.fixture
@@ -303,9 +312,7 @@ async def test_update_protocol_step_repositions_into_lane(
     )
     db_session.add(proto)
     await db_session.flush()
-    role = ProtocolRole(
-        id=role_id, protocol_id=proto.id, name="Op", sort_order=0
-    )
+    role = ProtocolRole(id=role_id, protocol_id=proto.id, name="Op", sort_order=0)
     db_session.add(role)
     await db_session.flush()
 
@@ -369,9 +376,7 @@ async def test_update_protocol_step_grows_lane_for_many_children(
     )
     db_session.add(proto)
     await db_session.flush()
-    role = ProtocolRole(
-        id=role_id, protocol_id=proto.id, name="Op", sort_order=0
-    )
+    role = ProtocolRole(id=role_id, protocol_id=proto.id, name="Op", sort_order=0)
     db_session.add(role)
     await db_session.flush()
 

@@ -6,35 +6,64 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import (APIRouter, BackgroundTasks, Depends, Form, HTTPException,
-                     Query, Request, UploadFile)
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.api.endpoints.protocol_pdfs import (_build_approval_context,
-                                             _load_protocol_project,
-                                             _load_template, _pdf_response,
-                                             _resolve_template_path)
-from app.core.deps import (get_current_user, get_or_404,
-                           get_org_id_from_request,
-                           require_active_subscription, require_permission)
+from app.api.endpoints.protocol_pdfs import (
+    _build_approval_context,
+    _load_protocol_project,
+    _load_template,
+    _pdf_response,
+    _resolve_template_path,
+)
+from app.core.deps import (
+    get_current_user,
+    get_or_404,
+    get_org_id_from_request,
+    require_active_subscription,
+    require_permission,
+)
 from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import (Project, Protocol, ProtocolVersion, Run,
-                                RunRoleAssignment, UnitOpDefinition)
-from app.schemas.science import (CheckLotNumberResponse, RunAttachment,
-                                 RunAttachmentListResponse, RunCreate, RunNote,
-                                 RunNoteCreate, RunNoteListResponse,
-                                 RunOverrides, RunResponse,
-                                 RunRoleAssignmentCreate,
-                                 RunRoleAssignmentListResponse,
-                                 RunRoleAssignmentResponse, RunUpdate,
-                                 SuggestLotNumberRequest,
-                                 SuggestLotNumberResponse)
+from app.models.science import (
+    Project,
+    Protocol,
+    ProtocolVersion,
+    Run,
+    RunRoleAssignment,
+    UnitOpDefinition,
+)
+from app.schemas.science import (
+    CheckLotNumberResponse,
+    RunAttachment,
+    RunAttachmentListResponse,
+    RunCreate,
+    RunNote,
+    RunNoteCreate,
+    RunNoteListResponse,
+    RunOverrides,
+    RunResponse,
+    RunRoleAssignmentCreate,
+    RunRoleAssignmentListResponse,
+    RunRoleAssignmentResponse,
+    RunUpdate,
+    SuggestLotNumberRequest,
+    SuggestLotNumberResponse,
+)
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
@@ -44,9 +73,11 @@ from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import build_context, render_to_pdf
 from app.services.protocols.validation import assert_no_branch_errors
 from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
-from app.services.runs.overrides import (apply_node_overrides,
-                                         diff_unit_op_node,
-                                         snapshot_unit_op_node)
+from app.services.runs.overrides import (
+    apply_node_overrides,
+    diff_unit_op_node,
+    snapshot_unit_op_node,
+)
 
 logger = logging.getLogger(__name__)
 

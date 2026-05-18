@@ -5,8 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.core.task_runner import (TaskRunner, ThreadTaskRunner,
-                                           get_task_runner, reset_task_runner)
+from app.services.core.task_runner import (
+    TaskRunner,
+    ThreadTaskRunner,
+    get_task_runner,
+    reset_task_runner,
+)
 
 
 @pytest.fixture(autouse=True)

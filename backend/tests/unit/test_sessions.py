@@ -6,8 +6,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization, User
-from app.services.ai.sessions import (create_session, delete_session,
-                                      get_session, list_sessions)
+from app.services.ai.sessions import (
+    create_session,
+    delete_session,
+    get_session,
+    list_sessions,
+)
 
 
 @pytest.mark.asyncio

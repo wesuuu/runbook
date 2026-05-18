@@ -9,22 +9,24 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import (get_current_user, get_or_404,
-                           require_active_subscription)
+from app.core.deps import get_current_user, get_or_404, require_active_subscription
 from app.db.session import get_db
-from app.models.batch_record_import import (BatchRecordImport,
-                                            BatchRecordImportStatus)
+from app.models.batch_record_import import BatchRecordImport, BatchRecordImportStatus
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import Protocol, Run, RunStatus
-from app.schemas.batch_record_import import (BatchRecordFinalizeRequest,
-                                             BatchRecordFinalizeResponse,
-                                             BatchRecordImportResponse,
-                                             ExtractionResponse,
-                                             StepMappingResponse)
+from app.schemas.batch_record_import import (
+    BatchRecordFinalizeRequest,
+    BatchRecordFinalizeResponse,
+    BatchRecordImportResponse,
+    ExtractionResponse,
+    StepMappingResponse,
+)
 from app.schemas.jobs import ProcessingProgress
 from app.services.batch.batch_record_extractor import (
-    map_values_to_execution_data, run_batch_record_extraction)
+    map_values_to_execution_data,
+    run_batch_record_extraction,
+)
 from app.services.core.audit import log_audit
 from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService

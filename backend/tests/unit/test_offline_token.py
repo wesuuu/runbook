@@ -3,8 +3,12 @@
 from uuid import UUID, uuid4
 
 from app.api.endpoints.sync import values_match
-from app.core.security import (create_access_token, create_offline_token,
-                               decode_access_token, decode_offline_token)
+from app.core.security import (
+    create_access_token,
+    create_offline_token,
+    decode_access_token,
+    decode_offline_token,
+)
 
 
 class TestOfflineToken:

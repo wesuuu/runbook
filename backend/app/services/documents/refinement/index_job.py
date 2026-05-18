@@ -16,8 +16,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.models.jobs import BackgroundJob
@@ -57,7 +56,10 @@ async def _load_and_claim_document(
         return None, None
 
     job = await BackgroundJobService.create(
-        session, "document_index", "document", document_id,
+        session,
+        "document_index",
+        "document",
+        document_id,
         input_data={"chunk_count_before": 0},
     )
     doc.processing_started_at = datetime.now(timezone.utc)
@@ -69,7 +71,9 @@ async def _load_and_claim_document(
 
 
 async def _persist_success(
-    session: AsyncSession, doc: Document, job: BackgroundJob,
+    session: AsyncSession,
+    doc: Document,
+    job: BackgroundJob,
 ) -> None:
     """Mark doc READY, complete the BackgroundJob, clear heartbeat_token.
 
@@ -89,9 +93,15 @@ async def _persist_success(
     doc.processing_started_at = None
     doc.heartbeat_token = None
     await BackgroundJobService.complete(
-        session, job,
-        output_data={"stage": "done", "stage_label": "Indexing complete",
-                     "current": 1, "total": 1, "percent": 100},
+        session,
+        job,
+        output_data={
+            "stage": "done",
+            "stage_label": "Indexing complete",
+            "current": 1,
+            "total": 1,
+            "percent": 100,
+        },
     )
     await session.commit()
 
@@ -104,9 +114,7 @@ async def _persist_failure(
 ) -> None:
     """Rollback, mark doc FAILED, mark job FAILED — in a clean session."""
     await session.rollback()
-    result = await session.execute(
-        select(Document).where(Document.id == document_id)
-    )
+    result = await session.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
     if doc is not None:
         doc.status = DocumentStatus.FAILED.value
@@ -165,11 +173,11 @@ async def run_index(document_id: UUID) -> None:
             except IndexingError as exc:
                 await _persist_failure(session, document_id, job, str(exc))
             except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "document_index crashed on %s", document_id
-                )
+                logger.exception("document_index crashed on %s", document_id)
                 await _persist_failure(
-                    session, document_id, job,
+                    session,
+                    document_id,
+                    job,
                     f"unexpected error: {exc}",
                 )
     finally:

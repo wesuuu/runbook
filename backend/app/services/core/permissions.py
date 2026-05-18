@@ -4,9 +4,17 @@ from sqlalchemy import not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.iam import (PERMISSION_RANK, ObjectPermission, ObjectType,
-                            OrganizationMember, OrgRole, PermissionLevel,
-                            PrincipalType, TeamMember, has_org_role)
+from app.models.iam import (
+    PERMISSION_RANK,
+    ObjectPermission,
+    ObjectType,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    PrincipalType,
+    TeamMember,
+    has_org_role,
+)
 from app.models.library import Document
 from app.models.science import Project, Protocol, Run
 

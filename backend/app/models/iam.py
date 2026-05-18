@@ -3,8 +3,16 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, List, Optional
 
-from sqlalchemy import (Boolean, CheckConstraint, DateTime, ForeignKey, Index,
-                        String, UniqueConstraint, text)
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -160,9 +168,7 @@ class User(Base, UUIDMixin, TimestampMixin):
     signature_initials_path: Mapped[Optional[str]] = mapped_column(
         String, nullable=True
     )
-    signature_full_path: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
+    signature_full_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     preferences: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default="{}", nullable=False
     )
@@ -242,9 +248,7 @@ def has_org_role(membership: "OrganizationMember", role: str) -> bool:
     return role in (membership.roles or [])
 
 
-def has_any_org_role(
-    membership: "OrganizationMember", roles: List[str]
-) -> bool:
+def has_any_org_role(membership: "OrganizationMember", roles: List[str]) -> bool:
     """True if the membership holds any of the given roles."""
     member_roles = set(membership.roles or [])
     return any(r in member_roles for r in roles)

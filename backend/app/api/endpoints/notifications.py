@@ -19,22 +19,30 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import OrganizationMember, OrgRole, User, has_org_role
-from app.models.notifications import (ChannelType, DeliveryStatus,
-                                      Notification, NotificationChannel,
-                                      NotificationDelivery,
-                                      NotificationEventType,
-                                      NotificationSubscription)
-from app.schemas.notifications import (ChannelCreate, ChannelResponse,
-                                       ChannelTestResult, ChannelUpdate,
-                                       DeliveryListResponse, DeliveryResponse,
-                                       NotificationListResponse,
-                                       NotificationResponse,
-                                       SubscriptionCreate,
-                                       SubscriptionResponse,
-                                       UnreadCountResponse)
+from app.models.notifications import (
+    ChannelType,
+    DeliveryStatus,
+    Notification,
+    NotificationChannel,
+    NotificationDelivery,
+    NotificationEventType,
+    NotificationSubscription,
+)
+from app.schemas.notifications import (
+    ChannelCreate,
+    ChannelResponse,
+    ChannelTestResult,
+    ChannelUpdate,
+    DeliveryListResponse,
+    DeliveryResponse,
+    NotificationListResponse,
+    NotificationResponse,
+    SubscriptionCreate,
+    SubscriptionResponse,
+    UnreadCountResponse,
+)
 from app.services.core.notifications.channels import get_channel
-from app.services.core.notifications.channels.base import (PermanentError,
-                                                           TransientError)
+from app.services.core.notifications.channels.base import PermanentError, TransientError
 
 logger = logging.getLogger("notifications.api")
 

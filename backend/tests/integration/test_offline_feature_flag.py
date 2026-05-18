@@ -2,11 +2,7 @@
 
 from fastapi import FastAPI
 
-from app.core.config import (
-    FeaturesConfig,
-    OfflineModeFeatureConfig,
-    Settings,
-)
+from app.core.config import FeaturesConfig, OfflineModeFeatureConfig, Settings
 from app.main import _register_offline_routers
 
 

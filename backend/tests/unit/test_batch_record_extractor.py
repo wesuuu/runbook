@@ -7,10 +7,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.batch.batch_record_extractor import (
-    BatchRecordExtraction, ExtractedDeviation, ExtractedParameterValue,
-    ExtractedSignature, ExtractedStep, ExtractedTimestamp, ParamMapping,
-    StepMapping, StepMappingResult, _extract_chunked,
-    extract_batch_record_data, map_values_to_execution_data)
+    BatchRecordExtraction,
+    ExtractedDeviation,
+    ExtractedParameterValue,
+    ExtractedSignature,
+    ExtractedStep,
+    ExtractedTimestamp,
+    ParamMapping,
+    StepMapping,
+    StepMappingResult,
+    _extract_chunked,
+    extract_batch_record_data,
+    map_values_to_execution_data,
+)
 
 # ── Pydantic model validation ───────────────────────────────────────
 

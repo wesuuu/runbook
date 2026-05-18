@@ -6,6 +6,7 @@ that expected_on substrings appear and expected_off substrings do not.
 Pass --write-artifacts to also emit .docx + .pdf into
 tests/fixtures/template-permutations/rendered/<Pn>/.
 """
+
 from __future__ import annotations
 
 import io
@@ -48,26 +49,44 @@ def _doc_text(blob: bytes) -> str:
 def _convert_to_pdf(docx_path: Path) -> Path | None:
     try:
         subprocess.run(
-            ["libreoffice", "--headless", "--convert-to", "pdf",
-             "--outdir", str(docx_path.parent), str(docx_path)],
-            check=True, capture_output=True, timeout=60,
+            [
+                "libreoffice",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(docx_path.parent),
+                str(docx_path),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=60,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
         return None
     pdf_path = docx_path.with_suffix(".pdf")
     return pdf_path if pdf_path.exists() else None
 
 
-@pytest.mark.parametrize("builder_name,template_key,template_path", [
-    ("build_p1", "sop", str(SOP_PATH)),
-    ("build_p1", "batch_record", str(BR_PATH)),
-    ("build_p2", "sop", str(SOP_PATH)),
-    ("build_p3", "sop", str(SOP_PATH)),
-    ("build_p4", "batch_record", str(BR_PATH)),
-    ("build_p5", "batch_record", str(BR_PATH)),
-    ("build_p6", "batch_record", str(BR_PATH)),
-])
-def test_permutation_renders(builder_name, template_key, template_path, write_artifacts):
+@pytest.mark.parametrize(
+    "builder_name,template_key,template_path",
+    [
+        ("build_p1", "sop", str(SOP_PATH)),
+        ("build_p1", "batch_record", str(BR_PATH)),
+        ("build_p2", "sop", str(SOP_PATH)),
+        ("build_p3", "sop", str(SOP_PATH)),
+        ("build_p4", "batch_record", str(BR_PATH)),
+        ("build_p5", "batch_record", str(BR_PATH)),
+        ("build_p6", "batch_record", str(BR_PATH)),
+    ],
+)
+def test_permutation_renders(
+    builder_name, template_key, template_path, write_artifacts
+):
     built = getattr(builders, builder_name)()
     if template_key not in built.renders_against:
         pytest.skip(f"{built.name} not configured to render against {template_key}")
@@ -109,26 +128,30 @@ def _graph_from_p1() -> dict:
     edges: list[dict] = []
     for role in kw["roles_with_steps"]:
         lane_id = f"lane-{role['role_name']}"
-        nodes.append({
-            "id": lane_id,
-            "type": "swimLane",
-            "data": {"role_name": role["role_name"]},
-            "position": {"x": 0, "y": 0},
-        })
+        nodes.append(
+            {
+                "id": lane_id,
+                "type": "swimLane",
+                "data": {"role_name": role["role_name"]},
+                "position": {"x": 0, "y": 0},
+            }
+        )
         for step in role["steps"]:
-            nodes.append({
-                "id": step["id"],
-                "type": "unitOp",
-                "parentId": lane_id,
-                "data": {
-                    "label": step["name"],
-                    "duration_min": step["duration_min"],
-                    "params": step["params"],
-                    "paramSchema": step["param_schema"],
-                    "equipment": step.get("equipment", []),
-                },
-                "position": {"x": 100, "y": 100},
-            })
+            nodes.append(
+                {
+                    "id": step["id"],
+                    "type": "unitOp",
+                    "parentId": lane_id,
+                    "data": {
+                        "label": step["name"],
+                        "duration_min": step["duration_min"],
+                        "params": step["params"],
+                        "paramSchema": step["param_schema"],
+                        "equipment": step.get("equipment", []),
+                    },
+                    "position": {"x": 100, "y": 100},
+                }
+            )
     return {
         "nodes": nodes,
         "edges": edges,
@@ -154,8 +177,7 @@ async def test_p1_endpoint_renders_batch_record_pdf(
         file_path="system/document_templates/batch_record_default.docx",
         original_filename="batch_record_default.docx",
         mime_type=(
-            "application/vnd.openxmlformats-officedocument"
-            ".wordprocessingml.document"
+            "application/vnd.openxmlformats-officedocument" ".wordprocessingml.document"
         ),
         file_size_bytes=BR_PATH.stat().st_size,
         org_id=test_org.id,

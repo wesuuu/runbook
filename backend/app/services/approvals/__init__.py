@@ -1,2 +1,1 @@
-from .events import (VALID_ACTIONS, fulfill_open_requests,  # noqa: F401
-                     write_event)
+from .events import VALID_ACTIONS, fulfill_open_requests, write_event  # noqa: F401

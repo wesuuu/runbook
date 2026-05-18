@@ -13,10 +13,17 @@ from app.core.config import settings
 from app.core.deps import require_org_role
 from app.db.session import get_db
 from app.models.iam import Organization, OrgRole, User
-from app.schemas.billing import (PortalSessionRequest, PortalSessionResponse,
-                                 SubscriptionStateResponse)
-from app.services.billing import (seat_limits, stripe_client,
-                                  subscription_service, webhook_handler)
+from app.schemas.billing import (
+    PortalSessionRequest,
+    PortalSessionResponse,
+    SubscriptionStateResponse,
+)
+from app.services.billing import (
+    seat_limits,
+    stripe_client,
+    subscription_service,
+    webhook_handler,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

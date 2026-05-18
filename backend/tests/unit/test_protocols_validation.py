@@ -7,8 +7,10 @@ from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 
-from app.services.protocols.validation import (assert_no_branch_errors,
-                                               validate_protocol_graph)
+from app.services.protocols.validation import (
+    assert_no_branch_errors,
+    validate_protocol_graph,
+)
 
 
 def _unit_op(name: str = "Buffer Mix") -> object:
@@ -937,9 +939,7 @@ def test_horizontal_chain_into_lane_above_source_lane_warns():
         "layout": "horizontal",
     }
     result = validate_protocol_graph(graph, [op], roles=[role_eng, role_qa])
-    issue = next(
-        (i for i in result.issues if i.code == "lane_order_violation"), None
-    )
+    issue = next((i for i in result.issues if i.code == "lane_order_violation"), None)
     assert issue is not None
     assert issue.severity == "warning"
     # The downstream lane is the one out of order — flag it so the agent

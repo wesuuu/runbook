@@ -11,9 +11,15 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.services.protocols.protocol_importer import (
-    ImportedParam, ImportedStep, ParsedProtocol, ProtocolImportProposal,
-    StepProposal, build_import_graph, build_param_schema_from_params,
-    build_proposal)
+    ImportedParam,
+    ImportedStep,
+    ParsedProtocol,
+    ProtocolImportProposal,
+    StepProposal,
+    build_import_graph,
+    build_param_schema_from_params,
+    build_proposal,
+)
 
 
 def _make_unit_op(

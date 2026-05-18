@@ -29,9 +29,7 @@ async def test_upload_rejects_text_plain(client: AsyncClient, auth_headers):
     assert resp.status_code == 422
 
 
-async def test_upload_calls_background_handler(
-    client: AsyncClient, auth_headers
-):
+async def test_upload_calls_background_handler(client: AsyncClient, auth_headers):
     launched: list = []
 
     class _FakeHandler:
@@ -101,9 +99,7 @@ async def test_refine_complete_transitions_to_indexing(
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "INDEXING"
-    assert launched == [
-        ("document_index", {"document_id": extracted_document.id})
-    ]
+    assert launched == [("document_index", {"document_id": extracted_document.id})]
 
 
 async def test_refine_complete_twice_returns_409(
@@ -182,6 +178,7 @@ async def test_refine_complete_reopen_on_non_complete_returns_409(
     client: AsyncClient, auth_headers, extracted_document
 ):
     """reopen=True on a doc that was never completed must 409."""
+
     class _FakeHandler:
         async def launch(self, job, **kwargs):
             pass
@@ -197,5 +194,3 @@ async def test_refine_complete_reopen_on_non_complete_returns_409(
         )
 
     assert resp.status_code == 409
-
-

@@ -12,8 +12,12 @@ from app.core.deps import get_current_user_or_offline, get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.iam import User
 from app.models.science import Run
-from app.schemas.offline import (SyncAction, SyncActionResult,
-                                 SyncQueueRequest, SyncQueueResponse)
+from app.schemas.offline import (
+    SyncAction,
+    SyncActionResult,
+    SyncQueueRequest,
+    SyncQueueResponse,
+)
 from app.services.core.audit import log_audit
 
 router = APIRouter()
@@ -173,8 +177,7 @@ async def _handle_image_upload(
 
     from fastapi import UploadFile as _UploadFile
 
-    from app.services.core.file_storage import (IMAGE_MIME_TYPES,
-                                                FileStorageService)
+    from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 
     filename = action.image_filename or f"offline_{uuid.uuid4().hex[:8]}.jpg"
     mime_type = "image/png" if filename.endswith(".png") else "image/jpeg"

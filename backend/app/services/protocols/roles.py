@@ -83,8 +83,7 @@ async def _require_view(db: AsyncSession, user_id: UUID, protocol: Protocol) -> 
 async def _require_draft_and_edit(
     db: AsyncSession, user_id: UUID, protocol: Protocol
 ) -> "WorkingDraft":
-    from app.services.protocols.draft import (WorkingDraft,
-                                              resolve_working_draft)
+    from app.services.protocols.draft import WorkingDraft, resolve_working_draft
 
     if protocol.project_id is not None:
         allowed = await check_permission(

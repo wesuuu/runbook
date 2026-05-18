@@ -5,9 +5,12 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 
-from app.models.notifications import (Notification, NotificationChannel,
-                                      NotificationDelivery,
-                                      NotificationSubscription)
+from app.models.notifications import (
+    Notification,
+    NotificationChannel,
+    NotificationDelivery,
+    NotificationSubscription,
+)
 
 # ── Org Channel CRUD ─────────────────────────────────────────────────────
 

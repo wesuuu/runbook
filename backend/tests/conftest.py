@@ -8,17 +8,24 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            Team, TeamMember, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    Team,
+    TeamMember,
+    User,
+)
 from app.models.library import Document, DocumentStatus
 from app.models.science import Project
 from app.models.templates import DocumentTemplate  # noqa: F401
@@ -72,6 +79,7 @@ async def _seed_library_registry():
 @pytest.fixture(autouse=True)
 def _reset_chat_agent_cache():
     from app.services.ai.chat_agent import _reset_cache_for_tests
+
     _reset_cache_for_tests()
     yield
     _reset_cache_for_tests()
@@ -181,9 +189,7 @@ async def db_session(test_engine):
     # the SAME connection used by `db_session` for the duration of the test.
     import importlib
 
-    _send_message_module = importlib.import_module(
-        "app.services.ai.send_message"
-    )
+    _send_message_module = importlib.import_module("app.services.ai.send_message")
 
     test_writer_factory = async_sessionmaker(
         bind=conn,
@@ -346,6 +352,7 @@ async def test_project(db_session, test_org, test_user) -> Project:
 # `async_session` fixture name.  This alias keeps them working without
 # touching the canonical `db_session` fixture.
 
+
 @pytest_asyncio.fixture
 async def async_session(db_session: AsyncSession) -> AsyncSession:
     """Alias for db_session — used by heartbeat / watchdog tests."""
@@ -421,6 +428,7 @@ async def extracted_document(db_session: AsyncSession, test_org, test_user) -> D
 
 
 # ── seed_document_extracting ─────────────────────────────────────────
+
 
 @pytest_asyncio.fixture
 async def seed_document_extracting(db_session: AsyncSession) -> Document:

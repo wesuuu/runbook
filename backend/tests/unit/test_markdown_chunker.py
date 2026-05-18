@@ -1,9 +1,11 @@
 import pytest
 
 from app.services.data.text_chunker import PageData
-from app.services.documents.markdown_chunker import (_segment_into_blocks,
-                                                     chunk_by_pages,
-                                                     chunk_markdown)
+from app.services.documents.markdown_chunker import (
+    _segment_into_blocks,
+    chunk_by_pages,
+    chunk_markdown,
+)
 
 
 class TestEmptyAndShortTexts:

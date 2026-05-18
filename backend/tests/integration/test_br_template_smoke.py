@@ -5,6 +5,7 @@ get_mock_context(), and that no Jinja tokens leak through. Verifies the
 GLP-style numbered sections (1. General Information through 6. Final
 Disposition) and the always-present Verifier column appear.
 """
+
 import io
 from pathlib import Path
 

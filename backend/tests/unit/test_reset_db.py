@@ -4,8 +4,13 @@ from unittest.mock import patch
 
 import pytest
 
-from app.db.reset import (PRESERVED_TABLES, WIPE_TABLES, assert_local_dev_db,
-                          confirm_reset, mask_database_url)
+from app.db.reset import (
+    PRESERVED_TABLES,
+    WIPE_TABLES,
+    assert_local_dev_db,
+    confirm_reset,
+    mask_database_url,
+)
 
 EXPECTED_WIPE = {
     "experiments",

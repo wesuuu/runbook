@@ -7,8 +7,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import (APIRouter, Depends, Form, HTTPException, Query, Request,
-                     UploadFile)
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,31 +16,54 @@ from sqlalchemy.orm import defer, selectinload
 from app.core.config import settings
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
-from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
-                            PermissionLevel, PrincipalType, User)
-from app.models.library import (ALLOWED_DOCUMENT_TYPES,
-                                MAX_DOCUMENT_SIZE_BYTES, MIME_EXTENSION_MAP,
-                                Document, DocumentChunk, DocumentStatus,
-                                validate_file_content)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
+from app.models.library import (
+    ALLOWED_DOCUMENT_TYPES,
+    MAX_DOCUMENT_SIZE_BYTES,
+    MIME_EXTENSION_MAP,
+    Document,
+    DocumentChunk,
+    DocumentStatus,
+    validate_file_content,
+)
 from app.schemas.jobs import ProcessingProgress
-from app.schemas.library import (DocumentChunkResponse, DocumentDetailResponse,
-                                 DocumentListResponse, DocumentResponse,
-                                 ImportUrlRequest, MarkdownPayload,
-                                 ProcessingAuditResponse, ProcessingJobAudit,
-                                 RefineCompleteRequest, SearchResponse,
-                                 SearchResultGroup, SearchResultItem, TOCEntry)
+from app.schemas.library import (
+    DocumentChunkResponse,
+    DocumentDetailResponse,
+    DocumentListResponse,
+    DocumentResponse,
+    ImportUrlRequest,
+    MarkdownPayload,
+    ProcessingAuditResponse,
+    ProcessingJobAudit,
+    RefineCompleteRequest,
+    SearchResponse,
+    SearchResultGroup,
+    SearchResultItem,
+    TOCEntry,
+)
 from app.services.core.audit import log_audit
+from app.services.core.background_handler import get_background_handler
 from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
-from app.services.core.background_handler import get_background_handler
+
 # Side-effect imports: @register_job decorators populate JOB_REGISTRY.
 from app.services.documents.extraction import extract_job  # noqa: F401
-from app.services.documents.refinement import index_job  # noqa: F401
 from app.services.documents.extraction.source_page import render_source_page
-from app.services.documents.refinement.refinement_service import (mark_complete,
-                                                                   reopen,
-                                                                   save_markdown)
+from app.services.documents.refinement import index_job  # noqa: F401
+from app.services.documents.refinement.refinement_service import (
+    mark_complete,
+    reopen,
+    save_markdown,
+)
 from app.services.protocols.url_importer import import_from_url
 
 router = APIRouter()
@@ -265,8 +287,7 @@ async def list_documents(
             .group_by(DocumentChunk.document_id)
         )
         counts = {
-            row.document_id: (row.chunks, row.embedded)
-            for row in counts_result.all()
+            row.document_id: (row.chunks, row.embedded) for row in counts_result.all()
         }
 
     # Compute can_delete for each document
@@ -965,9 +986,7 @@ async def get_document_markdown(
 ):
     org_id = await _get_user_org_id(current_user, db)
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -991,9 +1010,7 @@ async def put_document_markdown(
 ):
     org_id = await _get_user_org_id(current_user, db)
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -1021,9 +1038,7 @@ async def refine_complete(
 ):
     org_id = await _get_user_org_id(current_user, db)
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -1071,9 +1086,7 @@ async def get_document_image(
         raise HTTPException(400, "Invalid image filename")
     org_id = await _get_user_org_id(current_user, db)
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -1100,9 +1113,7 @@ async def get_document_source_page(
 ):
     org_id = await _get_user_org_id(current_user, db)
     result = await db.execute(
-        select(Document).where(
-            Document.id == document_id, Document.org_id == org_id
-        )
+        select(Document).where(Document.id == document_id, Document.org_id == org_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:

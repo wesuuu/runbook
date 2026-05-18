@@ -7,9 +7,7 @@ from app.models.science import Run, RunStatus
 
 
 @pytest.mark.asyncio
-async def test_run_produces_lot_defaults_false(
-    db_session: AsyncSession, test_project
-):
+async def test_run_produces_lot_defaults_false(db_session: AsyncSession, test_project):
     r = Run(
         name="not-a-lot-producer",
         project_id=test_project.id,
@@ -26,9 +24,7 @@ async def test_run_produces_lot_defaults_false(
 
 
 @pytest.mark.asyncio
-async def test_run_produces_lot_can_be_set_true(
-    db_session: AsyncSession, test_project
-):
+async def test_run_produces_lot_can_be_set_true(db_session: AsyncSession, test_project):
     r = Run(
         name="lot-producer",
         project_id=test_project.id,

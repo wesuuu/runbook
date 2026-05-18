@@ -3,8 +3,14 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            PermissionLevel, PrincipalType, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
 from app.models.science import Project, Protocol, Run
 
 # --- Fixtures ---

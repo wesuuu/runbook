@@ -10,24 +10,44 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import (get_current_user, get_or_404,
-                           require_active_subscription)
+from app.core.deps import get_current_user, get_or_404, require_active_subscription
 from app.core.security import generate_verification_token
 from app.db.session import get_db
 from app.models.execution import AuditLog
-from app.models.iam import (_ALLOWED_ORG_ROLES, Invitation, InvitationStatus,
-                            ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, OrgRole, PermissionLevel, Team,
-                            TeamMember, TeamRole, User, has_org_role)
+from app.models.iam import (
+    _ALLOWED_ORG_ROLES,
+    Invitation,
+    InvitationStatus,
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    Team,
+    TeamMember,
+    TeamRole,
+    User,
+    has_org_role,
+)
 from app.models.science import Equipment
-from app.schemas.iam import (InvitationCreate, InvitationResponse,
-                             OrganizationCreate, OrganizationResponse,
-                             OrgMemberAdd, OrgMemberResponse, OrgMemberUpdate,
-                             PermissionGrant, PermissionResponse, TeamCreate,
-                             TeamMemberAdd, TeamMemberResponse, TeamResponse,
-                             UserSearchResponse)
-from app.schemas.science import (EquipmentCreate, EquipmentResponse,
-                                 EquipmentUpdate)
+from app.schemas.iam import (
+    InvitationCreate,
+    InvitationResponse,
+    OrganizationCreate,
+    OrganizationResponse,
+    OrgMemberAdd,
+    OrgMemberResponse,
+    OrgMemberUpdate,
+    PermissionGrant,
+    PermissionResponse,
+    TeamCreate,
+    TeamMemberAdd,
+    TeamMemberResponse,
+    TeamResponse,
+    UserSearchResponse,
+)
+from app.schemas.science import EquipmentCreate, EquipmentResponse, EquipmentUpdate
 from app.services.billing import seat_limits
 from app.services.core.permissions import check_permission
 
@@ -36,9 +56,7 @@ router = APIRouter()
 _DEPRECATION_LOG = logging.getLogger("app.deprecation")
 
 
-def _normalize_roles(
-    input_roles: list[str] | None, raw_role: str | None
-) -> list[str]:
+def _normalize_roles(input_roles: list[str] | None, raw_role: str | None) -> list[str]:
     """Server-side role normalization: ensure MEMBER, dedupe, validate.
 
     Raises HTTPException(400) on unknown values. Logs a deprecation warning
@@ -59,8 +77,7 @@ def _normalize_roles(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Unknown role(s): {bad}. Allowed: "
-                f"{sorted(_ALLOWED_ORG_ROLES)}"
+                f"Unknown role(s): {bad}. Allowed: " f"{sorted(_ALLOWED_ORG_ROLES)}"
             ),
         )
     seen: set[str] = set()
@@ -357,9 +374,8 @@ async def update_org_member_role(
         raise HTTPException(status_code=404, detail="Membership not found")
 
     # Enforce max 3 admins (only when adding ADMIN to a member that didn't have it)
-    becoming_admin = (
-        OrgRole.ADMIN.value in new_roles
-        and not has_org_role(membership, OrgRole.ADMIN.value)
+    becoming_admin = OrgRole.ADMIN.value in new_roles and not has_org_role(
+        membership, OrgRole.ADMIN.value
     )
     if becoming_admin:
         admin_count = await db.execute(
@@ -376,9 +392,8 @@ async def update_org_member_role(
             )
 
     # Enforce last-admin guard (only when removing ADMIN from a member that had it)
-    losing_admin = (
-        OrgRole.ADMIN.value not in new_roles
-        and has_org_role(membership, OrgRole.ADMIN.value)
+    losing_admin = OrgRole.ADMIN.value not in new_roles and has_org_role(
+        membership, OrgRole.ADMIN.value
     )
     if losing_admin:
         admin_count_result = await db.execute(

@@ -1,8 +1,13 @@
 import uuid
 
-from app.models.science import (Protocol, ProtocolApprovalAction,
-                                ProtocolApprovalEvent, ProtocolApprovalRequest,
-                                ProtocolApprovalRequestStatus, Run)
+from app.models.science import (
+    Protocol,
+    ProtocolApprovalAction,
+    ProtocolApprovalEvent,
+    ProtocolApprovalRequest,
+    ProtocolApprovalRequestStatus,
+    Run,
+)
 
 
 def test_protocol_has_approval_columns():

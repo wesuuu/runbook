@@ -18,11 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.science import Protocol, ProtocolRole, UnitOpDefinition
 from app.services.ai.ai_config import get_model
-from app.services.ai.workflows.protocol_generator import (GeneratedProtocol,
-                                                          GeneratedStep,
-                                                          build_graph,
-                                                          extract_params,
-                                                          match_unit_op)
+from app.services.ai.workflows.protocol_generator import (
+    GeneratedProtocol,
+    GeneratedStep,
+    build_graph,
+    extract_params,
+    match_unit_op,
+)
 
 logger = logging.getLogger(__name__)
 

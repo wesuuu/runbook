@@ -20,8 +20,14 @@ import pytest
 from docx import Document
 
 from app.services.protocols.template_converter import (
-    JINJA_PATTERN, ConversionState, EventStream, _apply_substitutions_to_docx,
-    _extract_jinja_variables, _to_pdf, _try_render)
+    JINJA_PATTERN,
+    ConversionState,
+    EventStream,
+    _apply_substitutions_to_docx,
+    _extract_jinja_variables,
+    _to_pdf,
+    _try_render,
+)
 
 # ── _extract_jinja_variables tests ──
 

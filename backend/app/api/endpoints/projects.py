@@ -8,19 +8,35 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import (get_current_user, get_or_404,
-                           require_active_subscription, require_permission)
+from app.core.deps import (
+    get_current_user,
+    get_or_404,
+    require_active_subscription,
+    require_permission,
+)
 from app.db.session import get_db
 from app.models.execution import AuditLog
-from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
-                            PermissionLevel, PrincipalType, Team, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    Team,
+    User,
+)
 from app.models.science import Experiment, Project, Protocol, Run
-from app.schemas.project import (ApproverEntry, ApproverGrant, AuditLogEntry,
-                                 AuditLogPage, ProjectCreate, ProjectResponse,
-                                 ProjectUpdate)
+from app.schemas.project import (
+    ApproverEntry,
+    ApproverGrant,
+    AuditLogEntry,
+    AuditLogPage,
+    ProjectCreate,
+    ProjectResponse,
+    ProjectUpdate,
+)
 from app.services.core.audit import log_audit
-from app.services.core.permissions import (check_permission,
-                                           get_visible_project_ids)
+from app.services.core.permissions import check_permission, get_visible_project_ids
 
 router = APIRouter()
 

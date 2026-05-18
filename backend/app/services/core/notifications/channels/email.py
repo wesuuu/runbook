@@ -4,10 +4,12 @@ from email.mime.text import MIMEText
 
 import aiosmtplib
 
-from app.services.core.notifications.channels.base import (BaseChannel,
-                                                           FormattedMessage,
-                                                           PermanentError,
-                                                           TransientError)
+from app.services.core.notifications.channels.base import (
+    BaseChannel,
+    FormattedMessage,
+    PermanentError,
+    TransientError,
+)
 
 logger = logging.getLogger("notifications.email")
 

@@ -2,10 +2,12 @@ import logging
 
 import httpx
 
-from app.services.core.notifications.channels.base import (BaseChannel,
-                                                           FormattedMessage,
-                                                           PermanentError,
-                                                           TransientError)
+from app.services.core.notifications.channels.base import (
+    BaseChannel,
+    FormattedMessage,
+    PermanentError,
+    TransientError,
+)
 
 logger = logging.getLogger("notifications.teams")
 

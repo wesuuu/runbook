@@ -64,7 +64,9 @@ class HeartbeatWatchdog:
                 misses += 1
                 logger.debug(
                     "heartbeat miss %d/%d for document %s",
-                    misses, self._max_misses, self._document_id,
+                    misses,
+                    self._max_misses,
+                    self._document_id,
                 )
             else:
                 misses = 0

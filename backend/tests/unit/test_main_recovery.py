@@ -1,14 +1,18 @@
 """Unit tests for the startup recovery sweeps (TD-0085 Phase 3)."""
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.models.jobs import BackgroundJob, JobStatus
-from app.models.library import (Document, DocumentStatus, RefinementStatus,
-                                STALE_PROCESSING_SECONDS)
+from app.models.library import (
+    STALE_PROCESSING_SECONDS,
+    Document,
+    DocumentStatus,
+    RefinementStatus,
+)
 
 
 def _stale_indexing_doc(test_org, test_user) -> Document:
@@ -36,7 +40,9 @@ def _stale_indexing_doc(test_org, test_user) -> Document:
 
 @pytest.mark.asyncio
 async def test_recovery_refires_stalled_indexing_doc_with_document_index(
-    db_session, test_org, test_user,
+    db_session,
+    test_org,
+    test_user,
 ):
     """Stalled INDEXING doc → handler.launch('document_index', ...).
 
@@ -64,12 +70,16 @@ async def test_recovery_refires_stalled_indexing_doc_with_document_index(
     fake_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
     with patch.object(
-        main_module, "get_background_handler", return_value=fake_handler,
+        main_module,
+        "get_background_handler",
+        return_value=fake_handler,
     ), patch.object(
-        main_module, "create_async_engine",
+        main_module,
+        "create_async_engine",
         MagicMock(return_value=AsyncMock()),
     ), patch.object(
-        main_module, "async_sessionmaker",
+        main_module,
+        "async_sessionmaker",
         MagicMock(return_value=fake_factory),
     ):
         await main_module._recover_stalled_documents()
@@ -77,9 +87,8 @@ async def test_recovery_refires_stalled_indexing_doc_with_document_index(
     assert ("document_index", {"document_id": doc.id}) in launched
 
     from sqlalchemy import select
-    fresh = await db_session.scalar(
-        select(Document).where(Document.id == doc.id)
-    )
+
+    fresh = await db_session.scalar(select(Document).where(Document.id == doc.id))
     assert fresh.status == DocumentStatus.INDEXING.value
     assert fresh.heartbeat_token is None
     assert fresh.processing_started_at is None
@@ -87,7 +96,9 @@ async def test_recovery_refires_stalled_indexing_doc_with_document_index(
 
 @pytest.mark.asyncio
 async def test_recovery_marks_stalled_index_job_failed_after_max_attempts(
-    db_session, test_org, test_user,
+    db_session,
+    test_org,
+    test_user,
 ):
     """A document with 3 stale FAILED document_index jobs should
     transition to status=FAILED (terminal)."""
@@ -114,27 +125,31 @@ async def test_recovery_marks_stalled_index_job_failed_after_max_attempts(
 
     # Pre-seed (MAX_RECOVERY_ATTEMPTS - 1) prior FAILED job rows.
     for _ in range(MAX_RECOVERY_ATTEMPTS - 1):
-        db_session.add(BackgroundJob(
-            id=uuid.uuid4(),
-            job_type="document_index",
-            status=JobStatus.FAILED.value,
-            entity_type="document",
-            entity_id=doc.id,
-            started_at=datetime.now(timezone.utc),
-            completed_at=datetime.now(timezone.utc),
-            heartbeat_at=datetime.now(timezone.utc),
-        ))
+        db_session.add(
+            BackgroundJob(
+                id=uuid.uuid4(),
+                job_type="document_index",
+                status=JobStatus.FAILED.value,
+                entity_type="document",
+                entity_id=doc.id,
+                started_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(timezone.utc),
+                heartbeat_at=datetime.now(timezone.utc),
+            )
+        )
 
     # One RUNNING job with stale heartbeat — this is the one the sweep finds.
-    db_session.add(BackgroundJob(
-        id=uuid.uuid4(),
-        job_type="document_index",
-        status=JobStatus.RUNNING.value,
-        entity_type="document",
-        entity_id=doc.id,
-        started_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-        heartbeat_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-    ))
+    db_session.add(
+        BackgroundJob(
+            id=uuid.uuid4(),
+            job_type="document_index",
+            status=JobStatus.RUNNING.value,
+            entity_type="document",
+            entity_id=doc.id,
+            started_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+            heartbeat_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        )
+    )
     await db_session.commit()
 
     # _recover_stalled_jobs opens its own engine; patch the session
@@ -144,17 +159,18 @@ async def test_recovery_marks_stalled_index_job_failed_after_max_attempts(
     fake_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
     with patch.object(
-        main_module, "create_async_engine",
+        main_module,
+        "create_async_engine",
         MagicMock(return_value=AsyncMock()),
     ), patch.object(
-        main_module, "async_sessionmaker",
+        main_module,
+        "async_sessionmaker",
         MagicMock(return_value=fake_factory),
     ):
         await main_module._recover_stalled_jobs()
 
     from sqlalchemy import select
-    fresh = await db_session.scalar(
-        select(Document).where(Document.id == doc.id)
-    )
+
+    fresh = await db_session.scalar(select(Document).where(Document.id == doc.id))
     assert fresh.status == DocumentStatus.FAILED.value
     assert "recovery attempts" in (fresh.error_message or "")

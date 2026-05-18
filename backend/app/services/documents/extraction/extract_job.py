@@ -21,13 +21,16 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.models.jobs import BackgroundJob
-from app.models.library import (Document, DocumentSourceFormat, DocumentStatus,
-                                 RefinementStatus)
+from app.models.library import (
+    Document,
+    DocumentSourceFormat,
+    DocumentStatus,
+    RefinementStatus,
+)
 from app.services.core.background_handler import register_job
 from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService
@@ -38,8 +41,7 @@ logger = logging.getLogger(__name__)
 
 _MIME_TO_FORMAT = {
     "application/pdf": DocumentSourceFormat.PDF,
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        DocumentSourceFormat.DOCX,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocumentSourceFormat.DOCX,
     "image/jpeg": DocumentSourceFormat.IMAGE,
     "image/png": DocumentSourceFormat.IMAGE,
     "image/tiff": DocumentSourceFormat.IMAGE,
@@ -70,19 +72,22 @@ async def _load_and_claim_document(
     up the same document concurrently sees no row and exits cleanly.
     """
     result = await session.execute(
-        select(Document).where(Document.id == document_id).with_for_update(skip_locked=True)
+        select(Document)
+        .where(Document.id == document_id)
+        .with_for_update(skip_locked=True)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
         return None, None
 
     if doc.mime_type not in _MIME_TO_FORMAT:
-        raise ValueError(
-            f"Unsupported MIME type for extraction: {doc.mime_type!r}"
-        )
+        raise ValueError(f"Unsupported MIME type for extraction: {doc.mime_type!r}")
 
     job = await BackgroundJobService.create(
-        session, "document_extract", "document", document_id,
+        session,
+        "document_extract",
+        "document",
+        document_id,
         input_data={"mime_type": doc.mime_type},
     )
     doc.status = DocumentStatus.EXTRACTING.value
@@ -96,7 +101,10 @@ async def _load_and_claim_document(
 
 
 async def _persist_success(
-    session: AsyncSession, doc: Document, job: BackgroundJob, output_dir: Path,
+    session: AsyncSession,
+    doc: Document,
+    job: BackgroundJob,
+    output_dir: Path,
 ) -> None:
     """Read artifacts from output_dir and write them to the Document row.
 
@@ -122,22 +130,20 @@ async def _persist_success(
     storage = FileStorageService()
 
     doc.stored_markdown = refined
-    doc.images_dir = str(
-        (output_dir / "images").relative_to(storage.storage_root)
-    )
+    doc.images_dir = str((output_dir / "images").relative_to(storage.storage_root))
     doc.page_count = result_payload.get("page_count")
     doc.refinement_flags = result_payload.get("flags", [])
     flags = doc.refinement_flags
     doc.refinement_status = (
-        RefinementStatus.PENDING.value if flags
-        else RefinementStatus.NOT_REQUIRED.value
+        RefinementStatus.PENDING.value if flags else RefinementStatus.NOT_REQUIRED.value
     )
     doc.status = DocumentStatus.AWAITING_REFINEMENT.value
     doc.processing_started_at = None
     doc.heartbeat_token = None
 
     await BackgroundJobService.complete(
-        session, job,
+        session,
+        job,
         output_data={
             "page_count": doc.page_count,
             "flag_count": len(flags),
@@ -148,7 +154,10 @@ async def _persist_success(
 
 
 async def _persist_failure(
-    session: AsyncSession, document_id: UUID, job: BackgroundJob | None, message: str,
+    session: AsyncSession,
+    document_id: UUID,
+    job: BackgroundJob | None,
+    message: str,
 ) -> None:
     """Rollback any dirty state, re-query the document, mark it FAILED.
 
@@ -157,9 +166,7 @@ async def _persist_failure(
     to write the FAILED status atomically.
     """
     await session.rollback()
-    result = await session.execute(
-        select(Document).where(Document.id == document_id)
-    )
+    result = await session.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
     if doc is not None:
         doc.status = DocumentStatus.FAILED.value
@@ -209,21 +216,23 @@ async def run_extraction(
             output_dir.mkdir(parents=True, exist_ok=True)
 
             base_url = (
-                heartbeat_base_url
-                or settings.extraction_heartbeat_base_url
+                heartbeat_base_url or settings.extraction_heartbeat_base_url
             ).rstrip("/")
-            heartbeat_url = (
-                f"{base_url}/internal/extraction/{document_id}/heartbeat"
-            )
+            heartbeat_url = f"{base_url}/internal/extraction/{document_id}/heartbeat"
 
             proc = await asyncio.create_subprocess_exec(
                 settings.docling_script_python,
                 settings.docling_script_path,
-                "--input", str(input_path),
-                "--output-dir", str(output_dir),
-                "--num-threads", str(settings.docling_num_threads),
-                "--heartbeat-url", heartbeat_url,
-                "--heartbeat-token", doc.heartbeat_token,
+                "--input",
+                str(input_path),
+                "--output-dir",
+                str(output_dir),
+                "--num-threads",
+                str(settings.docling_num_threads),
+                "--heartbeat-url",
+                heartbeat_url,
+                "--heartbeat-token",
+                doc.heartbeat_token,
                 "--heartbeat-interval-seconds",
                 str(settings.extraction_heartbeat_interval_seconds),
                 stdout=asyncio.subprocess.PIPE,
@@ -247,7 +256,9 @@ async def run_extraction(
 
             if watchdog.timed_out:
                 await _persist_failure(
-                    session, document_id, job,
+                    session,
+                    document_id,
+                    job,
                     "Extraction process became unresponsive "
                     f"(no heartbeat for "
                     f"{settings.extraction_heartbeat_interval_seconds * settings.extraction_heartbeat_max_misses}s)",
@@ -258,7 +269,9 @@ async def run_extraction(
                 msg = stderr.decode(errors="replace") or stdout.decode(errors="replace")
                 logger.error(
                     "docling subprocess failed (rc=%s) for %s: %s",
-                    proc.returncode, document_id, msg[:500],
+                    proc.returncode,
+                    document_id,
+                    msg[:500],
                 )
                 await _persist_failure(session, document_id, job, msg)
                 return

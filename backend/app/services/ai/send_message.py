@@ -25,9 +25,11 @@ import logging
 from typing import Any, AsyncIterator
 from uuid import UUID
 
-from pydantic_ai.messages import (FunctionToolCallEvent,
-                                  FunctionToolResultEvent,
-                                  ModelMessagesTypeAdapter)
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    ModelMessagesTypeAdapter,
+)
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession

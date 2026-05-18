@@ -5,8 +5,7 @@ import uuid
 import pytest
 
 from app.models.science import Protocol
-from app.services.approvals import (VALID_ACTIONS, fulfill_open_requests,
-                                    write_event)
+from app.services.approvals import VALID_ACTIONS, fulfill_open_requests, write_event
 
 
 @pytest.mark.asyncio

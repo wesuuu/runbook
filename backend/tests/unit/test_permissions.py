@@ -5,10 +5,21 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, OrgRole, PermissionLevel,
-                            PrincipalType, Team, TeamMember, TeamRole, User,
-                            has_any_org_role, has_org_role)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    PrincipalType,
+    Team,
+    TeamMember,
+    TeamRole,
+    User,
+    has_any_org_role,
+    has_org_role,
+)
 from app.models.science import Project, Protocol, Run
 from app.services.core.permissions import check_permission
 
@@ -640,10 +651,13 @@ async def test_resolver_multi_role_member_has_admin_access(db_session: AsyncSess
     db_session.add(project)
     await db_session.flush()
 
-    assert await check_permission(
-        db_session,
-        user.id,
-        ObjectType.PROJECT,
-        project.id,
-        PermissionLevel.ADMIN,
-    ) is True
+    assert (
+        await check_permission(
+            db_session,
+            user.id,
+            ObjectType.PROJECT,
+            project.id,
+            PermissionLevel.ADMIN,
+        )
+        is True
+    )

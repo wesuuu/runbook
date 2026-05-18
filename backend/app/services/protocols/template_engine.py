@@ -118,11 +118,14 @@ def _build_br_card_header(
 
 
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
-from app.services.documents.pdf_base import (_build_param_sentence,
-                                             _format_value,
-                                             _get_editable_params,
-                                             _get_initials, _get_param_title,
-                                             _render_template)
+from app.services.documents.pdf_base import (
+    _build_param_sentence,
+    _format_value,
+    _get_editable_params,
+    _get_initials,
+    _get_param_title,
+    _render_template,
+)
 
 # ── Known template variables (for upload validation) ──
 
@@ -185,7 +188,7 @@ KNOWN_VARIABLES = {
     "references",
     "definitions",
     # Run identifiers
-    "produces_lot",      # F-0086
+    "produces_lot",  # F-0086
     "lot_number",
     "batch_number",
     # SOP time-course mode (bioreactor-style sampling SOPs)
@@ -848,9 +851,7 @@ def build_context(
     # to avoid empty conditional paragraphs
     protocol_subtitle = RichText()
     if run_name:
-        protocol_subtitle.add(
-            f"Run: {run_name}", bold=True, size=20, color="#334155"
-        )
+        protocol_subtitle.add(f"Run: {run_name}", bold=True, size=20, color="#334155")
     if protocol_description:
         if run_name:
             protocol_subtitle.add("\a")

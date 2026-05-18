@@ -13,8 +13,12 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
-                                UnitOpDefinition)
+from app.models.science import (
+    Project,
+    Protocol,
+    ProtocolApprovalEvent,
+    UnitOpDefinition,
+)
 from app.models.templates import DocumentTemplate
 from app.schemas.science import GraphPayload
 from app.services.core.file_storage import FileStorageService
@@ -182,7 +186,9 @@ def _pdf_response(
     we emit RFC 6266 form: an ASCII-safe ``filename=`` fallback plus a
     ``filename*=UTF-8''<percent-encoded>`` for unicode-aware clients.
     """
-    ascii_filename = filename.encode("ascii", "replace").decode("ascii").replace("?", "_")
+    ascii_filename = (
+        filename.encode("ascii", "replace").decode("ascii").replace("?", "_")
+    )
     encoded_filename = quote(filename, safe="")
     headers = {
         "Content-Disposition": (

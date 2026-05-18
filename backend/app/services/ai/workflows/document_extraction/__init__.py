@@ -15,9 +15,7 @@ from app.services.ai.workflows.document_extraction.extractor import (
     extract_docx,
     extract_pdf,
 )
-from app.services.ai.workflows.document_extraction.html_renderer import (
-    render_html,
-)
+from app.services.ai.workflows.document_extraction.html_renderer import render_html
 from app.services.ai.workflows.document_extraction.models import (
     PageSpan,
     StructuredDoc,

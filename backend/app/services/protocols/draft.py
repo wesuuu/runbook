@@ -66,9 +66,7 @@ async def _find_active_draft(
     return result.scalars().first()
 
 
-async def resolve_working_draft(
-    db: AsyncSession, protocol: Protocol
-) -> WorkingDraft:
+async def resolve_working_draft(db: AsyncSession, protocol: Protocol) -> WorkingDraft:
     """Return the editable graph surface for ``protocol``.
 
     Raises ``ValueError`` (message contains "published" for HTTP 409
@@ -84,9 +82,7 @@ async def resolve_working_draft(
             "approved or rejected."
         )
     if protocol.status == "ARCHIVED":
-        raise ValueError(
-            "Protocol is archived. Restore it before editing."
-        )
+        raise ValueError("Protocol is archived. Restore it before editing.")
     if protocol.status == "APPROVED":
         draft = await _find_active_draft(db, protocol.id)
         if draft is None:
@@ -140,9 +136,7 @@ async def create_draft_version(
     if protocol.status == "ARCHIVED":
         raise ValueError("Protocol is archived. Restore it before drafting.")
     if protocol.status != "APPROVED":
-        raise ValueError(
-            f"Cannot create draft from status '{protocol.status}'."
-        )
+        raise ValueError(f"Cannot create draft from status '{protocol.status}'.")
 
     existing = await _find_active_draft(db, protocol_id)
     if existing is not None:

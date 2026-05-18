@@ -10,18 +10,36 @@ from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
-from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
-                            OrgRole, PermissionLevel, PrincipalType, User)
-from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
-                                ProtocolApprovalRequest, ProtocolVersion,
-                                UnitOpDefinition)
-from app.schemas.science import (ApprovalActorRef, ApproveProtocolRequest,
-                                 AwaitingApprovalItem,
-                                 ProtocolApprovalEventResponse,
-                                 ProtocolResponse, ProtocolVersionListItem,
-                                 ProtocolVersionRef, ProtocolVersionResponse,
-                                 PublishDraftRequest, RejectProtocolRequest,
-                                 SubmitForApprovalRequest)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
+from app.models.science import (
+    Project,
+    Protocol,
+    ProtocolApprovalEvent,
+    ProtocolApprovalRequest,
+    ProtocolVersion,
+    UnitOpDefinition,
+)
+from app.schemas.science import (
+    ApprovalActorRef,
+    ApproveProtocolRequest,
+    AwaitingApprovalItem,
+    ProtocolApprovalEventResponse,
+    ProtocolResponse,
+    ProtocolVersionListItem,
+    ProtocolVersionRef,
+    ProtocolVersionResponse,
+    PublishDraftRequest,
+    RejectProtocolRequest,
+    SubmitForApprovalRequest,
+)
 from app.services.approvals import fulfill_open_requests, write_event
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification

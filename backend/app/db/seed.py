@@ -16,9 +16,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.db.session import AsyncSessionLocal
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            Team, TeamMember, TeamRole, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    Team,
+    TeamMember,
+    TeamRole,
+    User,
+)
 from app.models.science import Project
 from app.models.templates import DocumentTemplate, TemplateType
 from app.services.protocols.template_seeder import seed_system_templates

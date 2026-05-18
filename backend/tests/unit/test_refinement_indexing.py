@@ -1,5 +1,5 @@
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -28,8 +28,11 @@ async def test_index_refined_document_chunks_and_calls_embedder():
 
     with patch(
         "app.services.documents.refinement.indexing.chunk_markdown",
-        return_value=[MagicMock(content="# Heading", chunk_index=0,
-                                token_count=2, page_number=None)],
+        return_value=[
+            MagicMock(
+                content="# Heading", chunk_index=0, token_count=2, page_number=None
+            )
+        ],
     ), patch(
         "app.services.documents.refinement.indexing.embed_texts",
         AsyncMock(return_value=[[0.1] * 1536]),
@@ -70,7 +73,8 @@ async def test_index_refined_document_handles_whitespace_only_markdown():
         "app.services.documents.refinement.indexing.chunk_markdown",
         return_value=[],
     ), patch(
-        "app.services.documents.refinement.indexing.embed_texts", embed_mock,
+        "app.services.documents.refinement.indexing.embed_texts",
+        embed_mock,
     ):
         await index_refined_document(db, doc)
 
@@ -95,8 +99,9 @@ async def test_index_refined_document_drops_prior_chunks_first():
 
     with patch(
         "app.services.documents.refinement.indexing.chunk_markdown",
-        return_value=[MagicMock(content="c", chunk_index=0,
-                                token_count=1, page_number=None)],
+        return_value=[
+            MagicMock(content="c", chunk_index=0, token_count=1, page_number=None)
+        ],
     ), patch(
         "app.services.documents.refinement.indexing.embed_texts",
         AsyncMock(return_value=[[0.1] * 1536]),
@@ -108,9 +113,7 @@ async def test_index_refined_document_drops_prior_chunks_first():
     # that doesn't depend on private SQLAlchemy internals.
     assert db.execute.call_count >= 1
     first_stmt = db.execute.call_args_list[0].args[0]
-    rendered = str(first_stmt.compile(
-        compile_kwargs={"literal_binds": False}
-    ))
+    rendered = str(first_stmt.compile(compile_kwargs={"literal_binds": False}))
     assert "DELETE FROM document_chunks" in rendered
 
 
@@ -126,8 +129,9 @@ async def test_index_refined_document_wraps_embed_error_as_indexing_error():
 
     with patch(
         "app.services.documents.refinement.indexing.chunk_markdown",
-        return_value=[MagicMock(content="c", chunk_index=0,
-                                token_count=1, page_number=None)],
+        return_value=[
+            MagicMock(content="c", chunk_index=0, token_count=1, page_number=None)
+        ],
     ), patch(
         "app.services.documents.refinement.indexing.embed_texts",
         AsyncMock(side_effect=EmbeddingError("Ollama unreachable")),

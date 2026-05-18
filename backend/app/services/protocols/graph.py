@@ -19,20 +19,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Protocol
 from app.services.core.permissions import check_permission
-from app.services.protocols.lane_layout import (LANE_DEFAULT_HORIZONTAL,
-                                                LANE_DEFAULT_VERTICAL,
-                                                TOP_LEVEL_DEFAULT_X,
-                                                TOP_LEVEL_DEFAULT_Y,
-                                                grow_lane_to_fit,
-                                                lane_relative_position,
-                                                relayout_top_level_chain)
+from app.services.protocols.lane_layout import (
+    LANE_DEFAULT_HORIZONTAL,
+    LANE_DEFAULT_VERTICAL,
+    TOP_LEVEL_DEFAULT_X,
+    TOP_LEVEL_DEFAULT_Y,
+    grow_lane_to_fit,
+    lane_relative_position,
+    relayout_top_level_chain,
+)
 
 
 async def _load_and_guard(
     db: AsyncSession, user_id: UUID, protocol_id: UUID
 ) -> "WorkingDraft":
-    from app.services.protocols.draft import (WorkingDraft,
-                                              resolve_working_draft)
+    from app.services.protocols.draft import WorkingDraft, resolve_working_draft
 
     proto = (
         await db.execute(select(Protocol).where(Protocol.id == protocol_id))
@@ -313,9 +314,7 @@ def _grow_lane_for_child_bbox(
     shrinks the lane.
     """
     out = list(nodes)
-    lane_idx = next(
-        (i for i, n in enumerate(out) if n.get("id") == lane_id), None
-    )
+    lane_idx = next((i for i, n in enumerate(out) if n.get("id") == lane_id), None)
     if lane_idx is None:
         return out
     lane = out[lane_idx]

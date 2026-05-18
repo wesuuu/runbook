@@ -15,8 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Project, Protocol, UnitOpDefinition
 from app.services.core.permissions import check_permission
-from app.services.protocols.lane_layout import (grow_lane_to_fit,
-                                                lane_relative_position)
+from app.services.protocols.lane_layout import grow_lane_to_fit, lane_relative_position
 
 
 class ProtocolStep(BaseModel):
@@ -77,7 +76,10 @@ async def create_protocol_from_spec(
     # workflows/protocol_generator.py in Task 21 — this import path
     # updates then).
     from app.services.ai.workflows.protocol_generator import (
-        GeneratedProtocol, GeneratedStep, build_graph)
+        GeneratedProtocol,
+        GeneratedStep,
+        build_graph,
+    )
 
     generated = GeneratedProtocol(
         name=spec.name,

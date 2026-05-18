@@ -13,9 +13,9 @@ async def test_recovery_loop_runs_both_sweeps_each_tick():
 
     jobs = AsyncMock()
     docs = AsyncMock()
-    with patch("app.main._recover_stalled_jobs", jobs), \
-         patch("app.main._recover_stalled_documents", docs), \
-         patch("app.main.settings") as fake_settings:
+    with patch("app.main._recover_stalled_jobs", jobs), patch(
+        "app.main._recover_stalled_documents", docs
+    ), patch("app.main.settings") as fake_settings:
         fake_settings.recovery_interval_seconds = 0.01
 
         task = asyncio.create_task(_recovery_loop())
@@ -42,9 +42,9 @@ async def test_recovery_loop_swallows_sweep_exceptions():
     async def ok():
         calls.append("ok")
 
-    with patch("app.main._recover_stalled_jobs", boom), \
-         patch("app.main._recover_stalled_documents", ok), \
-         patch("app.main.settings") as fake_settings:
+    with patch("app.main._recover_stalled_jobs", boom), patch(
+        "app.main._recover_stalled_documents", ok
+    ), patch("app.main.settings") as fake_settings:
         fake_settings.recovery_interval_seconds = 0.01
 
         task = asyncio.create_task(_recovery_loop())
@@ -64,9 +64,9 @@ async def test_recovery_loop_disabled_when_interval_is_zero():
 
     jobs = AsyncMock()
     docs = AsyncMock()
-    with patch("app.main._recover_stalled_jobs", jobs), \
-         patch("app.main._recover_stalled_documents", docs), \
-         patch("app.main.settings") as fake_settings:
+    with patch("app.main._recover_stalled_jobs", jobs), patch(
+        "app.main._recover_stalled_documents", docs
+    ), patch("app.main.settings") as fake_settings:
         fake_settings.recovery_interval_seconds = 0
 
         # Should return immediately.

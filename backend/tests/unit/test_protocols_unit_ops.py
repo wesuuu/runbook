@@ -7,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization, User
 from app.models.science import Project, UnitOpDefinition
-from app.services.protocols.unit_ops import (create_unit_op_definition,
-                                             elevate_unit_op_scope,
-                                             update_unit_op_definition)
+from app.services.protocols.unit_ops import (
+    create_unit_op_definition,
+    elevate_unit_op_scope,
+    update_unit_op_definition,
+)
 
 
 @pytest.mark.asyncio

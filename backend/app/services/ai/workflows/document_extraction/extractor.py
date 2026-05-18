@@ -168,7 +168,9 @@ def _build_toc(doc) -> list[TocEntry]:
         if not text:
             continue
 
-        heading_level = _heading_level(item, fallback=1 if label_value == "title" else 2)
+        heading_level = _heading_level(
+            item, fallback=1 if label_value == "title" else 2
+        )
         page_no = _first_page(item)
 
         toc.append(

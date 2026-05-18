@@ -5,8 +5,7 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from app.models.iam import (Organization, OrganizationMember, SubscriptionTier,
-                            User)
+from app.models.iam import Organization, OrganizationMember, SubscriptionTier, User
 
 
 async def _fill_org_to(db_session, org_id, target_count, start_count=1):

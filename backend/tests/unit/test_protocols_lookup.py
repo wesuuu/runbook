@@ -7,9 +7,17 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            Team, TeamMember, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    Team,
+    TeamMember,
+    User,
+)
 from app.models.science import Project, Protocol, ProtocolRole, ProtocolVersion
 from app.services.protocols.lookup import get_protocol_full, list_protocols
 

@@ -15,8 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.science import Project, Protocol, ProtocolRole, ProtocolVersion
-from app.services.core.permissions import (check_permission,
-                                           get_visible_project_ids)
+from app.services.core.permissions import check_permission, get_visible_project_ids
 
 
 @dataclass
@@ -128,15 +127,19 @@ async def get_protocol_full(
     # — chat tools that just mutated the draft need to read their own
     # work, not the frozen published graph.
     draft_row = (
-        await db.execute(
-            select(ProtocolVersion)
-            .where(
-                ProtocolVersion.protocol_id == protocol.id,
-                ProtocolVersion.is_draft.is_(True),
+        (
+            await db.execute(
+                select(ProtocolVersion)
+                .where(
+                    ProtocolVersion.protocol_id == protocol.id,
+                    ProtocolVersion.is_draft.is_(True),
+                )
+                .order_by(ProtocolVersion.version_number.desc())
             )
-            .order_by(ProtocolVersion.version_number.desc())
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     has_draft = draft_row is not None
 
     if draft_row is not None and protocol.status == "APPROVED":

@@ -6,12 +6,8 @@ def test_background_handler_and_docling_settings_have_sensible_defaults():
     assert s.background_handler == "local"
     assert s.docling_num_threads == 4
     # Default paths point at the ext/ project relative to the repo root.
-    assert s.docling_script_python.endswith(
-        "ext/docling-extractor/.venv/bin/python"
-    )
-    assert s.docling_script_path.endswith(
-        "ext/docling-extractor/extract.py"
-    )
+    assert s.docling_script_python.endswith("ext/docling-extractor/.venv/bin/python")
+    assert s.docling_script_path.endswith("ext/docling-extractor/extract.py")
 
 
 def test_doc_structure_capability_fields_removed():

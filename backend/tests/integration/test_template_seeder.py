@@ -1,4 +1,5 @@
 """Seeder re-installs the new system defaults at app startup."""
+
 from app.services.protocols.template_seeder import seed_system_templates
 
 

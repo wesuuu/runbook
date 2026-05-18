@@ -23,9 +23,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.db.seed import (seed_library_subscriptions, seed_org,
-                         seed_permissions, seed_projects, seed_teams,
-                         seed_users)
+from app.db.seed import (
+    seed_library_subscriptions,
+    seed_org,
+    seed_permissions,
+    seed_projects,
+    seed_teams,
+    seed_users,
+)
 from app.db.session import AsyncSessionLocal
 
 # Ordered tuple (not frozenset) so ``confirm_reset`` prints the tables in a

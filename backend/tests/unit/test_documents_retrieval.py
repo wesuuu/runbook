@@ -4,9 +4,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization
-from app.services.documents.retrieval import (RAG_MAX_CONTEXT_CHARS,
-                                              RAG_MIN_SCORE, RAG_TOP_K,
-                                              retrieve_relevant_chunks)
+from app.services.documents.retrieval import (
+    RAG_MAX_CONTEXT_CHARS,
+    RAG_MIN_SCORE,
+    RAG_TOP_K,
+    retrieve_relevant_chunks,
+)
 
 
 def test_constants_exist():

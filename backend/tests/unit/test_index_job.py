@@ -36,20 +36,14 @@ def _make_doc(
 
 
 @pytest.mark.asyncio
-async def test_claim_rejects_doc_in_wrong_status(
-    db_session, test_org, test_user
-):
-    from app.services.documents.refinement.index_job import (
-        _load_and_claim_document,
-    )
+async def test_claim_rejects_doc_in_wrong_status(db_session, test_org, test_user):
+    from app.services.documents.refinement.index_job import _load_and_claim_document
 
     doc = _make_doc(test_org, test_user, DocumentStatus.UPLOADED)
     db_session.add(doc)
     await db_session.flush()
 
-    claimed_doc, claimed_job = await _load_and_claim_document(
-        db_session, doc.id
-    )
+    claimed_doc, claimed_job = await _load_and_claim_document(db_session, doc.id)
     assert claimed_doc is None
     assert claimed_job is None
 
@@ -58,13 +52,13 @@ async def test_claim_rejects_doc_in_wrong_status(
 async def test_claim_rejects_doc_with_existing_heartbeat_token(
     db_session, test_org, test_user
 ):
-    from app.services.documents.refinement.index_job import (
-        _load_and_claim_document,
-    )
+    from app.services.documents.refinement.index_job import _load_and_claim_document
 
     doc = _make_doc(
-        test_org, test_user,
-        DocumentStatus.INDEXING, heartbeat_token="someone-else",
+        test_org,
+        test_user,
+        DocumentStatus.INDEXING,
+        heartbeat_token="someone-else",
     )
     db_session.add(doc)
     await db_session.flush()
@@ -77,17 +71,13 @@ async def test_claim_rejects_doc_with_existing_heartbeat_token(
 async def test_claim_accepts_indexing_doc_with_no_token(
     db_session, test_org, test_user
 ):
-    from app.services.documents.refinement.index_job import (
-        _load_and_claim_document,
-    )
+    from app.services.documents.refinement.index_job import _load_and_claim_document
 
     doc = _make_doc(test_org, test_user, DocumentStatus.INDEXING)
     db_session.add(doc)
     await db_session.flush()
 
-    claimed_doc, claimed_job = await _load_and_claim_document(
-        db_session, doc.id
-    )
+    claimed_doc, claimed_job = await _load_and_claim_document(db_session, doc.id)
     assert claimed_doc is not None
     assert claimed_doc.id == doc.id
     assert claimed_doc.heartbeat_token is not None
@@ -114,14 +104,18 @@ async def test_run_index_happy_path_transitions_to_ready(
     from app.services.documents.refinement import index_job
 
     doc = _make_doc(
-        test_org, test_user,
+        test_org,
+        test_user,
         DocumentStatus.INDEXING,
         stored_markdown="# H\n\n" + ("word " * 1500),
     )
     db_session.add(doc)
     await db_session.flush()
     job = await BackgroundJobService.create(
-        db_session, "document_index", "document", doc.id,
+        db_session,
+        "document_index",
+        "document",
+        doc.id,
     )
     await db_session.flush()
 
@@ -140,13 +134,16 @@ async def test_run_index_happy_path_transitions_to_ready(
         "app.services.documents.refinement.indexing.embed_texts",
         side_effect=fake_embed_texts,
     ), patch.object(
-        index_job, "_load_and_claim_document",
+        index_job,
+        "_load_and_claim_document",
         AsyncMock(return_value=(doc, job)),
     ), patch.object(
-        index_job, "create_async_engine",
+        index_job,
+        "create_async_engine",
         MagicMock(return_value=AsyncMock()),
     ), patch.object(
-        index_job, "async_sessionmaker",
+        index_job,
+        "async_sessionmaker",
         MagicMock(return_value=fake_factory),
     ):
         await index_job.run_index(document_id=doc.id)
@@ -176,7 +173,10 @@ async def test_run_index_routes_embed_failure_to_persist_failure(
     db_session.add(doc)
     await db_session.flush()
     job = await BackgroundJobService.create(
-        db_session, "document_index", "document", doc.id,
+        db_session,
+        "document_index",
+        "document",
+        doc.id,
     )
     await db_session.flush()
 
@@ -190,15 +190,20 @@ async def test_run_index_routes_embed_failure_to_persist_failure(
         "app.services.documents.refinement.indexing.embed_texts",
         side_effect=EmbeddingError("Ollama unreachable"),
     ), patch.object(
-        index_job, "_load_and_claim_document",
+        index_job,
+        "_load_and_claim_document",
         AsyncMock(return_value=(doc, job)),
     ), patch.object(
-        index_job, "_persist_failure", persist_failure,
+        index_job,
+        "_persist_failure",
+        persist_failure,
     ), patch.object(
-        index_job, "create_async_engine",
+        index_job,
+        "create_async_engine",
         MagicMock(return_value=AsyncMock()),
     ), patch.object(
-        index_job, "async_sessionmaker",
+        index_job,
+        "async_sessionmaker",
         MagicMock(return_value=fake_factory),
     ):
         await index_job.run_index(document_id=doc.id)
@@ -224,18 +229,23 @@ async def test_persist_failure_marks_doc_and_job_failed(
     db_session.add(doc)
     await db_session.flush()
     job = await BackgroundJobService.create(
-        db_session, "document_index", "document", doc.id,
+        db_session,
+        "document_index",
+        "document",
+        doc.id,
     )
     await db_session.commit()
 
     await index_job._persist_failure(
-        db_session, doc.id, job, "Embedding failed: Ollama unreachable",
+        db_session,
+        doc.id,
+        job,
+        "Embedding failed: Ollama unreachable",
     )
 
     from sqlalchemy import select
-    fresh_doc = await db_session.scalar(
-        select(Document).where(Document.id == doc.id)
-    )
+
+    fresh_doc = await db_session.scalar(select(Document).where(Document.id == doc.id))
     assert fresh_doc.status == DocumentStatus.FAILED.value
     assert "Indexing error" in (fresh_doc.error_message or "")
 
@@ -248,8 +258,8 @@ async def test_persist_failure_marks_doc_and_job_failed(
 
 def test_job_registered_under_canonical_name():
     # Side-effect import: importing the module registers the job.
-    from app.services.documents.refinement import index_job  # noqa: F401
     from app.services.core.background_handler import JOB_REGISTRY
+    from app.services.documents.refinement import index_job  # noqa: F401
 
     assert "document_index" in JOB_REGISTRY
     assert JOB_REGISTRY["document_index"].__name__ == "run_index"
@@ -269,7 +279,10 @@ async def test_persist_success_drops_claim_if_watchdog_won_race(
     db_session.add(doc)
     await db_session.flush()
     job = await BackgroundJobService.create(
-        db_session, "document_index", "document", doc.id,
+        db_session,
+        "document_index",
+        "document",
+        doc.id,
     )
     await db_session.flush()
 
@@ -281,9 +294,8 @@ async def test_persist_success_drops_claim_if_watchdog_won_race(
     await index_job._persist_success(db_session, doc, job)
 
     from sqlalchemy import select
-    fresh = await db_session.scalar(
-        select(Document).where(Document.id == doc.id)
-    )
+
+    fresh = await db_session.scalar(select(Document).where(Document.id == doc.id))
     assert fresh.status == DocumentStatus.FAILED.value
     assert fresh.error_message == "watchdog: stale heartbeat"
 
@@ -304,7 +316,10 @@ async def test_run_index_routes_unexpected_exception_to_persist_failure(
     db_session.add(doc)
     await db_session.flush()
     job = await BackgroundJobService.create(
-        db_session, "document_index", "document", doc.id,
+        db_session,
+        "document_index",
+        "document",
+        doc.id,
     )
     await db_session.flush()
 
@@ -317,18 +332,24 @@ async def test_run_index_routes_unexpected_exception_to_persist_failure(
     # NOTE: patch the symbol where it's *used* (index_job module), not
     # where it's defined — index_job imports the name at module-load.
     with patch.object(
-        index_job, "index_refined_document",
+        index_job,
+        "index_refined_document",
         AsyncMock(side_effect=RuntimeError("disk on fire")),
     ), patch.object(
-        index_job, "_load_and_claim_document",
+        index_job,
+        "_load_and_claim_document",
         AsyncMock(return_value=(doc, job)),
     ), patch.object(
-        index_job, "_persist_failure", persist_failure,
+        index_job,
+        "_persist_failure",
+        persist_failure,
     ), patch.object(
-        index_job, "create_async_engine",
+        index_job,
+        "create_async_engine",
         MagicMock(return_value=AsyncMock()),
     ), patch.object(
-        index_job, "async_sessionmaker",
+        index_job,
+        "async_sessionmaker",
         MagicMock(return_value=fake_factory),
     ):
         await index_job.run_index(document_id=doc.id)

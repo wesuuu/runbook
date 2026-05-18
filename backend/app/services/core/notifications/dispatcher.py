@@ -8,13 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.notifications import (DeliveryStatus, NotificationChannel,
-                                      NotificationDelivery,
-                                      NotificationSubscription)
+from app.models.notifications import (
+    DeliveryStatus,
+    NotificationChannel,
+    NotificationDelivery,
+    NotificationSubscription,
+)
 from app.services.core.notifications.channels import get_channel
-from app.services.core.notifications.channels.base import (FormattedMessage,
-                                                           PermanentError,
-                                                           TransientError)
+from app.services.core.notifications.channels.base import (
+    FormattedMessage,
+    PermanentError,
+    TransientError,
+)
 
 logger = logging.getLogger("notifications.dispatcher")
 

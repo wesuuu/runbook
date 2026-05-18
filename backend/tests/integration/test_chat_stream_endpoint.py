@@ -15,7 +15,7 @@ def _parse_sse_lines(body: str) -> list[dict]:
     for line in body.splitlines():
         line = line.strip()
         if line.startswith("data:"):
-            events.append(json.loads(line[len("data:"):].strip()))
+            events.append(json.loads(line[len("data:") :].strip()))
     return events
 
 
@@ -46,7 +46,11 @@ async def test_stream_endpoint_emits_tool_events_then_done(
     session_id = await _create_session(client, auth_headers)
 
     canned = [
-        {"type": "tool_start", "tool": "search_documents", "label": "Searching documents…"},
+        {
+            "type": "tool_start",
+            "tool": "search_documents",
+            "label": "Searching documents…",
+        },
         {"type": "tool_end", "tool": "search_documents"},
         {
             "type": "done",
@@ -129,7 +133,9 @@ async def test_stream_endpoint_404_when_session_missing(
 
 
 @pytest.mark.asyncio
-async def test_stream_endpoint_requires_auth(client: AsyncClient, test_org: Organization):
+async def test_stream_endpoint_requires_auth(
+    client: AsyncClient, test_org: Organization
+):
     """Unauthenticated request returns 401."""
     async with client.stream(
         "POST",

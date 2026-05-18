@@ -41,15 +41,14 @@ async def test_empty_markdown_raises(db_session, test_org, test_user):
 
 
 @pytest.mark.asyncio
-async def test_embed_failure_raises_indexing_error(
-    db_session, test_org, test_user
-):
+async def test_embed_failure_raises_indexing_error(db_session, test_org, test_user):
     from unittest.mock import patch
 
     from app.services.ai.embedding import EmbeddingError
 
     doc = _doc(
-        test_org, test_user,
+        test_org,
+        test_user,
         stored_markdown="# A heading\n\nSome body content.",
     )
     db_session.add(doc)
@@ -70,7 +69,8 @@ async def test_progress_callback_forwarded_to_embed_texts(
     from unittest.mock import patch
 
     doc = _doc(
-        test_org, test_user,
+        test_org,
+        test_user,
         stored_markdown="# H\n\n" + ("word " * 3000),  # >1 chunk
     )
     db_session.add(doc)

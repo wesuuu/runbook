@@ -12,8 +12,7 @@ from app.api.endpoints.protocol_pdfs import _build_approval_context
 from app.core.security import hash_password
 from app.models.iam import OrganizationMember, User
 from app.models.science import Project, Protocol, ProtocolApprovalEvent
-from app.services.protocols.template_engine import (build_context,
-                                                    render_to_docx)
+from app.services.protocols.template_engine import build_context, render_to_docx
 
 
 def _docx_text(docx_bytes: bytes) -> str:

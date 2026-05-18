@@ -16,15 +16,26 @@ import pytest_asyncio
 
 from app.models.iam import Organization, SubscriptionTier
 from app.services.batch.batch_record_extractor import (
-    extract_batch_record_data, extract_batch_record_pages,
-    map_steps_to_protocol, map_values_to_execution_data)
+    extract_batch_record_data,
+    extract_batch_record_pages,
+    map_steps_to_protocol,
+    map_values_to_execution_data,
+)
 from tests.benchmarks.batch_record_scoring import (
-    build_auto_finalized_mappings, print_run_report, score_run)
-from tests.benchmarks.conftest import (all_batch_record_run_scores,
-                                       all_benchmark_scores,
-                                       build_seed_catalog, discover_fixtures,
-                                       find_document, get_mime_type,
-                                       load_expected, load_json)
+    build_auto_finalized_mappings,
+    print_run_report,
+    score_run,
+)
+from tests.benchmarks.conftest import (
+    all_batch_record_run_scores,
+    all_benchmark_scores,
+    build_seed_catalog,
+    discover_fixtures,
+    find_document,
+    get_mime_type,
+    load_expected,
+    load_json,
+)
 from tests.benchmarks.scoring import print_score_report, score_proposal
 
 # Collect all fixture dirs at module level for parametrize
@@ -46,7 +57,10 @@ class TestProtocolImportAccuracy:
     async def test_import_accuracy(self, fixture_dir: Path, db_session, pro_org):
         """Run a single fixture through extract -> parse -> build_proposal."""
         from app.services.protocols.protocol_importer import (
-            build_proposal, extract_text, parse_protocol_text)
+            build_proposal,
+            extract_text,
+            parse_protocol_text,
+        )
 
         # Load expected output
         expected = load_expected(fixture_dir)

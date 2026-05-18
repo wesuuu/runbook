@@ -5,13 +5,17 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.services.ai.ai_vision import (ExtractedValue, ImageAnalysisResult,
-                                       _format_history, _guess_mime,
-                                       analyze_image,
-                                       build_conversation_prompt,
-                                       build_system_prompt,
-                                       continue_conversation,
-                                       create_vision_agent)
+from app.services.ai.ai_vision import (
+    ExtractedValue,
+    ImageAnalysisResult,
+    _format_history,
+    _guess_mime,
+    analyze_image,
+    build_conversation_prompt,
+    build_system_prompt,
+    continue_conversation,
+    create_vision_agent,
+)
 
 SAMPLE_PARAM_SCHEMA = {
     "type": "object",

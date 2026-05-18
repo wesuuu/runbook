@@ -6,8 +6,7 @@ import pytest
 import pytest_asyncio
 
 from app.core.security import create_access_token, hash_password
-from app.models.iam import (Organization, OrganizationMember, SubscriptionTier,
-                            User)
+from app.models.iam import Organization, OrganizationMember, SubscriptionTier, User
 
 
 class TestLoginIncludesOrgContext:

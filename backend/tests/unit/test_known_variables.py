@@ -4,8 +4,7 @@ from io import BytesIO
 
 from docx import Document
 
-from app.services.protocols.template_engine import (KNOWN_VARIABLES,
-                                                    parse_template)
+from app.services.protocols.template_engine import KNOWN_VARIABLES, parse_template
 
 REQUIRED = {
     "time_enabled",

@@ -15,39 +15,40 @@ from uuid import UUID
 from pydantic_ai import RunContext
 from sqlalchemy import select
 
-from app.models.science import (Project, Protocol, ProtocolRole,
-                                UnitOpDefinition)
+from app.models.science import Project, Protocol, ProtocolRole, UnitOpDefinition
 from app.services.ai.deps import ChatDeps
 from app.services.protocols.creation import ProtocolSpec, ProtocolStep
-from app.services.protocols.creation import \
-    create_protocol_from_spec as create_protocol_from_spec_service
-from app.services.protocols.creation import \
-    update_protocol_metadata as update_protocol_metadata_service
-from app.services.protocols.creation import \
-    update_protocol_step as update_protocol_step_service
+from app.services.protocols.creation import (
+    create_protocol_from_spec as create_protocol_from_spec_service,
+)
+from app.services.protocols.creation import (
+    update_protocol_metadata as update_protocol_metadata_service,
+)
+from app.services.protocols.creation import (
+    update_protocol_step as update_protocol_step_service,
+)
 from app.services.protocols.graph import add_step as add_step_service
-from app.services.protocols.graph import \
-    relayout_chain as relayout_chain_service
+from app.services.protocols.graph import relayout_chain as relayout_chain_service
 from app.services.protocols.graph import remove_step as remove_step_service
 from app.services.protocols.graph import reorder_steps as reorder_steps_service
-from app.services.protocols.graph import \
-    replace_step_unit_op as replace_step_unit_op_service
+from app.services.protocols.graph import (
+    replace_step_unit_op as replace_step_unit_op_service,
+)
 from app.services.protocols.lookup import ProtocolFull
-from app.services.protocols.lookup import \
-    get_protocol_full as get_protocol_full_service
-from app.services.protocols.lookup import \
-    list_protocols as list_protocols_service
+from app.services.protocols.lookup import get_protocol_full as get_protocol_full_service
+from app.services.protocols.lookup import list_protocols as list_protocols_service
 from app.services.protocols.roles import add_role as add_role_service
 from app.services.protocols.roles import list_roles as list_roles_service
 from app.services.protocols.roles import remove_role as remove_role_service
 from app.services.protocols.roles import update_role as update_role_service
 from app.services.protocols.unit_ops import create_unit_op_definition
-from app.services.protocols.unit_ops import \
-    elevate_unit_op_scope as elevate_unit_op_scope_service
-from app.services.protocols.unit_ops import \
-    update_unit_op_definition as update_unit_op_definition_service
-from app.services.protocols.validation import (ValidationIssue,
-                                               validate_protocol_graph)
+from app.services.protocols.unit_ops import (
+    elevate_unit_op_scope as elevate_unit_op_scope_service,
+)
+from app.services.protocols.unit_ops import (
+    update_unit_op_definition as update_unit_op_definition_service,
+)
+from app.services.protocols.validation import ValidationIssue, validate_protocol_graph
 
 logger = logging.getLogger(__name__)
 

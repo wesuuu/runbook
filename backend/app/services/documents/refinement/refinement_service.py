@@ -11,7 +11,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.library import (Document, DocumentStatus, RefinementStatus)
+from app.models.library import Document, DocumentStatus, RefinementStatus
 
 
 async def mark_in_progress(db: AsyncSession, doc: Document) -> None:
@@ -34,9 +34,7 @@ async def save_markdown(
     await mark_in_progress(db, doc)
 
 
-async def mark_complete(
-    db: AsyncSession, doc: Document, user_id: UUID
-) -> None:
+async def mark_complete(db: AsyncSession, doc: Document, user_id: UUID) -> None:
     if doc.refinement_status == RefinementStatus.COMPLETE.value:
         raise ValueError("Document refinement already complete")
     doc.refinement_status = RefinementStatus.COMPLETE.value

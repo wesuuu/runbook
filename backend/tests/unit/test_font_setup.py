@@ -29,12 +29,14 @@ def test_idempotent_when_dest_already_current(tmp_path, monkeypatch):
     dest_dir.mkdir()
     # Pre-populate dest with a copy that has a NEWER mtime than the source
     from app.services.documents.fonts import FONTS_DIR
+
     src = FONTS_DIR / "DancingScript-Regular.ttf"
     dest = dest_dir / src.name
     shutil.copy2(src, dest)
     # Bump dest mtime to "now + 1 day" so it's strictly newer than src
     future = src.stat().st_mtime + 86400
     import os
+
     os.utime(dest, (future, future))
 
     fake_run = patch("subprocess.run").start()

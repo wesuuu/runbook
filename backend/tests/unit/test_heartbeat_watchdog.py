@@ -50,7 +50,9 @@ async def test_watchdog_kills_after_max_misses(async_session, seed_document_extr
 
 
 @pytest.mark.asyncio
-async def test_watchdog_resets_on_fresh_heartbeat(async_session, seed_document_extracting):
+async def test_watchdog_resets_on_fresh_heartbeat(
+    async_session, seed_document_extracting
+):
     doc = seed_document_extracting
     doc.heartbeat_token = "tok"
     doc.last_heartbeat_at = datetime.now(timezone.utc)

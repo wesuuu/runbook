@@ -11,8 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.library import (STALE_PROCESSING_SECONDS, Document,
-                                DocumentChunk, DocumentStatus)
+from app.models.library import (
+    STALE_PROCESSING_SECONDS,
+    Document,
+    DocumentChunk,
+    DocumentStatus,
+)
 
 
 @pytest_asyncio.fixture

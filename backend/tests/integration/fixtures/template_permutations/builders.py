@@ -15,6 +15,7 @@ Each ``build_pN()`` returns a :class:`BuiltPermutation`:
   when one permutation renders against multiple templates with different
   surfaces. The base lists apply when no per-template entry exists.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ class BuiltPermutation:
 
 
 # ---------- Shared step factory ----------
+
 
 def _step(sid, name, *, duration=10, params=None, schema=None, equipment=None):
     """Build a step dict.
@@ -89,29 +91,97 @@ def _event(action, actor, when):
 
 # ---------- P1: Kitchen sink ----------
 
+
 def build_p1() -> BuiltPermutation:
     roles = [
-        _role("Operator", [
-            _step("p1-s1", "Weigh media", duration=5,
-                  params={"mass_g": 50.0},
-                  schema=[{"key": "mass_g", "label": "Mass", "unit": "g", "type": "number"}],
-                  equipment=[{"local_id": "E-001", "name": "Balance", "description": "Mettler XPE"}]),
-            _step("p1-s2", "Mix buffer", duration=15,
-                  params={"volume_L": 2.0, "rpm": 200},
-                  schema=[{"key": "volume_L", "label": "Volume", "unit": "L", "type": "number"},
-                          {"key": "rpm", "label": "RPM", "unit": "", "type": "number"}],
-                  equipment=[{"local_id": "E-002", "name": "Magnetic Stirrer", "description": "IKA RT"}]),
-            _step("p1-s3", "Seed bioreactor", duration=30,
-                  params={"cell_density": 0.3e6},
-                  schema=[{"key": "cell_density", "label": "Density", "unit": "cells/mL", "type": "number"}],
-                  equipment=[{"local_id": "E-003", "name": "Bioreactor", "description": "Sartorius 5L"}]),
-        ]),
-        _role("Reviewer", [
-            _step("p1-s4", "Verify pH", duration=10,
-                  params={"ph": 7.2},
-                  schema=[{"key": "ph", "label": "pH", "unit": "", "type": "number"}],
-                  equipment=[{"local_id": "E-004", "name": "pH Probe", "description": "Mettler S400"}]),
-        ]),
+        _role(
+            "Operator",
+            [
+                _step(
+                    "p1-s1",
+                    "Weigh media",
+                    duration=5,
+                    params={"mass_g": 50.0},
+                    schema=[
+                        {
+                            "key": "mass_g",
+                            "label": "Mass",
+                            "unit": "g",
+                            "type": "number",
+                        }
+                    ],
+                    equipment=[
+                        {
+                            "local_id": "E-001",
+                            "name": "Balance",
+                            "description": "Mettler XPE",
+                        }
+                    ],
+                ),
+                _step(
+                    "p1-s2",
+                    "Mix buffer",
+                    duration=15,
+                    params={"volume_L": 2.0, "rpm": 200},
+                    schema=[
+                        {
+                            "key": "volume_L",
+                            "label": "Volume",
+                            "unit": "L",
+                            "type": "number",
+                        },
+                        {"key": "rpm", "label": "RPM", "unit": "", "type": "number"},
+                    ],
+                    equipment=[
+                        {
+                            "local_id": "E-002",
+                            "name": "Magnetic Stirrer",
+                            "description": "IKA RT",
+                        }
+                    ],
+                ),
+                _step(
+                    "p1-s3",
+                    "Seed bioreactor",
+                    duration=30,
+                    params={"cell_density": 0.3e6},
+                    schema=[
+                        {
+                            "key": "cell_density",
+                            "label": "Density",
+                            "unit": "cells/mL",
+                            "type": "number",
+                        }
+                    ],
+                    equipment=[
+                        {
+                            "local_id": "E-003",
+                            "name": "Bioreactor",
+                            "description": "Sartorius 5L",
+                        }
+                    ],
+                ),
+            ],
+        ),
+        _role(
+            "Reviewer",
+            [
+                _step(
+                    "p1-s4",
+                    "Verify pH",
+                    duration=10,
+                    params={"ph": 7.2},
+                    schema=[{"key": "ph", "label": "pH", "unit": "", "type": "number"}],
+                    equipment=[
+                        {
+                            "local_id": "E-004",
+                            "name": "pH Probe",
+                            "description": "Mettler S400",
+                        }
+                    ],
+                ),
+            ],
+        ),
     ]
     return BuiltPermutation(
         name="P1_kitchen_sink",
@@ -143,33 +213,64 @@ def build_p1() -> BuiltPermutation:
             # permutation exercises the "lot-producing run" branch.
             produces_lot=True,
             revision_history=[
-                {"version_number": 1, "created_at": "2025-12-01",
-                 "created_by": "Alice", "change_summary": "Initial release"},
-                {"version_number": 2, "created_at": "2026-01-15",
-                 "created_by": "Bob",   "change_summary": "Tightened acceptance"},
+                {
+                    "version_number": 1,
+                    "created_at": "2025-12-01",
+                    "created_by": "Alice",
+                    "change_summary": "Initial release",
+                },
+                {
+                    "version_number": 2,
+                    "created_at": "2026-01-15",
+                    "created_by": "Bob",
+                    "change_summary": "Tightened acceptance",
+                },
             ],
             user_map={"u-1": "Olivia Operator", "u-2": "Robin Reviewer"},
             execution_data={
-                "p1-s1": {"started_at": "2026-05-15T08:02:00Z",
-                          "completed_at": "2026-05-15T08:07:00Z",
-                          "edited_by_user_id": "u-1",
-                          "edited_at": "2026-05-15T08:08:00Z"},
-                "p1-s2": {"started_at": "2026-05-15T08:10:00Z",
-                          "completed_at": "2026-05-15T08:25:00Z"},
-                "p1-s3": {"started_at": "2026-05-15T08:30:00Z",
-                          "completed_at": "2026-05-15T09:00:00Z"},
-                "p1-s4": {"started_at": "2026-05-15T09:05:00Z",
-                          "completed_at": "2026-05-15T09:15:00Z",
-                          "reviewed_by_user_id": "u-2",
-                          "reviewed_at": "2026-05-15T09:20:00Z"},
+                "p1-s1": {
+                    "started_at": "2026-05-15T08:02:00Z",
+                    "completed_at": "2026-05-15T08:07:00Z",
+                    "edited_by_user_id": "u-1",
+                    "edited_at": "2026-05-15T08:08:00Z",
+                },
+                "p1-s2": {
+                    "started_at": "2026-05-15T08:10:00Z",
+                    "completed_at": "2026-05-15T08:25:00Z",
+                },
+                "p1-s3": {
+                    "started_at": "2026-05-15T08:30:00Z",
+                    "completed_at": "2026-05-15T09:00:00Z",
+                },
+                "p1-s4": {
+                    "started_at": "2026-05-15T09:05:00Z",
+                    "completed_at": "2026-05-15T09:15:00Z",
+                    "reviewed_by_user_id": "u-2",
+                    "reviewed_at": "2026-05-15T09:20:00Z",
+                },
             },
             notes=[
-                {"content": "Buffer foamed unexpectedly", "flags": ["anomaly"],
-                 "author_id": "u-1", "author_name": "Olivia", "created_at": "2026-05-15T08:11:00Z"},
-                {"content": "Probe drift suspected", "flags": ["anomaly"],
-                 "author_id": "u-2", "author_name": "Robin", "created_at": "2026-05-15T09:06:00Z"},
-                {"content": "Routine handoff to next shift", "flags": [],
-                 "author_id": "u-1", "author_name": "Olivia", "created_at": "2026-05-15T09:00:00Z"},
+                {
+                    "content": "Buffer foamed unexpectedly",
+                    "flags": ["anomaly"],
+                    "author_id": "u-1",
+                    "author_name": "Olivia",
+                    "created_at": "2026-05-15T08:11:00Z",
+                },
+                {
+                    "content": "Probe drift suspected",
+                    "flags": ["anomaly"],
+                    "author_id": "u-2",
+                    "author_name": "Robin",
+                    "created_at": "2026-05-15T09:06:00Z",
+                },
+                {
+                    "content": "Routine handoff to next shift",
+                    "flags": [],
+                    "author_id": "u-1",
+                    "author_name": "Olivia",
+                    "created_at": "2026-05-15T09:00:00Z",
+                },
             ],
         ),
         expected_on=["Kitchen Sink"],
@@ -180,15 +281,22 @@ def build_p1() -> BuiltPermutation:
         # per-template overrides describe what each side must surface.
         per_template_expected_on={
             "sop": [
-                "Kitchen Sink", "SOP-CC-001",
+                "Kitchen Sink",
+                "SOP-CC-001",
                 # Numbered headings from the GLP/bioreactor-style SOP layout
-                "1.0 Purpose", "2.0 Scope", "3.0 Procedure",
+                "1.0 Purpose",
+                "2.0 Scope",
+                "3.0 Procedure",
                 # Body text from the populated metadata fields
-                "Define the cell culture", "Applies to clone PD-7",
+                "Define the cell culture",
+                "Applies to clone PD-7",
                 # Role subsection headers (3.1, 3.2 ...) — P1 has two roles
-                "Operator", "Reviewer",
+                "Operator",
+                "Reviewer",
                 # Step rows from the procedure table
-                "Weigh media", "Mix buffer", "Verify pH",
+                "Weigh media",
+                "Mix buffer",
+                "Verify pH",
             ],
             "batch_record": [
                 "Kitchen Sink",
@@ -202,13 +310,18 @@ def build_p1() -> BuiltPermutation:
                 # F-0086: lot row binds to lot_number and is gated on
                 # produces_lot=True. The cell now surfaces the lot number,
                 # not the run name.
-                "Batch / Lot Number", "LOT-2026-001",
+                "Batch / Lot Number",
+                "LOT-2026-001",
                 # Notes appear in the Deviations section
-                "Robin", "Olivia",
+                "Robin",
+                "Olivia",
                 # Step-execution table column captions
-                "Verifier", "Operator",
+                "Verifier",
+                "Operator",
                 # Step rows from the execution table
-                "Weigh media", "Mix buffer", "Verify pH",
+                "Weigh media",
+                "Mix buffer",
+                "Verify pH",
             ],
         },
         per_template_expected_off={
@@ -226,15 +339,20 @@ def build_p1() -> BuiltPermutation:
 
 # ---------- P2: Minimal flat experiment ----------
 
+
 def build_p2() -> BuiltPermutation:
-    steps = [_step("p2-s1", "Pipette sample", duration=5),
-             _step("p2-s2", "Read absorbance", duration=2)]
+    steps = [
+        _step("p2-s1", "Pipette sample", duration=5),
+        _step("p2-s2", "Read absorbance", duration=2),
+    ]
     return BuiltPermutation(
         name="P2_minimal",
         kwargs=dict(
             protocol_name="P2 — Minimal Experiment",
-            project_name="Demo", organization_name="Trellis",
-            is_role_based=False, flat_steps=steps,
+            project_name="Demo",
+            organization_name="Trellis",
+            is_role_based=False,
+            flat_steps=steps,
         ),
         expected_on=["Minimal Experiment", "1.0 Purpose", "Pipette sample"],
         # Rendered against SOP only: the GLP-style BR-only sections / fields
@@ -251,19 +369,35 @@ def build_p2() -> BuiltPermutation:
 
 # ---------- P3: Role-based, no time, with equipment ----------
 
+
 def build_p3() -> BuiltPermutation:
     roles = [
-        _role("Operator", [
-            _step("p3-s1", "Harvest", duration=20,
-                  equipment=[{"local_id": "E-010", "name": "Centrifuge", "description": "Beckman"}]),
-        ]),
+        _role(
+            "Operator",
+            [
+                _step(
+                    "p3-s1",
+                    "Harvest",
+                    duration=20,
+                    equipment=[
+                        {
+                            "local_id": "E-010",
+                            "name": "Centrifuge",
+                            "description": "Beckman",
+                        }
+                    ],
+                ),
+            ],
+        ),
     ]
     return BuiltPermutation(
         name="P3_role_no_time",
         kwargs=dict(
             protocol_name="P3 — Harvest (no time)",
-            project_name="Demo", organization_name="Trellis",
-            is_role_based=True, roles_with_steps=roles,
+            project_name="Demo",
+            organization_name="Trellis",
+            is_role_based=True,
+            roles_with_steps=roles,
             time_enabled=False,
         ),
         # The SOP layout does not surface per-step equipment names — assert
@@ -283,16 +417,22 @@ def build_p3() -> BuiltPermutation:
 
 # ---------- P4: Flat with time ----------
 
+
 def build_p4() -> BuiltPermutation:
-    steps = [_step("p4-s1", "Pre-warm", duration=10),
-             _step("p4-s2", "Inoculate", duration=5)]
+    steps = [
+        _step("p4-s1", "Pre-warm", duration=10),
+        _step("p4-s2", "Inoculate", duration=5),
+    ]
     return BuiltPermutation(
         name="P4_flat_with_time",
         kwargs=dict(
             protocol_name="P4 — Flat Timed",
-            project_name="Demo", organization_name="Trellis",
-            is_role_based=False, flat_steps=steps,
-            time_enabled=True, start_time="08:00",
+            project_name="Demo",
+            organization_name="Trellis",
+            is_role_based=False,
+            flat_steps=steps,
+            time_enabled=True,
+            start_time="08:00",
         ),
         # GLP-style BR no longer has a "Scheduled" column. Assert on the
         # protocol title plus always-present skeleton headings + the step
@@ -312,32 +452,61 @@ def build_p4() -> BuiltPermutation:
 
 # ---------- P5: Unapproved + deviations + reviewer ----------
 
+
 def build_p5() -> BuiltPermutation:
     roles = [
-        _role("Operator", [
-            _step("p5-s1", "Adjust pH", duration=5,
-                  equipment=[{"local_id": "E-020", "name": "pH Probe"}]),
-            _step("p5-s2", "Sample", duration=5),
-        ]),
+        _role(
+            "Operator",
+            [
+                _step(
+                    "p5-s1",
+                    "Adjust pH",
+                    duration=5,
+                    equipment=[{"local_id": "E-020", "name": "pH Probe"}],
+                ),
+                _step("p5-s2", "Sample", duration=5),
+            ],
+        ),
     ]
     return BuiltPermutation(
         name="P5_unapproved_deviations",
         kwargs=dict(
             protocol_name="P5 — Unapproved Run with Deviations",
-            project_name="Demo", organization_name="Trellis",
-            is_role_based=True, roles_with_steps=roles,
-            time_enabled=True, start_time="07:30",
+            project_name="Demo",
+            organization_name="Trellis",
+            is_role_based=True,
+            roles_with_steps=roles,
+            time_enabled=True,
+            start_time="07:30",
             user_map={"u-3": "Sam Sampler"},
             execution_data={
-                "p5-s1": {"reviewed_by_user_id": "u-3", "reviewed_at": "2026-05-15T07:45:00Z"},
+                "p5-s1": {
+                    "reviewed_by_user_id": "u-3",
+                    "reviewed_at": "2026-05-15T07:45:00Z",
+                },
             },
             notes=[
-                {"content": "pH undershoot", "flags": ["anomaly"],
-                 "author_id": "u-3", "author_name": "Sam", "created_at": "t1"},
-                {"content": "Sample cloudy", "flags": ["anomaly"],
-                 "author_id": "u-3", "author_name": "Sam", "created_at": "t2"},
-                {"content": "Sensor recalibrated", "flags": ["anomaly"],
-                 "author_id": "u-3", "author_name": "Sam", "created_at": "t3"},
+                {
+                    "content": "pH undershoot",
+                    "flags": ["anomaly"],
+                    "author_id": "u-3",
+                    "author_name": "Sam",
+                    "created_at": "t1",
+                },
+                {
+                    "content": "Sample cloudy",
+                    "flags": ["anomaly"],
+                    "author_id": "u-3",
+                    "author_name": "Sam",
+                    "created_at": "t2",
+                },
+                {
+                    "content": "Sensor recalibrated",
+                    "flags": ["anomaly"],
+                    "author_id": "u-3",
+                    "author_name": "Sam",
+                    "created_at": "t3",
+                },
             ],
         ),
         # "Unapproved" matches via the protocol title; the GLP BR layout
@@ -355,12 +524,14 @@ def build_p5() -> BuiltPermutation:
         renders_against=("batch_record",),
         # unapproved_warning is not set by build_context; inject it manually
         # so the template's conditional block renders the warning text.
-        context_overrides={"unapproved_warning":
-                           "Unapproved — this run lacks an approval signature."},
+        context_overrides={
+            "unapproved_warning": "Unapproved — this run lacks an approval signature."
+        },
     )
 
 
 # ---------- P6: Multi-event approval history ----------
+
 
 def build_p6() -> BuiltPermutation:
     roles = [_role("Operator", [_step("p6-s1", "Final review", duration=5)])]
@@ -368,9 +539,12 @@ def build_p6() -> BuiltPermutation:
         name="P6_multi_approval",
         kwargs=dict(
             protocol_name="P6 — Multi-event Approval",
-            project_name="Demo", organization_name="Trellis",
-            is_role_based=True, roles_with_steps=roles,
-            time_enabled=True, start_time="08:00",
+            project_name="Demo",
+            organization_name="Trellis",
+            is_role_based=True,
+            roles_with_steps=roles,
+            time_enabled=True,
+            start_time="08:00",
             lot_number="LOT-2026-006",
             # F-0086: lot row is gated on produces_lot — enable it so the
             # Batch / Lot Number row renders with the lot number.

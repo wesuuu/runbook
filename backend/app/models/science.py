@@ -2,9 +2,22 @@ import uuid
 from datetime import date, datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, Enum,
-                        ForeignKey, Index, Integer, String, Text,
-                        UniqueConstraint, desc, func, text)
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    desc,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

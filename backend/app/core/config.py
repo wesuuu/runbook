@@ -156,10 +156,7 @@ class Settings(BaseSettings):
         / "python"
     )
     docling_script_path: str = str(
-        Path(__file__).resolve().parents[3]
-        / "ext"
-        / "docling-extractor"
-        / "extract.py"
+        Path(__file__).resolve().parents[3] / "ext" / "docling-extractor" / "extract.py"
     )
     docling_num_threads: int = 4
 

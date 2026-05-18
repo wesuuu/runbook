@@ -5,6 +5,7 @@ get_mock_context(), and that no Jinja tokens leak through. Also verifies
 truly optional sections (approval, approval history, critical-requirement
 callout, unapproved warning) are gated out when the context omits them.
 """
+
 import io
 from pathlib import Path
 

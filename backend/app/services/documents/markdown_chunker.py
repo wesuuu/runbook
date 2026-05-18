@@ -10,9 +10,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from app.services.data.text_chunker import (PageData, TextChunk,
-                                            _get_page_number)
-
+from app.services.data.text_chunker import PageData, TextChunk, _get_page_number
 
 # Patterns for Markdown block boundaries
 _HEADING_RE = re.compile(r"^#{1,6}\s", re.MULTILINE)
@@ -315,4 +313,3 @@ def _split_long_page(text: str, page_number: int, max_tokens: int) -> list[str]:
         chunks.append("\n\n".join(current_parts))
 
     return chunks
-

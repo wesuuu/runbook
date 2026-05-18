@@ -5,9 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.library import EMBEDDING_DIMENSIONS
-from app.services.ai.embedding import (BATCH_SIZE, EmbeddingError,
-                                       _embed_ollama, _embed_openai_compatible,
-                                       embed_query, embed_texts)
+from app.services.ai.embedding import (
+    BATCH_SIZE,
+    EmbeddingError,
+    _embed_ollama,
+    _embed_openai_compatible,
+    embed_query,
+    embed_texts,
+)
 from app.services.documents.document_processor import _pad_embedding
 
 

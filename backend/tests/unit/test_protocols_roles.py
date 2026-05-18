@@ -6,11 +6,16 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            PermissionLevel, PrincipalType, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
 from app.models.science import Project, Protocol, ProtocolRole
-from app.services.protocols.roles import (add_role, list_roles, remove_role,
-                                          update_role)
+from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
 
 
 @pytest_asyncio.fixture

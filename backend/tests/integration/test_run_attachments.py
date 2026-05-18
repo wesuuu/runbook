@@ -5,8 +5,7 @@ from io import BytesIO
 import pytest
 import pytest_asyncio
 
-from app.models.iam import (ObjectPermission, ObjectType, PermissionLevel,
-                            PrincipalType)
+from app.models.iam import ObjectPermission, ObjectType, PermissionLevel, PrincipalType
 from app.models.science import Run, RunRoleAssignment
 
 

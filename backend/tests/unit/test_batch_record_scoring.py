@@ -1,8 +1,12 @@
 """Unit tests for batch_record_scoring (no LLM)."""
 
-from tests.benchmarks.batch_record_scoring import (RunScoreDetails, RunScores,
-                                                   _fuzzy_match,
-                                                   _numeric_equal, _unit_equal)
+from tests.benchmarks.batch_record_scoring import (
+    RunScoreDetails,
+    RunScores,
+    _fuzzy_match,
+    _numeric_equal,
+    _unit_equal,
+)
 
 
 def test_run_scores_defaults():

@@ -10,11 +10,9 @@ import json
 import logging
 from uuid import UUID
 
-from fastapi import (APIRouter, BackgroundTasks, Depends, Form, HTTPException,
-                     UploadFile)
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from starlette.responses import StreamingResponse
 from ulid import ULID
@@ -23,15 +21,20 @@ from app.core.config import settings
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import User
-from app.schemas.template_convert import (ConvertResponse,
-                                          ConvertStartResponse, RefineRequest,
-                                          SaveRequest)
-from app.services.protocols.template_converter import (ConversionState,
-                                                       _active_streams,
-                                                       convert_document,
-                                                       refine_template,
-                                                       reupload_template,
-                                                       save_to_library)
+from app.schemas.template_convert import (
+    ConvertResponse,
+    ConvertStartResponse,
+    RefineRequest,
+    SaveRequest,
+)
+from app.services.protocols.template_converter import (
+    ConversionState,
+    _active_streams,
+    convert_document,
+    refine_template,
+    reupload_template,
+    save_to_library,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

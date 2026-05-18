@@ -6,8 +6,12 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import (create_access_token, create_verification_jwt,
-                               decode_access_token, hash_password)
+from app.core.security import (
+    create_access_token,
+    create_verification_jwt,
+    decode_access_token,
+    hash_password,
+)
 from app.models.iam import User, VerificationToken
 
 # ---------- register ----------
@@ -534,7 +538,8 @@ async def test_update_preferences_persists_theme(
 
 @pytest.mark.asyncio
 async def test_update_preferences_rejects_unknown_theme(
-    client: AsyncClient, auth_headers: dict,
+    client: AsyncClient,
+    auth_headers: dict,
 ):
     resp = await client.put(
         "/auth/me/preferences",

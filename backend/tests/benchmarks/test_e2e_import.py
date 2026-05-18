@@ -17,9 +17,13 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.science import Protocol, ProtocolRole, UnitOpDefinition
-from tests.benchmarks.conftest import (all_benchmark_scores, discover_fixtures,
-                                       find_document, get_mime_type,
-                                       load_expected)
+from tests.benchmarks.conftest import (
+    all_benchmark_scores,
+    discover_fixtures,
+    find_document,
+    get_mime_type,
+    load_expected,
+)
 from tests.benchmarks.scoring import print_score_report, score_proposal
 
 _fixture_dirs = discover_fixtures()

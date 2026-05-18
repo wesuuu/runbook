@@ -4,32 +4,53 @@ from pathlib import Path
 from typing import List
 from uuid import UUID
 
-from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
-                     HTTPException, Query, UploadFile)
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import (get_current_user, get_or_404,
-                           require_active_subscription, require_permission)
+from app.core.deps import (
+    get_current_user,
+    get_or_404,
+    require_active_subscription,
+    require_permission,
+)
 from app.db.session import get_db
-from app.models.iam import (ObjectType, OrganizationMember, OrgRole,
-                            PermissionLevel, User)
-from app.models.science import (Project, Protocol, ProtocolRole,
-                                ProtocolVersion, Run)
-from app.schemas.science import (DesignateApprovalRequest, ProtocolCreate,
-                                 ProtocolImportFinalizeRequest,
-                                 ProtocolImportProposalResponse,
-                                 ProtocolRefineRequest, ProtocolResponse,
-                                 ProtocolRoleCreate, ProtocolRoleResponse,
-                                 ProtocolRoleUpdate, ProtocolUpdate)
+from app.models.iam import (
+    ObjectType,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    User,
+)
+from app.models.science import Project, Protocol, ProtocolRole, ProtocolVersion, Run
+from app.schemas.science import (
+    DesignateApprovalRequest,
+    ProtocolCreate,
+    ProtocolImportFinalizeRequest,
+    ProtocolImportProposalResponse,
+    ProtocolRefineRequest,
+    ProtocolResponse,
+    ProtocolRoleCreate,
+    ProtocolRoleResponse,
+    ProtocolRoleUpdate,
+    ProtocolUpdate,
+)
 from app.services.approvals import write_event
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.protocols.lookup import get_protocol_full, list_protocols
-from app.services.protocols.roles import (add_role, list_roles, remove_role,
-                                          update_role)
+from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +113,7 @@ async def create_protocol(
             raise HTTPException(403, "Org admin required for organization protocols")
 
     # Resolve default template IDs: project > org > system
-    from app.services.protocols.template_engine import \
-        resolve_default_template_id
+    from app.services.protocols.template_engine import resolve_default_template_id
 
     org_id = protocol.organization_id
     if not org_id and protocol.project_id:
@@ -168,9 +188,11 @@ async def import_protocol(
 ):
     """Upload a protocol document and get an AI-generated import proposal."""
     from app.models.science import UnitOpDefinition
-    from app.services.protocols.protocol_importer import (build_proposal,
-                                                          extract_text,
-                                                          parse_protocol_text)
+    from app.services.protocols.protocol_importer import (
+        build_proposal,
+        extract_text,
+        parse_protocol_text,
+    )
 
     # Validate file type
     allowed_types = {
@@ -272,8 +294,7 @@ async def finalize_protocol_import(
     _: User = Depends(require_active_subscription()),
 ):
     """Finalize a protocol import: create unit ops, roles, and protocol."""
-    from app.services.protocols.protocol_importer import (StepProposal,
-                                                          finalize_import)
+    from app.services.protocols.protocol_importer import StepProposal, finalize_import
 
     # Validate scope
     if request.project_id and request.organization_id:

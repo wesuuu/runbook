@@ -3,10 +3,15 @@ from datetime import timedelta
 
 import pytest
 
-from app.core.security import (TokenPayload, create_access_token,
-                               create_verification_jwt, decode_access_token,
-                               generate_verification_token, hash_password,
-                               verify_password)
+from app.core.security import (
+    TokenPayload,
+    create_access_token,
+    create_verification_jwt,
+    decode_access_token,
+    generate_verification_token,
+    hash_password,
+    verify_password,
+)
 
 
 def test_hash_verify_roundtrip():

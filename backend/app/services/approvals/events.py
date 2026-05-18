@@ -9,8 +9,7 @@ from typing import Optional
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import (Protocol, ProtocolApprovalEvent,
-                                ProtocolApprovalRequest)
+from app.models.science import Protocol, ProtocolApprovalEvent, ProtocolApprovalRequest
 from app.services.core.audit import log_audit
 
 VALID_ACTIONS = ("SUBMITTED", "APPROVED", "REJECTED", "REVERTED")

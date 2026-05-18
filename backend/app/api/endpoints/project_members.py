@@ -8,8 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
-                            OrgRole, PermissionLevel, TeamMember, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    TeamMember,
+    User,
+)
 from app.models.science import Project
 from app.schemas.iam import UserSearchResponse
 from app.services.core.permissions import check_permission

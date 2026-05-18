@@ -28,9 +28,7 @@ def ensure_cursive_font_registered() -> None:
     dest_dir = Path.home() / ".fonts"
     dest = dest_dir / _FONT_FILENAME
 
-    needs_install = (
-        not dest.exists() or dest.stat().st_mtime < src.stat().st_mtime
-    )
+    needs_install = not dest.exists() or dest.stat().st_mtime < src.stat().st_mtime
     if not needs_install:
         return
 
@@ -45,6 +43,4 @@ def ensure_cursive_font_registered() -> None:
             capture_output=True,
         )
     except (FileNotFoundError, subprocess.SubprocessError) as e:
-        logger.warning(
-            "fc-cache failed; cursive fallback may not render: %s", e
-        )
+        logger.warning("fc-cache failed; cursive fallback may not render: %s", e)

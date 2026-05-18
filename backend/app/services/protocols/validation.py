@@ -657,9 +657,7 @@ def _chain_layout_issues(
         src_label = (src_lane.get("data") or {}).get("label") or "<lane>"
         tgt_label = (tgt_lane.get("data") or {}).get("label") or "<lane>"
         direction = "above" if graph_layout == "horizontal" else "to the left of"
-        reorder_hint = (
-            "below" if graph_layout == "horizontal" else "to the right of"
-        )
+        reorder_hint = "below" if graph_layout == "horizontal" else "to the right of"
         issues.append(
             ValidationIssue(
                 severity="warning",
@@ -818,8 +816,7 @@ def assert_no_branch_errors(
     Other validation issues (warnings, missing process start, etc.) are not
     enforced here — callers handle them separately if needed.
     """
-    from fastapi import \
-        HTTPException  # noqa: PLC0415 — keep validation.py import-light
+    from fastapi import HTTPException  # noqa: PLC0415 — keep validation.py import-light
 
     result = validate_protocol_graph(graph, unit_ops)
     blocking = [i for i in result.issues if i.code == "branch_requires_distinct_roles"]

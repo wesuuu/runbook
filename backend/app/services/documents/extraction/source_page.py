@@ -14,9 +14,7 @@ def render_source_page(pdf_path: Path, page_number: int, dpi: int = 96) -> bytes
     doc = pymupdf.open(str(pdf_path))
     try:
         if page_number < 1 or page_number > len(doc):
-            raise ValueError(
-                f"page {page_number} out of range (1..{len(doc)})"
-            )
+            raise ValueError(f"page {page_number} out of range (1..{len(doc)})")
         page = doc[page_number - 1]
         zoom = dpi / 72.0
         pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))

@@ -2,8 +2,16 @@ import uuid
 from enum import Enum
 from typing import Any, Optional
 
-from sqlalchemy import (Boolean, CheckConstraint, DateTime, ForeignKey, Index,
-                        Integer, String, Text)
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

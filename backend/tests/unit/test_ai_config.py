@@ -9,8 +9,12 @@ from app.core.config import ProviderConfig, settings
 from app.core.security import hash_password
 from app.models.ai import AiProviderConfig
 from app.models.iam import Organization, OrganizationMember, User
-from app.services.ai.ai_config import (_build_model_string, _get_env_fallback,
-                                       get_full_config, get_model)
+from app.services.ai.ai_config import (
+    _build_model_string,
+    _get_env_fallback,
+    get_full_config,
+    get_model,
+)
 
 
 class TestBuildModelString:

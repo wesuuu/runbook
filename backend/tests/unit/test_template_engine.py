@@ -12,9 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from app.services.protocols.template_engine import (build_context,
-                                                    render_to_docx,
-                                                    render_to_pdf)
+from app.services.protocols.template_engine import (
+    build_context,
+    render_to_docx,
+    render_to_pdf,
+)
 
 ARTIFACTS_DIR = Path(__file__).parent.parent / "artifacts" / "templates"
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "images"
@@ -406,8 +408,7 @@ TIME_COURSE_POINTS = [
             {
                 "time": "T=3 h",
                 "action": (
-                    "Visually inspect headspace foam height; compare to "
-                    "Figure 2."
+                    "Visually inspect headspace foam height; compare to " "Figure 2."
                 ),
                 "output": "PASS / FAIL noted in eBR; foam height (mm).",
             },
@@ -440,8 +441,7 @@ TIME_COURSE_POINTS = [
             {
                 "time": "T=6 h +20 min",
                 "action": (
-                    "Initiate bolus feed (Feed-A, 50 mL) via peristaltic "
-                    "pump P-02."
+                    "Initiate bolus feed (Feed-A, 50 mL) via peristaltic " "pump P-02."
                 ),
                 "output": "Feed start time, pump RPM, and totaliser reading.",
             },

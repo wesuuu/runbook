@@ -9,12 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
-from app.models.iam import (ObjectType, OrganizationMember, OrgRole,
-                            PermissionLevel, User)
+from app.models.iam import (
+    ObjectType,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    User,
+)
 from app.models.science import Project, UnitOpDefinition
-from app.schemas.science import (UnitOpDefinitionCreate,
-                                 UnitOpDefinitionResponse,
-                                 UnitOpDefinitionUpdate)
+from app.schemas.science import (
+    UnitOpDefinitionCreate,
+    UnitOpDefinitionResponse,
+    UnitOpDefinitionUpdate,
+)
 from app.services.core.permissions import check_permission
 from app.services.protocols.unit_ops import create_unit_op_definition
 
@@ -166,8 +173,11 @@ async def create_unit_op(
             )
 
         allowed = await check_permission(
-            db, user.id, ObjectType.PROJECT,
-            unit_op.project_id, PermissionLevel.EDIT,
+            db,
+            user.id,
+            ObjectType.PROJECT,
+            unit_op.project_id,
+            PermissionLevel.EDIT,
         )
         if not allowed:
             raise HTTPException(

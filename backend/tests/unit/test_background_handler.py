@@ -3,8 +3,13 @@ from unittest.mock import patch
 import pytest
 
 from app.services.core.background_handler import (
-    BackgroundHandler, CloudGpuBackgroundHandler, JOB_REGISTRY,
-    LocalBackgroundHandler, get_background_handler, register_job)
+    JOB_REGISTRY,
+    BackgroundHandler,
+    CloudGpuBackgroundHandler,
+    LocalBackgroundHandler,
+    get_background_handler,
+    register_job,
+)
 
 
 def test_factory_returns_local_by_default():

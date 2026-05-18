@@ -1,12 +1,16 @@
 from datetime import datetime, timezone
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 
 from app.models.library import DocumentStatus, RefinementStatus
 from app.services.documents.refinement.refinement_service import (
-    mark_complete, mark_in_progress, reopen, save_markdown)
+    mark_complete,
+    mark_in_progress,
+    reopen,
+    save_markdown,
+)
 
 
 def _doc(refinement_status=RefinementStatus.PENDING.value):

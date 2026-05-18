@@ -1,7 +1,9 @@
-from app.services.core.notifications.channels.base import (BaseChannel,
-                                                           FormattedMessage,
-                                                           PermanentError,
-                                                           TransientError)
+from app.services.core.notifications.channels.base import (
+    BaseChannel,
+    FormattedMessage,
+    PermanentError,
+    TransientError,
+)
 from app.services.core.notifications.channels.console import ConsoleChannel
 from app.services.core.notifications.channels.discord import DiscordChannel
 from app.services.core.notifications.channels.email import EmailChannel

@@ -196,8 +196,7 @@ async def _recover_stalled_documents() -> None:
     Uses SELECT … FOR UPDATE SKIP LOCKED so multiple pods starting
     simultaneously won't double-process.
     """
-    from app.models.library import (STALE_PROCESSING_SECONDS, Document,
-                                    DocumentStatus)
+    from app.models.library import STALE_PROCESSING_SECONDS, Document, DocumentStatus
 
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -217,10 +216,12 @@ async def _recover_stalled_documents() -> None:
                     or_(
                         Document.status == DocumentStatus.UPLOADED.value,
                         (
-                            Document.status.in_([
-                                DocumentStatus.EXTRACTING.value,
-                                DocumentStatus.PROCESSING.value,
-                            ])
+                            Document.status.in_(
+                                [
+                                    DocumentStatus.EXTRACTING.value,
+                                    DocumentStatus.PROCESSING.value,
+                                ]
+                            )
                             & (
                                 (Document.processing_started_at == None)  # noqa: E711
                                 | (Document.processing_started_at < stale_cutoff)
@@ -355,8 +356,7 @@ async def lifespan(app: FastAPI):
 
     # Make the cursive fallback font visible to LibreOffice for PDF
     # rendering (F-0080)
-    from app.services.documents.font_setup import \
-        ensure_cursive_font_registered
+    from app.services.documents.font_setup import ensure_cursive_font_registered
 
     ensure_cursive_font_registered()
 
@@ -421,13 +421,34 @@ async def health_check():
     return {"status": "ok", "service": "batchrite-backend"}
 
 
-from app.api.endpoints import (admin, ai, auth, batch_record_import, billing,
-                               chat, dashboard, experiments, export_data, iam,
-                               internal, legal, library, notifications, offline,
-                               onboarding, project_members, projects,
-                               protocol_pdfs, protocol_versions, protocols,
-                               runs, sync, template_convert, templates,
-                               unit_ops)
+from app.api.endpoints import (
+    admin,
+    ai,
+    auth,
+    batch_record_import,
+    billing,
+    chat,
+    dashboard,
+    experiments,
+    export_data,
+    iam,
+    internal,
+    legal,
+    library,
+    notifications,
+    offline,
+    onboarding,
+    project_members,
+    projects,
+    protocol_pdfs,
+    protocol_versions,
+    protocols,
+    runs,
+    sync,
+    template_convert,
+    templates,
+    unit_ops,
+)
 
 app.include_router(internal.router)  # no prefix — router already has /internal
 app.include_router(admin.router, prefix="/admin", tags=["admin"])

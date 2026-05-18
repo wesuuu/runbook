@@ -3,6 +3,7 @@
 These exercise the full HTTP path so the service-layer helpers and the
 endpoint plumbing are tested together.
 """
+
 import copy
 
 import pytest
@@ -42,9 +43,7 @@ def _sample_protocol_graph() -> dict:
                     "params": {"rpm": 4000},
                     "equipment": [{"id": "cf-A", "name": "Centrifuge A"}],
                     "paramSchema": {
-                        "properties": {
-                            "rpm": {"type": "number", "title": "Spin speed"}
-                        }
+                        "properties": {"rpm": {"type": "number", "title": "Spin speed"}}
                     },
                     "description": "Spin at {{rpm}} rpm",
                 },
@@ -113,9 +112,9 @@ async def test_create_run_no_overrides_populates_mirror_fields(
     fresh_protocol = (
         await db_session.execute(select(Protocol).where(Protocol.id == protocol.id))
     ).scalar_one()
-    assert fresh_protocol.graph == original_graph, (
-        "Mutating Run.graph leaked into Protocol.graph — likely a shallow copy bug"
-    )
+    assert (
+        fresh_protocol.graph == original_graph
+    ), "Mutating Run.graph leaked into Protocol.graph — likely a shallow copy bug"
 
 
 @pytest.mark.asyncio
@@ -191,9 +190,9 @@ async def test_create_run_equipment_swap(
         headers=auth_headers,
     )
     assert resp.status_code == 201
-    run = (await db_session.execute(
-        select(Run).where(Run.id == resp.json()["id"])
-    )).scalar_one()
+    run = (
+        await db_session.execute(select(Run).where(Run.id == resp.json()["id"]))
+    ).scalar_one()
     n2 = next(n for n in run.graph["nodes"] if n["id"] == "n2")
     assert n2["data"]["equipment"] == [{"id": "cf-B", "name": "Centrifuge B"}]
     assert n2["data"]["protocol_equipment"] == [{"id": "cf-A", "name": "Centrifuge A"}]
@@ -229,9 +228,9 @@ async def test_create_run_paramSchema_override(
         headers=auth_headers,
     )
     assert resp.status_code == 201
-    run = (await db_session.execute(
-        select(Run).where(Run.id == resp.json()["id"])
-    )).scalar_one()
+    run = (
+        await db_session.execute(select(Run).where(Run.id == resp.json()["id"]))
+    ).scalar_one()
     n1 = next(n for n in run.graph["nodes"] if n["id"] == "n1")
     assert "buffer_lot" in n1["data"]["paramSchema"]["properties"]
     assert "buffer_lot" not in n1["data"]["protocol_paramSchema"]["properties"]
@@ -259,9 +258,9 @@ async def test_create_run_description_override(
         headers=auth_headers,
     )
     assert resp.status_code == 201
-    run = (await db_session.execute(
-        select(Run).where(Run.id == resp.json()["id"])
-    )).scalar_one()
+    run = (
+        await db_session.execute(select(Run).where(Run.id == resp.json()["id"]))
+    ).scalar_one()
     n1 = next(n for n in run.graph["nodes"] if n["id"] == "n1")
     assert n1["data"]["description"] == new_desc
     assert n1["data"]["protocol_description"] == "Mix until pH={{pH}}"
@@ -293,13 +292,15 @@ async def test_create_run_from_specific_version(
         ],
         "edges": [],
     }
-    db_session.add(ProtocolVersion(
-        protocol_id=protocol.id,
-        version_number=1,
-        name=protocol.name,
-        graph=old_graph,
-        is_draft=False,
-    ))
+    db_session.add(
+        ProtocolVersion(
+            protocol_id=protocol.id,
+            version_number=1,
+            name=protocol.name,
+            graph=old_graph,
+            is_draft=False,
+        )
+    )
     # Bump the protocol's current version to 2 so v1 is "old"
     protocol.version_number = 2
     await db_session.flush()
@@ -315,9 +316,9 @@ async def test_create_run_from_specific_version(
         headers=auth_headers,
     )
     assert resp.status_code == 201
-    run = (await db_session.execute(
-        select(Run).where(Run.id == resp.json()["id"])
-    )).scalar_one()
+    run = (
+        await db_session.execute(select(Run).where(Run.id == resp.json()["id"]))
+    ).scalar_one()
     node_ids = {n["id"] for n in run.graph["nodes"]}
     assert node_ids == {"old-n1"}  # snapshotted v1, not the current protocol graph
 
@@ -373,9 +374,7 @@ async def test_update_run_graph_allowed_while_planned(
         headers=auth_headers,
     )
     assert resp.status_code == 200
-    n1_resp = next(
-        n for n in resp.json()["graph"]["nodes"] if n["id"] == "n1"
-    )
+    n1_resp = next(n for n in resp.json()["graph"]["nodes"] if n["id"] == "n1")
     assert n1_resp["data"]["params"]["pH"] == 6.8
 
 
@@ -435,9 +434,7 @@ async def test_update_run_emits_override_edit_audit(
             "name": "Run",
             "project_id": str(test_project.id),
             "protocol_id": str(protocol.id),
-            "overrides": {
-                "nodes": {"n1": {"params": {"pH": 6.8}}}
-            },
+            "overrides": {"nodes": {"n1": {"params": {"pH": 6.8}}}},
         },
         headers=auth_headers,
     )
@@ -458,11 +455,13 @@ async def test_update_run_emits_override_edit_audit(
     assert resp.status_code == 200
 
     audit_q = await db_session.execute(
-        select(AuditLog).where(
+        select(AuditLog)
+        .where(
             (AuditLog.entity_type == "Run")
             & (AuditLog.entity_id == run_id)
             & (AuditLog.action == "OVERRIDE_EDIT")
-        ).order_by(AuditLog.created_at)
+        )
+        .order_by(AuditLog.created_at)
     )
     entries = audit_q.scalars().all()
     fields = sorted((e.changes["step_id"], e.changes["field"]) for e in entries)

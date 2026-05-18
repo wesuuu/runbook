@@ -9,8 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import OrganizationMember, OrgRole, User
-from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
-                                ProtocolApprovalRequest)
+from app.models.science import (
+    Project,
+    Protocol,
+    ProtocolApprovalEvent,
+    ProtocolApprovalRequest,
+)
 
 
 async def list_awaiting_for_user(

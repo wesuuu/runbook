@@ -44,13 +44,9 @@ async def index_refined_document(
     committing.
     """
     if not doc.stored_markdown:
-        raise IndexingError(
-            f"Document {doc.id} has no stored_markdown to index"
-        )
+        raise IndexingError(f"Document {doc.id} has no stored_markdown to index")
 
-    await db.execute(
-        delete(DocumentChunk).where(DocumentChunk.document_id == doc.id)
-    )
+    await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc.id))
     await db.flush()
 
     chunks = chunk_markdown(doc.stored_markdown, 1000, 200, None)
@@ -67,9 +63,7 @@ async def index_refined_document(
             org_id=doc.org_id,
         )
     except EmbeddingError as exc:
-        raise IndexingError(
-            f"Embedding failed for document {doc.id}: {exc}"
-        ) from exc
+        raise IndexingError(f"Embedding failed for document {doc.id}: {exc}") from exc
 
     for i, chunk in enumerate(chunks):
         emb = _pad_embedding(embeddings[i]) if i < len(embeddings) else None

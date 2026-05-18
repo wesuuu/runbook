@@ -9,8 +9,14 @@ from pydantic_ai import RunContext
 from app.services.ai.deps import ChatDeps
 from app.services.ai.subagents.protocol_builder import build
 from app.services.ai.subagents.protocol_builder.tools import (
-    ProtocolStepInput, create_protocol, create_unit_op, list_projects,
-    list_unit_ops, update_protocol_step, validate_protocol)
+    ProtocolStepInput,
+    create_protocol,
+    create_unit_op,
+    list_projects,
+    list_unit_ops,
+    update_protocol_step,
+    validate_protocol,
+)
 
 
 def make_ctx() -> RunContext[ChatDeps]:
@@ -27,11 +33,20 @@ def make_ctx() -> RunContext[ChatDeps]:
 
 def test_build_returns_subagent_config():
     from app.services.ai.subagents.protocol_builder.tools import (
-        add_protocol_role, add_protocol_step, elevate_unit_op_scope,
-        get_protocol, list_protocol_roles, list_protocols,
-        remove_protocol_role, remove_protocol_step, reorder_protocol_steps,
-        replace_step_unit_op, update_protocol_metadata, update_protocol_role,
-        update_unit_op)
+        add_protocol_role,
+        add_protocol_step,
+        elevate_unit_op_scope,
+        get_protocol,
+        list_protocol_roles,
+        list_protocols,
+        remove_protocol_role,
+        remove_protocol_step,
+        reorder_protocol_steps,
+        replace_step_unit_op,
+        update_protocol_metadata,
+        update_protocol_role,
+        update_unit_op,
+    )
 
     cfg = build("openai:gpt-4.1-mini")
     assert cfg["name"] == "protocol_builder"
@@ -173,8 +188,10 @@ async def test_update_protocol_step_delegates_to_service(monkeypatch):
 
 import uuid as _uuid
 
-from app.services.ai.subagents.protocol_builder.tools import (get_protocol,
-                                                              list_protocols)
+from app.services.ai.subagents.protocol_builder.tools import (
+    get_protocol,
+    list_protocols,
+)
 
 
 @pytest.mark.asyncio
@@ -260,8 +277,12 @@ async def test_get_protocol_tool_returns_error_on_value_error(monkeypatch):
 
 
 from app.services.ai.subagents.protocol_builder.tools import (
-    add_protocol_step, remove_protocol_step, reorder_protocol_steps,
-    replace_step_unit_op, update_protocol_metadata)
+    add_protocol_step,
+    remove_protocol_step,
+    reorder_protocol_steps,
+    replace_step_unit_op,
+    update_protocol_metadata,
+)
 
 
 @pytest.mark.asyncio
@@ -413,8 +434,11 @@ async def test_replace_step_unit_op_tool(monkeypatch):
 
 
 from app.services.ai.subagents.protocol_builder.tools import (
-    add_protocol_role, list_protocol_roles, remove_protocol_role,
-    update_protocol_role)
+    add_protocol_role,
+    list_protocol_roles,
+    remove_protocol_role,
+    update_protocol_role,
+)
 
 
 @pytest.mark.asyncio
@@ -509,7 +533,9 @@ async def test_remove_protocol_role_tool(monkeypatch):
 
 
 from app.services.ai.subagents.protocol_builder.tools import (
-    elevate_unit_op_scope, update_unit_op)
+    elevate_unit_op_scope,
+    update_unit_op,
+)
 
 
 @pytest.mark.asyncio

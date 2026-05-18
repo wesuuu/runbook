@@ -96,9 +96,9 @@ def extract_pdf_pages(path: Path, render_images: bool = True) -> list:
     Returns:
         List of PageData objects, one per PDF page (1-indexed).
     """
-    from app.services.data.text_chunker import PageData
-
     import pymupdf
+
+    from app.services.data.text_chunker import PageData
 
     doc = pymupdf.open(str(path))
     try:

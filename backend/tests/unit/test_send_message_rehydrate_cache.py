@@ -13,8 +13,10 @@ cache bounded at flush time.
 
 from __future__ import annotations
 
-from app.services.ai.send_message import (_EXTERNAL_PROTOCOL_CACHE_MAX,
-                                          _trim_external_protocol_cache)
+from app.services.ai.send_message import (
+    _EXTERNAL_PROTOCOL_CACHE_MAX,
+    _trim_external_protocol_cache,
+)
 
 
 def test_trim_noop_when_under_cap():

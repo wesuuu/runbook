@@ -13,16 +13,23 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.batch_record_import import (BatchRecordImport,
-                                            BatchRecordImportStatus)
+from app.models.batch_record_import import BatchRecordImport, BatchRecordImportStatus
 from app.models.execution import AuditLog
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            PermissionLevel, PrincipalType, User)
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
 from app.models.jobs import BackgroundJob, JobStatus
 from app.models.science import Project, Protocol, Run
-from app.services.batch.batch_record_extractor import (BatchRecordExtraction,
-                                                       ParamMapping,
-                                                       StepMapping)
+from app.services.batch.batch_record_extractor import (
+    BatchRecordExtraction,
+    ParamMapping,
+    StepMapping,
+)
 from app.services.core.background_jobs import BackgroundJobService
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"

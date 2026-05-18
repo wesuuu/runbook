@@ -8,8 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
-                                ProtocolApprovalRequest)
+from app.models.science import (
+    Project,
+    Protocol,
+    ProtocolApprovalEvent,
+    ProtocolApprovalRequest,
+)
 
 
 async def _make_user(

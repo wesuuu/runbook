@@ -2,12 +2,15 @@
 
 import pytest
 
-from app.services.documents.pdf_base import (DEFAULT_FORMAT,
-                                             _build_param_sentence,
-                                             _format_value,
-                                             _get_editable_params,
-                                             _get_param_title,
-                                             _render_template, _resolve_format)
+from app.services.documents.pdf_base import (
+    DEFAULT_FORMAT,
+    _build_param_sentence,
+    _format_value,
+    _get_editable_params,
+    _get_param_title,
+    _render_template,
+    _resolve_format,
+)
 
 
 class TestFormatValue:

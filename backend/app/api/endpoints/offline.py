@@ -12,9 +12,14 @@ from app.core.security import create_offline_token, verify_password
 from app.models.iam import User
 from app.models.offline import RevokedOfflineToken
 from app.models.science import Run, RunRoleAssignment, UnitOpDefinition
-from app.schemas.offline import (OfflineSessionRequest, OfflineSessionResponse,
-                                 RevokedTokenResponse, RevokeTokenRequest,
-                                 RoleAssignmentPrefetch, RunPrefetchResponse)
+from app.schemas.offline import (
+    OfflineSessionRequest,
+    OfflineSessionResponse,
+    RevokedTokenResponse,
+    RevokeTokenRequest,
+    RoleAssignmentPrefetch,
+    RunPrefetchResponse,
+)
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 

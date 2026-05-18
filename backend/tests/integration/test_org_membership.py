@@ -14,8 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
-from app.models.iam import (Invitation, Organization, OrganizationMember, Team,
-                            TeamMember, User)
+from app.models.iam import (
+    Invitation,
+    Organization,
+    OrganizationMember,
+    Team,
+    TeamMember,
+    User,
+)
 
 # ---------- Fixtures ----------
 
@@ -1010,10 +1016,17 @@ class TestSeedOrgMembership:
     @pytest.mark.asyncio
     async def test_seed_users_have_selected_org(self):
         """Verify the seed script sets selected_org_id for all users."""
-        from app.db.seed import (ORG_ID, USER_ADMIN, USER_DOWNSTREAM_LEAD,
-                                 USER_SCIENTIST1, USER_SCIENTIST2,
-                                 USER_UPSTREAM_LEAD, USER_VIEWER, seed_org,
-                                 seed_users)
+        from app.db.seed import (
+            ORG_ID,
+            USER_ADMIN,
+            USER_DOWNSTREAM_LEAD,
+            USER_SCIENTIST1,
+            USER_SCIENTIST2,
+            USER_UPSTREAM_LEAD,
+            USER_VIEWER,
+            seed_org,
+            seed_users,
+        )
         from app.db.session import AsyncSessionLocal
 
         async with AsyncSessionLocal() as db:

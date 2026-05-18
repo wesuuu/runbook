@@ -138,9 +138,7 @@ COMPETENT_FIXTURE = (
     / "openwetware"
     / "preparing_chemically_competent_cells.wikitext"
 ).read_text()
-COMPETENT_URL = (
-    "https://openwetware.org/wiki/Preparing_chemically_competent_cells"
-)
+COMPETENT_URL = "https://openwetware.org/wiki/Preparing_chemically_competent_cells"
 
 
 def test_parser_skips_sub_bullets_and_biblio():
@@ -151,9 +149,9 @@ def test_parser_skips_sub_bullets_and_biblio():
     )
     texts = [s.text for s in p.steps]
     # No biblio entries should leak in as steps.
-    assert not any("pmid=" in t for t in texts), (
-        f"Biblio entries leaked as steps: {[t for t in texts if 'pmid=' in t]}"
-    )
+    assert not any(
+        "pmid=" in t for t in texts
+    ), f"Biblio entries leaked as steps: {[t for t in texts if 'pmid=' in t]}"
     # No `#*` sub-bullet content should be a top-level step. Look for
     # signature substrings unique to the sub-bullets on this page.
     assert not any("PCR tubes also work" in t for t in texts)
@@ -164,6 +162,4 @@ def test_parser_skips_sub_bullets_and_biblio():
     assert any("Centrifuge for 10 min" in t for t in texts)
     assert any(t.startswith("Add 100") and "aliquot" in t for t in texts)
     # The page has exactly 9 numbered (`#`) top-level steps in source order.
-    assert len(p.steps) == 9, (
-        f"Expected 9 top-level steps, got {len(p.steps)}: {texts}"
-    )
+    assert len(p.steps) == 9, f"Expected 9 top-level steps, got {len(p.steps)}: {texts}"

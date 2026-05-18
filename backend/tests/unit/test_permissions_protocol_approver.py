@@ -6,8 +6,14 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
-from app.models.iam import (ObjectType, Organization, OrganizationMember,
-                            OrgRole, PermissionLevel, User)
+from app.models.iam import (
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    User,
+)
 from app.models.science import Project, Protocol
 from app.services.core.permissions import check_permission
 

@@ -8,13 +8,13 @@ Uses ``render_to_docx`` (the public renderer in
 ``app.services.protocols.template_engine``) directly so the test is a
 focused docx contract check, not an end-to-end run pipeline test.
 """
+
 from io import BytesIO
 from pathlib import Path
 
 from docx import Document
 
-from app.services.protocols.template_engine import (build_context,
-                                                    render_to_docx)
+from app.services.protocols.template_engine import build_context, render_to_docx
 
 BR_TEMPLATE = (
     Path(__file__).resolve().parents[2]
@@ -62,8 +62,7 @@ def test_batch_record_includes_lot_row_when_produces_lot():
         f"produces_lot=True. Got text:\n{text[:2000]}"
     )
     assert "Batch / Lot Number" in text or "Lot Number" in text, (
-        "Expected the 'Batch / Lot Number' label to appear when "
-        "produces_lot=True."
+        "Expected the 'Batch / Lot Number' label to appear when " "produces_lot=True."
     )
     # Defensive: the legacy mis-binding ({{ run_name }}) must not surface
     # the run name in the lot row. Run name is "Run-Test-001"; we don't

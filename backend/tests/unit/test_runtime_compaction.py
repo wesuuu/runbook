@@ -2,8 +2,7 @@
 
 from pydantic_ai.messages import ModelRequest, SystemPromptPart
 
-from app.services.ai.runtime.compaction import (CompactionState,
-                                                make_compaction_hooks)
+from app.services.ai.runtime.compaction import CompactionState, make_compaction_hooks
 
 
 def test_initial_state_is_untriggered():

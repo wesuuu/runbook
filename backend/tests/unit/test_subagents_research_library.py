@@ -8,9 +8,11 @@ from pydantic_ai import RunContext
 
 from app.services.ai.deps import ChatDeps, RetrievedChunk
 from app.services.ai.subagents.research_library import build
-from app.services.ai.subagents.research_library.tools import (list_documents,
-                                                              read_section,
-                                                              search_documents)
+from app.services.ai.subagents.research_library.tools import (
+    list_documents,
+    read_section,
+    search_documents,
+)
 
 
 def make_ctx() -> RunContext[ChatDeps]:
