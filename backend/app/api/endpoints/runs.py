@@ -915,6 +915,7 @@ async def get_run_sop_pdf(
         flat_steps=flat_steps,
         is_role_based=is_role_based,
         equipment_context=equipment_ctx,
+        produces_lot=run_obj.produces_lot,
     )
     context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
@@ -1059,6 +1060,7 @@ async def get_run_batch_record_pdf(
         attachments=run_obj.attachments if filled else None,
         storage=FileStorageService() if filled and embed_images else None,
         equipment_context=equipment_ctx,
+        produces_lot=run_obj.produces_lot,
     )
     context.update(approval_ctx)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)

@@ -185,6 +185,7 @@ KNOWN_VARIABLES = {
     "references",
     "definitions",
     # Run identifiers
+    "produces_lot",      # F-0086
     "lot_number",
     "batch_number",
     # SOP time-course mode (bioreactor-style sampling SOPs)
@@ -349,6 +350,7 @@ def build_context(
     definitions: str = "",
     lot_number: str = "",
     batch_number: str = "",
+    produces_lot: bool = False,
     revision_history: list[dict[str, Any]] | None = None,
     critical_requirement: str = "",
     is_time_based: bool = False,
@@ -891,6 +893,9 @@ def build_context(
         "batch_number",
     ):
         context[_k] = locals()[_k] or ""
+
+    # F-0086: explicit boolean — the batch-record template uses {%tr if produces_lot %}.
+    context["produces_lot"] = bool(produces_lot)
 
     # Responsibilities matrix (role-based only)
     if is_role_based:
