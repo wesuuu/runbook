@@ -38,6 +38,7 @@ class OrgRole(str, Enum):
     BILLING = "BILLING"
     MEMBER = "MEMBER"
     PROTOCOL_APPROVER = "PROTOCOL_APPROVER"
+    SITE_MANAGER = "SITE_MANAGER"
 
 
 _ALLOWED_ORG_ROLES = frozenset(r.value for r in OrgRole)
@@ -220,7 +221,7 @@ class OrganizationMember(Base, UUIDMixin, TimestampMixin):
         UniqueConstraint("user_id", "organization_id", name="uq_org_member"),
         CheckConstraint(
             "roles <@ ARRAY['ADMIN','BILLING','MEMBER',"
-            "'PROTOCOL_APPROVER']::varchar[]",
+            "'PROTOCOL_APPROVER','SITE_MANAGER']::varchar[]",
             name="ck_org_member_roles",
         ),
     )

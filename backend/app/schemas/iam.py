@@ -10,6 +10,7 @@ _LEGACY_ROLE_RANK = {
     "ADMIN": 4,
     "BILLING": 3,
     "PROTOCOL_APPROVER": 2,
+    "SITE_MANAGER": 2,
     "MEMBER": 1,
 }
 
