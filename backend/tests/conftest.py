@@ -8,24 +8,17 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
 from sqlalchemy.pool import NullPool
 
 from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.iam import (
-    ObjectPermission,
-    ObjectType,
-    Organization,
-    OrganizationMember,
-    PermissionLevel,
-    PrincipalType,
-    Team,
-    TeamMember,
-    User,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            Team, TeamMember, User)
 from app.models.library import Document, DocumentStatus
 from app.models.science import Project
 from app.models.templates import DocumentTemplate  # noqa: F401
@@ -428,6 +421,20 @@ async def extracted_document(db_session: AsyncSession, test_org, test_user) -> D
 
 
 # ── seed_document_extracting ─────────────────────────────────────────
+
+
+@pytest.fixture
+def make_equipment(db_session, test_org):
+    async def _factory(*, site_id, name="Eq"):
+        from app.models.science import Equipment
+
+        e = Equipment(organization_id=test_org.id, name=name, site_id=site_id)
+        db_session.add(e)
+        await db_session.commit()
+        await db_session.refresh(e)
+        return e
+
+    return _factory
 
 
 @pytest_asyncio.fixture
