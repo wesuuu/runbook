@@ -67,6 +67,8 @@ Index("ix_pending_invitation", "organization_id", "invited_email",
       unique=True, postgresql_where="status = 'PENDING'")
 ```
 
+**Polymorphic FK** -- one row references one of N parents via mutually-exclusive nullable FK columns + CHECK enforcing "exactly one non-null". Pair with a partial unique index using `postgresql_where=text(...)` to enforce uniqueness conditional on which FK is populated. Example: `glp_signoffs.protocol_id` / `run_id` (see `backend/app/models/science.py`).
+
 **Composite indexes** for common query patterns:
 ```python
 Index("ix_audit_logs_entity", "entity_type", "entity_id", "created_at")

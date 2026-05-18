@@ -111,3 +111,7 @@ Tools called by chat subagents (under `services/ai/subagents/<name>/tools.py`) m
 Example: `services/protocols/validation.py` exposes `validate_protocol_graph(graph, unit_ops) -> ValidationResult` with no DB or LLM dependency. The chat tool `validate_protocol(ctx, protocol_id)` loads the row, calls the validator, returns the dataclass. This keeps the validator unit-testable without pydantic-ai and reusable from non-chat code paths.
 
 When a validation rule must hard-block an endpoint (publish, run, PDF), expose a paired `assert_no_<rule>_errors(graph, unit_ops)` helper next to the validator that raises `HTTPException(400, {"error": code, "issues": [...]})`. Endpoints call the helper at the top of the handler so the 400 contract stays identical across every gated route. Mirror the rule on the frontend (e.g. `protocolValidation.ts`) so the UX can pre-flight before the round trip.
+
+## Cross-context validators
+
+When a single rule applies to multiple parent entity types (e.g., protocol *and* run sign-offs share QAU-independence and attestation checks), expose the validators from a single module (`services/signoffs/validation.py`) and call them from each endpoint. Don't duplicate per-context. Both `POST /protocols/{id}/signoffs` and `POST /runs/{id}/signoffs` route through `services/signoffs/service.create_signoff`, which dispatches the validator chain.
