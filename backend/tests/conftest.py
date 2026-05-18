@@ -472,3 +472,29 @@ async def seed_document_extracting(db_session: AsyncSession) -> Document:
     db_session.add(doc)
     await db_session.flush()
     return doc
+
+
+@pytest.fixture
+async def sample_site(db_session, test_org, test_user):
+    from app.schemas.sites import SiteCreate
+    from app.services.sites import crud as sites_crud
+
+    return await sites_crud.create_site(
+        db_session,
+        org_id=test_org.id,
+        payload=SiteCreate(name="Sample Site"),
+        actor_id=test_user.id,
+    )
+
+
+@pytest.fixture
+async def other_org_site(db_session, second_org, second_user):
+    from app.schemas.sites import SiteCreate
+    from app.services.sites import crud as sites_crud
+
+    return await sites_crud.create_site(
+        db_session,
+        org_id=second_org.id,
+        payload=SiteCreate(name="Other Org Site"),
+        actor_id=second_user.id,
+    )
