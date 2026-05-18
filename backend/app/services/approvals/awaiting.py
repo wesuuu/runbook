@@ -9,8 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import OrganizationMember, OrgRole, User
-from app.models.science import (GlpSignoffRequest, Project, Protocol,
-                                ProtocolApprovalEvent)
+from app.models.science import GlpSignoffRequest, Project, Protocol
 
 
 async def list_awaiting_for_user(
@@ -79,29 +78,32 @@ async def list_awaiting_for_user(
     if not awaiting:
         return []
 
-    # 4. Fetch the latest SUBMITTED event per protocol for actor + timestamp
+    # 4. Fetch the earliest OPEN signoff request per protocol for submitter +
+    #    submitted-at timestamp. GlpSignoffRequest carries this info now
+    #    (Task 7 renamed protocol_approval_requests → glp_signoff_requests;
+    #    Task 26 retired the SUBMITTED ProtocolApprovalEvent reader path).
     proto_ids = list(awaiting.keys())
     submit_rows = await db.execute(
-        select(ProtocolApprovalEvent, User)
-        .join(User, ProtocolApprovalEvent.actor_id == User.id, isouter=True)
+        select(GlpSignoffRequest, User)
+        .join(User, GlpSignoffRequest.requested_by_id == User.id, isouter=True)
         .where(
-            ProtocolApprovalEvent.protocol_id.in_(proto_ids),
-            ProtocolApprovalEvent.action == "SUBMITTED",
+            GlpSignoffRequest.protocol_id.in_(proto_ids),
+            GlpSignoffRequest.status == "OPEN",
         )
         .order_by(
-            ProtocolApprovalEvent.protocol_id,
-            ProtocolApprovalEvent.created_at.desc(),
+            GlpSignoffRequest.protocol_id,
+            GlpSignoffRequest.created_at.asc(),
         )
     )
     seen: set[uuid.UUID] = set()
-    for ev, actor in submit_rows.all():
-        if ev.protocol_id in seen:
+    for req, actor in submit_rows.all():
+        if req.protocol_id in seen:
             continue
-        seen.add(ev.protocol_id)
-        item = awaiting.get(ev.protocol_id)
+        seen.add(req.protocol_id)
+        item = awaiting.get(req.protocol_id)
         if item is None:
             continue
-        item["submitted_at"] = ev.created_at
+        item["submitted_at"] = req.created_at
         if actor is not None:
             item["submitted_by"] = {
                 "id": actor.id,
