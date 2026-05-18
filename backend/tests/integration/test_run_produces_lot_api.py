@@ -131,3 +131,62 @@ async def test_list_project_runs_filter_produces_lot(
         headers=auth_headers,
     )
     assert {r["name"] for r in resp_all.json()} >= {"producer", "non-producer"}
+
+
+@pytest.mark.asyncio
+async def test_suggest_lot_number_empty_org_returns_first(
+    client: AsyncClient, auth_headers, test_project
+):
+    resp = await client.post(
+        "/science/runs/suggest-lot-number",
+        headers=auth_headers,
+        json={"project_id": str(test_project.id)},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"lot_number": "LOT-000001"}
+
+
+@pytest.mark.asyncio
+async def test_suggest_lot_number_increments_after_existing(
+    client: AsyncClient, auth_headers, test_project
+):
+    await client.post(
+        "/science/runs",
+        headers=auth_headers,
+        json={
+            "name": "first",
+            "project_id": str(test_project.id),
+            "produces_lot": True,
+            "lot_number": "LOT-000042",
+        },
+    )
+    resp = await client.post(
+        "/science/runs/suggest-lot-number",
+        headers=auth_headers,
+        json={"project_id": str(test_project.id)},
+    )
+    assert resp.json() == {"lot_number": "LOT-000043"}
+
+
+@pytest.mark.asyncio
+async def test_suggest_lot_number_ignores_non_matching_values(
+    client: AsyncClient, auth_headers, test_project
+):
+    # Manual entry that does not match the LOT-NNNNNN pattern is ignored
+    # by the sequence calculation.
+    await client.post(
+        "/science/runs",
+        headers=auth_headers,
+        json={
+            "name": "custom",
+            "project_id": str(test_project.id),
+            "produces_lot": True,
+            "lot_number": "PILOT-A7",
+        },
+    )
+    resp = await client.post(
+        "/science/runs/suggest-lot-number",
+        headers=auth_headers,
+        json={"project_id": str(test_project.id)},
+    )
+    assert resp.json() == {"lot_number": "LOT-000001"}

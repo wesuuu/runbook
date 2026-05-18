@@ -31,7 +31,9 @@ from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
                                  RunNoteListResponse, RunOverrides,
                                  RunResponse, RunRoleAssignmentCreate,
                                  RunRoleAssignmentListResponse,
-                                 RunRoleAssignmentResponse, RunUpdate)
+                                 RunRoleAssignmentResponse, RunUpdate,
+                                 SuggestLotNumberRequest,
+                                 SuggestLotNumberResponse)
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
@@ -235,6 +237,53 @@ async def create_run(
     await db.commit()
     await db.refresh(run_obj)
     return run_obj
+
+
+@router.post(
+    "/runs/suggest-lot-number",
+    response_model=SuggestLotNumberResponse,
+)
+async def suggest_lot_number(
+    body: SuggestLotNumberRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Suggest the next monotonic lot number for the project's organization.
+
+    Pattern: LOT-{seq:06}. Sequence is org-scoped and computed over runs whose
+    lot_number matches the canonical pattern. Manually entered values that do
+    not match are ignored (they don't anchor or break the sequence).
+    """
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, body.project_id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    project = await get_or_404(db, Project, body.project_id)
+
+    # Pull all canonical-pattern lot_numbers for runs in this org. Cheap given
+    # the index on lot_number; the JOIN scopes to the org without denormalizing.
+    stmt = (
+        select(Run.lot_number)
+        .join(Project, Run.project_id == Project.id)
+        .where(
+            Project.organization_id == project.organization_id,
+            Run.lot_number.regexp_match(r"^LOT-[0-9]{6}$"),
+        )
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    max_seq = 0
+    for value in rows:
+        try:
+            n = int(value.split("-", 1)[1])
+            if n > max_seq:
+                max_seq = n
+        except (ValueError, IndexError):
+            continue
+    next_seq = max_seq + 1
+    return SuggestLotNumberResponse(lot_number=f"LOT-{next_seq:06d}")
 
 
 @router.get("/runs/{run_id}", response_model=RunResponse)

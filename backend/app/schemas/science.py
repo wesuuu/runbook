@@ -442,6 +442,14 @@ class RunOverrides(BaseModel):
     nodes: Dict[str, NodeOverrides] = Field(default_factory=dict)
 
 
+class SuggestLotNumberRequest(BaseModel):
+    project_id: UUID
+
+
+class SuggestLotNumberResponse(BaseModel):
+    lot_number: str
+
+
 RunCreate.model_rebuild()
 
 
