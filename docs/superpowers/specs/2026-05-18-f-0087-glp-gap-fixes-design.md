@@ -287,7 +287,7 @@ Per the bucket placement rule in `conventions.md`:
 
 | Component | Path | Purpose |
 |---|---|---|
-| `GlpSettingsPanel.svelte` | `protocol/` | Inspector-replacing view when no node selected; toggles + attestation textareas |
+| `GlpSettingsPanel.svelte` | `protocol/` | Right-side slide-over panel (reuses the inspector slot) opened by a new ⚖ GLP button on `CanvasToolbar.svelte`. State is independent of node selection — opening the panel deselects any node, and selecting a node closes the panel. Toggles for `require_study_director` / `require_qau` + three attestation textareas. Persists to `protocol.graph.glpSettings` via the existing protocol save path; an unsaved-changes dot on the toolbar button signals dirty state. |
 | `SignoffBlock.svelte` | `shared/` | Reused by both run-completion and protocol-approval surfaces. Lists required sign-offs per role; each row has a "Sign as <role>" button. Props: `entityType`, `entityId`, `requiredRoles`, `attestationDefaults`. |
 | `SignoffModal.svelte` | `shared/` | Attestation preview + signature confirmation modal. Shared between protocols and runs. |
 | `RunReopenModal.svelte` | `run/` | Required `reason` field; warns sign-off invalidation; triggered from completed-run view |

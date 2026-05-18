@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en" data-theme="lab-glass" style="scrollbar-gutter: stable">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>F-0087 — GLP Sign-off Surfaces (Mock)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+<link
+  href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap"
+  rel="stylesheet"
+/>
+<script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+<style>
+  /* --- Mirror app.css theme tokens exactly --- */
+  :root, [data-theme="lab-glass"] {
+    --bg:           hsl(200 25% 97%);
+    --fg:           hsl(215 40% 12%);
+    --card:         hsl(0 0% 100%);
+    --card-fg:      hsl(215 40% 12%);
+    --muted:        hsl(205 25% 94%);
+    --muted-fg:     hsl(215 15% 42%);
+    --primary:      hsl(195 85% 22%);
+    --primary-fg:   hsl(195 30% 98%);
+    --accent:       hsl(155 70% 38%);
+    --accent-fg:    hsl(155 30% 98%);
+    --destructive:  hsl(355 75% 50%);
+    --border:       hsl(205 22% 87%);
+    --ring:         hsl(195 85% 22%);
+    --grid-dot:     hsl(205 30% 70% / 0.25);
+    --radius: 0.625rem;
+    --radius-md: 0.375rem;
+    --radius-sm: 0.125rem;
+  }
+  [data-theme="blueprint"] {
+    --bg:           hsl(210 32% 96%);
+    --fg:           hsl(218 55% 14%);
+    --card:         hsl(210 45% 99%);
+    --card-fg:      hsl(218 55% 14%);
+    --muted:        hsl(210 28% 92%);
+    --muted-fg:     hsl(218 18% 42%);
+    --primary:      hsl(218 70% 22%);
+    --primary-fg:   hsl(210 40% 98%);
+    --accent:       hsl(35 95% 55%);
+    --accent-fg:    hsl(35 80% 12%);
+    --destructive:  hsl(0 72% 50%);
+    --border:       hsl(210 28% 84%);
+    --ring:         hsl(218 70% 30%);
+    --grid-dot:     hsl(218 50% 45% / 0.22);
+  }
+  [data-theme="apothecary"] {
+    --bg:           hsl(60 20% 96%);
+    --fg:           hsl(150 28% 12%);
+    --card:         hsl(45 28% 98%);
+    --card-fg:      hsl(150 28% 12%);
+    --muted:        hsl(60 14% 92%);
+    --muted-fg:     hsl(150 12% 38%);
+    --primary:      hsl(155 45% 20%);
+    --primary-fg:   hsl(60 25% 97%);
+    --accent:       hsl(15 70% 45%);
+    --accent-fg:    hsl(60 25% 97%);
+    --destructive:  hsl(8 70% 42%);
+    --border:       hsl(60 14% 84%);
+    --ring:         hsl(155 45% 25%);
+    --grid-dot:     hsl(150 25% 50% / 0.22);
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  .font-mono { font-family: 'DM Mono', ui-monospace, monospace; }
+  .font-cursive { font-family: 'Caveat', cursive; }
+
+  /* shadcn-style utility classes — map to theme tokens */
+  .bg-background { background-color: var(--bg); }
+  .bg-card { background-color: var(--card); }
+  .bg-muted { background-color: var(--muted); }
+  .bg-primary { background-color: var(--primary); }
+  .bg-accent { background-color: var(--accent); }
+  .bg-destructive { background-color: var(--destructive); }
+  .text-foreground { color: var(--fg); }
+  .text-muted-foreground { color: var(--muted-fg); }
+  .text-primary { color: var(--primary); }
+  .text-primary-foreground { color: var(--primary-fg); }
+  .text-accent { color: var(--accent); }
+  .text-accent-foreground { color: var(--accent-fg); }
+  .text-destructive { color: var(--destructive); }
+  .border-border { border-color: var(--border); }
+  .ring-ring { --tw-ring-color: var(--ring); }
+
+  .card-warm {
+    background: var(--card);
+    border: 1px solid var(--border);
+    box-shadow:
+      0 1px 2px hsl(0 0% 0% / 0.06),
+      0 4px 12px hsl(0 0% 0% / 0.04);
+    border-radius: var(--radius);
+  }
+  .dot-grid {
+    background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Button variants (mirror buttonVariants tv()) */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 0.5rem; white-space: nowrap; border-radius: var(--radius-md);
+    font-size: 0.875rem; font-weight: 500; transition: all 150ms;
+    height: 2.25rem; padding: 0 0.875rem; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .btn-primary { background: var(--primary); color: var(--primary-fg); }
+  .btn-primary:hover { filter: brightness(0.92); }
+  .btn-outline { background: transparent; border-color: var(--border); color: var(--fg); }
+  .btn-outline:hover { background: var(--muted); }
+  .btn-ghost { background: transparent; color: var(--fg); }
+  .btn-ghost:hover { background: var(--muted); }
+  .btn-destructive { background: var(--destructive); color: var(--primary-fg); }
+  .btn-destructive:hover { filter: brightness(0.92); }
+  .btn-accent { background: var(--accent); color: var(--accent-fg); }
+  .btn-accent:hover { filter: brightness(0.92); }
+  .btn-sm { height: 2rem; padding: 0 0.625rem; font-size: 0.8125rem; }
+  .btn-xs { height: 1.625rem; padding: 0 0.5rem; font-size: 0.75rem; }
+
+  /* Badge */
+  .badge {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.125rem 0.5rem; border-radius: 9999px;
+    font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .badge-approved { background: hsl(155 60% 92%); color: hsl(155 60% 22%); }
+  .badge-rejected { background: hsl(355 70% 94%); color: hsl(355 70% 32%); }
+  .badge-pending  { background: hsl(40 80% 92%); color: hsl(35 70% 28%); }
+  .badge-invalid  { background: hsl(0 0% 92%); color: hsl(0 0% 30%); text-decoration: line-through; }
+  .badge-muted    { background: var(--muted); color: var(--muted-fg); }
+
+  /* Input */
+  .input, .textarea {
+    width: 100%; background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 0.5rem 0.75rem;
+    font-size: 0.875rem; color: var(--fg);
+    transition: border-color 150ms, box-shadow 150ms;
+  }
+  .input:focus, .textarea:focus {
+    outline: none; border-color: var(--ring);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 22%, transparent);
+  }
+  .label {
+    display: block; font-size: 0.8125rem; font-weight: 500;
+    color: var(--fg); margin-bottom: 0.375rem;
+  }
+  .switch {
+    width: 36px; height: 20px; border-radius: 9999px;
+    background: var(--muted); border: 1px solid var(--border);
+    position: relative; cursor: pointer; transition: background 150ms;
+  }
+  .switch::after {
+    content: ''; position: absolute; top: 1px; left: 1px;
+    width: 16px; height: 16px; border-radius: 9999px;
+    background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transition: transform 150ms;
+  }
+  .switch.on { background: var(--primary); }
+  .switch.on::after { transform: translateX(16px); }
+
+  /* Signature scribble */
+  .sig-line {
+    border-bottom: 1px solid var(--border);
+    height: 56px; display: flex; align-items: flex-end; padding-bottom: 4px;
+  }
+  .scribble {
+    font-family: 'Caveat', cursive; font-size: 1.875rem; line-height: 1;
+    color: var(--primary); transform: rotate(-2deg);
+  }
+
+  /* Audit dotted leader */
+  .leader { border-bottom: 1px dotted var(--border); flex: 1; margin: 0 0.5rem; }
+
+  /* Section title accent rule */
+  h2.section { position: relative; padding-bottom: 6px; }
+  h2.section::after {
+    content: ''; position: absolute; left: 0; bottom: 0;
+    width: 28px; height: 2px; background: var(--accent);
+  }
+
+  /* Surface label tag */
+  .surface-tag {
+    position: absolute; top: -10px; left: 16px;
+    background: var(--bg); padding: 0 8px;
+    font-family: 'DM Mono', monospace; font-size: 0.6875rem;
+    color: var(--muted-fg); letter-spacing: 0.04em;
+  }
+
+  /* Nav active underline */
+  .nav-link { position: relative; padding: 6px 4px; color: var(--muted-fg); font-size: 0.875rem; }
+  .nav-link.active { color: var(--fg); font-weight: 500; }
+  .nav-link.active::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -14px;
+    height: 2px; background: var(--primary);
+  }
+
+  /* Modal scrim */
+  .scrim {
+    background: hsl(215 40% 12% / 0.45);
+    backdrop-filter: blur(2px);
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ===================== APP CHROME ===================== -->
+<header class="border-b border-border bg-card">
+  <div class="max-w-[1280px] mx-auto px-6 h-14 flex items-center gap-6">
+    <!-- Logo -->
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded grid place-items-center" style="background:var(--primary);color:var(--primary-fg);font-weight:700;font-size:13px;letter-spacing:.06em">B</div>
+      <span class="font-semibold tracking-tight">batchrite</span>
+    </div>
+    <!-- Project picker (chip) -->
+    <button class="btn btn-ghost btn-sm" style="border:1px solid var(--border)">
+      <span class="text-muted-foreground text-xs font-mono">PROJECT</span>
+      <span>mAb-203 Tox Study</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <!-- Nav -->
+    <nav class="flex items-center gap-5 ml-2">
+      <a class="nav-link" href="#">Library</a>
+      <a class="nav-link" href="#">Protocols</a>
+      <a class="nav-link active" href="#">Runs</a>
+      <a class="nav-link" href="#">Equipment</a>
+    </nav>
+    <div class="ml-auto flex items-center gap-3">
+      <!-- theme switcher -->
+      <div class="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+        <button onclick="document.documentElement.dataset.theme='lab-glass'" class="px-2 py-1 rounded hover:bg-muted">lab-glass</button>
+        <button onclick="document.documentElement.dataset.theme='blueprint'" class="px-2 py-1 rounded hover:bg-muted">blueprint</button>
+        <button onclick="document.documentElement.dataset.theme='apothecary'" class="px-2 py-1 rounded hover:bg-muted">apothecary</button>
+      </div>
+      <div class="w-7 h-7 rounded-full bg-muted grid place-items-center text-xs font-medium">WU</div>
+    </div>
+  </div>
+</header>
+
+<!-- ===================== PAGE BANNER ===================== -->
+<div class="max-w-[1280px] mx-auto px-6 pt-8 pb-4">
+  <div class="font-mono text-[11px] text-muted-foreground mb-1">F-0087 · MOCK · NOT WIRED</div>
+  <h1 class="text-2xl font-semibold tracking-tight">GLP Sign-off Surfaces</h1>
+  <p class="text-sm text-muted-foreground mt-1 max-w-[640px]">
+    Four surfaces from <span class="font-mono">docs/superpowers/specs/2026-05-18-f-0087-glp-gap-fixes-design.md</span>, rendered with the live theme tokens, DM&nbsp;Sans/DM&nbsp;Mono, and shadcn-svelte primitives already in this app. Toggle a theme above to verify the components honor it.
+  </p>
+</div>
+
+<main class="max-w-[1280px] mx-auto px-6 pb-24 space-y-12">
+
+<!-- ============================================================
+     SURFACE 1 — Run sign-off block (the new SignoffBlock.svelte)
+     ============================================================ -->
+<section class="relative">
+  <span class="surface-tag">SURFACE 01 · /runs/[id] · SignoffBlock.svelte (shared/)</span>
+  <div class="card-warm p-6">
+    <!-- Run summary strip -->
+    <div class="flex items-start justify-between gap-6 mb-5">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="font-mono text-xs text-muted-foreground">RUN</span>
+          <span class="font-mono text-xs">R-2026-05-018</span>
+          <span class="badge badge-approved">COMPLETED</span>
+        </div>
+        <h2 class="text-xl font-semibold tracking-tight section">Buffer prep — Lot mAb203-B14</h2>
+        <div class="text-sm text-muted-foreground mt-1">
+          Started 2026-05-17 09:14 by W.&nbsp;Uykimpang · Completed 2026-05-17 16:42
+        </div>
+      </div>
+      <div class="text-right shrink-0">
+        <div class="font-mono text-[11px] text-muted-foreground">OUTCOME</div>
+        <div class="text-sm font-medium mt-0.5">Completed with deviations</div>
+        <button class="text-xs text-primary hover:underline mt-1">View 2 deviations →</button>
+      </div>
+    </div>
+
+    <!-- Sign-off table -->
+    <div class="border-t border-border pt-5">
+      <div class="flex items-baseline justify-between mb-3">
+        <h3 class="text-sm font-semibold tracking-tight">GLP Sign-offs</h3>
+        <span class="font-mono text-[11px] text-muted-foreground">21 CFR §11.50 · §58.130(e)</span>
+      </div>
+
+      <div class="divide-y divide-border border border-border rounded-md overflow-hidden">
+
+        <!-- Operator: signed -->
+        <div class="grid grid-cols-[120px_1fr_180px_140px] items-center gap-4 px-4 py-3" style="background:color-mix(in srgb, var(--accent) 6%, transparent)">
+          <div>
+            <div class="font-mono text-[10px] text-muted-foreground">§58.29</div>
+            <div class="text-sm font-semibold">Operator</div>
+          </div>
+          <div class="min-w-0">
+            <div class="text-sm">Wesley Uykimpang <span class="text-muted-foreground">· wesu07@anthropic.com</span></div>
+            <div class="text-xs text-muted-foreground italic mt-0.5 truncate">"I performed this run according to the approved protocol and certify the recorded values are accurate."</div>
+          </div>
+          <div class="sig-line">
+            <span class="scribble">Wesley Uykimpang</span>
+          </div>
+          <div class="text-right">
+            <span class="badge badge-approved">Signed</span>
+            <div class="font-mono text-[10px] text-muted-foreground mt-1">2026-05-17 16:43</div>
+          </div>
+        </div>
+
+        <!-- Study Director: required, pending -->
+        <div class="grid grid-cols-[120px_1fr_180px_140px] items-center gap-4 px-4 py-3">
+          <div>
+            <div class="font-mono text-[10px] text-muted-foreground">§58.33</div>
+            <div class="text-sm font-semibold">Study Director</div>
+          </div>
+          <div>
+            <div class="text-sm text-muted-foreground">Required by GLP Settings</div>
+            <div class="text-xs text-muted-foreground mt-0.5">Awaiting assignment</div>
+          </div>
+          <div class="text-xs text-muted-foreground">—</div>
+          <div class="text-right">
+            <button class="btn btn-outline btn-sm">Sign as SD</button>
+          </div>
+        </div>
+
+        <!-- QAU: required, signable by me -->
+        <div class="grid grid-cols-[120px_1fr_180px_140px] items-center gap-4 px-4 py-3">
+          <div>
+            <div class="font-mono text-[10px] text-muted-foreground">§58.35</div>
+            <div class="text-sm font-semibold">QAU</div>
+            <div class="badge badge-muted mt-1" style="font-size:9px">Independence required</div>
+          </div>
+          <div>
+            <div class="text-sm text-muted-foreground">Required by GLP Settings</div>
+            <div class="text-xs text-muted-foreground mt-0.5">You are eligible as QAU reviewer for this run.</div>
+          </div>
+          <div class="text-xs text-muted-foreground">—</div>
+          <div class="text-right">
+            <button class="btn btn-primary btn-sm">Sign as QAU</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reopen affordance, only when at least one sign-off exists -->
+      <div class="flex items-center justify-between mt-4 pt-4 border-t border-border">
+        <div class="text-xs text-muted-foreground">
+          <span class="font-mono">Run is immutable</span> until QAU sign-off is invalidated.
+        </div>
+        <button class="btn btn-ghost btn-sm text-destructive" style="border:1px dashed var(--destructive)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+          Reopen with reason
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     SURFACE 2 — Sign-off modal (SignoffModal.svelte, shared/)
+     ============================================================ -->
+<section class="relative">
+  <span class="surface-tag">SURFACE 02 · SignoffModal.svelte (shared/) · attestation + signature</span>
+  <div class="relative card-warm dot-grid p-10 min-h-[520px]">
+    <!-- The page behind the modal, dimmed -->
+    <div class="absolute inset-0 scrim rounded-[var(--radius)]"></div>
+
+    <!-- Modal -->
+    <div class="relative max-w-[540px] mx-auto card-warm">
+      <!-- Header -->
+      <div class="px-5 pt-5 pb-3 border-b border-border">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="badge" style="background:var(--primary);color:var(--primary-fg)">QAU SIGN-OFF</span>
+          <span class="font-mono text-[11px] text-muted-foreground">21 CFR §11.50</span>
+        </div>
+        <h3 class="text-lg font-semibold tracking-tight">Sign Run R-2026-05-018 as QAU</h3>
+        <p class="text-xs text-muted-foreground mt-1">
+          You are attesting to the accuracy of this run record. Your saved signature image will be copied to this record at sign time and cannot be retroactively replaced.
+        </p>
+      </div>
+
+      <!-- Body -->
+      <div class="px-5 py-4 space-y-4">
+        <!-- Independence check passing -->
+        <div class="flex items-start gap-2 p-3 rounded-md" style="background:color-mix(in srgb,var(--accent) 10%, transparent);border:1px solid color-mix(in srgb,var(--accent) 30%, transparent)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--accent);margin-top:2px"><polyline points="20 6 9 17 4 12"/></svg>
+          <div class="text-xs">
+            <span class="font-medium" style="color:var(--accent)">Independence verified.</span>
+            <span class="text-muted-foreground">You are not listed as the operator or study director on this run.</span>
+          </div>
+        </div>
+
+        <!-- Attestation -->
+        <div>
+          <label class="label">Attestation <span class="text-destructive">*</span></label>
+          <textarea class="textarea" rows="3">I have inspected this run record and confirm it complies with the approved protocol and applicable SOPs.</textarea>
+          <div class="text-[11px] text-muted-foreground mt-1">Default from <span class="font-mono">protocol.graph.glpSettings.qau_attestation_text</span>. Editable per signature.</div>
+        </div>
+
+        <!-- Signature preview -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="label" style="margin-bottom:0">Signature</span>
+            <span class="font-mono text-[10px] text-muted-foreground">snapshot at sign time → uploads/{org}/signoffs/{id}.png</span>
+          </div>
+          <div class="rounded-md border border-border bg-muted px-4 py-3 flex items-end justify-between">
+            <span class="scribble" style="font-size:2.25rem">Wesley Uykimpang</span>
+            <button class="btn btn-ghost btn-xs">Re-draw in Settings</button>
+          </div>
+        </div>
+
+        <!-- Linked request (optional) -->
+        <div class="flex items-center text-xs text-muted-foreground">
+          <span class="font-mono">request</span><span class="leader"></span><span>GLP-REQ-204 (Run review queue)</span>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-5 py-3 border-t border-border flex items-center justify-between">
+        <span class="text-[11px] text-muted-foreground">Signed as <span class="font-medium text-foreground">Wesley Uykimpang</span> at <span class="font-mono">2026-05-18 14:32</span></span>
+        <div class="flex gap-2">
+          <button class="btn btn-outline btn-sm">Cancel</button>
+          <button class="btn btn-primary btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+            Confirm sign-off
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     SURFACE 3 — GLP Settings panel (Protocol Editor inspector)
+     ============================================================ -->
+<section class="relative">
+  <span class="surface-tag">SURFACE 03 · /protocols/[id] · GlpSettingsPanel.svelte (protocol/)</span>
+  <div class="grid grid-cols-[1fr_360px] gap-4 items-stretch">
+
+    <!-- Pretend canvas -->
+    <div class="card-warm dot-grid relative overflow-hidden min-h-[520px]">
+      <div class="absolute top-3 left-4 font-mono text-[10px] text-muted-foreground">PROTOCOL CANVAS</div>
+
+      <!-- Canvas toolbar (matches CanvasToolbar.svelte) -->
+      <div class="absolute top-3 left-1/2 -translate-x-1/2 flex items-stretch rounded-md border border-border bg-card shadow-sm overflow-hidden text-xs">
+        <button class="px-2.5 py-1.5 hover:bg-muted flex items-center gap-1.5" title="Pan">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6.5a1.5 1.5 0 0 0-3 0V11"/><path d="M15 11V5a1.5 1.5 0 0 0-3 0v6"/><path d="M12 11V4a1.5 1.5 0 0 0-3 0v9"/><path d="M9 13.5L6.5 11A2 2 0 0 0 4 13l3 7a6 6 0 0 0 6 4h2a6 6 0 0 0 6-6v-5"/></svg>
+        </button>
+        <button class="px-2.5 py-1.5 hover:bg-muted border-l border-border" title="Select">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51z"/><path d="m13 13 6 6"/></svg>
+        </button>
+        <div class="border-l border-border px-2.5 py-1.5 flex items-center gap-1 hover:bg-muted cursor-pointer">⇄ <span>Layout</span></div>
+        <div class="border-l border-border px-2.5 py-1.5 flex items-center gap-1 hover:bg-muted cursor-pointer">⧗ <span>Time</span></div>
+        <!-- NEW: GLP button (active state) -->
+        <div class="border-l border-border px-2.5 py-1.5 flex items-center gap-1 relative font-medium" style="background:color-mix(in srgb,var(--primary) 10%, transparent);color:var(--primary)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M5 21h14"/><path d="M5 8h14"/><path d="m5 8 3 6h-6z"/><path d="m19 8 3 6h-6z"/></svg>
+          <span>GLP</span>
+          <!-- Unsaved dot -->
+          <span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full" style="background:var(--accent)"></span>
+        </div>
+        <div class="border-l border-border px-2.5 py-1.5 flex items-center gap-1 hover:bg-muted cursor-pointer">⟲ <span>Versions</span></div>
+      </div>
+
+      <!-- Callout arrow from button → panel -->
+      <svg class="absolute top-[34px] right-[68px]" width="260" height="180" viewBox="0 0 260 180" fill="none">
+        <path d="M 80 6 Q 200 6 240 100" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" fill="none"/>
+        <polyline points="232,90 240,100 246,90" stroke="var(--accent)" stroke-width="1.5" fill="none"/>
+      </svg>
+
+      <!-- Decorative nodes -->
+      <div class="absolute top-32 left-12 w-44 rounded-md bg-card border border-border px-3 py-2 shadow-sm">
+        <div class="font-mono text-[9px] text-muted-foreground">MEDIA PREP</div>
+        <div class="text-sm font-medium">Buffer mix</div>
+      </div>
+      <div class="absolute top-32 left-72 w-44 rounded-md bg-card border border-border px-3 py-2 shadow-sm" style="border-left:3px solid var(--accent)">
+        <div class="font-mono text-[9px] text-muted-foreground">CELL CULTURE</div>
+        <div class="text-sm font-medium">Seed bioreactor</div>
+      </div>
+      <svg class="absolute top-[150px] left-[224px]" width="48" height="20" viewBox="0 0 48 20">
+        <path d="M2 10 H 44" stroke="hsl(215 15% 42%)" stroke-width="1.5" fill="none"/>
+        <polyline points="38,5 44,10 38,15" stroke="hsl(215 15% 42%)" stroke-width="1.5" fill="none"/>
+      </svg>
+
+      <!-- Caption -->
+      <div class="absolute bottom-3 left-4 right-4 font-mono text-[10px] text-muted-foreground">
+        Click <span style="color:var(--primary);font-weight:600">⚖ GLP</span> in the canvas toolbar — same row as Layout / Time / Versions — to toggle the panel on the right. Deselects any node; selecting a node closes it. Accent dot = unsaved.
+      </div>
+    </div>
+
+    <!-- Inspector panel -->
+    <aside class="card-warm">
+      <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+        <div>
+          <div class="font-mono text-[10px] text-muted-foreground">INSPECTOR</div>
+          <div class="text-sm font-semibold tracking-tight">GLP Settings</div>
+        </div>
+        <span class="badge badge-muted">Protocol-level</span>
+      </div>
+
+      <div class="p-4 space-y-5">
+        <!-- Toggle group -->
+        <div class="space-y-3">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-sm font-medium">Require Study Director sign-off</div>
+              <div class="text-xs text-muted-foreground">§58.33 — overall conduct of the study</div>
+            </div>
+            <button class="switch" onclick="this.classList.toggle('on')"></button>
+          </div>
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-sm font-medium">Require QAU sign-off</div>
+              <div class="text-xs text-muted-foreground">§58.35 — independent quality review</div>
+            </div>
+            <button class="switch on" onclick="this.classList.toggle('on')"></button>
+          </div>
+        </div>
+
+        <div class="border-t border-border pt-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="label" style="margin-bottom:0">Attestation defaults</span>
+            <span class="font-mono text-[10px] text-muted-foreground">stored in graph.glpSettings</span>
+          </div>
+
+          <div>
+            <label class="label" style="font-size:11px;color:var(--muted-fg);text-transform:uppercase;letter-spacing:.04em">Operator</label>
+            <textarea class="textarea" rows="2" style="font-size:0.8125rem">I performed this run according to the approved protocol and certify the recorded values are accurate.</textarea>
+          </div>
+          <div>
+            <label class="label" style="font-size:11px;color:var(--muted-fg);text-transform:uppercase;letter-spacing:.04em">Study Director</label>
+            <textarea class="textarea" rows="2" style="font-size:0.8125rem">I confirm this run was conducted according to the approved protocol.</textarea>
+          </div>
+          <div>
+            <label class="label" style="font-size:11px;color:var(--muted-fg);text-transform:uppercase;letter-spacing:.04em">QAU</label>
+            <textarea class="textarea" rows="2" style="font-size:0.8125rem">I have inspected this run record and confirm it complies with the approved protocol and applicable SOPs.</textarea>
+          </div>
+        </div>
+
+        <div class="text-[11px] text-muted-foreground italic border-t border-border pt-3">
+          These settings are snapshotted into every <span class="font-mono">ProtocolVersion</span> at publish time and into each Run at start. Changing them mid-run has no effect on in-flight records.
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     SURFACE 4 — Reopen modal + Protocol approval block (paired)
+     ============================================================ -->
+<section class="relative">
+  <span class="surface-tag">SURFACE 04 · paired — Protocol approval (SignoffBlock reuse) + RunReopenModal</span>
+
+  <div class="grid grid-cols-[1fr_1fr] gap-4">
+
+    <!-- Protocol approval block (same SignoffBlock, entityType=protocol) -->
+    <div class="card-warm p-5">
+      <div class="flex items-center justify-between mb-1">
+        <div class="font-mono text-[10px] text-muted-foreground">PROTOCOL</div>
+        <span class="badge badge-approved">v3 PUBLISHED</span>
+      </div>
+      <h3 class="text-base font-semibold tracking-tight section">mAb-203 Tox — Buffer prep procedure</h3>
+      <p class="text-xs text-muted-foreground mt-1">Same <span class="font-mono">SignoffBlock</span> component, rendered with <span class="font-mono">entityType="protocol"</span>. Backed by the unified <span class="font-mono">glp_signoffs</span> table — replaces the F-0066 approval-event UI.</p>
+
+      <div class="mt-4 divide-y divide-border border border-border rounded-md">
+
+        <div class="grid grid-cols-[110px_1fr_120px] gap-3 px-3 py-2.5 items-center" style="background:color-mix(in srgb,var(--accent) 5%, transparent)">
+          <div>
+            <div class="font-mono text-[10px] text-muted-foreground">§58.33</div>
+            <div class="text-sm font-medium">Study Director</div>
+          </div>
+          <div>
+            <div class="text-sm">Dr. K. Rao</div>
+            <div class="font-cursive text-xl leading-none" style="color:var(--primary);transform:rotate(-2deg);transform-origin:left">K. Rao</div>
+          </div>
+          <div class="text-right">
+            <span class="badge badge-approved">Signed</span>
+            <div class="font-mono text-[10px] text-muted-foreground mt-1">05-15 11:02</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-[110px_1fr_120px] gap-3 px-3 py-2.5 items-center" style="background:color-mix(in srgb,var(--accent) 5%, transparent)">
+          <div>
+            <div class="font-mono text-[10px] text-muted-foreground">§58.35</div>
+            <div class="text-sm font-medium">QAU</div>
+          </div>
+          <div>
+            <div class="text-sm">A. Patel</div>
+            <div class="font-cursive text-xl leading-none" style="color:var(--primary);transform:rotate(-2deg);transform-origin:left">A. Patel</div>
+          </div>
+          <div class="text-right">
+            <span class="badge badge-approved">Signed</span>
+            <div class="font-mono text-[10px] text-muted-foreground mt-1">05-15 14:30</div>
+          </div>
+        </div>
+
+        <!-- Invalidated row from a prior revision (audit trail visible, not hidden) -->
+        <div class="grid grid-cols-[110px_1fr_120px] gap-3 px-3 py-2.5 items-center opacity-70">
+          <div>
+            <div class="font-mono text-[10px] text-muted-foreground">§58.35 · v2</div>
+            <div class="text-sm font-medium line-through">QAU</div>
+          </div>
+          <div>
+            <div class="text-sm line-through">A. Patel</div>
+            <div class="text-[11px] text-muted-foreground">Invalidated 05-14 by author — "fixed pH range typo"</div>
+          </div>
+          <div class="text-right">
+            <span class="badge badge-invalid">Invalid</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-[11px] text-muted-foreground mt-3 italic">Invalidated rows are kept and rendered — the audit trail is the record, not just the final state.</div>
+    </div>
+
+    <!-- Reopen modal -->
+    <div class="relative card-warm dot-grid p-6 min-h-[100%]">
+      <div class="absolute inset-0 scrim rounded-[var(--radius)]"></div>
+      <div class="relative card-warm">
+        <div class="px-5 pt-5 pb-3 border-b border-border">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="badge badge-rejected">REOPEN RUN</span>
+            <span class="font-mono text-[11px] text-muted-foreground">§11.10(e) audit trail</span>
+          </div>
+          <h3 class="text-lg font-semibold tracking-tight">Reopen R-2026-05-018 for correction</h3>
+        </div>
+
+        <div class="px-5 py-4 space-y-4">
+          <div class="rounded-md p-3" style="background:color-mix(in srgb,var(--destructive) 8%, transparent);border:1px solid color-mix(in srgb,var(--destructive) 35%, transparent)">
+            <div class="text-xs font-medium" style="color:var(--destructive)">All active sign-offs on this run will be invalidated.</div>
+            <ul class="text-xs text-muted-foreground mt-1.5 space-y-0.5">
+              <li>• OPERATOR — W. Uykimpang (2026-05-17 16:43)</li>
+              <li>• QAU — A. Patel (2026-05-18 09:12)</li>
+            </ul>
+            <div class="text-xs text-muted-foreground mt-2">Each role must re-sign after edits land.</div>
+          </div>
+
+          <div>
+            <label class="label">Reason for reopen <span class="text-destructive">*</span></label>
+            <textarea class="textarea" rows="3" placeholder="Operator noticed pH probe was reading +0.3 high; recorded values for steps 7–9 need correction before QA re-review."></textarea>
+            <div class="text-[11px] text-muted-foreground mt-1">Recorded verbatim in the audit log. Visible to QAU on re-review.</div>
+          </div>
+        </div>
+
+        <div class="px-5 py-3 border-t border-border flex justify-end gap-2">
+          <button class="btn btn-outline btn-sm">Cancel</button>
+          <button class="btn btn-destructive btn-sm">Reopen run</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     SURFACE 5 — Run completion: outcome + edit-reason prompt
+     ============================================================ -->
+<section class="relative">
+  <span class="surface-tag">SURFACE 05 · /runs/[id] · run completion (outcome + EDITED-transition prompt)</span>
+  <div class="grid grid-cols-[1.1fr_1fr] gap-4">
+    <!-- Outcome block (in-line in run page) -->
+    <div class="card-warm p-5">
+      <div class="font-mono text-[10px] text-muted-foreground">RUN COMPLETION</div>
+      <h3 class="text-base font-semibold tracking-tight">Record outcome</h3>
+      <p class="text-xs text-muted-foreground mt-1 mb-4">Operator sets the outcome; QAU attests to it during sign-off but does not change it. Separate column on <span class="font-mono">Run</span>.</p>
+
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        <label class="border border-border rounded-md p-3 cursor-pointer hover:bg-muted/60" style="border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)">
+          <div class="flex items-center justify-between">
+            <div class="font-mono text-[10px] text-muted-foreground">A</div>
+            <div class="w-3 h-3 rounded-full" style="background:var(--accent)"></div>
+          </div>
+          <div class="text-sm font-medium mt-1">Completed normally</div>
+        </label>
+        <label class="border border-border rounded-md p-3 cursor-pointer hover:bg-muted/60">
+          <div class="flex items-center justify-between">
+            <div class="font-mono text-[10px] text-muted-foreground">B</div>
+            <div class="w-3 h-3 rounded-full border border-border"></div>
+          </div>
+          <div class="text-sm font-medium mt-1">Completed with deviations</div>
+        </label>
+        <label class="border border-border rounded-md p-3 cursor-pointer hover:bg-muted/60">
+          <div class="flex items-center justify-between">
+            <div class="font-mono text-[10px] text-muted-foreground">C</div>
+            <div class="w-3 h-3 rounded-full border border-border"></div>
+          </div>
+          <div class="text-sm font-medium mt-1">Aborted</div>
+        </label>
+      </div>
+
+      <label class="label">Outcome notes <span class="text-muted-foreground">(optional)</span></label>
+      <textarea class="textarea" rows="3" placeholder="Brief narrative: any deviations, abnormal conditions, or context QAU should know."></textarea>
+
+      <div class="flex justify-end mt-4">
+        <button class="btn btn-primary btn-sm">Mark run complete</button>
+      </div>
+    </div>
+
+    <!-- Edit-reason prompt -->
+    <div class="card-warm p-5">
+      <div class="font-mono text-[10px] text-muted-foreground">EDITED-TRANSITION SAVE PROMPT</div>
+      <h3 class="text-base font-semibold tracking-tight">Reason for change</h3>
+      <p class="text-xs text-muted-foreground mt-1 mb-4">Modal injected into the save flow when modified steps lack <span class="font-mono">edit_reason</span>. Backed by <span class="font-mono">assert_no_unjustified_edit_errors</span>.</p>
+
+      <div class="space-y-3">
+        <div class="border border-border rounded-md p-3">
+          <div class="flex items-baseline justify-between">
+            <div>
+              <div class="font-mono text-[10px] text-muted-foreground">STEP 7</div>
+              <div class="text-sm font-medium">Adjust pH</div>
+            </div>
+            <div class="font-mono text-xs">
+              <span class="line-through text-muted-foreground">7.42</span>
+              <span class="mx-1 text-muted-foreground">→</span>
+              <span style="color:var(--accent)">7.12</span>
+            </div>
+          </div>
+          <textarea class="textarea mt-2" rows="2" placeholder="Operator: probe was reading +0.3 high; corrected after recalibration." style="font-size:0.8125rem"></textarea>
+        </div>
+
+        <div class="border border-border rounded-md p-3">
+          <div class="flex items-baseline justify-between">
+            <div>
+              <div class="font-mono text-[10px] text-muted-foreground">STEP 8</div>
+              <div class="text-sm font-medium">Mix duration</div>
+            </div>
+            <div class="font-mono text-xs">
+              <span class="line-through text-muted-foreground">15 min</span>
+              <span class="mx-1 text-muted-foreground">→</span>
+              <span style="color:var(--accent)">18 min</span>
+            </div>
+          </div>
+          <textarea class="textarea mt-2" rows="2" placeholder="Reason required to save EDITED transition." style="font-size:0.8125rem"></textarea>
+        </div>
+      </div>
+
+      <div class="flex justify-between items-center mt-4">
+        <div class="text-[11px] text-muted-foreground">Reasons append to the strikethrough annotation in batch records.</div>
+        <div class="flex gap-2">
+          <button class="btn btn-outline btn-sm">Cancel</button>
+          <button class="btn btn-primary btn-sm">Save EDITED</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     LEGEND
+     ============================================================ -->
+<section>
+  <div class="card-warm p-5">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+      <div>
+        <div class="font-mono text-[10px] text-muted-foreground mb-1">PALETTE</div>
+        <div class="flex gap-1.5 items-center">
+          <span class="w-5 h-5 rounded" style="background:var(--primary)"></span>
+          <span class="w-5 h-5 rounded" style="background:var(--accent)"></span>
+          <span class="w-5 h-5 rounded" style="background:var(--destructive)"></span>
+          <span class="w-5 h-5 rounded" style="background:var(--muted);border:1px solid var(--border)"></span>
+        </div>
+        <div class="mt-1 text-muted-foreground">From <span class="font-mono">app.css</span>, live</div>
+      </div>
+      <div>
+        <div class="font-mono text-[10px] text-muted-foreground mb-1">TYPE</div>
+        <div>DM&nbsp;Sans · DM&nbsp;Mono</div>
+        <div class="font-cursive text-lg" style="color:var(--primary)">Cursive name (signature)</div>
+      </div>
+      <div>
+        <div class="font-mono text-[10px] text-muted-foreground mb-1">COMPONENTS REUSED</div>
+        <div>card · button · badge · textarea · switch · dialog</div>
+      </div>
+      <div>
+        <div class="font-mono text-[10px] text-muted-foreground mb-1">NEW COMPONENTS</div>
+        <div>SignoffBlock · SignoffModal · GlpSettingsPanel · RunReopenModal · RunEditReasonPrompt</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="border-t border-border bg-card mt-12">
+  <div class="max-w-[1280px] mx-auto px-6 py-4 flex items-center justify-between text-xs text-muted-foreground">
+    <span class="font-mono">docs/superpowers/specs/2026-05-18-f-0087-glp-gap-fixes-design.md</span>
+    <span>Mock only — not wired</span>
+  </div>
+</footer>
+
+</body>
+</html>
