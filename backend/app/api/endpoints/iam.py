@@ -36,9 +36,7 @@ router = APIRouter()
 _DEPRECATION_LOG = logging.getLogger("app.deprecation")
 
 
-def _normalize_roles(
-    input_roles: list[str] | None, raw_role: str | None
-) -> list[str]:
+def _normalize_roles(input_roles: list[str] | None, raw_role: str | None) -> list[str]:
     """Server-side role normalization: ensure MEMBER, dedupe, validate.
 
     Raises HTTPException(400) on unknown values. Logs a deprecation warning
@@ -59,8 +57,7 @@ def _normalize_roles(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Unknown role(s): {bad}. Allowed: "
-                f"{sorted(_ALLOWED_ORG_ROLES)}"
+                f"Unknown role(s): {bad}. Allowed: " f"{sorted(_ALLOWED_ORG_ROLES)}"
             ),
         )
     seen: set[str] = set()
@@ -357,9 +354,8 @@ async def update_org_member_role(
         raise HTTPException(status_code=404, detail="Membership not found")
 
     # Enforce max 3 admins (only when adding ADMIN to a member that didn't have it)
-    becoming_admin = (
-        OrgRole.ADMIN.value in new_roles
-        and not has_org_role(membership, OrgRole.ADMIN.value)
+    becoming_admin = OrgRole.ADMIN.value in new_roles and not has_org_role(
+        membership, OrgRole.ADMIN.value
     )
     if becoming_admin:
         admin_count = await db.execute(
@@ -376,9 +372,8 @@ async def update_org_member_role(
             )
 
     # Enforce last-admin guard (only when removing ADMIN from a member that had it)
-    losing_admin = (
-        OrgRole.ADMIN.value not in new_roles
-        and has_org_role(membership, OrgRole.ADMIN.value)
+    losing_admin = OrgRole.ADMIN.value not in new_roles and has_org_role(
+        membership, OrgRole.ADMIN.value
     )
     if losing_admin:
         admin_count_result = await db.execute(
@@ -1076,6 +1071,18 @@ async def update_equipment(
     if body.location is not None:
         changes["location"] = body.location
         equipment.location = body.location
+    if body.serial_number is not None:
+        changes["serial_number"] = body.serial_number
+        equipment.serial_number = body.serial_number
+    if body.last_calibration_date is not None:
+        changes["last_calibration_date"] = body.last_calibration_date.isoformat()
+        equipment.last_calibration_date = body.last_calibration_date
+    if body.next_calibration_date is not None:
+        changes["next_calibration_date"] = body.next_calibration_date.isoformat()
+        equipment.next_calibration_date = body.next_calibration_date
+    if body.calibration_certificate_path is not None:
+        changes["calibration_certificate_path"] = body.calibration_certificate_path
+        equipment.calibration_certificate_path = body.calibration_certificate_path
 
     # Log to audit trail
     if changes:
