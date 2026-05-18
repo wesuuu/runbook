@@ -510,3 +510,63 @@ async def test_step_in_progress_records_started_by(
     step = run_after.json()["execution_data"]["step1"]
     assert step["started_by_user_id"] == str(test_user.id)
     assert step.get("started_at") is not None
+
+
+# --- Task 20: POST /runs/{id}/steps/{step_id}/review ----------------------
+
+
+@pytest_asyncio.fixture
+async def sample_completed_step_run(
+    db_session: AsyncSession,
+    test_project,
+    sample_active_protocol,
+    test_user: User,
+) -> Run:
+    """An ACTIVE run whose step1 was started+completed by a different user
+    so the calling test_user can act as the independent reviewer."""
+    from uuid import uuid4
+
+    other_user_id = str(uuid4())
+    run = Run(
+        name="Run Lifecycle Step Review",
+        project_id=test_project.id,
+        protocol_id=sample_active_protocol.id,
+        status="ACTIVE",
+        graph={"nodes": [], "edges": []},
+        execution_data={
+            "step1": {
+                "status": "completed",
+                "started_by_user_id": other_user_id,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            }
+        },
+        notes=[],
+        attachments=[],
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest.mark.asyncio
+async def test_step_review_sets_reviewed_by_and_audit(
+    client,
+    auth_headers,
+    sample_completed_step_run,
+    test_user,
+):
+    res = await client.post(
+        f"/science/runs/{sample_completed_step_run.id}/steps/step1/review",
+        headers=auth_headers,
+        json={},
+    )
+    assert res.status_code == 200, res.text
+    run = (
+        await client.get(
+            f"/science/runs/{sample_completed_step_run.id}",
+            headers=auth_headers,
+        )
+    ).json()
+    step = run["execution_data"]["step1"]
+    assert step["reviewed_by_user_id"] == str(test_user.id)
+    assert step["reviewed_at"] is not None

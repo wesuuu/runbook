@@ -1962,6 +1962,59 @@ async def patch_run_step_state(
     return RunResponse.model_validate(run)
 
 
+# --- Run step review (F-0087 Task 20) --------------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/steps/{step_id}/review",
+    response_model=RunResponse,
+)
+async def review_run_step(
+    run_id: UUID,
+    step_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Record an independent reviewer's sign-off on a completed step.
+
+    The reviewer cannot be the same user who started the step (F-0087
+    Task 20). Sets ``reviewed_by_user_id`` and ``reviewed_at`` on the
+    matching ``execution_data`` entry and emits a ``run.step.review``
+    audit log row.
+    """
+    run = await get_or_404(db, Run, run_id)
+    step = (run.execution_data or {}).get(step_id)
+    if step is None or step.get("status") != "completed":
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "STEP_NOT_REVIEWABLE", "step_id": step_id},
+        )
+    if step.get("started_by_user_id") == str(user.id):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "REVIEWER_NOT_INDEPENDENT", "step_id": step_id},
+        )
+
+    step = dict(step)
+    step["reviewed_by_user_id"] = str(user.id)
+    step["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+    run.execution_data = {**(run.execution_data or {}), step_id: step}
+    flag_modified(run, "execution_data")
+
+    await log_audit(
+        db,
+        user.id,
+        "run.step.review",
+        "run_step",
+        run.id,
+        {"step_id": step_id},
+    )
+
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
 # --- Sign-off listing (F-0087 Task 16) -------------------------------------
 
 
