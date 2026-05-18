@@ -498,3 +498,40 @@ async def other_org_site(db_session, second_org, second_user):
         payload=SiteCreate(name="Other Org Site"),
         actor_id=second_user.id,
     )
+
+
+@pytest.fixture
+async def sample_equipment(db_session, test_org, test_user, sample_site):
+    from app.models.science import Equipment
+
+    eq = Equipment(
+        organization_id=test_org.id,
+        name="Sample Equipment",
+        site_id=sample_site.id,
+        created_by_id=test_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    return eq
+
+
+@pytest.fixture
+async def sample_equipment_attachment(db_session, sample_equipment, test_user):
+    from app.models.science import EquipmentAttachment
+
+    att = EquipmentAttachment(
+        equipment_id=sample_equipment.id,
+        file_path=(
+            f"{sample_equipment.organization_id}/equipment/"
+            f"{sample_equipment.id}/test.pdf"
+        ),
+        original_filename="test.pdf",
+        mime_type="application/pdf",
+        size_bytes=100,
+        uploaded_by_id=test_user.id,
+    )
+    db_session.add(att)
+    await db_session.commit()
+    await db_session.refresh(att)
+    return att

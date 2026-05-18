@@ -1,1 +1,1 @@
-from app.services.equipment import registry, tags  # noqa: F401
+from app.services.equipment import attachments, registry, tags  # noqa: F401
