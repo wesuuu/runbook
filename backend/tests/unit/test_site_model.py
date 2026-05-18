@@ -1,6 +1,6 @@
 # backend/tests/unit/test_site_model.py
-from uuid import uuid4
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -36,7 +36,11 @@ async def test_site_partial_unique_active_name(db_session, test_org):
 
 @pytest.mark.asyncio
 async def test_site_name_reused_after_archive(db_session, test_org):
-    s1 = Site(organization_id=test_org.id, name="HQ", archived_at=datetime.now(timezone.utc))
+    s1 = Site(
+        organization_id=test_org.id,
+        name="HQ",
+        archived_at=datetime.now(timezone.utc),
+    )
     db_session.add(s1)
     await db_session.commit()
 

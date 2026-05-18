@@ -2,22 +2,9 @@ import uuid
 from datetime import date, datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import (
-    Boolean,
-    CheckConstraint,
-    Date,
-    DateTime,
-    Enum,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    desc,
-    func,
-    text,
-)
+from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, Enum,
+                        ForeignKey, Index, Integer, String, Text,
+                        UniqueConstraint, desc, func, text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -478,7 +465,6 @@ class Site(Base, UUIDMixin, TimestampMixin):
         PG_UUID(as_uuid=True),
         ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -499,8 +485,6 @@ class Site(Base, UUIDMixin, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-
-    organization = relationship("Organization", lazy="joined")
     # TODO Task 4: add Equipment.site back_populates once Equipment.site_id FK is added
     # equipment = relationship("Equipment", back_populates="site", lazy="select")
 
