@@ -7,6 +7,18 @@
     import { Button, buttonVariants } from "$lib/components/ui/button";
     import { scale, fly } from "svelte/transition";
     import {
+        X,
+        FlaskConical,
+        Sparkles,
+        FileSearch,
+        GitCompare,
+        Wrench,
+        BookOpen,
+        BarChart3,
+        Bug,
+    } from "lucide-svelte";
+    import { cn } from "$lib/utils";
+    import {
         getPanelState,
         getActiveSession,
         getMessageInput,
@@ -27,7 +39,31 @@
         getPendingApproval,
         isSubmittingApproval,
         submitApproval,
+        getActiveSkill,
+        clearActiveSkill,
     } from "$lib/chat-store.svelte";
+
+    const skillIconMap: Record<string, typeof FlaskConical> = {
+        "flask-conical": FlaskConical,
+        sparkles: Sparkles,
+        "file-search": FileSearch,
+        "git-compare": GitCompare,
+        wrench: Wrench,
+        "book-open": BookOpen,
+        "bar-chart-3": BarChart3,
+        bug: Bug,
+    };
+
+    function getSkillIcon(name: string) {
+        return skillIconMap[name] ?? Sparkles;
+    }
+
+    function formatSkillName(name: string): string {
+        return name
+            .split("-")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" ");
+    }
 
     let { showFab = true } = $props();
 
@@ -53,6 +89,7 @@
     const stalePending = $derived(getStalePendingMessage());
     const pendingApproval = $derived(getPendingApproval());
     const submittingApproval = $derived(isSubmittingApproval());
+    const activeSkill = $derived(getActiveSkill());
 
     const hasMessages = $derived(
         activeSession !== null && activeSession.messages.length > 0,
@@ -483,6 +520,27 @@
 
         <!-- Input -->
         <div class="border-t border-border/40 p-3 bg-card/30 flex-shrink-0">
+            {#if activeSkill}
+                {@const SkillIcon = getSkillIcon(activeSkill.icon)}
+                <div class="mb-2 flex items-center gap-2">
+                    <div
+                        class="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs text-accent"
+                    >
+                        <SkillIcon class="h-3 w-3" />
+                        <span class="font-medium">
+                            {formatSkillName(activeSkill.name)}
+                        </span>
+                        <button
+                            type="button"
+                            class="ml-1 rounded hover:bg-accent/20 p-0.5 cursor-pointer transition-all duration-150"
+                            onclick={clearActiveSkill}
+                            aria-label="Clear active skill"
+                        >
+                            <X class="h-3 w-3" />
+                        </button>
+                    </div>
+                </div>
+            {/if}
             <div class="flex items-end gap-2">
                 {#if hasMessages && skills.length > 0}
                     <ChatSkillButtons
@@ -496,10 +554,15 @@
                     value={messageInput}
                     oninput={(e) => setMessageInput(e.currentTarget.value)}
                     onkeydown={handleKeydown}
-                    placeholder="Ask a question..."
-                    class="flex-1 resize-none rounded-xl border border-border/60 bg-background px-3 py-2.5 text-sm
-                        placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30
-                        focus:border-primary/50 min-h-[40px] max-h-[120px]"
+                    placeholder={activeSkill
+                        ? `Ask "${formatSkillName(activeSkill.name)}"…`
+                        : "Ask a question..."}
+                    class={cn(
+                        "flex-1 resize-none rounded-xl px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none min-h-[40px] max-h-[120px]",
+                        activeSkill
+                            ? "border border-accent ring-1 ring-accent/30 bg-background focus:ring-accent/40"
+                            : "border border-border/60 bg-background focus:ring-2 focus:ring-primary/30 focus:border-primary/50",
+                    )}
                     rows="1"
                     disabled={sending}
                 ></textarea>
