@@ -170,21 +170,20 @@ def _scripted_model(script: list[ModelResponse]) -> FunctionModel:
 
     async def stream_call(messages: list[ModelMessage], info: AgentInfo):
         response = _next()
-        tool_index = 0
-        for part in response.parts:
+        for idx, part in enumerate(response.parts):
             if isinstance(part, TextPart):
                 yield part.content
             elif isinstance(part, ToolCallPart):
                 args = part.args
                 json_args = args if isinstance(args, str) else json.dumps(args)
+                key = part.tool_call_id or f"call_{idx}"
                 yield {
-                    tool_index: DeltaToolCall(
+                    key: DeltaToolCall(
                         name=part.tool_name,
                         json_args=json_args,
                         tool_call_id=part.tool_call_id,
                     )
                 }
-                tool_index += 1
 
     return FunctionModel(function=call, stream_function=stream_call)
 
@@ -314,7 +313,7 @@ async def test_library_source_flow_dispatches_research_then_creator(
         from app.services.ai.deps import ChatDeps
 
         async def _build(*_a, **_kw):
-            script = next(scripts_iter)
+            script = next(scripts_iter, [])
             agent = Agent(_scripted_model(script), deps_type=ChatDeps)
             agent.tool_plain(fake_task, name="task")
             return agent
@@ -355,9 +354,8 @@ async def test_library_source_flow_dispatches_research_then_creator(
     assert (
         "protocol_creator" in dispatched_names
     ), f"Library path must dispatch protocol_creator; got {dispatched_names}"
-    assert dispatched_names.index("research_library") < dispatched_names.index(
-        "protocol_creator"
-    ), "research_library must be dispatched before protocol_creator"
+    assert captured[0]["name"] == "research_library"
+    assert captured[1]["name"] == "protocol_creator"
     creator_call = next(c for c in captured if c["name"] == "protocol_creator")
     assert "grounding:" in creator_call["task"].lower()
     assert "Lyophilization SOP v2" in creator_call["task"]
