@@ -83,6 +83,13 @@ async def create_run(
             detail="EDIT permission required on project",
         )
 
+    # F-0086: a run designated as producing a lot must carry a lot number.
+    if run_in.produces_lot and not (run_in.lot_number and run_in.lot_number.strip()):
+        raise HTTPException(
+            status_code=422,
+            detail="lot_number is required when produces_lot is true",
+        )
+
     result = await db.execute(select(Project).where(Project.id == run_in.project_id))
     project = result.scalar_one_or_none()
     if project is None:
@@ -184,6 +191,8 @@ async def create_run(
         execution_data={},
         created_by_id=user.id,
         is_strict=is_strict,
+        # F-0086
+        produces_lot=run_in.produces_lot,
         # QA-0008: GxP execution metadata
         lot_number=run_in.lot_number,
         batch_number=run_in.batch_number,
@@ -346,6 +355,19 @@ async def update_run(
         allowed = True
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    # F-0086: when toggling produces_lot=true, ensure a lot_number is set
+    # either in this payload or already on the run.
+    update_dict = update_data.model_dump(exclude_unset=True)
+    if update_dict.get("produces_lot") is True:
+        next_lot = update_dict.get("lot_number")
+        if next_lot is None:
+            next_lot = run_obj.lot_number
+        if not (next_lot and next_lot.strip()):
+            raise HTTPException(
+                status_code=422,
+                detail="lot_number is required when produces_lot is true",
+            )
 
     # Validate status transitions
     new_status = update_data.status.value if update_data.status else None
@@ -634,7 +656,7 @@ async def update_run(
                     diff,
                 )
 
-    changes = update_data.model_dump(exclude_unset=True)
+    changes = update_dict
     for key, value in changes.items():
         setattr(run_obj, key, value)
 
