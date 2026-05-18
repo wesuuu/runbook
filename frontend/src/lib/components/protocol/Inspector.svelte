@@ -6,6 +6,7 @@
     import { X } from "lucide-svelte";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
     import EquipmentPickerModal from "$lib/components/modals/EquipmentPickerModal.svelte";
+    import type { Site } from "$lib/schemas/sites";
     import { Button } from "$lib/components/ui/button";
     import type { BranchValidationError } from "$lib/components/protocol/protocolValidation";
     import EquipmentChipList from "$lib/components/shared/EquipmentChipList.svelte";
@@ -35,6 +36,7 @@
         node: Node | null;
         allNodes: Node[];
         orgEquipment?: Equipment[];
+        sites?: Site[];
         equipmentConflicts?: Map<string, string[]>;
         onApply: (
             nodeId: string,
@@ -51,7 +53,7 @@
         branchErrors?: BranchValidationError[];
     }
 
-    let { node, allNodes, orgEquipment = [], equipmentConflicts = new Map(), onApply, onSaveAsNew, onCreateEquipment, onClose, branchErrors = [] }: Props = $props();
+    let { node, allNodes, orgEquipment = [], sites = [], equipmentConflicts = new Map(), onApply, onSaveAsNew, onCreateEquipment, onClose, branchErrors = [] }: Props = $props();
 
     const timelineConfig: {
         enabled: boolean;
@@ -421,6 +423,7 @@
         {#if onCreateEquipment}
             <EquipmentPickerModal
                 open={equipmentModalOpen}
+                {sites}
                 nodeId={node?.id || ''}
                 currentEquipment={editEquipment}
                 {orgEquipment}

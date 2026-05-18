@@ -6,6 +6,8 @@
 		findLocalIdConflicts
 	} from '$lib/protocol/equipmentIds';
 	import type { Node } from '@xyflow/svelte';
+	import type { Site } from '$lib/schemas/sites';
+	import SitePicker from '$lib/components/sites/SitePicker.svelte';
 
 	interface Equipment {
 		id: string;
@@ -26,35 +28,54 @@
 
 	interface Props {
 		open: boolean;
-		nodeId: string;
-		currentEquipment: SelectedEquipment[];
-		orgEquipment: Equipment[];
-		allNodes: Node[];
-		conflictingIds: Set<string>;
-		onClose: () => void;
-		onApply: (equipment: SelectedEquipment[]) => void;
+		sites?: Site[];
+		mode?: 'pick' | 'create';
+		nodeId?: string;
+		currentEquipment?: SelectedEquipment[];
+		orgEquipment?: Equipment[];
+		allNodes?: Node[];
+		conflictingIds?: Set<string>;
+		onClose?: () => void;
+		onApply?: (equipment: SelectedEquipment[]) => void;
 		onCreateEquipment: (data: {
 			name: string;
 			description: string;
 			equipment_type: string;
 			location: string;
+			room?: string;
+			site_id?: string;
 		}) => Promise<Equipment>;
 	}
 
 	let {
 		open = false,
-		nodeId,
+		sites = [],
+		mode = 'pick',
+		nodeId = '',
 		currentEquipment = [],
 		orgEquipment = [],
 		allNodes = [],
 		conflictingIds = new Set(),
-		onClose,
-		onApply,
+		onClose = () => {},
+		onApply = () => {},
 		onCreateEquipment
 	}: Props = $props();
 
+	const STORAGE_KEY = 'f0088:lastSiteId';
+
+	function resolveInitialSiteId(): string {
+		const cached =
+			typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+		if (cached) {
+			const match = sites.find((s) => s.id === cached && !s.archived_at);
+			if (match) return match.id;
+		}
+		const orgDefault = sites.find((s) => s.is_default && !s.archived_at);
+		return orgDefault?.id ?? sites[0]?.id ?? '';
+	}
+
 	let searchQuery = $state('');
-	let showCreateForm = $state(false);
+	let showCreateForm = $state(mode === 'create');
 	let createSectionEl = $state<HTMLDivElement | null>(null);
 	let selectedItems = $state<Map<string, { local_id: string; shareable: boolean }>>(new Map());
 	let isCreating = $state(false);
@@ -63,8 +84,16 @@
 	let newEquipmentName = $state('');
 	let newEquipmentDescription = $state('');
 	let newEquipmentType = $state('');
+	let newEquipmentRoom = $state('');
 	let newEquipmentLocation = $state('');
+	let newSiteId = $state<string>(resolveInitialSiteId());
 	let createError = $state('');
+
+	$effect(() => {
+		if (newSiteId && typeof localStorage !== 'undefined') {
+			localStorage.setItem(STORAGE_KEY, newSiteId);
+		}
+	});
 
 	// Initialize selected items when modal opens
 	$effect(() => {
@@ -157,6 +186,10 @@
 			createError = 'Equipment name is required';
 			return;
 		}
+		if (!newSiteId) {
+			createError = 'Site is required';
+			return;
+		}
 
 		isCreating = true;
 		createError = '';
@@ -166,22 +199,30 @@
 				name: newEquipmentName,
 				description: newEquipmentDescription,
 				equipment_type: newEquipmentType,
-				location: newEquipmentLocation
+				location: newEquipmentLocation,
+				room: newEquipmentRoom,
+				site_id: newSiteId
 			});
 
-			// Add to selected items
-			selectedItems.set(newEq.id, {
-				local_id: nextLocalIdInContext(),
-				shareable: false
-			});
-			selectedItems = selectedItems;
+			// Add to selected items only in pick mode
+			if (mode !== 'create') {
+				selectedItems.set(newEq.id, {
+					local_id: nextLocalIdInContext(),
+					shareable: false
+				});
+				selectedItems = selectedItems;
+			}
 
 			// Reset form
 			newEquipmentName = '';
 			newEquipmentDescription = '';
 			newEquipmentType = '';
+			newEquipmentRoom = '';
 			newEquipmentLocation = '';
-			showCreateForm = false;
+			showCreateForm = mode === 'create';
+
+			// In create-only mode, close the modal after create
+			if (mode === 'create') onClose?.();
 		} catch (e) {
 			createError = `Failed to create equipment: ${e instanceof Error ? e.message : 'Unknown error'}`;
 		} finally {
@@ -218,10 +259,11 @@
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
 	<Dialog.Content class="sm:max-w-lg max-h-[85vh] flex flex-col p-0 gap-0">
 		<Dialog.Header class="px-6 pt-6 pb-0">
-			<Dialog.Title>Select Equipment</Dialog.Title>
+			<Dialog.Title>{mode === 'create' ? 'Create Equipment' : 'Select Equipment'}</Dialog.Title>
 		</Dialog.Header>
 
 		<div class="equipment-modal">
+			{#if mode !== 'create'}
 			<!-- Search bar -->
 			<div class="search-bar">
 				<input
@@ -311,9 +353,11 @@
 					</div>
 				{/if}
 			</div>
+			{/if}
 
 			<!-- Create new equipment section -->
 			<div class="create-section" bind:this={createSectionEl}>
+				{#if mode !== 'create'}
 				<Button
 					variant="link"
 					size="sm"
@@ -322,6 +366,7 @@
 				>
 					{showCreateForm ? '✕ Cancel' : '+ Add New Equipment'}
 				</Button>
+				{/if}
 
 				{#if showCreateForm}
 					<div class="create-form">
@@ -360,14 +405,30 @@
 						</div>
 
 						<div class="form-group">
-							<label for="eq-loc">Location</label>
+							<label for="eq-room">Room</label>
+							<input
+								id="eq-room"
+								type="text"
+								placeholder="e.g., Room 204"
+								bind:value={newEquipmentRoom}
+								class="form-input"
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-loc">Bench / Spot</label>
 							<input
 								id="eq-loc"
 								type="text"
-								placeholder="e.g., Lab 1"
+								placeholder="e.g., Bench A2"
 								bind:value={newEquipmentLocation}
 								class="form-input"
 							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-site">Site *</label>
+							<SitePicker {sites} value={newSiteId} onChange={(v) => (newSiteId = v)} />
 						</div>
 
 						{#if createError}
@@ -386,6 +447,7 @@
 			</div>
 		</div>
 
+		{#if mode !== 'create'}
 		<Dialog.Footer class="px-6 pb-6 pt-0 border-t border-border mt-0">
 			{#if hasConflicts}
 				<span class="footer-error">Resolve duplicate IDs before applying</span>
@@ -397,6 +459,7 @@
 				Apply
 			</Button>
 		</Dialog.Footer>
+		{/if}
 	</Dialog.Content>
 </Dialog.Root>
 

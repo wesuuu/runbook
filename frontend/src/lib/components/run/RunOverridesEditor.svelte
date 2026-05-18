@@ -9,6 +9,7 @@
     } from '$lib/utils/runOverrides';
     import { detectEquipmentConflicts } from '$lib/components/protocol/protocolGraph';
     import type { ProtocolRole } from '$lib/schemas/protocols';
+    import type { Site } from '$lib/schemas/sites';
     import { fade, slide } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { cubicOut } from 'svelte/easing';
@@ -41,6 +42,7 @@
         originalGraph: Graph;
         currentGraph: Graph;
         orgEquipment: OrgEquipment[];
+        sites?: Site[];
         mediaPrepNodes: Array<{ id: string; label: string }>;
         roles: ProtocolRole[];
         activeRoleId: string | null;
@@ -60,6 +62,7 @@
         originalGraph,
         currentGraph,
         orgEquipment,
+        sites = [],
         mediaPrepNodes,
         roles,
         activeRoleId,
@@ -282,6 +285,7 @@
 {#if swapNode}
     <EquipmentPickerModal
         open={true}
+        {sites}
         nodeId={swapNode.id}
         currentEquipment={(swapNode.data as { equipment?: Array<{ equipment_id: string; shareable: boolean }> })?.equipment ?? []}
         orgEquipment={orgEquipment as Parameters<typeof EquipmentPickerModal>[0]['orgEquipment']}
