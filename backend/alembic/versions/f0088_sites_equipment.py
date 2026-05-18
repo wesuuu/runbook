@@ -1,7 +1,7 @@
 """f0088 add sites and extend equipment
 
 Revision ID: f0088_sites_equipment
-Revises: f0044_glp_signoffs
+Revises: f0043
 Create Date: 2026-05-18
 """
 from alembic import op
@@ -10,12 +10,16 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY
 
 
 revision = "f0088_sites_equipment"
-down_revision = "f0044_glp_signoffs"
+down_revision = "f0043"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    # NOTE: When merging with F-0087 (parallel work), some Equipment columns
+    # (serial_number, last_calibration_date) may already exist. Resolve at merge
+    # time — likely by rebasing onto F-0087's head and removing duplicates here.
+
     # 1. sites
     op.create_table(
         "sites",
@@ -54,7 +58,8 @@ def upgrade() -> None:
                                         sa.ForeignKey("users.id", ondelete="SET NULL")))
     op.add_column("equipment", sa.Column("manufacturer", sa.String(120)))
     op.add_column("equipment", sa.Column("model", sa.String(120)))
-    # serial_number, last_calibration_date, next_calibration_date already added by f0044
+    op.add_column("equipment", sa.Column("serial_number", sa.String(120)))
+    op.add_column("equipment", sa.Column("last_calibration_date", sa.Date()))
     op.add_column("equipment", sa.Column("status", sa.String(20),
                                         server_default="ACTIVE", nullable=False))
     op.add_column("equipment", sa.Column("install_date", sa.Date()))
@@ -168,10 +173,10 @@ def downgrade() -> None:
 
     op.drop_index("ix_equipment_org_status", "equipment")
     op.drop_index("ix_equipment_site", "equipment")
-    # serial_number, last_calibration_date, next_calibration_date dropped by f0044 downgrade
     for col in ("archived_by_id", "archived_at", "tags", "room",
-                "next_calibration_due", "install_date",
-                "status", "model", "manufacturer",
+                "next_calibration_due", "last_calibration_date",
+                "install_date", "status", "serial_number",
+                "model", "manufacturer",
                 "created_by_id", "site_id"):
         op.drop_column("equipment", col)
 
