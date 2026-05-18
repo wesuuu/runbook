@@ -1,1 +1,1 @@
-from app.services.sites import defaults  # noqa: F401
+from app.services.sites import defaults, grants  # noqa: F401
