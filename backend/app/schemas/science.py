@@ -378,6 +378,12 @@ class RunStateUpdate(BaseModel):
     execution_data_delta: Optional[Dict[str, Dict[str, Any]]] = None
 
 
+class RunStepStateUpdate(BaseModel):
+    """Body for PATCH /runs/{id}/steps/{step_id} (F-0087)."""
+
+    status: str
+
+
 class RunResponse(RunBase):
     id: UUID
     project_id: UUID

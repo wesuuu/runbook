@@ -35,7 +35,7 @@ from app.schemas.science import (GlpSignoffCreate, GlpSignoffResponse,
                                  RunRoleAssignmentCreate,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunStateUpdate,
-                                 RunUpdate)
+                                 RunStepStateUpdate, RunUpdate)
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
@@ -1905,6 +1905,56 @@ async def patch_run_state(
             "to": new_status,
             "edit_reasons": payload.edit_reasons or {},
         },
+    )
+
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
+# --- Run step state (F-0087 Task 19) ---------------------------------------
+
+
+@router.patch(
+    "/runs/{run_id}/steps/{step_id}",
+    response_model=RunResponse,
+)
+async def patch_run_step_state(
+    run_id: UUID,
+    step_id: str,
+    payload: RunStepStateUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Transition a single step's status within a run.
+
+    On the ``not in_progress -> in_progress`` edge, captures the actor and
+    timestamp (F-0087 Task 19) so a later ``/review`` can enforce
+    second-set-of-eyes independence.
+    """
+    run = await get_or_404(db, Run, run_id)
+    exec_data = dict(run.execution_data or {})
+    step = dict(exec_data.get(step_id) or {})
+
+    old_status = step.get("status")
+    new_step_status = payload.status
+
+    if new_step_status == "in_progress" and old_status != "in_progress":
+        step["started_by_user_id"] = str(user.id)
+        step["started_at"] = datetime.now(timezone.utc).isoformat()
+
+    step["status"] = new_step_status
+    exec_data[step_id] = step
+    run.execution_data = exec_data
+    flag_modified(run, "execution_data")
+
+    await log_audit(
+        db,
+        user.id,
+        "run.step.state",
+        "run_step",
+        run.id,
+        {"step_id": step_id, "from": old_status, "to": new_step_status},
     )
 
     await db.commit()

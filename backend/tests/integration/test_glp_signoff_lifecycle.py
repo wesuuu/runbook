@@ -484,3 +484,29 @@ async def test_active_transition_sets_started_at(
     body = res.json()
     assert body["started_at"] is not None
     assert body["started_by_id"] is not None
+
+
+# --- Task 19: step in_progress records started_by_user_id -----------------
+
+
+@pytest.mark.asyncio
+async def test_step_in_progress_records_started_by(
+    client,
+    auth_headers,
+    sample_active_run,
+    test_user,
+):
+    res = await client.patch(
+        f"/science/runs/{sample_active_run.id}/steps/step1",
+        headers=auth_headers,
+        json={"status": "in_progress"},
+    )
+    assert res.status_code == 200, res.text
+    run_after = await client.get(
+        f"/science/runs/{sample_active_run.id}",
+        headers=auth_headers,
+    )
+    assert run_after.status_code == 200, run_after.text
+    step = run_after.json()["execution_data"]["step1"]
+    assert step["started_by_user_id"] == str(test_user.id)
+    assert step.get("started_at") is not None
