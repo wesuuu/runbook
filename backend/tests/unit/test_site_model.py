@@ -5,7 +5,18 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.models.iam import Organization
 from app.models.science import Site
+
+
+async def _make_bare_org(db_session, name="Bare Org"):
+    """Create an org without the test_org fixture's auto-default-site so we
+    can exercise the partial unique constraint cleanly.
+    """
+    org = Organization(name=name)
+    db_session.add(org)
+    await db_session.flush()
+    return org
 
 
 @pytest.mark.asyncio
@@ -60,12 +71,14 @@ async def test_site_is_default_default_false(db_session, test_org):
 
 
 @pytest.mark.asyncio
-async def test_only_one_default_site_per_org(db_session, test_org):
-    s1 = Site(organization_id=test_org.id, name="HQ", is_default=True)
+async def test_only_one_default_site_per_org(db_session):
+    org = await _make_bare_org(db_session, name="Default-Unique Org")
+
+    s1 = Site(organization_id=org.id, name="HQ", is_default=True)
     db_session.add(s1)
     await db_session.commit()
 
-    s2 = Site(organization_id=test_org.id, name="Lab B", is_default=True)
+    s2 = Site(organization_id=org.id, name="Lab B", is_default=True)
     db_session.add(s2)
     with pytest.raises(IntegrityError):
         await db_session.commit()  # partial unique violation
