@@ -20,7 +20,9 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import GlpSignoff, Run, RunRoleAssignment
+from app.models.iam import ObjectType, PermissionLevel
+from app.models.science import GlpSignoff, Protocol, Run, RunRoleAssignment
+from app.services.core.permissions import check_permission
 
 
 @dataclass
@@ -137,24 +139,28 @@ async def assert_qau_independent(
                     },
                 )
 
-        # 5. Active Study Director sign-off on the run
-        sd_result = await db.execute(
-            select(GlpSignoff).where(
-                GlpSignoff.run_id == entity_id,
-                GlpSignoff.role == "STUDY_DIRECTOR",
-                GlpSignoff.action == "APPROVED",
-                GlpSignoff.invalidated_at.is_(None),
+        # 5. Active Study Director sign-off on the protocol the run executes.
+        # GLP §58.35: QAU must be independent of the SD who APPROVED THE
+        # PROTOCOL (pre-execution approval), not a per-run SD sign-off.
+        # Grilling decision #5 (plan lines 4262-4263).
+        if run.protocol_id is not None:
+            sd_result = await db.execute(
+                select(GlpSignoff).where(
+                    GlpSignoff.protocol_id == run.protocol_id,
+                    GlpSignoff.role == "STUDY_DIRECTOR",
+                    GlpSignoff.action == "APPROVED",
+                    GlpSignoff.invalidated_at.is_(None),
+                )
             )
-        )
-        sd_row = sd_result.scalar_one_or_none()
-        if sd_row is not None and sd_row.signer_id == signer_id:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "QAU_NOT_INDEPENDENT",
-                    "conflict_role": "STUDY_DIRECTOR",
-                },
-            )
+            sd_row = sd_result.scalar_one_or_none()
+            if sd_row is not None and sd_row.signer_id == signer_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "QAU_NOT_INDEPENDENT",
+                        "conflict_role": "STUDY_DIRECTOR",
+                    },
+                )
 
     else:
         # entity_type == "protocol"
@@ -176,3 +182,91 @@ async def assert_qau_independent(
                     "conflict_role": "STUDY_DIRECTOR",
                 },
             )
+
+
+async def validate_signoff_role_assignable(
+    db: AsyncSession,
+    entity_type: Literal["protocol", "run"],
+    entity_id: UUID,
+    user_id: UUID,
+    role: str,
+) -> None:
+    """Verify the signer has the project-level permission required to act in
+    ``role``.  Raises HTTPException(403) on failure.
+
+    Role → required permission mapping (grilling plan lines 1098-1138):
+        OPERATOR        → WRITE  (EDIT) on the run
+        STUDY_DIRECTOR  → APPROVE on the protocol (or the run's protocol)
+        QAU             → APPROVE on the protocol (or the run's protocol)
+        SPONSOR         → ADMIN on the project owning the protocol
+
+    For roles that check the protocol (STUDY_DIRECTOR, QAU, SPONSOR) when the
+    entity is a run, the check is performed against the run's ``protocol_id``.
+    If ``protocol_id`` is None the run is not linked to a protocol and only
+    OPERATOR/EDIT-level checks apply (protocol-scoped roles pass through).
+    """
+    # Resolve the protocol_id we need for SD/QAU/SPONSOR checks.
+    protocol_id: Optional[UUID] = None
+    if entity_type == "run":
+        run_result = await db.execute(select(Run).where(Run.id == entity_id))
+        run = run_result.scalar_one()
+        protocol_id = run.protocol_id
+    else:
+        protocol_id = entity_id
+
+    # Determine the (object_type, object_id, level) triple for check_permission.
+    if role == "OPERATOR":
+        # OPERATOR signs the run directly; requires EDIT on the run.
+        obj_type = ObjectType.RUN
+        obj_id = entity_id
+        required = PermissionLevel.EDIT
+
+    elif role in ("STUDY_DIRECTOR", "QAU"):
+        # These roles sign the protocol (or the run's protocol).
+        if protocol_id is None:
+            # Run not linked to a protocol — no protocol permission to check.
+            return
+        obj_type = ObjectType.PROTOCOL
+        obj_id = protocol_id
+        required = PermissionLevel.APPROVE
+
+    elif role == "SPONSOR":
+        # SPONSOR requires ADMIN on the project owning the protocol.
+        if protocol_id is None:
+            return
+        proto_result = await db.execute(
+            select(Protocol.project_id).where(Protocol.id == protocol_id)
+        )
+        proj_id: Optional[UUID] = proto_result.scalar_one_or_none()
+        if proj_id is None:
+            # Protocol is org-scoped (no project) — fall back to APPROVE on
+            # the protocol itself.
+            # TODO: revisit when org-scoped protocols get a proper SPONSOR flow.
+            obj_type = ObjectType.PROTOCOL
+            obj_id = protocol_id
+            required = PermissionLevel.APPROVE
+        else:
+            obj_type = ObjectType.PROJECT
+            obj_id = proj_id
+            required = PermissionLevel.ADMIN
+
+    else:
+        # Unknown role — no specific permission mapping; allow through.
+        return
+
+    allowed = await check_permission(
+        db=db,
+        user_id=user_id,
+        object_type=obj_type,
+        object_id=obj_id,
+        required_level=required,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "ROLE_NOT_AUTHORIZED",
+                "role": role,
+                "entity_type": entity_type,
+            },
+        )

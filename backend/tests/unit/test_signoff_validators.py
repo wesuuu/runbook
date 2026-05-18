@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from app.services.signoffs.validation import (
     SignoffPayload, assert_attestation_and_image_present,
-    assert_qau_independent)
+    assert_qau_independent, validate_signoff_role_assignable)
 
 # ---------------------------------------------------------------------------
 # assert_attestation_and_image_present
@@ -311,16 +311,22 @@ async def test_assert_qau_independent_rejects_lane_assignment():
 # ---------------------------------------------------------------------------
 
 
-async def test_assert_qau_independent_rejects_study_director_on_run():
-    """QAU signer is also active STUDY_DIRECTOR on the run → STUDY_DIRECTOR."""
+async def test_assert_qau_independent_run_rejects_protocol_sd_signer():
+    """QAU signer is also the active STUDY_DIRECTOR on the run's protocol →
+    STUDY_DIRECTOR conflict.
+
+    The SD sign-off lives on the protocol (pre-execution approval), NOT on
+    the run.  Grilling decision #5, plan lines 4262-4263.
+    """
     signer_id = uuid4()
     run_id = uuid4()
+    protocol_id = uuid4()
 
     mock_run = MagicMock()
     mock_run.started_by_id = uuid4()
     mock_run.created_by_id = uuid4()
     mock_run.execution_data = {}
-    mock_run.protocol_id = uuid4()
+    mock_run.protocol_id = protocol_id  # run IS linked to a protocol
 
     mock_result = MagicMock()
     mock_result.scalar_one.return_value = mock_run
@@ -328,6 +334,7 @@ async def test_assert_qau_independent_rejects_study_director_on_run():
     mock_assignments_result = MagicMock()
     mock_assignments_result.scalars.return_value.all.return_value = []
 
+    # SD sign-off is on the PROTOCOL, not the run.
     mock_sd_row = MagicMock()
     mock_sd_row.signer_id = signer_id
 
@@ -486,3 +493,133 @@ async def test_assert_qau_independent_step_actor_uuid_comparison():
             role="QAU",
         )
     assert exc.value.detail["conflict_role"] == "STEP_ACTOR"
+
+
+# ---------------------------------------------------------------------------
+# validate_signoff_role_assignable
+# ---------------------------------------------------------------------------
+
+
+async def test_validate_signoff_role_assignable_passes_with_permission():
+    """User has APPROVE on the protocol → QAU role is allowed."""
+    user_id = uuid4()
+    protocol_id = uuid4()
+
+    with patch(
+        "app.services.signoffs.validation.check_permission",
+        new_callable=AsyncMock,
+        return_value=True,
+    ) as mock_check:
+        await validate_signoff_role_assignable(
+            db=AsyncMock(),
+            entity_type="protocol",
+            entity_id=protocol_id,
+            user_id=user_id,
+            role="QAU",
+        )
+
+    mock_check.assert_awaited_once()
+
+
+async def test_validate_signoff_role_assignable_raises_403_without_permission():
+    """User lacks APPROVE on the protocol → 403 ROLE_NOT_AUTHORIZED."""
+    user_id = uuid4()
+    protocol_id = uuid4()
+
+    with patch(
+        "app.services.signoffs.validation.check_permission",
+        new_callable=AsyncMock,
+        return_value=False,
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await validate_signoff_role_assignable(
+                db=AsyncMock(),
+                entity_type="protocol",
+                entity_id=protocol_id,
+                user_id=user_id,
+                role="STUDY_DIRECTOR",
+            )
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail["error"] == "ROLE_NOT_AUTHORIZED"
+    assert exc.value.detail["role"] == "STUDY_DIRECTOR"
+    assert exc.value.detail["entity_type"] == "protocol"
+
+
+async def test_validate_signoff_role_assignable_operator_checks_run_edit():
+    """OPERATOR role checks EDIT on the run itself, not the protocol."""
+    from app.models.iam import ObjectType, PermissionLevel
+
+    user_id = uuid4()
+    run_id = uuid4()
+
+    captured_args: dict = {}
+
+    async def fake_check_permission(db, user_id, object_type, object_id, required_level):
+        captured_args["object_type"] = object_type
+        captured_args["object_id"] = object_id
+        captured_args["required_level"] = required_level
+        return True
+
+    with patch(
+        "app.services.signoffs.validation.check_permission",
+        side_effect=fake_check_permission,
+    ):
+        mock_run = MagicMock()
+        mock_run.protocol_id = uuid4()
+        mock_run_result = MagicMock()
+        mock_run_result.scalar_one.return_value = mock_run
+
+        db = AsyncMock()
+        db.execute.return_value = mock_run_result
+
+        await validate_signoff_role_assignable(
+            db=db,
+            entity_type="run",
+            entity_id=run_id,
+            user_id=user_id,
+            role="OPERATOR",
+        )
+
+    assert captured_args["object_type"] == ObjectType.RUN
+    assert captured_args["object_id"] == run_id
+    assert captured_args["required_level"] == PermissionLevel.EDIT
+
+
+async def test_validate_signoff_role_assignable_sponsor_uses_project_admin():
+    """SPONSOR role requires ADMIN on the project that owns the protocol."""
+    from app.models.iam import ObjectType, PermissionLevel
+
+    user_id = uuid4()
+    protocol_id = uuid4()
+    project_id = uuid4()
+
+    captured_args: dict = {}
+
+    async def fake_check_permission(db, user_id, object_type, object_id, required_level):
+        captured_args["object_type"] = object_type
+        captured_args["object_id"] = object_id
+        captured_args["required_level"] = required_level
+        return True
+
+    mock_proj_result = MagicMock()
+    mock_proj_result.scalar_one_or_none.return_value = project_id
+
+    db = AsyncMock()
+    db.execute.return_value = mock_proj_result
+
+    with patch(
+        "app.services.signoffs.validation.check_permission",
+        side_effect=fake_check_permission,
+    ):
+        await validate_signoff_role_assignable(
+            db=db,
+            entity_type="protocol",
+            entity_id=protocol_id,
+            user_id=user_id,
+            role="SPONSOR",
+        )
+
+    assert captured_args["object_type"] == ObjectType.PROJECT
+    assert captured_args["object_id"] == project_id
+    assert captured_args["required_level"] == PermissionLevel.ADMIN
