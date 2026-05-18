@@ -285,7 +285,7 @@ def build() -> Document:
 
     _style_cell(th.rows[0].cells[0], "Document Number:",
                 bold=True, fill=HEADER_FILL)
-    _style_cell(th.rows[0].cells[1], "{{ document_number }}")
+    _style_cell(th.rows[0].cells[1], "{{ doc_number }}")
     _style_cell(th.rows[0].cells[2], "Revision:",
                 bold=True, fill=HEADER_FILL)
     _style_cell(th.rows[0].cells[3], "{{ version_number }}")
@@ -320,13 +320,13 @@ def build() -> Document:
     _add_section_heading(doc, "1.0 Purpose", level=2)
     purpose_p = doc.add_paragraph()
     purpose_p.paragraph_format.space_after = Pt(8)
-    _apply_font(purpose_p.add_run("{{ purpose_text }}"), size=10)
+    _apply_font(purpose_p.add_run("{{ purpose }}"), size=10)
 
     # ── 2.0 Scope ───────────────────────────────────────────────
     _add_section_heading(doc, "2.0 Scope", level=2)
     scope_p = doc.add_paragraph()
     scope_p.paragraph_format.space_after = Pt(8)
-    _apply_font(scope_p.add_run("{{ scope_text }}"), size=10)
+    _apply_font(scope_p.add_run("{{ scope }}"), size=10)
 
     # ── 3.0 Procedure ───────────────────────────────────────────
     _add_section_heading(doc, "3.0 Procedure: {{ protocol_name }}", level=2)

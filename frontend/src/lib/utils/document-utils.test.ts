@@ -9,6 +9,7 @@ import {
     getStatusLabel,
     sanitizeHighlight,
     MAX_FILE_SIZE_BYTES,
+    deriveIndexingState,
 } from './document-utils';
 
 describe('isAllowedFileType', () => {
@@ -198,6 +199,125 @@ describe('getStatusColor', () => {
 
     it('returns "destructive" for FAILED', () => {
         expect(getStatusColor('FAILED')).toBe('destructive');
+    });
+});
+
+describe('deriveIndexingState', () => {
+    it('returns "queued" for UPLOADED', () => {
+        const state = deriveIndexingState({
+            status: 'UPLOADED',
+            chunk_count: 0,
+            embedded_count: 0,
+        });
+        expect(state.kind).toBe('queued');
+    });
+
+    it('returns "queued" for QUEUED', () => {
+        const state = deriveIndexingState({
+            status: 'QUEUED',
+            chunk_count: 0,
+            embedded_count: 0,
+        });
+        expect(state.kind).toBe('queued');
+    });
+
+    it('returns "processing" for PROCESSING', () => {
+        const state = deriveIndexingState({
+            status: 'PROCESSING',
+            chunk_count: 12,
+            embedded_count: 4,
+        });
+        expect(state.kind).toBe('processing');
+        if (state.kind === 'processing') {
+            expect(state.chunkCount).toBe(12);
+            expect(state.embeddedCount).toBe(4);
+        }
+    });
+
+    it('returns "failed" for FAILED', () => {
+        const state = deriveIndexingState({
+            status: 'FAILED',
+            chunk_count: 0,
+            embedded_count: 0,
+        });
+        expect(state.kind).toBe('failed');
+    });
+
+    it('returns "indexed" when READY with full embedding coverage', () => {
+        const state = deriveIndexingState({
+            status: 'READY',
+            chunk_count: 100,
+            embedded_count: 100,
+        });
+        expect(state.kind).toBe('indexed');
+        if (state.kind === 'indexed') {
+            expect(state.coverage).toBe(100);
+        }
+    });
+
+    it('returns "indexed" when INDEXED with full coverage', () => {
+        const state = deriveIndexingState({
+            status: 'INDEXED',
+            chunk_count: 50,
+            embedded_count: 50,
+        });
+        expect(state.kind).toBe('indexed');
+    });
+
+    it('returns "indexed" when ENRICHED with full coverage', () => {
+        const state = deriveIndexingState({
+            status: 'ENRICHED',
+            chunk_count: 10,
+            embedded_count: 10,
+        });
+        expect(state.kind).toBe('indexed');
+    });
+
+    it('returns "partial" when READY but embeddings are missing', () => {
+        const state = deriveIndexingState({
+            status: 'READY',
+            chunk_count: 100,
+            embedded_count: 60,
+        });
+        expect(state.kind).toBe('partial');
+        if (state.kind === 'partial') {
+            expect(state.coverage).toBe(60);
+            expect(state.missing).toBe(40);
+        }
+    });
+
+    it('returns "partial" when READY with zero embeddings (silent embedding failure)', () => {
+        const state = deriveIndexingState({
+            status: 'READY',
+            chunk_count: 604,
+            embedded_count: 0,
+        });
+        expect(state.kind).toBe('partial');
+        if (state.kind === 'partial') {
+            expect(state.coverage).toBe(0);
+            expect(state.missing).toBe(604);
+        }
+    });
+
+    it('rounds coverage to nearest integer', () => {
+        const state = deriveIndexingState({
+            status: 'READY',
+            chunk_count: 3,
+            embedded_count: 1,
+        });
+        expect(state.kind).toBe('partial');
+        if (state.kind === 'partial') {
+            expect(state.coverage).toBe(33);
+        }
+    });
+
+    it('returns "unknown" for unrecognized status', () => {
+        const state = deriveIndexingState({
+            status: 'SOMETHING_NEW',
+            chunk_count: 0,
+            embedded_count: 0,
+        });
+        expect(state.kind).toBe('unknown');
     });
 });
 

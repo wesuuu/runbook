@@ -285,6 +285,70 @@ async def test_list_documents_pagination(
 
 
 @pytest.mark.asyncio
+async def test_list_documents_includes_chunk_and_embed_counts(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_org: Organization,
+    test_user: User,
+    db_session,
+):
+    """List response includes chunk_count + embedded_count derived from
+    document_chunks (chunks with non-NULL embedding)."""
+    from app.models.library import DocumentChunk
+
+    upload_resp = await _make_upload(client, auth_headers, title="Counted Doc")
+    doc_id = upload_resp.json()["id"]
+
+    db_session.add_all(
+        [
+            DocumentChunk(
+                document_id=doc_id,
+                chunk_index=0,
+                content="a",
+                token_count=1,
+                embedding=[0.1] * 1536,
+            ),
+            DocumentChunk(
+                document_id=doc_id,
+                chunk_index=1,
+                content="b",
+                token_count=1,
+                embedding=[0.1] * 1536,
+            ),
+            DocumentChunk(
+                document_id=doc_id,
+                chunk_index=2,
+                content="c",
+                token_count=1,
+                embedding=None,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resp = await client.get("/library/documents", headers=auth_headers)
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    item = next(i for i in items if i["id"] == doc_id)
+    assert item["chunk_count"] == 3
+    assert item["embedded_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_list_documents_zero_counts_when_no_chunks(
+    client: AsyncClient, auth_headers: dict, test_org: Organization
+):
+    """A freshly uploaded document with no chunks reports 0/0."""
+    upload_resp = await _make_upload(client, auth_headers, title="Fresh Doc")
+    doc_id = upload_resp.json()["id"]
+
+    resp = await client.get("/library/documents", headers=auth_headers)
+    item = next(i for i in resp.json()["items"] if i["id"] == doc_id)
+    assert item["chunk_count"] == 0
+    assert item["embedded_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_list_documents_scoped_to_org(
     client: AsyncClient,
     auth_headers: dict,
@@ -457,6 +521,153 @@ async def test_retry_non_failed_document_returns_409(
 
     resp = await client.post(f"/library/documents/{doc_id}/retry", headers=auth_headers)
     assert resp.status_code == 409
+
+
+# --- Processing Audit Tests ---
+
+
+@pytest.mark.asyncio
+async def test_get_processing_audit_returns_404_for_unknown(
+    client: AsyncClient, auth_headers: dict, test_org: Organization
+):
+    import uuid
+
+    fake_id = str(uuid.uuid4())
+    resp = await client.get(
+        f"/library/documents/{fake_id}/processing", headers=auth_headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_processing_audit_empty_when_no_jobs(
+    client: AsyncClient, auth_headers: dict, test_org: Organization
+):
+    """A document with no BackgroundJob rows reports zero counts + empty job list."""
+    upload_resp = await _make_upload(client, auth_headers, title="Audit Doc")
+    doc_id = upload_resp.json()["id"]
+
+    resp = await client.get(
+        f"/library/documents/{doc_id}/processing", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["document_id"] == doc_id
+    assert body["chunk_count"] == 0
+    assert body["embedded_count"] == 0
+    assert body["jobs"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_processing_audit_returns_jobs_and_counts(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_org: Organization,
+    db_session,
+):
+    """Audit endpoint returns jobs (newest first) and current chunk/embed counts."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    from app.models.jobs import BackgroundJob, JobStatus
+    from app.models.library import DocumentChunk
+
+    upload_resp = await _make_upload(client, auth_headers, title="Audited Doc")
+    doc_id = upload_resp.json()["id"]
+    doc_uuid = _uuid.UUID(doc_id)
+
+    # Two chunks, one with embedding, one without
+    db_session.add_all(
+        [
+            DocumentChunk(
+                document_id=doc_uuid,
+                chunk_index=0,
+                content="a",
+                token_count=1,
+                embedding=[0.1] * 1536,
+            ),
+            DocumentChunk(
+                document_id=doc_uuid,
+                chunk_index=1,
+                content="b",
+                token_count=1,
+                embedding=None,
+            ),
+        ]
+    )
+
+    # Two jobs: an older completed one and a newer failed one
+    older = BackgroundJob(
+        job_type="document_extract",
+        status=JobStatus.COMPLETED.value,
+        entity_type="document",
+        entity_id=doc_uuid,
+        input_data={},
+        output_data={
+            "stage": "embed",
+            "stage_label": "Embedding chunks",
+            "current": 2,
+            "total": 2,
+            "percent": 100,
+        },
+        started_at=datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 1, 1, 10, 5, tzinfo=timezone.utc),
+        attempts=1,
+    )
+    newer = BackgroundJob(
+        job_type="document_enrich",
+        status=JobStatus.FAILED.value,
+        entity_type="document",
+        entity_id=doc_uuid,
+        input_data={},
+        error_message="LLM provider unavailable",
+        started_at=datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 2, 1, 12, 1, tzinfo=timezone.utc),
+        attempts=3,
+    )
+    db_session.add_all([older, newer])
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/library/documents/{doc_id}/processing", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["document_id"] == doc_id
+    assert body["chunk_count"] == 2
+    assert body["embedded_count"] == 1
+
+    jobs = body["jobs"]
+    assert len(jobs) == 2
+    # Newest first
+    assert jobs[0]["job_type"] == "document_enrich"
+    assert jobs[0]["status"] == "FAILED"
+    assert jobs[0]["error_message"] == "LLM provider unavailable"
+    assert jobs[0]["attempts"] == 3
+
+    assert jobs[1]["job_type"] == "document_extract"
+    assert jobs[1]["status"] == "COMPLETED"
+    assert jobs[1]["stage"] == "embed"
+    assert jobs[1]["percent"] == 100
+
+
+@pytest.mark.asyncio
+async def test_get_processing_audit_scoped_to_org(
+    client: AsyncClient,
+    auth_headers: dict,
+    second_auth_headers: dict,
+    test_org: Organization,
+):
+    """A user from another org cannot read a document's processing audit."""
+    upload_resp = await _make_upload(client, auth_headers, title="Org 1 Audit")
+    doc_id = upload_resp.json()["id"]
+
+    resp = await client.get(
+        f"/library/documents/{doc_id}/processing",
+        headers=second_auth_headers,
+    )
+    assert resp.status_code == 404
 
 
 # --- Security Tests ---

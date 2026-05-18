@@ -61,6 +61,7 @@ async def embed_texts(
     creds = config.get("credentials") or {}
     api_key = creds.get("api_key")
     base_url = creds.get("base_url")
+    context_window = config.get("context_window") or 8192
 
     all_embeddings: list[list[float]] = []
     total = len(texts)
@@ -69,7 +70,9 @@ async def embed_texts(
         batch = texts[i : i + BATCH_SIZE]
 
         if provider == "ollama":
-            embeddings = await _embed_ollama(batch, model_name, base_url)
+            embeddings = await _embed_ollama(
+                batch, model_name, base_url, context_window
+            )
         elif provider in ("openai", "anthropic", "google"):
             embeddings = await _embed_openai_compatible(
                 batch, model_name, api_key, base_url, provider
@@ -100,6 +103,7 @@ async def _embed_ollama(
     texts: list[str],
     model: str,
     base_url: Optional[str],
+    num_ctx: int = 8192,
 ) -> list[list[float]]:
     """Call Ollama's /api/embed endpoint."""
     url = (base_url or "http://localhost:11434").rstrip("/")
@@ -108,7 +112,11 @@ async def _embed_ollama(
         # Ollama /api/embed supports batch input
         resp = await client.post(
             f"{url}/api/embed",
-            json={"model": model, "input": texts},
+            json={
+                "model": model,
+                "input": texts,
+                "options": {"num_ctx": num_ctx},
+            },
         )
         if resp.status_code != 200:
             raise EmbeddingError(

@@ -26,6 +26,8 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     can_delete: bool = False
+    chunk_count: int = 0
+    embedded_count: int = 0
     source_format: Optional[str] = None
     refinement_status: Optional[str] = None
     refinement_flags: Optional[List[Any]] = None
@@ -74,6 +76,30 @@ class ImportUrlRequest(BaseModel):
     url: HttpUrl
     title: Optional[str] = Field(None, max_length=150)
     project_id: Optional[UUID] = None
+
+
+class ProcessingJobAudit(BaseModel):
+    id: UUID
+    job_type: str
+    status: str
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    heartbeat_at: Optional[datetime] = None
+    attempts: int = 0
+    error_message: Optional[str] = None
+    stage: Optional[str] = None
+    stage_label: Optional[str] = None
+    current: Optional[int] = None
+    total: Optional[int] = None
+    percent: Optional[int] = None
+
+
+class ProcessingAuditResponse(BaseModel):
+    document_id: UUID
+    document_status: str
+    chunk_count: int = 0
+    embedded_count: int = 0
+    jobs: List[ProcessingJobAudit] = []
 
 
 class SearchResultItem(BaseModel):

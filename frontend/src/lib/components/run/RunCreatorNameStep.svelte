@@ -10,11 +10,13 @@
         experimentId: string | null;
         experiments: ExperimentOption[];
         lockedExperiment: { id: string; name: string } | null;
-        onChange: (next: { name: string; experimentId: string | null }) => void;
+        lotNumber?: string;
+        batchNumber?: string;
+        onChange: (next: { name: string; experimentId: string | null; lotNumber: string; batchNumber: string }) => void;
         onValidate: (valid: boolean) => void;
     }
 
-    let { name, experimentId, experiments, lockedExperiment, onChange, onValidate }: Props = $props();
+    let { name, experimentId, experiments, lockedExperiment, lotNumber = '', batchNumber = '', onChange, onValidate }: Props = $props();
 
     const visibleExperiments = $derived(
         experiments.filter((e) => (e.status ?? '').toUpperCase() !== 'ARCHIVED'),
@@ -24,10 +26,12 @@
         onValidate(name.trim().length > 0);
     });
 
-    function setName(v: string) { onChange({ name: v, experimentId }); }
+    function setName(v: string) { onChange({ name: v, experimentId, lotNumber, batchNumber }); }
     function setExperimentId(v: string) {
-        onChange({ name, experimentId: v === '' ? null : v });
+        onChange({ name, experimentId: v === '' ? null : v, lotNumber, batchNumber });
     }
+    function setLotNumber(v: string) { onChange({ name, experimentId, lotNumber: v, batchNumber }); }
+    function setBatchNumber(v: string) { onChange({ name, experimentId, lotNumber, batchNumber: v }); }
 </script>
 
 <section class="step-body">
@@ -72,6 +76,36 @@
         {#if lockedExperiment}
             <p class="hint">This run will belong to {lockedExperiment.name}.</p>
         {/if}
+    </div>
+
+    <div class="field">
+        <label for="run-lot" class="field-label">
+            Lot number <span class="optional">(optional)</span>
+        </label>
+        <input
+            id="run-lot"
+            type="text"
+            value={lotNumber}
+            oninput={(e) => setLotNumber((e.target as HTMLInputElement).value)}
+            placeholder="e.g. LOT-2024-001"
+            class="input-field"
+            autocomplete="off"
+        />
+    </div>
+
+    <div class="field">
+        <label for="run-batch" class="field-label">
+            Batch number <span class="optional">(optional)</span>
+        </label>
+        <input
+            id="run-batch"
+            type="text"
+            value={batchNumber}
+            oninput={(e) => setBatchNumber((e.target as HTMLInputElement).value)}
+            placeholder="e.g. BATCH-42"
+            class="input-field"
+            autocomplete="off"
+        />
     </div>
 </section>
 

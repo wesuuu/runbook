@@ -24,6 +24,10 @@
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
     import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
+    import IndexingStatusBadge from '$lib/components/library/IndexingStatusBadge.svelte';
+    import IndexingPipeline from '$lib/components/library/IndexingPipeline.svelte';
+    import IndexingStatusBanner from '$lib/components/library/IndexingStatusBanner.svelte';
+    import ProcessingAuditCard from '$lib/components/library/ProcessingAuditCard.svelte';
     import { z } from 'zod';
 
     // --- Schemas ---
@@ -68,6 +72,7 @@
         error_message: z.string().nullable(),
         tags: z.array(z.string()),
         chunk_count: z.number(),
+        embedded_count: z.number().default(0),
         chunks_preview: z.array(DocumentChunkSchema),
         structure_metadata: z.record(z.string(), z.unknown()).nullable(),
         processing_progress: ProcessingProgressSchema.nullable(),
@@ -88,6 +93,7 @@
     let deleting = $state(false);
     let retrying = $state(false);
     let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let auditRefreshKey = $state(0);
     const CHUNKS_PER_PAGE = 50;
 
     // In-document search (non-PDF only)
@@ -107,7 +113,7 @@
     // exist (PDF + indexed); non-PDFs render the reader unconditionally.
     let viewMode = $state<'refined' | 'source'>('refined');
 
-    const documentId = $derived($page.params.id);
+    const documentId = $derived($page.params.id ?? '');
     const isPdf = $derived(document?.mime_type === 'application/pdf');
     const isEnriched = $derived(
         document?.status === 'ENRICHED' || document?.status === 'READY'
@@ -265,12 +271,15 @@
             allChunks = doc.chunks_preview;
 
             const hasActiveProgress = doc.processing_progress && doc.processing_progress.stage !== '';
+            const isReadyStatus =
+                doc.status === 'INDEXED' || doc.status === 'READY' || doc.status === 'ENRICHED';
             const shouldPoll =
-                doc.status === 'PROCESSING' ||
+                doc.status === 'UPLOADED' ||
                 doc.status === 'QUEUED' ||
+                doc.status === 'PROCESSING' ||
                 doc.status === 'EXTRACTING' ||
                 doc.status === 'INDEXING' ||
-                (doc.status === 'INDEXED' && hasActiveProgress);
+                (isReadyStatus && hasActiveProgress);
             if (shouldPoll && !pollTimer) {
                 pollTimer = setInterval(loadDocument, 3000);
             } else if (!shouldPoll && pollTimer) {
@@ -310,6 +319,7 @@
             await api.post(`/library/documents/${documentId}/retry`, {});
             toast.success('Reprocessing started');
             await loadDocument();
+            auditRefreshKey += 1;
         } catch (e: unknown) {
             toast.error(e instanceof Error ? e.message : 'Retry failed');
         } finally {

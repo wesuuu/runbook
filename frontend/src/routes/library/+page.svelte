@@ -16,11 +16,10 @@
     import DocumentUploadDialog from '$lib/components/modals/DocumentUploadDialog.svelte';
     import {
         getFileTypeLabel,
-        getStatusColor,
-        getStatusLabel,
         formatFileSize,
         sanitizeHighlight,
     } from '$lib/utils/document-utils';
+    import IndexingStatusBadge from '$lib/components/library/IndexingStatusBadge.svelte';
     import { Plus, Search, X } from 'lucide-svelte';
     import { z } from 'zod';
     import { fade } from 'svelte/transition';
@@ -37,6 +36,8 @@
         status: z.string(),
         source_url: z.string().nullable(),
         created_at: z.string(),
+        chunk_count: z.number().default(0),
+        embedded_count: z.number().default(0),
     }).passthrough();
     type DocumentItem = z.infer<typeof DocumentItemSchema>;
 
@@ -94,13 +95,19 @@
             const res = await api.get('/library/documents?limit=50', { schema: DocumentListResponseSchema });
             documents = res.items;
 
-            const inFlightStatuses = ['PROCESSING', 'QUEUED', 'EXTRACTING', 'INDEXING'];
-            const hasProcessing = documents.some((d) =>
+            const inFlightStatuses = [
+                'UPLOADED',
+                'QUEUED',
+                'PROCESSING',
+                'EXTRACTING',
+                'INDEXING',
+            ];
+            const stillIndexing = documents.some((d) =>
                 inFlightStatuses.includes(d.status),
             );
-            if (hasProcessing && !pollTimer) {
+            if (stillIndexing && !pollTimer) {
                 pollTimer = setInterval(loadDocuments, 5000);
-            } else if (!hasProcessing && pollTimer) {
+            } else if (!stillIndexing && pollTimer) {
                 clearInterval(pollTimer);
                 pollTimer = null;
             }
@@ -293,7 +300,7 @@
                             <a href="/library/{doc.id}" class="block py-3 px-1 min-h-11" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="flex items-center gap-2">
                                     <span class="font-semibold text-sm text-primary">{doc.title}</span>
-                                    <Badge variant={getStatusColor(doc.status) as any}>{getStatusLabel(doc.status)}</Badge>
+                                    <IndexingStatusBadge document={doc} verbose />
                                 </div>
                                 <div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                                     <span>{getFileTypeLabel(doc.mime_type)}</span>
@@ -334,7 +341,7 @@
                                             <Badge variant="outline">{getFileTypeLabel(doc.mime_type)}</Badge>
                                         </Table.Cell>
                                         <Table.Cell>
-                                            <Badge variant={getStatusColor(doc.status) as any}>{getStatusLabel(doc.status)}</Badge>
+                                            <IndexingStatusBadge document={doc} verbose />
                                         </Table.Cell>
                                         <Table.Cell class="hidden md:table-cell">
                                             {formatFileSize(doc.file_size_bytes)}

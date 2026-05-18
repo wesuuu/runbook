@@ -81,7 +81,7 @@ async def test_default_sop_renders_with_approval_block(
         / "app/services/documents/templates/sop_default.docx"
     )
 
-    context = build_context(
+    context, _ = build_context(
         protocol_name=proto.name,
         protocol_description="",
         version_number=proto.version_number,

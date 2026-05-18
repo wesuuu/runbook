@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import Optional
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -174,8 +175,21 @@ def _pdf_response(
     disposition: str,
     unresolved: list[str],
 ) -> Response:
-    """Build a PDF response and attach X-Unresolved-Placeholders when needed."""
-    headers = {"Content-Disposition": f'{disposition}; filename="{filename}"'}
+    """Build a PDF response and attach X-Unresolved-Placeholders when needed.
+
+    Filenames may include unicode (em-dashes, accents) when a protocol
+    name does — Content-Disposition headers are encoded as latin-1, so
+    we emit RFC 6266 form: an ASCII-safe ``filename=`` fallback plus a
+    ``filename*=UTF-8''<percent-encoded>`` for unicode-aware clients.
+    """
+    ascii_filename = filename.encode("ascii", "replace").decode("ascii").replace("?", "_")
+    encoded_filename = quote(filename, safe="")
+    headers = {
+        "Content-Disposition": (
+            f'{disposition}; filename="{ascii_filename}"; '
+            f"filename*=UTF-8''{encoded_filename}"
+        )
+    }
     if unresolved:
         headers["X-Unresolved-Placeholders"] = ",".join(unresolved)
     return Response(

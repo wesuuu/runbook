@@ -29,6 +29,24 @@ TEST_DATABASE_URL = (
 )
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--write-artifacts",
+        action="store_true",
+        default=False,
+        help=(
+            "Write rendered .docx and .pdf artifacts into "
+            "tests/fixtures/template-permutations/rendered/ for side-by-side "
+            "review."
+        ),
+    )
+
+
+@pytest.fixture
+def write_artifacts(request):
+    return bool(request.config.getoption("--write-artifacts"))
+
+
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def _seed_library_registry():
     """Load bundled libraries once for the test session.

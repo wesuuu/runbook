@@ -184,6 +184,9 @@ async def create_run(
         execution_data={},
         created_by_id=user.id,
         is_strict=is_strict,
+        # QA-0008: GxP execution metadata
+        lot_number=run_in.lot_number,
+        batch_number=run_in.batch_number,
     )
     db.add(run_obj)
     await db.flush()

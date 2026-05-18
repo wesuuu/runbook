@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Library — Indexing Status · Batchrite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #F4F2EC;
+  --paper-tint: #EDEAE0;
+  --card: #FBFAF5;
+  --ink: #1A1814;
+  --ink-mid: #5A554A;
+  --ink-muted: #8B8579;
+  --hairline: #D8D2C2;
+  --hairline-soft: #E8E3D5;
+  --moss: #4A6B3A;      /* indexed — semantic search ready */
+  --amber: #C77D2C;     /* indexing — in progress */
+  --ochre: #A07820;     /* partial — chunks but no embeddings */
+  --vermilion: #B83A2A; /* failed */
+  --shadow: 0 1px 0 rgba(26,24,20,0.04), 0 16px 40px -20px rgba(26,24,20,0.12);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  min-height: 100vh;
+  /* paper grain */
+  background-image:
+    radial-gradient(rgba(26,24,20,0.018) 1px, transparent 1px),
+    radial-gradient(rgba(26,24,20,0.012) 1px, transparent 1px);
+  background-size: 3px 3px, 7px 7px;
+  background-position: 0 0, 1px 1px;
+}
+
+/* ── App chrome ───────────────────────────────────────────── */
+.app-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 40px;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(244, 242, 236, 0.85);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.brand {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-mark {
+  width: 10px;
+  height: 10px;
+  background: var(--ink);
+  transform: rotate(45deg);
+}
+.nav-tabs { display: flex; gap: 32px; }
+.nav-tabs a {
+  text-decoration: none;
+  color: var(--ink-muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  position: relative;
+  padding: 4px 0;
+}
+.nav-tabs a.active { color: var(--ink); }
+.nav-tabs a.active::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -2px;
+  height: 2px;
+  background: var(--ink);
+}
+.user-tag {
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+
+main { padding: 56px 40px 80px; max-width: 1480px; margin: 0 auto; }
+
+/* ── Page header ─────────────────────────────────────────── */
+.kicker {
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kicker::before {
+  content: '';
+  width: 28px;
+  height: 1px;
+  background: var(--ink-muted);
+}
+h1.page-title {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: 'opsz' 144;
+  font-weight: 500;
+  font-size: 64px;
+  letter-spacing: -0.03em;
+  line-height: 0.92;
+  margin-bottom: 22px;
+}
+h1.page-title em {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--ink-mid);
+}
+.page-meta {
+  font-family: 'IBM Plex Mono';
+  font-size: 12px;
+  color: var(--ink-mid);
+  letter-spacing: 0.02em;
+  display: flex;
+  gap: 18px;
+}
+.page-meta .stat strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 40px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+.search-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 19px;
+  width: 320px;
+  padding: 8px 0;
+  color: var(--ink);
+}
+.search-input::placeholder { color: var(--ink-muted); }
+.search-input:focus { outline: none; border-bottom-color: var(--ink); }
+.filters { display: flex; gap: 6px; }
+.chip {
+  font-family: 'IBM Plex Sans';
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 100px;
+  color: var(--ink-mid);
+  cursor: pointer;
+  background: transparent;
+  letter-spacing: 0.02em;
+  transition: all 0.15s ease;
+}
+.chip:hover { border-color: var(--ink-mid); color: var(--ink); }
+.chip.active { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.chip .count {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  margin-left: 6px;
+  opacity: 0.7;
+}
+
+.legend {
+  display: flex;
+  gap: 28px;
+  margin-top: 18px;
+  padding: 14px 0 4px;
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.legend-item { display: flex; align-items: center; gap: 8px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 56px;
+  margin-top: 32px;
+}
+
+/* ── Document row ────────────────────────────────────────── */
+.col-head {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  justify-content: space-between;
+}
+
+.doc-row {
+  position: relative;
+  padding: 26px 8px;
+  border-bottom: 1px solid var(--hairline-soft);
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 220px;
+  gap: 22px;
+  align-items: start;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.doc-row:hover { background: rgba(232, 227, 213, 0.4); }
+.doc-row.selected {
+  background: var(--card);
+  margin: 0 -16px;
+  padding-left: 24px;
+  padding-right: 16px;
+  box-shadow: var(--shadow);
+}
+.doc-row.selected::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 26px; bottom: 26px; width: 2px;
+  background: var(--ink);
+}
+
+.doc-thumb {
+  width: 58px;
+  height: 74px;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
+  font-family: 'IBM Plex Mono';
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--ink-mid);
+  position: relative;
+  flex-shrink: 0;
+}
+.doc-thumb::before {
+  content: '';
+  position: absolute;
+  top: 8px; left: 8px; right: 8px;
+  height: 1px;
+  background: var(--hairline);
+  box-shadow:
+    0 4px 0 var(--hairline-soft),
+    0 8px 0 var(--hairline-soft),
+    0 12px 0 var(--hairline-soft);
+}
+.doc-thumb::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  border-style: solid;
+  border-width: 0 14px 14px 0;
+  border-color: transparent var(--paper) transparent transparent;
+}
+
+.doc-body { min-width: 0; }
+.doc-title {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 19px;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+.doc-meta {
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  color: var(--ink-muted);
+  letter-spacing: 0.015em;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.doc-meta .sep { color: var(--hairline); }
+
+/* ── Pipeline track — the differentiator ────────────────── */
+.pipeline {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.stage {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  font-weight: 500;
+}
+.stage-dot {
+  width: 9px;
+  height: 9px;
+  border: 1.25px solid var(--hairline);
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+}
+.stage.done .stage-dot { background: var(--ink); border-color: var(--ink); }
+.stage.done { color: var(--ink); }
+.stage.running .stage-dot {
+  background: var(--amber);
+  border-color: var(--amber);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.stage.running .stage-dot::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 1px solid var(--amber);
+  border-radius: 50%;
+  animation: ring-pulse 1.6s ease-out infinite;
+}
+.stage.running { color: var(--amber); }
+.stage.warning .stage-dot {
+  background: var(--card);
+  border-color: var(--ochre);
+  border-width: 1.5px;
+}
+.stage.warning .stage-dot::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: var(--ochre);
+  border-radius: 50%;
+}
+.stage.warning { color: var(--ochre); }
+.stage.failed .stage-dot {
+  background: var(--vermilion);
+  border-color: var(--vermilion);
+}
+.stage.failed .stage-dot::after {
+  content: '×';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--card);
+  font-family: sans-serif;
+  font-weight: 700;
+  line-height: 1;
+}
+.stage.failed { color: var(--vermilion); }
+.connector {
+  width: 22px;
+  height: 1px;
+  background: var(--hairline);
+  margin: 0 8px;
+}
+.connector.solid { background: var(--ink); }
+.connector.warning {
+  background: var(--ochre);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--ochre) 0, var(--ochre) 3px,
+    transparent 3px, transparent 6px
+  );
+  background-color: transparent;
+}
+.connector.failed { background: var(--vermilion); }
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+@keyframes ring-pulse {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* ── Status column (right) ──────────────────────────────── */
+.doc-status {
+  text-align: right;
+}
+.status-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: 'IBM Plex Sans';
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+  letter-spacing: 0.01em;
+}
+.status-icon {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  transform: translateY(-1px);
+  flex-shrink: 0;
+}
+.status-icon.indexed { background: var(--moss); }
+.status-icon.indexing { background: var(--amber); box-shadow: 0 0 0 0 var(--amber); animation: amber-pulse 1.6s ease-out infinite; }
+.status-icon.partial { background: var(--ochre); }
+.status-icon.failed { background: var(--vermilion); }
+.status-icon.queued { background: transparent; border: 1.25px solid var(--ink-muted); width: 7px; height: 7px; }
+@keyframes amber-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(199, 125, 44, 0.5); }
+  100% { box-shadow: 0 0 0 8px rgba(199, 125, 44, 0); }
+}
+
+.status-label.indexed { color: var(--moss); }
+.status-label.indexing { color: var(--amber); }
+.status-label.partial { color: var(--ochre); }
+.status-label.failed { color: var(--vermilion); }
+.status-label.queued { color: var(--ink-mid); }
+
+.status-detail {
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+.progress-bar {
+  height: 2px;
+  background: var(--hairline-soft);
+  width: 150px;
+  margin-left: auto;
+  margin-top: 8px;
+  position: relative;
+  overflow: hidden;
+}
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--amber);
+}
+.progress-fill.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  animation: shimmer 1.8s linear infinite;
+}
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+/* ── Detail panel ────────────────────────────────────────── */
+.detail-panel {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  padding: 36px;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.detail-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 60px;
+  height: 1px;
+  background: var(--ink);
+}
+.detail-eyebrow {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.detail-eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+.detail-title {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 27px;
+  letter-spacing: -0.018em;
+  line-height: 1.18;
+  margin-bottom: 12px;
+}
+.detail-meta {
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.detail-meta .sep { color: var(--hairline); }
+
+/* ── Status banner ──────────────────────────────────────── */
+.status-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px;
+  border-left: 3px solid var(--ochre);
+  margin-bottom: 30px;
+}
+.status-banner .symbol {
+  font-family: 'Fraunces', serif;
+  font-size: 30px;
+  line-height: 0.9;
+  font-style: italic;
+  flex-shrink: 0;
+  width: 24px;
+}
+.status-banner .text { flex: 1; }
+.status-banner .text strong {
+  font-family: 'IBM Plex Sans';
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+  display: block;
+  margin-bottom: 4px;
+}
+.status-banner .text small {
+  color: var(--ink-mid);
+  font-size: 12.5px;
+  line-height: 1.55;
+  display: block;
+}
+.warn-banner { background: rgba(160, 120, 32, 0.07); border-color: var(--ochre); }
+.warn-banner .symbol { color: var(--ochre); }
+.fail-banner { background: rgba(184, 58, 42, 0.07); border-color: var(--vermilion); }
+.fail-banner .symbol { color: var(--vermilion); }
+.ok-banner { background: rgba(74, 107, 58, 0.07); border-color: var(--moss); }
+.ok-banner .symbol { color: var(--moss); }
+.run-banner { background: rgba(199, 125, 44, 0.07); border-color: var(--amber); }
+.run-banner .symbol { color: var(--amber); }
+.run-banner .symbol::after {
+  content: '↻';
+  display: inline-block;
+  animation: spin 2.4s linear infinite;
+  transform-origin: 50% 55%;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Processing audit ────────────────────────────────────── */
+.audit { font-family: 'IBM Plex Mono'; font-size: 12px; }
+.audit-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.audit-row {
+  display: grid;
+  grid-template-columns: 20px 90px 1fr auto;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--hairline-soft);
+  font-size: 12px;
+  align-items: baseline;
+}
+.audit-row:last-child { border-bottom: none; }
+.audit-row .icon {
+  font-family: sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+}
+.audit-row.done .icon { color: var(--moss); }
+.audit-row.failed .icon { color: var(--vermilion); }
+.audit-row.running .icon {
+  color: var(--amber);
+  display: inline-block;
+  animation: spin 2.4s linear infinite;
+  transform-origin: 50% 55%;
+}
+.audit-row.pending .icon { color: var(--hairline); }
+.audit-row .stage-name {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.audit-row.done .stage-name { color: var(--ink); }
+.audit-row.failed .stage-name { color: var(--vermilion); }
+.audit-row.running .stage-name { color: var(--amber); }
+.audit-row.pending .stage-name { color: var(--ink-muted); }
+.audit-row .detail {
+  color: var(--ink-mid);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+.audit-row .detail .second { display: block; color: var(--ink-muted); margin-top: 2px; }
+.audit-row .duration {
+  color: var(--ink-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.audit-row .error {
+  display: block;
+  color: var(--vermilion);
+  margin-top: 8px;
+  background: rgba(184, 58, 42, 0.06);
+  padding: 8px 10px;
+  border-left: 2px solid var(--vermilion);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.audit-row .error .err-key { color: var(--ink-mid); text-transform: uppercase; letter-spacing: 0.12em; font-size: 9.5px; display: block; margin-bottom: 4px; }
+
+/* ── Actions ─────────────────────────────────────────────── */
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--hairline);
+}
+.btn {
+  font-family: 'IBM Plex Sans';
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 11px 18px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--card);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.btn:hover { background: transparent; color: var(--ink); }
+.btn.secondary {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+.btn.secondary:hover { border-color: var(--ink); }
+.btn.danger {
+  border-color: var(--vermilion);
+  background: transparent;
+  color: var(--vermilion);
+}
+.btn.danger:hover { background: var(--vermilion); color: var(--card); }
+
+/* ── Variant header ──────────────────────────────────────── */
+.variants {
+  margin-top: 96px;
+  padding-top: 56px;
+  border-top: 1px dashed var(--hairline);
+}
+.variants .kicker { margin-bottom: 8px; }
+.variants .v-head {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 32px;
+  letter-spacing: -0.015em;
+  color: var(--ink-mid);
+  margin-bottom: 36px;
+}
+.variant-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+
+@media (max-width: 1100px) {
+  .layout, .variant-grid { grid-template-columns: 1fr; gap: 36px; }
+  .detail-panel { position: static; }
+  h1.page-title { font-size: 44px; }
+}
+</style>
+</head>
+<body>
+
+<header class="app-nav">
+  <div class="brand"><span class="brand-mark"></span>Batchrite</div>
+  <nav class="nav-tabs">
+    <a href="#">Projects</a>
+    <a href="#">Protocols</a>
+    <a href="#">Runs</a>
+    <a href="#" class="active">Library</a>
+    <a href="#">Chat</a>
+  </nav>
+  <div class="user-tag">wes · trellis bio</div>
+</header>
+
+<main>
+  <header class="page-head">
+    <div class="kicker">Document library</div>
+    <h1 class="page-title">Knowledge <em>corpus</em></h1>
+    <div class="page-meta">
+      <span class="stat"><strong>147</strong> documents</span>
+      <span class="stat"><strong>2.4 GB</strong> stored</span>
+      <span class="stat"><strong>84,392</strong> chunks indexed</span>
+      <span class="stat"><strong>3</strong> currently processing</span>
+    </div>
+
+    <div class="toolbar">
+      <input type="text" class="search-input" placeholder="search the corpus…">
+      <div class="filters">
+        <button class="chip active">All<span class="count">147</span></button>
+        <button class="chip">Indexed<span class="count">141</span></button>
+        <button class="chip">Indexing<span class="count">3</span></button>
+        <button class="chip">Needs attention<span class="count">2</span></button>
+        <button class="chip">Failed<span class="count">1</span></button>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background: var(--moss);"></span>Indexed · semantic search ready</div>
+      <div class="legend-item"><span class="legend-dot" style="background: var(--amber);"></span>Indexing in progress</div>
+      <div class="legend-item"><span class="legend-dot" style="background: var(--ochre);"></span>Partial · viewable but not searchable</div>
+      <div class="legend-item"><span class="legend-dot" style="background: var(--vermilion);"></span>Failed</div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="doc-list">
+
+      <div class="col-head">
+        <span>Document</span>
+        <span>Status</span>
+      </div>
+
+      <!-- ── Row 1 · PARTIAL (the Freshney case — currently selected) ── -->
+      <article class="doc-row selected">
+        <div class="doc-thumb">PDF</div>
+        <div class="doc-body">
+          <h3 class="doc-title">Culture of Animal Cells — A Manual of Basic Technique</h3>
+          <div class="doc-meta">
+            <span>R. Ian Freshney · Wiley‑Blackwell 2010</span>
+            <span class="sep">/</span>
+            <span>27.3 MB</span>
+            <span class="sep">/</span>
+            <span>676 pages</span>
+            <span class="sep">/</span>
+            <span>uploaded 15 May 2026</span>
+          </div>
+          <div class="pipeline">
+            <div class="stage done"><span class="stage-dot"></span><span>Extract</span></div>
+            <span class="connector solid"></span>
+            <div class="stage done"><span class="stage-dot"></span><span>Chunk</span></div>
+            <span class="connector warning"></span>
+            <div class="stage warning"><span class="stage-dot"></span><span>Embed</span></div>
+          </div>
+        </div>
+        <div class="doc-status">
+          <div class="status-label partial">
+            <span class="status-icon partial"></span>
+            <span>Partial</span>
+          </div>
+          <div class="status-detail">0 / 604 embeddings</div>
+        </div>
+      </article>
+
+      <!-- ── Row 2 · INDEXING — extracting stage ── -->
+      <article class="doc-row">
+        <div class="doc-thumb">PDF</div>
+        <div class="doc-body">
+          <h3 class="doc-title">Bioreactor scale‑up — process characterization Q3 2026</h3>
+          <div class="doc-meta">
+            <span>internal · process_dev_q3.pdf</span>
+            <span class="sep">/</span>
+            <span>14.1 MB</span>
+            <span class="sep">/</span>
+            <span>~ 320 pages</span>
+            <span class="sep">/</span>
+            <span>uploaded 2 min ago</span>
+          </div>
+          <div class="pipeline">
+            <div class="stage running"><span class="stage-dot"></span><span>Extracting</span></div>
+            <span class="connector"></span>
+            <div class="stage"><span class="stage-dot"></span><span>Chunk</span></div>
+            <span class="connector"></span>
+            <div class="stage"><span class="stage-dot"></span><span>Embed</span></div>
+          </div>
+        </div>
+        <div class="doc-status">
+          <div class="status-label indexing">
+            <span class="status-icon indexing"></span>
+            <span>Indexing</span>
+          </div>
+          <div class="status-detail">page 156 of 320</div>
+          <div class="progress-bar"><div class="progress-fill shimmer" style="width: 48%;"></div></div>
+        </div>
+      </article>
+
+      <!-- ── Row 3 · INDEXING — embedding stage ── -->
+      <article class="doc-row">
+        <div class="doc-thumb">DOCX</div>
+        <div class="doc-body">
+          <h3 class="doc-title">CHO‑K1 cell line characterization SOP — Revision 4</h3>
+          <div class="doc-meta">
+            <span>m. alvarez</span>
+            <span class="sep">/</span>
+            <span>3.2 MB</span>
+            <span class="sep">/</span>
+            <span>42 pages</span>
+            <span class="sep">/</span>
+            <span>uploaded 6 min ago</span>
+          </div>
+          <div class="pipeline">
+            <div class="stage done"><span class="stage-dot"></span><span>Extract</span></div>
+            <span class="connector solid"></span>
+            <div class="stage done"><span class="stage-dot"></span><span>Chunk</span></div>
+            <span class="connector solid"></span>
+            <div class="stage running"><span class="stage-dot"></span><span>Embedding</span></div>
+          </div>
+        </div>
+        <div class="doc-status">
+          <div class="status-label indexing">
+            <span class="status-icon indexing"></span>
+            <span>Indexing</span>
+          </div>
+          <div class="status-detail">chunk 412 of 604</div>
+          <div class="progress-bar"><div class="progress-fill shimmer" style="width: 68%;"></div></div>
+        </div>
+      </article>
+
+      <!-- ── Row 4 · INDEXED (the happy path) ── -->
+      <article class="doc-row">
+        <div class="doc-thumb">PDF</div>
+        <div class="doc-body">
+          <h3 class="doc-title">Mammalian cell culture engineering — Wurm, F. M. (2004)</h3>
+          <div class="doc-meta">
+            <span>Nature Biotechnology 22, 1393–1398</span>
+            <span class="sep">/</span>
+            <span>1.1 MB</span>
+            <span class="sep">/</span>
+            <span>6 pages</span>
+            <span class="sep">/</span>
+            <span>uploaded 14 May 2026</span>
+          </div>
+          <div class="pipeline">
+            <div class="stage done"><span class="stage-dot"></span><span>Extract</span></div>
+            <span class="connector solid"></span>
+            <div class="stage done"><span class="stage-dot"></span><span>Chunk</span></div>
+            <span class="connector solid"></span>
+            <div class="stage done"><span class="stage-dot"></span><span>Embed</span></div>
+          </div>
+        </div>
+        <div class="doc-status">
+          <div class="status-label indexed">
+            <span class="status-icon indexed"></span>
+            <span>Indexed</span>
+          </div>
+          <div class="status-detail">38 / 38 embeddings · 14 May</div>
+        </div>
+      </article>
+
+      <!-- ── Row 5 · FAILED ── -->
+      <article class="doc-row">
+        <div class="doc-thumb">PDF</div>
+        <div class="doc-body">
+          <h3 class="doc-title">scanned_notebook_2019_p1‑40.pdf</h3>
+          <div class="doc-meta">
+            <span>wes</span>
+            <span class="sep">/</span>
+            <span>184 MB</span>
+            <span class="sep">/</span>
+            <span>— pages</span>
+            <span class="sep">/</span>
+            <span>uploaded 13 May 2026</span>
+          </div>
+          <div class="pipeline">
+            <div class="stage failed"><span class="stage-dot"></span><span>Extract</span></div>
+            <span class="connector failed"></span>
+            <div class="stage"><span class="stage-dot"></span><span>Chunk</span></div>
+            <span class="connector"></span>
+            <div class="stage"><span class="stage-dot"></span><span>Embed</span></div>
+          </div>
+        </div>
+        <div class="doc-status">
+          <div class="status-label failed">
+            <span class="status-icon failed"></span>
+            <span>Failed</span>
+          </div>
+          <div class="status-detail">OCR timeout · 3 attempts</div>
+        </div>
+      </article>
+
+      <!-- ── Row 6 · QUEUED ── -->
+      <article class="doc-row">
+        <div class="doc-thumb">PDF</div>
+        <div class="doc-body">
+          <h3 class="doc-title">ICH Q7 — Good manufacturing practice for APIs</h3>
+          <div class="doc-meta">
+            <span>regulatory · ich.org</span>
+            <span class="sep">/</span>
+            <span>2.4 MB</span>
+            <span class="sep">/</span>
+            <span>52 pages</span>
+            <span class="sep">/</span>
+            <span>uploaded just now</span>
+          </div>
+          <div class="pipeline">
+            <div class="stage"><span class="stage-dot"></span><span>Extract</span></div>
+            <span class="connector"></span>
+            <div class="stage"><span class="stage-dot"></span><span>Chunk</span></div>
+            <span class="connector"></span>
+            <div class="stage"><span class="stage-dot"></span><span>Embed</span></div>
+          </div>
+        </div>
+        <div class="doc-status">
+          <div class="status-label queued">
+            <span class="status-icon queued"></span>
+            <span>Queued</span>
+          </div>
+          <div class="status-detail">position 2 in queue</div>
+        </div>
+      </article>
+
+    </section>
+
+    <!-- ── Detail panel · selected = the Partial case ── -->
+    <aside class="detail-panel">
+      <div class="detail-eyebrow">Document detail</div>
+      <h2 class="detail-title">Culture of Animal Cells — A Manual of Basic Technique</h2>
+      <div class="detail-meta">
+        <span>27.3 MB</span><span class="sep">/</span>
+        <span>676 pages</span><span class="sep">/</span>
+        <span>application/pdf</span><span class="sep">/</span>
+        <span>id 4d60ed72</span>
+      </div>
+
+      <div class="status-banner warn-banner">
+        <div class="symbol">!</div>
+        <div class="text">
+          <strong>Indexed without semantic search.</strong>
+          <small>Text and chunks are stored, but the embedding stage failed. This document is viewable in the library but will not appear in AI chat retrieval until embeddings are generated.</small>
+        </div>
+      </div>
+
+      <div class="audit">
+        <div class="audit-head">
+          <span>Processing audit</span>
+          <span>Duration</span>
+        </div>
+
+        <div class="audit-row done">
+          <span class="icon">✓</span>
+          <span class="stage-name">Extract</span>
+          <span class="detail">
+            23:06:03 → 23:34:21
+            <span class="second">676 pages · 248 images · pdfplumber</span>
+          </span>
+          <span class="duration">28m 18s</span>
+        </div>
+
+        <div class="audit-row done">
+          <span class="icon">✓</span>
+          <span class="stage-name">Chunk</span>
+          <span class="detail">
+            23:34:21 → 23:38:42
+            <span class="second">604 chunks · ~1.2M tokens · plaintext</span>
+          </span>
+          <span class="duration">4m 21s</span>
+        </div>
+
+        <div class="audit-row failed">
+          <span class="icon">✕</span>
+          <span class="stage-name">Embed</span>
+          <span class="detail">
+            23:38:42 → failed
+            <span class="second">0 / 604 embeddings written</span>
+            <span class="error">
+              <span class="err-key">openai · rate_limit_exceeded</span>
+              429 returned at chunk 0 / 604 after 3 retries (org token budget exhausted).
+            </span>
+          </span>
+          <span class="duration">—</span>
+        </div>
+      </div>
+
+      <div class="detail-actions">
+        <button class="btn">Generate embeddings</button>
+        <button class="btn secondary">Re‑index</button>
+        <button class="btn danger">Delete</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ── Detail variants gallery ────────────────────────── -->
+  <section class="variants">
+    <div class="kicker">Detail panel · state gallery</div>
+    <div class="v-head">four states, one panel</div>
+
+    <div class="variant-grid">
+
+      <!-- Variant A · INDEXING (running embed) -->
+      <aside class="detail-panel" style="position: static; top: auto;">
+        <div class="detail-eyebrow">Indexing in progress</div>
+        <h2 class="detail-title">CHO‑K1 cell line characterization SOP — Rev 4</h2>
+        <div class="detail-meta">
+          <span>3.2 MB</span><span class="sep">/</span>
+          <span>42 pages</span><span class="sep">/</span>
+          <span>application/docx</span>
+        </div>
+        <div class="status-banner run-banner">
+          <div class="symbol"></div>
+          <div class="text">
+            <strong>Generating embeddings.</strong>
+            <small>Available for semantic search when complete. About 2 minutes remaining.</small>
+          </div>
+        </div>
+        <div class="audit">
+          <div class="audit-head"><span>Processing audit</span><span>Duration</span></div>
+          <div class="audit-row done">
+            <span class="icon">✓</span><span class="stage-name">Extract</span>
+            <span class="detail">12:04:11 → 12:04:38<span class="second">42 pages · mammoth</span></span>
+            <span class="duration">27 s</span>
+          </div>
+          <div class="audit-row done">
+            <span class="icon">✓</span><span class="stage-name">Chunk</span>
+            <span class="detail">12:04:38 → 12:04:51<span class="second">604 chunks · 89K tokens</span></span>
+            <span class="duration">13 s</span>
+          </div>
+          <div class="audit-row running">
+            <span class="icon">↻</span><span class="stage-name">Embedding</span>
+            <span class="detail">
+              12:04:51 → in progress
+              <span class="second">chunk 412 / 604 · openai text‑embedding‑3‑small</span>
+              <div style="margin-top: 10px;">
+                <div class="progress-bar" style="width: 100%; margin: 0;"><div class="progress-fill shimmer" style="width: 68%;"></div></div>
+              </div>
+            </span>
+            <span class="duration">~ 2 min</span>
+          </div>
+          <div class="audit-row pending">
+            <span class="icon">○</span><span class="stage-name">Finalize</span>
+            <span class="detail">queued</span>
+            <span class="duration">—</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Variant B · INDEXED (happy path) -->
+      <aside class="detail-panel" style="position: static; top: auto;">
+        <div class="detail-eyebrow">Fully indexed</div>
+        <h2 class="detail-title">Mammalian cell culture engineering — Wurm 2004</h2>
+        <div class="detail-meta">
+          <span>1.1 MB</span><span class="sep">/</span>
+          <span>6 pages</span><span class="sep">/</span>
+          <span>application/pdf</span>
+        </div>
+        <div class="status-banner ok-banner">
+          <div class="symbol">✓</div>
+          <div class="text">
+            <strong>Indexed and searchable.</strong>
+            <small>All 38 chunks have embeddings. This document will appear in AI chat retrieval and semantic search.</small>
+          </div>
+        </div>
+        <div class="audit">
+          <div class="audit-head"><span>Processing audit</span><span>Duration</span></div>
+          <div class="audit-row done">
+            <span class="icon">✓</span><span class="stage-name">Extract</span>
+            <span class="detail">09:14:02 → 09:14:09<span class="second">6 pages · pdfplumber</span></span>
+            <span class="duration">7 s</span>
+          </div>
+          <div class="audit-row done">
+            <span class="icon">✓</span><span class="stage-name">Chunk</span>
+            <span class="detail">09:14:09 → 09:14:11<span class="second">38 chunks · 47K tokens</span></span>
+            <span class="duration">2 s</span>
+          </div>
+          <div class="audit-row done">
+            <span class="icon">✓</span><span class="stage-name">Embed</span>
+            <span class="detail">09:14:11 → 09:14:24<span class="second">38 / 38 embeddings · text‑embedding‑3‑small (1536d)</span></span>
+            <span class="duration">13 s</span>
+          </div>
+        </div>
+        <div class="detail-actions">
+          <button class="btn secondary">Open in reader</button>
+          <button class="btn secondary">Re‑index</button>
+        </div>
+      </aside>
+
+      <!-- Variant C · FAILED at extract -->
+      <aside class="detail-panel" style="position: static; top: auto;">
+        <div class="detail-eyebrow">Indexing failed</div>
+        <h2 class="detail-title">scanned_notebook_2019_p1‑40.pdf</h2>
+        <div class="detail-meta">
+          <span>184 MB</span><span class="sep">/</span>
+          <span>— pages</span><span class="sep">/</span>
+          <span>application/pdf</span>
+        </div>
+        <div class="status-banner fail-banner">
+          <div class="symbol">×</div>
+          <div class="text">
+            <strong>Indexing failed at extraction.</strong>
+            <small>OCR did not complete within the allotted time. This document is not yet readable by the AI. Try splitting the file or retrying.</small>
+          </div>
+        </div>
+        <div class="audit">
+          <div class="audit-head"><span>Processing audit</span><span>Duration</span></div>
+          <div class="audit-row failed">
+            <span class="icon">✕</span><span class="stage-name">Extract</span>
+            <span class="detail">
+              08:30:00 → failed
+              <span class="second">attempt 3 of 3</span>
+              <span class="error">
+                <span class="err-key">tesseract · timeout</span>
+                OCR exceeded 1800s budget on page 47. Document appears to be a scanned bound notebook.
+              </span>
+            </span>
+            <span class="duration">30m</span>
+          </div>
+          <div class="audit-row pending">
+            <span class="icon">○</span><span class="stage-name">Chunk</span>
+            <span class="detail">not reached</span>
+            <span class="duration">—</span>
+          </div>
+          <div class="audit-row pending">
+            <span class="icon">○</span><span class="stage-name">Embed</span>
+            <span class="detail">not reached</span>
+            <span class="duration">—</span>
+          </div>
+        </div>
+        <div class="detail-actions">
+          <button class="btn">Retry extraction</button>
+          <button class="btn danger">Delete</button>
+        </div>
+      </aside>
+
+      <!-- Variant D · QUEUED -->
+      <aside class="detail-panel" style="position: static; top: auto;">
+        <div class="detail-eyebrow">Awaiting processing</div>
+        <h2 class="detail-title">ICH Q7 — GMP for active pharmaceutical ingredients</h2>
+        <div class="detail-meta">
+          <span>2.4 MB</span><span class="sep">/</span>
+          <span>52 pages</span><span class="sep">/</span>
+          <span>application/pdf</span>
+        </div>
+        <div class="status-banner" style="border-color: var(--ink-muted); background: var(--paper-tint);">
+          <div class="symbol" style="color: var(--ink-mid);">○</div>
+          <div class="text">
+            <strong>Queued for indexing.</strong>
+            <small>Position 2 of 3 in the org's processing queue. Estimated start in about 4 minutes.</small>
+          </div>
+        </div>
+        <div class="audit">
+          <div class="audit-head"><span>Processing audit</span><span>Duration</span></div>
+          <div class="audit-row pending">
+            <span class="icon">○</span><span class="stage-name">Extract</span>
+            <span class="detail">waiting</span>
+            <span class="duration">—</span>
+          </div>
+          <div class="audit-row pending">
+            <span class="icon">○</span><span class="stage-name">Chunk</span>
+            <span class="detail">waiting</span>
+            <span class="duration">—</span>
+          </div>
+          <div class="audit-row pending">
+            <span class="icon">○</span><span class="stage-name">Embed</span>
+            <span class="detail">waiting</span>
+            <span class="duration">—</span>
+          </div>
+        </div>
+        <div class="detail-actions">
+          <button class="btn secondary">Move to top of queue</button>
+          <button class="btn danger">Cancel upload</button>
+        </div>
+      </aside>
+
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>
