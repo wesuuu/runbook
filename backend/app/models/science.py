@@ -549,60 +549,6 @@ class GlpSignoff(Base, UUIDMixin, TimestampMixin):
     execution). Partition by FK: exactly one of protocol_id/run_id is set."""
 
     __tablename__ = "glp_signoffs"
-
-    protocol_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=True
-    )
-    run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("runs.id", ondelete="CASCADE"), nullable=True
-    )
-
-    role: Mapped[str] = mapped_column(String, nullable=False)
-    action: Mapped[str] = mapped_column(String, nullable=False)
-
-    signer_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
-    )
-    attestation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    signature_image_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-
-    # FK to glp_signoff_requests added by migration (Task 7) after the table
-    # is created by renaming protocol_approval_requests in Task 3.
-    signoff_request_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PGUUID(as_uuid=True),
-        nullable=True,
-    )
-
-    invalidated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    invalidated_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    invalidated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    # Grilling decision #15: distinguish edit-invalidation vs reopen-supersession.
-    # Both set invalidated_at; only reopen sets this FK to the audit event row.
-    superseded_by_reopen_audit_event_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey(
-            "audit_logs.id",
-            use_alter=True,
-            name="fk_glp_signoff_superseded_by",
-        ),
-        nullable=True,
-    )
-
-    protocol: Mapped[Optional["Protocol"]] = relationship(
-        "Protocol", foreign_keys=[protocol_id]
-    )
-    run: Mapped[Optional["Run"]] = relationship("Run", foreign_keys=[run_id])
-    signer: Mapped["app.models.iam.User"] = relationship(
-        "app.models.iam.User", foreign_keys=[signer_id]
-    )
-    invalidated_by: Mapped[Optional["app.models.iam.User"]] = relationship(
-        "app.models.iam.User", foreign_keys=[invalidated_by_id]
-    )
-
     __table_args__ = (
         CheckConstraint(
             "(protocol_id IS NOT NULL AND run_id IS NULL) OR "
@@ -649,4 +595,60 @@ class GlpSignoff(Base, UUIDMixin, TimestampMixin):
                 "run_id IS NOT NULL AND action='APPROVED' " "AND invalidated_at IS NULL"
             ),
         ),
+    )
+
+    protocol_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=True
+    )
+    run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), nullable=True
+    )
+
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+
+    signer_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    attestation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    signature_image_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # FK target will be renamed to glp_signoff_requests.id in Task 3.
+    signoff_request_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey(
+            "protocol_approval_requests.id",
+            use_alter=True,
+            name="fk_glp_signoff_request",
+        ),
+        nullable=True,
+    )
+
+    invalidated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    invalidated_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    invalidated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # Grilling decision #15: distinguish edit-invalidation vs reopen-supersession.
+    # Both set invalidated_at; only reopen sets this FK to the audit event row.
+    superseded_by_reopen_audit_event_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey(
+            "audit_logs.id",
+            use_alter=True,
+            name="fk_glp_signoff_superseded_by",
+        ),
+        nullable=True,
+    )
+
+    protocol: Mapped[Optional["Protocol"]] = relationship(
+        "Protocol", foreign_keys=[protocol_id]
+    )
+    run: Mapped[Optional["Run"]] = relationship("Run", foreign_keys=[run_id])
+    signer: Mapped["app.models.iam.User"] = relationship(
+        "app.models.iam.User", foreign_keys=[signer_id]
+    )
+    invalidated_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[invalidated_by_id]
     )
