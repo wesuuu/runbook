@@ -454,7 +454,6 @@ class Equipment(Base, UUIDMixin, TimestampMixin):
         PG_UUID(as_uuid=True),
         ForeignKey("sites.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -468,7 +467,7 @@ class Equipment(Base, UUIDMixin, TimestampMixin):
         String(20),
         nullable=False,
         default=EquipmentStatus.ACTIVE,
-        server_default=EquipmentStatus.ACTIVE,
+        server_default="ACTIVE",
     )
     install_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     last_calibration_date: Mapped[date | None] = mapped_column(Date, nullable=True)
