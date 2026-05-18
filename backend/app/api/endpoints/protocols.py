@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Query, UploadFile)
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,7 +18,8 @@ from app.models.iam import (ObjectType, OrganizationMember, OrgRole,
                             PermissionLevel, User)
 from app.models.science import (Project, Protocol, ProtocolRole,
                                 ProtocolVersion, Run)
-from app.schemas.science import (DesignateApprovalRequest, ProtocolCreate,
+from app.schemas.science import (DesignateApprovalRequest, GlpSignoffCreate,
+                                 GlpSignoffResponse, ProtocolCreate,
                                  ProtocolImportFinalizeRequest,
                                  ProtocolImportProposalResponse,
                                  ProtocolRefineRequest, ProtocolResponse,
@@ -30,6 +32,7 @@ from app.services.core.permissions import check_permission
 from app.services.protocols.lookup import get_protocol_full, list_protocols
 from app.services.protocols.roles import (add_role, list_roles, remove_role,
                                           update_role)
+from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
 
@@ -1026,3 +1029,51 @@ async def delete_protocol_role(
         raise HTTPException(status_code=403, detail=msg)
     await db.commit()
     return {"ok": True}
+
+
+# --- GLP Sign-offs (F-0087) -----------------------------------------------
+
+
+@router.post(
+    "/protocols/{protocol_id}/signoffs",
+    response_model=GlpSignoffResponse,
+    status_code=201,
+)
+async def create_protocol_signoff(
+    protocol_id: UUID,
+    payload: GlpSignoffCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> GlpSignoffResponse:
+    """Create a GLP sign-off on a protocol.
+
+    Replaces F-0066's ``POST /protocols/{id}/approval-events``; the old route
+    is preserved as a deprecation shim for one release (see Task 24). The
+    role/entity compatibility matrix is enforced by ``ck_protocol_signoff_roles``
+    at the DB layer and surfaced here as 400.
+    """
+    protocol = await get_or_404(db, Protocol, protocol_id)
+
+    try:
+        signoff = await create_signoff(
+            db,
+            entity_type="protocol",
+            entity_id=protocol.id,
+            role=payload.role,
+            action=payload.action,
+            signer=user,
+            attestation=payload.attestation,
+            signoff_request_id=payload.signoff_request_id,
+        )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "INVALID_SIGNOFF",
+                "role": payload.role,
+                "entity_type": "protocol",
+            },
+        ) from exc
+
+    return GlpSignoffResponse.model_validate(signoff)

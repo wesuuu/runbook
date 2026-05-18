@@ -204,7 +204,33 @@ async def validate_signoff_role_assignable(
     entity is a run, the check is performed against the run's ``protocol_id``.
     If ``protocol_id`` is None the run is not linked to a protocol and only
     OPERATOR/EDIT-level checks apply (protocol-scoped roles pass through).
+
+    Role/entity compatibility is enforced up front, mirroring the DB
+    constraints ``ck_run_signoff_roles`` and ``ck_protocol_signoff_roles``:
+    OPERATOR is only valid on runs; SPONSOR is only valid on protocols.
+    Violations raise ``HTTPException(400)`` with ``error="INVALID_SIGNOFF"``.
     """
+    # Role/entity compatibility — fail fast with 400 before permission lookups
+    # so callers get a consistent error code that matches the DB constraints.
+    if entity_type == "run" and role == "SPONSOR":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "INVALID_SIGNOFF",
+                "role": role,
+                "entity_type": entity_type,
+            },
+        )
+    if entity_type == "protocol" and role == "OPERATOR":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "INVALID_SIGNOFF",
+                "role": role,
+                "entity_type": entity_type,
+            },
+        )
+
     # Resolve the protocol_id we need for SD/QAU/SPONSOR checks.
     protocol_id: Optional[UUID] = None
     if entity_type == "run":
