@@ -196,7 +196,8 @@ async def _recover_stalled_documents() -> None:
     Uses SELECT … FOR UPDATE SKIP LOCKED so multiple pods starting
     simultaneously won't double-process.
     """
-    from app.models.library import STALE_PROCESSING_SECONDS, Document, DocumentStatus
+    from app.models.library import (STALE_PROCESSING_SECONDS, Document,
+                                    DocumentStatus)
 
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -356,7 +357,8 @@ async def lifespan(app: FastAPI):
 
     # Make the cursive fallback font visible to LibreOffice for PDF
     # rendering (F-0080)
-    from app.services.documents.font_setup import ensure_cursive_font_registered
+    from app.services.documents.font_setup import \
+        ensure_cursive_font_registered
 
     ensure_cursive_font_registered()
 
@@ -421,34 +423,13 @@ async def health_check():
     return {"status": "ok", "service": "batchrite-backend"}
 
 
-from app.api.endpoints import (
-    admin,
-    ai,
-    auth,
-    batch_record_import,
-    billing,
-    chat,
-    dashboard,
-    experiments,
-    export_data,
-    iam,
-    internal,
-    legal,
-    library,
-    notifications,
-    offline,
-    onboarding,
-    project_members,
-    projects,
-    protocol_pdfs,
-    protocol_versions,
-    protocols,
-    runs,
-    sync,
-    template_convert,
-    templates,
-    unit_ops,
-)
+from app.api.endpoints import (admin, ai, auth, batch_record_import, billing,
+                               chat, dashboard, experiments, export_data, iam,
+                               internal, legal, library, notifications,
+                               offline, onboarding, project_members, projects,
+                               protocol_pdfs, protocol_versions, protocols,
+                               runs, sites, sync, template_convert, templates,
+                               unit_ops)
 
 app.include_router(internal.router)  # no prefix — router already has /internal
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
@@ -467,6 +448,7 @@ app.include_router(experiments.router, prefix="/science", tags=["science"])
 app.include_router(batch_record_import.router, prefix="/science", tags=["science"])
 app.include_router(export_data.router, prefix="/science", tags=["science"])
 app.include_router(project_members.router, prefix="/science", tags=["science"])
+app.include_router(sites.router, tags=["sites"])
 app.include_router(ai.router, prefix="/ai", tags=["ai"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(

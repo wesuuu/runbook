@@ -226,6 +226,11 @@ async def test_org(db_session) -> Organization:
 
     if library_registry.list_libraries():  # registry seeded by app startup
         await library_registry.subscribe_default_libraries(db_session, org.id)
+    # Mirror production: every new org gets a default site.
+    from app.services.core.audit import SYSTEM_ACTOR_ID
+    from app.services.sites.defaults import ensure_default_site
+
+    await ensure_default_site(db_session, org.id, actor_id=SYSTEM_ACTOR_ID)
     return org
 
 
@@ -535,3 +540,161 @@ async def sample_equipment_attachment(db_session, sample_equipment, test_user):
     await db_session.commit()
     await db_session.refresh(att)
     return att
+
+
+# ── Sites role-gate fixtures ─────────────────────────────────────────────────
+
+
+def _make_bearer_client(db_session, user, org):
+    """Build an AsyncClient pre-loaded with a Bearer token for `user`.
+
+    Each call produces an independent client with its own token so tests that
+    request two authed clients (e.g. admin + member) in the same function
+    don't clobber each other's headers.  The db_session override is idempotent
+    (all roles share the same session); cleanup is left to the caller.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    token = create_access_token(
+        user.id,
+        org_id=org.id,
+        subscription_tier=org.subscription_tier,
+        email_verified=True,
+    )
+
+    async def override_get_db():
+        yield db_session
+
+    # Set the override every time — safe because it's always the same session.
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    return AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+@pytest_asyncio.fixture
+async def authed_admin_client(db_session, test_user, test_org):
+    """test_user is already ADMIN+MEMBER of test_org."""
+    async with _make_bearer_client(db_session, test_user, test_org) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def member_user(db_session, test_org) -> User:
+    user = User(
+        email="member-only@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Member User",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=test_org.id,
+            roles=["MEMBER"],
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def authed_member_client(db_session, member_user, test_org):
+    async with _make_bearer_client(db_session, member_user, test_org) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def site_manager_user(db_session, test_org) -> User:
+    user = User(
+        email="site-mgr@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Site Manager",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=test_org.id,
+            roles=["MEMBER", "SITE_MANAGER"],
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def authed_site_manager_client(db_session, site_manager_user, test_org):
+    async with _make_bearer_client(db_session, site_manager_user, test_org) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def managed_site(db_session, test_org, test_user, site_manager_user):
+    """A site that `site_manager_user` has a grant on."""
+    from app.schemas.sites import SiteCreate
+    from app.services.sites import crud as sites_crud
+    from app.services.sites import grants as sites_grants
+
+    site = await sites_crud.create_site(
+        db_session,
+        org_id=test_org.id,
+        payload=SiteCreate(name="Managed Site"),
+        actor_id=test_user.id,
+    )
+    await sites_grants.grant_site_manager(
+        db_session,
+        site=site,
+        user_id=site_manager_user.id,
+        granted_by_id=test_user.id,
+    )
+    return site
+
+
+@pytest_asyncio.fixture
+async def unmanaged_site(db_session, test_org, test_user):
+    """A site that nobody has a grant on (other than ADMINs)."""
+    from app.schemas.sites import SiteCreate
+    from app.services.sites import crud as sites_crud
+
+    return await sites_crud.create_site(
+        db_session,
+        org_id=test_org.id,
+        payload=SiteCreate(name="Unmanaged Site"),
+        actor_id=test_user.id,
+    )
+
+
+@pytest_asyncio.fixture
+async def grantee_user(db_session, test_org) -> User:
+    """A bare MEMBER eligible to be granted a SITE_MANAGER role on a site."""
+    user = User(
+        email="grantee@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Grantee User",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=test_org.id,
+            roles=["MEMBER", "SITE_MANAGER"],
+        )
+    )
+    await db_session.flush()
+    return user
