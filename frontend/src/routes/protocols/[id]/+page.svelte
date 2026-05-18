@@ -23,7 +23,9 @@
     import PublishVersionDialog from "$lib/components/protocol/PublishVersionDialog.svelte";
     import RevertOnEditConfirmDialog from "$lib/components/protocol/RevertOnEditConfirmDialog.svelte";
     import CanvasToolbar from "$lib/components/protocol/CanvasToolbar.svelte";
+    import GlpSettingsPanel from "$lib/components/protocol/GlpSettingsPanel.svelte";
     import ValidationBanners from "$lib/components/protocol/ValidationBanners.svelte";
+    import { GlpSettingsSchema, type GlpSettings } from "$lib/schemas/glpSignoff";
     import {
         serializeGraphData,
         buildStateSnapshot,
@@ -270,7 +272,7 @@
 
     // Compute current state as JSON for comparison
     const currentState = $derived(() =>
-        buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour),
+        buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings),
     );
 
     // Track changes
@@ -352,6 +354,35 @@
         get snapMinutes() { return 5; },
     });
 
+    // GLP settings panel — protocol-level config stored on protocol.graph.glpSettings
+    function defaultGlpSettings(): GlpSettings {
+        return GlpSettingsSchema.parse({});
+    }
+    let glpSettings = $state<GlpSettings>(defaultGlpSettings());
+    let glpPanelOpen = $state(false);
+    let glpSettingsDirty = $state(false);
+
+    function toggleGlpPanel(): void {
+        glpPanelOpen = !glpPanelOpen;
+    }
+
+    function handleGlpApply(next: GlpSettings): void {
+        glpSettings = next;
+        glpSettingsDirty = true;
+        hasUnsavedChanges = true;
+    }
+
+    // Mutual exclusion: opening the GLP panel deselects any node so the
+    // canvas inspector and GLP panel never share the screen.
+    $effect(() => {
+        if (glpPanelOpen) {
+            const anySelected = nodes.some((n) => n.selected);
+            if (anySelected) {
+                nodes = nodes.map((n) => (n.selected ? { ...n, selected: false } : n));
+            }
+        }
+    });
+
     // Inspector — watch for node selection changes via SvelteFlow's built-in selection
     let selectedNodeId = $state<string | null>(null);
     let previewedOp = $state<any | null>(null);
@@ -374,7 +405,10 @@
     $effect(() => {
         const sel = nodes.find((n) => (n.type === "unitOp" || n.type === "processStart") && n.selected);
         selectedNodeId = sel ? sel.id : null;
-        if (selectedNodeId) previewedOp = null;
+        if (selectedNodeId) {
+            previewedOp = null;
+            glpPanelOpen = false;
+        }
     });
 
     const selectedNode = $derived(
@@ -457,6 +491,12 @@
         handleOrientation = gs.handleOrientation;
         timeEnabled = gs.timeEnabled;
         pixelsPerHour = gs.pixelsPerHour;
+        // GLP settings live alongside the rest of the graph payload but are
+        // protocol-level (not per-node); parse defensively and fall back to
+        // sensible defaults via the zod schema.
+        const rawGlp = (graph as any)?.glpSettings;
+        const parsed = GlpSettingsSchema.safeParse(rawGlp ?? {});
+        glpSettings = parsed.success ? parsed.data : defaultGlpSettings();
     }
 
     // --- Capability Resolution ---
@@ -580,8 +620,9 @@
             }
 
             // Initialize saved state for change tracking
-            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
             hasUnsavedChanges = false;
+            glpSettingsDirty = false;
             undoRedoState = createUndoRedoState();
 
             // Populate version list so the save toast can tell whether it
@@ -622,7 +663,7 @@
         saving = true;
 
         try {
-            const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
 
             const draftVersionNumber = versionNumber + 1;
             const draftExisted = versions.some(
@@ -641,8 +682,9 @@
                     : `Draft saved (v${draftVersionNumber})`,
             );
             // Mark as saved and reset undo/redo
-            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
             hasUnsavedChanges = false;
+            glpSettingsDirty = false;
             undoRedoState = createUndoRedoState();
         } catch (e: unknown) {
             toast.error(e instanceof Error ? e.message : 'An error occurred');
@@ -682,7 +724,7 @@
         saving = true;
 
         try {
-            const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
 
             // Save as draft first
             const draftResponse: any = await api.put(`/science/protocols/${protocol.id}?save_as_draft=true`, {
@@ -701,8 +743,9 @@
             toast.success("Published");
 
             // Mark as saved and reset undo/redo
-            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
             hasUnsavedChanges = false;
+            glpSettingsDirty = false;
             undoRedoState = createUndoRedoState();
         } catch (e: unknown) {
             toast.error(e instanceof Error ? e.message : 'An error occurred');
@@ -758,8 +801,9 @@
             }
             if (timeEnabled) applyTimelineSizing();
 
-            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
             hasUnsavedChanges = false;
+            glpSettingsDirty = false;
 
             toast.success(`Reverted to v${versionNum}`);
 
@@ -799,7 +843,7 @@
         try {
             // Save current state before first preview
             if (previewingVersion === null) {
-                savedStateBeforePreview = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+                savedStateBeforePreview = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
             }
 
             const ver: any = await api.get(
@@ -1196,7 +1240,7 @@
         if (embedded && initialGraph && loading) {
             applyGraphState(initialGraph);
             loading = false;
-            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            lastSavedState = buildStateSnapshot(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
             hasUnsavedChanges = false;
         }
     });
@@ -1209,7 +1253,7 @@
     // Emit graph changes to parent in embedded mode
     $effect(() => {
         if (embedded && onGraphChange && !loading) {
-            const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour);
+            const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
             onGraphChange(graphData);
         }
     });
@@ -1317,6 +1361,9 @@
             {nodes}
             canUndoAction={canUndo(undoRedoState)}
             canRedoAction={canRedo(undoRedoState)}
+            {glpPanelOpen}
+            {glpSettingsDirty}
+            onToggleGlpPanel={toggleGlpPanel}
             onUndo={handleUndo}
             onRedo={handleRedo}
             onInteractionModeChange={(mode) => (interactionMode = mode)}
@@ -1400,7 +1447,14 @@
     </div>
 
     <!-- ============= INSPECTOR / PREVIEW ============= -->
-    {#if previewedOp}
+    {#if glpPanelOpen}
+        <GlpSettingsPanel
+            open={glpPanelOpen}
+            {glpSettings}
+            onApply={handleGlpApply}
+            onClose={() => (glpPanelOpen = false)}
+        />
+    {:else if previewedOp}
         <UnitOpPreview op={previewedOp} onClose={clearPreview} />
     {:else if selectedNode}
         {#if selectedNode.type === "processStart"}
