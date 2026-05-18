@@ -12,7 +12,7 @@
     let { sites, activeId, canEdit, onSelect, onAdd }: Props = $props();
 </script>
 
-<aside class="site-rail">
+<aside class="site-rail col-span-3">
     <header>
         <span class="text-xs uppercase tracking-wide text-muted-foreground font-medium">Sites</span>
         {#if canEdit}

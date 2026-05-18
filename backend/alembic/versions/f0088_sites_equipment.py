@@ -118,11 +118,14 @@ def upgrade() -> None:
     )
     op.create_index("ix_equipment_attachments_eq", "equipment_attachments", ["equipment_id"])
 
-    # 5. OrganizationMember CHECK constraint
+    # 5. OrganizationMember CHECK constraint — drop both the old name that
+    #    may have been created by earlier migrations and the name used in
+    #    this migration so re-runs are idempotent.
+    op.execute("ALTER TABLE organization_members DROP CONSTRAINT IF EXISTS ck_org_member_roles")
     op.execute("ALTER TABLE organization_members DROP CONSTRAINT IF EXISTS ck_organization_members_roles_valid")
     op.execute(
-        "ALTER TABLE organization_members ADD CONSTRAINT ck_organization_members_roles_valid "
-        "CHECK (roles <@ ARRAY['ADMIN','BILLING','MEMBER','PROTOCOL_APPROVER','SITE_MANAGER']::varchar[])"
+        "ALTER TABLE organization_members ADD CONSTRAINT ck_org_member_roles "
+        "CHECK (roles <@ ARRAY['ADMIN','BILLING','MEMBER','PROTOCOL_APPROVER','QAU','SITE_MANAGER']::varchar[])"
     )
 
     # 6. site_manager_grants
@@ -162,10 +165,11 @@ def downgrade() -> None:
     op.drop_index("ix_site_manager_grants_site", "site_manager_grants")
     op.drop_table("site_manager_grants")
 
+    op.execute("ALTER TABLE organization_members DROP CONSTRAINT IF EXISTS ck_org_member_roles")
     op.execute("ALTER TABLE organization_members DROP CONSTRAINT IF EXISTS ck_organization_members_roles_valid")
     op.execute(
-        "ALTER TABLE organization_members ADD CONSTRAINT ck_organization_members_roles_valid "
-        "CHECK (roles <@ ARRAY['ADMIN','BILLING','MEMBER','PROTOCOL_APPROVER']::varchar[])"
+        "ALTER TABLE organization_members ADD CONSTRAINT ck_org_member_roles "
+        "CHECK (roles <@ ARRAY['ADMIN','BILLING','MEMBER','PROTOCOL_APPROVER','QAU']::varchar[])"
     )
 
     op.drop_index("ix_equipment_attachments_eq", "equipment_attachments")
