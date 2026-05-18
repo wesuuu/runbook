@@ -85,7 +85,7 @@ async def grant_site_manager(
         entity_id=site.id,
         changes={"user_id": str(user_id), "grant_id": str(grant.id)},
     )
-    await db.flush()
+    await db.commit()
     await db.refresh(grant)
     return grant
 
@@ -122,4 +122,4 @@ async def revoke_site_manager(
         entity_id=site_id,
         changes={"user_id": str(user_id), "grant_id": str(grant_id)},
     )
-    await db.flush()
+    await db.commit()
