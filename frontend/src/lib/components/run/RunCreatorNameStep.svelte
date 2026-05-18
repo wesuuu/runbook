@@ -1,4 +1,8 @@
 <script lang="ts">
+    import { api } from '$lib/api';
+    import { Button } from '$lib/components/ui/button';
+    import { Switch } from '$lib/components/ui/switch';
+
     interface ExperimentOption {
         id: string;
         name: string;
@@ -10,28 +14,102 @@
         experimentId: string | null;
         experiments: ExperimentOption[];
         lockedExperiment: { id: string; name: string } | null;
+        producesLot?: boolean;
         lotNumber?: string;
         batchNumber?: string;
-        onChange: (next: { name: string; experimentId: string | null; lotNumber: string; batchNumber: string }) => void;
+        projectId: string;
+        onChange: (next: {
+            name: string;
+            experimentId: string | null;
+            producesLot: boolean;
+            lotNumber: string;
+            batchNumber: string;
+        }) => void;
         onValidate: (valid: boolean) => void;
     }
 
-    let { name, experimentId, experiments, lockedExperiment, lotNumber = '', batchNumber = '', onChange, onValidate }: Props = $props();
+    let {
+        name,
+        experimentId,
+        experiments,
+        lockedExperiment,
+        producesLot = false,
+        lotNumber = '',
+        batchNumber = '',
+        projectId,
+        onChange,
+        onValidate,
+    }: Props = $props();
+
+    let duplicateCount = $state<number>(0);
+    let autoGenerating = $state(false);
 
     const visibleExperiments = $derived(
         experiments.filter((e) => (e.status ?? '').toUpperCase() !== 'ARCHIVED'),
     );
 
     $effect(() => {
-        onValidate(name.trim().length > 0);
+        const baseValid = name.trim().length > 0;
+        const lotValid = !producesLot || lotNumber.trim().length > 0;
+        onValidate(baseValid && lotValid);
     });
 
-    function setName(v: string) { onChange({ name: v, experimentId, lotNumber, batchNumber }); }
-    function setExperimentId(v: string) {
-        onChange({ name, experimentId: v === '' ? null : v, lotNumber, batchNumber });
+    function emit(partial: Partial<{
+        name: string;
+        experimentId: string | null;
+        producesLot: boolean;
+        lotNumber: string;
+        batchNumber: string;
+    }>) {
+        onChange({
+            name,
+            experimentId,
+            producesLot,
+            lotNumber,
+            batchNumber,
+            ...partial,
+        });
     }
-    function setLotNumber(v: string) { onChange({ name, experimentId, lotNumber: v, batchNumber }); }
-    function setBatchNumber(v: string) { onChange({ name, experimentId, lotNumber, batchNumber: v }); }
+
+    function setName(v: string) { emit({ name: v }); }
+    function setExperimentId(v: string) { emit({ experimentId: v === '' ? null : v }); }
+    function setProducesLot(v: boolean) {
+        if (!v) {
+            // Clear lot value so a hidden, stale string can't leak through on submit.
+            emit({ producesLot: false, lotNumber: '' });
+            duplicateCount = 0;
+        } else {
+            emit({ producesLot: true });
+        }
+    }
+    function setLotNumber(v: string) { emit({ lotNumber: v }); }
+    function setBatchNumber(v: string) { emit({ batchNumber: v }); }
+
+    async function autoGenerate() {
+        autoGenerating = true;
+        try {
+            const res = await api.post<{ lot_number: string }>(
+                '/science/runs/suggest-lot-number',
+                { project_id: projectId },
+            );
+            setLotNumber(res.lot_number);
+            duplicateCount = 0;
+        } finally {
+            autoGenerating = false;
+        }
+    }
+
+    async function checkDuplicate() {
+        if (!producesLot) { duplicateCount = 0; return; }
+        const trimmed = lotNumber.trim();
+        if (!trimmed) { duplicateCount = 0; return; }
+        const res = await api.get<{ exists: boolean; count: number }>(
+            `/science/runs/check-lot-number?project_id=${encodeURIComponent(projectId)}&lot_number=${encodeURIComponent(trimmed)}`,
+        );
+        // Subtract this run's own pending entry if needed — for a creator
+        // flow the run doesn't exist yet, so the raw count is correct.
+        duplicateCount = res.exists ? res.count : 0;
+    }
 </script>
 
 <section class="step-body">
@@ -78,19 +156,60 @@
         {/if}
     </div>
 
-    <div class="field">
-        <label for="run-lot" class="field-label">
-            Lot number <span class="optional">(optional)</span>
-        </label>
-        <input
-            id="run-lot"
-            type="text"
-            value={lotNumber}
-            oninput={(e) => setLotNumber((e.target as HTMLInputElement).value)}
-            placeholder="e.g. LOT-2024-001"
-            class="input-field"
-            autocomplete="off"
-        />
+    <div class="rounded-lg border border-border bg-card p-4 space-y-3">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <span class="text-sm font-medium text-foreground">This run produces a lot</span>
+                <p class="text-xs text-muted-foreground mt-1">
+                    Designate this run as the producer of a manufacturing lot.
+                </p>
+            </div>
+            <Switch
+                id="run-produces-lot"
+                checked={producesLot}
+                onCheckedChange={setProducesLot}
+            />
+        </div>
+
+        {#if producesLot}
+            <div class="field pt-1">
+                <div class="flex items-center justify-between">
+                    <label for="run-lot" class="field-label">Lot number</label>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onclick={autoGenerate}
+                        disabled={autoGenerating}
+                    >
+                        {autoGenerating ? 'Generating…' : 'Auto-generate'}
+                    </Button>
+                </div>
+                <input
+                    id="run-lot"
+                    type="text"
+                    value={lotNumber}
+                    oninput={(e) => setLotNumber((e.target as HTMLInputElement).value)}
+                    onblur={checkDuplicate}
+                    placeholder="LOT-000001"
+                    class="input-field font-mono"
+                    autocomplete="off"
+                />
+            </div>
+
+            {#if duplicateCount > 0}
+                <div
+                    role="status"
+                    class="flex items-start gap-3 rounded-md border-l-4 border-l-amber-400 bg-amber-50 px-4 py-3"
+                    data-testid="lot-duplicate-warning"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mt-0.5 shrink-0 text-amber-600"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <p class="text-sm text-amber-900">
+                        This lot number already exists in your org ({duplicateCount} run{duplicateCount !== 1 ? 's' : ''}). Lots may be re-entered intentionally — confirm or change.
+                    </p>
+                </div>
+            {/if}
+        {/if}
     </div>
 
     <div class="field">
