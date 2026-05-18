@@ -377,12 +377,16 @@
 
     async function lotAutoGenerate() {
         if (!run) return;
-        const res = await api.post<{ lot_number: string }>(
-            '/science/runs/suggest-lot-number',
-            { project_id: run.project_id },
-        );
-        lotDraftLotNumber = res.lot_number;
-        lotDuplicateCount = 0;
+        try {
+            const res = await api.post<{ lot_number: string }>(
+                '/science/runs/suggest-lot-number',
+                { project_id: run.project_id },
+            );
+            lotDraftLotNumber = res.lot_number;
+            lotDuplicateCount = 0;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'Failed to generate lot number';
+        }
     }
 
     async function lotCheckDuplicate() {
@@ -407,6 +411,8 @@
                 lot_number: lotDraftProducesLot ? lotDraftLotNumber.trim() : null,
             });
             run = updated as any;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'Failed to save lot information';
         } finally {
             lotSaving = false;
         }
