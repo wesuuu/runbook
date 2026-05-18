@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>F-0086 · Run as Lot Producer — UI mockups</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+    /* Lab-glass theme variables — mirrored from frontend/src/app.css */
+    :root {
+        --bg:           hsl(200 25% 97%);
+        --fg:           hsl(215 40% 12%);
+        --card:         hsl(0 0% 100%);
+        --card-fg:      hsl(215 40% 12%);
+        --muted:        hsl(205 25% 94%);
+        --muted-fg:     hsl(215 15% 42%);
+        --primary:      hsl(195 85% 22%);
+        --primary-fg:   hsl(195 30% 98%);
+        --accent:       hsl(155 70% 38%);
+        --accent-fg:    hsl(155 30% 98%);
+        --destructive:  hsl(355 75% 50%);
+        --border:       hsl(205 22% 87%);
+        --ring:         hsl(195 85% 22%);
+    }
+    html, body { background: var(--bg); color: var(--fg); font-family: 'Inter', system-ui, sans-serif; }
+    .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+    /* shadcn primitives — minimal replicas */
+    .ui-card { background: var(--card); color: var(--card-fg); border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: 0 1px 2px hsl(215 40% 12% / 0.04); }
+    .ui-input {
+        width: 100%; padding: 0.5rem 0.75rem; border: 1px solid hsl(214 14% 84%);
+        border-radius: 0.5rem; font-size: 0.875rem; background-color: white;
+        transition: box-shadow .12s, border-color .12s;
+    }
+    .ui-input:focus { outline: none; border-color: transparent; box-shadow: 0 0 0 2px var(--primary); }
+    .ui-input.mono { letter-spacing: 0.02em; }
+    .ui-label { font-size: 0.875rem; font-weight: 500; color: hsl(215 25% 27%); }
+    .ui-hint { font-size: 0.75rem; color: var(--muted-fg); }
+
+    .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; border-radius: 0.5rem; font-size: 0.8125rem; font-weight: 500; line-height: 1; transition: background-color .12s, border-color .12s, color .12s; }
+    .btn-primary { background: var(--primary); color: var(--primary-fg); }
+    .btn-primary:hover { background: hsl(195 85% 18%); }
+    .btn-outline { background: white; border: 1px solid var(--border); color: var(--fg); }
+    .btn-outline:hover { background: var(--muted); }
+    .btn-ghost { background: transparent; color: var(--muted-fg); }
+    .btn-ghost:hover { background: var(--muted); color: var(--fg); }
+    .btn-sm { padding: 0.35rem 0.65rem; font-size: 0.75rem; }
+
+    .badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.55rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 500; line-height: 1; }
+    .badge-outline { background: white; border: 1px solid var(--border); color: var(--fg); }
+    .badge-soft-accent { background: hsl(155 70% 38% / 0.12); color: hsl(155 70% 22%); }
+    .badge-soft-muted { background: var(--muted); color: var(--muted-fg); }
+
+    /* Switch — there's no shadcn-svelte Switch in this repo, so I'm modeling
+       what the implementation will use (bits-ui Switch styled). */
+    .switch { position: relative; display: inline-flex; height: 1.25rem; width: 2.25rem; flex-shrink: 0; cursor: pointer; align-items: center; border-radius: 9999px; transition: background-color .15s; }
+    .switch-on { background: var(--primary); }
+    .switch-off { background: hsl(214 14% 78%); }
+    .switch-thumb { display: inline-block; height: 0.95rem; width: 0.95rem; transform: translateX(0.15rem); border-radius: 9999px; background: white; box-shadow: 0 1px 2px rgb(0 0 0 / 0.18); transition: transform .15s; }
+    .switch-on .switch-thumb { transform: translateX(1.15rem); }
+
+    /* Amber warning — mirrors IndexingStatusBanner.svelte */
+    .alert-amber { display: flex; align-items: flex-start; gap: 0.75rem; border-left: 4px solid #fbbf24; background: #fffbeb; padding: 0.65rem 0.9rem; border-radius: 0.375rem; color: #78350f; font-size: 0.8125rem; }
+
+    /* App chrome */
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); }
+    .table { width: 100%; border-collapse: collapse; }
+    .table th, .table td { text-align: left; padding: 0.7rem 1rem; font-size: 0.8125rem; border-bottom: 1px solid var(--border); }
+    .table th { font-weight: 600; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.6875rem; background: hsl(205 25% 96%); }
+    .table tr:hover td { background: hsl(205 25% 98%); }
+
+    .frame { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; overflow: hidden; box-shadow: 0 6px 24px hsl(215 40% 12% / 0.05); }
+    .frame-header { display: flex; align-items: center; justify-content: space-between; padding: 0.8rem 1.25rem; background: hsl(205 25% 96%); border-bottom: 1px solid var(--border); }
+    .frame-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-fg); }
+    .frame-note  { font-size: 0.75rem; color: var(--muted-fg); }
+    .frame-body  { padding: 1.5rem; }
+
+    /* Section heads */
+    .section-eyebrow { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted-fg); font-weight: 600; }
+    .section-divider { border: 0; border-top: 1px dashed var(--border); margin: 2.25rem 0; }
+
+    /* Dot leader between callout numbers and mockups */
+    .callout {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.25rem; height: 1.25rem; border-radius: 9999px;
+        background: var(--primary); color: var(--primary-fg);
+        font-size: 0.7rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="topbar px-8 py-5">
+    <div class="max-w-6xl mx-auto flex items-end justify-between">
+        <div>
+            <p class="section-eyebrow">Trellisbio · UI mockup</p>
+            <h1 class="text-2xl font-semibold mt-1" style="letter-spacing:-0.01em">F-0086 — Designate Run as Lot Producer</h1>
+            <p class="text-sm mt-1" style="color:var(--muted-fg)">Three views: <strong>1.</strong> Run Creator step · <strong>2.</strong> Runs table filter · <strong>3.</strong> Run Detail inline editor</p>
+        </div>
+        <div class="flex items-center gap-2 text-xs" style="color:var(--muted-fg)">
+            <span class="badge badge-outline">lab-glass theme</span>
+            <span class="badge badge-outline">shadcn-svelte parity</span>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-8 py-10 space-y-12">
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<!-- VIEW 1 · Run Creator step                                              -->
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section>
+    <div class="flex items-baseline gap-3 mb-4">
+        <span class="callout">1</span>
+        <h2 class="text-lg font-semibold">Run Creator · Step 1 (Name your run)</h2>
+        <span class="text-sm" style="color:var(--muted-fg)">RunCreatorNameStep.svelte</span>
+    </div>
+    <p class="text-sm mb-5 max-w-2xl" style="color:var(--muted-fg)">
+        Existing lot/batch inputs reorganized. The Lot input now lives behind a "produces a lot" switch so a run's <em>intent</em> to produce a lot is explicit. Auto-generate fills the input from the next available sequence; manual entry overrides. Duplicate warning shows on blur via a non-blocking soft alert.
+    </p>
+
+    <div class="frame">
+        <div class="frame-header">
+            <span class="frame-title">Run Creator · /projects/&lt;id&gt;/runs/new</span>
+            <span class="frame-note">Step 1 of 3</span>
+        </div>
+        <div class="frame-body grid grid-cols-12 gap-8">
+
+            <!-- Left: step nav (stub) -->
+            <aside class="col-span-3 space-y-1.5">
+                <div class="badge badge-soft-accent">1 · Name</div>
+                <div class="badge badge-soft-muted">2 · Schedule</div>
+                <div class="badge badge-soft-muted">3 · Roles</div>
+            </aside>
+
+            <!-- Right: form -->
+            <div class="col-span-9 max-w-xl space-y-5">
+                <header>
+                    <h3 class="text-lg font-semibold">Step 1 · Name your run</h3>
+                    <p class="text-sm mt-1" style="color:var(--muted-fg)">Pick a name you'll recognize on the runs list.</p>
+                </header>
+
+                <div class="space-y-1.5">
+                    <label class="ui-label" for="m-name">Name</label>
+                    <input id="m-name" class="ui-input" value="CHO-DG44 Run 14" />
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="ui-label" for="m-exp">Experiment <span style="color:var(--muted-fg);font-weight:400">(optional)</span></label>
+                    <select id="m-exp" class="ui-input">
+                        <option>Process dev — Q2</option>
+                    </select>
+                </div>
+
+                <!-- NEW: produces_lot toggle block -->
+                <div class="ui-card p-4 space-y-3" style="border-color: hsl(195 50% 80%); background: hsl(200 50% 99%);">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="ui-label" style="color:var(--fg)">This run produces a lot</span>
+                                <span class="badge badge-outline" title="Affects 'Has lot' filter and downstream traceability">GxP</span>
+                            </div>
+                            <p class="ui-hint mt-1">When on, this run is designated as the producer of a manufacturing lot. Auto-generate a number or enter your own.</p>
+                        </div>
+                        <button class="switch switch-on" aria-pressed="true" aria-label="produces a lot">
+                            <span class="switch-thumb"></span>
+                        </button>
+                    </div>
+
+                    <div class="space-y-1.5 pt-1">
+                        <label class="ui-label flex items-center justify-between" for="m-lot">
+                            <span>Lot number</span>
+                            <button class="btn btn-ghost btn-sm">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+                                Auto-generate
+                            </button>
+                        </label>
+                        <input id="m-lot" class="ui-input mono" value="LOT-000042" />
+                        <p class="ui-hint">Next available in this org. Edit freely — manual values override.</p>
+                    </div>
+
+                    <!-- Soft duplicate warning -->
+                    <div class="alert-amber">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mt-0.5 shrink-0">
+                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        <div>
+                            <p class="font-medium">This lot number already exists in your org (2 runs).</p>
+                            <p style="color:#92400e">Lots may be re-entered intentionally — confirm or change.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="ui-label" for="m-batch">Batch number <span style="color:var(--muted-fg);font-weight:400">(optional)</span></label>
+                    <input id="m-batch" class="ui-input" placeholder="e.g. BATCH-42" />
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-3">
+                    <button class="btn btn-outline">Cancel</button>
+                    <button class="btn btn-primary">Continue →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Off state -->
+    <div class="frame mt-6">
+        <div class="frame-header">
+            <span class="frame-title">Off state — toggle collapsed</span>
+            <span class="frame-note">default for new runs</span>
+        </div>
+        <div class="frame-body">
+            <div class="max-w-xl ui-card p-4 flex items-start justify-between gap-4" style="background: hsl(205 25% 98%); border-color: var(--border);">
+                <div>
+                    <span class="ui-label" style="color:var(--fg)">This run produces a lot</span>
+                    <p class="ui-hint mt-1">No lot number required. Turn on for manufacturing runs.</p>
+                </div>
+                <button class="switch switch-off" aria-pressed="false" aria-label="produces a lot">
+                    <span class="switch-thumb"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<!-- VIEW 2 · Runs table with filter + new column                           -->
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section>
+    <div class="flex items-baseline gap-3 mb-4">
+        <span class="callout">2</span>
+        <h2 class="text-lg font-semibold">Project · Runs tab — filter and lot column</h2>
+        <span class="text-sm" style="color:var(--muted-fg)">RunsTab.svelte</span>
+    </div>
+    <p class="text-sm mb-5 max-w-2xl" style="color:var(--muted-fg)">
+        New filter chip <em>"Lot producer only"</em> sits beside the search input. When active, the API loads with <code class="mono">?produces_lot=true</code> and a <code class="mono">Lot #</code> column appears. The chip carries a remove (×) affordance.
+    </p>
+
+    <div class="frame">
+        <div class="frame-header">
+            <span class="frame-title">/projects/&lt;id&gt; · Runs</span>
+            <span class="frame-note">14 of 38 runs · filter active</span>
+        </div>
+        <div class="frame-body">
+
+            <!-- Toolbar -->
+            <div class="flex items-center gap-3 mb-4 flex-wrap">
+                <div class="relative flex-1 min-w-[240px] max-w-md">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="absolute left-3 top-2.5" style="color:var(--muted-fg)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                    <input class="ui-input pl-9" placeholder="Search runs…" />
+                </div>
+
+                <!-- Active filter chip -->
+                <span class="badge" style="background: hsl(195 85% 22% / 0.08); color: var(--primary); padding: 0.35rem 0.65rem;">
+                    Lot producer only
+                    <button class="ml-1 -mr-1 rounded-full" style="opacity:0.7" aria-label="Clear filter">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                    </button>
+                </span>
+
+                <button class="btn btn-outline btn-sm">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/></svg>
+                    More filters
+                </button>
+
+                <div class="ml-auto">
+                    <button class="btn btn-primary btn-sm">+ New run</button>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="rounded-md border" style="border-color:var(--border); overflow:hidden">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Lot #</th>
+                            <th>Experiment</th>
+                            <th>Protocol</th>
+                            <th>Status</th>
+                            <th>Updated</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="font-medium">CHO-DG44 Run 14</td>
+                            <td class="mono" style="color:var(--primary)">LOT-000042</td>
+                            <td>Process dev — Q2</td>
+                            <td>CHO Fed-Batch v3</td>
+                            <td><span class="badge badge-soft-accent">Active</span></td>
+                            <td style="color:var(--muted-fg)">2 min ago</td>
+                            <td class="text-right"><button class="btn btn-ghost btn-sm">Open ↗</button></td>
+                        </tr>
+                        <tr>
+                            <td class="font-medium">CHO-DG44 Run 13</td>
+                            <td class="mono" style="color:var(--primary)">LOT-000041</td>
+                            <td>Process dev — Q2</td>
+                            <td>CHO Fed-Batch v3</td>
+                            <td><span class="badge badge-outline">Completed</span></td>
+                            <td style="color:var(--muted-fg)">3 h ago</td>
+                            <td class="text-right"><button class="btn btn-ghost btn-sm">Open ↗</button></td>
+                        </tr>
+                        <tr>
+                            <td class="font-medium">Stability LOT-23 retain</td>
+                            <td class="mono" style="color:var(--primary)">LOT-000040</td>
+                            <td>—</td>
+                            <td>QC Retain v1</td>
+                            <td><span class="badge badge-outline">Completed</span></td>
+                            <td style="color:var(--muted-fg)">Yesterday</td>
+                            <td class="text-right"><button class="btn btn-ghost btn-sm">Open ↗</button></td>
+                        </tr>
+                        <tr>
+                            <td class="font-medium">Tech-transfer pilot</td>
+                            <td class="mono" style="color:var(--primary)">PILOT-A7</td>
+                            <td>Tech transfer</td>
+                            <td>CHO Fed-Batch v3</td>
+                            <td><span class="badge badge-soft-accent">Active</span></td>
+                            <td style="color:var(--muted-fg)">2 d ago</td>
+                            <td class="text-right"><button class="btn btn-ghost btn-sm">Open ↗</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="ui-hint mt-3">When the filter is cleared, the <em>Lot #</em> column hides and all project runs are listed.</p>
+        </div>
+    </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<!-- VIEW 3 · Run detail · inline editor                                    -->
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section>
+    <div class="flex items-baseline gap-3 mb-4">
+        <span class="callout">3</span>
+        <h2 class="text-lg font-semibold">Run Detail · inline Lot editor</h2>
+        <span class="text-sm" style="color:var(--muted-fg)">/routes/runs/[id]/+page.svelte</span>
+    </div>
+    <p class="text-sm mb-5 max-w-2xl" style="color:var(--muted-fg)">
+        New Card on the run detail page (right column, beside attachments/notes). Editable at any run status; every change writes an audit log entry. Save is per-card to keep the change atomic.
+    </p>
+
+    <div class="frame">
+        <div class="frame-header">
+            <span class="frame-title">/runs/r_abc · CHO-DG44 Run 14</span>
+            <span class="frame-note">status: ACTIVE</span>
+        </div>
+        <div class="frame-body grid grid-cols-12 gap-6">
+
+            <!-- Left: run overview stub -->
+            <div class="col-span-7 space-y-4">
+                <div class="ui-card p-5">
+                    <p class="section-eyebrow">Overview</p>
+                    <h3 class="text-xl font-semibold mt-1">CHO-DG44 Run 14</h3>
+                    <p class="text-sm mt-2" style="color:var(--muted-fg)">Protocol: CHO Fed-Batch v3 · Started 2 min ago by Wesley Uykimpang</p>
+                    <div class="flex items-center gap-2 mt-3">
+                        <span class="badge badge-soft-accent">ACTIVE</span>
+                        <span class="badge badge-outline">3 of 8 steps complete</span>
+                    </div>
+                </div>
+                <div class="ui-card p-5">
+                    <p class="section-eyebrow mb-3">Execution</p>
+                    <div class="space-y-1.5">
+                        <div class="flex items-center justify-between text-sm">
+                            <span>Step 1 — Buffer Mix</span><span style="color:var(--muted-fg)">✓ 09:12</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span>Step 2 — Seeding</span><span style="color:var(--muted-fg)">✓ 10:04</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm" style="color:var(--primary)">
+                            <span>Step 3 — Bioreactor inoculation</span><span>● in progress</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Lot editor card -->
+            <aside class="col-span-5 space-y-4">
+
+                <div class="ui-card p-5 space-y-4">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <p class="section-eyebrow">Lot output</p>
+                            <p class="text-sm mt-1" style="color:var(--muted-fg)">This run produces a manufacturing lot.</p>
+                        </div>
+                        <button class="switch switch-on" aria-pressed="true">
+                            <span class="switch-thumb"></span>
+                        </button>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <label class="ui-label flex items-center justify-between" for="m-lot-2">
+                            <span>Lot number</span>
+                            <button class="btn btn-ghost btn-sm">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+                                Auto-generate
+                            </button>
+                        </label>
+                        <input id="m-lot-2" class="ui-input mono" value="LOT-000042" />
+                        <p class="ui-hint">Edits write to the run audit log.</p>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-1">
+                        <span class="text-xs" style="color:var(--muted-fg)">Last changed 4 min ago · Wesley</span>
+                        <div class="flex items-center gap-2">
+                            <button class="btn btn-ghost btn-sm">Discard</button>
+                            <button class="btn btn-primary btn-sm">Save</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audit log preview (illustrative) -->
+                <div class="ui-card p-5">
+                    <p class="section-eyebrow mb-3">Recent audit entries</p>
+                    <ul class="space-y-2 text-sm">
+                        <li class="flex items-start gap-3">
+                            <span class="badge badge-outline mt-0.5">UPDATE</span>
+                            <div>
+                                <span class="mono">produces_lot</span> set to <span class="mono">true</span>
+                                <p class="ui-hint">4 min ago · Wesley Uykimpang</p>
+                            </div>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <span class="badge badge-outline mt-0.5">UPDATE</span>
+                            <div>
+                                <span class="mono">lot_number</span> → <span class="mono">LOT-000042</span>
+                                <p class="ui-hint">4 min ago · Wesley Uykimpang</p>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </aside>
+        </div>
+    </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<!-- Notes                                                                  -->
+<!-- ────────────────────────────────────────────────────────────────────── -->
+<section class="mt-10">
+    <h2 class="text-lg font-semibold mb-3">Component / pattern notes</h2>
+    <ul class="text-sm space-y-2 list-disc pl-5" style="color:var(--muted-fg)">
+        <li><strong>Switch:</strong> no shadcn-svelte <code class="mono">Switch</code> exists in this repo yet. Implementation will add the bits-ui <code class="mono">Switch</code> wrapper to <code class="mono">$lib/components/ui/switch/</code> following the shadcn-svelte recipe.</li>
+        <li><strong>Filter chip:</strong> uses the existing primary-soft badge style. Chip ×-button calls the same handler that clears <code class="mono">produces_lot</code> from the loader query.</li>
+        <li><strong>Amber warning:</strong> mirrors <code class="mono">IndexingStatusBanner.svelte</code> (<code class="mono">border-l-4 border-l-amber-400 bg-amber-50</code>). Triggered on input blur via <code class="mono">GET /science/runs/check-lot-number</code>.</li>
+        <li><strong>Lot column:</strong> column only renders when the filter chip is active. Mono font for the value to make sequence digits scan cleanly.</li>
+        <li><strong>Audit:</strong> existing <code class="mono">log_audit()</code> already handles diffs from PUT /runs/{id}; the audit preview card here is illustrative only — it'll surface via the existing run history view, not a new card.</li>
+    </ul>
+</section>
+
+</main>
+</body>
+</html>
