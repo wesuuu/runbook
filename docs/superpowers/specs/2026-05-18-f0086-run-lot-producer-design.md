@@ -20,7 +20,7 @@ This feature introduces a first-class "this run produces a lot" designation on `
 | Uniqueness | Non-unique. Indexed on `runs.lot_number` for lookup. Org-scoping done in the query (JOIN through `projects`). Soft warning surfaced via a check endpoint; never blocks save. |
 | Post-creation edit | Allowed on any run status. Captured via existing `log_audit()`. |
 | Run-list filter | Backend query param `?produces_lot=true`, applied in SQL. |
-| Template engine gating | Out of scope. `{{ lot_number }}` continues to render whatever value is in the field. |
+| Template engine gating | In scope. `produces_lot` is exposed in the Jinja context; the batch-record template's lot/batch row is wrapped in `{%tr if produces_lot %} … {%tr endif %}` so the row disappears entirely when the run is not a lot producer. |
 | Org-settings table | Out of scope. Defer until a second per-org config knob lands. |
 
 ## Data model
@@ -91,6 +91,27 @@ No `Switch` exists in `$lib/components/ui/`. Implementation adds `$lib/component
 - `RunSchema`: add `produces_lot: z.boolean().default(false)`.
 - `RunCreatePayloadSchema`: add `produces_lot: z.boolean().optional()`.
 
+## Batch record template
+
+The batch record template (`backend/app/services/documents/templates/batch_record_default.docx` and its companion in `backend/uploads/system/document_templates/batch_record_default.docx`) currently has a "Batch / Lot Number" row, but the value cell is incorrectly bound to `{{ run_name }}` — fix to bind to the run's actual `lot_number` (with `batch_number` displayed alongside or below as appropriate).
+
+Wrap the table row in docxtpl row-scope conditionals so the row is removed cleanly when the run does not produce a lot:
+
+```
+{%tr if produces_lot %}
+| Lot Number | {{ lot_number }} |
+{%tr endif %}
+```
+
+Backend additions to support this:
+
+- `backend/app/services/protocols/template_engine.py`:
+  - Add `"produces_lot"` to `KNOWN_VARIABLES`.
+  - Pass `produces_lot` (boolean, defaults to `False`) into the rendered Jinja context alongside the existing `lot_number` / `batch_number` keys.
+- No code change is needed if a run that does not produce a lot still has a leftover `lot_number` value — the row simply hides; nothing renders. (We rely on `produces_lot` rather than `bool(lot_number)` so an explicit toggle wins over stale strings.)
+
+Two `.docx` files are touched (the system template and the seed in `uploads/`); both must be edited in lockstep so re-seeding does not regress the change.
+
 ## Audit / GxP
 
 Every mutation of `produces_lot` and `lot_number` flows through the existing `PUT /science/runs/{id}` handler which already calls `log_audit(action="UPDATE", changes=...)`. No new audit infrastructure.
@@ -107,6 +128,10 @@ Every mutation of `produces_lot` and `lot_number` flows through the existing `PU
 - `GET /check-lot-number` returns `exists=true` within same org; returns `exists=false` for an identical value in a different org.
 - `GET /projects/{id}/runs?produces_lot=true` returns only lot-producing runs.
 
+`test_template_engine_produces_lot.py`:
+- `build_render_context(...)` for a lot-producing run exposes `produces_lot=True` and the run's `lot_number`.
+- Same call for a non-producer exposes `produces_lot=False` (the docx template's `{%tr if produces_lot %}` block is responsible for hiding the row; the engine just hands over the boolean).
+
 ### Frontend (`frontend/src/lib/components/`)
 
 `run/RunCreatorNameStep.test.ts`:
@@ -120,7 +145,6 @@ Every mutation of `produces_lot` and `lot_number` flows through the existing `PU
 
 ## Out of scope
 
-- Template engine gating of `{{ lot_number }}`.
 - `OrganizationSettings` table / per-org pattern configuration.
 - Strict uniqueness constraint on `lot_number`.
 - Batch-number-producer designation (this feature concerns lots only).
@@ -131,6 +155,9 @@ Every mutation of `produces_lot` and `lot_number` flows through the existing `PU
 backend/app/models/science.py
 backend/app/schemas/science.py
 backend/app/api/endpoints/runs.py
+backend/app/services/protocols/template_engine.py
+backend/app/services/documents/templates/batch_record_default.docx
+backend/uploads/system/document_templates/batch_record_default.docx
 backend/alembic/versions/<new>_add_run_produces_lot.py
 backend/tests/unit/test_run_produces_lot.py
 
