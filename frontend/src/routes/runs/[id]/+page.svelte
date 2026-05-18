@@ -20,6 +20,7 @@
     import RunHistory from "$lib/components/run/RunHistory.svelte";
     import { ConfirmDialog } from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
+    import { Switch } from "$lib/components/ui/switch";
     import { PendingImagesSchema, AnalyzePendingResultSchema, RunRoleAssignmentListSchema, UserSearchSchema } from '$lib/schemas';
     import { renderTemplate } from '$lib/utils/template';
     import { HelpMenu, TourModal, runRunTour } from '$lib/onboarding';
@@ -353,6 +354,70 @@
     function handleEditDataUpdate(updatedData: Record<string, any>) {
         editExecutionData = updatedData;
     }
+
+    // F-0086: editable lot fields. Drafted locally; committed via Save.
+    let lotDraftProducesLot = $state(false);
+    let lotDraftLotNumber = $state('');
+    let lotDuplicateCount = $state(0);
+    let lotSaving = $state(false);
+
+    $effect(() => {
+        // Re-seed from run whenever the loaded run changes.
+        if (run) {
+            lotDraftProducesLot = run.produces_lot ?? false;
+            lotDraftLotNumber = run.lot_number ?? '';
+            lotDuplicateCount = 0;
+        }
+    });
+
+    const lotDraftDirty = $derived(
+        !!run && (lotDraftProducesLot !== (run.produces_lot ?? false)
+            || lotDraftLotNumber !== (run.lot_number ?? ''))
+    );
+
+    async function lotAutoGenerate() {
+        if (!run) return;
+        const res = await api.post<{ lot_number: string }>(
+            '/science/runs/suggest-lot-number',
+            { project_id: run.project_id },
+        );
+        lotDraftLotNumber = res.lot_number;
+        lotDuplicateCount = 0;
+    }
+
+    async function lotCheckDuplicate() {
+        if (!run || !lotDraftProducesLot || !lotDraftLotNumber.trim()) {
+            lotDuplicateCount = 0;
+            return;
+        }
+        const res = await api.get<{ exists: boolean; count: number }>(
+            `/science/runs/check-lot-number?project_id=${encodeURIComponent(run.project_id)}&lot_number=${encodeURIComponent(lotDraftLotNumber.trim())}`,
+        );
+        // Subtract this run's own row if its current lot_number matches.
+        const ownCount = run.lot_number === lotDraftLotNumber.trim() ? 1 : 0;
+        lotDuplicateCount = res.exists ? Math.max(0, res.count - ownCount) : 0;
+    }
+
+    async function lotSave() {
+        if (!run) return;
+        lotSaving = true;
+        try {
+            const updated = await api.put(`/science/runs/${run.id}`, {
+                produces_lot: lotDraftProducesLot,
+                lot_number: lotDraftProducesLot ? lotDraftLotNumber.trim() : null,
+            });
+            run = updated as any;
+        } finally {
+            lotSaving = false;
+        }
+    }
+
+    function lotDiscard() {
+        if (!run) return;
+        lotDraftProducesLot = run.produces_lot ?? false;
+        lotDraftLotNumber = run.lot_number ?? '';
+        lotDuplicateCount = 0;
+    }
 </script>
 
 <div class="min-h-screen bg-background">
@@ -414,6 +479,61 @@
                 <RunHistory runId={run.id} />
             </div>
         {:else}
+
+        <!-- F-0086: Lot Output card (visible across all run statuses) -->
+        <div class="max-w-5xl mx-auto px-6 pt-6">
+            <div class="rounded-xl border border-border bg-card text-card-foreground shadow-sm p-5 space-y-4">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lot output</p>
+                        <p class="text-sm mt-1 text-muted-foreground">This run produces a manufacturing lot.</p>
+                    </div>
+                    <Switch
+                        checked={lotDraftProducesLot}
+                        onCheckedChange={(v) => { lotDraftProducesLot = v; if (!v) lotDraftLotNumber = ''; lotDuplicateCount = 0; }}
+                    />
+                </div>
+
+                {#if lotDraftProducesLot}
+                    <div class="space-y-1.5">
+                        <label class="text-sm font-medium flex items-center justify-between" for="run-detail-lot">
+                            <span>Lot number</span>
+                            <Button type="button" variant="ghost" size="sm" onclick={lotAutoGenerate}>
+                                Auto-generate
+                            </Button>
+                        </label>
+                        <input
+                            id="run-detail-lot"
+                            class="w-full font-mono px-3 py-2 text-sm rounded-md border border-input bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            bind:value={lotDraftLotNumber}
+                            onblur={lotCheckDuplicate}
+                            placeholder="LOT-000001"
+                        />
+                        <p class="text-xs text-muted-foreground">Edits write to the run audit log.</p>
+                    </div>
+
+                    {#if lotDuplicateCount > 0}
+                        <div
+                            role="status"
+                            class="flex items-start gap-3 rounded-md border-l-4 border-l-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                            data-testid="lot-duplicate-warning"
+                        >
+                            <span class="font-medium">{lotDuplicateCount} other run{lotDuplicateCount !== 1 ? 's' : ''}</span>
+                            <span>in this org already use this lot number.</span>
+                        </div>
+                    {/if}
+                {/if}
+
+                <div class="flex items-center justify-end gap-2 pt-1">
+                    <Button variant="ghost" size="sm" onclick={lotDiscard} disabled={!lotDraftDirty || lotSaving}>
+                        Discard
+                    </Button>
+                    <Button size="sm" onclick={lotSave} disabled={!lotDraftDirty || lotSaving || (lotDraftProducesLot && !lotDraftLotNumber.trim())}>
+                        {lotSaving ? 'Saving…' : 'Save'}
+                    </Button>
+                </div>
+            </div>
+        </div>
 
         <!-- PLANNED State: Setup & Role Assignment -->
         {#if run.status === "PLANNED"}
