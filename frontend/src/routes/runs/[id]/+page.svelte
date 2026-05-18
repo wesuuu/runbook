@@ -18,9 +18,32 @@
     import RunNotes from "$lib/components/run/RunNotes.svelte";
     import RunAttachmentsTab from "$lib/components/run/RunAttachmentsTab.svelte";
     import RunHistory from "$lib/components/run/RunHistory.svelte";
+    import RunReopenModal from "$lib/components/run/RunReopenModal.svelte";
+    import RunEditReasonPrompt from "$lib/components/run/RunEditReasonPrompt.svelte";
+    import RunOutcomePicker, {
+        type RunOutcome,
+    } from "$lib/components/run/RunOutcomePicker.svelte";
+    import SignoffBlock from "$lib/components/shared/SignoffBlock.svelte";
+    import SignoffModal from "$lib/components/shared/SignoffModal.svelte";
     import { ConfirmDialog } from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
     import { PendingImagesSchema, AnalyzePendingResultSchema, RunRoleAssignmentListSchema, UserSearchSchema } from '$lib/schemas';
+    import {
+        listRunSignoffs,
+        createRunSignoff,
+        completeRun as completeRunApi,
+        reopenRun,
+    } from '$lib/api';
+    import {
+        GlpSettingsSchema,
+        type GlpRole,
+        type GlpSettings,
+        type GlpSignoffResponse,
+    } from '$lib/schemas/glpSignoff';
+    import { validateCanCloseRun } from '$lib/runValidation';
+    import { API_BASE } from '$lib/config';
+    import { getToken } from '$lib/auth.svelte';
+    import { toast } from 'svelte-sonner';
     import { renderTemplate } from '$lib/utils/template';
     import { HelpMenu, TourModal, runRunTour } from '$lib/onboarding';
     import { shouldShowDot, markDismissed } from '$lib/onboarding/tourStore.svelte';
@@ -65,6 +88,254 @@
     let canEditPlanned = $state(false);
     let showPlannedEditor = $state(false);
 
+    // -- GLP signoff state (F-0087) --
+    let signoffs = $state<GlpSignoffResponse[]>([]);
+    let glpSettings = $state<GlpSettings>(GlpSettingsSchema.parse({}));
+    let signoffModalOpen = $state(false);
+    let signoffModalRole = $state<GlpRole>('OPERATOR');
+    let signoffModalAttestation = $state('');
+    let reopenOpen = $state(false);
+    let editReasonOpen = $state(false);
+    let pendingEditReasons = $state<
+        { stepId: string; oldValue: unknown; newValue: unknown; label: string }[]
+    >([]);
+    let outcome = $state<RunOutcome | null>(null);
+    let outcomeNotes = $state('');
+
+    const currentUser = $derived(getUser());
+
+    const signerMap = $derived.by(() => {
+        const map: Record<
+            string,
+            { id: string; full_name: string; email: string }
+        > = {};
+        for (const member of projectMembers) {
+            if (member?.id) {
+                map[member.id] = {
+                    id: member.id,
+                    full_name: member.full_name ?? member.email ?? member.id,
+                    email: member.email ?? '',
+                };
+            }
+        }
+        for (const s of signoffs) {
+            if (s.signer && s.signer.id && !map[s.signer.id]) {
+                map[s.signer.id] = {
+                    id: s.signer.id,
+                    full_name:
+                        s.signer.name ?? s.signer.email ?? s.signer.id,
+                    email: s.signer.email ?? '',
+                };
+            }
+        }
+        return map;
+    });
+
+    const activeSignoffs = $derived(
+        signoffs.filter(
+            (s) =>
+                s.action === 'APPROVED' &&
+                (s.invalidated_at === null ||
+                    s.invalidated_at === undefined),
+        ),
+    );
+
+    function resolveRequiredRoles(settings: GlpSettings): GlpRole[] {
+        const roles: GlpRole[] = ['OPERATOR'];
+        if (settings.require_study_director) roles.push('STUDY_DIRECTOR');
+        if (settings.require_qau) roles.push('QAU');
+        return roles;
+    }
+
+    function attestationDefaultFor(
+        role: GlpRole,
+        settings: GlpSettings,
+    ): string {
+        switch (role) {
+            case 'OPERATOR':
+                return settings.operator_attestation_text ?? '';
+            case 'STUDY_DIRECTOR':
+                return settings.study_director_attestation_text ?? '';
+            case 'QAU':
+                return settings.qau_attestation_text ?? '';
+            default:
+                return '';
+        }
+    }
+
+    function independenceMessageFor(
+        role: GlpRole,
+        existing: GlpSignoffResponse[],
+    ): string | undefined {
+        if (role !== 'QAU') return undefined;
+        const userId = currentUser?.id;
+        if (!userId) return undefined;
+        const conflicting = existing.find(
+            (s) =>
+                s.signer_id === userId &&
+                (s.role === 'OPERATOR' || s.role === 'STUDY_DIRECTOR') &&
+                (s.invalidated_at === null || s.invalidated_at === undefined),
+        );
+        if (conflicting) {
+            return `Independence warning: you previously signed as ${conflicting.role}. QAU sign-off must come from a different person.`;
+        }
+        return undefined;
+    }
+
+    function signatureUrl(
+        user: { signature_full_url?: string | null } | null,
+    ): string | null {
+        if (!user?.signature_full_url) return null;
+        return `${API_BASE}${user.signature_full_url}?token=${getToken()}`;
+    }
+
+    function applyGlpSettingsFromProtocol(p: any): void {
+        const raw = p?.graph?.glpSettings;
+        if (raw && typeof raw === 'object') {
+            const parsed = GlpSettingsSchema.safeParse(raw);
+            if (parsed.success) {
+                glpSettings = parsed.data;
+                return;
+            }
+        }
+        glpSettings = GlpSettingsSchema.parse({});
+    }
+
+    async function refreshSignoffs(): Promise<void> {
+        if (!run?.id) return;
+        try {
+            signoffs = await listRunSignoffs(run.id, true);
+        } catch (e) {
+            console.error('Failed to load signoffs', e);
+        }
+    }
+
+    function openSignoffModal(role: GlpRole, defaultAttestation: string) {
+        signoffModalRole = role;
+        signoffModalAttestation = defaultAttestation;
+        signoffModalOpen = true;
+    }
+
+    async function handleSignoffConfirm(attestation: string) {
+        await createRunSignoff(run.id, {
+            role: signoffModalRole,
+            action: 'APPROVED',
+            attestation,
+        });
+        await refreshSignoffs();
+        toast.success(`${signoffModalRole} sign-off recorded`);
+    }
+
+    async function handleCompleteWithOutcome() {
+        if (!outcome) {
+            toast.error('Pick a run outcome before completing.');
+            return;
+        }
+        const validation = validateCanCloseRun(
+            run,
+            glpSettings,
+            activeSignoffs,
+        );
+        if (!validation.ok) {
+            toast.error(
+                `Missing sign-offs: ${validation.missing.join(', ')}`,
+            );
+            return;
+        }
+        try {
+            completingRun = true;
+            await completeRunApi(run.id, outcome, outcomeNotes);
+            run = await api.get(`/science/runs/${id}`);
+            await refreshSignoffs();
+            showCompleteConfirm = false;
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
+        } finally {
+            completingRun = false;
+        }
+    }
+
+    async function handleReopen(reason: string) {
+        await reopenRun(run.id, reason);
+        signoffs = [];
+        run = await api.get(`/science/runs/${id}`);
+        await refreshSignoffs();
+        toast.success('Run reopened. Sign-offs invalidated.');
+    }
+
+    function computeEditedSteps(): {
+        stepId: string;
+        oldValue: unknown;
+        newValue: unknown;
+        label: string;
+    }[] {
+        const oldData = run?.execution_data ?? {};
+        const newData = editExecutionData ?? {};
+        const stepLabels: Record<string, string> = {};
+        for (const step of getAllUnitOpSteps()) {
+            stepLabels[step.id] = step.name;
+        }
+        const stepIds = new Set([
+            ...Object.keys(oldData),
+            ...Object.keys(newData),
+        ]);
+        const result: {
+            stepId: string;
+            oldValue: unknown;
+            newValue: unknown;
+            label: string;
+        }[] = [];
+        for (const stepId of stepIds) {
+            const ov = JSON.stringify(oldData[stepId] ?? null);
+            const nv = JSON.stringify(newData[stepId] ?? null);
+            if (ov !== nv) {
+                result.push({
+                    stepId,
+                    oldValue: oldData[stepId] ?? null,
+                    newValue: newData[stepId] ?? null,
+                    label: stepLabels[stepId] ?? stepId,
+                });
+            }
+        }
+        return result;
+    }
+
+    async function handleEditReasonConfirm(
+        reasons: Record<string, string>,
+    ): Promise<void> {
+        try {
+            savingEdits = true;
+            error = null;
+            await api.put(`/science/runs/${id}`, {
+                status: 'EDITED',
+                execution_data: editExecutionData,
+                edit_reasons: reasons,
+            });
+            run = await api.get(`/science/runs/${id}`);
+            await refreshSignoffs();
+            isEditMode = false;
+            editExecutionData = {};
+            pendingEditReasons = [];
+            toast.success('Run edits saved.');
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : 'An error occurred';
+            throw e;
+        } finally {
+            savingEdits = false;
+        }
+    }
+
+    function requestEditSave() {
+        const edited = computeEditedSteps();
+        if (edited.length === 0) {
+            // Nothing changed — fall through to a plain save.
+            saveEdits();
+            return;
+        }
+        pendingEditReasons = edited;
+        editReasonOpen = true;
+    }
+
     // -- Onboarding Tour --
     let runTourModalOpen = $state(false);
 
@@ -97,6 +368,9 @@
 
             if (run.protocol_id) {
                 protocol = await api.get(`/science/protocols/${run.protocol_id}`);
+                applyGlpSettingsFromProtocol(protocol);
+            } else {
+                applyGlpSettingsFromProtocol(null);
             }
 
             const assignResp = await api.get(
@@ -111,6 +385,15 @@
             );
             projectMembers = membersResp || [];
 
+            // Seed outcome from existing run data when available.
+            if (run.outcome) {
+                outcome = run.outcome as RunOutcome;
+            }
+            if (run.outcome_notes) {
+                outcomeNotes = run.outcome_notes;
+            }
+
+            await refreshSignoffs();
             await loadUnanalyzedCount();
             await loadEditPermissions();
         } catch (e: unknown) {
@@ -743,20 +1026,30 @@
                             confirmLabel={completingRun ? "Completing..." : "Complete Run"}
                             confirmVariant="success"
                             loading={completingRun}
-                            onConfirm={completeRun}
+                            onConfirm={handleCompleteWithOutcome}
                             onCancel={() => (showCompleteConfirm = false)}
                         >
                             {#snippet warning()}
-                                {#if unanalyzedCount > 0}
-                                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                        <p class="text-sm font-medium text-amber-800">
-                                            You have {unanalyzedCount} unanalyzed image{unanalyzedCount !== 1 ? 's' : ''}. Complete anyway?
-                                        </p>
-                                        <p class="text-xs text-amber-600 mt-1">
-                                            You'll be notified to review them later.
-                                        </p>
-                                    </div>
-                                {/if}
+                                <div class="space-y-3">
+                                    <RunOutcomePicker
+                                        {outcome}
+                                        {outcomeNotes}
+                                        onChange={(o, n) => {
+                                            outcome = o;
+                                            outcomeNotes = n;
+                                        }}
+                                    />
+                                    {#if unanalyzedCount > 0}
+                                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                            <p class="text-sm font-medium text-amber-800">
+                                                You have {unanalyzedCount} unanalyzed image{unanalyzedCount !== 1 ? 's' : ''}. Complete anyway?
+                                            </p>
+                                            <p class="text-xs text-amber-600 mt-1">
+                                                You'll be notified to review them later.
+                                            </p>
+                                        </div>
+                                    {/if}
+                                </div>
                             {/snippet}
                         </ConfirmDialog>
                     {:else}
@@ -850,6 +1143,28 @@
                         />
                     </div>
 
+                    <!-- GLP Sign-offs -->
+                    <div class="mb-8">
+                        <h2 class="text-lg font-semibold text-foreground mb-3">
+                            GLP Sign-offs
+                        </h2>
+                        <SignoffBlock
+                            entityType="run"
+                            entityId={run.id}
+                            requiredRoles={resolveRequiredRoles(glpSettings)}
+                            {signoffs}
+                            signers={signerMap}
+                            currentUserId={currentUser?.id ?? ''}
+                            attestationDefaults={{
+                                OPERATOR: glpSettings.operator_attestation_text,
+                                STUDY_DIRECTOR:
+                                    glpSettings.study_director_attestation_text,
+                                QAU: glpSettings.qau_attestation_text,
+                            }}
+                            onSignClick={openSignoffModal}
+                        />
+                    </div>
+
                     <!-- Documents Section -->
                     <div class="mb-8">
                         <RunDocuments
@@ -863,20 +1178,30 @@
                     </div>
 
                     <!-- Footer -->
-                    <div class="flex justify-between items-center">
+                    <div class="flex justify-between items-center gap-3">
                         <a
                             href="/projects/{run.project_id}?tab=runs"
                             class="text-muted-foreground hover:text-foreground font-medium"
                         >
                             &larr; Back to project
                         </a>
-                        <Button
-                            onclick={enterEditMode}
-                            size="lg"
-                            class="bg-amber-600 text-white hover:bg-amber-700"
-                        >
-                            Edit Run
-                        </Button>
+                        <div class="flex items-center gap-2">
+                            {#if activeSignoffs.length > 0}
+                                <Button
+                                    variant="outline"
+                                    onclick={() => (reopenOpen = true)}
+                                >
+                                    Reopen with reason
+                                </Button>
+                            {/if}
+                            <Button
+                                onclick={enterEditMode}
+                                size="lg"
+                                class="bg-amber-600 text-white hover:bg-amber-700"
+                            >
+                                Edit Run
+                            </Button>
+                        </div>
                     </div>
                   {:else}
                     <RunEditMode
@@ -888,7 +1213,7 @@
                         {savingEdits}
                         {error}
                         onDataUpdate={handleEditDataUpdate}
-                        onSave={saveEdits}
+                        onSave={requestEditSave}
                         onCancel={cancelEditMode}
                     />
                   {/if}
@@ -1005,7 +1330,7 @@
                         {error}
                         reEdit={true}
                         onDataUpdate={handleEditDataUpdate}
-                        onSave={saveEdits}
+                        onSave={requestEditSave}
                         onCancel={cancelEditMode}
                     />
                   {/if}
@@ -1059,6 +1384,38 @@
                 onSaved={loadData}
             />
         {/if}
+
+        <!-- GLP signoff modals (F-0087) -->
+        <SignoffModal
+            bind:open={signoffModalOpen}
+            role={signoffModalRole}
+            entityType="run"
+            entityId={run.id}
+            defaultAttestation={signoffModalAttestation}
+            signerName={currentUser?.full_name ?? currentUser?.email ?? ''}
+            signatureImageUrl={signatureUrl(currentUser)}
+            independenceMessage={independenceMessageFor(
+                signoffModalRole,
+                signoffs,
+            )}
+            onConfirm={handleSignoffConfirm}
+            onCancel={() => (signoffModalOpen = false)}
+        />
+
+        <RunReopenModal
+            bind:open={reopenOpen}
+            runId={run.id}
+            activeSignoffs={activeSignoffs}
+            onConfirm={handleReopen}
+            onCancel={() => (reopenOpen = false)}
+        />
+
+        <RunEditReasonPrompt
+            bind:open={editReasonOpen}
+            editedSteps={pendingEditReasons}
+            onConfirm={handleEditReasonConfirm}
+            onCancel={() => (editReasonOpen = false)}
+        />
     {/if}
 </div>
 
