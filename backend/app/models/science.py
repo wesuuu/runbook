@@ -8,6 +8,7 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy import (ForeignKey, Index, Integer, String, Text,
                         UniqueConstraint, desc, func, text)
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -538,4 +539,114 @@ class ProtocolApprovalRequest(Base, UUIDMixin, TimestampMixin):
     )
     fulfilled_by: Mapped[Optional["app.models.iam.User"]] = relationship(
         "app.models.iam.User", foreign_keys=[fulfilled_by_id]
+    )
+
+
+class GlpSignoff(Base, UUIDMixin, TimestampMixin):
+    """Unified GLP signature event. Replaces ProtocolApprovalEvent (F-0066)
+    and supersedes the originally-proposed standalone RunSignoff. Used for
+    both protocol approvals (pre-execution) and run sign-offs (during/post-
+    execution). Partition by FK: exactly one of protocol_id/run_id is set."""
+
+    __tablename__ = "glp_signoffs"
+
+    protocol_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=True
+    )
+    run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), nullable=True
+    )
+
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+
+    signer_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    attestation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    signature_image_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # FK to glp_signoff_requests added by migration (Task 7) after the table
+    # is created by renaming protocol_approval_requests in Task 3.
+    signoff_request_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=True,
+    )
+
+    invalidated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    invalidated_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    invalidated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    # Grilling decision #15: distinguish edit-invalidation vs reopen-supersession.
+    # Both set invalidated_at; only reopen sets this FK to the audit event row.
+    superseded_by_reopen_audit_event_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey(
+            "audit_logs.id",
+            use_alter=True,
+            name="fk_glp_signoff_superseded_by",
+        ),
+        nullable=True,
+    )
+
+    protocol: Mapped[Optional["Protocol"]] = relationship(
+        "Protocol", foreign_keys=[protocol_id]
+    )
+    run: Mapped[Optional["Run"]] = relationship("Run", foreign_keys=[run_id])
+    signer: Mapped["app.models.iam.User"] = relationship(
+        "app.models.iam.User", foreign_keys=[signer_id]
+    )
+    invalidated_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[invalidated_by_id]
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(protocol_id IS NOT NULL AND run_id IS NULL) OR "
+            "(protocol_id IS NULL AND run_id IS NOT NULL)",
+            name="ck_glp_signoff_scope",
+        ),
+        CheckConstraint(
+            "role IN ('SPONSOR','STUDY_DIRECTOR','QAU','OPERATOR')",
+            name="ck_glp_signoff_role",
+        ),
+        CheckConstraint(
+            "action IN ('APPROVED','REJECTED','REQUESTED_CHANGES')",
+            name="ck_glp_signoff_action",
+        ),
+        CheckConstraint(
+            "(protocol_id IS NULL) OR " "(role IN ('SPONSOR','STUDY_DIRECTOR','QAU'))",
+            name="ck_protocol_signoff_roles",
+        ),
+        CheckConstraint(
+            "(run_id IS NULL) OR " "(role IN ('OPERATOR','STUDY_DIRECTOR','QAU'))",
+            name="ck_run_signoff_roles",
+        ),
+        CheckConstraint(
+            "(action != 'APPROVED') OR "
+            "(attestation IS NOT NULL AND signature_image_path IS NOT NULL)",
+            name="ck_approved_requires_attestation",
+        ),
+        Index(
+            "ux_glp_signoff_active_protocol",
+            "protocol_id",
+            "role",
+            unique=True,
+            postgresql_where=text(
+                "protocol_id IS NOT NULL AND action='APPROVED' "
+                "AND invalidated_at IS NULL"
+            ),
+        ),
+        Index(
+            "ux_glp_signoff_active_run",
+            "run_id",
+            "role",
+            unique=True,
+            postgresql_where=text(
+                "run_id IS NOT NULL AND action='APPROVED' " "AND invalidated_at IS NULL"
+            ),
+        ),
     )
