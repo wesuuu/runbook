@@ -378,6 +378,8 @@ class RunCreate(BaseModel):
     protocol_version_number: Optional[int] = None
     experiment_id: Optional[UUID] = None
     overrides: Optional["RunOverrides"] = None
+    # F-0086
+    produces_lot: bool = False
     # QA-0008: GxP execution metadata
     lot_number: Optional[str] = None
     batch_number: Optional[str] = None
@@ -388,6 +390,8 @@ class RunUpdate(BaseModel):
     status: Optional[RunStatus] = None
     graph: Optional[Dict[str, Any]] = None
     execution_data: Optional[Dict[str, Any]] = None
+    # F-0086
+    produces_lot: Optional[bool] = None
     # QA-0008: GxP execution metadata
     lot_number: Optional[str] = None
     batch_number: Optional[str] = None
@@ -403,6 +407,8 @@ class RunResponse(RunBase):
     is_strict: bool = False
     notes: list[RunNote] = Field(default_factory=list)
     attachments: list[RunAttachment] = Field(default_factory=list)
+    # F-0086
+    produces_lot: bool = False
     # QA-0008: GxP execution metadata
     lot_number: Optional[str] = None
     batch_number: Optional[str] = None
