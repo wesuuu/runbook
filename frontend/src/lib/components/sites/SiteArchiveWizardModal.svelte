@@ -26,7 +26,7 @@
     let overrides = $state<Record<string, string>>({});
     let filter = $state('');
     let reason = $state('');
-    let ack = $state(true);
+    let ack = $state(false);
     let submitting = $state(false);
 
     function jump(n: StepNum) {

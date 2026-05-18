@@ -25,7 +25,7 @@ describe('SiteArchiveWizardModal', () => {
 
     it('submits payload with reason and per-item overrides', async () => {
         const onSubmit = vi.fn().mockResolvedValue(undefined);
-        const { getByText, getByPlaceholderText } = render(SiteArchiveWizardModal, {
+        const { getByText, getByPlaceholderText, getByLabelText } = render(SiteArchiveWizardModal, {
             props: {
                 open: true, site, otherSites, equipment,
                 onClose: vi.fn(), onSubmit,
@@ -35,6 +35,7 @@ describe('SiteArchiveWizardModal', () => {
         await fireEvent.click(getByText(/Next: Confirm/i));
         await fireEvent.input(getByPlaceholderText(/Hayward lease|reason/i),
             { target: { value: 'consolidate' } });
+        await fireEvent.click(getByLabelText(/I understand/i));
         await fireEvent.click(getByText(/Archive site/i));
         expect(onSubmit).toHaveBeenCalled();
         const payload = onSubmit.mock.calls[0][0];
