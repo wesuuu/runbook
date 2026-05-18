@@ -96,7 +96,7 @@ roles: Mapped[List[str]] = mapped_column(
 )
 __table_args__ = (
     CheckConstraint(
-        "roles <@ ARRAY['ADMIN','BILLING','MEMBER','PROTOCOL_APPROVER']::varchar[]",
+        "roles <@ ARRAY['ADMIN','BILLING','MEMBER','PROTOCOL_APPROVER','SITE_MANAGER']::varchar[]",
         name="ck_roles_allowed",
     ),
 )
