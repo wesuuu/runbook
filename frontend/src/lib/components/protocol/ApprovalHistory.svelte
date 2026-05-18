@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { getProtocolSignoffs } from '$lib/api';
+    import { listProtocolSignoffs } from '$lib/api';
     import type { GlpSignoffResponse } from '$lib/schemas/glpSignoff';
 
     interface Props {
@@ -19,7 +19,8 @@
             loading = true;
             errorMessage = null;
             try {
-                signoffs = await getProtocolSignoffs(protocolId);
+                // active=false returns the full history including invalidated rows.
+                signoffs = await listProtocolSignoffs(protocolId, false);
             } catch (e: unknown) {
                 errorMessage = e instanceof Error ? e.message : 'Failed to load history.';
             } finally {
@@ -56,7 +57,13 @@
             {:else if signoffs}
                 <ol class="space-y-2">
                     {#each signoffs as s (s.id)}
-                        <li class="text-xs">
+                        {@const invalidated = !!s.invalidated_at}
+                        <li
+                            class="text-xs"
+                            class:line-through={invalidated}
+                            class:text-muted-foreground={invalidated}
+                            data-invalidated={invalidated ? 'true' : 'false'}
+                        >
                             <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold {colorFor(s.action)}">
                                 {s.action}
                             </span>
@@ -70,9 +77,9 @@
                             {#if s.attestation}
                                 <div class="mt-1 italic text-muted-foreground">"{s.attestation}"</div>
                             {/if}
-                            {#if s.invalidated_at}
-                                <div class="mt-1 text-destructive">
-                                    Invalidated {new Date(s.invalidated_at).toLocaleString()}{s.invalidated_reason ? `: ${s.invalidated_reason}` : ''}
+                            {#if invalidated}
+                                <div class="mt-1 text-destructive no-underline not-italic">
+                                    Invalidated {new Date(s.invalidated_at as string).toLocaleString()}{s.invalidated_reason ? `: ${s.invalidated_reason}` : ''}
                                 </div>
                             {/if}
                         </li>

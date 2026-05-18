@@ -1,4 +1,10 @@
 <script lang="ts">
+    // F-0087 (Task 39): This dialog is the protocol-approval entry point for
+    // the QAU role. The reusable, post-migration surface lives in
+    // $lib/components/shared/SignoffBlock.svelte (rendered on protocol pages)
+    // and SignoffModal.svelte. ApprovalSignatureDialog is retained for the
+    // existing approve/reject flow until the full migration in a later
+    // release; see plans/2026-05-18-f-0087-glp-gap-fixes.md.
     import * as Dialog from '$lib/components/ui/dialog';
     import { Button } from '$lib/components/ui/button';
     import { Textarea } from '$lib/components/ui/textarea';

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('$lib/api', () => ({
-    getProtocolSignoffs: vi.fn(),
+    listProtocolSignoffs: vi.fn(),
 }));
 
 import ApprovalHistory from './ApprovalHistory.svelte';
@@ -16,27 +16,27 @@ beforeEach(() => {
 describe('ApprovalHistory', () => {
     it('does not fetch on mount', () => {
         render(ApprovalHistory, { protocolId: 'p1' });
-        expect(apiModule.getProtocolSignoffs).not.toHaveBeenCalled();
+        expect(apiModule.listProtocolSignoffs).not.toHaveBeenCalled();
     });
 
     it('fetches once on first expand and not again on toggle', async () => {
-        (apiModule.getProtocolSignoffs as any).mockResolvedValue([]);
+        (apiModule.listProtocolSignoffs as any).mockResolvedValue([]);
         const { getByRole } = render(ApprovalHistory, { protocolId: 'p1' });
         const btn = getByRole('button');
 
         await fireEvent.click(btn); // expand
         await waitFor(() => {
-            expect(apiModule.getProtocolSignoffs).toHaveBeenCalledTimes(1);
+            expect(apiModule.listProtocolSignoffs).toHaveBeenCalledTimes(1);
         });
 
         await fireEvent.click(btn); // collapse
         await fireEvent.click(btn); // re-expand
         // Should still be 1 (cached)
-        expect(apiModule.getProtocolSignoffs).toHaveBeenCalledTimes(1);
+        expect(apiModule.listProtocolSignoffs).toHaveBeenCalledTimes(1);
     });
 
     it('renders empty state', async () => {
-        (apiModule.getProtocolSignoffs as any).mockResolvedValue([]);
+        (apiModule.listProtocolSignoffs as any).mockResolvedValue([]);
         const { getByRole, findByText } = render(ApprovalHistory, { protocolId: 'p1' });
         await fireEvent.click(getByRole('button'));
         expect(await findByText(/No signoffs yet/i)).toBeTruthy();
@@ -67,7 +67,7 @@ describe('ApprovalHistory', () => {
                 updated_at: '2026-05-10T12:00:00Z',
             },
         ];
-        (apiModule.getProtocolSignoffs as any).mockResolvedValue(signoffs);
+        (apiModule.listProtocolSignoffs as any).mockResolvedValue(signoffs);
         const { getByRole, findByText } = render(ApprovalHistory, { protocolId: 'p1' });
         await fireEvent.click(getByRole('button'));
         expect(await findByText('APPROVED')).toBeTruthy();
