@@ -9,11 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
+from app.models.execution import AuditLog
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             User)
-from app.models.science import (GlpSignoffRequest, Project, Protocol,
-                                ProtocolApprovalEvent)
+from app.models.science import GlpSignoffRequest, Project, Protocol
 
 
 async def _make_pending_protocol(
@@ -112,21 +112,22 @@ async def test_approve_happy_path_via_project_perm(
     assert body["approved_by_id"] == str(approver.id)
     assert body["approved_at"] is not None
 
-    evs = (
+    audits = (
         (
             await db_session.execute(
-                select(ProtocolApprovalEvent).where(
-                    ProtocolApprovalEvent.protocol_id == proto.id
+                select(AuditLog).where(
+                    AuditLog.entity_type == "Protocol",
+                    AuditLog.entity_id == proto.id,
+                    AuditLog.action == "PROTOCOL_APPROVAL_APPROVED",
                 )
             )
         )
         .scalars()
         .all()
     )
-    assert len(evs) == 1
-    assert evs[0].action == "APPROVED"
-    assert evs[0].comment == "looks good"
-    assert evs[0].signature_statement == "I attest"
+    assert len(audits) == 1
+    assert audits[0].changes.get("comment") == "looks good"
+    assert audits[0].changes.get("has_signature_statement") is True
 
     reqs = (
         (

@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,16 +13,13 @@ from app.db.session import get_db
 from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
                             OrgRole, PermissionLevel, PrincipalType, User)
 from app.models.science import (GlpSignoffRequest, Project, Protocol,
-                                ProtocolApprovalEvent, ProtocolVersion,
-                                UnitOpDefinition)
-from app.schemas.science import (ApprovalActorRef, ApproveProtocolRequest,
-                                 AwaitingApprovalItem,
-                                 ProtocolApprovalEventResponse,
+                                ProtocolVersion, UnitOpDefinition)
+from app.schemas.science import (ApproveProtocolRequest, AwaitingApprovalItem,
                                  ProtocolResponse, ProtocolVersionListItem,
-                                 ProtocolVersionRef, ProtocolVersionResponse,
-                                 PublishDraftRequest, RejectProtocolRequest,
+                                 ProtocolVersionResponse, PublishDraftRequest,
+                                 RejectProtocolRequest,
                                  SubmitForApprovalRequest)
-from app.services.approvals import fulfill_open_requests, write_event
+from app.services.approvals import fulfill_open_requests
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
@@ -356,11 +353,13 @@ async def submit_protocol_for_approval(
             )
         )
 
-    await write_event(
+    await log_audit(
         db,
-        protocol=protocol,
-        actor_id=user.id,
-        action="SUBMITTED",
+        user.id,
+        "PROTOCOL_APPROVAL_SUBMITTED",
+        "Protocol",
+        protocol.id,
+        {"requested_user_ids": [str(uid) for uid in requested]},
     )
 
     await db.commit()
@@ -418,13 +417,16 @@ async def approve_protocol(
     protocol_obj.approved_by_id = user.id
     protocol_obj.approved_at = datetime.now(timezone.utc)
 
-    await write_event(
+    await log_audit(
         db,
-        protocol=protocol_obj,
-        actor_id=user.id,
-        action="APPROVED",
-        comment=body.comment,
-        signature_statement=body.signature_statement,
+        user.id,
+        "PROTOCOL_APPROVAL_APPROVED",
+        "Protocol",
+        protocol_obj.id,
+        {
+            "comment": body.comment,
+            "has_signature_statement": bool(body.signature_statement),
+        },
     )
     await fulfill_open_requests(
         db,
@@ -514,13 +516,16 @@ async def reject_protocol(
 
     protocol_obj.status = "DRAFT"
 
-    await write_event(
+    await log_audit(
         db,
-        protocol=protocol_obj,
-        actor_id=user.id,
-        action="REJECTED",
-        comment=body.comment,
-        signature_statement=body.signature_statement,
+        user.id,
+        "PROTOCOL_APPROVAL_REJECTED",
+        "Protocol",
+        protocol_obj.id,
+        {
+            "comment": body.comment,
+            "has_signature_statement": bool(body.signature_statement),
+        },
     )
     await fulfill_open_requests(
         db,
@@ -618,66 +623,3 @@ async def publish_draft_version(
         .where(Protocol.id == protocol.id)
     )
     return result.scalar_one()
-
-
-# --- Approval History ---
-
-
-@router.get(
-    "/protocols/{protocol_id}/approval-history",
-    response_model=List[ProtocolApprovalEventResponse],
-)
-async def list_approval_history(
-    protocol_id: UUID,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Return the protocol's approval events, newest first."""
-    allowed = await check_permission(
-        db,
-        user.id,
-        ObjectType.PROTOCOL,
-        protocol_id,
-        PermissionLevel.VIEW,
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await db.execute(
-        select(ProtocolApprovalEvent)
-        .options(
-            selectinload(ProtocolApprovalEvent.actor),
-            selectinload(ProtocolApprovalEvent.protocol_version),
-        )
-        .where(ProtocolApprovalEvent.protocol_id == protocol_id)
-        .order_by(ProtocolApprovalEvent.created_at.desc())
-    )
-    events = result.scalars().all()
-
-    response: list[ProtocolApprovalEventResponse] = []
-    for ev in events:
-        actor_ref = None
-        if ev.actor is not None:
-            actor_ref = ApprovalActorRef(
-                id=ev.actor.id,
-                name=ev.actor.full_name or ev.actor.email,
-                email=ev.actor.email,
-            )
-        version_ref = None
-        if ev.protocol_version is not None:
-            version_ref = ProtocolVersionRef(
-                id=ev.protocol_version.id,
-                version_number=ev.protocol_version.version_number,
-            )
-        response.append(
-            ProtocolApprovalEventResponse(
-                id=ev.id,
-                action=ev.action,
-                comment=ev.comment,
-                signature_statement=ev.signature_statement,
-                actor=actor_ref,
-                protocol_version=version_ref,
-                created_at=ev.created_at,
-            )
-        )
-    return response

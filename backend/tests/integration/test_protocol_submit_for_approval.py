@@ -8,11 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
+from app.models.execution import AuditLog
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             User)
-from app.models.science import (GlpSignoffRequest, Project, Protocol,
-                                ProtocolApprovalEvent)
+from app.models.science import GlpSignoffRequest, Project, Protocol
 
 
 async def _make_protocol(
@@ -132,21 +132,23 @@ async def test_submit_for_approval_happy_path(
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "PENDING_APPROVAL"
 
-    # Verify event row
-    evs = (
+    # Verify audit-log row
+    audits = (
         (
             await db_session.execute(
-                select(ProtocolApprovalEvent).where(
-                    ProtocolApprovalEvent.protocol_id == proto.id
+                select(AuditLog).where(
+                    AuditLog.entity_type == "Protocol",
+                    AuditLog.entity_id == proto.id,
+                    AuditLog.action == "PROTOCOL_APPROVAL_SUBMITTED",
                 )
             )
         )
         .scalars()
         .all()
     )
-    assert len(evs) == 1
-    assert evs[0].action == "SUBMITTED"
-    assert evs[0].actor_id == test_user.id
+    assert len(audits) == 1
+    assert audits[0].actor_id == test_user.id
+    assert str(approver.id) in audits[0].changes.get("requested_user_ids", [])
 
     # Verify OPEN request row
     reqs = (

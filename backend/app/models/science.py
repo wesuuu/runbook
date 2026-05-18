@@ -30,13 +30,6 @@ class RunStatus(str, Enum):
     ARCHIVED = "ARCHIVED"
 
 
-class ProtocolApprovalAction(str, Enum):
-    SUBMITTED = "SUBMITTED"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
-    REVERTED = "REVERTED"
-
-
 class GlpSignoffRequestStatus(str, Enum):
     OPEN = "OPEN"
     APPROVED = "APPROVED"
@@ -194,11 +187,6 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     )
     approved_by: Mapped[Optional["app.models.iam.User"]] = relationship(
         "app.models.iam.User", foreign_keys=[approved_by_id]
-    )
-    approval_events: Mapped[List["ProtocolApprovalEvent"]] = relationship(
-        back_populates="protocol",
-        cascade="all, delete-orphan",
-        order_by="ProtocolApprovalEvent.created_at.desc()",
     )
     approval_requests: Mapped[List["GlpSignoffRequest"]] = relationship(
         back_populates="protocol",
@@ -459,42 +447,6 @@ class Equipment(Base, UUIDMixin, TimestampMixin):
     )
 
 
-class ProtocolApprovalEvent(Base, UUIDMixin, TimestampMixin):
-    __tablename__ = "protocol_approval_events"
-    __table_args__ = (
-        CheckConstraint(
-            "action IN ('SUBMITTED','APPROVED','REJECTED','REVERTED')",
-            name="ck_proto_appr_event_action",
-        ),
-        Index(
-            "ix_proto_appr_event_protocol_created",
-            "protocol_id",
-            "created_at",
-        ),
-    )
-
-    protocol_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False
-    )
-    protocol_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("protocol_versions.id", ondelete="SET NULL"), nullable=True
-    )
-    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
-    action: Mapped[str] = mapped_column(String(20), nullable=False)
-    comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    signature_statement: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-
-    protocol: Mapped["Protocol"] = relationship(back_populates="approval_events")
-    actor: Mapped[Optional["app.models.iam.User"]] = relationship(
-        "app.models.iam.User", foreign_keys=[actor_id]
-    )
-    protocol_version: Mapped[Optional["ProtocolVersion"]] = relationship(
-        foreign_keys=[protocol_version_id]
-    )
-
-
 class GlpSignoffRequest(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "glp_signoff_requests"
     __table_args__ = (
@@ -543,10 +495,13 @@ class GlpSignoffRequest(Base, UUIDMixin, TimestampMixin):
 
 
 class GlpSignoff(Base, UUIDMixin, TimestampMixin):
-    """Unified GLP signature event. Replaces ProtocolApprovalEvent (F-0066)
-    and supersedes the originally-proposed standalone RunSignoff. Used for
-    both protocol approvals (pre-execution) and run sign-offs (during/post-
-    execution). Partition by FK: exactly one of protocol_id/run_id is set."""
+    """Unified GLP signature event for both protocol approvals
+    (pre-execution) and run sign-offs (during/post-execution).
+    Partition by FK: exactly one of protocol_id/run_id is set.
+
+    This model is the single source of truth for signature events after
+    F-0087 Task 27 retired the legacy protocol-approval events table.
+    """
 
     __tablename__ = "glp_signoffs"
     __table_args__ = (

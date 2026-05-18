@@ -4,7 +4,7 @@ Editing certain fields on an APPROVED protocol must:
   1. Be authorized (creator, project admin, or any APPROVE-permission holder).
   2. Auto-revert the protocol to DRAFT.
   3. Clear approved_by_id / approved_at (requires_approval is sticky).
-  4. Emit exactly one ProtocolApprovalEvent with action=REVERTED.
+  4. Emit exactly one PROTOCOL_APPROVAL_REVERTED audit-log row.
 
 Editing any field on a PENDING_APPROVAL protocol must 409.
 """
@@ -17,10 +17,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
+from app.models.execution import AuditLog
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             User)
-from app.models.science import Project, Protocol, ProtocolApprovalEvent
+from app.models.science import Project, Protocol
 
 
 def _minimal_graph() -> dict:
@@ -109,9 +110,10 @@ async def _make_user_with_project_perm(
 
 async def _count_reverted_events(db: AsyncSession, protocol_id: uuid.UUID) -> int:
     result = await db.execute(
-        select(ProtocolApprovalEvent).where(
-            ProtocolApprovalEvent.protocol_id == protocol_id,
-            ProtocolApprovalEvent.action == "REVERTED",
+        select(AuditLog).where(
+            AuditLog.entity_type == "Protocol",
+            AuditLog.entity_id == protocol_id,
+            AuditLog.action == "PROTOCOL_APPROVAL_REVERTED",
         )
     )
     return len(result.scalars().all())

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.endpoints.protocol_pdfs import _build_approval_context
 from app.core.security import hash_password
 from app.models.iam import OrganizationMember, User
-from app.models.science import Project, Protocol, ProtocolApprovalEvent
+from app.models.science import GlpSignoff, Project, Protocol
 from app.services.protocols.template_engine import (build_context,
                                                     render_to_docx)
 
@@ -65,11 +65,14 @@ async def test_default_sop_renders_with_approval_block(
     await db_session.flush()
 
     db_session.add(
-        ProtocolApprovalEvent(
+        GlpSignoff(
             protocol_id=proto.id,
-            actor_id=approver.id,
+            signer_id=approver.id,
+            role="STUDY_DIRECTOR",
             action="APPROVED",
-            signature_statement="I have reviewed and approved this protocol",
+            attestation="I have reviewed and approved this protocol",
+            signed_at=datetime.now(timezone.utc),
+            signature_image_path="fixture/sig.png",
         )
     )
     await db_session.flush()
@@ -81,7 +84,7 @@ async def test_default_sop_renders_with_approval_block(
         / "app/services/documents/templates/sop_default.docx"
     )
 
-    context = build_context(
+    context, _unresolved = build_context(
         protocol_name=proto.name,
         protocol_description="",
         version_number=proto.version_number,

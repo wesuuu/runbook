@@ -10,13 +10,13 @@ import {
 } from '$lib/schemas/billing';
 import { ProtocolSchema, type Protocol } from '$lib/schemas/protocols';
 import {
-    ProtocolApprovalEventListSchema,
+    GlpSignoffResponseListSchema,
     AwaitingApprovalListSchema,
-    type ProtocolApprovalEventList,
+    type GlpSignoffResponseList,
     type AwaitingApprovalList,
     type ApproveProtocolRequest,
     type RejectProtocolRequest,
-} from '$lib/schemas/protocolApproval';
+} from '$lib/schemas/glpSignoff';
 
 export class ApiError extends Error {
     status: number;
@@ -293,12 +293,12 @@ export function rejectProtocol(
     );
 }
 
-export function getProtocolApprovalHistory(
+export function getProtocolSignoffs(
     protocolId: string,
-): Promise<ProtocolApprovalEventList> {
-    return api.get<ProtocolApprovalEventList>(
-        `/science/protocols/${protocolId}/approval-history`,
-        { schema: ProtocolApprovalEventListSchema },
+): Promise<GlpSignoffResponseList> {
+    return api.get<GlpSignoffResponseList>(
+        `/science/protocols/${protocolId}/signoffs`,
+        { schema: GlpSignoffResponseListSchema },
     );
 }
 
@@ -309,12 +309,12 @@ export function getAwaitingMyApproval(): Promise<AwaitingApprovalList> {
     );
 }
 
-export const protocolApprovalApi = {
+export const glpSignoffApi = {
     designate: designateProtocolApproval,
     submit: submitProtocolForApproval,
     approve: approveProtocol,
     reject: rejectProtocol,
-    history: getProtocolApprovalHistory,
+    signoffs: getProtocolSignoffs,
     awaitingMine: getAwaitingMyApproval,
 };
 

@@ -154,8 +154,6 @@ class PublishDraftRequest(BaseModel):
 
 
 # Protocol Approval Schemas
-class ProtocolApprovalAction(BaseModel):
-    comment: Optional[str] = None
 
 
 class DesignateApprovalRequest(BaseModel):
@@ -185,24 +183,15 @@ class RejectProtocolRequest(BaseModel):
 
 
 class ApprovalActorRef(BaseModel):
+    """Minimal reference to the user who acted on a protocol approval.
+
+    Kept as a shared type so the awaiting-approval list endpoint can
+    surface submitter identity without leaking the full User schema.
+    """
+
     id: UUID
     name: str
     email: str
-
-
-class ProtocolVersionRef(BaseModel):
-    id: UUID
-    version_number: int
-
-
-class ProtocolApprovalEventResponse(BaseModel):
-    id: UUID
-    action: str
-    comment: Optional[str] = None
-    signature_statement: Optional[str] = None
-    actor: Optional[ApprovalActorRef] = None
-    protocol_version: Optional[ProtocolVersionRef] = None
-    created_at: datetime
 
 
 class AwaitingApprovalItem(BaseModel):

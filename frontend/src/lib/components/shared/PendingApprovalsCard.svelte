@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { getAwaitingMyApproval } from '$lib/api';
-    import type { AwaitingApprovalItem } from '$lib/schemas/protocolApproval';
+    import type { AwaitingApprovalItem } from '$lib/schemas/glpSignoff';
 
     let items = $state<AwaitingApprovalItem[]>([]);
     let loaded = $state(false);

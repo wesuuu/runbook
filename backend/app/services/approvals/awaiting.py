@@ -81,7 +81,7 @@ async def list_awaiting_for_user(
     # 4. Fetch the earliest OPEN signoff request per protocol for submitter +
     #    submitted-at timestamp. GlpSignoffRequest carries this info now
     #    (Task 7 renamed protocol_approval_requests → glp_signoff_requests;
-    #    Task 26 retired the SUBMITTED ProtocolApprovalEvent reader path).
+    #    Task 27 removed the SUBMITTED protocol-approval-event row entirely).
     proto_ids = list(awaiting.keys())
     submit_rows = await db.execute(
         select(GlpSignoffRequest, User)

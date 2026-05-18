@@ -25,7 +25,6 @@ from app.schemas.science import (DesignateApprovalRequest, GlpSignoffCreate,
                                  ProtocolRefineRequest, ProtocolResponse,
                                  ProtocolRoleCreate, ProtocolRoleResponse,
                                  ProtocolRoleUpdate, ProtocolUpdate)
-from app.services.approvals import write_event
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
@@ -368,27 +367,26 @@ async def get_protocol(
         options=[selectinload(Protocol.roles)],
     )
 
-    # F-0066: derive latest_signature_statement / latest_approval_comment
-    # from the most recent APPROVED ProtocolApprovalEvent.
-    from app.models.science import ProtocolApprovalEvent
-
+    # F-0087: derive latest_signature_statement from the most recent active
+    # APPROVED GlpSignoff. The legacy free-form "comment" field has no
+    # equivalent in the unified GLP signoff model; latest_approval_comment
+    # is therefore always None now.
     latest = await db.execute(
-        select(ProtocolApprovalEvent)
+        select(GlpSignoff)
         .where(
-            ProtocolApprovalEvent.protocol_id == protocol_id,
-            ProtocolApprovalEvent.action == "APPROVED",
+            GlpSignoff.protocol_id == protocol_id,
+            GlpSignoff.action == "APPROVED",
+            GlpSignoff.invalidated_at.is_(None),
         )
-        .order_by(ProtocolApprovalEvent.created_at.desc())
+        .order_by(GlpSignoff.signed_at.desc())
         .limit(1)
     )
     latest_ev = latest.scalar_one_or_none()
     # Stash on the ORM instance for `from_attributes` serialization.
     protocol.latest_signature_statement = (  # type: ignore[attr-defined]
-        latest_ev.signature_statement if latest_ev else None
+        latest_ev.attestation if latest_ev else None
     )
-    protocol.latest_approval_comment = (  # type: ignore[attr-defined]
-        latest_ev.comment if latest_ev else None
-    )
+    protocol.latest_approval_comment = None  # type: ignore[attr-defined]
 
     # Surface unpublished drafts so the editor's version toggle can jump to
     # them. Mirrors the same logic in list_project_protocols.
@@ -772,11 +770,13 @@ async def update_protocol(
         protocol.approved_by_id = None
         protocol.approved_at = None
 
-        await write_event(
+        await log_audit(
             db,
-            protocol=protocol,
-            actor_id=user.id,
-            action="REVERTED",
+            user.id,
+            "PROTOCOL_APPROVAL_REVERTED",
+            "Protocol",
+            protocol.id,
+            {"trigger": "edit_after_approved"},
         )
         # Flush so the metadata-only fast path below (which re-SELECTs
         # the protocol inside update_protocol_metadata) sees the new
@@ -1048,9 +1048,9 @@ async def create_protocol_signoff(
 ) -> GlpSignoffResponse:
     """Create a GLP sign-off on a protocol.
 
-    Replaces F-0066's ``POST /protocols/{id}/approval-events``; the old route
-    is preserved as a deprecation shim for one release (see Task 24). The
-    role/entity compatibility matrix is enforced by ``ck_protocol_signoff_roles``
+    Sole entry point for protocol-level GLP signatures (F-0087 Task 27
+    removed the legacy F-0066 endpoint with no shim). The role/entity
+    compatibility matrix is enforced by ``ck_protocol_signoff_roles``
     at the DB layer and surfaced here as 400.
     """
     protocol = await get_or_404(db, Protocol, protocol_id)
