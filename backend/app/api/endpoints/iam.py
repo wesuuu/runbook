@@ -10,44 +10,24 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404, require_active_subscription
+from app.core.deps import (get_current_user, get_or_404,
+                           require_active_subscription)
 from app.core.security import generate_verification_token
 from app.db.session import get_db
 from app.models.execution import AuditLog
-from app.models.iam import (
-    _ALLOWED_ORG_ROLES,
-    Invitation,
-    InvitationStatus,
-    ObjectPermission,
-    ObjectType,
-    Organization,
-    OrganizationMember,
-    OrgRole,
-    PermissionLevel,
-    Team,
-    TeamMember,
-    TeamRole,
-    User,
-    has_org_role,
-)
+from app.models.iam import (_ALLOWED_ORG_ROLES, Invitation, InvitationStatus,
+                            ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, OrgRole, PermissionLevel, Team,
+                            TeamMember, TeamRole, User, has_org_role)
 from app.models.science import Equipment
-from app.schemas.iam import (
-    InvitationCreate,
-    InvitationResponse,
-    OrganizationCreate,
-    OrganizationResponse,
-    OrgMemberAdd,
-    OrgMemberResponse,
-    OrgMemberUpdate,
-    PermissionGrant,
-    PermissionResponse,
-    TeamCreate,
-    TeamMemberAdd,
-    TeamMemberResponse,
-    TeamResponse,
-    UserSearchResponse,
-)
-from app.schemas.science import EquipmentCreate, EquipmentResponse, EquipmentUpdate
+from app.schemas.iam import (InvitationCreate, InvitationResponse,
+                             OrganizationCreate, OrganizationResponse,
+                             OrgMemberAdd, OrgMemberResponse, OrgMemberUpdate,
+                             PermissionGrant, PermissionResponse, TeamCreate,
+                             TeamMemberAdd, TeamMemberResponse, TeamResponse,
+                             UserSearchResponse)
+from app.schemas.science import (EquipmentCreate, EquipmentResponse,
+                                 EquipmentUpdate)
 from app.services.billing import seat_limits
 from app.services.core.permissions import check_permission
 
@@ -177,6 +157,12 @@ async def create_organization(
     )
     db.add(membership)
     await db.commit()
+
+    # F-0088: ensure a default site exists for the new org
+    from app.services.sites.defaults import ensure_default_site
+
+    await ensure_default_site(db, org.id, actor_id=user.id)
+
     await db.refresh(org)
     return org
 
