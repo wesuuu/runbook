@@ -38,6 +38,10 @@
 			description: string;
 			equipment_type: string;
 			location: string;
+			serial_number: string;
+			last_calibration_date: string | null;
+			next_calibration_date: string | null;
+			calibration_certificate_path: string;
 		}) => Promise<Equipment>;
 	}
 
@@ -64,7 +68,23 @@
 	let newEquipmentDescription = $state('');
 	let newEquipmentType = $state('');
 	let newEquipmentLocation = $state('');
+	let newEquipmentSerial = $state('');
+	let newEquipmentLastCal = $state('');
+	let newEquipmentNextCal = $state('');
+	let newEquipmentCertPath = $state('');
 	let createError = $state('');
+
+	function handleCertificateFile(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (file) {
+			// Until a dedicated calibration-certificate upload endpoint exists
+			// (backend Task 21 stores a path string), fall back to recording
+			// the file name. Operators can later replace this with a real path
+			// once the upload route ships.
+			newEquipmentCertPath = file.name;
+		}
+	}
 
 	// Initialize selected items when modal opens
 	$effect(() => {
@@ -166,7 +186,11 @@
 				name: newEquipmentName,
 				description: newEquipmentDescription,
 				equipment_type: newEquipmentType,
-				location: newEquipmentLocation
+				location: newEquipmentLocation,
+				serial_number: newEquipmentSerial,
+				last_calibration_date: newEquipmentLastCal || null,
+				next_calibration_date: newEquipmentNextCal || null,
+				calibration_certificate_path: newEquipmentCertPath
 			});
 
 			// Add to selected items
@@ -181,6 +205,10 @@
 			newEquipmentDescription = '';
 			newEquipmentType = '';
 			newEquipmentLocation = '';
+			newEquipmentSerial = '';
+			newEquipmentLastCal = '';
+			newEquipmentNextCal = '';
+			newEquipmentCertPath = '';
 			showCreateForm = false;
 		} catch (e) {
 			createError = `Failed to create equipment: ${e instanceof Error ? e.message : 'Unknown error'}`;
@@ -368,6 +396,53 @@
 								bind:value={newEquipmentLocation}
 								class="form-input"
 							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-serial">Serial Number</label>
+							<input
+								id="eq-serial"
+								type="text"
+								placeholder="e.g., SN-12345"
+								bind:value={newEquipmentSerial}
+								class="form-input"
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-last-cal">Last Calibrated</label>
+							<input
+								id="eq-last-cal"
+								type="date"
+								bind:value={newEquipmentLastCal}
+								class="form-input"
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-next-cal">Calibration Due</label>
+							<input
+								id="eq-next-cal"
+								type="date"
+								bind:value={newEquipmentNextCal}
+								class="form-input"
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-cert">Calibration Certificate</label>
+							<input
+								id="eq-cert"
+								type="file"
+								accept="application/pdf,image/*"
+								onchange={handleCertificateFile}
+								class="form-input"
+							/>
+							{#if newEquipmentCertPath}
+								<span class="text-xs text-muted-foreground">
+									Selected: {newEquipmentCertPath}
+								</span>
+							{/if}
 						</div>
 
 						{#if createError}

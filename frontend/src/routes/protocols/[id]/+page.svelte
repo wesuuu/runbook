@@ -1057,7 +1057,16 @@
     }
 
     // --- Equipment Management ---
-    async function handleCreateEquipment(data: { name: string; description: string; equipment_type: string; location: string }): Promise<any> {
+    async function handleCreateEquipment(data: {
+        name: string;
+        description: string;
+        equipment_type: string;
+        location: string;
+        serial_number?: string;
+        last_calibration_date?: string | null;
+        next_calibration_date?: string | null;
+        calibration_certificate_path?: string;
+    }): Promise<any> {
         const org = getCurrentOrg();
         if (!org?.id) throw new Error("No organization");
 
@@ -1068,6 +1077,11 @@
                 description: data.description,
                 equipment_type: data.equipment_type,
                 location: data.location,
+                serial_number: data.serial_number || null,
+                last_calibration_date: data.last_calibration_date || null,
+                next_calibration_date: data.next_calibration_date || null,
+                calibration_certificate_path:
+                    data.calibration_certificate_path || null,
             }
         );
 
