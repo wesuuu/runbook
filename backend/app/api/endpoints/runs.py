@@ -31,7 +31,7 @@ from app.schemas.science import (GlpSignoffCreate, GlpSignoffResponse,
                                  RunAttachment, RunAttachmentListResponse,
                                  RunCompleteRequest, RunCreate, RunNote,
                                  RunNoteCreate, RunNoteListResponse,
-                                 RunOverrides, RunResponse,
+                                 RunOverrides, RunReopenRequest, RunResponse,
                                  RunRoleAssignmentCreate,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunUpdate)
@@ -48,6 +48,7 @@ from app.services.runs.overrides import (apply_node_overrides,
                                          diff_unit_op_node,
                                          snapshot_unit_op_node)
 from app.services.runs.validation import assert_run_can_close
+from app.services.signoffs.queries import invalidate_active_signoffs
 from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
@@ -1765,6 +1766,53 @@ async def complete_run(
     run.outcome_notes = payload.outcome_notes
     run.completed_at = datetime.now(timezone.utc)
 
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
+# --- Run lifecycle: reopen (F-0087 Task 15) --------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/reopen",
+    response_model=RunResponse,
+)
+async def reopen_run(
+    run_id: UUID,
+    payload: RunReopenRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Reopen a COMPLETED run, invalidating all active sign-offs.
+
+    Transitions the run back to EDITED, clears ``completed_at``, and writes a
+    ``run.reopen`` audit entry capturing the supplied justification reason.
+    """
+    run = await get_or_404(db, Run, run_id)
+    status_str = _run_status_str(run)
+    if status_str != "COMPLETED":
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "INVALID_RUN_STATE", "status": status_str},
+        )
+
+    await invalidate_active_signoffs(
+        db,
+        run.id,
+        reason=payload.reason,
+        user_id=user.id,
+    )
+    run.status = "EDITED"
+    run.completed_at = None
+    await log_audit(
+        db,
+        user.id,
+        "run.reopen",
+        "run",
+        run.id,
+        {"reason": payload.reason},
+    )
     await db.commit()
     await db.refresh(run)
     return RunResponse.model_validate(run)

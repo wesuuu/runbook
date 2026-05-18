@@ -1,10 +1,11 @@
 """Integration tests for GLP sign-off lifecycle endpoints.
 
-Tasks 12, 13, and 14 of F-0087 GLP Gap Fixes:
+Tasks 12, 13, 14, and 15 of F-0087 GLP Gap Fixes:
 
 * ``POST /science/runs/{run_id}/signoffs``
 * ``POST /science/protocols/{protocol_id}/signoffs``
 * ``POST /science/runs/{run_id}/complete``
+* ``POST /science/runs/{run_id}/reopen``
 """
 
 from __future__ import annotations
@@ -279,3 +280,91 @@ async def test_run_complete_sets_outcome_and_completed_at(
     assert body["outcome"] == "COMPLETED_WITH_DEVIATIONS"
     assert body["outcome_notes"] == "pH drift on step 7"
     assert body["completed_at"] is not None
+
+
+# --- Task 15 fixtures and tests --------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def completed_run_with_signoffs(
+    db_session: AsyncSession,
+    sample_active_run: Run,
+    test_user: User,
+) -> Run:
+    """A COMPLETED run carrying OPERATOR + QAU active sign-offs."""
+    sample_active_run.status = "COMPLETED"
+    sample_active_run.completed_at = datetime.now(timezone.utc)
+    sample_active_run.outcome = "COMPLETED_NORMAL"
+    db_session.add(
+        GlpSignoff(
+            run_id=sample_active_run.id,
+            role="OPERATOR",
+            action="APPROVED",
+            signer_id=test_user.id,
+            attestation="Operator attestation.",
+            signed_at=datetime.now(timezone.utc),
+            signature_image_path="fixture/operator.png",
+        )
+    )
+    db_session.add(
+        GlpSignoff(
+            run_id=sample_active_run.id,
+            role="QAU",
+            action="APPROVED",
+            signer_id=test_user.id,
+            attestation="QAU attestation.",
+            signed_at=datetime.now(timezone.utc),
+            signature_image_path="fixture/qau.png",
+        )
+    )
+    await db_session.flush()
+    return sample_active_run
+
+
+# --- Task 15: POST /science/runs/{run_id}/reopen ---------------------------
+
+
+@pytest.mark.asyncio
+async def test_reopen_invalidates_all_active_signoffs(
+    client,
+    auth_headers,
+    completed_run_with_signoffs,
+    db_session: AsyncSession,
+):
+    """All active sign-offs (operator + QAU) get invalidated on reopen."""
+    from sqlalchemy import select
+
+    res = await client.post(
+        f"/science/runs/{completed_run_with_signoffs.id}/reopen",
+        headers=auth_headers,
+        json={"reason": "pH probe drift on step 7-9"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["status"] in ("EDITED", "ACTIVE")
+
+    # Confirm no rows remain active for this run (queries DB directly until
+    # the GET listing endpoint lands in Task 16).
+    result = await db_session.execute(
+        select(GlpSignoff).where(
+            GlpSignoff.run_id == completed_run_with_signoffs.id,
+            GlpSignoff.action == "APPROVED",
+            GlpSignoff.invalidated_at.is_(None),
+        )
+    )
+    assert result.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_reopen_requires_reason(
+    client,
+    auth_headers,
+    completed_run_with_signoffs,
+):
+    """Empty/missing reason returns 400 or 422 from Pydantic min_length."""
+    res = await client.post(
+        f"/science/runs/{completed_run_with_signoffs.id}/reopen",
+        headers=auth_headers,
+        json={"reason": ""},
+    )
+    assert res.status_code in (400, 422), res.text
