@@ -10,6 +10,7 @@ from fastapi import (APIRouter, BackgroundTasks, Depends, Form, HTTPException,
                      Query, Request, UploadFile)
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -26,7 +27,8 @@ from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import (Project, Protocol, ProtocolVersion, Run,
                                 RunRoleAssignment, UnitOpDefinition)
-from app.schemas.science import (RunAttachment, RunAttachmentListResponse,
+from app.schemas.science import (GlpSignoffCreate, GlpSignoffResponse,
+                                 RunAttachment, RunAttachmentListResponse,
                                  RunCreate, RunNote, RunNoteCreate,
                                  RunNoteListResponse, RunOverrides,
                                  RunResponse, RunRoleAssignmentCreate,
@@ -44,6 +46,7 @@ from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
 from app.services.runs.overrides import (apply_node_overrides,
                                          diff_unit_op_node,
                                          snapshot_unit_op_node)
+from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
 
@@ -1667,3 +1670,52 @@ async def get_run_audit_log(
         "offset": offset,
         "limit": limit,
     }
+
+
+# --- GLP Sign-offs (F-0087) -----------------------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/signoffs",
+    response_model=GlpSignoffResponse,
+    status_code=201,
+)
+async def create_run_signoff(
+    run_id: UUID,
+    payload: GlpSignoffCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> GlpSignoffResponse:
+    """Create a GLP sign-off on a run.
+
+    Replaces the originally-proposed standalone ``RunSignoff`` model; see
+    F-0087 design spec. Permission and QAU-independence checks run inside
+    :func:`app.services.signoffs.service.create_signoff` via the cross-context
+    validators. The role/entity compatibility matrix is enforced by the
+    ``ck_run_signoff_roles`` DB constraint and surfaced here as 400.
+    """
+    run = await get_or_404(db, Run, run_id)
+
+    try:
+        signoff = await create_signoff(
+            db,
+            entity_type="run",
+            entity_id=run.id,
+            role=payload.role,
+            action=payload.action,
+            signer=user,
+            attestation=payload.attestation,
+            signoff_request_id=payload.signoff_request_id,
+        )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "INVALID_SIGNOFF",
+                "role": payload.role,
+                "entity_type": "run",
+            },
+        ) from exc
+
+    return GlpSignoffResponse.model_validate(signoff)
