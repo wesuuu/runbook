@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field, field_validator
+from pydantic import (BaseModel, ConfigDict, Field, computed_field,
+                      field_validator)
 
 
 # UnitOpDefinition Schemas
@@ -454,6 +455,10 @@ class EquipmentBase(BaseModel):
     description: Optional[str] = None
     equipment_type: Optional[str] = None
     location: Optional[str] = None
+    serial_number: Optional[str] = None
+    last_calibration_date: Optional[date] = None
+    next_calibration_date: Optional[date] = None
+    calibration_certificate_path: Optional[str] = None
 
 
 class EquipmentCreate(EquipmentBase):
@@ -465,6 +470,10 @@ class EquipmentUpdate(BaseModel):
     description: Optional[str] = None
     equipment_type: Optional[str] = None
     location: Optional[str] = None
+    serial_number: Optional[str] = None
+    last_calibration_date: Optional[date] = None
+    next_calibration_date: Optional[date] = None
+    calibration_certificate_path: Optional[str] = None
 
 
 class GraphPayload(BaseModel):
@@ -519,3 +528,68 @@ class ProtocolImportFinalizeRequest(BaseModel):
     project_id: Optional[UUID] = None
     organization_id: Optional[UUID] = None
     source_filename: str = ""
+
+
+# ── GLP Signoff Schemas ─────────────────────────────────────────────
+
+GLP_ROLES = ("SPONSOR", "STUDY_DIRECTOR", "QAU", "OPERATOR")
+GLP_ACTIONS = ("APPROVED", "REJECTED", "REQUESTED_CHANGES")
+RUN_OUTCOMES = ("COMPLETED_NORMAL", "COMPLETED_WITH_DEVIATIONS", "ABORTED")
+
+
+class GlpSignoffCreate(BaseModel):
+    role: str
+    action: str
+    attestation: Optional[str] = None
+    signature_image_path: Optional[str] = None
+    signoff_request_id: Optional[UUID] = None
+
+    @field_validator("role")
+    @classmethod
+    def _check_role(cls, v: str) -> str:
+        if v not in GLP_ROLES:
+            raise ValueError(f"role must be one of {GLP_ROLES}")
+        return v
+
+    @field_validator("action")
+    @classmethod
+    def _check_action(cls, v: str) -> str:
+        if v not in GLP_ACTIONS:
+            raise ValueError(f"action must be one of {GLP_ACTIONS}")
+        return v
+
+
+class GlpSignoffResponse(BaseModel):
+    id: UUID
+    protocol_id: Optional[UUID]
+    run_id: Optional[UUID]
+    role: str
+    action: str
+    signer_id: UUID
+    attestation: Optional[str]
+    signed_at: datetime
+    signature_image_path: Optional[str]
+    signoff_request_id: Optional[UUID]
+    invalidated_at: Optional[datetime]
+    invalidated_reason: Optional[str]
+    invalidated_by_id: Optional[UUID]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RunCompleteRequest(BaseModel):
+    outcome: str
+    outcome_notes: Optional[str] = None
+
+    @field_validator("outcome")
+    @classmethod
+    def _check_outcome(cls, v: str) -> str:
+        if v not in RUN_OUTCOMES:
+            raise ValueError(f"outcome must be one of {RUN_OUTCOMES}")
+        return v
+
+
+class RunReopenRequest(BaseModel):
+    reason: str = Field(min_length=1)
