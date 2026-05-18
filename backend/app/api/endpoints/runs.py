@@ -29,9 +29,10 @@ from app.models.science import (Project, Protocol, ProtocolVersion, Run,
                                 RunRoleAssignment, UnitOpDefinition)
 from app.schemas.science import (GlpSignoffCreate, GlpSignoffResponse,
                                  RunAttachment, RunAttachmentListResponse,
-                                 RunCreate, RunNote, RunNoteCreate,
-                                 RunNoteListResponse, RunOverrides,
-                                 RunResponse, RunRoleAssignmentCreate,
+                                 RunCompleteRequest, RunCreate, RunNote,
+                                 RunNoteCreate, RunNoteListResponse,
+                                 RunOverrides, RunResponse,
+                                 RunRoleAssignmentCreate,
                                  RunRoleAssignmentListResponse,
                                  RunRoleAssignmentResponse, RunUpdate)
 from app.services.core.audit import log_audit
@@ -46,6 +47,7 @@ from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
 from app.services.runs.overrides import (apply_node_overrides,
                                          diff_unit_op_node,
                                          snapshot_unit_op_node)
+from app.services.runs.validation import assert_run_can_close
 from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
@@ -1719,3 +1721,50 @@ async def create_run_signoff(
         ) from exc
 
     return GlpSignoffResponse.model_validate(signoff)
+
+
+# --- Run lifecycle: complete (F-0087 Task 14) ------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/complete",
+    response_model=RunResponse,
+)
+async def complete_run(
+    run_id: UUID,
+    payload: RunCompleteRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Transition an ACTIVE/EDITED run to COMPLETED.
+
+    Gates closure on the GLP sign-off matrix resolved from the linked
+    protocol's ``graph["glpSettings"]`` snapshot (see
+    :func:`app.services.runs.validation.assert_run_can_close`). Records the
+    outcome, optional outcome_notes, and a UTC ``completed_at`` timestamp.
+    """
+    run = await get_or_404(db, Run, run_id)
+    status_str = _run_status_str(run)
+    if status_str not in ("ACTIVE", "EDITED"):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "INVALID_RUN_STATE", "status": status_str},
+        )
+
+    # Resolve effective glpSettings from the run's protocol snapshot.
+    glp_settings: dict = {}
+    if run.protocol_id is not None:
+        proto = await db.get(Protocol, run.protocol_id)
+        if proto is not None and isinstance(proto.graph, dict):
+            glp_settings = proto.graph.get("glpSettings") or {}
+
+    await assert_run_can_close(db, run, glp_settings)
+
+    run.status = "COMPLETED"
+    run.outcome = payload.outcome
+    run.outcome_notes = payload.outcome_notes
+    run.completed_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)

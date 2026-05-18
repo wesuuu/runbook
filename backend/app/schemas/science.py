@@ -374,6 +374,10 @@ class RunResponse(RunBase):
     is_strict: bool = False
     notes: list[RunNote] = Field(default_factory=list)
     attachments: list[RunAttachment] = Field(default_factory=list)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    outcome: Optional[str] = None
+    outcome_notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

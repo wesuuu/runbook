@@ -1,22 +1,22 @@
 """Integration tests for GLP sign-off lifecycle endpoints.
 
-Tasks 12 and 13 of F-0087 GLP Gap Fixes:
+Tasks 12, 13, and 14 of F-0087 GLP Gap Fixes:
 
 * ``POST /science/runs/{run_id}/signoffs``
 * ``POST /science/protocols/{protocol_id}/signoffs``
-
-Both endpoints are thin wrappers over
-``app.services.signoffs.service.create_signoff``.
+* ``POST /science/runs/{run_id}/complete``
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import User
-from app.models.science import Protocol, Run
+from app.models.science import GlpSignoff, Protocol, Run
 from app.services.core.file_storage import FileStorageService
 
 
@@ -169,3 +169,113 @@ async def test_post_protocol_signoff_rejects_operator_role(
         },
     )
     assert res.status_code in (400, 422), res.text
+
+
+# --- Task 14 fixtures and tests --------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def sample_active_protocol(
+    db_session: AsyncSession, test_project, test_user: User
+) -> Protocol:
+    """A protocol with an empty graph (no glpSettings overrides)."""
+    proto = Protocol(
+        name="Run Lifecycle Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=1,
+        created_by_id=test_user.id,
+        graph={"nodes": [], "edges": [], "glpSettings": {}},
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    return proto
+
+
+@pytest_asyncio.fixture
+async def sample_active_run(
+    db_session: AsyncSession, test_project, sample_active_protocol
+) -> Run:
+    """An ACTIVE run linked to a protocol with empty glpSettings.
+
+    Only OPERATOR sign-off is required to close (Study Director and QAU
+    are not gated by default).
+    """
+    run = Run(
+        name="Run Lifecycle Active",
+        project_id=test_project.id,
+        protocol_id=sample_active_protocol.id,
+        status="ACTIVE",
+        graph={"nodes": [], "edges": []},
+        execution_data={},
+        notes=[],
+        attachments=[],
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest_asyncio.fixture
+async def sample_active_run_with_operator_signoff(
+    db_session: AsyncSession,
+    sample_active_run: Run,
+    test_user: User,
+) -> Run:
+    """ACTIVE run that already has an active OPERATOR APPROVED sign-off."""
+    so = GlpSignoff(
+        run_id=sample_active_run.id,
+        role="OPERATOR",
+        action="APPROVED",
+        signer_id=test_user.id,
+        attestation="I performed the run.",
+        signed_at=datetime.now(timezone.utc),
+        signature_image_path="fixture/operator.png",
+    )
+    db_session.add(so)
+    await db_session.flush()
+    return sample_active_run
+
+
+# --- Task 14: POST /science/runs/{run_id}/complete -------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_complete_requires_operator_signoff(
+    client,
+    auth_headers,
+    sample_active_run,
+):
+    """Without an OPERATOR sign-off, /complete returns 400 SIGNOFF_REQUIRED."""
+    res = await client.post(
+        f"/science/runs/{sample_active_run.id}/complete",
+        headers=auth_headers,
+        json={"outcome": "COMPLETED_NORMAL"},
+    )
+    assert res.status_code == 400, res.text
+    body = res.json()
+    assert body["detail"]["error"] == "SIGNOFF_REQUIRED"
+    assert "OPERATOR" in body["detail"]["missing_roles"]
+
+
+@pytest.mark.asyncio
+async def test_run_complete_sets_outcome_and_completed_at(
+    client,
+    auth_headers,
+    sample_active_run_with_operator_signoff,
+):
+    """Happy path: outcome and completed_at populated; status -> COMPLETED."""
+    res = await client.post(
+        f"/science/runs/{sample_active_run_with_operator_signoff.id}/complete",
+        headers=auth_headers,
+        json={
+            "outcome": "COMPLETED_WITH_DEVIATIONS",
+            "outcome_notes": "pH drift on step 7",
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["status"] == "COMPLETED"
+    assert body["outcome"] == "COMPLETED_WITH_DEVIATIONS"
+    assert body["outcome_notes"] == "pH drift on step 7"
+    assert body["completed_at"] is not None
