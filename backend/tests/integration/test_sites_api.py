@@ -133,3 +133,41 @@ async def test_managed_sites_for_user(authed_admin_client, managed_site, grantee
     res = await authed_admin_client.get(f"/users/{grantee_user.id}/managed-sites")
     assert res.status_code == 200
     assert any(m["site"]["id"] == str(managed_site.id) for m in res.json())
+
+
+@pytest.mark.asyncio
+async def test_get_my_managed_sites_returns_grants_for_caller(
+    authed_site_manager_client, managed_site, authed_admin_client, test_org
+):
+    """Site manager with grants on 2 sites calls /users/me/managed-sites and
+    gets 2 entries. The existing `managed_site` fixture already grants the
+    site_manager_user on one site; we add a second grant on a new site."""
+    # Create a second site and grant the site_manager_user on it.
+    second = (
+        await authed_admin_client.post("/sites", json={"name": "Second Site"})
+    ).json()
+    # Discover the site_manager_user id by listing managers on managed_site
+    managers = (
+        await authed_admin_client.get(f"/sites/{managed_site.id}/managers")
+    ).json()
+    site_manager_user_id = managers[0]["user_id"]
+    await authed_admin_client.post(
+        f"/sites/{second['id']}/managers",
+        json={"user_id": site_manager_user_id},
+    )
+
+    res = await authed_site_manager_client.get("/users/me/managed-sites")
+    assert res.status_code == 200
+    site_ids = {m["site"]["id"] for m in res.json()}
+    assert str(managed_site.id) in site_ids
+    assert second["id"] in site_ids
+    assert len(res.json()) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_my_managed_sites_empty_for_member_without_grants(
+    authed_member_client,
+):
+    res = await authed_member_client.get("/users/me/managed-sites")
+    assert res.status_code == 200
+    assert res.json() == []

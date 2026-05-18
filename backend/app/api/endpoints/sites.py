@@ -152,6 +152,27 @@ async def revoke_site_manager_endpoint(
 
 
 @router.get(
+    "/users/me/managed-sites",
+    response_model=list[ManagedSiteResponse],
+)
+async def list_my_managed_sites_endpoint(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Self-scoped alias for the caller's grants. Any authenticated org
+    member can call this. Used by the frontend `canManageEquipmentLifecycle`
+    helper (F-0088 decision 4) to know which sites the user can edit
+    regulated metadata on."""
+    rows = await grants.list_managed_sites_for_user(
+        db, user.id, include_archived=False
+    )
+    # Filter to current org to keep cross-org isolation explicit, even
+    # though grants are scoped to a single org via Site.organization_id.
+    rows = [g for g in rows if g.site.organization_id == user.selected_org_id]
+    return [{"grant_id": g.id, "site": g.site} for g in rows]
+
+
+@router.get(
     "/users/{user_id}/managed-sites",
     response_model=list[ManagedSiteResponse],
 )
