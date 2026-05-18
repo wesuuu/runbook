@@ -9,8 +9,8 @@ from typing import Optional
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import (Protocol, ProtocolApprovalEvent,
-                                ProtocolApprovalRequest)
+from app.models.science import (GlpSignoffRequest, Protocol,
+                                ProtocolApprovalEvent)
 from app.services.core.audit import log_audit
 
 VALID_ACTIONS = ("SUBMITTED", "APPROVED", "REJECTED", "REVERTED")
@@ -81,10 +81,10 @@ async def fulfill_open_requests(
         raise ValueError(f"invalid final_status {final_status!r}")
     now = datetime.now(timezone.utc)
     result = await db.execute(
-        update(ProtocolApprovalRequest)
+        update(GlpSignoffRequest)
         .where(
-            ProtocolApprovalRequest.protocol_id == protocol_id,
-            ProtocolApprovalRequest.status == "OPEN",
+            GlpSignoffRequest.protocol_id == protocol_id,
+            GlpSignoffRequest.status == "OPEN",
         )
         .values(status=final_status, fulfilled_at=now, fulfilled_by_id=actor_id)
     )

@@ -1,8 +1,8 @@
 import uuid
 
-from app.models.science import (Protocol, ProtocolApprovalAction,
-                                ProtocolApprovalEvent, ProtocolApprovalRequest,
-                                ProtocolApprovalRequestStatus, Run)
+from app.models.science import (GlpSignoffRequest, GlpSignoffRequestStatus,
+                                Protocol, ProtocolApprovalAction,
+                                ProtocolApprovalEvent, Run)
 
 
 def test_protocol_has_approval_columns():
@@ -32,10 +32,10 @@ def test_event_action_constants():
 
 
 def test_request_status_uses_enum():
-    r = ProtocolApprovalRequest(
+    r = GlpSignoffRequest(
         protocol_id=uuid.uuid4(),
         requested_user_id=uuid.uuid4(),
         requested_by_id=uuid.uuid4(),
-        status=ProtocolApprovalRequestStatus.OPEN,
+        status=GlpSignoffRequestStatus.OPEN,
     )
     assert r.status == "OPEN"

@@ -37,7 +37,7 @@ class ProtocolApprovalAction(str, Enum):
     REVERTED = "REVERTED"
 
 
-class ProtocolApprovalRequestStatus(str, Enum):
+class GlpSignoffRequestStatus(str, Enum):
     OPEN = "OPEN"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
@@ -200,10 +200,10 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="ProtocolApprovalEvent.created_at.desc()",
     )
-    approval_requests: Mapped[List["ProtocolApprovalRequest"]] = relationship(
+    approval_requests: Mapped[List["GlpSignoffRequest"]] = relationship(
         back_populates="protocol",
         cascade="all, delete-orphan",
-        order_by="ProtocolApprovalRequest.created_at.desc()",
+        order_by="GlpSignoffRequest.created_at.desc()",
     )
 
 
@@ -495,8 +495,8 @@ class ProtocolApprovalEvent(Base, UUIDMixin, TimestampMixin):
     )
 
 
-class ProtocolApprovalRequest(Base, UUIDMixin, TimestampMixin):
-    __tablename__ = "protocol_approval_requests"
+class GlpSignoffRequest(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "glp_signoff_requests"
     __table_args__ = (
         CheckConstraint(
             "status IN ('OPEN','APPROVED','REJECTED','WITHDRAWN')",
@@ -614,10 +614,9 @@ class GlpSignoff(Base, UUIDMixin, TimestampMixin):
     signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     signature_image_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
-    # FK target will be renamed to glp_signoff_requests.id in Task 3.
     signoff_request_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey(
-            "protocol_approval_requests.id",
+            "glp_signoff_requests.id",
             use_alter=True,
             name="fk_glp_signoff_request",
         ),

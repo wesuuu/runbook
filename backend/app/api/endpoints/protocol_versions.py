@@ -12,8 +12,8 @@ from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import (ObjectPermission, ObjectType, OrganizationMember,
                             OrgRole, PermissionLevel, PrincipalType, User)
-from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
-                                ProtocolApprovalRequest, ProtocolVersion,
+from app.models.science import (GlpSignoffRequest, Project, Protocol,
+                                ProtocolApprovalEvent, ProtocolVersion,
                                 UnitOpDefinition)
 from app.schemas.science import (ApprovalActorRef, ApproveProtocolRequest,
                                  AwaitingApprovalItem,
@@ -348,7 +348,7 @@ async def submit_protocol_for_approval(
 
     for uid in requested:
         db.add(
-            ProtocolApprovalRequest(
+            GlpSignoffRequest(
                 protocol_id=protocol.id,
                 requested_user_id=uid,
                 requested_by_id=user.id,

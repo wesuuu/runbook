@@ -11,8 +11,8 @@ from app.core.security import create_access_token, hash_password
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             User)
-from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
-                                ProtocolApprovalRequest)
+from app.models.science import (GlpSignoffRequest, Project, Protocol,
+                                ProtocolApprovalEvent)
 
 
 async def _make_protocol(
@@ -152,8 +152,8 @@ async def test_submit_for_approval_happy_path(
     reqs = (
         (
             await db_session.execute(
-                select(ProtocolApprovalRequest).where(
-                    ProtocolApprovalRequest.protocol_id == proto.id
+                select(GlpSignoffRequest).where(
+                    GlpSignoffRequest.protocol_id == proto.id
                 )
             )
         )

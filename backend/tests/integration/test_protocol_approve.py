@@ -12,8 +12,8 @@ from app.core.security import create_access_token, hash_password
 from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             User)
-from app.models.science import (Project, Protocol, ProtocolApprovalEvent,
-                                ProtocolApprovalRequest)
+from app.models.science import (GlpSignoffRequest, Project, Protocol,
+                                ProtocolApprovalEvent)
 
 
 async def _make_pending_protocol(
@@ -33,7 +33,7 @@ async def _make_pending_protocol(
     await db.flush()
     if requested_user_id is not None:
         db.add(
-            ProtocolApprovalRequest(
+            GlpSignoffRequest(
                 protocol_id=proto.id,
                 requested_user_id=requested_user_id,
                 requested_by_id=creator_id,
@@ -131,8 +131,8 @@ async def test_approve_happy_path_via_project_perm(
     reqs = (
         (
             await db_session.execute(
-                select(ProtocolApprovalRequest).where(
-                    ProtocolApprovalRequest.protocol_id == proto.id
+                select(GlpSignoffRequest).where(
+                    GlpSignoffRequest.protocol_id == proto.id
                 )
             )
         )
