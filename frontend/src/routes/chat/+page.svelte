@@ -8,6 +8,12 @@
     import ProtocolImportModal from '$lib/components/modals/ProtocolImportModal.svelte';
     import { Button } from '$lib/components/ui/button';
     import { EmptyState } from '$lib/components/ui/empty-state';
+    import {
+        X,
+        FlaskConical, Sparkles, FileSearch, GitCompare,
+        Wrench, BookOpen, BarChart3, Bug, FilePlus,
+    } from 'lucide-svelte';
+    import { cn } from '$lib/utils';
     import { goto } from '$app/navigation';
     import { toast } from 'svelte-sonner';
     import { getCurrentOrg } from '$lib/auth.svelte';
@@ -22,6 +28,7 @@
         showSourcesForMessage, registerScrollFn, activateSkill,
         retryStalePending, dismissStalePending,
         getPendingApproval, isSubmittingApproval, submitApproval,
+        getActiveSkill, clearActiveSkill,
     } from '$lib/chat-store.svelte';
     import type { ChatMessage } from '$lib/schemas/chat';
     import { fade } from 'svelte/transition';
@@ -45,6 +52,27 @@
     const toolTrail = $derived(getToolTrail());
     const pendingApproval = $derived(getPendingApproval());
     const submittingApproval = $derived(isSubmittingApproval());
+    const activeSkill = $derived(getActiveSkill());
+
+    const skillIconMap: Record<string, typeof FlaskConical> = {
+        'flask-conical': FlaskConical,
+        'sparkles': Sparkles,
+        'file-search': FileSearch,
+        'file-plus': FilePlus,
+        'git-compare': GitCompare,
+        'wrench': Wrench,
+        'book-open': BookOpen,
+        'bar-chart-3': BarChart3,
+        'bug': Bug,
+    };
+
+    function getSkillIcon(name: string) {
+        return skillIconMap[name] ?? Sparkles;
+    }
+
+    function formatSkillName(name: string): string {
+        return name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
 
     const hasMessages = $derived(
         activeSession !== null && activeSession.messages.length > 0
@@ -405,6 +433,27 @@
 
             <!-- Input area -->
             <div class="border-t border-border/40 p-4 bg-card/30">
+                {#if activeSkill}
+                    {@const SkillIcon = getSkillIcon(activeSkill.icon)}
+                    <div class="mb-2 max-w-4xl mx-auto flex items-center gap-2">
+                        <div
+                            class="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs text-accent"
+                        >
+                            <SkillIcon class="h-3 w-3" />
+                            <span class="font-medium">
+                                {formatSkillName(activeSkill.name)}
+                            </span>
+                            <button
+                                type="button"
+                                class="ml-1 rounded hover:bg-accent/20 p-0.5 cursor-pointer transition-all duration-150"
+                                onclick={clearActiveSkill}
+                                aria-label="Clear active skill"
+                            >
+                                <X class="h-3 w-3" />
+                            </button>
+                        </div>
+                    </div>
+                {/if}
                 <div class="flex items-end gap-3 max-w-4xl mx-auto">
                     {#if hasMessages && skills.length > 0}
                         <ChatSkillButtons {skills} mode="dropdown" onactivate={activateSkill} />
@@ -414,13 +463,17 @@
                         value={messageInput}
                         oninput={(e) => setMessageInput(e.currentTarget.value)}
                         onkeydown={handleKeydown}
-                        placeholder="Ask about cell biology, protocols, experiments..."
-                        class="flex-1 resize-none rounded-xl border bg-background px-4 py-3 text-sm
-                            placeholder:text-muted-foreground focus:outline-none focus:ring-2
-                            min-h-[44px] max-h-[200px]
-                            {messageError
-                                ? 'border-red-500 focus:ring-red-500/30 focus:border-red-500'
-                                : 'border-border/60 focus:ring-primary/30 focus:border-primary/50'}"
+                        placeholder={activeSkill
+                            ? `Ask "${formatSkillName(activeSkill.name)}"…`
+                            : 'Ask about cell biology, protocols, experiments...'}
+                        class={cn(
+                            'flex-1 resize-none rounded-xl border bg-background px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none min-h-[44px] max-h-[200px]',
+                            messageError
+                                ? 'border-red-500 focus:ring-2 focus:ring-red-500/30 focus:border-red-500'
+                                : activeSkill
+                                    ? 'border-accent ring-1 ring-accent/30 focus:ring-accent/40'
+                                    : 'border-border/60 focus:ring-2 focus:ring-primary/30 focus:border-primary/50',
+                        )}
                         rows="1"
                         disabled={sending}
                     ></textarea>

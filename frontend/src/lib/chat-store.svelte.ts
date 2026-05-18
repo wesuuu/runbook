@@ -602,6 +602,9 @@ export async function sendMessage(): Promise<void> {
     } finally {
         resetLabelQueue();
         sending = false;
+        // Clear on error too — `done` already cleared on success, but errors
+        // would otherwise leave the badge stuck with no dismiss path.
+        activeSkill = null;
     }
 }
 
