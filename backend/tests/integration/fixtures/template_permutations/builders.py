@@ -139,6 +139,9 @@ def build_p1() -> BuiltPermutation:
             definitions="CIP = clean-in-place. PD = process development.",
             lot_number="LOT-2026-001",
             batch_number="BAT-7",
+            # F-0086: lot row is now gated on produces_lot; the kitchen-sink
+            # permutation exercises the "lot-producing run" branch.
+            produces_lot=True,
             revision_history=[
                 {"version_number": 1, "created_at": "2025-12-01",
                  "created_by": "Alice", "change_summary": "Initial release"},
@@ -196,8 +199,10 @@ def build_p1() -> BuiltPermutation:
                 "4. Execution: Unit Operations",
                 "5. Deviations and Process Comments",
                 "6. Final Disposition & Signatures",
-                # Run identifiers (run_name shows in Batch / Lot Number cell)
-                "Batch / Lot Number", "P1 Run",
+                # F-0086: lot row binds to lot_number and is gated on
+                # produces_lot=True. The cell now surfaces the lot number,
+                # not the run name.
+                "Batch / Lot Number", "LOT-2026-001",
                 # Notes appear in the Deviations section
                 "Robin", "Olivia",
                 # Step-execution table column captions
@@ -367,13 +372,16 @@ def build_p6() -> BuiltPermutation:
             is_role_based=True, roles_with_steps=roles,
             time_enabled=True, start_time="08:00",
             lot_number="LOT-2026-006",
+            # F-0086: lot row is gated on produces_lot — enable it so the
+            # Batch / Lot Number row renders with the lot number.
+            produces_lot=True,
         ),
-        # The GLP BR layout surfaces ``run_name`` (not ``lot_number``) in
-        # the Batch / Lot Number cell, so assert on the always-present
-        # section structure rather than the literal lot string.
+        # F-0086: lot row now binds to lot_number (not run_name) and is
+        # only visible when produces_lot=True.
         expected_on=[
             "Multi-event Approval",
             "Batch / Lot Number",
+            "LOT-2026-006",
             "6. Final Disposition & Signatures",
         ],
         expected_off=["1.0 Purpose", "Standard Operating Procedure"],

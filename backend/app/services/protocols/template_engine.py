@@ -1258,6 +1258,9 @@ def get_mock_context() -> dict[str, Any]:
     ctx["definitions"] = "CIP = clean-in-place. SOP = Standard Operating Procedure."
     ctx["lot_number"] = "LOT-DEMO-2026-001"
     ctx["batch_number"] = "BAT-DEMO-7"
+    # F-0086: demo a lot-producing run so the batch-record template's
+    # {%tr if produces_lot %}-gated lot row is exercised in previews.
+    ctx["produces_lot"] = True
     ctx["equipment_summary"] = [
         {
             "local_id": "E-001",
