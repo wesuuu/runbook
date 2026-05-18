@@ -97,5 +97,9 @@ async def test_default_sop_renders_with_approval_block(
 
     docx_bytes = render_to_docx(template_path, context)
     text = _docx_text(docx_bytes)
-    assert "Approval" in text
+    # F-0087: SOP renders per-role sign-off blocks keyed by GlpSignoff.role.
+    # The fixture creates a STUDY_DIRECTOR approval, so the Study Director
+    # block must surface the approver's name and CFR cite.
+    assert "Study Director" in text
     assert "Approver Alice" in text
+    assert "§58.33" in text

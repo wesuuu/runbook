@@ -107,6 +107,12 @@ def test_render_to_docx_swaps_initials_to_inline_image(tmp_path):
         "notes": [],
         "figures": [],
         "non_image_attachments": [],
+        # F-0087: BR template references {{ run.outcome }} and
+        # run.outcome_notes; build_context() emits {"run": {...}}, but this
+        # test constructs the context manually so seed an empty dict.
+        "run": {},
+        "signoffs": {},
+        "protocol_approvals": {},
     }
 
     docx_bytes = render_to_docx(template_path, context)

@@ -760,6 +760,25 @@ def render_to_docx(
         _swap(role.get("steps"))
         _swap(role.get("br_steps"))
 
+    # F-0087 — swap actual_value_block plain string to a RichText so newlines
+    # render as <w:br/> line breaks inside the cell. The template uses
+    # `{{r step.actual_value_block }}` which expects a RichText object.
+    def _swap_actual_value(steps_list):
+        for step in steps_list or []:
+            raw = step.get("actual_value_block")
+            if isinstance(raw, str) and raw:
+                rt = RichText()
+                for i, line in enumerate(raw.split("\n")):
+                    if i:
+                        rt.add("\a")  # RichText line break
+                    rt.add(line)
+                step["actual_value_block"] = rt
+
+    _swap_actual_value(context.get("steps"))
+    for role in context.get("roles", []) or []:
+        _swap_actual_value(role.get("steps"))
+        _swap_actual_value(role.get("br_steps"))
+
     # F-0066 — swap approval.signature_image_path to an InlineImage so
     # the template can render `{{ approval.signature_image }}`. Mirrors
     # the figure handling above.

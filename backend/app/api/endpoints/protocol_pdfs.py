@@ -169,10 +169,37 @@ async def _build_approval_context(
             "protocol_version": protocol.version_number,
         }
 
+    # F-0087 — build per-role `protocol_approvals.<role>` blocks for the new
+    # SOP / batch-record templates. Latest active APPROVED sign-off per role
+    # wins. Mirrors template_engine._signoff_to_block().
+    protocol_approvals: dict[str, dict] = {}
+    for so in rows:
+        if so.action != "APPROVED" or so.invalidated_at is not None:
+            continue
+        role_key = (so.role or "").lower()
+        if not role_key or role_key in protocol_approvals:
+            continue
+        signer = so.signer
+        if signer is not None:
+            name = signer.full_name or signer.email or ""
+            email = signer.email or ""
+        else:
+            name = "(deleted user)"
+            email = ""
+        protocol_approvals[role_key] = {
+            "name": name,
+            "email": email,
+            "signature_image": so.signature_image_path,
+            "attestation": so.attestation,
+            "signed_at": so.signed_at,
+            "initials": (name or "")[:2].upper(),
+        }
+
     return {
         "approval": approval,
         "approval_history": history,
         "unapproved_warning": unapproved_warning,
+        "protocol_approvals": protocol_approvals,
     }
 
 
