@@ -42,7 +42,8 @@ from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.equipment_context import build_equipment_context
-from app.services.protocols.template_engine import build_context, render_to_pdf
+from app.services.protocols.template_engine import (
+    assemble_signoff_context_args, build_context, render_to_pdf)
 from app.services.protocols.validation import assert_no_branch_errors
 from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
 from app.services.runs.overrides import (apply_node_overrides,
@@ -802,18 +803,35 @@ async def get_run_sop_pdf(
             "unapproved_warning": False,
         }
 
+    # F-0087: GLP sign-offs, run outcome, equipment calibration metadata.
+    glp_args = await assemble_signoff_context_args(db, run=run_obj, protocol=proto)
+
     context, unresolved = build_context(
         protocol_name=protocol_name,
         protocol_description=protocol_description,
         run_name=run_obj.name,
+        run_status=run_obj.status,
+        started_at=(run_obj.started_at.isoformat() if run_obj.started_at else None),
+        completed_at=(
+            run_obj.completed_at.isoformat() if run_obj.completed_at else None
+        ),
         version_number=proto_version,
         created_at=proto_modified or "",
         roles_with_steps=roles_with_steps,
         flat_steps=flat_steps,
         is_role_based=is_role_based,
         equipment_context=equipment_ctx,
+        execution_data=run_obj.execution_data or {},
+        **glp_args,
     )
-    context.update(approval_ctx)
+    # Legacy approval context (F-0066) keeps approval_history /
+    # unapproved_warning; the build_context-supplied ``approval`` alias
+    # is preserved when no legacy event exists.
+    legacy_approval = approval_ctx.get("approval")
+    if legacy_approval is not None:
+        context["approval"] = legacy_approval
+    context["approval_history"] = approval_ctx.get("approval_history", [])
+    context["unapproved_warning"] = approval_ctx.get("unapproved_warning", False)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     if unresolved:

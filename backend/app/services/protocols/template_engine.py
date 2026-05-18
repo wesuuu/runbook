@@ -5,7 +5,8 @@ Pipeline: docxtpl fills .docx → LibreOffice headless converts to PDF.
 
 import subprocess
 import tempfile
-from datetime import datetime
+import uuid
+from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,11 @@ KNOWN_VARIABLES = {
     "approval",
     "approval_history",
     "unapproved_warning",
+    # GLP sign-offs (F-0087)
+    "signoffs",
+    "protocol_approvals",
+    "run",
+    "equipment",
 }
 
 
@@ -99,6 +105,76 @@ def _resolve_initials(
     return _get_initials(name)
 
 
+def _signoff_to_block(signoff: Any, signer: Any) -> dict[str, Any]:
+    """Convert a GlpSignoff + its signer User to a template-friendly dict.
+
+    Mirrors the shape consumed by the SOP/batch-record templates:
+    ``{name, email, signature_image, attestation, signed_at, initials}``.
+    ``signer`` may be ``None`` if the user row was deleted; fall back to a
+    deleted-user placeholder so templates keep rendering.
+    """
+    if signer is None:
+        name = "(deleted user)"
+        email = ""
+    else:
+        name = getattr(signer, "full_name", None) or getattr(signer, "email", "")
+        email = getattr(signer, "email", "") or ""
+    return {
+        "name": name,
+        "email": email,
+        "signature_image": getattr(signoff, "signature_image_path", None),
+        "attestation": getattr(signoff, "attestation", None),
+        "signed_at": getattr(signoff, "signed_at", None),
+        "initials": (name or "")[:2].upper(),
+    }
+
+
+def _calibration_status(equipment: Any) -> str:
+    """Return "OK" / "OVERDUE" / "UNKNOWN" for an Equipment row.
+
+    ``Equipment.next_calibration_date`` is a ``date`` (not datetime); compare
+    against ``date.today()`` UTC. Missing dates yield ``"UNKNOWN"``.
+    """
+    due = getattr(equipment, "next_calibration_date", None)
+    if not due:
+        return "UNKNOWN"
+    today_utc = datetime.now(timezone.utc).date()
+    return "OVERDUE" if due < today_utc else "OK"
+
+
+def _stacked_actual_value(step_exec: dict[str, Any]) -> str:
+    """Render a plain-text "Target / Recorded / initials • ts" block.
+
+    Templates may render this via ``{{r step.actual_value_block }}`` once
+    RichText support lands; for now the plain string is forwards-compatible.
+    """
+    if not step_exec:
+        return ""
+    results = step_exec.get("results") or {}
+    target = step_exec.get("target", "")
+    unit = step_exec.get("unit", "")
+    value = step_exec.get("value")
+    if value is None and results:
+        # Single-value steps store the result under whichever key the schema
+        # exposes; fall back to the first non-empty value.
+        for v in results.values():
+            if v not in (None, ""):
+                value = v
+                break
+    if value is None:
+        value = ""
+    delta = step_exec.get("delta_flag", "")
+    initials = step_exec.get("initials", "")
+    ts = step_exec.get("completed_at", "")
+    lines = []
+    if target != "":
+        lines.append(f"Target: {target} {unit}".rstrip())
+    lines.append(f"Recorded: {value} {unit} {delta}".rstrip())
+    if initials or ts:
+        lines.append(f"{initials} • {ts}".strip(" •"))
+    return "\n".join(lines)
+
+
 def build_context(
     *,
     protocol_name: str = "",
@@ -122,6 +198,14 @@ def build_context(
     attachments: list[dict[str, Any]] | None = None,
     storage: FileStorageService | None = None,
     equipment_context: dict[str, str] | None = None,
+    # F-0087 GLP additions — all optional and pre-resolved by the caller
+    # via assemble_signoff_context_args (keeps build_context sync).
+    outcome: str | None = None,
+    outcome_notes: str | None = None,
+    signoffs: list[Any] | None = None,
+    protocol_signoffs: list[Any] | None = None,
+    signer_lookup: dict[Any, Any] | None = None,
+    equipment_rows: list[Any] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Assemble the Jinja2 context dict for template rendering.
 
@@ -130,6 +214,11 @@ def build_context(
     resolved across all step renders. Pass ``equipment_context`` to make
     ``{{<local_id>_name}}`` / ``{{<local_id>_description}}`` resolvable;
     per-step params still win on key collision.
+
+    GLP context (F-0087) is layered via the ``signoffs``,
+    ``protocol_signoffs``, ``equipment_rows``, ``signer_lookup``,
+    ``outcome`` and ``outcome_notes`` kwargs — all optional and gathered
+    by :func:`assemble_signoff_context_args` so this function stays sync.
     """
     exec_data = execution_data or {}
     umap = user_map or {}
@@ -138,9 +227,7 @@ def build_context(
     unresolved_all: list[str] = []
     _seen_unresolved: set[str] = set()
 
-    def _merge_and_render(
-        desc: str, params: dict[str, Any] | None
-    ) -> str:
+    def _merge_and_render(desc: str, params: dict[str, Any] | None) -> str:
         merged = {**eq_ctx, **(params or {})}
         rendered, unresolved = _render_template(desc, merged)
         for tok in unresolved:
@@ -309,6 +396,13 @@ def build_context(
                 parts.append(figure_refs)
             notes_display = "  ".join(parts)
 
+        # F-0087: stacked Target/Recorded/initials block + edit reason for
+        # GLP-compliant batch record rows. ``actual_value_block`` is a plain
+        # string today (templates can switch to {{r ...}} when they add
+        # RichText); ``edit_reason`` surfaces GMP-style change rationale.
+        actual_value_block = _stacked_actual_value(sd)
+        edit_reason = sd.get("edit_reason") or sd.get("change_reason")
+
         step_ctx = {
             "_step_id": step_id,
             "name": step.get("name", ""),
@@ -320,6 +414,8 @@ def build_context(
             "has_multi_params": len(editable) > 1,
             "single_value": single_value,
             "value_display": value_display,
+            "actual_value_block": actual_value_block,
+            "edit_reason": edit_reason,
             "initials": initials,
             "_initials_user_id": initials_user_id,
             "_initials_name": completer_name,
@@ -508,28 +604,117 @@ def build_context(
             protocol_subtitle.add("\a")
         protocol_subtitle.add(protocol_description, size=Pt(10), color="#64748B")
 
+    # ── F-0087 GLP context ──
+    # Build {role_lower: block} maps from the pre-resolved signoff lists.
+    # ``signer_lookup`` carries the User object for each signoff so the
+    # caller (which holds the AsyncSession) controls all DB I/O.
+    lookup = signer_lookup or {}
+
+    def _resolve_signer(s: Any) -> Any:
+        # Prefer the SQLAlchemy relationship when eagerly loaded; fall
+        # back to the explicit lookup keyed by signer_id.
+        try:
+            existing = getattr(s, "signer", None)
+        except Exception:
+            existing = None
+        if existing is not None:
+            return existing
+        return lookup.get(getattr(s, "signer_id", None))
+
+    run_signoffs_map: dict[str, dict[str, Any]] = {}
+    for s in signoffs or []:
+        role = (getattr(s, "role", "") or "").lower()
+        if role:
+            run_signoffs_map[role] = _signoff_to_block(s, _resolve_signer(s))
+
+    protocol_approvals_map: dict[str, dict[str, Any]] = {}
+    for s in protocol_signoffs or []:
+        role = (getattr(s, "role", "") or "").lower()
+        if role:
+            protocol_approvals_map[role] = _signoff_to_block(s, _resolve_signer(s))
+
+    # Back-compat: legacy templates reference ``approval.approver_name``.
+    # Prefer QAU > STUDY_DIRECTOR > SPONSOR so the strongest signature is
+    # the one rendered when the template only shows a single block.
+    approval_alias: dict[str, Any] | None = None
+    legacy_source = (
+        protocol_approvals_map.get("qau")
+        or protocol_approvals_map.get("study_director")
+        or protocol_approvals_map.get("sponsor")
+    )
+    if legacy_source:
+        approval_alias = {
+            "approver_name": legacy_source["name"],
+            "approver_email": legacy_source["email"],
+            "signature_image": legacy_source["signature_image"],
+            "signature_image_path": legacy_source["signature_image"],
+            "signature_statement": legacy_source["attestation"],
+            "approved_at": legacy_source["signed_at"],
+            "protocol_version": version_number,
+        }
+
+    run_block = {
+        "outcome": outcome,
+        "outcome_notes": outcome_notes,
+        "started_at": started_at or "",
+        "completed_at": completed_at or "",
+        "name": run_name or "",
+        "status": run_status or "",
+    }
+
+    # Equipment rows for the GLP "Equipment used" appendix. Each row exposes
+    # serial number + calibration status so the template can flag overdue
+    # instruments.
+    equipment_list: list[dict[str, Any]] = []
+    for eq in equipment_rows or []:
+        equipment_list.append(
+            {
+                "id": getattr(eq, "id", None),
+                "name": getattr(eq, "name", "") or "",
+                "description": getattr(eq, "description", "") or "",
+                "equipment_type": getattr(eq, "equipment_type", None),
+                "location": getattr(eq, "location", None),
+                "serial_number": getattr(eq, "serial_number", None),
+                "calibration_due_at": getattr(eq, "next_calibration_date", None),
+                "calibration_status": _calibration_status(eq),
+            }
+        )
+
+    ctx_out: dict[str, Any] = {
+        "protocol_name": protocol_name,
+        "protocol_subtitle": protocol_subtitle,
+        "protocol_description": protocol_description,
+        "version_number": version_number,
+        "created_at": created_at,
+        "run_name": run_name or "",
+        "run_status": run_status or "",
+        "started_at": started_at or "",
+        "completed_at": completed_at or "",
+        "project_name": project_name,
+        "organization_name": organization_name,
+        "is_role_based": is_role_based,
+        "page_break": RichText("\f"),
+        "steps": step_contexts,
+        "roles": role_contexts,
+        "notes": note_contexts,
+        "figures": figure_contexts,
+        "non_image_attachments": non_image_att_contexts,
+        "_user_signatures": sigmap,
+        # F-0087 additions
+        "signoffs": run_signoffs_map,
+        "protocol_approvals": protocol_approvals_map,
+        "run": run_block,
+        "equipment": equipment_list,
+    }
+    if approval_alias is not None:
+        # Only set when a protocol sign-off exists — preserves the
+        # endpoint-level _build_approval_context output when callers
+        # ``ctx.update(approval_ctx)`` after building (the legacy path
+        # has approver_name/approver_email/etc. with the same keys).
+        ctx_out["approval"] = approval_alias
+
     return (
-        {
-            "protocol_name": protocol_name,
-            "protocol_subtitle": protocol_subtitle,
-            "protocol_description": protocol_description,
-            "version_number": version_number,
-            "created_at": created_at,
-            "run_name": run_name or "",
-            "run_status": run_status or "",
-            "started_at": started_at or "",
-            "completed_at": completed_at or "",
-            "project_name": project_name,
-            "organization_name": organization_name,
-            "is_role_based": is_role_based,
-            "page_break": RichText("\f"),
-            "steps": step_contexts,
-            "roles": role_contexts,
-            "notes": note_contexts,
-            "figures": figure_contexts,
-            "non_image_attachments": non_image_att_contexts,
-            "_user_signatures": sigmap,
-        },
+        ctx_out,
         unresolved_all,
     )
 
@@ -689,6 +874,100 @@ async def resolve_default_template_id(
         )
     )
     return result.scalar_one_or_none()
+
+
+# ── F-0087: async helper that pre-resolves the new GLP context vars ──
+
+
+async def assemble_signoff_context_args(
+    db: Any,
+    *,
+    run: Any = None,
+    protocol: Any = None,
+) -> dict[str, Any]:
+    """Gather GLP sign-off / equipment / outcome data for build_context.
+
+    Returns a dict suitable for ``**kwargs`` splatting into the sync
+    :func:`build_context`. Splits DB I/O from the pure-Python context
+    shaping so callers — most of which already pre-resolve protocol,
+    project, attachments and execution_data synchronously — don't have
+    to be turned async.
+
+    Looks up active GLP sign-offs on the run and/or its protocol,
+    resolves each signer User, materialises Equipment rows for the
+    run/protocol graph so per-row ``serial_number`` /
+    ``calibration_due_at`` are available, and surfaces
+    ``run.outcome`` / ``run.outcome_notes`` when present.
+    """
+    from sqlalchemy import select
+
+    from app.models.iam import User
+    from app.models.science import Equipment
+    from app.services.signoffs.queries import list_active_signoffs
+
+    args: dict[str, Any] = {}
+    signer_ids: set[Any] = set()
+    signer_lookup: dict[Any, User] = {}
+
+    if run is not None:
+        run_signoffs = list(await list_active_signoffs(db, "run", run.id))
+        args["signoffs"] = run_signoffs
+        for s in run_signoffs:
+            if s.signer_id:
+                signer_ids.add(s.signer_id)
+        args["outcome"] = getattr(run, "outcome", None)
+        args["outcome_notes"] = getattr(run, "outcome_notes", None)
+
+    proto_target = protocol if protocol is not None else getattr(run, "protocol", None)
+    if proto_target is not None:
+        proto_signoffs = list(
+            await list_active_signoffs(db, "protocol", proto_target.id)
+        )
+        args["protocol_signoffs"] = proto_signoffs
+        for s in proto_signoffs:
+            if s.signer_id:
+                signer_ids.add(s.signer_id)
+
+    # Load missing signers in one round-trip. ``list_active_signoffs``
+    # selectinloads the signer on each row, but explicit lookup keeps the
+    # sync helper independent of relationship loading state and tolerates
+    # detached instances inside test SAVEPOINTs.
+    if signer_ids:
+        result = await db.execute(select(User).where(User.id.in_(signer_ids)))
+        for u in result.scalars().all():
+            signer_lookup[u.id] = u
+    args["signer_lookup"] = signer_lookup
+
+    # Materialise Equipment rows referenced by the run/protocol graph so
+    # the template can render serial numbers and calibration status. The
+    # graph stores equipment_id strings on each unit-op node.
+    graph = None
+    if run is not None:
+        graph = run.graph or None
+    elif protocol is not None:
+        graph = protocol.graph or None
+
+    eq_uuids: set[uuid.UUID] = set()
+    if graph:
+        for node in graph.get("nodes") or []:
+            if node.get("type") != "unitOp":
+                continue
+            for eq in (node.get("data") or {}).get("equipment") or []:
+                eq_id = eq.get("equipment_id")
+                if not eq_id:
+                    continue
+                try:
+                    eq_uuids.add(uuid.UUID(eq_id))
+                except (ValueError, TypeError):
+                    continue
+
+    if eq_uuids:
+        result = await db.execute(select(Equipment).where(Equipment.id.in_(eq_uuids)))
+        args["equipment_rows"] = list(result.scalars().all())
+    else:
+        args["equipment_rows"] = []
+
+    return args
 
 
 # ── Mock data for template preview ──
