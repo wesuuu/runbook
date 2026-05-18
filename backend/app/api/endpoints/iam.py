@@ -14,20 +14,16 @@ from app.core.deps import (get_current_user, get_or_404,
                            require_active_subscription)
 from app.core.security import generate_verification_token
 from app.db.session import get_db
-from app.models.execution import AuditLog
 from app.models.iam import (_ALLOWED_ORG_ROLES, Invitation, InvitationStatus,
                             ObjectPermission, ObjectType, Organization,
                             OrganizationMember, OrgRole, PermissionLevel, Team,
                             TeamMember, TeamRole, User, has_org_role)
-from app.models.science import Equipment
 from app.schemas.iam import (InvitationCreate, InvitationResponse,
                              OrganizationCreate, OrganizationResponse,
                              OrgMemberAdd, OrgMemberResponse, OrgMemberUpdate,
                              PermissionGrant, PermissionResponse, TeamCreate,
                              TeamMemberAdd, TeamMemberResponse, TeamResponse,
                              UserSearchResponse)
-from app.schemas.science import (EquipmentCreate, EquipmentResponse,
-                                 EquipmentUpdate)
 from app.services.billing import seat_limits
 from app.services.core.permissions import check_permission
 
@@ -988,133 +984,3 @@ async def list_permissions(
     return result.scalars().all()
 
 
-# --- Equipment ---
-
-
-@router.get(
-    "/organizations/{org_id}/equipment",
-    response_model=List[EquipmentResponse],
-)
-async def list_equipment(
-    org_id: UUID,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all equipment in an organization."""
-    await _require_org_member(db, user.id, org_id)
-
-    result = await db.execute(
-        select(Equipment).where(Equipment.organization_id == org_id)
-    )
-    return result.scalars().all()
-
-
-@router.post(
-    "/organizations/{org_id}/equipment",
-    response_model=EquipmentResponse,
-    status_code=201,
-)
-async def create_equipment(
-    org_id: UUID,
-    body: EquipmentCreate,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_active_subscription()),
-):
-    """Create equipment in an organization. Any org member can create."""
-    await _require_org_member(db, user.id, org_id)
-
-    equipment = Equipment(
-        organization_id=org_id,
-        name=body.name,
-        description=body.description,
-        equipment_type=body.equipment_type,
-        location=body.location,
-    )
-    db.add(equipment)
-    await db.flush()
-
-    # Log to audit trail
-    audit = AuditLog(
-        entity_type="equipment",
-        entity_id=equipment.id,
-        action="create",
-        actor_id=user.id,
-        changes={"name": body.name},
-    )
-    db.add(audit)
-    await db.commit()
-    await db.refresh(equipment)
-    return equipment
-
-
-@router.put(
-    "/equipment/{equipment_id}",
-    response_model=EquipmentResponse,
-)
-async def update_equipment(
-    equipment_id: UUID,
-    body: EquipmentUpdate,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_active_subscription()),
-):
-    """Update equipment. Any org member can update."""
-    equipment = await get_or_404(db, Equipment, equipment_id)
-
-    await _require_org_member(db, user.id, equipment.organization_id)
-
-    changes = {}
-    if body.name is not None:
-        changes["name"] = body.name
-        equipment.name = body.name
-    if body.description is not None:
-        changes["description"] = body.description
-        equipment.description = body.description
-    if body.equipment_type is not None:
-        changes["equipment_type"] = body.equipment_type
-        equipment.equipment_type = body.equipment_type
-    if body.location is not None:
-        changes["location"] = body.location
-        equipment.location = body.location
-
-    # Log to audit trail
-    if changes:
-        audit = AuditLog(
-            entity_type="equipment",
-            entity_id=equipment.id,
-            action="update",
-            actor_id=user.id,
-            changes=changes,
-        )
-        db.add(audit)
-
-    await db.commit()
-    await db.refresh(equipment)
-    return equipment
-
-
-@router.delete("/equipment/{equipment_id}")
-async def delete_equipment(
-    equipment_id: UUID,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_active_subscription()),
-):
-    """Delete equipment. Any org member can delete."""
-    equipment = await get_or_404(db, Equipment, equipment_id)
-
-    await _require_org_member(db, user.id, equipment.organization_id)
-
-    # Log to audit trail before deleting
-    audit = AuditLog(
-        entity_type="equipment",
-        entity_id=equipment.id,
-        action="delete",
-        actor_id=user.id,
-        changes={"name": equipment.name},
-    )
-    db.add(audit)
-    await db.delete(equipment)
-    await db.commit()
-    return {"ok": True}
