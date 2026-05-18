@@ -5,6 +5,7 @@ export const SiteSchema = z.object({
     organization_id: z.string(),
     name: z.string(),
     description: z.string().nullable().optional(),
+    is_default: z.boolean().default(false),
     archived_at: z.string().nullable().optional(),
     archived_by_id: z.string().nullable().optional(),
     archive_reason: z.string().nullable().optional(),

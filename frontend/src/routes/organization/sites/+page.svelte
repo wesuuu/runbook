@@ -57,13 +57,7 @@
     const activeSite = $derived(sites.find((s) => s.id === activeId) ?? null);
     const adminFlag = $derived(getCurrentOrgRoles().includes('ADMIN'));
     const activeSiteManageable = $derived(activeSite ? canManageSite(activeSite.id) : false);
-    // Default-site protection (decision: default site cannot be archived). The
-    // `is_default` field is server-driven and may not always be present in the
-    // Zod schema; fall back to `false` so the button stays enabled unless the
-    // server explicitly flags it.
-    const activeSiteIsDefault = $derived(
-        Boolean((activeSite as unknown as { is_default?: boolean } | null)?.is_default),
-    );
+    const activeSiteIsDefault = $derived(Boolean(activeSite?.is_default));
 
     const visibleEquipment = $derived(
         equipment
