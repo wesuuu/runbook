@@ -1,7 +1,5 @@
 """Unit tests for the GlpSignoff data model and its enums."""
 
-from datetime import date
-
 from sqlalchemy import Date
 
 from app.models.science import (Equipment, GlpRole, GlpSignoffAction, Run,

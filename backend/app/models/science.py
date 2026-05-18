@@ -1,10 +1,11 @@
 import uuid
 from datetime import date, datetime
-from enum import Enum as _PyEnum
+from enum import Enum
 from typing import Any, List, Optional
 
-from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, Enum,
-                        ForeignKey, Index, Integer, String, Text,
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy import (ForeignKey, Index, Integer, String, Text,
                         UniqueConstraint, desc, func, text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -42,7 +43,7 @@ class ProtocolApprovalRequestStatus(str, Enum):
     WITHDRAWN = "WITHDRAWN"
 
 
-class GlpRole(str, _PyEnum):
+class GlpRole(str, Enum):
     """21 CFR Part 58 roles used across protocol approval and run sign-off."""
 
     SPONSOR = "SPONSOR"  # §58.10, §58.120(a)
@@ -51,13 +52,13 @@ class GlpRole(str, _PyEnum):
     OPERATOR = "OPERATOR"  # §58.29
 
 
-class GlpSignoffAction(str, _PyEnum):
+class GlpSignoffAction(str, Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     REQUESTED_CHANGES = "REQUESTED_CHANGES"
 
 
-class RunOutcome(str, _PyEnum):
+class RunOutcome(str, Enum):
     COMPLETED_NORMAL = "COMPLETED_NORMAL"
     COMPLETED_WITH_DEVIATIONS = "COMPLETED_WITH_DEVIATIONS"
     ABORTED = "ABORTED"
@@ -262,7 +263,7 @@ class Run(Base, UUIDMixin, TimestampMixin):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    outcome: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    outcome: Mapped[Optional[RunOutcome]] = mapped_column(String, nullable=True)
     outcome_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
