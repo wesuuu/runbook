@@ -2,6 +2,7 @@
     import { api } from '$lib/api';
     import { Button } from '$lib/components/ui/button';
     import { Switch } from '$lib/components/ui/switch';
+    import * as Tooltip from '$lib/components/ui/tooltip';
 
     interface ExperimentOption {
         id: string;
@@ -159,7 +160,23 @@
     <div class="rounded-lg border border-border bg-card p-4 space-y-3">
         <div class="flex items-start justify-between gap-4">
             <div>
-                <span class="text-sm font-medium text-foreground">This run produces a lot</span>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-sm font-medium text-foreground">This run produces a lot</span>
+                    <Tooltip.Provider delayDuration={150}>
+                        <Tooltip.Root>
+                            <Tooltip.Trigger
+                                type="button"
+                                aria-label="What is a lot?"
+                                class="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content class="max-w-xs text-left">
+                                A <strong>lot</strong> is a traceability unit assigned to finished material. One batch may yield multiple lots (different fill sizes, stability conditions), or multiple batches may be combined into a single lot. Toggle this on only when the run produces a manufacturing lot.
+                            </Tooltip.Content>
+                        </Tooltip.Root>
+                    </Tooltip.Provider>
+                </div>
                 <p class="text-xs text-muted-foreground mt-1">
                     Designate this run as the producer of a manufacturing lot.
                 </p>
@@ -213,9 +230,25 @@
     </div>
 
     <div class="field">
-        <label for="run-batch" class="field-label">
-            Batch number <span class="optional">(optional)</span>
-        </label>
+        <div class="flex items-center gap-1.5">
+            <label for="run-batch" class="field-label">
+                Batch number <span class="optional">(optional)</span>
+            </label>
+            <Tooltip.Provider delayDuration={150}>
+                <Tooltip.Root>
+                    <Tooltip.Trigger
+                        type="button"
+                        aria-label="What is a batch?"
+                        class="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content class="max-w-xs text-left">
+                        A <strong>batch</strong> is the output of a single execution of the manufacturing process (e.g., one fermenter run). Under GMP, batch and lot are distinct: one batch can yield multiple lots, and multiple batches can be combined into a single lot.
+                    </Tooltip.Content>
+                </Tooltip.Root>
+            </Tooltip.Provider>
+        </div>
         <input
             id="run-batch"
             type="text"

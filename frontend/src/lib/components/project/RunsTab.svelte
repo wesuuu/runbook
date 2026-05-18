@@ -134,19 +134,22 @@
     rowClass={(r) => selectedRunIds.has(r.id) ? 'bg-blue-50/50' : ''}
 >
     {#snippet toolbar()}
-        <button
+        <Button
             type="button"
             data-testid="lot-producer-filter"
-            onclick={() => { lotProducerFilter = !lotProducerFilter; }}
+            size="sm"
+            rounded="full"
+            variant={lotProducerFilter ? 'default' : 'outline'}
             class={lotProducerFilter
-                ? 'inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium'
-                : 'inline-flex items-center gap-1 rounded-full border border-border text-foreground/70 hover:bg-muted px-2.5 py-1 text-xs font-medium'}
+                ? 'bg-primary/10 text-primary hover:bg-primary/15 shadow-none text-xs'
+                : 'text-foreground/70 text-xs'}
+            onclick={() => { lotProducerFilter = !lotProducerFilter; }}
         >
             Lot producer only
             {#if lotProducerFilter}
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
             {/if}
-        </button>
+        </Button>
         {#if !hideExportColumn && selectedRunIds.size > 0}
             <Button
                 size="sm"

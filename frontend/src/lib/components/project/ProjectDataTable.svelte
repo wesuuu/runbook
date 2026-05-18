@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { Snippet } from 'svelte';
     import { flip } from 'svelte/animate';
+    import { fade } from 'svelte/transition';
     import { compareValues, sortIndicator, type SortDir } from './projectUtils';
     import { Button } from '$lib/components/ui/button';
 
@@ -149,8 +150,14 @@
 {:else}
     <!-- Mobile card view -->
     <div class="sm:hidden divide-y divide-slate-100 px-4">
-        {#each paginatedItems() as item}
-            {@render mobileCard(item)}
+        {#each paginatedItems() as item (item.id)}
+            <div
+                in:fade={{ duration: 200 }}
+                out:fade={{ duration: 150 }}
+                animate:flip={{ duration: 250 }}
+            >
+                {@render mobileCard(item)}
+            </div>
         {/each}
     </div>
     <!-- Desktop table view -->
@@ -187,6 +194,8 @@
                 <tr
                     class="border-b border-slate-50 transition-colors hover:bg-slate-50 {onRowClick ? 'cursor-pointer' : ''} {rowClass ? rowClass(item) : ''}"
                     onclick={onRowClick ? () => onRowClick(item) : undefined}
+                    in:fade={{ duration: 200 }}
+                    out:fade={{ duration: 150 }}
                     animate:flip={{ duration: 250 }}
                 >
                     {@render cells(item)}

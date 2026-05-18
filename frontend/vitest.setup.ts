@@ -8,9 +8,13 @@ import { cleanup } from '@testing-library/svelte';
 if (typeof Element !== 'undefined' && !Element.prototype.animate) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (Element.prototype as any).animate = function animateStub() {
-        return {
+        const animation: any = {
             cancel: () => {},
-            finish: () => {},
+            finish: () => {
+                if (typeof animation.onfinish === 'function') {
+                    animation.onfinish();
+                }
+            },
             play: () => {},
             pause: () => {},
             reverse: () => {},
@@ -31,6 +35,13 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
             persist: () => {},
             updatePlaybackRate: () => {},
         };
+        // Fire onfinish on next microtask so Svelte's transition cleanup runs.
+        queueMicrotask(() => {
+            if (typeof animation.onfinish === 'function') {
+                animation.onfinish();
+            }
+        });
+        return animation;
     };
 }
 
