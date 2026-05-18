@@ -359,3 +359,81 @@ async def test_upload_attachment_member_forbidden(
         files={"file": ("test.pdf", b"%PDF-stub", "application/pdf")},
     )
     assert resp.status_code == 403
+
+
+# ── delete attachment ─────────────────────────────────────────────────────────
+
+
+async def test_delete_attachment_admin(
+    authed_admin_client: AsyncClient,
+    db_session,
+    sample_equipment_attachment,
+):
+    """ADMIN can delete an existing attachment; row is removed from DB."""
+    from app.models.science import EquipmentAttachment
+
+    att_id = str(sample_equipment_attachment.id)
+    resp = await authed_admin_client.delete(f"/equipment/attachments/{att_id}")
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": True}
+    # Verify the row is gone
+    still_there = await db_session.get(
+        EquipmentAttachment, sample_equipment_attachment.id
+    )
+    assert still_there is None
+
+
+async def test_delete_attachment_not_found(
+    authed_admin_client: AsyncClient,
+):
+    """Unknown attachment id → 404."""
+    import uuid as _uuid
+
+    resp = await authed_admin_client.delete(f"/equipment/attachments/{_uuid.uuid4()}")
+    assert resp.status_code == 404
+
+
+async def test_delete_attachment_cross_org_returns_404(
+    authed_admin_client: AsyncClient,
+    db_session,
+    second_org,
+    second_user,
+    other_org_site,
+):
+    """Attachment belonging to another org → 404 (not 403)."""
+    from app.models.science import Equipment, EquipmentAttachment
+
+    eq = Equipment(
+        organization_id=second_org.id,
+        name="Other Org Equip",
+        site_id=other_org_site.id,
+        created_by_id=second_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    att = EquipmentAttachment(
+        equipment_id=eq.id,
+        file_path=(f"{second_org.id}/equipment/{eq.id}/other.pdf"),
+        original_filename="other.pdf",
+        mime_type="application/pdf",
+        size_bytes=10,
+        uploaded_by_id=second_user.id,
+    )
+    db_session.add(att)
+    await db_session.commit()
+    await db_session.refresh(att)
+
+    resp = await authed_admin_client.delete(f"/equipment/attachments/{att.id}")
+    assert resp.status_code == 404
+
+
+async def test_delete_attachment_member_forbidden(
+    authed_member_client: AsyncClient,
+    sample_equipment_attachment,
+):
+    """Plain MEMBER (no SITE_MANAGER, no ADMIN) cannot delete — 403."""
+    resp = await authed_member_client.delete(
+        f"/equipment/attachments/{sample_equipment_attachment.id}"
+    )
+    assert resp.status_code == 403

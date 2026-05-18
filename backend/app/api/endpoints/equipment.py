@@ -53,6 +53,26 @@ async def list_tags_endpoint(
     return await list_distinct_tags(db, user.selected_org_id)
 
 
+# ── attachment delete (registered before /{equipment_id} to avoid shadowing) ──
+
+
+@router.delete("/attachments/{attachment_id}")
+async def delete_attachment_endpoint(
+    attachment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(_require_site_manager_or_admin),
+):
+    att = await db.get(EquipmentAttachment, attachment_id)
+    if att is None:
+        raise HTTPException(404)
+    eq = await eq_svc.get_equipment(db, att.equipment_id)
+    if eq.organization_id != user.selected_org_id:
+        raise HTTPException(404)
+    await att_svc.remove_attachment(db, att, actor_id=user.id)
+    return {"deleted": True}
+
+
 # ── list / detail ──────────────────────────────────────────────────────────────
 
 
