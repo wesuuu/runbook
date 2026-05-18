@@ -698,3 +698,78 @@ async def grantee_user(db_session, test_org) -> User:
     )
     await db_session.flush()
     return user
+
+
+@pytest_asyncio.fixture
+async def default_site_id(db_session, test_org) -> str:
+    """ID of the auto-seeded Default Site for test_org."""
+    from app.services.sites.crud import list_sites
+    from app.services.sites.defaults import DEFAULT_SITE_NAME
+
+    sites = await list_sites(db_session, test_org.id)
+    for s in sites:
+        if s.name == DEFAULT_SITE_NAME:
+            return str(s.id)
+    raise RuntimeError("Default Site not seeded for test_org")
+
+
+@pytest_asyncio.fixture
+async def member_owned_equipment_id(
+    db_session, test_org, test_user, managed_site
+) -> str:
+    """Equipment on `managed_site` (which `site_manager_user` has a grant on).
+
+    Used by tests where SITE_MANAGER with grant should be authorized for
+    restricted edits, but the equipment was created by any member."""
+    from app.models.science import Equipment
+
+    eq = Equipment(
+        organization_id=test_org.id,
+        name="Member Owned",
+        site_id=managed_site.id,
+        created_by_id=test_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    return str(eq.id)
+
+
+@pytest_asyncio.fixture
+async def equipment_on_unmanaged_site_id(
+    db_session, test_org, test_user, unmanaged_site
+) -> str:
+    """Equipment on a site nobody has a grant on (other than ADMINs)."""
+    from app.models.science import Equipment
+
+    eq = Equipment(
+        organization_id=test_org.id,
+        name="Unmanaged Site Equip",
+        site_id=unmanaged_site.id,
+        created_by_id=test_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    return str(eq.id)
+
+
+@pytest_asyncio.fixture
+async def archived_equipment_id(db_session, test_org, test_user, managed_site) -> str:
+    """An archived equipment row to test the read-only guard."""
+    from datetime import datetime, timezone
+
+    from app.models.science import Equipment
+
+    eq = Equipment(
+        organization_id=test_org.id,
+        name="Archived",
+        site_id=managed_site.id,
+        created_by_id=test_user.id,
+        archived_at=datetime.now(timezone.utc),
+        archived_by_id=test_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    return str(eq.id)

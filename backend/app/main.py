@@ -424,12 +424,12 @@ async def health_check():
 
 
 from app.api.endpoints import (admin, ai, auth, batch_record_import, billing,
-                               chat, dashboard, experiments, export_data, iam,
-                               internal, legal, library, notifications,
-                               offline, onboarding, project_members, projects,
-                               protocol_pdfs, protocol_versions, protocols,
-                               runs, sites, sync, template_convert, templates,
-                               unit_ops)
+                               chat, dashboard, equipment, experiments,
+                               export_data, iam, internal, legal, library,
+                               notifications, offline, onboarding,
+                               project_members, projects, protocol_pdfs,
+                               protocol_versions, protocols, runs, sites, sync,
+                               template_convert, templates, unit_ops)
 
 app.include_router(internal.router)  # no prefix — router already has /internal
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
@@ -449,6 +449,7 @@ app.include_router(batch_record_import.router, prefix="/science", tags=["science
 app.include_router(export_data.router, prefix="/science", tags=["science"])
 app.include_router(project_members.router, prefix="/science", tags=["science"])
 app.include_router(sites.router, tags=["sites"])
+app.include_router(equipment.router)  # prefix="/equipment" defined on the router
 app.include_router(ai.router, prefix="/ai", tags=["ai"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(
