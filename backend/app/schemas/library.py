@@ -26,6 +26,11 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     can_delete: bool = False
+    source_format: Optional[str] = None
+    refinement_status: Optional[str] = None
+    refinement_flags: Optional[List[Any]] = None
+    refined_by_id: Optional[UUID] = None
+    refined_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -95,3 +100,11 @@ class SearchResponse(BaseModel):
     items: List[SearchResultGroup]
     total: int
     search_mode: str  # "hybrid", "semantic", "keyword"
+
+
+class MarkdownPayload(BaseModel):
+    markdown: str
+
+
+class RefineCompleteRequest(BaseModel):
+    reopen: bool = False

@@ -94,7 +94,10 @@
             const res = await api.get('/library/documents?limit=50', { schema: DocumentListResponseSchema });
             documents = res.items;
 
-            const hasProcessing = documents.some((d) => d.status === 'PROCESSING');
+            const inFlightStatuses = ['PROCESSING', 'QUEUED', 'EXTRACTING', 'INDEXING'];
+            const hasProcessing = documents.some((d) =>
+                inFlightStatuses.includes(d.status),
+            );
             if (hasProcessing && !pollTimer) {
                 pollTimer = setInterval(loadDocuments, 5000);
             } else if (!hasProcessing && pollTimer) {
@@ -340,9 +343,15 @@
                                             {formatDate(doc.created_at)}
                                         </Table.Cell>
                                         <Table.Cell class="text-right">
-                                            <a href="/library/{doc.id}">
-                                                <Button variant="ghost" size="sm">View</Button>
-                                            </a>
+                                            {#if doc.status === 'AWAITING_REFINEMENT'}
+                                                <a href="/library/documents/{doc.id}/refine">
+                                                    <Button variant="outline" size="sm">Refine</Button>
+                                                </a>
+                                            {:else}
+                                                <a href="/library/{doc.id}">
+                                                    <Button variant="ghost" size="sm">View</Button>
+                                                </a>
+                                            {/if}
                                         </Table.Cell>
                                     </Table.Row>
                                 {/each}

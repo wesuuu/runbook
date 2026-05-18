@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Library detail — Editorial mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap"
+  rel="stylesheet"
+/>
+<style>
+    /* tokens */
+    :root {
+        --bg:           hsl(200 25% 97%);
+        --fg:           hsl(215 40% 12%);
+        --card:         hsl(0 0% 100%);
+        --muted:        hsl(205 25% 94%);
+        --muted-fg:     hsl(215 15% 42%);
+        --primary:      hsl(195 85% 22%);
+        --primary-fg:   hsl(195 30% 98%);
+        --accent:       hsl(155 70% 38%);
+        --accent-fg:    hsl(155 30% 98%);
+        --destructive:  hsl(355 75% 50%);
+        --border:       hsl(205 22% 87%);
+        --warn:         hsl(38 92% 50%);
+        --radius: 0.625rem;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        background:
+          radial-gradient(1200px 600px at 0% -10%, hsl(195 40% 94%), transparent 60%),
+          radial-gradient(900px 500px at 110% 0%, hsl(155 30% 95%), transparent 50%),
+          var(--bg);
+        color: var(--fg);
+        font-family: 'DM Sans', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+    }
+    .serif { font-family: 'Newsreader', Georgia, serif; }
+    .mono  { font-family: 'DM Mono', ui-monospace, monospace; }
+
+    .shell { max-width: 1180px; margin: 0 auto; padding: 28px 40px 80px; }
+
+    /* breadcrumb */
+    .crumbs {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 12px; color: var(--muted-fg);
+        margin-bottom: 56px;
+    }
+    .crumbs a {
+        color: var(--muted-fg);
+        text-decoration: none;
+        border-bottom: 1px dashed transparent;
+        padding-bottom: 1px;
+    }
+    .crumbs a:hover { color: var(--fg); border-bottom-color: currentColor; }
+
+    /* eyebrow */
+    .eyebrow {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--primary);
+        font-weight: 500;
+        margin-bottom: 14px;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .eyebrow::before {
+        content: ''; display: inline-block;
+        width: 22px; height: 1px; background: currentColor;
+    }
+
+    h1.title {
+        font-family: 'Newsreader', Georgia, serif;
+        font-weight: 500;
+        font-size: 52px;
+        line-height: 1.04;
+        letter-spacing: -0.01em;
+        margin: 0 0 18px;
+        max-width: 22ch;
+    }
+    h1.title em {
+        font-style: italic;
+        color: var(--primary);
+        font-weight: 500;
+    }
+
+    .lede {
+        font-size: 16px;
+        color: var(--muted-fg);
+        max-width: 60ch;
+        line-height: 1.5;
+        margin: 0 0 28px;
+    }
+
+    /* stat row */
+    .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        margin: 32px 0 40px;
+    }
+    .stat {
+        padding: 18px 20px 18px 0;
+        border-right: 1px solid var(--border);
+    }
+    .stat:last-child { border-right: 0; padding-right: 0; }
+    .stat dt {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted-fg);
+        font-weight: 500;
+        margin: 0 0 6px;
+    }
+    .stat dd {
+        margin: 0;
+        font-family: 'DM Mono', ui-monospace, monospace;
+        font-size: 22px;
+        font-weight: 400;
+        color: var(--fg);
+        font-feature-settings: 'tnum';
+    }
+    .stat .small {
+        font-size: 12px;
+        color: var(--muted-fg);
+        margin-left: 4px;
+        font-family: 'DM Sans', sans-serif;
+    }
+
+    /* main + side */
+    .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        gap: 48px;
+        align-items: start;
+    }
+
+    /* hero scanner */
+    .hero {
+        background: hsl(0 0% 100% / 0.9);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+        position: relative;
+        box-shadow:
+            0 1px 0 hsl(195 40% 98%) inset,
+            0 30px 60px -40px hsl(215 40% 12% / 0.18);
+    }
+    .hero-head {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--border);
+    }
+    .badge-live {
+        display: inline-flex; align-items: center; gap: 8px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: hsl(28 75% 28%);
+    }
+    .badge-live .dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--warn);
+        animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+        0%   { box-shadow: 0 0 0 0   hsla(38 92% 50% / 0.6); }
+        70%  { box-shadow: 0 0 0 8px hsla(38 92% 50% / 0); }
+        100% { box-shadow: 0 0 0 0   hsla(38 92% 50% / 0); }
+    }
+    .stage-label {
+        font-family: 'DM Mono', ui-monospace, monospace;
+        font-size: 12px;
+        color: var(--muted-fg);
+    }
+    .stage-label b { color: var(--fg); font-weight: 500; }
+
+    .scanner {
+        position: relative;
+        aspect-ratio: 16 / 11;
+        background:
+            linear-gradient(180deg, hsl(195 25% 97%), hsl(195 15% 94%));
+        overflow: hidden;
+    }
+    /* the page being scanned */
+    .scanner .page {
+        position: absolute;
+        left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        width: 58%;
+        aspect-ratio: 8.5 / 11;
+        background: var(--card);
+        border: 1px solid hsl(205 22% 80%);
+        border-radius: 4px;
+        box-shadow: 0 30px 60px -30px hsl(215 40% 12% / 0.25);
+        padding: 22px 26px;
+        display: flex; flex-direction: column; gap: 9px;
+    }
+    .scanner .page .line {
+        height: 6px;
+        background: hsl(205 22% 90%);
+        border-radius: 2px;
+    }
+    .scanner .page .line.l1 { width: 70%; height: 9px; margin-bottom: 6px; }
+    .scanner .page .line.l2 { width: 92%; }
+    .scanner .page .line.l3 { width: 85%; }
+    .scanner .page .line.l4 { width: 96%; }
+    .scanner .page .line.l5 { width: 78%; }
+    .scanner .page .line.gap { background: transparent; }
+    .scanner .page .fig {
+        height: 64px; width: 70%; background: hsl(205 22% 92%);
+        border-radius: 3px;
+        margin: 6px 0;
+    }
+
+    /* the scan beam */
+    .scanner .beam {
+        position: absolute;
+        left: 0; right: 0; height: 80px;
+        background: linear-gradient(180deg,
+          transparent 0%,
+          hsla(195 85% 50% / 0.06) 35%,
+          hsla(195 85% 35% / 0.20) 50%,
+          hsla(195 85% 50% / 0.06) 65%,
+          transparent 100%);
+        animation: scan 3.6s ease-in-out infinite;
+        mix-blend-mode: multiply;
+    }
+    .scanner .beam::after {
+        content: ''; position: absolute;
+        left: 22%; right: 22%;
+        top: 50%; height: 1px;
+        background: var(--primary);
+        opacity: 0.75;
+        box-shadow: 0 0 6px hsl(195 85% 35% / 0.6);
+    }
+    @keyframes scan {
+        0%   { transform: translateY(-30%); }
+        50%  { transform: translateY(105%); }
+        100% { transform: translateY(-30%); }
+    }
+
+    .hero-foot {
+        padding: 14px 22px;
+        border-top: 1px solid var(--border);
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 12.5px; color: var(--muted-fg);
+    }
+    .hero-foot .right { color: var(--fg); font-family: 'DM Mono', monospace; }
+
+    /* side rail */
+    .side {
+        position: sticky;
+        top: 24px;
+        display: flex; flex-direction: column; gap: 22px;
+    }
+    .side h4 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted-fg);
+        font-weight: 500;
+        margin: 0 0 10px;
+    }
+    .pipeline {
+        list-style: none; margin: 0; padding: 0;
+    }
+    .pipeline li {
+        display: grid;
+        grid-template-columns: 18px 1fr auto;
+        gap: 10px;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        align-items: baseline;
+    }
+    .pipeline li:last-child { border-bottom: 0; }
+    .pipeline .marker {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--border);
+        margin: 7px 0 0 5px;
+    }
+    .pipeline .done .marker  { background: var(--accent); }
+    .pipeline .now .marker {
+        background: var(--warn);
+        box-shadow: 0 0 0 4px hsla(38 92% 50% / 0.18);
+    }
+    .pipeline .label.done    { color: var(--muted-fg); text-decoration: line-through; text-decoration-color: hsl(155 70% 38% / 0.4); }
+    .pipeline .label.now     { color: var(--fg); font-weight: 500; }
+    .pipeline .label.pending { color: var(--muted-fg); }
+    .pipeline .time {
+        font-family: 'DM Mono', monospace;
+        font-size: 11px;
+        color: var(--muted-fg);
+    }
+
+    .side .meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px 18px;
+    }
+    .side .meta dt {
+        font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.12em;
+        color: var(--muted-fg); margin: 0 0 4px; font-weight: 500;
+    }
+    .side .meta dd { margin: 0; font-size: 13px; }
+    .side .meta dd.mono { font-family: 'DM Mono', monospace; }
+
+    /* actions */
+    .actions {
+        display: flex; flex-direction: column; gap: 10px;
+    }
+    .btn {
+        font-family: inherit; font-size: 13px; font-weight: 500;
+        padding: 10px 14px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        transition: background 120ms ease, transform 120ms ease;
+    }
+    .btn:hover { background: var(--muted); }
+    .btn.primary {
+        background: var(--primary);
+        color: var(--primary-fg);
+        border-color: var(--primary);
+    }
+    .btn.primary[disabled] {
+        background: var(--muted);
+        color: var(--muted-fg);
+        border-color: var(--border);
+        cursor: not-allowed;
+    }
+    .btn .key {
+        font-family: 'DM Mono', monospace;
+        font-size: 10.5px;
+        padding: 2px 6px;
+        border: 1px solid hsl(195 60% 60% / .4);
+        border-radius: 4px;
+        color: inherit;
+        opacity: .8;
+    }
+    .danger {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--destructive);
+        background: transparent;
+        border: 0; padding: 6px 0;
+        cursor: pointer;
+        text-align: left;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        text-decoration-color: hsl(355 75% 50% / 0.3);
+    }
+    .danger:hover { text-decoration-color: currentColor; }
+
+    @media (max-width: 1024px) {
+        .layout { grid-template-columns: 1fr; }
+        .side { position: static; }
+        h1.title { font-size: 40px; }
+        .stats { grid-template-columns: repeat(2, 1fr); }
+    }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <nav class="crumbs">
+    <a href="#">← Library</a>
+    <span>·</span>
+    <span class="mono" style="font-size:11.5px;">0caa2e39</span>
+  </nav>
+
+  <div class="eyebrow">Document &nbsp; <span class="mono" style="opacity:.7">PDF · 482 pp</span></div>
+  <h1 class="title">
+    animal-culture-<em>textbook</em>
+  </h1>
+  <p class="lede">
+    A 20.1 MB scanned PDF uploaded a moment ago. Docling is parsing layout and figures
+    right now — once it lands, you’ll review the extracted text in the refinement editor
+    before it’s indexed for search.
+  </p>
+
+  <dl class="stats">
+    <div class="stat">
+      <dt>Pages</dt>
+      <dd>482</dd>
+    </div>
+    <div class="stat">
+      <dt>Size</dt>
+      <dd>20.1<span class="small">MB</span></dd>
+    </div>
+    <div class="stat">
+      <dt>Figures (est.)</dt>
+      <dd>~ 311</dd>
+    </div>
+    <div class="stat">
+      <dt>ETA</dt>
+      <dd>5:48<span class="small">min</span></dd>
+    </div>
+  </dl>
+
+  <div class="layout">
+
+    <section class="hero">
+      <div class="hero-head">
+        <span class="badge-live"><span class="dot"></span>Extracting</span>
+        <span class="stage-label">stage: <b>parse_layout</b> · page <b>34</b> / <b>482</b></span>
+      </div>
+
+      <div class="scanner" role="img" aria-label="Animation of a document being scanned page by page">
+        <div class="page">
+          <div class="line l1"></div>
+          <div class="line l2"></div>
+          <div class="line l3"></div>
+          <div class="line l4"></div>
+          <div class="line l5"></div>
+          <div class="fig"></div>
+          <div class="line l2"></div>
+          <div class="line l3"></div>
+          <div class="line l5"></div>
+          <div class="line l4"></div>
+        </div>
+        <div class="beam"></div>
+      </div>
+
+      <div class="hero-foot">
+        <span>Preview opens automatically when the first chunk is ready.</span>
+        <span class="right">heartbeat ↻ 10s</span>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div>
+        <h4>Pipeline</h4>
+        <ul class="pipeline">
+          <li>
+            <span class="marker"></span>
+            <span class="label done">Uploaded</span>
+            <span class="time">04:54</span>
+          </li>
+          <li class="done">
+            <span class="marker" style="background: var(--accent);"></span>
+            <span class="label done">Queued</span>
+            <span class="time">04:54</span>
+          </li>
+          <li class="now">
+            <span class="marker"></span>
+            <span class="label now">Extracting</span>
+            <span class="time">04:55</span>
+          </li>
+          <li>
+            <span class="marker"></span>
+            <span class="label pending">Awaiting refinement</span>
+            <span class="time">—</span>
+          </li>
+          <li>
+            <span class="marker"></span>
+            <span class="label pending">Indexing</span>
+            <span class="time">—</span>
+          </li>
+          <li>
+            <span class="marker"></span>
+            <span class="label pending">Ready</span>
+            <span class="time">—</span>
+          </li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Details</h4>
+        <dl class="meta">
+          <div>
+            <dt>Type</dt>
+            <dd class="mono">pdf</dd>
+          </div>
+          <div>
+            <dt>OCR</dt>
+            <dd class="mono">easyocr</dd>
+          </div>
+          <div>
+            <dt>Project</dt>
+            <dd>—</dd>
+          </div>
+          <div>
+            <dt>By</dt>
+            <dd>you</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div>
+        <h4>Actions</h4>
+        <div class="actions">
+          <button class="btn primary" disabled>
+            Refine document
+            <span class="key">R</span>
+          </button>
+          <button class="btn">Re-extract</button>
+          <button class="danger">Delete document</button>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+</div>
+</body>
+</html>

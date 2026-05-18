@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.services.core.background_handler import get_background_handler
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +80,13 @@ async def _recover_stalled_jobs() -> None:
     simultaneously won't claim the same stale jobs.
 
     Recovery per job type:
-    - ``document_process``: mark FAILED, reset Document → UPLOADED.
+    - ``document_extract``: mark FAILED, reset Document → UPLOADED.
       The subsequent ``_recover_stalled_documents`` will re-fire it.
-    - ``document_enrich``: mark FAILED, re-fire directly if Document
-      is still INDEXED and retry budget remains.
+    - Legacy ``document_process`` / ``document_enrich`` rows (pre-TD-0085):
+      mark FAILED, reset doc → UPLOADED so the new extractor picks it up.
     """
     from app.models.jobs import BackgroundJob, JobStatus
     from app.models.library import Document, DocumentStatus
-    from app.services.documents.document_processor import enrich_document
 
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -119,8 +119,6 @@ async def _recover_stalled_jobs() -> None:
                 len(stalled_jobs),
                 [f"{j.job_type}:{j.entity_id}" for j in stalled_jobs],
             )
-
-            enrich_tasks: list[tuple] = []  # (doc_id, db_url)
 
             for job in stalled_jobs:
                 job.status = JobStatus.FAILED.value
@@ -160,44 +158,37 @@ async def _recover_stalled_jobs() -> None:
                         )
                     continue
 
-                # Route by job type
-                if job.job_type == "document_process":
-                    # Reset doc → UPLOADED; _recover_stalled_documents
-                    # (which runs next) will re-fire process_document.
+                # All document job types (new document_extract and legacy
+                # document_process / document_enrich): reset doc → UPLOADED
+                # so _recover_stalled_documents will re-fire the new extractor.
+                if job.job_type in (
+                    "document_extract",
+                    "document_index",
+                    "document_process",
+                    "document_enrich",
+                ):
                     doc_result = await session.execute(
                         select(Document).where(Document.id == job.entity_id)
                     )
                     doc = doc_result.scalar_one_or_none()
-                    if doc and doc.status in (
-                        DocumentStatus.UPLOADED.value,
-                        DocumentStatus.PROCESSING.value,
+                    if doc and doc.status not in (
+                        DocumentStatus.FAILED.value,
+                        DocumentStatus.READY.value,
+                        DocumentStatus.AWAITING_REFINEMENT.value,
+                        DocumentStatus.INDEXING.value,
                     ):
                         doc.status = DocumentStatus.UPLOADED.value
                         doc.processing_started_at = None
-
-                elif job.job_type == "document_enrich":
-                    # Re-fire enrichment directly (no doc-status
-                    # mechanism exists for enrichment recovery).
-                    doc_result = await session.execute(
-                        select(Document).where(Document.id == job.entity_id)
-                    )
-                    doc = doc_result.scalar_one_or_none()
-                    if doc and doc.status == DocumentStatus.INDEXED.value:
-                        enrich_tasks.append((doc.id, settings.database_url))
+                        doc.heartbeat_token = None
 
             await session.commit()
-
-            # Fire enrichment tasks after commit
-            for doc_id, db_url in enrich_tasks:
-                asyncio.create_task(enrich_document(doc_id, db_url))
-                logger.info("Re-fired enrichment for document %s", doc_id)
 
     finally:
         await engine.dispose()
 
 
 async def _recover_stalled_documents() -> None:
-    """Find documents stuck in UPLOADED or stale PROCESSING and re-enqueue.
+    """Find documents stuck in UPLOADED or stale EXTRACTING and re-enqueue.
 
     Called once on startup, AFTER ``_recover_stalled_jobs`` has marked
     abandoned jobs as FAILED and reset their documents to UPLOADED.
@@ -207,7 +198,6 @@ async def _recover_stalled_documents() -> None:
     """
     from app.models.library import (STALE_PROCESSING_SECONDS, Document,
                                     DocumentStatus)
-    from app.services.documents.document_processor import process_document
 
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -220,14 +210,24 @@ async def _recover_stalled_documents() -> None:
 
             # Find documents that need recovery:
             # 1. UPLOADED — background task never ran (pod died before it fired)
-            # 2. PROCESSING with stale timestamp — pod died mid-processing
+            # 2. EXTRACTING / PROCESSING with stale timestamp — pod died mid-run
             result = await session.execute(
                 select(Document)
                 .where(
                     or_(
                         Document.status == DocumentStatus.UPLOADED.value,
                         (
-                            (Document.status == DocumentStatus.PROCESSING.value)
+                            Document.status.in_([
+                                DocumentStatus.EXTRACTING.value,
+                                DocumentStatus.PROCESSING.value,
+                            ])
+                            & (
+                                (Document.processing_started_at == None)  # noqa: E711
+                                | (Document.processing_started_at < stale_cutoff)
+                            )
+                        ),
+                        (
+                            (Document.status == DocumentStatus.INDEXING.value)
                             & (
                                 (Document.processing_started_at == None)  # noqa: E711
                                 | (Document.processing_started_at < stale_cutoff)
@@ -249,19 +249,67 @@ async def _recover_stalled_documents() -> None:
                 [str(d.id) for d in stalled_docs],
             )
 
-            # Reset stale PROCESSING docs back to UPLOADED so
-            # process_document treats them as fresh
+            # Categorize before re-firing — INDEXING docs go back through
+            # document_index, everything else through document_extract.
+            extracting_docs: list[Document] = []
+            indexing_docs: list[Document] = []
             for doc in stalled_docs:
-                if doc.status == DocumentStatus.PROCESSING.value:
-                    doc.status = DocumentStatus.UPLOADED.value
+                if doc.status == DocumentStatus.INDEXING.value:
+                    # Release the claim; keep status=INDEXING so the
+                    # job picks up where the previous attempt left off
+                    # (indexer is idempotent — drops prior chunks first).
                     doc.processing_started_at = None
+                    doc.heartbeat_token = None
+                    indexing_docs.append(doc)
+                else:
+                    # UPLOADED / EXTRACTING / PROCESSING all re-enter the
+                    # extraction pipeline. Reset to UPLOADED for a fresh fire.
+                    if doc.status in (
+                        DocumentStatus.EXTRACTING.value,
+                        DocumentStatus.PROCESSING.value,
+                    ):
+                        doc.status = DocumentStatus.UPLOADED.value
+                        doc.processing_started_at = None
+                        doc.heartbeat_token = None
+                    extracting_docs.append(doc)
             await session.commit()
 
-            # Fire off processing tasks for each
-            for doc in stalled_docs:
-                asyncio.create_task(process_document(doc.id, settings.database_url))
+            handler = get_background_handler()
+            for doc in extracting_docs:
+                await handler.launch("document_extract", document_id=doc.id)
+                logger.info("Re-fired extraction for document %s", doc.id)
+            for doc in indexing_docs:
+                await handler.launch("document_index", document_id=doc.id)
+                logger.info("Re-fired indexing for document %s", doc.id)
     finally:
         await engine.dispose()
+
+
+async def _recovery_loop() -> None:
+    """Periodically re-run the stalled-jobs and stalled-docs sweeps.
+
+    The startup sweep covers cold boots; this loop covers steady-state
+    autoscaled deployments where new pods don't boot for hours. Each
+    sweep is independent — exceptions inside one don't kill the other,
+    and don't kill the loop.
+
+    Set BATCHRITE_RECOVERY_INTERVAL_SECONDS=0 to disable.
+    """
+    interval = settings.recovery_interval_seconds
+    if not interval or interval <= 0:
+        logger.info("Recovery loop disabled (interval <= 0)")
+        return
+
+    while True:
+        try:
+            await _recover_stalled_jobs()
+        except Exception:
+            logger.exception("Recovery loop: job sweep failed")
+        try:
+            await _recover_stalled_documents()
+        except Exception:
+            logger.exception("Recovery loop: doc sweep failed")
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
@@ -321,6 +369,7 @@ async def lifespan(app: FastAPI):
 
     # Start the heartbeat background task
     heartbeat_task = asyncio.create_task(_heartbeat_loop())
+    recovery_task = asyncio.create_task(_recovery_loop())
 
     yield
 
@@ -328,6 +377,11 @@ async def lifespan(app: FastAPI):
     heartbeat_task.cancel()
     try:
         await heartbeat_task
+    except asyncio.CancelledError:
+        pass
+    recovery_task.cancel()
+    try:
+        await recovery_task
     except asyncio.CancelledError:
         pass
 
@@ -369,12 +423,13 @@ async def health_check():
 
 from app.api.endpoints import (admin, ai, auth, batch_record_import, billing,
                                chat, dashboard, experiments, export_data, iam,
-                               legal, library, notifications, offline,
+                               internal, legal, library, notifications, offline,
                                onboarding, project_members, projects,
                                protocol_pdfs, protocol_versions, protocols,
                                runs, sync, template_convert, templates,
                                unit_ops)
 
+app.include_router(internal.router)  # no prefix — router already has /internal
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])

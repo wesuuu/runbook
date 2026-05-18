@@ -45,6 +45,18 @@ KNOWN_VARIABLES = {
     "notes",
     "figures",
     "non_image_attachments",
+    # Manual/optional loops — populated only when data is wired
+    "materials",
+    "equipment",
+    "target_yield",
+    # SOP-specific fields (time-course bioreactor SOP template)
+    "document_number",
+    "effective_date",
+    "purpose_text",
+    "scope_text",
+    "critical_requirement",
+    "is_time_based",
+    "time_points",
     # Approval (F-0066)
     "approval",
     "approval_history",
@@ -122,6 +134,16 @@ def build_context(
     attachments: list[dict[str, Any]] | None = None,
     storage: FileStorageService | None = None,
     equipment_context: dict[str, str] | None = None,
+    materials: list[dict[str, Any]] | None = None,
+    equipment: list[dict[str, Any]] | None = None,
+    target_yield: str = "",
+    document_number: str = "",
+    effective_date: str = "",
+    purpose_text: str = "",
+    scope_text: str = "",
+    critical_requirement: str = "",
+    is_time_based: bool = False,
+    time_points: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Assemble the Jinja2 context dict for template rendering.
 
@@ -528,6 +550,16 @@ def build_context(
             "notes": note_contexts,
             "figures": figure_contexts,
             "non_image_attachments": non_image_att_contexts,
+            "materials": materials or [],
+            "equipment": equipment or [],
+            "target_yield": target_yield,
+            "document_number": document_number,
+            "effective_date": effective_date,
+            "purpose_text": purpose_text,
+            "scope_text": scope_text,
+            "critical_requirement": critical_requirement,
+            "is_time_based": is_time_based,
+            "time_points": time_points or [],
             "_user_signatures": sigmap,
         },
         unresolved_all,
@@ -541,9 +573,11 @@ def render_to_docx(
     """Render a .docx template with context, return .docx bytes."""
     doc = DocxTemplate(str(template_path))
 
-    # Convert figure file paths to InlineImage objects
+    # Convert figure file paths to InlineImage objects. Keep `_file_path`
+    # so the context dict can be reused across multiple render calls
+    # (each call must bind a fresh InlineImage to the current DocxTemplate).
     for fig in context.get("figures", []):
-        fpath_str = fig.pop("_file_path", None)
+        fpath_str = fig.get("_file_path")
         if fpath_str:
             fpath = Path(fpath_str)
             if fpath.exists():
@@ -551,11 +585,26 @@ def render_to_docx(
             else:
                 fig["image"] = f"[Image not found: {fpath.name}]"
 
+    # Same handling for per-time-point figures in SOP time-course mode.
+    for tp in context.get("time_points", []) or []:
+        fig = tp.get("figure")
+        if not isinstance(fig, dict):
+            continue
+        fpath_str = fig.get("_file_path")
+        if fpath_str:
+            fpath = Path(fpath_str)
+            if fpath.exists():
+                fig["image"] = InlineImage(doc, str(fpath), width=Mm(120))
+            else:
+                fig["image"] = f"[Image not found: {fpath.name}]"
+        elif "image" not in fig:
+            fig["image"] = ""
+
     # F-0080 — swap step.initials to an InlineImage of the user's drawn
     # signature, or a cursive RichText fallback. Mirrors the figure
     # handling above: build_context puts placeholders, render_to_docx
     # finalizes them against the open DocxTemplate.
-    user_signatures = context.pop("_user_signatures", {}) or {}
+    user_signatures = context.get("_user_signatures") or {}
 
     def _swap(steps_list):
         for step in steps_list or []:

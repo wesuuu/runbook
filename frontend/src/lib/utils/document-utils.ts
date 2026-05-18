@@ -52,6 +52,9 @@ const STATUS_COLORS: Record<string, string> = {
     UPLOADED: 'secondary',
     QUEUED: 'secondary',
     PROCESSING: 'secondary',
+    EXTRACTING: 'secondary',
+    AWAITING_REFINEMENT: 'warning',
+    INDEXING: 'secondary',
     INDEXED: 'default',
     ENRICHED: 'default',
     READY: 'default',
@@ -73,6 +76,12 @@ export function getStatusLabel(status: string): string {
             return 'Queued';
         case 'PROCESSING':
             return 'Processing';
+        case 'EXTRACTING':
+            return 'Extracting';
+        case 'AWAITING_REFINEMENT':
+            return 'Needs refinement';
+        case 'INDEXING':
+            return 'Indexing';
         case 'INDEXED':
         case 'ENRICHED':
         case 'READY':

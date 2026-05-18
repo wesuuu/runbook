@@ -10,22 +10,29 @@ from app.models.library import Document, DocumentStatus
 from app.models.science import Project
 
 
-# Mock the background processor to avoid async task issues in tests
+# Mock the background handler to avoid async task issues in tests
 @pytest.fixture(autouse=True)
 def mock_processor():
+    class _FakeHandler:
+        async def launch(self, job, **kwargs):
+            pass
+
     with patch(
-        "app.api.endpoints.library.process_document",
-        new_callable=AsyncMock,
+        "app.api.endpoints.library.get_background_handler",
+        return_value=_FakeHandler(),
     ):
         yield
+
+
+_PDF_CONTENT = b"%PDF-1.4\n%minimal\n"
 
 
 def _make_upload(
     client: AsyncClient,
     auth_headers: dict,
-    content: bytes = b"Hello, world!",
-    filename: str = "test.txt",
-    mime_type: str = "text/plain",
+    content: bytes = _PDF_CONTENT,
+    filename: str = "test.pdf",
+    mime_type: str = "application/pdf",
     title: str = "Test Document",
     project_id: str | None = None,
     tags: str | None = None,
@@ -49,15 +56,18 @@ def _make_upload(
 
 
 @pytest.mark.asyncio
-async def test_upload_txt_document_returns_201(
+async def test_upload_rejects_text_plain(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
-    resp = await _make_upload(client, auth_headers)
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["title"] == "Test Document"
-    assert body["mime_type"] == "text/plain"
-    assert body["status"] == "UPLOADED"
+    """text/plain is no longer an allowed document type (Task 5 / TD-0085)."""
+    resp = await _make_upload(
+        client,
+        auth_headers,
+        content=b"Hello, world!",
+        filename="test.txt",
+        mime_type="text/plain",
+    )
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -88,8 +98,9 @@ async def test_upload_sets_correct_response_fields(
     body = resp.json()
     assert "id" in body
     assert body["title"] == "My Doc"
-    assert body["original_filename"] == "test.txt"
-    assert body["file_size_bytes"] == len(b"Hello, world!")
+    assert body["original_filename"] == "test.pdf"
+    assert body["mime_type"] == "application/pdf"
+    assert body["file_size_bytes"] == len(_PDF_CONTENT)
     assert body["status"] == "UPLOADED"
     assert "created_at" in body
     assert "updated_at" in body
@@ -101,7 +112,7 @@ async def test_upload_writes_file_to_disk(
 ):
     from app.services.core.file_storage import FileStorageService
 
-    resp = await _make_upload(client, auth_headers, content=b"disk check")
+    resp = await _make_upload(client, auth_headers, content=b"%PDF-1.4\ndisk check")
     assert resp.status_code == 201
     body = resp.json()
     # The file_path is now a relative path resolved via FileStorageService
@@ -375,18 +386,22 @@ async def test_delete_document_returns_204(
 async def test_delete_document_removes_file(
     client: AsyncClient, auth_headers: dict, test_org: Organization
 ):
-    import os
+    from app.services.core.file_storage import FileStorageService
 
     upload_resp = await _make_upload(client, auth_headers)
     body = upload_resp.json()
     doc_id = body["id"]
-    file_path = body["file_path"]
+    relative_path = body["file_path"]
 
-    assert os.path.exists(file_path)
+    # file_path on the response is storage-relative; resolve to absolute
+    # via the storage service so the test isn't CWD-sensitive.
+    storage = FileStorageService()
+    full_path = storage.resolve_path(relative_path)
+    assert full_path.exists()
 
     resp = await client.delete(f"/library/documents/{doc_id}", headers=auth_headers)
     assert resp.status_code == 204
-    assert not os.path.exists(file_path)
+    assert not full_path.exists()
 
 
 @pytest.mark.asyncio
@@ -470,8 +485,9 @@ async def test_upload_rejects_path_traversal_filename(
     resp = await _make_upload(
         client,
         auth_headers,
-        filename="../../../etc/passwd",
-        mime_type="text/plain",
+        content=_PDF_CONTENT,
+        filename="../../../etc/passwd.pdf",
+        mime_type="application/pdf",
     )
     # Should succeed but the filename should be sanitized
     assert resp.status_code == 201

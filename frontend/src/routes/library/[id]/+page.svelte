@@ -4,19 +4,11 @@
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
     import { Button } from '$lib/components/ui/button';
-    import { Badge } from '$lib/components/ui/badge';
-    import {
-        Card,
-        CardContent,
-        CardHeader,
-        CardTitle,
-    } from '$lib/components/ui/card';
     import * as Dialog from '$lib/components/ui/dialog';
     import { toast } from 'svelte-sonner';
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import {
         getFileTypeLabel,
-        getStatusColor,
         getStatusLabel,
         formatFileSize,
         extractSectionNav,
@@ -27,7 +19,7 @@
     import { API_BASE } from '$lib/config';
     import { getToken } from '$lib/auth.svelte';
     import { Input } from '$lib/components/ui/input';
-    import { ArrowLeft, RotateCcw, Trash2, ExternalLink, Search, X, ChevronDown, ChevronRight, List } from 'lucide-svelte';
+    import { ArrowLeft, RotateCcw, Trash2, ExternalLink, Search, X, ChevronDown, ChevronRight, List, FileText, BookOpen } from 'lucide-svelte';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
@@ -110,6 +102,11 @@
     // PDF viewer ref for page navigation
     let pdfIframe = $state<HTMLIFrameElement | null>(null);
 
+    // Post-refinement view mode: 'refined' shows the cleaned markdown
+    // reader, 'source' shows the original PDF. Only meaningful when both
+    // exist (PDF + indexed); non-PDFs render the reader unconditionally.
+    let viewMode = $state<'refined' | 'source'>('refined');
+
     const documentId = $derived($page.params.id);
     const isPdf = $derived(document?.mime_type === 'application/pdf');
     const isEnriched = $derived(
@@ -118,13 +115,29 @@
     const isViewable = $derived(
         document ? VIEWABLE_STATUSES.has(document.status) : false
     );
+    // True once the doc is past refinement — controls whether the
+    // refined/source toggle is offered.
+    const isPostRefinement = $derived(
+        document?.status === 'INDEXED' ||
+        document?.status === 'READY' ||
+        document?.status === 'ENRICHED',
+    );
+    const canToggleView = $derived(isPdf && isPostRefinement);
+    // Render decision: only swap to the PDF iframe when the user has
+    // explicitly asked for "Source" on a PDF that's actually viewable.
+    const isShowingSource = $derived(
+        canToggleView && viewMode === 'source' && isViewable,
+    );
 
-    // Build section nav for sidebar
+    // Build section nav for sidebar. Keyed off `isShowingSource` rather
+    // than `isPdf` so the TOC re-targets correctly when the user flips
+    // a PDF between the refined reader and the iframe source view.
     const sectionNav = $derived.by<SectionNav[]>(() => {
         if (!document) return [];
 
-        // For PDFs: only use API TOC (chunk-based fallbacks don't work for iframe viewer)
-        if (isPdf) {
+        // Source-PDF view: only API TOC is useful (we jump pages in the
+        // iframe; chunk-based fallbacks don't apply).
+        if (isShowingSource) {
             if (document.table_of_contents && document.table_of_contents.length > 0) {
                 return document.table_of_contents
                     .filter((e: TOCEntry) => e.page_number != null)
@@ -136,7 +149,8 @@
             return [];
         }
 
-        // For non-PDFs: prefer API TOC, then enriched chunk metadata, then fallback
+        // Refined-reader view (both non-PDFs and PDFs flipped to refined):
+        // prefer API TOC, then enriched chunk metadata, then fallback.
         if (document.table_of_contents && document.table_of_contents.length > 0) {
             return document.table_of_contents
                 .filter((e: TOCEntry) => e.chunk_index != null)
@@ -154,6 +168,96 @@
         return (chunk.chunk_metadata?.role as string) ?? 'body';
     }
 
+    // ─── Workbench derived values ──────────────────────────────────
+    const shortDocId = $derived(
+        document
+            ? `${document.id.slice(0, 8)}…${document.id.slice(-7)}`
+            : ''
+    );
+
+    // True while the pipeline is actively churning: we render the
+    // workbench live-card with a sliding bar + shimmer skeleton in place
+    // of reader content. AWAITING_REFINEMENT is its own state below.
+    const isLiveExtraction = $derived.by(() => {
+        if (!document) return false;
+        const s = document.status;
+        const hasActiveProgress = !!(
+            document.processing_progress &&
+            document.processing_progress.stage !== ''
+        );
+        return (
+            s === 'UPLOADED' ||
+            s === 'QUEUED' ||
+            s === 'EXTRACTING' ||
+            s === 'INDEXING' ||
+            s === 'PROCESSING' ||
+            (s === 'INDEXED' && hasActiveProgress)
+        );
+    });
+
+    const liveStageText = $derived.by(() => {
+        if (!document) return '';
+        const p = document.processing_progress;
+        if (p && p.stage) {
+            if (p.total > 0) {
+                return `stage: ${p.stage_label || p.stage} · ${p.current} / ${p.total}`;
+            }
+            return `stage: ${p.stage_label || p.stage}`;
+        }
+        switch (document.status) {
+            case 'UPLOADED':
+            case 'QUEUED':
+                return 'stage: queued';
+            case 'EXTRACTING':
+                return 'stage: parse';
+            case 'INDEXING':
+                // Pre-progress fallback. Once the document_index job
+                // calls update_progress, processing_progress takes
+                // precedence (handled by the earlier branch).
+                return 'stage: chunking';
+            case 'PROCESSING':
+                return 'stage: indexing';
+            default:
+                return '';
+        }
+    });
+
+    const liveTitle = $derived.by(() => {
+        if (!document) return '';
+        switch (document.status) {
+            case 'UPLOADED':
+            case 'QUEUED':
+            case 'EXTRACTING':
+                // From the user's POV the doc is "extracting" the whole time
+                // it sits in this live-polling state — the UPLOADED → QUEUED
+                // → EXTRACTING walk is an internal worker handoff.
+                return 'Extraction in progress';
+            case 'INDEXING':
+            case 'PROCESSING':
+                return 'Indexing for search';
+            default:
+                return 'Working…';
+        }
+    });
+
+    // Short chip label that matches liveTitle: the user sees "Extracting"
+    // for the entire pre-refinement live phase, not the internal status
+    // string ("Uploaded" / "Queued").
+    const displayStatusLabel = $derived.by(() => {
+        if (!document) return '';
+        switch (document.status) {
+            case 'UPLOADED':
+            case 'QUEUED':
+            case 'EXTRACTING':
+                return 'Extracting';
+            case 'INDEXING':
+            case 'PROCESSING':
+                return 'Indexing';
+            default:
+                return getStatusLabel(document.status);
+        }
+    });
+
     async function loadDocument() {
         try {
             const doc = await api.get(`/library/documents/${documentId}`, { schema: DocumentDetailSchema });
@@ -161,7 +265,12 @@
             allChunks = doc.chunks_preview;
 
             const hasActiveProgress = doc.processing_progress && doc.processing_progress.stage !== '';
-            const shouldPoll = doc.status === 'PROCESSING' || doc.status === 'QUEUED' || (doc.status === 'INDEXED' && hasActiveProgress);
+            const shouldPoll =
+                doc.status === 'PROCESSING' ||
+                doc.status === 'QUEUED' ||
+                doc.status === 'EXTRACTING' ||
+                doc.status === 'INDEXING' ||
+                (doc.status === 'INDEXED' && hasActiveProgress);
             if (shouldPoll && !pollTimer) {
                 pollTimer = setInterval(loadDocument, 3000);
             } else if (!shouldPoll && pollTimer) {
@@ -275,7 +384,9 @@
     }
 
     function handleSidebarClick(index: number) {
-        if (isPdf) {
+        // In source lens, the TOC carries page numbers; in the refined
+        // reader (default and non-PDF case) it carries chunk indices.
+        if (isShowingSource) {
             navigatePdfToPage(index);
         } else {
             scrollToChunk(index);
@@ -298,16 +409,7 @@
     });
 </script>
 
-<div class="max-w-6xl mx-auto space-y-6">
-    <!-- Back link -->
-    <a
-        href="/library"
-        class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-    >
-        <ArrowLeft class="h-4 w-4" />
-        Back to Library
-    </a>
-
+<div class="max-w-7xl mx-auto px-6 pb-16 pt-4">
     {#if loading}
         <div in:fade={{ duration: blockDuration() }}>
             <LoadingSpinner message="Loading document..." />
@@ -315,125 +417,152 @@
     {:else if error}
         <div in:fade={{ duration: blockDuration() }} class="bg-destructive/10 text-destructive p-4 rounded-md">Error: {error}</div>
     {:else if document}
-        <!-- Header -->
-        <div in:fade={{ duration: blockDuration() }} class="space-y-3">
-            <h1 class="text-3xl font-bold tracking-tight">{document.title}</h1>
-            <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <Badge variant="outline">{getFileTypeLabel(document.mime_type)}</Badge>
-                <span>{formatFileSize(document.file_size_bytes)}</span>
-                <Badge variant={getStatusColor(document.status) as any}>
-                    {getStatusLabel(document.status)}
-                </Badge>
-                <span>Uploaded {formatDate(document.created_at)}</span>
-                {#if document.page_count}
-                    <span>&middot; {document.page_count} pages</span>
-                {/if}
-            </div>
-            {#if document.source_url}
-                <p class="text-sm text-muted-foreground">
-                    Imported from:
-                    <a
-                        href={document.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-primary hover:underline inline-flex items-center gap-1"
-                    >
-                        {document.source_url}
-                        <ExternalLink class="h-3 w-3" />
-                    </a>
-                </p>
-            {/if}
+        <!-- ─── Topbar: breadcrumbs + doc id ─── -->
+        <div in:fade={{ duration: blockDuration() }} class="flex justify-between items-center text-sm text-muted-foreground mb-7 gap-4">
+            <nav class="flex items-center min-w-0">
+                <a href="/library" class="hover:text-foreground transition-colors inline-flex items-center gap-1">
+                    <ArrowLeft class="h-3.5 w-3.5" />
+                    Library
+                </a>
+                <span class="opacity-50 px-2">/</span>
+                <span class="text-foreground font-medium truncate">{document.title}</span>
+            </nav>
+            <span class="font-mono text-[11.5px] shrink-0">doc · {shortDocId}</span>
         </div>
 
-        <!-- Action bar -->
-        <div class="flex items-center gap-2">
-            {#if document.status === 'FAILED' || document.status === 'QUEUED'}
-                <Button variant="outline" size="sm" onclick={handleRetry} disabled={retrying}>
-                    <RotateCcw class="mr-2 h-4 w-4" />
-                    {retrying ? 'Retrying...' : 'Retry Processing'}
-                </Button>
-            {/if}
-            {#if document.can_delete}
-                <Button
-                    variant="destructive"
-                    size="sm"
-                    onclick={() => (deleteDialogOpen = true)}
-                >
-                    <Trash2 class="mr-2 h-4 w-4" />
-                    Delete
-                </Button>
-            {/if}
-        </div>
-
-        <!-- Error banner -->
-        {#if document.status === 'FAILED' && document.error_message}
-            <div class="bg-destructive/10 border border-destructive/20 text-destructive p-4 rounded-md">
-                <p class="font-medium">Processing failed</p>
-                <p class="text-sm mt-1">{document.error_message}</p>
-            </div>
-        {/if}
-
-        <!-- Queued banner -->
-        {#if document.status === 'QUEUED'}
-            <div class="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-md">
-                <div class="flex items-center gap-3">
-                    <div class="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0"></div>
-                    <span class="text-sm font-medium">Waiting for AI processing...</span>
-                </div>
-                <p class="text-xs text-blue-600/70 mt-2">
-                    The document is queued and will be processed when the AI service becomes available.
-                </p>
-            </div>
-        {/if}
-
-        <!-- Processing progress -->
-        {@const activeProgress = document.processing_progress && document.processing_progress.stage !== ''}
-        {#if document.status === 'PROCESSING' || (document.status === 'INDEXED' && activeProgress)}
-            {@const progress = document.processing_progress}
-            {@const isEnrichmentPhase = document.status === 'INDEXED'}
-            <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-md space-y-3">
-                <div class="flex items-center gap-3">
-                    <div class="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin shrink-0"></div>
-                    <span class="text-sm font-medium">
-                        {#if progress && progress.stage_label}
-                            {progress.stage_label}
-                            {#if progress.total > 0}
-                                ({progress.current} / {progress.total})
-                            {/if}
-                        {:else if isEnrichmentPhase}
-                            Analyzing document structure...
-                        {:else}
-                            Processing document...
-                        {/if}
+        <!-- ─── Header: title + chips + actions ─── -->
+        <header in:fade={{ duration: blockDuration() }} class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-6 items-end pb-5 border-b border-border">
+            <div class="min-w-0">
+                <h1 class="text-3xl font-semibold tracking-tight mb-2 leading-tight truncate">{document.title}</h1>
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <!-- Status chip — pulses while live -->
+                    <span class="chip" class:chip-live={isLiveExtraction} class:chip-done={document.status === 'INDEXED' || document.status === 'READY' || document.status === 'ENRICHED'} class:chip-failed={document.status === 'FAILED'} class:chip-refine={document.status === 'AWAITING_REFINEMENT'}>
+                        <span class="dot"></span>{displayStatusLabel}
                     </span>
+                    <span class="chip"><span class="dot"></span>{getFileTypeLabel(document.mime_type)}</span>
+                    <span class="chip"><span class="dot"></span>{formatFileSize(document.file_size_bytes)}</span>
+                    {#if document.page_count}
+                        <span class="chip"><span class="dot"></span>{document.page_count} pages</span>
+                    {/if}
+                    <span class="chip"><span class="dot"></span>Uploaded {formatDate(document.created_at)}</span>
                 </div>
-                {#if progress && progress.total > 0}
-                    <div class="w-full bg-amber-200 rounded-full h-2 overflow-hidden">
-                        <div
-                            class="bg-amber-600 h-2 rounded-full transition-all duration-500 ease-out"
-                            style="width: {progress.percent}%"
-                        ></div>
-                    </div>
-                    <p class="text-xs text-amber-700/70">{progress.percent}% complete</p>
+                {#if document.source_url}
+                    <p class="text-xs text-muted-foreground mt-2 truncate">
+                        Imported from:
+                        <a
+                            href={document.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-primary hover:underline inline-flex items-center gap-1"
+                        >
+                            {document.source_url}
+                            <ExternalLink class="h-3 w-3" />
+                        </a>
+                    </p>
                 {/if}
             </div>
-        {/if}
+            <div class="flex items-center gap-2 shrink-0">
+                {#if document.status === 'FAILED' || document.status === 'QUEUED'}
+                    <Button variant="outline" size="sm" onclick={handleRetry} disabled={retrying}>
+                        <RotateCcw class="mr-2 h-4 w-4" />
+                        {retrying ? 'Retrying…' : 'Re-extract'}
+                    </Button>
+                {/if}
+                {#if document.status === 'AWAITING_REFINEMENT'}
+                    <a href="/library/documents/{document.id}/refine">
+                        <Button size="sm">Refine document</Button>
+                    </a>
+                {:else if canToggleView}
+                    <!-- Lens toggle: flip the main column between the cleaned
+                         refined reader and the raw PDF source. -->
+                    <div class="view-toggle" role="tablist" aria-label="Document view">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={viewMode === 'refined'}
+                            class:active={viewMode === 'refined'}
+                            onclick={() => (viewMode = 'refined')}
+                        >
+                            <BookOpen class="h-3.5 w-3.5" />
+                            Refined
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={viewMode === 'source'}
+                            class:active={viewMode === 'source'}
+                            onclick={() => (viewMode = 'source')}
+                        >
+                            <FileText class="h-3.5 w-3.5" />
+                            Source PDF
+                        </button>
+                    </div>
+                {:else if !isLiveExtraction && document.status !== 'FAILED'}
+                    <Button size="sm" variant="outline" disabled>Refined</Button>
+                {:else}
+                    <Button size="sm" disabled>Refine document</Button>
+                {/if}
+                {#if document.can_delete}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        class="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        onclick={() => (deleteDialogOpen = true)}
+                        title="Delete document"
+                    >
+                        <Trash2 class="h-4 w-4" />
+                    </Button>
+                {/if}
+            </div>
+        </header>
 
-        <!-- Content area with optional section nav -->
-        <div class="flex gap-6">
-            <!-- Section navigation sidebar -->
-            {#if sectionNav.length > 0 && showSectionNav}
-                <div class="w-64 shrink-0 hidden lg:block">
-                    <div class="sticky top-6">
-                        <div class="flex items-center gap-2 mb-3">
-                            <List class="h-4 w-4 text-muted-foreground" />
-                            <span class="text-sm font-medium">Contents</span>
+        <!-- ─── Body grid: rail + main ─── -->
+        <div class="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-7 mt-7">
+
+            <!-- ─── Left rail ─── -->
+            <aside in:fade={{ duration: blockDuration() }} class="flex flex-col gap-5">
+
+                <!-- Details -->
+                <section class="rounded-[var(--radius)] border border-border bg-card px-4 py-4">
+                    <h3 class="text-[11px] uppercase tracking-[0.09em] text-muted-foreground font-medium mb-3.5">Details</h3>
+                    <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+                        <div>
+                            <dt class="text-[10.5px] uppercase tracking-[0.09em] text-muted-foreground font-medium mb-0.5">Type</dt>
+                            <dd class="font-mono">{document.mime_type}</dd>
                         </div>
-                        <nav class="space-y-0.5 max-h-[calc(100vh-8rem)] overflow-y-auto">
+                        <div>
+                            <dt class="text-[10.5px] uppercase tracking-[0.09em] text-muted-foreground font-medium mb-0.5">Size</dt>
+                            <dd class="font-mono">{formatFileSize(document.file_size_bytes)}</dd>
+                        </div>
+                        {#if document.page_count}
+                            <div>
+                                <dt class="text-[10.5px] uppercase tracking-[0.09em] text-muted-foreground font-medium mb-0.5">Pages</dt>
+                                <dd class="font-mono">{document.page_count}</dd>
+                            </div>
+                        {/if}
+                        <div>
+                            <dt class="text-[10.5px] uppercase tracking-[0.09em] text-muted-foreground font-medium mb-0.5">Chunks</dt>
+                            <dd class="font-mono">{document.chunk_count}</dd>
+                        </div>
+                        <div class="col-span-2">
+                            <dt class="text-[10.5px] uppercase tracking-[0.09em] text-muted-foreground font-medium mb-0.5">Updated</dt>
+                            <dd>{formatDate(document.updated_at)}</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <!-- Contents (when section nav available) -->
+                {#if sectionNav.length > 0 && showSectionNav}
+                    <section class="rounded-[var(--radius)] border border-border bg-card px-4 py-4">
+                        <div class="flex items-center gap-2 mb-3">
+                            <List class="h-3.5 w-3.5 text-muted-foreground" />
+                            <h3 class="text-[11px] uppercase tracking-[0.09em] text-muted-foreground font-medium">Contents</h3>
+                        </div>
+                        <nav class="space-y-0.5 max-h-[calc(100vh-20rem)] overflow-y-auto -mx-1.5">
                             {#each sectionNav as section, i (i)}
                                 <button
                                     type="button"
-                                    class="block w-full text-left text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-muted/50 transition-colors duration-150 cursor-pointer truncate"
+                                    class="block w-full text-left text-xs text-muted-foreground hover:text-foreground px-1.5 py-1 rounded hover:bg-muted/60 transition-colors duration-150 cursor-pointer truncate"
                                     onclick={() => handleSidebarClick(section.chunkIndex)}
                                     title={section.heading}
                                     animate:flip={{ duration: listDuration() }}
@@ -443,49 +572,110 @@
                                 </button>
                             {/each}
                         </nav>
-                    </div>
-                </div>
-            {/if}
+                    </section>
+                {/if}
 
-            <!-- Main content area -->
-            <Card class="flex-1 min-w-0">
-                {#if isPdf}
-                    <!-- ═══ PDF: embedded viewer (no tabs) ═══ -->
-                    <CardContent class="p-0">
+                <!-- Tip card while live -->
+                {#if isLiveExtraction}
+                    <div in:fade={{ duration: blockDuration() }} class="rounded-[var(--radius)] border px-4 py-3 flex gap-2.5 items-start text-[12.5px]" style="background: hsl(195 80% 96%); border-color: hsl(195 50% 80%); color: hsl(195 70% 18%);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary mt-px shrink-0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                        <span>Heartbeats stream from the extractor every 10&nbsp;s. You can navigate away — we'll keep working in the background.</span>
+                    </div>
+                {/if}
+            </aside>
+
+            <!-- ─── Main column ─── -->
+            <main class="min-w-0">
+                {#if document.status === 'FAILED'}
+                    <!-- Failure card -->
+                    <div in:fade={{ duration: blockDuration() }} class="rounded-[var(--radius)] border border-destructive/30 bg-destructive/5 overflow-hidden">
+                        <div class="px-5 py-4 border-b border-destructive/20 flex justify-between items-center gap-3">
+                            <h2 class="text-sm font-medium text-destructive">Processing failed</h2>
+                            <Button size="sm" variant="outline" onclick={handleRetry} disabled={retrying}>
+                                <RotateCcw class="mr-2 h-3.5 w-3.5" />
+                                {retrying ? 'Retrying…' : 'Retry'}
+                            </Button>
+                        </div>
+                        {#if document.error_message}
+                            <pre class="px-5 py-4 text-xs text-destructive whitespace-pre-wrap font-mono leading-relaxed">{document.error_message}</pre>
+                        {/if}
+                    </div>
+
+                {:else if isLiveExtraction}
+                    <!-- Live extraction card with shimmer skeleton -->
+                    <div in:fade={{ duration: blockDuration() }} class="live relative rounded-[var(--radius)] border border-border bg-card overflow-hidden">
+                        <div class="px-5 py-3.5 border-b border-border flex justify-between items-center gap-3" style="background: linear-gradient(180deg, hsl(200 25% 99%), var(--card));">
+                            <h2 class="text-sm font-medium m-0">{liveTitle}</h2>
+                            {#if liveStageText}
+                                <span class="font-mono text-[11.5px] text-muted-foreground">{liveStageText}</span>
+                            {/if}
+                        </div>
+                        <div class="progress"></div>
+                        <div class="p-8 flex flex-col gap-3.5" aria-hidden="true">
+                            <div class="skeleton-block h-[22px] w-[55%]"></div>
+                            <div class="skeleton-block h-[11px] w-[92%]"></div>
+                            <div class="skeleton-block h-[11px] w-[82%]"></div>
+                            <div class="skeleton-block h-[11px] w-[48%]"></div>
+                            <div class="skeleton-block h-[16px] w-[38%] mt-3"></div>
+                            <div class="skeleton-block h-[11px] w-[92%]"></div>
+                            <div class="skeleton-block h-[11px] w-[71%]"></div>
+                            <div class="skeleton-block h-[110px] w-[65%] rounded-sm"></div>
+                            <div class="skeleton-block h-[11px] w-[82%]"></div>
+                            <div class="skeleton-block h-[11px] w-[92%]"></div>
+                            <div class="skeleton-block h-[11px] w-[48%]"></div>
+                        </div>
+                        <div class="px-5 py-3 border-t border-border flex justify-between items-center text-xs text-muted-foreground" style="background: linear-gradient(0deg, hsl(200 25% 98%), var(--card));">
+                            <span>Preview will appear here once the first page finishes.</span>
+                            {#if document.processing_progress && document.processing_progress.percent > 0}
+                                <span class="font-mono text-foreground">{document.processing_progress.percent}%</span>
+                            {/if}
+                        </div>
+                    </div>
+
+                {:else if document.status === 'AWAITING_REFINEMENT'}
+                    <!-- Ready-for-refinement card -->
+                    <div in:fade={{ duration: blockDuration() }} class="rounded-[var(--radius)] border border-border bg-card overflow-hidden">
+                        <div class="px-5 py-4 border-b border-border" style="background: linear-gradient(180deg, hsl(200 25% 99%), var(--card));">
+                            <h2 class="text-sm font-medium m-0">Extraction complete · awaiting refinement</h2>
+                        </div>
+                        <div class="px-6 py-8 flex flex-col items-start gap-3 max-w-prose">
+                            <p class="text-sm text-muted-foreground leading-relaxed">
+                                The raw markdown has been pulled out of your document. Open the refinement editor to review docling's output, fix any artifacts, and approve the file for indexing.
+                            </p>
+                            <a href="/library/documents/{document.id}/refine">
+                                <Button>Refine document</Button>
+                            </a>
+                        </div>
+                    </div>
+
+                {:else if isShowingSource}
+                    <!-- PDF viewer (source lens) -->
+                    <div in:fade={{ duration: blockDuration() }} class="rounded-[var(--radius)] border border-border bg-card overflow-hidden">
                         {#if isViewable}
-                            <div class="w-full" style="height: calc(100vh - 12rem);">
+                            <div class="w-full" style="height: calc(100vh - 14rem);">
                                 <iframe
                                     bind:this={pdfIframe}
                                     src="{API_BASE}/library/documents/{document.id}/download?token={getToken()}"
                                     title="PDF viewer — {document.title}"
-                                    class="w-full h-full rounded-md"
+                                    class="w-full h-full"
                                 ></iframe>
                             </div>
                         {:else}
-                            <div class="p-6">
-                                <p class="text-muted-foreground text-center py-8">
-                                    {#if document.status === 'PROCESSING'}
-                                        PDF will be viewable once processing is complete.
-                                    {:else if document.status === 'UPLOADED' || document.status === 'QUEUED'}
-                                        Document is queued for processing.
-                                    {:else}
-                                        PDF not available.
-                                    {/if}
-                                </p>
-                            </div>
+                            <p class="text-muted-foreground text-center py-10 text-sm">PDF not available.</p>
                         {/if}
-                    </CardContent>
+                    </div>
+
                 {:else}
-                    <!-- ═══ Non-PDF: reader view with search ═══ -->
-                    <CardHeader>
-                        <div class="flex items-center justify-between gap-4">
-                            <span class="text-sm font-medium text-muted-foreground">Reader</span>
+                    <!-- Non-PDF reader -->
+                    <div in:fade={{ duration: blockDuration() }} class="rounded-[var(--radius)] border border-border bg-card overflow-hidden">
+                        <div class="px-5 py-3.5 border-b border-border flex justify-between items-center gap-4" style="background: linear-gradient(180deg, hsl(200 25% 99%), var(--card));">
+                            <h2 class="text-sm font-medium m-0">Reader</h2>
                             {#if allChunks.length > 0}
                                 <div class="relative w-64">
                                     <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                                     <Input
                                         type="text"
-                                        placeholder="Find in document..."
+                                        placeholder="Find in document…"
                                         class="pl-8 pr-8 h-8 text-sm"
                                         bind:value={docSearchQuery}
                                         oninput={handleDocSearch}
@@ -503,129 +693,124 @@
                                 </div>
                             {/if}
                         </div>
-                        {#if docSearchQuery && matchingChunkIndices.size > 0}
-                            <p class="text-xs text-muted-foreground mt-1">
-                                {matchingChunkIndices.size} match{matchingChunkIndices.size !== 1 ? 'es' : ''} found
-                            </p>
-                        {:else if docSearchQuery && matchingChunkIndices.size === 0}
-                            <p class="text-xs text-muted-foreground mt-1">No matches found</p>
-                        {/if}
-                    </CardHeader>
-                    <CardContent>
-                        {#if isViewable && document.chunk_count === 0 && document.mime_type.startsWith('image/')}
-                            <div class="text-center space-y-4">
-                                <p class="text-muted-foreground">
-                                    This document is an image. Text extraction will be available in a
-                                    future update.
-                                </p>
-                                <img
-                                    src="{API_BASE}/library/documents/{document.id}/download?token={getToken()}"
-                                    alt={document.title}
-                                    class="max-w-full mx-auto rounded-lg shadow-sm"
-                                />
-                            </div>
-                        {:else if allChunks.length === 0}
-                            <p in:fade={{ duration: blockDuration() }} class="text-muted-foreground text-center py-8">
-                                {#if document.status === 'PROCESSING'}
-                                    Content will appear here once processing is complete.
-                                {:else if document.status === 'UPLOADED' || document.status === 'QUEUED'}
-                                    Document is queued for processing.
+                        {#if docSearchQuery}
+                            <div class="px-5 py-2 border-b border-border text-xs text-muted-foreground">
+                                {#if matchingChunkIndices.size > 0}
+                                    {matchingChunkIndices.size} match{matchingChunkIndices.size !== 1 ? 'es' : ''} found
                                 {:else}
-                                    No text content available.
+                                    No matches found
                                 {/if}
-                            </p>
-                        {:else}
-                            <div class="max-w-none">
-                                {#each allChunks as chunk, i}
-                                    {@const role = getChunkRole(chunk)}
-
-                                    <!-- Collapsible front matter -->
-                                    {#if isEnriched && role === 'front_matter'}
-                                        {#if i === 0 || getChunkRole(allChunks[i - 1]) !== 'front_matter'}
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                class="h-auto px-0 py-1 gap-2 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent mb-2 mt-4 font-normal"
-                                                onclick={() => (showFrontMatter = !showFrontMatter)}
-                                            >
-                                                {#if showFrontMatter}
-                                                    <ChevronDown class="h-3 w-3" />
-                                                {:else}
-                                                    <ChevronRight class="h-3 w-3" />
-                                                {/if}
-                                                Front Matter
-                                            </Button>
-                                        {/if}
-                                        {#if showFrontMatter}
-                                            <div
-                                                id="chunk-{i}"
-                                                class="opacity-60 text-sm transition-colors {matchingChunkIndices.has(i) ? 'bg-yellow-100 rounded px-2 py-1 -mx-2 opacity-100' : ''}"
-                                            >
-                                                <MarkdownRenderer
-                                                    content={chunk.content}
-                                                    format={(chunk.chunk_metadata?.content_format as string) ?? 'plaintext'}
-                                                    role="front_matter"
-                                                />
-                                            </div>
-                                        {/if}
-
-                                    <!-- Collapsible TOC -->
-                                    {:else if isEnriched && role === 'toc'}
-                                        {#if i === 0 || getChunkRole(allChunks[i - 1]) !== 'toc'}
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                class="h-auto px-0 py-1 gap-2 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent mb-2 mt-4 font-normal"
-                                                onclick={() => (showToc = !showToc)}
-                                            >
-                                                {#if showToc}
-                                                    <ChevronDown class="h-3 w-3" />
-                                                {:else}
-                                                    <ChevronRight class="h-3 w-3" />
-                                                {/if}
-                                                Table of Contents
-                                            </Button>
-                                        {/if}
-                                        {#if showToc}
-                                            <div
-                                                id="chunk-{i}"
-                                                class="opacity-60 text-sm transition-colors {matchingChunkIndices.has(i) ? 'bg-yellow-100 rounded px-2 py-1 -mx-2 opacity-100' : ''}"
-                                            >
-                                                <MarkdownRenderer
-                                                    content={chunk.content}
-                                                    format={(chunk.chunk_metadata?.content_format as string) ?? 'plaintext'}
-                                                    role="toc"
-                                                />
-                                            </div>
-                                        {/if}
-
-                                    <!-- Body content -->
-                                    {:else}
-                                        <div
-                                            id="chunk-{i}"
-                                            class="transition-colors {matchingChunkIndices.has(i) ? 'bg-yellow-100 rounded px-2 py-1 -mx-2' : ''}"
-                                        >
-                                            <MarkdownRenderer
-                                                content={chunk.content}
-                                                format={(chunk.chunk_metadata?.content_format as string) ?? 'plaintext'}
-                                                role={role}
-                                            />
-                                        </div>
-                                    {/if}
-                                {/each}
                             </div>
-
-                            {#if !allChunksLoaded && document.chunk_count > allChunks.length}
-                                <div class="text-center mt-6">
-                                    <Button variant="outline" onclick={loadMoreChunks} disabled={loadingMoreChunks}>
-                                        {loadingMoreChunks ? 'Loading...' : `Load more (${allChunks.length} of ${document.chunk_count})`}
-                                    </Button>
-                                </div>
-                            {/if}
                         {/if}
-                    </CardContent>
+                        <div class="px-6 py-6">
+                            {#if isViewable && document.chunk_count === 0 && document.mime_type.startsWith('image/')}
+                                <div class="text-center space-y-4">
+                                    <p class="text-muted-foreground text-sm">
+                                        This document is an image. Text extraction will be available in a future update.
+                                    </p>
+                                    <img
+                                        src="{API_BASE}/library/documents/{document.id}/download?token={getToken()}"
+                                        alt={document.title}
+                                        class="max-w-full mx-auto rounded-md shadow-sm"
+                                    />
+                                </div>
+                            {:else if allChunks.length === 0}
+                                <p in:fade={{ duration: blockDuration() }} class="text-muted-foreground text-center py-8 text-sm">
+                                    No text content available.
+                                </p>
+                            {:else}
+                                <div class="max-w-none">
+                                    {#each allChunks as chunk, i}
+                                        {@const role = getChunkRole(chunk)}
+
+                                        <!-- Collapsible front matter -->
+                                        {#if isEnriched && role === 'front_matter'}
+                                            {#if i === 0 || getChunkRole(allChunks[i - 1]) !== 'front_matter'}
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    class="h-auto px-0 py-1 gap-2 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent mb-2 mt-4 font-normal"
+                                                    onclick={() => (showFrontMatter = !showFrontMatter)}
+                                                >
+                                                    {#if showFrontMatter}
+                                                        <ChevronDown class="h-3 w-3" />
+                                                    {:else}
+                                                        <ChevronRight class="h-3 w-3" />
+                                                    {/if}
+                                                    Front Matter
+                                                </Button>
+                                            {/if}
+                                            {#if showFrontMatter}
+                                                <div
+                                                    id="chunk-{i}"
+                                                    class="opacity-60 text-sm transition-colors {matchingChunkIndices.has(i) ? 'bg-yellow-100 rounded px-2 py-1 -mx-2 opacity-100' : ''}"
+                                                >
+                                                    <MarkdownRenderer
+                                                        content={chunk.content}
+                                                        format={(chunk.chunk_metadata?.content_format as string) ?? 'plaintext'}
+                                                        role="front_matter"
+                                                    />
+                                                </div>
+                                            {/if}
+
+                                        <!-- Collapsible TOC -->
+                                        {:else if isEnriched && role === 'toc'}
+                                            {#if i === 0 || getChunkRole(allChunks[i - 1]) !== 'toc'}
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    class="h-auto px-0 py-1 gap-2 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent mb-2 mt-4 font-normal"
+                                                    onclick={() => (showToc = !showToc)}
+                                                >
+                                                    {#if showToc}
+                                                        <ChevronDown class="h-3 w-3" />
+                                                    {:else}
+                                                        <ChevronRight class="h-3 w-3" />
+                                                    {/if}
+                                                    Table of Contents
+                                                </Button>
+                                            {/if}
+                                            {#if showToc}
+                                                <div
+                                                    id="chunk-{i}"
+                                                    class="opacity-60 text-sm transition-colors {matchingChunkIndices.has(i) ? 'bg-yellow-100 rounded px-2 py-1 -mx-2 opacity-100' : ''}"
+                                                >
+                                                    <MarkdownRenderer
+                                                        content={chunk.content}
+                                                        format={(chunk.chunk_metadata?.content_format as string) ?? 'plaintext'}
+                                                        role="toc"
+                                                    />
+                                                </div>
+                                            {/if}
+
+                                        <!-- Body content -->
+                                        {:else}
+                                            <div
+                                                id="chunk-{i}"
+                                                class="transition-colors {matchingChunkIndices.has(i) ? 'bg-yellow-100 rounded px-2 py-1 -mx-2' : ''}"
+                                            >
+                                                <MarkdownRenderer
+                                                    content={chunk.content}
+                                                    format={(chunk.chunk_metadata?.content_format as string) ?? 'plaintext'}
+                                                    role={role}
+                                                />
+                                            </div>
+                                        {/if}
+                                    {/each}
+                                </div>
+
+                                {#if !allChunksLoaded && document.chunk_count > allChunks.length}
+                                    <div class="text-center mt-6">
+                                        <Button variant="outline" onclick={loadMoreChunks} disabled={loadingMoreChunks}>
+                                            {loadingMoreChunks ? 'Loading…' : `Load more (${allChunks.length} of ${document.chunk_count})`}
+                                        </Button>
+                                    </div>
+                                {/if}
+                            {/if}
+                        </div>
+                    </div>
                 {/if}
-            </Card>
+            </main>
         </div>
     {/if}
 </div>
@@ -647,3 +832,146 @@
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>
+
+<style>
+    /* ─── Chips (header status / meta) ─────────────────────────── */
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 9px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        border-radius: 999px;
+        color: var(--muted-fg);
+        font-size: 12px;
+        line-height: 1;
+        white-space: nowrap;
+    }
+    .chip .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted-fg);
+    }
+    .chip-live {
+        color: hsl(28 75% 32%);
+        background: hsl(38 92% 96%);
+        border-color: hsl(38 70% 80%);
+    }
+    .chip-live .dot {
+        background: hsl(38 92% 50%);
+        animation: chip-pulse 1.4s infinite;
+    }
+    .chip-done {
+        color: hsl(155 70% 22%);
+        background: hsl(155 70% 96%);
+        border-color: hsl(155 50% 78%);
+    }
+    .chip-done .dot { background: var(--accent); }
+    .chip-refine {
+        color: hsl(195 70% 22%);
+        background: hsl(195 80% 96%);
+        border-color: hsl(195 50% 78%);
+    }
+    .chip-refine .dot { background: var(--primary); }
+    .chip-failed {
+        color: hsl(355 75% 38%);
+        background: hsl(355 80% 96%);
+        border-color: hsl(355 50% 82%);
+    }
+    .chip-failed .dot { background: var(--destructive); }
+
+    @keyframes chip-pulse {
+        0%   { box-shadow: 0 0 0 0   hsla(38 92% 50% / 0.55); }
+        70%  { box-shadow: 0 0 0 6px hsla(38 92% 50% / 0); }
+        100% { box-shadow: 0 0 0 0   hsla(38 92% 50% / 0); }
+    }
+
+    /* ─── View-mode segmented toggle ───────────────────────────── */
+    .view-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px;
+        border: 1px solid var(--border);
+        background: var(--muted);
+        border-radius: calc(var(--radius) - 2px);
+    }
+    .view-toggle button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        font-size: 12.5px;
+        line-height: 1;
+        font-weight: 500;
+        color: var(--muted-fg);
+        background: transparent;
+        border: 0;
+        border-radius: calc(var(--radius) - 4px);
+        cursor: pointer;
+        transition: background-color 150ms ease, color 150ms ease;
+        white-space: nowrap;
+    }
+    .view-toggle button:hover {
+        color: var(--fg);
+    }
+    .view-toggle button.active {
+        background: var(--card);
+        color: var(--fg);
+        box-shadow: 0 1px 2px hsl(195 30% 20% / 0.06);
+    }
+    .view-toggle button:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 1px;
+    }
+
+    /* ─── Live extraction card ─────────────────────────────────── */
+    .live::after {
+        /* subtle grain texture to lift the card above the page */
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(hsl(195 30% 60% / 0.05) 1px, transparent 1px);
+        background-size: 4px 4px;
+        pointer-events: none;
+    }
+    .progress {
+        position: relative;
+        height: 3px;
+        background: var(--muted);
+        overflow: hidden;
+    }
+    .progress::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg,
+            transparent 0%,
+            var(--primary) 40%,
+            var(--primary) 60%,
+            transparent 100%);
+        width: 40%;
+        animation: slide 1.6s ease-in-out infinite;
+    }
+    @keyframes slide {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+    }
+
+    /* ─── Markdown skeleton shimmer ────────────────────────────── */
+    .skeleton-block {
+        background: linear-gradient(90deg,
+            hsl(205 22% 91%),
+            hsl(205 22% 95%),
+            hsl(205 22% 91%));
+        background-size: 200% 100%;
+        border-radius: 3px;
+        animation: shimmer 1.8s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+        0%   { background-position: 100% 0; }
+        100% { background-position: -100% 0; }
+    }
+</style>

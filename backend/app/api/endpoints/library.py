@@ -26,15 +26,21 @@ from app.models.library import (ALLOWED_DOCUMENT_TYPES,
 from app.schemas.jobs import ProcessingProgress
 from app.schemas.library import (DocumentChunkResponse, DocumentDetailResponse,
                                  DocumentListResponse, DocumentResponse,
-                                 ImportUrlRequest, SearchResponse,
+                                 ImportUrlRequest, MarkdownPayload,
+                                 RefineCompleteRequest, SearchResponse,
                                  SearchResultGroup, SearchResultItem, TOCEntry)
 from app.services.core.audit import log_audit
 from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
-from app.services.core.task_runner import get_task_runner
-from app.services.documents.document_processor import (build_book,
-                                                       process_document)
+from app.services.core.background_handler import get_background_handler
+# Side-effect imports: @register_job decorators populate JOB_REGISTRY.
+from app.services.documents.extraction import extract_job  # noqa: F401
+from app.services.documents.refinement import index_job  # noqa: F401
+from app.services.documents.extraction.source_page import render_source_page
+from app.services.documents.refinement.refinement_service import (mark_complete,
+                                                                   reopen,
+                                                                   save_markdown)
 from app.services.protocols.url_importer import import_from_url
 
 router = APIRouter()
@@ -95,6 +101,7 @@ def _validate_extension_matches_mime(filename: str, mime_type: str) -> bool:
 
 @router.post("/documents", response_model=DocumentResponse, status_code=201)
 async def upload_document(
+    request: Request,
     file: UploadFile,
     title: str = Form(...),
     project_id: Optional[uuid.UUID] = Form(None),
@@ -200,8 +207,14 @@ async def upload_document(
     await db.commit()
     await db.refresh(doc)
 
-    # Trigger background processing via task runner
-    get_task_runner().submit(build_book(doc.id, settings.database_url))
+    # Trigger background processing via background handler. Pass the live
+    # base URL so the docling subprocess heartbeats back to whatever port
+    # this process actually bound (not whatever was in settings).
+    await get_background_handler().launch(
+        "document_extract",
+        document_id=doc.id,
+        heartbeat_base_url=str(request.base_url).rstrip("/"),
+    )
 
     resp = DocumentResponse.model_validate(doc)
     resp.can_delete = True  # Uploader always has ADMIN
@@ -332,6 +345,11 @@ async def get_document(
         can_delete=can_delete,
         processing_progress=progress,
         table_of_contents=toc_entries,
+        source_format=doc.source_format,
+        refinement_status=doc.refinement_status,
+        refinement_flags=doc.refinement_flags,
+        refined_by_id=doc.refined_by_id,
+        refined_at=doc.refined_at,
     )
 
 
@@ -491,6 +509,7 @@ async def delete_document(
 )
 async def retry_processing(
     document_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_active_subscription()),
@@ -504,10 +523,14 @@ async def retry_processing(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if doc.status in (DocumentStatus.PROCESSING.value,):
+    # Retry is only meaningful for failed documents. Anything still in
+    # flight (QUEUED/EXTRACTING/INDEXING/PROCESSING/AWAITING_REFINEMENT)
+    # or already terminal-successful (READY/INDEXED/ENRICHED/UPLOADED)
+    # is rejected — the user should wait, delete, or just re-upload.
+    if doc.status != DocumentStatus.FAILED.value:
         raise HTTPException(
             status_code=409,
-            detail="Document is currently processing",
+            detail=f"Document is not in a failed state (status={doc.status})",
         )
 
     # Reset status
@@ -517,53 +540,13 @@ async def retry_processing(
     await db.commit()
     await db.refresh(doc)
 
-    # Re-trigger processing via task runner
-    get_task_runner().submit(build_book(doc.id, settings.database_url))
-
-    return doc
-
-
-@router.post(
-    "/documents/{document_id}/enrich",
-    response_model=DocumentResponse,
-)
-async def enrich_document_endpoint(
-    document_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    _: User = Depends(require_active_subscription()),
-):
-    """Manually trigger LLM structure enrichment for a document.
-
-    Only works for PDF documents that are INDEXED or ENRICHED.
-    """
-    from app.services.documents.document_processor import enrich_document
-
-    org_id = await _get_user_org_id(current_user, db)
-
-    result = await db.execute(
-        select(Document).where(Document.id == document_id, Document.org_id == org_id)
+    # Re-trigger processing via background handler. See upload_document for
+    # the rationale on passing ``heartbeat_base_url``.
+    await get_background_handler().launch(
+        "document_extract",
+        document_id=doc.id,
+        heartbeat_base_url=str(request.base_url).rstrip("/"),
     )
-    doc = result.scalar_one_or_none()
-    if doc is None:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    if doc.mime_type != "application/pdf":
-        raise HTTPException(
-            status_code=400,
-            detail="Enrichment is only supported for PDF documents",
-        )
-
-    if doc.status not in (
-        DocumentStatus.INDEXED.value,
-        DocumentStatus.ENRICHED.value,
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="Document must be indexed before enrichment",
-        )
-
-    get_task_runner().submit(enrich_document(doc.id, settings.database_url))
 
     return doc
 
@@ -835,6 +818,7 @@ async def backfill_embeddings(
 )
 async def import_document_from_url(
     body: ImportUrlRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_active_subscription()),
@@ -860,7 +844,177 @@ async def import_document_from_url(
     await db.commit()
     await db.refresh(doc)
 
-    # Trigger background processing via task runner
-    get_task_runner().submit(build_book(doc.id, settings.database_url))
+    # Trigger background processing via background handler. See
+    # upload_document for the rationale on passing ``heartbeat_base_url``.
+    await get_background_handler().launch(
+        "document_extract",
+        document_id=doc.id,
+        heartbeat_base_url=str(request.base_url).rstrip("/"),
+    )
 
     return doc
+
+
+@router.get("/documents/{document_id}/markdown")
+async def get_document_markdown(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = await _get_user_org_id(current_user, db)
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(404, "Markdown not available")
+    allowed = await check_permission(
+        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(403, "Insufficient permissions")
+    if doc.stored_markdown is None:
+        raise HTTPException(404, "Markdown not available")
+    return {"markdown": doc.stored_markdown}
+
+
+@router.put("/documents/{document_id}/markdown", response_model=DocumentResponse)
+async def put_document_markdown(
+    document_id: uuid.UUID,
+    payload: MarkdownPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = await _get_user_org_id(current_user, db)
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(404, "Document not found")
+    allowed = await check_permission(
+        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.EDIT
+    )
+    if not allowed:
+        raise HTTPException(403, "Insufficient permissions")
+    await save_markdown(db, doc, payload.markdown, user_id=current_user.id)
+    await db.commit()
+    await db.refresh(doc)
+    return DocumentResponse.model_validate(doc)
+
+
+@router.post(
+    "/documents/{document_id}/refine/complete",
+    response_model=DocumentResponse,
+)
+async def refine_complete(
+    document_id: uuid.UUID,
+    payload: RefineCompleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = await _get_user_org_id(current_user, db)
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(404, "Document not found")
+    allowed = await check_permission(
+        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.EDIT
+    )
+    if not allowed:
+        raise HTTPException(403, "Insufficient permissions")
+
+    if payload.reopen:
+        try:
+            await reopen(db, doc)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        await db.commit()
+        await db.refresh(doc)
+        return DocumentResponse.model_validate(doc)
+
+    try:
+        await mark_complete(db, doc, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    await db.commit()
+
+    # Indexing now runs as a background job so the user gets the live
+    # shimmer card and the doc survives worker restarts via the
+    # heartbeat / recovery machinery. See document_index in
+    # services/documents/refinement/index_job.py.
+    handler = get_background_handler()
+    await handler.launch("document_index", document_id=doc.id)
+
+    await db.refresh(doc)
+    return DocumentResponse.model_validate(doc)
+
+
+@router.get("/documents/{document_id}/images/{filename}")
+async def get_document_image(
+    document_id: uuid.UUID,
+    filename: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not re.fullmatch(r"\d+\.png", filename):
+        raise HTTPException(400, "Invalid image filename")
+    org_id = await _get_user_org_id(current_user, db)
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(404, "Image not found")
+    allowed = await check_permission(
+        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(403, "Insufficient permissions")
+    if doc.images_dir is None:
+        raise HTTPException(404, "Image not found")
+    path = FileStorageService().storage_root / doc.images_dir / filename
+    if not path.exists():
+        raise HTTPException(404, "Image not found")
+    return FileResponse(path, media_type="image/png")
+
+
+@router.get("/documents/{document_id}/source-page/{page_number}.png")
+async def get_document_source_page(
+    document_id: uuid.UUID,
+    page_number: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = await _get_user_org_id(current_user, db)
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id, Document.org_id == org_id
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(404, "Source page not available")
+    allowed = await check_permission(
+        db, current_user.id, ObjectType.DOCUMENT, document_id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(403, "Insufficient permissions")
+    if doc.mime_type != "application/pdf":
+        raise HTTPException(404, "Source page not available")
+    path = FileStorageService().resolve_path(doc.file_path)
+    try:
+        png = render_source_page(path, page_number)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return Response(content=png, media_type="image/png")
