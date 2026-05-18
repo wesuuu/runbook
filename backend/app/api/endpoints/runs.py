@@ -314,9 +314,16 @@ async def get_run_permissions(
 )
 async def list_project_runs(
     project_id: UUID,
+    produces_lot: Optional[bool] = Query(
+        None,
+        description="Filter by lot-producer designation. Omit to return all.",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Run).where(Run.project_id == project_id))
+    stmt = select(Run).where(Run.project_id == project_id)
+    if produces_lot is not None:
+        stmt = stmt.where(Run.produces_lot == produces_lot)
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 

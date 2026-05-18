@@ -86,3 +86,48 @@ async def test_update_run_produces_lot_without_lot_number_rejected(
     )
     assert resp.status_code == 422
     assert "lot_number" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_list_project_runs_filter_produces_lot(
+    client: AsyncClient, auth_headers, test_project
+):
+    # Create two runs: one producer, one not.
+    await client.post(
+        "/science/runs",
+        headers=auth_headers,
+        json={
+            "name": "non-producer",
+            "project_id": str(test_project.id),
+        },
+    )
+    await client.post(
+        "/science/runs",
+        headers=auth_headers,
+        json={
+            "name": "producer",
+            "project_id": str(test_project.id),
+            "produces_lot": True,
+            "lot_number": "LOT-000010",
+        },
+    )
+
+    resp_true = await client.get(
+        f"/science/projects/{test_project.id}/runs?produces_lot=true",
+        headers=auth_headers,
+    )
+    assert resp_true.status_code == 200
+    names = {r["name"] for r in resp_true.json()}
+    assert names == {"producer"}
+
+    resp_false = await client.get(
+        f"/science/projects/{test_project.id}/runs?produces_lot=false",
+        headers=auth_headers,
+    )
+    assert {r["name"] for r in resp_false.json()} == {"non-producer"}
+
+    resp_all = await client.get(
+        f"/science/projects/{test_project.id}/runs",
+        headers=auth_headers,
+    )
+    assert {r["name"] for r in resp_all.json()} >= {"producer", "non-producer"}
