@@ -8,13 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.security import TokenPayload
 from app.db.session import get_db
-from app.models.iam import (
-    TIER_RANK,
-    ObjectType,
-    PermissionLevel,
-    SubscriptionTier,
-    User,
-)
+from app.models.iam import (TIER_RANK, ObjectType, PermissionLevel,
+                            SubscriptionTier, User)
 from app.services.core.permissions import check_permission
 
 T = TypeVar("T")
@@ -189,6 +184,48 @@ def require_org_role(required_role: "OrgRole"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Requires {required_role.value} role or above",
+            )
+        return user
+
+    return _check
+
+
+def require_any_org_role(roles: list["OrgRole"]):
+    """Allow if the user's org membership holds ANY of the given roles.
+
+    Additive — does NOT use the legacy rank hierarchy. ADMIN must be listed
+    explicitly to satisfy a `SITE_MANAGER ∨ ADMIN` rule.
+    """
+    from app.models.iam import OrganizationMember, has_any_org_role
+
+    role_values = {r.value for r in roles}
+
+    async def _check(
+        user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        if user.selected_org_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No organization selected",
+            )
+        result = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.organization_id == user.selected_org_id,
+                OrganizationMember.archived == False,  # noqa: E712
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not a member of this organization",
+            )
+        if not has_any_org_role(member, list(role_values)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires one of: {sorted(role_values)}",
             )
         return user
 
