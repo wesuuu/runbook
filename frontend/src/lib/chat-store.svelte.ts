@@ -54,6 +54,12 @@ export interface PendingApproval {
 let pendingApproval = $state<PendingApproval | null>(null);
 let submittingApproval = $state(false);
 
+// F-0089: sticky skill activation. Clicking a skill chip arms the next
+// message; the user types their prompt and `sendMessage` attaches the
+// `skill_id` to the request body. Cleared after the agent emits `done`
+// and when the active session changes.
+let activeSkill = $state<ChatSkill | null>(null);
+
 // Scroll callback — set by the component that owns the DOM ref
 let scrollFn: (() => void) | null = null;
 
@@ -287,6 +293,8 @@ export function getChatConfig(): ChatConfig | null { return chatConfig; }
 export function getMessageError(): string | null { return messageError; }
 export function getPendingApproval(): PendingApproval | null { return pendingApproval; }
 export function isSubmittingApproval(): boolean { return submittingApproval; }
+export function getActiveSkill(): ChatSkill | null { return activeSkill; }
+export function clearActiveSkill(): void { activeSkill = null; }
 
 // ─── Panel state actions ───
 
@@ -384,6 +392,8 @@ export async function createSession(): Promise<void> {
 export async function selectSession(sessionId: string): Promise<void> {
     clearPoll();
     sending = false;
+    // F-0089: switching sessions clears the sticky skill badge.
+    activeSkill = null;
     try {
         const detail = await api.get(`/chat/sessions/${sessionId}`, {
             schema: ChatSessionDetailSchema,
@@ -430,9 +440,12 @@ export async function clearConversation(): Promise<void> {
     }
 }
 
-export async function sendMessage(skillId?: string): Promise<void> {
+export async function sendMessage(): Promise<void> {
     const content = messageInput.trim();
     if (!content || sending) return;
+    // Snapshot the armed skill (if any) before any awaits so a concurrent
+    // session switch / clear can't strip it from this in-flight request.
+    const skillId = activeSkill?.name ?? null;
 
     // Lazy session creation — if no active session, create one first
     if (!activeSession) {
@@ -517,6 +530,8 @@ export async function sendMessage(skillId?: string): Promise<void> {
                         assistant_message: event.assistant_message as ChatMessage,
                         sources: event.sources as ChatSourceReference[],
                     };
+                    // F-0089: agent finished — clear the sticky skill badge.
+                    activeSkill = null;
                 } else if (event.type === 'error') {
                     errorDetail = event.detail;
                     errorCode = (event as { error_code?: string }).error_code ?? null;
@@ -683,9 +698,9 @@ export async function submitApproval(
 }
 
 export function activateSkill(skill: ChatSkill): void {
-    const label = skill.name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    messageInput = label;
-    sendMessage(skill.name);
+    // F-0089: arm the next user message. The badge clears on the agent's
+    // `done` event (success path) or when the user switches sessions.
+    activeSkill = skill;
 }
 
 export function showSourcesForMessage(msg: ChatMessage): void {
@@ -720,6 +735,7 @@ export function resetChat(): void {
     chatConfig = null;
     pendingApproval = null;
     submittingApproval = false;
+    activeSkill = null;
     scrollFn = null;
     clearPoll();
 }
@@ -727,4 +743,6 @@ export function resetChat(): void {
 // --- Test-only export (DO NOT USE FROM APP CODE) ---
 export function __test_setActiveSession(s: ChatSessionDetail | null): void {
     activeSession = s;
+    // F-0089: switching sessions clears the sticky skill badge.
+    activeSkill = null;
 }
