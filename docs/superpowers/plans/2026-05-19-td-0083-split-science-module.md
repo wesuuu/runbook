@@ -4,7 +4,7 @@
 
 **Goal:** Split the `science` umbrella (models, schemas, services, `/science/` API prefix) into six domain modules with no behavior change.
 
-**Architecture:** Mechanical refactor in seven stages. Stages 1–3 create domain modules while leaving a transitional re-export shim so the suite stays green; stage 4 codemods all 189+ backend import sites off the umbrella; stage 5 deletes the now-unused umbrella files; stage 6 drops the `/science/` API prefix; stage 7 updates frontend URLs. The existing test suite is the correctness backstop — no behavior assertions change.
+**Architecture:** Mechanical refactor in eight stages. Stages 1–3 create domain modules while leaving a transitional re-export shim so the suite stays green; stage 4 codemods all 189+ backend import sites (`app/` **and** `tests/`) off the umbrella; stage 5 deletes the now-unused umbrella files; stage 6 drops the `/science/` API prefix; stage 7 updates frontend URLs; stage 8 splits the legacy `test_science_api.py` grab-bag into per-domain integration files. The existing test suite is the correctness backstop — no behavior assertions change.
 
 **Tech Stack:** FastAPI, SQLAlchemy 2.0, Pydantic, Alembic (backend); Svelte 5 + Vite (frontend); `pytest`, `mypy`, `black`, `isort`, `svelte-check`.
 
@@ -257,8 +257,8 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 4: Codemod every backend import off the umbrella
 
 **Files:**
-- Create: `backend/scripts/split_science_imports.py` (one-shot tool; deleted in Task 8)
-- Modify: every `backend/` file importing `app.models.science` / `app.schemas.science` / `app.services.science`
+- Create: `backend/scripts/split_science_imports.py` (one-shot tool; deleted in Task 9)
+- Modify: every `backend/` file importing the umbrella — `backend/app/` (~75 sites) **and** `backend/tests/` including `conftest.py`, `fixtures/`, and `benchmarks/` (~114 sites). The codemod's `rglob` walks all of `backend/`, so test code is migrated by the same pass.
 
 - [ ] **Step 1: Write the codemod**
 
@@ -518,7 +518,212 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-## Task 8: Final verification and doc refresh
+## Task 8: Split `test_science_api.py` into per-domain integration files
+
+The umbrella integration test (`tests/integration/test_science_api.py`, 47
+tests across 6 domains) is the test-layer twin of the `science.py` grab-bag.
+Splitting it by domain finishes the refactor: every domain's API tests live in
+that domain's file. This is a pure move — **no test body changes** (the URLs
+inside were already rewritten by Task 6's `sed`). Two target files already
+exist and are appended to; five are new.
+
+**Files:**
+- Create: `backend/tests/integration/test_unit_ops_api.py`, `test_protocol_roles_api.py`, `test_protocol_versions_api.py`, `test_runs_api.py`, `test_run_role_assignments_api.py`
+- Modify (append): `backend/tests/integration/test_protocols_api.py`, `test_projects_api.py`
+- Delete: `backend/tests/integration/test_science_api.py`
+
+`test_science_api.py` has **no module-level fixtures, helpers, or constants** —
+only `async def test_*` functions and `# ---` section comments (verified). So
+each step below is a verbatim function move; nothing shared needs relocating.
+
+Post-Task-4 the file's header reads:
+
+```python
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.iam import (
+    ObjectPermission, ObjectType, Organization, OrganizationMember,
+    PermissionLevel, PrincipalType, User,
+)
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
+```
+
+Call that **HEADER** below. `isort` (Step 10) re-wraps it; copy it whole and
+let the formatter normalize.
+
+- [ ] **Step 1: Baseline the test count**
+
+Run: `cd backend && source .venv/bin/activate && pytest --collect-only -q tests/integration/test_science_api.py | tail -3`
+Expected: `47 tests collected`. Record this — Step 10 reconciles against it.
+
+- [ ] **Step 2: Create `test_unit_ops_api.py` (3 tests)**
+
+New file. Header is the minimal subset (these tests use only `client` /
+`auth_headers`):
+
+```python
+import pytest
+from httpx import AsyncClient
+```
+
+Cut these functions verbatim from `test_science_api.py` (with their
+`@pytest.mark.asyncio` decorators) into the new file:
+
+- `test_list_unit_ops_authenticated`
+- `test_list_unit_ops_unauthenticated`
+- `test_create_unit_op`
+
+(`tests/integration/test_unit_ops_scoping.py` already exists but covers
+library-scoping, a different concern — keep these as a separate API file.)
+
+- [ ] **Step 3: Create `test_protocol_roles_api.py` (4 tests)**
+
+New file. Header = **HEADER**. Cut these functions verbatim:
+
+- `test_list_protocol_roles`
+- `test_create_protocol_role`
+- `test_update_protocol_role`
+- `test_delete_protocol_role`
+
+- [ ] **Step 4: Create `test_protocol_versions_api.py` (10 tests)**
+
+New file. Header = **HEADER**. Cut these functions verbatim — the protocol
+publish / draft-version / version-listing tests, including the ones currently
+under the `# --- Protocol Publishing ---` section comment:
+
+- `test_publish_protocol_success`
+- `test_save_as_draft_creates_draft_version`
+- `test_publish_draft_not_found`
+- `test_save_draft_always_creates_version`
+- `test_save_as_draft_syncs_live_graph_for_unpublished_protocol`
+- `test_save_as_draft_preserves_live_graph_for_published_protocol`
+- `test_list_versions_returns_description`
+- `test_publish_draft_persists_description`
+- `test_publish_draft_persists_change_summary`
+- `test_publish_draft_without_body_still_works`
+
+- [ ] **Step 5: Create `test_runs_api.py` (11 tests)**
+
+New file. Header = **HEADER**. Cut these functions verbatim — run CRUD plus
+the run-start lifecycle tests:
+
+- `test_create_run`
+- `test_create_run_no_project_perm`
+- `test_get_run_with_perm`
+- `test_get_run_without_perm`
+- `test_update_run_with_edit_perm`
+- `test_list_runs_for_project`
+- `test_start_run_without_assignments_fails`
+- `test_start_run_with_swimlanes_requires_all_assigned`
+- `test_start_run_succeeds_with_one_assignment_no_swimlanes`
+- `test_start_run_succeeds_with_all_swimlanes_assigned`
+- `test_started_by_id_set_on_active_transition`
+
+- [ ] **Step 6: Create `test_run_role_assignments_api.py` (7 tests)**
+
+New file. Header = **HEADER**. Cut these functions verbatim — role-assignment
+CRUD plus the assignment-gated transition/audit tests:
+
+- `test_create_role_assignment`
+- `test_get_role_assignments`
+- `test_update_role_assignment`
+- `test_delete_role_assignment`
+- `test_transition_to_active_with_all_roles_assigned`
+- `test_transition_to_active_without_all_roles_assigned`
+- `test_assignment_operations_audit_logged`
+
+- [ ] **Step 7: Append Protocols CRUD to `test_protocols_api.py` (10 tests)**
+
+`test_protocols_api.py` already exists (it holds
+`test_delete_sample_protocol_hard_deletes`). Its header already imports
+`pytest`, `AsyncClient`, `select`, `AsyncSession`, `Organization`, `Project`,
+`Protocol` — append `User` to the `app.models.iam` import and add
+`from app.models.runs import Run` only if a moved test references `Run`
+(none do — skip it). Append these functions verbatim to the end of the file:
+
+- `test_create_protocol`
+- `test_create_protocol_no_project_perm`
+- `test_get_protocol_with_project_perm`
+- `test_get_protocol_without_perm`
+- `test_update_protocol_with_edit_perm`
+- `test_update_protocol_view_only_forbidden`
+- `test_list_protocols_for_project`
+- `test_list_protocols_filters_archived_by_default`
+- `test_list_protocols_surfaces_latest_draft_version`
+- `test_get_protocol_surfaces_latest_draft_version`
+
+Collision guard: none of these 10 names exist in `test_protocols_api.py`
+(verified — its only test is `test_delete_sample_protocol_hard_deletes`). If a
+future collision appears, `grep -nE '^async def NAME' test_protocols_api.py`
+before appending; a same-name hit means Python would silently shadow the
+earlier `def` — diff the two bodies, drop the move if identical, otherwise
+rename the moved one and note the rename.
+
+- [ ] **Step 8: Append Project Members to `test_projects_api.py` (2 tests)**
+
+`test_projects_api.py` already exists with a full `app.models.iam` import
+(`ObjectPermission`, `ObjectType`, `Organization`, `OrganizationMember`,
+`PermissionLevel`, `PrincipalType`, `User`) and `from app.models.projects
+import Project` — no header change needed. Append these functions verbatim:
+
+- `test_get_project_members`
+- `test_get_project_members_no_perm`
+
+(Collision guard: neither name exists in `test_projects_api.py` — verified.)
+
+- [ ] **Step 9: Delete the emptied umbrella test file**
+
+`test_science_api.py` is now empty of test functions (only the header and
+`# ---` comments remain). Delete it:
+
+```bash
+git rm backend/tests/integration/test_science_api.py
+```
+
+- [ ] **Step 10: Verify the test count and run the suite**
+
+```bash
+cd backend && source .venv/bin/activate
+isort tests/integration && black tests/integration
+pytest --collect-only -q tests/integration/test_unit_ops_api.py \
+  tests/integration/test_protocol_roles_api.py \
+  tests/integration/test_protocol_versions_api.py \
+  tests/integration/test_runs_api.py \
+  tests/integration/test_run_role_assignments_api.py \
+  tests/integration/test_protocols_api.py \
+  tests/integration/test_projects_api.py | tail -3
+```
+
+Expected: **59 tests collected** across the 7 destination files — the 47
+moved tests, plus the 1 test already in `test_protocols_api.py`, plus the 11
+already in `test_projects_api.py` (`47 + 1 + 11 = 59`). Per file:
+`test_unit_ops_api.py` 3, `test_protocol_roles_api.py` 4,
+`test_protocol_versions_api.py` 10, `test_runs_api.py` 11,
+`test_run_role_assignments_api.py` 7, `test_protocols_api.py` 11,
+`test_projects_api.py` 13. Then run the full suite:
+
+Run: `pytest -q tests/integration`
+Expected: PASS — identical pass/fail counts to before the split (no test body
+changed). A `0 tests collected` for any new file means a decorator was left
+behind; a failure means a function was split mid-body — re-check the cut.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add backend/tests/integration/
+git commit -m "test(TD-0083): split test_science_api into per-domain files
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 9: Final verification and doc refresh
 
 **Files:**
 - Delete: `backend/scripts/split_science_imports.py`
