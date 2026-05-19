@@ -1,3 +1,19 @@
+"""DEPRECATED (TD-0083) — legacy "science" umbrella module.
+
+The "science" namespace is a grab-bag with no clear domain meaning. Per
+TD-0083 this module is being split by domain and will be removed:
+
+    - models/protocols.py  — Protocol, ProtocolRole, ProtocolVersion,
+                             UnitOpDefinition, UnitOpLibrarySubscription
+    - models/runs.py       — Run, RunStatus, RunRoleAssignment, Experiment,
+                             ExperimentStatus
+    - models/projects.py   — Project
+    - models/equipment.py  — Equipment
+
+Do NOT add new models here. Add them to the appropriate domain module.
+"""
+
+# DEPRECATED (TD-0083): this module will be split by domain and deleted.
 import uuid
 from datetime import date, datetime
 from enum import Enum

@@ -1,3 +1,17 @@
+"""DEPRECATED (TD-0083) — legacy "science" umbrella schemas.
+
+Mirrors the deprecated models/science.py umbrella. Per TD-0083 these
+schemas are being split by domain and this module will be removed:
+
+    - schemas/protocols.py
+    - schemas/runs.py
+    - schemas/projects.py
+    - schemas/equipment.py
+
+Do NOT add new schemas here. Add them to the appropriate domain module.
+"""
+
+# DEPRECATED (TD-0083): this module will be split by domain and deleted.
 from datetime import date, datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional

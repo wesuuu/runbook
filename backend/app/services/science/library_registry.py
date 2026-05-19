@@ -1,3 +1,6 @@
+# DEPRECATED (TD-0083): the services/science/ package is being removed.
+# This module will move to services/protocols/library_registry.py.
+# Do NOT add new code to the services/science/ package.
 """Unit operation library registry (F-0075).
 
 Loads versioned JSON catalogs of unit operations and serves them to the
