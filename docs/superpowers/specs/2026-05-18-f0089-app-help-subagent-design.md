@@ -1,6 +1,6 @@
 # F-0089 App Help Subagent — Design
 
-**Status:** Design approved 2026-05-18, awaiting implementation plan.
+**Status:** Design approved and grilled 2026-05-18, awaiting implementation plan.
 **ClickUp:** [F-0089] App Help Subagent — In-App Product Q&A from Curated User Guide (`86e1ef8k3`).
 **Effort:** XL (~2 days with corpus authoring and page-context awareness).
 
@@ -66,7 +66,37 @@ keywords: [protocol, editor, swimlane, unit op, graph]
 
 End-user voice — second person ("You can…"), no developer jargon, no internal file paths in user-facing prose. This corpus is distinct from `.claude/rules/` and `CLAUDE.md` (developer-facing) and from user-uploaded library documents (org-scoped data).
 
-Pages are ~150-400 words. Markdown headings are fine; the model reads the whole body.
+**Page shape** — every page follows the same template:
+
+```markdown
+---
+title: ...
+summary: ...
+keywords: [...]
+---
+
+# <Title>
+
+<Short overview paragraph — what this feature is.>
+
+## What you can do
+
+- <feature bullet>
+- <feature bullet>
+- ...
+
+## How to <task>
+
+<step-by-step>
+
+## How to <another task>
+
+<step-by-step>
+```
+
+Pages are ~150-500 words. The "What you can do" bullets answer feature-discovery questions ("what can the editor do?") in the same file that answers how-to questions ("how do I publish?").
+
+**Frontmatter parsing is lenient.** If a page is missing `title`, fall back to the filename (`.md` stripped, dashes → spaces, title-cased). If `summary` is missing, fall back to empty string. If `keywords` is missing or malformed, fall back to empty list. Log a `WARNING` per fallback so corpus-quality issues are visible in logs, but the page stays discoverable.
 
 ### 2. Subagent package — `backend/app/services/ai/subagents/app_help/`
 
@@ -101,7 +131,7 @@ SubAgentConfig(
 )
 ```
 
-`typically_needs_context=False` because help questions are usually self-contained ("how do I create a protocol?") and don't need the conversation history. The framework can opt in per-call when context matters.
+`typically_needs_context=False` controls *execution mode* (sync vs async dispatch + whether the subagent can pause for clarification), not chat-history visibility. Help is fire-and-forget: the parent (which retains full history) rewrites follow-up questions into self-contained task descriptions before dispatching, so the subagent never needs to ask the user a clarifying question mid-task.
 
 **`tools.py`** — dataclass results, recoverable errors (no raises), path-traversal guards:
 
@@ -141,7 +171,11 @@ TOOL_LABELS = {
 - Resolve under `Path(settings.user_guide_dir).resolve()`; verify the resolved path is a child of that root.
 - On any violation, return an `error` field rather than raising — same recovery shape as `fetch_openwetware_protocol` so the model can try a different filename instead of killing the run.
 
-**Module-level cache for `list_user_guide_pages`:** parse each file's frontmatter once, cache keyed by mtime, invalidate when mtime changes. ~25 small files = sub-millisecond scan even uncached, so the cache is comfort more than necessity.
+**No caching.** `list_user_guide_pages` re-scans the directory on every call. ~25 small markdown files = sub-millisecond, and skipping the cache keeps multi-worker semantics trivial (each call reads disk; no invalidation logic).
+
+**Ordering.** `list_user_guide_pages` returns pages sorted alphabetically by filename. The prompt instructs the model to pick based on `title`/`summary`/`keywords`, not list position, so ordering is not significant.
+
+**Missing or empty corpus directory.** Treated as `total=0, pages=[]`. No startup probe, no `FileNotFoundError`. The "I don't know" prompt branch handles the empty-result path.
 
 **`prompt.md`** (sketch):
 
@@ -154,20 +188,36 @@ To answer:
 2. Read the page(s) most relevant to the question.
 3. Answer concisely in end-user voice — no code, no jargon unless the
    page uses it.
-4. Cite each page you read at the end:
+4. Cite each page you read at the end as plain text — no markdown link,
+   no bracketed link target:
+
+     Source: Protocols and the protocol editor
+
+   If you read multiple pages, list each on its own line:
 
      Sources:
-     - [Protocols and the protocol editor](docs/user-guide/protocols-and-editor.md)
+     - Protocols and the protocol editor
+     - GLP sign-offs
 
 If list_user_guide_pages returns nothing relevant, or you read a page
-and it doesn't answer the question, say so:
-"I don't have documentation on that yet — try asking your admin or
-filing a request." Do NOT fall back to general knowledge about lab
-software, FastAPI, or PostgreSQL.
+and it doesn't answer the question, say:
+"I don't have documentation on that topic. If this is about a Batchrite
+feature, the docs may not be written yet — please email
+support@batchrite.com."
+
+If the user's question could plausibly be about their own data (their
+documents, protocols, runs), add: "If you meant to ask about something
+in your own documents or protocols, try rephrasing — I can search those
+too."
+
+Do NOT fall back to general knowledge about lab software, FastAPI, or
+PostgreSQL.
 
 If the dispatched task mentions the user's current route (e.g.
 "/protocols/abc/edit"), use it to pick the page that covers that surface.
 ```
+
+**Citation format:** plain text only — no markdown link target. Reasons: the docs aren't hosted at a stable URL the chat UI can link to, repo paths render as broken in-app `<a>` tags, and the end-user audience isn't expected to have GitHub access. When an in-app docs viewer is built (out of scope here), swap to `Source: [<title>](/help/<slug>)`.
 
 ### 3. Configuration
 
@@ -204,6 +254,17 @@ if settings.features.app_help.enabled:
 ```
 
 No frontend flag. The chat UI surfaces the capability when the agent dispatches it, hides it otherwise — same pattern as F-0084's external protocols.
+
+**`backend/settings.example.yaml` gets a commented stanza** so devs can opt in locally:
+
+```yaml
+# features:
+#   app_help:
+#     # Enable the app_help chat subagent grounded in docs/user-guide/. (F-0089)
+#     enabled: false
+```
+
+**Process restart required** for flag changes, prompt edits, and `chat_agent.md` routing edits — the chat Agent is cached per `(chat_model, subagent_model, summary_model, context_window)`. Corpus edits (adding/editing `.md` files under `docs/user-guide/`) take effect immediately because the tools read disk on every call. This matches the existing skills convention noted in `.claude/rules/backend-ai.md`.
 
 `CLAUDE.md` feature-flags table gets a row:
 
@@ -249,7 +310,10 @@ The chat FAB sends the user's current route so the help subagent can disambiguat
 ### Unit — `tests/unit/services/ai/subagents/test_app_help_tools.py`
 
 - `list_user_guide_pages` parses frontmatter from each fixture page and returns metadata.
-- `list_user_guide_pages` handles a file with no frontmatter by skipping it and logging a warning — the corpus author must add frontmatter for the page to be discoverable.
+- `list_user_guide_pages` returns pages sorted alphabetically by filename.
+- `list_user_guide_pages` falls back to filename-derived title when frontmatter is missing, returns empty summary and keywords, and logs a `WARNING` per fallback. The page is still listed.
+- `list_user_guide_pages` returns `total=0, pages=[]` when `settings.user_guide_dir` does not exist (no raise).
+- `list_user_guide_pages` returns `total=0, pages=[]` when the directory exists but is empty.
 - `read_user_guide_page("protocols.md")` returns body with frontmatter stripped.
 - `read_user_guide_page("../../etc/passwd")` returns a populated `error`, does NOT raise.
 - `read_user_guide_page("nonexistent.md")` returns a populated `error`.
@@ -271,9 +335,9 @@ The chat FAB sends the user's current route so the help subagent can disambiguat
 
 Seed a small fixture corpus under `tests/fixtures/user_guide/`, point `settings.user_guide_dir` at it via `monkeypatch`:
 
-- With `features.app_help.enabled=True`, sending "how do I create a protocol?" through the chat agent results in (a) `app_help` being dispatched (assert via `tool_calls`), (b) the response body containing a citation link to a `docs/user-guide/*.md` page from the fixture.
+- With `features.app_help.enabled=True`, sending "how do I create a protocol?" through the chat agent results in (a) `app_help` being dispatched (assert via `tool_calls`), (b) the response body containing a plain-text `Source: <page title>` citation matching a fixture page.
 - With the flag disabled, the same question does not dispatch `app_help` (the subagent isn't registered).
-- A query the fixture doesn't cover ("how do I integrate with Salesforce?") returns the "I don't have documentation on that yet" phrasing and no fabricated citation.
+- A query the fixture doesn't cover ("how do I integrate with Salesforce?") returns the "support@batchrite.com" phrasing and no fabricated citation.
 - A chat message with `current_route="/protocols/abc/edit"` and user text "how do I publish this?" dispatches `app_help` and the response cites the protocols page from the fixture.
 
 ### Frontend — Vitest
@@ -282,15 +346,36 @@ Seed a small fixture corpus under `tests/fixtures/user_guide/`, point `settings.
 
 ## Work breakdown (input to writing-plans)
 
-**Phase 1 — Feature audit.** Verify which surfaces from the task description are actually shipped vs aspirational. Output: the concrete list of pages to write. The user-guide must not document features that don't exist (e.g. voice/dictation, if it isn't built).
+**Phase 1 — Feature audit.** Verify which surfaces are actually shipped *and on-by-default*. The corpus documents only what an end user can use today on prod defaults — flag-gated-off features (offline mode, external protocols) and unbuilt features (voice/dictation) are skipped. When a flag is later flipped on, the corresponding page lands in the same PR.
+
+Expected initial surfaces (subject to audit):
+- Protocols & editor
+- Experiments & runs
+- Library & documents
+- Chat agent
+- GLP sign-offs
+- AI configuration
+- Org / roles / permissions
+- Sites & equipment
+- Lot producer (if shipped on-by-default — confirm during audit)
+- Stripe billing surface (if shipped on-by-default — confirm during audit)
+
+Explicitly excluded:
+- Voice / dictation (not built)
+- Offline mode (flag-gated off)
+- External protocols / OpenWetWare (flag-gated off)
 
 **Phase 2 — Subagent infrastructure.** Package skeleton (`config.py`, `prompt.md`, `tools.py`), feature flag, `user_guide_dir` setting, registration in `chat_agent.py`, `subagents/__init__.py` import, prompt block in `chat_agent.md`, `TOOL_LABELS` entries. TDD: write the failing unit tests first.
 
 **Phase 3 — Page-context awareness.** Backend request schema field, `[page:<route>]` prefix in `send_message.py`, frontend chat FAB wiring, prompt edits, unit + integration tests.
 
-**Phase 4 — Corpus authoring.** One `.md` per audited surface (Phase 1 output), frontmatter, end-user voice, ~150-400 words per page.
+**Phase 4 — Corpus authoring.** One `.md` per audited surface (Phase 1 output), following the standard template: frontmatter → short overview → "What you can do" feature bullets → how-to sections. End-user voice, ~150-500 words per page.
 
-**Phase 5 — Integration tests + docs sync.** Wire up the fixture corpus, end-to-end routing tests. Update `CLAUDE.md` feature-flags table; add a one-line note about `app_help` in `.claude/rules/backend-ai.md`'s subagents directory tree.
+**Phase 5 — Integration tests + docs sync.** Wire up the fixture corpus, end-to-end routing tests. Update `CLAUDE.md` feature-flags table; add the commented `app_help` stanza to `backend/settings.example.yaml`; add a one-line note about `app_help` in `.claude/rules/backend-ai.md`'s subagents directory tree.
+
+## Known coverage gaps
+
+The chat FAB is hidden on `/protocols/[id]` (view), `/runs/[id]`, `/library/[id]`, `/chat/*`, and `/export` per `frontend/src/routes/+layout.svelte:32-38`. On those routes, `current_route` is irrelevant because the user can't open chat there in the first place. Users who navigated away from such a route and opened chat elsewhere will send the *current* (chat-open) route, not the previous one. Fixing the hide-list is out of scope for F-0089; track separately if it matters.
 
 ## Out of scope
 
