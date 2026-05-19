@@ -11,6 +11,7 @@ from app.schemas.sites import (ManagedSiteResponse, SiteArchiveRequest,
                                SiteUpdate)
 from app.services.permissions.equipment import user_can_rename_site
 from app.services.sites import crud, grants
+from app.services.sites.defaults import set_default_site
 
 router = APIRouter(tags=["sites"])
 
@@ -66,6 +67,20 @@ async def update_site_endpoint(
     ):
         raise HTTPException(403)
     return await crud.update_site(db, site, payload=payload, actor_id=user.id)
+
+
+@router.post("/sites/{site_id}/set-default", response_model=SiteResponse)
+async def set_default_site_endpoint(
+    site_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_org_role(OrgRole.ADMIN)),
+):
+    """Promote a non-archived site to be the org's default. ADMIN-only."""
+    site = await crud.get_site(db, site_id)
+    if site.organization_id != user.selected_org_id:
+        raise HTTPException(404)
+    return await set_default_site(db, site=site, actor_id=user.id)
 
 
 @router.delete("/sites/{site_id}", response_model=SiteResponse)
