@@ -28,12 +28,12 @@ F-0090.
 | Dimension | **protocols.io** | **PMC OA Subset** | **bioRxiv / medRxiv** | **JoVE** | **Sci-Hub** |
 |---|---|---|---|---|---|
 | **API / access** | Public REST API (v4), JSON. Search + per-protocol retrieve. | NCBI E-utilities (`esearch`/`efetch`) + PMC OA service; full-text JATS XML. | `api.biorxiv.org` — **metadata only** (DOI, title, abstract, license). Full text only via a bulk Amazon S3 TDM bucket. | **No public developer API.** Access via institutional subscription + SSO; third-party integrations exist for subscribers. | No legitimate API. Rotating TLDs (`.st`/`.ru`/`.se`/…). |
-| **Auth** | OAuth2 — a client access token (from `client_id`/`client_secret` registered on the developers page) reads all public data. | None required. A free NCBI API key only raises the rate limit. | None. | Institutional subscription credentials. | — |
-| **Licensing** | Per-protocol Creative Commons, author-selected. Public default ≈ CC-BY; CC-BY-NC and CC-BY-NC-ND also present. License exposed as a structured field. | OA subset is CC-licensed — mix of CC-BY, CC-BY-NC, CC-BY-NC-ND, CC0. Per-article; a "commercial-use" sub-filter exists. | Author-selected per preprint; many CC variants but also CC-BY-NC-ND and "no reuse without permission". | Proprietary, paywalled — not openly licensed. | None — hosts paywalled content without authorization. |
+| **Auth** | A single long-lived access token (generated once from a registered developer app) reads all public data. No per-user OAuth flow — we only ever read public protocols. | None required. A free NCBI API key only raises the rate limit. | None. | Institutional subscription credentials. | — |
+| **Licensing** | **All public protocols uniformly CC-BY** — platform-wide policy, not author-selected. The per-protocol `license` field is still read and verified on every payload (fail-closed). | OA subset is CC-licensed — mix of CC-BY, CC-BY-NC, CC-BY-NC-ND, CC0. Per-article; a "commercial-use" sub-filter exists. | Author-selected per preprint; many CC variants but also CC-BY-NC-ND and "no reuse without permission". | Proprietary, paywalled — not openly licensed. | None — hosts paywalled content without authorization. |
 | **Content quality** | **Excellent** — purpose-built protocol repository; protocols are natively structured (titled steps, materials, durations). Cleanest normalization of any candidate. | **Fair** — research articles, not protocols; procedure content is buried in Methods sections and must be extracted from JATS XML. Noisier, lower fidelity. | **Poor** — preprints are papers; methods buried; and the API cannot return full text at query time at all. | High (purpose-built video + text protocols) — but inaccessible without a subscription. | N/A. |
 | **Rate limits** | No hard published public limit; reasonable-use expected. Self-throttled via the existing token bucket. | 3 req/s without a key, 10 req/s with a free key. | Not strictly published; bulk S3 for heavy use. | N/A. | N/A. |
 | **Cost** | Free public API tier. | Free. | Free. | Paid institutional subscription. | N/A. |
-| **Legal status** | **Viable** with (a) a per-protocol license gate that blocks NC/ND, and (b) a legal review of the protocols.io API Terms of Service before launch — the API ToS is a layer separate from the per-protocol CC license and can independently constrain redistribution. | **Viable** — fully legal and public. Still needs the license gate (the OA subset includes NC/ND articles). | **Metadata viable only.** Useful full text requires bulk S3 ingestion — a different architecture (background ingestion) that does not fit an interactive query-time adapter. | **Not viable now.** Requires a JoVE partnership or customer-supplied institutional credentials *and* a contract permitting reuse inside Batchrite. | **Excluded — see A.2.** |
+| **Legal status** | **Viable.** Public content is uniformly CC-BY → importable. The license gate is fail-closed *verification* of each payload's `license` field (defence-in-depth), not a per-protocol router. Still gated on a legal review of the protocols.io API Terms of Service before launch — the API ToS is a layer separate from the CC license and can independently constrain redistribution. | **Viable** — fully legal and public. Still needs the license gate (the OA subset includes NC/ND articles). | **Metadata viable only.** Useful full text requires bulk S3 ingestion — a different architecture (background ingestion) that does not fit an interactive query-time adapter. | **Not viable now.** Requires a JoVE partnership or customer-supplied institutional credentials *and* a contract permitting reuse inside Batchrite. | **Excluded — see A.2.** |
 
 ### A.2 Sci-Hub — exclusion rationale (recorded; no adapter, ever)
 
@@ -57,7 +57,7 @@ No adapter, no feature flag, no follow-up task. The candidate is closed.
 
 | Rank | Source | Decision | Effort | Notes |
 |---|---|---|---|---|
-| **1** | **protocols.io** | **Build now (this task, Part B).** | **L** | Best content fit, cleanest JSON→payload normalization, explicit per-protocol license field the gate keys on. Conditional on the license gate + API-ToS legal review. |
+| **1** | **protocols.io** | **Build now (this task, Part B).** | **L** | Best content fit, cleanest JSON→payload normalization. Public content is uniformly CC-BY (importable); the gate verifies that fail-closed. Conditional on the API-ToS legal review. |
 | **2** | **PMC OA Subset** | **Build next — separate follow-up task.** | **L+** | Zero credentials, unambiguously legal. The added cost over an L adapter is JATS Methods-section extraction and handling the article-vs-protocol content mismatch. |
 | **3** | **bioRxiv / medRxiv** | **Do not build.** | — | The query-time API is metadata-only; usable full text exists only via bulk S3 ingestion, which is a different architecture (background library ingestion) explicitly out of scope for the interactive subagent. Revisit only if bulk ingestion becomes a product direction. |
 | — | **JoVE** | **Defer indefinitely.** | Not estimable | Blocked on a commercial partnership or customer-supplied institutional credentials. Cannot be scoped until API access exists. |
@@ -87,29 +87,41 @@ namespacing, and scatters related config.
 
 ### B.1 Feature-flag model
 
-Restructure `ExternalProtocolsFeatureConfig` in `backend/app/core/config.py`:
+Restructure `ExternalProtocolsFeatureConfig` in `backend/app/core/config.py`
+into per-source sub-blocks, each carrying its own throttle/timeout:
 
 ```python
-class ProtocolSourceConfig(BaseModel):
-    """Per-source toggle within the external-protocols capability."""
-    enabled: bool = True
+class OpenWetWareSourceConfig(BaseModel):
+    enabled: bool = True                  # default-on — preserves F-0084 behavior
+    request_timeout_seconds: float = 10.0
+    rate_limit_per_minute: int = 10
 
-class ProtocolsIoSourceConfig(ProtocolSourceConfig):
+class ProtocolsIoSourceConfig(BaseModel):
     enabled: bool = False                 # new source — opt-in
-    access_token: str | None = None       # OAuth2 client access token
+    access_token: str = ""                # long-lived API token (secret)
+    request_timeout_seconds: float = 10.0
+    rate_limit_per_minute: int = 10
 
 class ExternalProtocolsFeatureConfig(BaseModel):
     enabled: bool = False                 # master capability switch (unchanged)
-    request_timeout_seconds: float = 10.0
-    rate_limit_per_minute: int = 10
-    openwetware: ProtocolSourceConfig = ProtocolSourceConfig()
+    openwetware: OpenWetWareSourceConfig = OpenWetWareSourceConfig()
     protocols_io: ProtocolsIoSourceConfig = ProtocolsIoSourceConfig()
 ```
 
 **Gating rule:** a source is live **iff** `external_protocols.enabled` (master)
 **AND** `external_protocols.<source>.enabled`. OpenWetWare's per-source flag
 defaults `True`, so a deployment that today sets only the master flag keeps
-working unchanged. protocols.io defaults `False`.
+working unchanged. protocols.io defaults `False`; if its flag is on but
+`access_token` is empty, the protocols.io tools raise `ValueError` (fail-closed,
+same shape as the existing `_require_oww_url` guard) rather than calling the API
+unauthenticated.
+
+**Breaking config change.** The current flat
+`external_protocols.request_timeout_seconds` / `rate_limit_per_minute` move
+under `.openwetware`. Any deployment that set the old env vars
+(`BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__REQUEST_TIMEOUT_SECONDS`, …) must
+re-target them to `…__OPENWETWARE__…`. Acceptable because the capability ships
+flag-disabled; the migration note belongs in the PR description.
 
 Env shape:
 `BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__PROTOCOLS_IO__ENABLED=true`,
@@ -117,55 +129,87 @@ Env shape:
 The access token is a **secret** — set via env var only, never committed to
 `settings.yaml`, treated like the AI provider keys.
 
-### B.2 Code structure — a `sources/` sub-package
+### B.2 Code structure — flat sibling modules
 
-F-0084's `tools.py` is ~280 lines; adding protocols.io would push it past 500.
-Extract a sub-package so each source is isolated and independently testable:
+F-0084's `tools.py` is **461 lines** doing five distinct jobs: result
+dataclasses, the OpenWetWare wikitext parser, the in-process rate limiter, the
+flag/URL guards, and the subagent tool functions. Adding protocols.io would
+push it past 700. Split it into flat sibling modules inside the existing
+subagent package — no sub-package — so the agent's logic stays next to the
+agent and each concern is independently testable:
 
 ```
 subagents/protocol_knowledgebase/
-├── config.py           # register the protocols.io tool pair
-├── prompt.md           # + protocols.io guidance, + license-restricted handling
-├── tools.py            # thinned: subagent tool fns, TOOL_LABELS, shared rate limit, flag helpers
-└── sources/
-    ├── __init__.py
-    ├── licenses.py     # shared license-compatibility gate (B.4)
-    ├── openwetware.py  # MOVED from tools.py: parse_openwetware_wikitext + search/fetch helpers
-    └── protocols_io.py # NEW: protocols.io search/fetch + parse_protocols_io_json
+├── config.py        # register the protocols.io tool pair (unchanged shape)
+├── prompt.md        # + protocols.io guidance, + license-restricted handling
+├── types.py         # NEW — result dataclasses, MOVED from tools.py
+│                    #   (ExternalProtocolStep/Payload, *Hit/*SearchResult,
+│                    #    + ProtocolsIoHit/ProtocolsIoSearchResult)
+├── licenses.py      # NEW — shared license-compatibility gate (B.4)
+├── rate_limit.py    # NEW — in-process token bucket, MOVED from tools.py,
+│                    #   re-keyed (org_id, source)
+├── openwetware.py   # NEW — parse_openwetware_wikitext + search/fetch helpers,
+│                    #   MOVED from tools.py
+├── protocols_io.py  # NEW — protocols.io search/fetch + parse_protocols_io_json
+└── tools.py         # THINNED to ~80 lines — RunContext wrappers that map args,
+                     #   delegate to the connector modules, append tool_calls
+                     #   audit rows; plus the TOOL_LABELS dict
 ```
 
-Moving the OpenWetWare connector is the one refactor beyond pure addition. It
-updates the import paths in F-0084's existing parser/tools tests (~2 lines
-each). The alternative — OpenWetWare in `tools.py`, protocols.io in `sources/` —
-is asymmetric and confusing.
+This follows the placement rule the project actually wants: `services/` is for
+genuinely shared, multi-consumer code; code owned by one package lives *in* that
+package as sibling files. `.claude/rules/backend-ai.md` and `backend-services.md`
+are corrected to state this explicitly (see §E) — the prior wording mandating
+`services/<domain>/` for all pure transforms was inaccurate.
+
+Moving the OpenWetWare connector, dataclasses, and rate limiter out of
+`tools.py` is the one refactor beyond pure addition. It updates import paths in
+F-0084's existing parser/tools tests; assertions are unchanged.
 
 `tools.py` keeps the `TOOL_LABELS` dict covering every tool the subagent
 registers (importing nothing new into `tool_labels.py`).
 
-### B.3 protocols.io connector — `sources/protocols_io.py`
+### B.3 protocols.io connector — `protocols_io.py`
 
-- `search_protocols_io(ctx, query, limit=5) -> ProtocolsIoSearchResult`
+Connector functions take **explicit primitives** (`db`, `org_id`, `query`,
+`access_token`, timeout, …) — not a pydantic-ai `RunContext` — so they unit-test
+without the chat harness. The `tools.py` wrappers (B.6) adapt `RunContext` to
+these signatures.
+
+- `search_protocols_io(...) -> ProtocolsIoSearchResult`
   Calls the protocols.io public search endpoint with an
   `Authorization: Bearer <access_token>` header. Returns hits
   (`id`, `title`, `url`, `snippet`).
-- `fetch_protocols_io(ctx, url) -> ExternalProtocolPayload`
+- `fetch_protocols_io(...) -> ExternalProtocolPayload`
   Validates the URL host is `protocols.io` / `www.protocols.io` (literal check,
   mirroring `_require_oww_url`); extracts the protocol id; GETs the protocol
-  detail JSON; runs the license gate (B.4); builds the payload.
+  detail JSON; delegates to the parser. Does **not** reuse OpenWetWare's generic
+  `if not payload.steps` guard — it has its own terminal logic (B.4).
 - `parse_protocols_io_json(detail_json, source_url) -> ExternalProtocolPayload`
   Pure parser (fixture-driven tests, no HTTP). Maps the protocol JSON to the
-  **existing `ExternalProtocolPayload`** — no change to the payload's core
-  fields. `license` ← the protocol's license object; `attribution` ←
+  `ExternalProtocolPayload` in `types.py` — no change to the payload's core
+  fields. `license` ← the protocol's license object, classified via
+  `licenses.classify_license`; `attribution` ←
   `"protocols.io — <authors>, <title>"`; `source_url` ← the protocol URL.
 
 The exact protocols.io v4 endpoint paths and JSON field names are pinned against
 the live API docs at implementation time; the fixture JSON drives the parser
 tests, so any schema drift surfaces as a test failure.
 
-### B.4 License-compatibility gate — `sources/licenses.py`
+### B.4 License-compatibility gate — `licenses.py`
 
-A pure classifier, shared across sources (protocols.io now; PMC/OpenWetWare
-later):
+protocols.io public content is **uniformly CC-BY** (platform-wide policy — not
+author-selected), so for protocols.io the gate is not a router: every public
+protocol is import-safe. The gate's job for this source is **fail-closed
+verification** — read the `license` field on every payload and confirm it
+really is CC-BY or CC0; if it ever comes back as anything else (a legacy
+import, embedded third-party content, a policy change), downgrade to link-only
+rather than wrongly import. The source that genuinely needs per-item license
+*routing* is **PMC OA** (follow-up task) — its open-access subset mixes CC-BY,
+CC-BY-NC, CC-BY-NC-ND and CC0. The classifier is built shared and pure now so
+PMC OA inherits it.
+
+A pure classifier, shared across sources:
 
 ```python
 @dataclass(frozen=True)
@@ -185,9 +229,30 @@ normalized form contains an **NC** (NonCommercial) or **ND** (NoDerivatives)
 token → `import_allowed=False`. Empty or unrecognized → `import_allowed=False`,
 `normalized="UNKNOWN"` (**fail-closed**).
 
-Why NC and ND both block: Batchrite is a commercial SaaS, so importing an NC
-protocol is commercial use the license forbids; and converting a protocol into a
-Batchrite protocol graph is a derivative work, which ND forbids.
+**Which licenses import, and why — the three clauses bite at different times:**
+
+- **NC (NonCommercial)** bites at *use* time. Batchrite is a commercial SaaS;
+  using NC content in the product is commercial use the license forbids
+  outright. → **blocked.**
+- **ND (NoDerivatives)** bites at *derivative* time. Parsing a protocol into a
+  Batchrite protocol graph and letting the user edit it *is* making a
+  derivative, which ND forbids. → **blocked** — we simply don't import ND
+  content; it isn't permissive enough for the product.
+- **SA (ShareAlike — CC-BY-SA)** bites only at *external-distribution* time. It
+  permits commercial use and derivatives; it only obligates that a derivative,
+  *if redistributed outside the customer*, carry the same SA terms. An internal
+  lab protocol is rarely redistributed. → **import-safe.** The SA notice is
+  carried forward in `attribution` / `license_note`, and the customer Terms of
+  Service allocate responsibility for any onward redistribution of an SA-derived
+  protocol to the customer — the party actually doing the distributing. That
+  TOS clause needs counsel review before launch (see Risks).
+
+So `_IMPORT_SAFE` = CC0, CC-BY, CC-BY-SA (+ public domain). This keeps the
+classifier consistent with the **existing OpenWetWare path**, whose content is
+uniformly CC-BY-SA 3.0: because CC-BY-SA is import-safe, routing OpenWetWare
+through the classifier would be a no-op — so F-0090 leaves the OpenWetWare
+connector exactly as F-0084 shipped it. The gate is invoked only by the
+protocols.io connector (and, later, PMC OA).
 
 **Behavior split** (validation tier **T1 — backend-only**; feedback is an
 in-chat message, no frontend preflight):
@@ -208,9 +273,31 @@ in-chat message, no frontend preflight):
   wants a restricted protocol, they bring it in through the **existing manual
   library-upload path**, where the user is the party doing the copying.
 
-This requires a small addition to `ExternalProtocolPayload`:
-`import_allowed: bool = True` and `license_note: str | None = None`. The `True`
-default leaves the OpenWetWare path (CC-BY-SA 3.0 — import-safe) unchanged.
+**Payload additions & the three terminal states.** `ExternalProtocolPayload`
+(now in `types.py`) gains `import_allowed: bool = True` and
+`license_note: str | None = None`. The `True` default leaves the OpenWetWare
+path (CC-BY-SA 3.0 — import-safe) unchanged. Crucially, `import_allowed=False`
+must **not** collapse into the existing `error` field — they mean opposite
+things to the subagent:
+
+| Terminal state | `steps` | Fields | Subagent behavior | Cached? |
+|---|---|---|---|---|
+| Genuine fetch failure | `[]` | `error` set | Skip silently, try another URL | No |
+| License-restricted, real protocol | `[]` | `import_allowed=False`, `error=None`, `license_note` set | Present as a link, stop | **Yes** |
+| Importable protocol | populated | `import_allowed=True`, `error=None` | Offer HITL import | Yes |
+
+So `fetch_protocols_io` has its **own terminal logic**, not OpenWetWare's
+generic `if not payload.steps → error` guard: a license-restricted protocol is
+fully parsed, legitimately has `steps=[]` (we never copy the step text), and
+must surface as a link — not be silently skipped as a "stub". The 0-steps guard
+applies on the protocols.io path **only** to an *import-safe* protocol that
+genuinely parsed no steps (a real stub → `error`).
+
+This flips the caching rule. F-0084 caches a payload iff `payload.steps` is
+non-empty; that would wrongly drop a license-restricted payload, which the
+approval tool's re-check (B.7) needs to read back. The rule becomes **cache iff
+`payload.error is None`** — failures aren't cached; restricted-but-valid
+payloads are.
 
 ### B.5 Multi-source dispatch pattern
 
@@ -218,23 +305,23 @@ default leaves the OpenWetWare path (CC-BY-SA 3.0 — import-safe) unchanged.
 `fetch_<source>` for each source. All tools are registered **unconditionally**
 on the subagent — the parent agent is cached per model tuple, not per org, so
 conditional registration would break the cache invariant (F-0084 §3.6). Each
-tool body checks the master flag + its source flag (+ the access token for
-protocols.io) and raises `ValueError` if unsatisfied; the subagent reports that
-message verbatim.
+`tools.py` wrapper checks the master flag + its source flag (+ the access token
+for protocols.io) and raises `ValueError` if unsatisfied; the subagent reports
+that message verbatim.
 
-Connector code is one module per source under `sources/`, each exposing the
-search / fetch / parse trio that normalizes to the shared
-`ExternalProtocolPayload`. **Adding a future source** = add `sources/<x>.py` +
-a tool pair in `tools.py`/`config.py` + a config sub-block in B.1 — the dispatch
-core does not change.
+Connector code is one sibling module per source (`openwetware.py`,
+`protocols_io.py`), each exposing the search / fetch / parse trio that
+normalizes to the `ExternalProtocolPayload` in `types.py`. **Adding a future
+source** = add `<x>.py` + a tool pair in `tools.py`/`config.py` + a config
+sub-block in B.1 — the dispatch core does not change.
 
-The in-process rate-limit bucket is re-keyed from `org_id` to
+The in-process rate-limit bucket (`rate_limit.py`) is re-keyed from `org_id` to
 `(org_id, source)` so the two sources do not share one budget.
 
 ### B.6 Subagent tools & prompt
 
 - `tools.py` — add `search_protocols_io` / `fetch_protocols_io` tool functions
-  (thin wrappers over `sources/protocols_io.py`), plus two `TOOL_LABELS`
+  (thin `RunContext` wrappers over `protocols_io.py`), plus two `TOOL_LABELS`
   entries (`"Searching protocols.io…"`, `"Reading protocols.io protocol…"`).
   The existing `test_tool_labels.py` coverage test validates them
   automatically.
@@ -250,10 +337,13 @@ The in-process rate-limit bucket is re-keyed from `org_id` to
 
 Unchanged from F-0084 — `create_protocol_from_external_source`,
 `external_protocol_cache`, and `POST /sessions/{id}/messages/approve` are all
-source-agnostic. **One addition:** the approval tool re-checks `import_allowed`
-(re-classifying the license from the payload) before drafting — belt-and-
-suspenders so a stale cached payload cannot slip a restricted protocol through.
-If restricted, it raises `ValueError` and no protocol is created.
+source-agnostic. **One addition:** before drafting, the approval tool reads
+`import_allowed` straight off the cached payload
+(`json.loads(cached)["import_allowed"]`) — a plain boolean check, no
+`classify_license` call — and raises `ValueError` if it is `False`, so a stale
+cached payload cannot slip a restricted protocol through. Keeping it a boolean
+read leaves `classify_license` single-consumer (the connector) and the approval
+tool free of licensing logic.
 
 ### B.8 Frontend
 
@@ -296,18 +386,25 @@ turn 2b (approve): user clicks Approve → POST /messages/approve
 - `test_protocols_io_parser.py` — `parse_protocols_io_json` against
   `fixtures/protocols_io/protocol_detail.json`: asserts title, ≥3 materials,
   ≥5 steps, non-empty summary, license, attribution, `source_url`,
-  `import_allowed=True`. A second case against `protocol_detail_nc.json`
-  asserts `import_allowed=False`, empty `steps`/`materials`, populated
-  `license_note`.
+  `import_allowed=True`, `error is None`. A second case against
+  `protocol_detail_nc.json` asserts `import_allowed=False`, `error is None`
+  (restricted ≠ failure), empty `steps`/`materials`, populated `license_note`.
 - `test_protocols_io_tools.py` — `httpx.AsyncClient.get` monkey-patched:
   (a) master flag off → `ValueError`; (b) source flag off → `ValueError`;
-  (c) missing access token → `ValueError`; (d) host not `protocols.io` →
-  `ValueError`; (e) rate-limit hit after `rate_limit_per_minute + 1` calls in
-  the simulated minute; (f) successful search/fetch append `tool_calls` audit
-  rows; (g) fetch of an NC-licensed protocol → metadata-only payload, no step
-  text retained.
+  (c) flag on but `access_token` empty → `ValueError`; (d) host not
+  `protocols.io` → `ValueError`; (e) rate-limit hit after
+  `rate_limit_per_minute + 1` calls in the simulated minute; (f) successful
+  search/fetch append `tool_calls` audit rows; (g) fetch of a license-restricted
+  protocol → `import_allowed=False`, `error is None`, no step text retained,
+  payload **is** cached; (h) genuine fetch failure → `error` set, payload **not**
+  cached.
 - `test_openwetware_parser.py`, `test_openwetware_tools.py` — update import
-  paths for the `sources/openwetware.py` move; assertions unchanged.
+  paths for the `openwetware.py` / `rate_limit.py` / `types.py` moves;
+  `test_openwetware_tools.py` also re-targets its rate-limit monkeypatch to
+  `external_protocols.openwetware.rate_limit_per_minute`. Assertions unchanged.
+- `test_settings_external_protocols.py` — `request_timeout_seconds` /
+  `rate_limit_per_minute` assertions re-target under `.openwetware`; add
+  `.protocols_io.*` defaults.
 - Config test (`test_protocol_knowledgebase_config.py` or the core config
   test) — new per-source flag structure; defaults `openwetware.enabled=True`,
   `protocols_io.enabled=False`; env-var override resolves.
@@ -331,30 +428,33 @@ No new frontend tests — the frontend is unchanged.
 ## E. Files touched
 
 ```
-backend/app/core/config.py                                                       # per-source flag model
-backend/app/services/ai/subagents/protocol_knowledgebase/sources/__init__.py      # new
-backend/app/services/ai/subagents/protocol_knowledgebase/sources/licenses.py      # new — classify_license
-backend/app/services/ai/subagents/protocol_knowledgebase/sources/openwetware.py   # new — moved from tools.py
-backend/app/services/ai/subagents/protocol_knowledgebase/sources/protocols_io.py  # new — protocols.io connector
-backend/app/services/ai/subagents/protocol_knowledgebase/tools.py                 # thinned + protocols.io tool fns + TOOL_LABELS
+backend/app/core/config.py                                                       # per-source flag model (breaking restructure)
+backend/app/services/ai/subagents/protocol_knowledgebase/types.py                 # new — result dataclasses, moved from tools.py
+backend/app/services/ai/subagents/protocol_knowledgebase/licenses.py              # new — classify_license
+backend/app/services/ai/subagents/protocol_knowledgebase/rate_limit.py            # new — token bucket, moved from tools.py
+backend/app/services/ai/subagents/protocol_knowledgebase/openwetware.py           # new — connector, moved from tools.py
+backend/app/services/ai/subagents/protocol_knowledgebase/protocols_io.py          # new — protocols.io connector
+backend/app/services/ai/subagents/protocol_knowledgebase/tools.py                 # thinned to RunContext wrappers + TOOL_LABELS
 backend/app/services/ai/subagents/protocol_knowledgebase/config.py                # register protocols.io tool pair
 backend/app/services/ai/subagents/protocol_knowledgebase/prompt.md                # protocols.io + license-restricted guidance
 backend/app/services/ai/tools/external_protocols.py                               # approval tool: import_allowed re-check
 backend/tests/fixtures/protocols_io/search_response.json                          # new fixture
 backend/tests/fixtures/protocols_io/protocol_detail.json                          # new fixture (import-safe)
-backend/tests/fixtures/protocols_io/protocol_detail_nc.json                       # new fixture (NC-licensed)
+backend/tests/fixtures/protocols_io/protocol_detail_nc.json                       # new fixture (license-restricted)
 backend/tests/unit/test_license_gate.py                                           # new
 backend/tests/unit/test_protocols_io_parser.py                                    # new
 backend/tests/unit/test_protocols_io_tools.py                                     # new
 backend/tests/unit/test_openwetware_parser.py                                     # import-path update
-backend/tests/unit/test_openwetware_tools.py                                      # import-path update
+backend/tests/unit/test_openwetware_tools.py                                      # import-path + per-source flag update
+backend/tests/unit/test_settings_external_protocols.py                            # per-source config shape
 backend/tests/unit/test_protocol_knowledgebase_config.py                          # per-source flag assertions
-backend/tests/integration/test_protocol_knowledgebase_handoff.py                  # + protocols.io + NC paths
+backend/tests/integration/test_protocol_knowledgebase_handoff.py                  # + protocols.io + restricted paths
 docs/superpowers/specs/2026-05-19-f-0090-additional-protocol-sources-evaluation.md # this doc
 docs/superpowers/specs/2026-05-12-f-0084-protocol-knowledgebase-subagent-design.md # forward-pointer (stale non-goal)
 CONTEXT.md                                                                        # Protocol Source + license gate glossary
 CLAUDE.md                                                                         # external_protocols flag row: per-source sub-flags
-.claude/rules/backend-ai.md                                                       # multi-source sources/ pattern + license gate
+.claude/rules/backend-ai.md                                                       # locality rule fix + multi-source sibling-module pattern
+.claude/rules/backend-services.md                                                 # locality rule fix (services = shared code only)
 ```
 
 ## F. Risks and pre-launch checklist
@@ -364,6 +464,13 @@ CLAUDE.md                                                                       
   Service have been reviewed. The per-protocol CC license governs the *content*;
   the API ToS governs *API use* and can independently restrict redistribution.
   This task ships the adapter flag-disabled; enabling it is a separate decision.
+- **CC-BY-SA redistribution — TOS clause needed.** CC-BY-SA content is
+  import-safe, but a customer who redistributes an SA-derived protocol *outside
+  their org* inherits the ShareAlike obligation. The customer Terms of Service
+  must carry a clause allocating responsibility for that onward redistribution
+  to the customer. Drafting it needs counsel review before `protocols_io.enabled`
+  is flipped on — a non-code follow-up, tracked here rather than as a separate
+  task.
 - **Access token is a secret.** Env var only, never `settings.yaml`.
 - **API v4 schema drift.** Exact field paths are pinned at implementation
   against the live docs; the fixture-driven parser tests catch drift.
