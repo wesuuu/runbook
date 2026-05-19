@@ -161,7 +161,9 @@ class Settings(BaseSettings):
     docling_num_threads: int = 4
 
     # Chat agent skills directory
-    skills_dir: str = "skills"
+    skills_dir: str = str(
+        Path(__file__).resolve().parent.parent / "services" / "ai" / "skills"
+    )
 
     # Chat context window management
     max_message_length: int = 10000

@@ -1,6 +1,18 @@
 """Tests for the protocol_creator subagent config."""
 
+from pathlib import Path
+
 from app.services.ai.subagents import protocol_creator
+
+PROMPT_PATH = (
+    Path(__file__).parent.parent.parent
+    / "app"
+    / "services"
+    / "ai"
+    / "subagents"
+    / "protocol_creator"
+    / "prompt.md"
+)
 
 EXPECTED_TOOL_NAMES = {
     "list_projects",
@@ -53,3 +65,33 @@ def test_protocol_creator_prompt_instructs_external_param_extraction():
     # Must explicitly tell the agent to extract from the source step text.
     assert "extract" in prompt or "parse" in prompt
     assert "param_schema" in prompt
+
+
+def test_prompt_documents_grounding_section() -> None:
+    text = PROMPT_PATH.read_text(encoding="utf-8").lower()
+    assert "grounding:" in text, (
+        "protocol_creator prompt must describe the brief's grounding: section"
+    )
+
+
+def test_prompt_documents_citation_footer_format() -> None:
+    text = PROMPT_PATH.read_text(encoding="utf-8")
+    assert "Grounded in:" in text, "Prompt must specify the citation footer literal"
+    assert "library document" in text.lower(), (
+        "Footer template must include 'library document(s)'"
+    )
+
+
+def test_prompt_disallows_retrieval_tool_calls() -> None:
+    """protocol_creator must not call search_documents — chat_agent retrieves first."""
+    text = PROMPT_PATH.read_text(encoding="utf-8").lower()
+    assert "do not" in text and (
+        "search_documents" in text or "retrieval" in text
+    ), "Prompt must explicitly forbid retrieval calls"
+
+
+def test_prompt_disallows_page_numbers_in_footer() -> None:
+    text = PROMPT_PATH.read_text(encoding="utf-8").lower()
+    assert "no page numbers" in text or "page number" in text, (
+        "Prompt must call out that page numbers are unavailable"
+    )

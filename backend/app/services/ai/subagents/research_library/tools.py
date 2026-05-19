@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic_ai import RunContext
 from sqlalchemy import text as sa_text
 
+from app.models.library import VIEWABLE_STATUSES
 from app.services.ai.deps import ChatDeps, RetrievedChunk
 from app.services.documents.retrieval import retrieve_relevant_chunks
 
@@ -270,6 +271,7 @@ async def list_documents(
     Args:
         ctx: Run context with shared deps.
     """
+    viewable = tuple(s for s in VIEWABLE_STATUSES)
     result = await ctx.deps.db.execute(
         sa_text(
             """
@@ -280,11 +282,12 @@ async def list_documents(
             FROM documents d
             LEFT JOIN document_chunks dc ON dc.document_id = d.id
             WHERE d.org_id = :org_id
+              AND d.status = ANY(:viewable)
             GROUP BY d.id, d.title
             ORDER BY d.title
             """
         ),
-        {"org_id": str(ctx.deps.org_id)},
+        {"org_id": str(ctx.deps.org_id), "viewable": list(viewable)},
     )
     rows = result.fetchall()
 

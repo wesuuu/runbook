@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic_ai import Agent, Tool
 from pydantic_ai.tools import DeferredToolRequests
+from pydantic_ai_skills import SkillsCapability
 from pydantic_ai_summarization import ContextManagerCapability
 from sqlalchemy.ext.asyncio import AsyncSession
 from subagents_pydantic_ai import SubAgentCapability
@@ -219,6 +220,9 @@ async def build_chat_agent(
                     token_counter=tiktoken_counter,
                     on_before_compress=on_before,
                     on_after_compress=on_after,
+                ),
+                SkillsCapability(
+                    directories=[str(Path(settings.skills_dir))],
                 ),
             ],
             tools=[

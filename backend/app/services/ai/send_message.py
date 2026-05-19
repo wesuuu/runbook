@@ -180,11 +180,28 @@ async def send_message_streaming(
     user_content: str,
     user_id: UUID,
     is_org_admin: bool,
+    skill_id: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Stream a chat turn as SSE-shaped event dicts. See module docstring."""
+    """Stream a chat turn as SSE-shaped event dicts. See module docstring.
+
+    ``skill_id`` (F-0089) activates a server-side skill by prepending
+    ``[skill:<id>] `` to the **model-visible** user content only. The
+    DB-persisted ChatMessage keeps the clean ``user_content`` so the user
+    sees what they typed in the thread history. The prefix tells the chat
+    agent (via the dispatch rule in its system prompt) to load the matching
+    SKILL.md and follow its recipe.
+    """
     session_pk: UUID = session.id
     session_org_id: UUID = session.org_id
     existing_history = session.ai_message_history
+
+    # Compose the model-visible content. The clean ``user_content`` is what
+    # gets persisted; ``model_visible_content`` is what the agent.run prompt
+    # carries, so the [skill:<id>] marker reaches the LLM and lands in the
+    # serialized message history for turn N+1 to see.
+    model_visible_content = (
+        f"[skill:{skill_id}] {user_content}" if skill_id else user_content
+    )
 
     # ── 1. Persist user message ──────────────────────────────────────────────
     user_msg = ChatMessage(
@@ -201,6 +218,13 @@ async def send_message_streaming(
 
     await db.commit()
     await db.refresh(user_msg)
+
+    # Snapshot the user_msg fields now — the request session can be expired or
+    # detached by the time the agent run finishes (60s+), and pydantic ORM
+    # validation would trigger lazy I/O outside an async greenlet.
+    user_msg_payload = ChatMessageResponse.model_validate(user_msg).model_dump(
+        mode="json"
+    )
 
     # ── 2. Build CompactionState + ChatDeps ──────────────────────────────────
     state = CompactionState()
@@ -274,7 +298,7 @@ async def send_message_streaming(
     # ── 5. Run the agent in a background task; drain the queue ───────────────
     run_task: asyncio.Task = asyncio.create_task(
         agent.run(
-            user_content,
+            model_visible_content,
             deps=deps,
             message_history=message_history,
             event_stream_handler=_parent_event_handler,
@@ -490,9 +514,7 @@ async def send_message_streaming(
     # ── 10. Emit done event ──────────────────────────────────────────────────
     yield {
         "type": "done",
-        "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(
-            mode="json"
-        ),
+        "user_message": user_msg_payload,
         "assistant_message": ChatMessageResponse.model_validate(
             assistant_msg
         ).model_dump(mode="json"),
@@ -553,6 +575,10 @@ async def resume_message_streaming(
     await db.flush()
     await db.commit()
     await db.refresh(user_msg)
+
+    user_msg_payload = ChatMessageResponse.model_validate(user_msg).model_dump(
+        mode="json"
+    )
 
     state = CompactionState()
     deps = ChatDeps(
@@ -729,9 +755,7 @@ async def resume_message_streaming(
 
     yield {
         "type": "done",
-        "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(
-            mode="json"
-        ),
+        "user_message": user_msg_payload,
         "assistant_message": ChatMessageResponse.model_validate(placeholder).model_dump(
             mode="json"
         ),

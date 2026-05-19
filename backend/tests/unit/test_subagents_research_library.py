@@ -5,7 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic_ai import RunContext
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.library import Document, DocumentStatus
 from app.services.ai.deps import ChatDeps, RetrievedChunk
 from app.services.ai.subagents.research_library import build
 from app.services.ai.subagents.research_library.tools import (
@@ -82,3 +84,45 @@ async def test_search_documents_returns_no_results_message_when_empty(monkeypatc
     result = await search_documents(ctx, query="hello")
     assert result.total == 0
     assert "No matching" in result.message
+
+
+@pytest.mark.asyncio
+async def test_list_documents_filters_to_viewable_statuses(
+    db_session: AsyncSession, test_org, test_user
+) -> None:
+    """list_documents must return only INDEXED/ENRICHED/READY documents."""
+    statuses = [
+        ("Uploaded doc", DocumentStatus.UPLOADED),
+        ("Indexing doc", DocumentStatus.INDEXING),
+        ("Indexed doc", DocumentStatus.INDEXED),
+        ("Enriched doc", DocumentStatus.ENRICHED),
+        ("Ready doc", DocumentStatus.READY),
+        ("Failed doc", DocumentStatus.FAILED),
+    ]
+    for title, status in statuses:
+        db_session.add(
+            Document(
+                org_id=test_org.id,
+                uploaded_by_id=test_user.id,
+                title=title,
+                original_filename=f"{title}.pdf",
+                mime_type="application/pdf",
+                file_size_bytes=1024,
+                file_path=f"/tmp/{title}.pdf",
+                status=status.value,
+            )
+        )
+    await db_session.flush()
+
+    deps = ChatDeps(
+        db=db_session,
+        org_id=test_org.id,
+        user_id=test_user.id,
+        is_org_admin=False,
+    )
+    ctx = MagicMock(spec=RunContext)
+    ctx.deps = deps
+
+    result = await list_documents(ctx)
+    titles = {d.title for d in (result.documents or [])}
+    assert titles == {"Indexed doc", "Enriched doc", "Ready doc"}

@@ -265,6 +265,7 @@ async def stream_chat_message(
                 body.content,
                 user_id=current_user.id,
                 is_org_admin=is_org_admin,
+                skill_id=body.skill_id,
             ):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as exc:

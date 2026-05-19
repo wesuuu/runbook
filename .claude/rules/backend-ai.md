@@ -26,6 +26,7 @@ services/ai/
 ├── deps.py              # ChatDeps dataclass (RunContext.deps for tools/subagents)
 ├── embedding.py
 ├── prompts/             # System prompts (chat_agent.md, summarization.md)
+├── skills/              # SKILL.md files discoverable via SkillsCapability (new-protocol)
 ├── runtime/             # Cross-cutting helpers used inside the harness
 │   ├── compaction.py    #   CompactionState (per-request mutable state for hooks)
 │   ├── token_counting.py#   tiktoken_counter
@@ -104,6 +105,17 @@ agent = Agent(
 ```
 
 **Never** call `Agent(...)` directly inside a request handler — go through `build_chat_agent()`. Callers do `live.set(state)` immediately before `agent.run()`.
+
+### SkillsCapability (F-0089)
+
+The chat Agent registers a third capability — `SkillsCapability` from `pydantic-ai-skills 0.6.0`. It reads `backend/app/services/ai/skills/<skill-name>/SKILL.md` files (skills are code; they live alongside subagents, prompts, workflows under `services/ai/`) and exposes `load_skill`, `list_skills`, `read_skill_resource`, and `run_skill_script` tools to the model. Skills land in conversation history as tool results when loaded, so they persist across turns.
+
+Two activation paths:
+
+- **Server-prefix (deterministic).** When a chat message arrives with `skill_id` set, `send_message.py` prepends `[skill:<skill_id>] ` to the model-visible prompt only (DB content stays clean). `chat_agent.md` instructs the model to call `load_skill("<id>")` first when it sees that prefix.
+- **Prompt-guarded (model judgment).** For typed requests without the prefix, `chat_agent.md`'s `## Skill: <name>` blocks list the do/don't triggers per skill.
+
+When adding a new skill: create `backend/app/services/ai/skills/<name>/SKILL.md` with `name`, `description`, `icon` frontmatter and instructions in markdown. Add a `## Skill: <name>` guardrail block to `chat_agent.md` listing positive triggers and anti-patterns. The `GET /chat/skills` endpoint reads the same directory, so the UI picks up new skills on the next request — but the chat Agent is cached per `(chat_model, subagent_model, summary_model, context_window)` tuple, so process restart is required for skill changes to reach the model.
 
 ## Subagent Pattern (`subagents-pydantic-ai`)
 

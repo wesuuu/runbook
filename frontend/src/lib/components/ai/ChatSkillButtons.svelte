@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { ChatSkill } from '$lib/schemas/chat';
     import {
-        FlaskConical, Sparkles, FileSearch, GitCompare,
+        FlaskConical, Sparkles, FileSearch, FilePlus, GitCompare,
         Wrench, BookOpen, BarChart3, Bug,
     } from 'lucide-svelte';
     import { Button } from '$lib/components/ui/button';
@@ -22,6 +22,7 @@
         'flask-conical': FlaskConical,
         'sparkles': Sparkles,
         'file-search': FileSearch,
+        'file-plus': FilePlus,
         'git-compare': GitCompare,
         'wrench': Wrench,
         'book-open': BookOpen,

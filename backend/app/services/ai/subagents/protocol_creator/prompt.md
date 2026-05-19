@@ -197,3 +197,21 @@ markdown links.
 **Never claim a creation you didn't actually execute via a tool call.**
 Your final reply may only describe records that correspond to a
 successful tool return *this turn*.
+
+## Grounded drafts (F-0089)
+
+When your brief from chat_agent contains a `grounding:` section listing one or more library documents and their chunks, you MUST:
+
+1. Draft the protocol using the chunks as the primary source of facts. Quote temperatures, durations, reagent concentrations, and step ordering from the chunks rather than inventing them.
+2. Do NOT call `search_documents`, `read_section`, or any retrieval tool. The chat agent already retrieved the chunks before dispatching you. Calling retrieval again is wasteful and produces duplicate citations.
+3. After the protocol's main description text, append this exact citation footer:
+
+   ```
+   Grounded in: {n} library document(s):
+   - {doc_title_1}
+   - {doc_title_2}
+   ```
+
+   `{n}` is the count. Each bullet is a document title copied verbatim from the brief. No page numbers — the markdown chunker does not populate them. No quotes, no chunk indices, no URLs. One title per line.
+
+When your brief has no `grounding:` section, draft from your training knowledge as before. Do not invent a "Grounded in: 0 library documents" footer in that case — omit the footer entirely.

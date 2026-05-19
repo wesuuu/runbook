@@ -395,3 +395,104 @@ describe('chat-store streaming', () => {
         expect(store.getToolTrail()).toEqual([]);
     });
 });
+
+describe('chat-store skill activation (F-0089)', () => {
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        store.clearActiveSkill?.();
+    });
+
+    it('activateSkill sets state without sending', async () => {
+        const apiPost = vi.mocked((await import('$lib/api')).api.post);
+        apiPost.mockClear();
+
+        store.activateSkill({
+            name: 'new-protocol',
+            description: 'Create a new protocol grounded in a source.',
+            icon: 'file-plus',
+        });
+
+        expect(store.getActiveSkill()?.name).toBe('new-protocol');
+        expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it('sendMessage attaches active skill_id then clears on done', async () => {
+        store.__test_setActiveSession({
+            id: 'S1',
+            messages: [],
+            title: 'New Chat',
+            created_at: '2026-01-01',
+            user_id: 'U1',
+            org_id: 'O1',
+            ai_message_history: null,
+        } as never);
+
+        store.activateSkill({
+            name: 'new-protocol',
+            description: 'd',
+            icon: 'file-plus',
+        });
+
+        let capturedBody: Record<string, unknown> | null = null;
+        vi.spyOn(sse, 'streamSse').mockImplementation(
+            async (_ep, body, cb) => {
+                capturedBody = body as Record<string, unknown>;
+                cb({
+                    type: 'done',
+                    user_message: { id: 'u1', session_id: 'S1', role: 'user', content: 'draft me a protocol', metadata_: null, created_at: '2026-01-01' },
+                    assistant_message: { id: 'a1', session_id: 'S1', role: 'assistant', content: 'ok', metadata_: null, created_at: '2026-01-01' },
+                    sources: [],
+                });
+            },
+        );
+
+        store.setMessageInput('draft me a protocol');
+        await store.sendMessage();
+
+        expect(capturedBody).toEqual({ content: 'draft me a protocol', skill_id: 'new-protocol' });
+        expect(store.getActiveSkill()).toBeNull();
+    });
+
+    it('switching sessions clears the active skill', async () => {
+        store.__test_setActiveSession({
+            id: 'S1', messages: [], title: 'New Chat', created_at: '2026-01-01',
+            user_id: 'U1', org_id: 'O1', ai_message_history: null,
+        } as never);
+        store.activateSkill({ name: 'new-protocol', description: 'd', icon: 'file-plus' });
+        expect(store.getActiveSkill()?.name).toBe('new-protocol');
+
+        store.__test_setActiveSession({
+            id: 'S2', messages: [], title: 'Another Chat', created_at: '2026-01-01',
+            user_id: 'U1', org_id: 'O1', ai_message_history: null,
+        } as never);
+        expect(store.getActiveSkill()).toBeNull();
+    });
+
+    it('clearActiveSkill resets state and next sendMessage has no skill_id', async () => {
+        store.__test_setActiveSession({
+            id: 'S1', messages: [], title: 'New Chat', created_at: '2026-01-01',
+            user_id: 'U1', org_id: 'O1', ai_message_history: null,
+        } as never);
+
+        store.activateSkill({ name: 'new-protocol', description: 'd', icon: 'file-plus' });
+        store.clearActiveSkill();
+        expect(store.getActiveSkill()).toBeNull();
+
+        let capturedBody: Record<string, unknown> | null = null;
+        vi.spyOn(sse, 'streamSse').mockImplementation(
+            async (_ep, body, cb) => {
+                capturedBody = body as Record<string, unknown>;
+                cb({
+                    type: 'done',
+                    user_message: { id: 'u1', session_id: 'S1', role: 'user', content: 'x', metadata_: null, created_at: '2026-01-01' },
+                    assistant_message: { id: 'a1', session_id: 'S1', role: 'assistant', content: 'y', metadata_: null, created_at: '2026-01-01' },
+                    sources: [],
+                });
+            },
+        );
+
+        store.setMessageInput('hello');
+        await store.sendMessage();
+        expect(capturedBody).toEqual({ content: 'hello' });
+    });
+});
