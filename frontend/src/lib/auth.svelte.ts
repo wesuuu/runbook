@@ -1,6 +1,14 @@
 import { API_BASE } from '$lib/config';
 import { syncThemeFromServer } from '$lib/theme.svelte';
+import { canManageEquipmentLifecycle } from '$lib/permissions/equipment';
 import { acceptTos as apiAcceptTos } from './legal-api';
+
+type OrgRole = 'ADMIN' | 'BILLING' | 'MEMBER' | 'PROTOCOL_APPROVER' | 'SITE_MANAGER';
+
+interface ManagedSiteEntry {
+    grant_id?: string;
+    site: { id: string; [key: string]: unknown };
+}
 
 interface User {
     id: string;
@@ -31,6 +39,8 @@ let token = $state<string | null>(localStorage.getItem('auth_token'));
 let currentOrg = $state<Org | null>(null);
 let orgs = $state<Org[]>([]);
 let initialized = $state(false);
+let currentOrgRoles = $state<OrgRole[]>([]);
+let managedSiteIds = $state<string[]>([]);
 
 export function getToken(): string | null {
     return token;
@@ -54,6 +64,64 @@ export function getOrgs(): Org[] {
 
 export function isInitialized(): boolean {
     return initialized;
+}
+
+export function getCurrentOrgRoles(): OrgRole[] {
+    return currentOrgRoles;
+}
+
+export function getManagedSiteIds(): string[] {
+    return managedSiteIds;
+}
+
+/**
+ * Refresh the calling user's per-site SITE_MANAGER grants for the current
+ * org. Drives the `canManageSite()` helper used by equipment-lifecycle and
+ * site-management UI (F-0088 decision 4).
+ */
+export async function refreshManagedSites(): Promise<void> {
+    if (!token) return;
+    try {
+        const res = await authFetch<ManagedSiteEntry[]>('GET', '/users/me/managed-sites');
+        managedSiteIds = Array.isArray(res) ? res.map((m) => m.site.id) : [];
+    } catch {
+        // Best-effort — leave previous value alone (could be offline).
+    }
+}
+
+/**
+ * Refresh the calling user's roles for the currently-selected org by
+ * scanning the org's member list. Mirrors the inline pattern used on the
+ * settings page. Safe to call repeatedly; no-ops if no org is selected.
+ */
+export async function refreshCurrentOrgRoles(): Promise<void> {
+    if (!token || !user || !currentOrg) {
+        currentOrgRoles = [];
+        return;
+    }
+    try {
+        const members = await authFetch<Array<{user_id: string; roles?: string[]}>>(
+            'GET',
+            `/iam/organizations/${currentOrg.id}/members`,
+        );
+        const me = members.find((m) => m.user_id === user!.id);
+        currentOrgRoles = ((me?.roles ?? []) as OrgRole[]);
+    } catch {
+        // Best-effort
+    }
+}
+
+/**
+ * Returns true if the current user can edit regulated metadata
+ * (equipment lifecycle, site-scoped objects) on the given site. ADMIN
+ * bypasses; SITE_MANAGER requires a grant on the site.
+ */
+export function canManageSite(siteId: string): boolean {
+    return canManageEquipmentLifecycle({
+        roles: currentOrgRoles,
+        managedSiteIds,
+        siteId,
+    });
 }
 
 export function getUserPreferences(): Record<string, string> {
@@ -264,6 +332,8 @@ export function logout(): void {
     user = null;
     currentOrg = null;
     orgs = [];
+    currentOrgRoles = [];
+    managedSiteIds = [];
     localStorage.removeItem('auth_token');
     clearCachedAuthData();
     // Lazy import to avoid circular dependency at module load time
@@ -286,6 +356,8 @@ export async function switchOrg(org: Org): Promise<void> {
     currentOrg = org;
     localStorage.setItem('current_org_id', org.id);
     cacheAuthData();
+    // Re-derive permission state for the newly-selected org.
+    await Promise.all([refreshCurrentOrgRoles(), refreshManagedSites()]);
     import('$lib/project-context.svelte').then(({ clearCurrentProjectId }) =>
         clearCurrentProjectId()
     );
@@ -302,6 +374,9 @@ async function loadOrgs(): Promise<void> {
         orgs = [];
         currentOrg = null;
     }
+    // Refresh org-scoped permission state (roles + per-site grants). Both
+    // are best-effort and tolerate failure.
+    await Promise.all([refreshCurrentOrgRoles(), refreshManagedSites()]);
 }
 
 export async function initialize(): Promise<void> {

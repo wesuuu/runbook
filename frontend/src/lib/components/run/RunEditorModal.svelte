@@ -190,7 +190,7 @@
                 const org = getCurrentOrg();
                 if (org) {
                     api
-                        .get<OrgEquipment[]>(`/iam/organizations/${org.id}/equipment`)
+                        .get<OrgEquipment[]>(`/equipment`)
                         .then((eq) => {
                             orgEquipment = eq;
                             loadedOrgEq = true;

@@ -8,24 +8,17 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
 from sqlalchemy.pool import NullPool
 
 from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.iam import (
-    ObjectPermission,
-    ObjectType,
-    Organization,
-    OrganizationMember,
-    PermissionLevel,
-    PrincipalType,
-    Team,
-    TeamMember,
-    User,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            Team, TeamMember, User)
 from app.models.library import Document, DocumentStatus
 from app.models.science import Project
 from app.models.templates import DocumentTemplate  # noqa: F401
@@ -233,6 +226,11 @@ async def test_org(db_session) -> Organization:
 
     if library_registry.list_libraries():  # registry seeded by app startup
         await library_registry.subscribe_default_libraries(db_session, org.id)
+    # Mirror production: every new org gets a default site.
+    from app.services.core.audit import SYSTEM_ACTOR_ID
+    from app.services.sites.defaults import ensure_default_site
+
+    await ensure_default_site(db_session, org.id, actor_id=SYSTEM_ACTOR_ID)
     return org
 
 
@@ -430,6 +428,20 @@ async def extracted_document(db_session: AsyncSession, test_org, test_user) -> D
 # ── seed_document_extracting ─────────────────────────────────────────
 
 
+@pytest.fixture
+def make_equipment(db_session, test_org):
+    async def _factory(*, site_id, name="Eq"):
+        from app.models.science import Equipment
+
+        e = Equipment(organization_id=test_org.id, name=name, site_id=site_id)
+        db_session.add(e)
+        await db_session.commit()
+        await db_session.refresh(e)
+        return e
+
+    return _factory
+
+
 @pytest_asyncio.fixture
 async def seed_document_extracting(db_session: AsyncSession) -> Document:
     """Yield a Document row in EXTRACTING status.
@@ -465,3 +477,299 @@ async def seed_document_extracting(db_session: AsyncSession) -> Document:
     db_session.add(doc)
     await db_session.flush()
     return doc
+
+
+@pytest.fixture
+async def sample_site(db_session, test_org, test_user):
+    from app.schemas.sites import SiteCreate
+    from app.services.sites import crud as sites_crud
+
+    return await sites_crud.create_site(
+        db_session,
+        org_id=test_org.id,
+        payload=SiteCreate(name="Sample Site"),
+        actor_id=test_user.id,
+    )
+
+
+@pytest.fixture
+async def other_org_site(db_session, second_org, second_user):
+    from app.schemas.sites import SiteCreate
+    from app.services.sites import crud as sites_crud
+
+    return await sites_crud.create_site(
+        db_session,
+        org_id=second_org.id,
+        payload=SiteCreate(name="Other Org Site"),
+        actor_id=second_user.id,
+    )
+
+
+@pytest.fixture
+async def sample_equipment(db_session, test_org, test_user, sample_site):
+    from app.models.science import Equipment
+
+    eq = Equipment(
+        organization_id=test_org.id,
+        name="Sample Equipment",
+        site_id=sample_site.id,
+        created_by_id=test_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    return eq
+
+
+@pytest.fixture
+async def sample_equipment_attachment(db_session, sample_equipment, test_user):
+    from app.models.science import EquipmentAttachment
+
+    att = EquipmentAttachment(
+        equipment_id=sample_equipment.id,
+        file_path=(
+            f"{sample_equipment.organization_id}/equipment/"
+            f"{sample_equipment.id}/test.pdf"
+        ),
+        original_filename="test.pdf",
+        mime_type="application/pdf",
+        size_bytes=100,
+        uploaded_by_id=test_user.id,
+    )
+    db_session.add(att)
+    await db_session.commit()
+    await db_session.refresh(att)
+    return att
+
+
+# ── Sites role-gate fixtures ─────────────────────────────────────────────────
+
+
+def _make_bearer_client(db_session, user, org):
+    """Build an AsyncClient pre-loaded with a Bearer token for `user`.
+
+    Each call produces an independent client with its own token so tests that
+    request two authed clients (e.g. admin + member) in the same function
+    don't clobber each other's headers.  The db_session override is idempotent
+    (all roles share the same session); cleanup is left to the caller.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    token = create_access_token(
+        user.id,
+        org_id=org.id,
+        subscription_tier=org.subscription_tier,
+        email_verified=True,
+    )
+
+    async def override_get_db():
+        yield db_session
+
+    # Set the override every time — safe because it's always the same session.
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    return AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+@pytest_asyncio.fixture
+async def authed_admin_client(db_session, test_user, test_org):
+    """test_user is already ADMIN+MEMBER of test_org."""
+    async with _make_bearer_client(db_session, test_user, test_org) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def member_user(db_session, test_org) -> User:
+    user = User(
+        email="member-only@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Member User",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=test_org.id,
+            roles=["MEMBER"],
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def authed_member_client(db_session, member_user, test_org):
+    async with _make_bearer_client(db_session, member_user, test_org) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def site_manager_user(db_session, test_org) -> User:
+    user = User(
+        email="site-mgr@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Site Manager",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=test_org.id,
+            roles=["MEMBER", "SITE_MANAGER"],
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def authed_site_manager_client(db_session, site_manager_user, test_org):
+    async with _make_bearer_client(db_session, site_manager_user, test_org) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def managed_site(db_session, test_org, test_user, site_manager_user):
+    """A site that `site_manager_user` has a grant on."""
+    from app.schemas.sites import SiteCreate
+    from app.services.sites import crud as sites_crud
+    from app.services.sites import grants as sites_grants
+
+    site = await sites_crud.create_site(
+        db_session,
+        org_id=test_org.id,
+        payload=SiteCreate(name="Managed Site"),
+        actor_id=test_user.id,
+    )
+    await sites_grants.grant_site_manager(
+        db_session,
+        site=site,
+        user_id=site_manager_user.id,
+        granted_by_id=test_user.id,
+    )
+    return site
+
+
+@pytest_asyncio.fixture
+async def unmanaged_site(db_session, test_org, test_user):
+    """A site that nobody has a grant on (other than ADMINs)."""
+    from app.schemas.sites import SiteCreate
+    from app.services.sites import crud as sites_crud
+
+    return await sites_crud.create_site(
+        db_session,
+        org_id=test_org.id,
+        payload=SiteCreate(name="Unmanaged Site"),
+        actor_id=test_user.id,
+    )
+
+
+@pytest_asyncio.fixture
+async def grantee_user(db_session, test_org) -> User:
+    """A bare MEMBER eligible to be granted a SITE_MANAGER role on a site."""
+    user = User(
+        email="grantee@example.com",
+        hashed_password=hash_password("testpass"),
+        full_name="Grantee User",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=test_org.id,
+            roles=["MEMBER", "SITE_MANAGER"],
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def default_site_id(db_session, test_org) -> str:
+    """ID of the auto-seeded Default Site for test_org."""
+    from app.services.sites.crud import list_sites
+    from app.services.sites.defaults import DEFAULT_SITE_NAME
+
+    sites = await list_sites(db_session, test_org.id)
+    for s in sites:
+        if s.name == DEFAULT_SITE_NAME:
+            return str(s.id)
+    raise RuntimeError("Default Site not seeded for test_org")
+
+
+@pytest_asyncio.fixture
+async def member_owned_equipment_id(
+    db_session, test_org, test_user, managed_site
+) -> str:
+    """Equipment on `managed_site` (which `site_manager_user` has a grant on).
+
+    Used by tests where SITE_MANAGER with grant should be authorized for
+    restricted edits, but the equipment was created by any member."""
+    from app.models.science import Equipment
+
+    eq = Equipment(
+        organization_id=test_org.id,
+        name="Member Owned",
+        site_id=managed_site.id,
+        created_by_id=test_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    return str(eq.id)
+
+
+@pytest_asyncio.fixture
+async def equipment_on_unmanaged_site_id(
+    db_session, test_org, test_user, unmanaged_site
+) -> str:
+    """Equipment on a site nobody has a grant on (other than ADMINs)."""
+    from app.models.science import Equipment
+
+    eq = Equipment(
+        organization_id=test_org.id,
+        name="Unmanaged Site Equip",
+        site_id=unmanaged_site.id,
+        created_by_id=test_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    return str(eq.id)
+
+
+@pytest_asyncio.fixture
+async def archived_equipment_id(db_session, test_org, test_user, managed_site) -> str:
+    """An archived equipment row to test the read-only guard."""
+    from datetime import datetime, timezone
+
+    from app.models.science import Equipment
+
+    eq = Equipment(
+        organization_id=test_org.id,
+        name="Archived",
+        site_id=managed_site.id,
+        created_by_id=test_user.id,
+        archived_at=datetime.now(timezone.utc),
+        archived_by_id=test_user.id,
+    )
+    db_session.add(eq)
+    await db_session.commit()
+    await db_session.refresh(eq)
+    return str(eq.id)

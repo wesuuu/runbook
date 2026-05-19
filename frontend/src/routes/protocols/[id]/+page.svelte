@@ -97,6 +97,7 @@
     let unitOps = $state<any[]>([]);
     let roles = $state<any[]>([]);
     let orgEquipment = $state<any[]>([]);
+    let sites = $state<import('$lib/schemas/sites').Site[]>([]);
     let equipmentConflicts = $state<Map<string, string[]>>(new Map());
     let loading = $state(true);
     let error = $state<string | null>(null);
@@ -531,7 +532,12 @@
             // Load organization equipment
             const org = getCurrentOrg();
             if (org?.id) {
-                orgEquipment = await api.get(`/iam/organizations/${org.id}/equipment`);
+                const [eq, st] = await Promise.all([
+                    api.get<any[]>(`/equipment`),
+                    api.get<import('$lib/schemas/sites').Site[]>(`/sites`),
+                ]);
+                orgEquipment = eq;
+                sites = st;
             }
 
             if (id && id !== "new") {
@@ -1013,19 +1019,23 @@
     }
 
     // --- Equipment Management ---
-    async function handleCreateEquipment(data: { name: string; description: string; equipment_type: string; location: string }): Promise<any> {
-        const org = getCurrentOrg();
-        if (!org?.id) throw new Error("No organization");
-
-        const newEquipment: any = await api.post(
-            `/iam/organizations/${org.id}/equipment`,
-            {
-                name: data.name,
-                description: data.description,
-                equipment_type: data.equipment_type,
-                location: data.location,
-            }
-        );
+    async function handleCreateEquipment(data: {
+        name: string;
+        description: string;
+        equipment_type: string;
+        location: string;
+        room?: string;
+        site_id?: string;
+    }): Promise<any> {
+        if (!data.site_id) throw new Error("Site is required");
+        const newEquipment: any = await api.post(`/equipment`, {
+            name: data.name,
+            site_id: data.site_id,
+            description: data.description,
+            equipment_type: data.equipment_type,
+            location: data.location,
+            room: data.room,
+        });
 
         orgEquipment = [...orgEquipment, newEquipment];
         return newEquipment;
@@ -1414,6 +1424,7 @@
                 node={selectedNode}
                 allNodes={nodes}
                 {orgEquipment}
+                {sites}
                 {equipmentConflicts}
                 onApply={handleInspectorApply}
                 onSaveAsNew={handleSaveAsNew}

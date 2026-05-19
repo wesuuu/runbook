@@ -3,9 +3,21 @@
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import select
 
-from app.models.science import Equipment, Protocol
+from app.models.science import Equipment, Protocol, Site
 from app.models.templates import DocumentTemplate
+
+
+async def _get_default_site_id(db_session, org_id):
+    site = (
+        await db_session.execute(
+            select(Site).where(
+                Site.organization_id == org_id, Site.is_default.is_(True)
+            )
+        )
+    ).scalar_one()
+    return site.id
 
 
 @pytest.fixture
@@ -49,8 +61,10 @@ async def test_pdf_endpoint_attaches_unresolved_header(
 ):
     """Endpoint surfaces unresolved {{<id>_name}} via X-Unresolved-Placeholders."""
     tpl = await _make_template(db_session, test_org.id)
+    site_id = await _get_default_site_id(db_session, test_org.id)
     eq = Equipment(
         organization_id=test_org.id,
+        site_id=site_id,
         name="Bioreactor A",
         description="5L stirred tank",
     )
@@ -95,8 +109,10 @@ async def test_pdf_endpoint_no_header_when_all_resolved(
 ):
     """No X-Unresolved-Placeholders header when every token resolves."""
     tpl = await _make_template(db_session, test_org.id)
+    site_id = await _get_default_site_id(db_session, test_org.id)
     eq = Equipment(
         organization_id=test_org.id,
+        site_id=site_id,
         name="Bioreactor A",
         description="5L",
     )

@@ -169,7 +169,7 @@
             if (!loadedOrgEq) {
                 const org = getCurrentOrg();
                 if (org) {
-                    api.get<OrgEquipment[]>(`/iam/organizations/${org.id}/equipment`).then((eq) => {
+                    api.get<OrgEquipment[]>(`/equipment`).then((eq) => {
                         orgEquipment = eq;
                         loadedOrgEq = true;
                     }).catch(() => {});

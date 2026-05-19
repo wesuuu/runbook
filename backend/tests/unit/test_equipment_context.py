@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization
-from app.models.science import Equipment
+from app.models.science import Equipment, Site
 from app.services.protocols.equipment_context import build_equipment_context
 
 
@@ -17,17 +17,29 @@ async def _make_org(db_session: AsyncSession) -> Organization:
     return org
 
 
+async def _make_org_with_site(
+    db_session: AsyncSession,
+) -> tuple[Organization, Site]:
+    org = await _make_org(db_session)
+    site = Site(organization_id=org.id, name="HQ", is_default=True)
+    db_session.add(site)
+    await db_session.flush()
+    return org, site
+
+
 async def test_build_equipment_context_flattens_assigned_equipment(
     db_session: AsyncSession,
 ):
-    org = await _make_org(db_session)
+    org, site = await _make_org_with_site(db_session)
     eq1 = Equipment(
         organization_id=org.id,
+        site_id=site.id,
         name="Sartorius Bioreactor",
         description="5L stirred-tank, single-use",
     )
     eq2 = Equipment(
         organization_id=org.id,
+        site_id=site.id,
         name="pH Probe",
         description="Mettler Toledo InPro 3250i",
     )
@@ -71,8 +83,8 @@ async def test_build_equipment_context_flattens_assigned_equipment(
 async def test_build_equipment_context_skips_entries_without_local_id(
     db_session: AsyncSession,
 ):
-    org = await _make_org(db_session)
-    eq = Equipment(organization_id=org.id, name="X", description="d")
+    org, site = await _make_org_with_site(db_session)
+    eq = Equipment(organization_id=org.id, site_id=site.id, name="X", description="d")
     db_session.add(eq)
     await db_session.flush()
 
@@ -97,9 +109,9 @@ async def test_build_equipment_context_skips_entries_without_local_id(
 async def test_build_equipment_context_warns_on_duplicate_local_id(
     db_session: AsyncSession,
 ):
-    org = await _make_org(db_session)
-    a = Equipment(organization_id=org.id, name="A", description="a")
-    b = Equipment(organization_id=org.id, name="B", description="b")
+    org, site = await _make_org_with_site(db_session)
+    a = Equipment(organization_id=org.id, site_id=site.id, name="A", description="a")
+    b = Equipment(organization_id=org.id, site_id=site.id, name="B", description="b")
     db_session.add_all([a, b])
     await db_session.flush()
 
@@ -169,8 +181,8 @@ async def test_build_equipment_context_warns_when_equipment_missing(
 async def test_build_equipment_context_handles_swimlane_children(
     db_session: AsyncSession,
 ):
-    org = await _make_org(db_session)
-    eq = Equipment(organization_id=org.id, name="N", description="d")
+    org, site = await _make_org_with_site(db_session)
+    eq = Equipment(organization_id=org.id, site_id=site.id, name="N", description="d")
     db_session.add(eq)
     await db_session.flush()
 

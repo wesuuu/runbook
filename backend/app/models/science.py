@@ -2,23 +2,11 @@ import uuid
 from datetime import date, datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import (
-    Boolean,
-    CheckConstraint,
-    Date,
-    DateTime,
-    Enum,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    desc,
-    func,
-    text,
-)
+from sqlalchemy import (ARRAY, Boolean, CheckConstraint, Date, DateTime, Enum,
+                        ForeignKey, Index, Integer, String, Text,
+                        UniqueConstraint, desc, func, text)
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -52,6 +40,12 @@ class ProtocolApprovalRequestStatus(str, Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     WITHDRAWN = "WITHDRAWN"
+
+
+class EquipmentStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    MAINTENANCE = "MAINTENANCE"
+    RETIRED = "RETIRED"
 
 
 class Project(Base, UUIDMixin, TimestampMixin):
@@ -444,6 +438,10 @@ class ProtocolVersion(Base, UUIDMixin, TimestampMixin):
 
 class Equipment(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "equipment"
+    __table_args__ = (
+        Index("ix_equipment_site", "site_id"),
+        Index("ix_equipment_org_status", "organization_id", "status"),
+    )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
@@ -452,6 +450,159 @@ class Equipment(Base, UUIDMixin, TimestampMixin):
     description: Mapped[Optional[str]] = mapped_column(String)
     equipment_type: Mapped[Optional[str]] = mapped_column(String)
     location: Mapped[Optional[str]] = mapped_column(String)
+    site_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("sites.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    manufacturer: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=EquipmentStatus.ACTIVE,
+        server_default="ACTIVE",
+    )
+    install_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    last_calibration_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    next_calibration_due: Mapped[date | None] = mapped_column(Date, nullable=True)
+    room: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(String),
+        nullable=False,
+        default=list,
+        server_default=text("ARRAY[]::varchar[]"),
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    archived_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    site = relationship("Site", back_populates="equipment", lazy="joined")
+    attachments = relationship(
+        "EquipmentAttachment",
+        back_populates="equipment",
+        lazy="select",
+        cascade="all, delete-orphan",
+    )
+
+
+class EquipmentAttachment(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "equipment_attachments"
+
+    equipment_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("equipment.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    equipment = relationship("Equipment", back_populates="attachments", lazy="joined")
+
+
+class SiteManagerGrant(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "site_manager_grants"
+    __table_args__ = (
+        Index("ix_site_manager_grants_site", "site_id"),
+        Index("ix_site_manager_grants_user", "user_id"),
+        Index("ix_site_manager_grants_org", "organization_id"),
+        Index(
+            "uq_site_manager_grants_site_user",
+            "site_id",
+            "user_id",
+            unique=True,
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    site_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("sites.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    granted_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    site = relationship("Site", lazy="joined")
+    user = relationship("User", foreign_keys=[user_id], lazy="joined")
+    granted_by = relationship("User", foreign_keys=[granted_by_id], lazy="select")
+
+
+class Site(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "sites"
+    __table_args__ = (
+        Index("ix_sites_org", "organization_id"),
+        Index(
+            "uq_sites_org_name",
+            "organization_id",
+            "name",
+            unique=True,
+            postgresql_where=text("archived_at IS NULL"),
+        ),
+        Index(
+            "uq_sites_org_is_default",
+            "organization_id",
+            unique=True,
+            postgresql_where=text("is_default = true AND archived_at IS NULL"),
+        ),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    archived_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    archive_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    equipment = relationship("Equipment", back_populates="site", lazy="select")
 
 
 class ProtocolApprovalEvent(Base, UUIDMixin, TimestampMixin):

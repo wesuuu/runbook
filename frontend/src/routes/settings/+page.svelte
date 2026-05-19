@@ -23,15 +23,18 @@
     import AppearanceTab from '$lib/components/settings/AppearanceTab.svelte';
     import SignatureCard from '$lib/components/settings/SignatureCard.svelte';
     import MemberRolesPicker from '$lib/components/settings/MemberRolesPicker.svelte';
+    import SitesEquipmentTab from '$lib/components/sites/SitesEquipmentTab.svelte';
     import OrgProtocolApproversCard from '$lib/components/settings/OrgProtocolApproversCard.svelte';
+    import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
+    import { SiteListSchema, type Site } from '$lib/schemas/sites';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { blockDuration, listDuration } from '$lib/transitions';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
 
-    type TabName = 'organization' | 'teams' | 'profile' | 'appearance' | 'notifications' | 'ai' | 'templates' | 'billing' | 'legal';
-    const VALID_TABS: TabName[] = ['organization', 'teams', 'profile', 'appearance', 'notifications', 'ai', 'templates', 'billing', 'legal'];
+    type TabName = 'organization' | 'teams' | 'sites' | 'profile' | 'appearance' | 'notifications' | 'ai' | 'templates' | 'billing' | 'legal';
+    const VALID_TABS: TabName[] = ['organization', 'teams', 'sites', 'profile', 'appearance', 'notifications', 'ai', 'templates', 'billing', 'legal'];
 
     const activeTab = $derived.by<TabName>(() => {
         const t = $page.url.searchParams.get('tab');
@@ -238,6 +241,22 @@
     let inviteEmail = $state('');
     let showInviteDialog = $state(false);
     let memberStatusFilter = $state<'all' | 'active' | 'pending'>('all');
+
+    // Sites (for SITE_MANAGER grant picker; F-0088 Task 31).
+    let allSites = $state<Site[]>([]);
+    // Per-member managed site ids, keyed by user_id.
+    let managedSiteIdsByUser = $state<Record<string, string[]>>({});
+
+    // Confirm-on-untick state when SITE_MANAGER is being removed while
+    // grants still exist. We stash the intended next-roles list and apply
+    // it only after the admin confirms the bulk revoke.
+    let confirmRevokeOpen = $state(false);
+    let pendingRevoke = $state<{
+        userId: string;
+        userLabel: string;
+        nextRoles: string[];
+        siteCount: number;
+    } | null>(null);
 
     // Library reload
     let reloading = $state(false);
@@ -480,12 +499,80 @@
         membersLoading = true;
         membersError = '';
         try {
-            members = await api.get(`/iam/organizations/${org.id}/members`);
+            const [memberList, siteList] = await Promise.all([
+                api.get(`/iam/organizations/${org.id}/members`),
+                api
+                    .get('/sites', { schema: SiteListSchema })
+                    .catch(() => [] as Site[]),
+            ]);
+            members = memberList as any[];
+            allSites = siteList as Site[];
+            await loadManagedSitesForMembers();
         } catch (e: unknown) {
             members = [];
             membersError = e instanceof Error ? e.message : 'Failed to load members.';
         } finally {
             membersLoading = false;
+        }
+    }
+
+    // For each member who currently holds SITE_MANAGER, fetch the list of
+    // sites they manage. Cheap when few members have the role.
+    async function loadManagedSitesForMembers() {
+        const siteManagerMembers = members.filter((m: any) =>
+            (m.roles ?? []).includes('SITE_MANAGER'),
+        );
+        if (siteManagerMembers.length === 0) {
+            managedSiteIdsByUser = {};
+            return;
+        }
+        const entries = await Promise.all(
+            siteManagerMembers.map(async (m: any) => {
+                try {
+                    const rows = await api.get<Array<{ grant_id: string; site: { id: string } }>>(
+                        `/users/${m.user_id}/managed-sites`,
+                    );
+                    return [m.user_id, rows.map((r) => r.site.id)] as const;
+                } catch {
+                    return [m.user_id, [] as string[]] as const;
+                }
+            }),
+        );
+        const next: Record<string, string[]> = {};
+        for (const [uid, ids] of entries) {
+            next[uid] = ids;
+        }
+        managedSiteIdsByUser = next;
+    }
+
+    // Diff-and-apply site grants for a member. POST for added, DELETE for
+    // removed, in parallel. On failure roll back optimistic state.
+    async function updateMemberSites(userId: string, nextSiteIds: string[]) {
+        const previous = managedSiteIdsByUser[userId] ?? [];
+        const added = nextSiteIds.filter((id) => !previous.includes(id));
+        const removed = previous.filter((id) => !nextSiteIds.includes(id));
+        if (added.length === 0 && removed.length === 0) return;
+        // Optimistic update
+        managedSiteIdsByUser = { ...managedSiteIdsByUser, [userId]: nextSiteIds };
+        try {
+            await Promise.all([
+                ...added.map((siteId) =>
+                    api.post(`/sites/${siteId}/managers`, { user_id: userId }),
+                ),
+                ...removed.map((siteId) =>
+                    api.delete(`/sites/${siteId}/managers/${userId}`),
+                ),
+            ]);
+        } catch (e: unknown) {
+            // Rollback
+            managedSiteIdsByUser = {
+                ...managedSiteIdsByUser,
+                [userId]: previous,
+            };
+            toast.error(
+                'Failed to update site grants',
+                e instanceof Error ? e.message : '',
+            );
         }
     }
 
@@ -597,8 +684,32 @@
         }
     }
 
-    // Update member roles (multi-role) with optimistic update
+    // Update member roles (multi-role) with optimistic update.
+    // If SITE_MANAGER is being removed while the member still holds grants,
+    // bounce through a confirm dialog before issuing the bulk DELETE +
+    // role patch.
     async function updateMemberRoles(userId: string, roles: string[]) {
+        const org = getCurrentOrg();
+        if (!org) return;
+        const member = members.find((m) => m.user_id === userId);
+        if (!member) return;
+        const wasSiteManager = (member.roles ?? []).includes('SITE_MANAGER');
+        const willBeSiteManager = roles.includes('SITE_MANAGER');
+        const grantCount = (managedSiteIdsByUser[userId] ?? []).length;
+        if (wasSiteManager && !willBeSiteManager && grantCount > 0) {
+            pendingRevoke = {
+                userId,
+                userLabel: member.full_name || member.email || 'this member',
+                nextRoles: roles,
+                siteCount: grantCount,
+            };
+            confirmRevokeOpen = true;
+            return;
+        }
+        await applyMemberRolesUpdate(userId, roles);
+    }
+
+    async function applyMemberRolesUpdate(userId: string, roles: string[]) {
         const org = getCurrentOrg();
         if (!org) return;
         const member = members.find((m) => m.user_id === userId);
@@ -620,6 +731,25 @@
                 e instanceof Error ? e.message : '',
             );
         }
+    }
+
+    async function confirmRevokeSiteManager() {
+        if (!pendingRevoke) return;
+        const { userId, nextRoles } = pendingRevoke;
+        // Clear grants first so backend state is consistent before the
+        // role bit drops.
+        await updateMemberSites(userId, []);
+        await applyMemberRolesUpdate(userId, nextRoles);
+        confirmRevokeOpen = false;
+        pendingRevoke = null;
+    }
+
+    function cancelRevokeSiteManager() {
+        confirmRevokeOpen = false;
+        pendingRevoke = null;
+        // No state to roll back; the picker's local checkbox is driven by
+        // the row.roles prop, so re-rendering with unchanged roles
+        // restores its visual state.
     }
 
     // Create team
@@ -686,6 +816,14 @@
             class="py-2.5 min-h-11"
         >
             Teams
+        </Button>
+        <Button
+            variant="tab"
+            data-active={activeTab === 'sites'}
+            onclick={() => setTab('sites')}
+            class="py-2.5 min-h-11"
+        >
+            Sites &amp; Equipment
         </Button>
         <Button
             variant="tab"
@@ -840,7 +978,10 @@
                                         <MemberRolesPicker
                                             roles={row.roles}
                                             disabled={!isOrgAdmin}
+                                            allSites={allSites.filter((s) => !s.archived_at)}
+                                            selectedSiteIds={managedSiteIdsByUser[row.id] ?? []}
                                             onChange={(roles) => updateMemberRoles(row.id, roles)}
+                                            onSitesChange={(siteIds) => updateMemberSites(row.id, siteIds)}
                                         />
                                     </div>
                                 {:else}
@@ -880,7 +1021,10 @@
                                     <MemberRolesPicker
                                         roles={row.roles}
                                         disabled={!isOrgAdmin}
+                                        allSites={allSites.filter((s) => !s.archived_at)}
+                                        selectedSiteIds={managedSiteIdsByUser[row.id] ?? []}
                                         onChange={(roles) => updateMemberRoles(row.id, roles)}
+                                        onSitesChange={(siteIds) => updateMemberSites(row.id, siteIds)}
                                     />
                                 </div>
                             {:else}
@@ -1017,6 +1161,10 @@
                 {/if}
             </CardContent>
         </Card>
+
+    <!-- Sites & Equipment Tab -->
+    {:else if activeTab === 'sites'}
+        <SitesEquipmentTab />
 
     <!-- Profile Tab -->
     {:else if activeTab === 'profile'}
@@ -1371,3 +1519,15 @@
         </Card>
     {/if}
 </div>
+
+<ConfirmDialog
+    bind:open={confirmRevokeOpen}
+    title="Remove site manager role?"
+    message={pendingRevoke
+        ? `Revoke ${pendingRevoke.siteCount} site grant(s) for ${pendingRevoke.userLabel}?`
+        : ''}
+    confirmLabel="Revoke"
+    confirmVariant="danger"
+    onConfirm={confirmRevokeSiteManager}
+    onCancel={cancelRevokeSiteManager}
+/>
