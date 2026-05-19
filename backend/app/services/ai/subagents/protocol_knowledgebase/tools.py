@@ -14,7 +14,7 @@ import re
 import time
 import urllib.parse
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 from typing import Callable
 from uuid import UUID
 
@@ -23,42 +23,12 @@ from pydantic_ai import RunContext
 
 from app.core.config import settings
 from app.services.ai.deps import ChatDeps
-
-# ─── Result dataclasses ────────────────────────────────────────────────────────
-
-
-@dataclass
-class ExternalProtocolStep:
-    text: str
-    duration_min: int | None  # parsed from "X min" / "X h" / "X s" in step text
-
-
-@dataclass
-class ExternalProtocolPayload:
-    title: str
-    source_url: str
-    summary: str
-    materials: list[str] = field(default_factory=list)
-    steps: list[ExternalProtocolStep] = field(default_factory=list)
-    notes: str | None = None
-    license: str = "CC BY-SA 3.0"
-    attribution: str = ""
-    error: str | None = None
-
-
-@dataclass
-class OpenWetWareHit:
-    title: str
-    url: str
-    snippet: str
-
-
-@dataclass
-class OpenWetWareSearchResult:
-    total: int
-    hits: list[OpenWetWareHit] = field(default_factory=list)
-    message: str = ""
-
+from app.services.ai.subagents.protocol_knowledgebase.types import (
+    ExternalProtocolPayload,
+    ExternalProtocolStep,
+    OpenWetWareHit,
+    OpenWetWareSearchResult,
+)
 
 # ─── Pure parser ───────────────────────────────────────────────────────────────
 
