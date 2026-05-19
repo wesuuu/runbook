@@ -316,3 +316,99 @@ async def test_agent_error_yields_error_event():
 
     assert emitted[-1]["type"] == "error"
     assert "detail" in emitted[-1]
+
+
+async def _fake_run_capturing(captured: dict):
+    """A fake agent.run that records the prompt it was given."""
+
+    async def _run(*args, event_stream_handler=None, **kwargs):
+        captured["prompt"] = args[0]
+        result = MagicMock()
+        result.output = "ok"
+        result.all_messages.return_value = []
+        return result
+
+    return _run
+
+
+async def _drain_streaming(db, session, content, **kwargs):
+    from app.services.ai.send_message import send_message_streaming
+
+    captured: dict = {}
+    run_fn = await _fake_run_capturing(captured)
+    cmr_patch, csr_patch = _patch_schema_serialization()
+    with (
+        patch(
+            "app.services.ai.send_message.build_chat_agent",
+            new_callable=AsyncMock,
+        ) as mock_build,
+        patch(
+            "app.services.ai.send_message.CompactionState",
+            return_value=CompactionState(),
+        ),
+        patch("app.services.ai.send_message.ModelMessagesTypeAdapter"),
+        patch("app.services.ai.send_message.sanitize_output", return_value="ok"),
+        cmr_patch,
+        csr_patch,
+    ):
+        fake_agent = MagicMock()
+        fake_agent.run = run_fn
+        mock_build.return_value = fake_agent
+        [ev async for ev in send_message_streaming(db, session, content, **kwargs)]
+    return captured, db
+
+
+def _fresh_db():
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    return db
+
+
+@pytest.mark.asyncio
+async def test_current_route_prepends_page_marker():
+    """current_route prepends [page:<route>] to the model-visible prompt."""
+    captured, db = await _drain_streaming(
+        _fresh_db(),
+        _make_session(),
+        "how do I publish this?",
+        user_id=uuid.uuid4(),
+        is_org_admin=False,
+        current_route="/protocols/abc/edit",
+    )
+    assert captured["prompt"] == ("[page:/protocols/abc/edit] how do I publish this?")
+    # Persisted user message keeps the clean text.
+    user_msg = db.add.call_args_list[0].args[0]
+    assert user_msg.content == "how do I publish this?"
+
+
+@pytest.mark.asyncio
+async def test_no_route_means_no_prefix():
+    """Absent current_route leaves the prompt unprefixed."""
+    captured, _ = await _drain_streaming(
+        _fresh_db(),
+        _make_session(),
+        "hello",
+        user_id=uuid.uuid4(),
+        is_org_admin=False,
+    )
+    assert captured["prompt"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_skill_marker_precedes_page_marker():
+    """[skill:<id>] stays first so 'message begins with [skill:' holds."""
+    captured, _ = await _drain_streaming(
+        _fresh_db(),
+        _make_session(),
+        "draft a protocol",
+        user_id=uuid.uuid4(),
+        is_org_admin=False,
+        skill_id="new-protocol",
+        current_route="/protocols",
+    )
+    assert captured["prompt"] == (
+        "[skill:new-protocol] [page:/protocols] draft a protocol"
+    )

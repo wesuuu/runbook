@@ -181,6 +181,7 @@ async def send_message_streaming(
     user_id: UUID,
     is_org_admin: bool,
     skill_id: str | None = None,
+    current_route: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Stream a chat turn as SSE-shaped event dicts. See module docstring.
 
@@ -190,6 +191,15 @@ async def send_message_streaming(
     sees what they typed in the thread history. The prefix tells the chat
     agent (via the dispatch rule in its system prompt) to load the matching
     SKILL.md and follow its recipe.
+
+    ``current_route`` (F-0089) adds page-context awareness by prepending
+    ``[page:<route>] `` to the model-visible content only (the persisted
+    message stays clean). This lets the chat agent and the ``app_help``
+    subagent pick the help page that covers the user's current surface
+    without requiring the user to describe where they are in the app.
+    When both ``skill_id`` and ``current_route`` are set, ``[skill:<id>]``
+    comes first so the "message begins with [skill:...]" dispatch rule
+    continues to hold.
     """
     session_pk: UUID = session.id
     session_org_id: UUID = session.org_id
@@ -197,11 +207,16 @@ async def send_message_streaming(
 
     # Compose the model-visible content. The clean ``user_content`` is what
     # gets persisted; ``model_visible_content`` is what the agent.run prompt
-    # carries, so the [skill:<id>] marker reaches the LLM and lands in the
-    # serialized message history for turn N+1 to see.
-    model_visible_content = (
-        f"[skill:{skill_id}] {user_content}" if skill_id else user_content
-    )
+    # carries. Markers reach the LLM and land in the serialized history for
+    # turn N+1. The [skill:<id>] marker stays first so the chat-agent prompt
+    # rule "if a message begins with [skill:...]" still holds when a
+    # [page:<route>] marker (F-0089) is also present.
+    markers = ""
+    if skill_id:
+        markers += f"[skill:{skill_id}] "
+    if current_route:
+        markers += f"[page:{current_route}] "
+    model_visible_content = f"{markers}{user_content}" if markers else user_content
 
     # ── 1. Persist user message ──────────────────────────────────────────────
     user_msg = ChatMessage(
