@@ -77,7 +77,7 @@
         <div class="space-y-3 py-2">
             <div>
                 <label class={labelClass} for="eq-name">Name *</label>
-                <Input id="eq-name" bind:value={name} />
+                <Input id="eq-name" class="bg-white" bind:value={name} />
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
@@ -86,22 +86,22 @@
                 </div>
                 <div>
                     <label class={labelClass} for="eq-type">Type</label>
-                    <Input id="eq-type" bind:value={equipment_type} />
+                    <Input id="eq-type" class="bg-white" bind:value={equipment_type} />
                 </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class={labelClass} for="eq-room">Room</label>
-                    <Input id="eq-room" bind:value={room} />
+                    <Input id="eq-room" class="bg-white" bind:value={room} />
                 </div>
                 <div>
                     <label class={labelClass} for="eq-loc">Bench / Spot</label>
-                    <Input id="eq-loc" bind:value={location} />
+                    <Input id="eq-loc" class="bg-white" bind:value={location} />
                 </div>
             </div>
             <div>
                 <label class={labelClass} for="eq-desc">Description</label>
-                <Input id="eq-desc" bind:value={description} />
+                <Input id="eq-desc" class="bg-white" bind:value={description} />
             </div>
             <div>
                 <label class={labelClass}>Tags</label>
@@ -120,15 +120,15 @@
                 <div class="grid grid-cols-2 gap-3 mt-2">
                     <div>
                         <label class={labelClass} for="eq-mfr">Manufacturer</label>
-                        <Input id="eq-mfr" bind:value={manufacturer} disabled={!canManage} />
+                        <Input id="eq-mfr" class="bg-white" bind:value={manufacturer} disabled={!canManage} />
                     </div>
                     <div>
                         <label class={labelClass} for="eq-model">Model</label>
-                        <Input id="eq-model" bind:value={model} disabled={!canManage} />
+                        <Input id="eq-model" class="bg-white" bind:value={model} disabled={!canManage} />
                     </div>
                     <div>
                         <label class={labelClass} for="eq-serial">Serial</label>
-                        <Input id="eq-serial" bind:value={serial_number} disabled={!canManage} />
+                        <Input id="eq-serial" class="bg-white" bind:value={serial_number} disabled={!canManage} />
                     </div>
                     <div>
                         <label class={labelClass} for="eq-status">Status</label>
