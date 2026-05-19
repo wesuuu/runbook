@@ -10,6 +10,22 @@
 
 ---
 
+## Environment notes (read before any task)
+
+- **Backend venv:** `backend/.venv` is already set up (symlinked to the complete
+  dev environment). Activate it with `source .venv/bin/activate` from `backend/`.
+- **Pre-existing broken test — not in scope:** `tests/unit/test_lane_layout.py`
+  fails to collect on the base branch (it imports `relayout_all_lane_children`,
+  a function that does not exist — landed broken in commit `3622342`). A
+  collection error aborts the whole `pytest` run, so **every `pytest` command in
+  this plan must append `--ignore=tests/unit/test_lane_layout.py`**. Do not fix
+  or touch that test — it is unrelated to TD-0083. Example: where a step says
+  `pytest -q`, run `pytest -q --ignore=tests/unit/test_lane_layout.py`.
+- **Baseline:** the suite (minus that one module) is green before Task 1. Every
+  task's verification step must keep it green with unchanged pass counts.
+
+---
+
 ## Reference: symbol → module mapping
 
 **Models** (`models/science.py` → 6 new files):
