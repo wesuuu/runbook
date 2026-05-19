@@ -30,6 +30,7 @@ restart; editing corpus `.md` files does not.)
 - `protocols-and-editor.md` — Creating, editing, validating, and publishing protocols.
 - `experiments-and-runs.md` — Planning, executing, completing, and recording deviations in runs.
 - `library-and-documents.md` — Uploading documents to the library and searching them via the chat assistant.
+- `chat-agent.md` — What the in-app chat assistant can do, how to open it, use skills, and read source citations.
 
 ## Excluded (not shipped on production defaults)
 
