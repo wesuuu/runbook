@@ -274,7 +274,7 @@ def _require_enabled() -> None:
 
 
 async def _check_rate_limit(org_id: UUID) -> None:
-    limit = settings.features.external_protocols.rate_limit_per_minute
+    limit = settings.features.external_protocols.openwetware.rate_limit_per_minute
     async with _LIMIT_LOCK:
         now = _now()
         bucket = _RECENT_REQUESTS.setdefault(org_id, deque())
@@ -336,7 +336,7 @@ async def search_openwetware(
     await _check_rate_limit(ctx.deps.org_id)
 
     limit = max(1, min(int(limit), 10))
-    timeout = settings.features.external_protocols.request_timeout_seconds
+    timeout = settings.features.external_protocols.openwetware.request_timeout_seconds
     params = {
         "action": "query",
         "list": "search",
@@ -398,7 +398,7 @@ async def fetch_openwetware_protocol(
     await _check_rate_limit(ctx.deps.org_id)
 
     page_title = _page_title_from_url(url)
-    timeout = settings.features.external_protocols.request_timeout_seconds
+    timeout = settings.features.external_protocols.openwetware.request_timeout_seconds
     params = {
         "action": "parse",
         "page": page_title,

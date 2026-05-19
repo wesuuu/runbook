@@ -59,7 +59,7 @@ def _reset_rate_bucket():
 def _enabled(monkeypatch):
     monkeypatch.setattr(settings.features.external_protocols, "enabled", True)
     monkeypatch.setattr(
-        settings.features.external_protocols, "rate_limit_per_minute", 10
+        settings.features.external_protocols.openwetware, "rate_limit_per_minute", 10
     )
     yield
 
@@ -126,7 +126,7 @@ async def test_fetch_populates_external_protocol_cache(_enabled):
 @pytest.mark.asyncio
 async def test_rate_limit_trips_after_threshold(_enabled, monkeypatch):
     monkeypatch.setattr(
-        settings.features.external_protocols, "rate_limit_per_minute", 2
+        settings.features.external_protocols.openwetware, "rate_limit_per_minute", 2
     )
     org = uuid4()
     fake_now = {"t": 0.0}

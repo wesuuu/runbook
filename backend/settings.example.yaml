@@ -90,10 +90,24 @@
 #
 # features:
 #   external_protocols:
-#     # Enable the protocol_knowledgebase chat subagent + HITL approval gate.
-#     # Talks to OpenWetWare's MediaWiki API; requires outbound HTTPS. (F-0084)
+#     # Master switch for the protocol_knowledgebase chat subagent + HITL
+#     # approval gate. Requires outbound HTTPS to source APIs. (F-0084, F-0090)
 #     enabled: false
-#     # Hard timeout for any single MediaWiki request, in seconds.
-#     request_timeout_seconds: 10.0
-#     # Per-org token-bucket cap on outbound OpenWetWare requests.
-#     rate_limit_per_minute: 10
+#     openwetware:
+#       # OpenWetWare MediaWiki source. Default-on when master flag is enabled.
+#       enabled: true
+#       # Hard timeout for any single MediaWiki request, in seconds.
+#       request_timeout_seconds: 10.0
+#       # Per-org token-bucket cap on outbound OpenWetWare requests.
+#       rate_limit_per_minute: 10
+#     protocols_io:
+#       # protocols.io source. Opt-in; requires a valid access token. (F-0090)
+#       enabled: false
+#       # Long-lived API token — SECRET. Do NOT put the real value here.
+#       # Set via env var only:
+#       #   BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__PROTOCOLS_IO__ACCESS_TOKEN=<token>
+#       # access_token: ""
+#       # Hard timeout for any single protocols.io request, in seconds.
+#       request_timeout_seconds: 10.0
+#       # Per-org token-bucket cap on outbound protocols.io requests.
+#       rate_limit_per_minute: 10
