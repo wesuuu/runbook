@@ -6,6 +6,9 @@ hardcoded entry for the auto-injected subagent-dispatch toolset (task,
 check_task, answer_subagent) from subagents-pydantic-ai.
 """
 
+from app.services.ai.subagents.app_help.tools import (
+    TOOL_LABELS as _APP_HELP_LABELS,
+)
 from app.services.ai.subagents.protocol_knowledgebase.tools import (
     TOOL_LABELS as _PROTOCOL_KB_LABELS,
 )
@@ -34,6 +37,7 @@ _ALL_LABELS: dict[str, str] = {
     **_PROTOCOL_LABELS,
     **_PROTOCOL_KB_LABELS,
     **_EXTERNAL_PROTOCOL_TOOL_LABELS,
+    **_APP_HELP_LABELS,
     **_DISPATCH_LABELS,
 }
 
