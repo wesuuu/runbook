@@ -23,6 +23,7 @@
     import AppearanceTab from '$lib/components/settings/AppearanceTab.svelte';
     import SignatureCard from '$lib/components/settings/SignatureCard.svelte';
     import MemberRolesPicker from '$lib/components/settings/MemberRolesPicker.svelte';
+    import SitesEquipmentTab from '$lib/components/sites/SitesEquipmentTab.svelte';
     import OrgProtocolApproversCard from '$lib/components/settings/OrgProtocolApproversCard.svelte';
     import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
     import { SiteListSchema, type Site } from '$lib/schemas/sites';
@@ -32,8 +33,8 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
 
-    type TabName = 'organization' | 'teams' | 'profile' | 'appearance' | 'notifications' | 'ai' | 'templates' | 'billing' | 'legal';
-    const VALID_TABS: TabName[] = ['organization', 'teams', 'profile', 'appearance', 'notifications', 'ai', 'templates', 'billing', 'legal'];
+    type TabName = 'organization' | 'teams' | 'sites' | 'profile' | 'appearance' | 'notifications' | 'ai' | 'templates' | 'billing' | 'legal';
+    const VALID_TABS: TabName[] = ['organization', 'teams', 'sites', 'profile', 'appearance', 'notifications', 'ai', 'templates', 'billing', 'legal'];
 
     const activeTab = $derived.by<TabName>(() => {
         const t = $page.url.searchParams.get('tab');
@@ -818,6 +819,14 @@
         </Button>
         <Button
             variant="tab"
+            data-active={activeTab === 'sites'}
+            onclick={() => setTab('sites')}
+            class="py-2.5 min-h-11"
+        >
+            Sites &amp; Equipment
+        </Button>
+        <Button
+            variant="tab"
             data-active={activeTab === 'profile'}
             onclick={() => setTab('profile')}
             class="py-2.5 min-h-11"
@@ -1152,6 +1161,10 @@
                 {/if}
             </CardContent>
         </Card>
+
+    <!-- Sites & Equipment Tab -->
+    {:else if activeTab === 'sites'}
+        <SitesEquipmentTab />
 
     <!-- Profile Tab -->
     {:else if activeTab === 'profile'}
