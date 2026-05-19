@@ -353,6 +353,83 @@ candidate list already render `title` / `source_url` / `license` generically. A
 license-restricted (link-only) candidate is just a markdown list item — no new
 component, no `chat-store` change.
 
+### B.9 Terms of Service — imported-content license clause
+
+Importing an externally-sourced protocol places third-party–licensed content
+(CC-BY from protocols.io, CC-BY-SA from OpenWetWare) into a customer's library.
+The CC obligations travel with that content — attribution always, and for
+ShareAlike the same-terms obligation if a derivative is redistributed outside
+the customer's org. The party that can actually discharge those obligations is
+the **customer** (they decide whether and how to use, modify, and redistribute
+the protocol), not Batchrite (which only surfaces the source and its license).
+The customer Terms of Service must say so. The licensing engineering above (the
+`licenses.py` gate, the carried-forward `attribution` / `license_note`) gives
+the customer the *information* to comply; this clause allocates the
+*responsibility*. Without it, §7 ("you retain all right, title, and interest"
+in Customer Data) reads as if the customer owns imported content outright,
+which is false for licensed third-party material.
+
+**Clause substance** (draft for counsel — exact wording and section placement
+are counsel's call):
+
+> **Externally-Sourced Protocol Content.** The Service may let you import
+> protocol content that originates from third-party public repositories and is
+> made available under an open-content license (for example, a Creative
+> Commons license). Imported content remains subject to its original license,
+> and the rights you have in it are only those that license grants. Batchrite
+> surfaces the source and the license of imported content but does not grant
+> you, and does not assume on your behalf, any rights or obligations in that
+> content. You are responsible for complying with the original license —
+> including its attribution requirements and, for "ShareAlike" licenses, the
+> obligation to license a derivative under the same terms if you redistribute
+> it outside your organization. The ownership representation in Section 7 does
+> not extend to imported third-party content; that content is hosted as
+> Customer Data but is not owned by you.
+
+Recommended placement: a new section immediately after §7, since it qualifies
+what §7 means for content the customer did not author. Adding a section
+renumbers §§8–18 and the §12 survival list gains the new section number — all
+contained inside the new version file; **the 2026-04-27 files are never
+edited.**
+
+**Mechanism — a new versioned legal document.** Legal docs are immutable
+versioned directories under `backend/app/legal/versions/<date>/`, registered in
+`versions/__init__.py`; `service.get_document` derives `effective_date` from the
+directory name. F-0090:
+
+1. Creates `backend/app/legal/versions/2026-05-19/terms.md` — the 2026-04-27
+   `terms.md` with the new section added, the `**Version:**` / `**Effective
+   Date:**` headers bumped to `2026-05-19`, §§8–18 renumbered, and the
+   counsel-review TODO marker retained.
+2. Copies `privacy.md` into the same directory **unchanged** — a version
+   directory must hold the complete document set even though the privacy policy
+   is unaffected.
+3. Adds `"2026-05-19"` to `ALL_VERSIONS` **and** bumps `CURRENT_VERSION` to
+   `"2026-05-19"` in `versions/__init__.py` — the activation step — committed
+   with the grep-able convention `feat(legal): activate ToS/Privacy version
+   2026-05-19`.
+
+**Activation now — the app is pre-launch with no production users.** Bumping
+`CURRENT_VERSION` is what makes the new version live and re-prompts users to
+accept it via the legal gate (which pins `users.tos_version`). Batchrite has no
+real users yet, so there is no re-acceptance churn to defer — F-0090 activates
+2026-05-19 directly, in the same change that authors it. The clause is in force
+from the moment the work lands; no separate activation step is owed to the
+protocols.io flag-enablement change. (The clause governing a still-disabled
+capability is harmless — it simply pre-states the rule.)
+
+The new `terms.md` retains the existing "counsel review before first paid
+contract" TODO marker. Activating a pre-counsel version is consistent with the
+status quo: 2026-04-27 is itself a pre-counsel draft already serving as
+`CURRENT_VERSION`. Counsel review of the externally-sourced-content clause folds
+into that existing pre-paid-contract review (see Risks); it does not gate
+F-0090. F-0090 updates `test_legal_content.py`: the `**Version:**` /
+`**Effective Date:**` header assertions move from `2026-04-27` to `2026-05-19`
+(they are pinned to `CURRENT_VERSION`, which now moves), and a new assertion
+checks the current terms contain the "Externally-Sourced Protocol Content"
+heading. The required-section and counsel-TODO assertions still pass — the new
+`terms.md` is a superset of 2026-04-27.
+
 ---
 
 ## C. Data flow (protocols.io happy path)
@@ -438,6 +515,9 @@ backend/app/services/ai/subagents/protocol_knowledgebase/tools.py               
 backend/app/services/ai/subagents/protocol_knowledgebase/config.py                # register protocols.io tool pair
 backend/app/services/ai/subagents/protocol_knowledgebase/prompt.md                # protocols.io + license-restricted guidance
 backend/app/services/ai/tools/external_protocols.py                               # approval tool: import_allowed re-check
+backend/app/legal/versions/2026-05-19/terms.md                                    # new — ToS version + externally-sourced-content clause
+backend/app/legal/versions/2026-05-19/privacy.md                                  # new — privacy.md copied unchanged (version-set completeness)
+backend/app/legal/versions/__init__.py                                            # register + activate 2026-05-19 (ALL_VERSIONS + CURRENT_VERSION bump)
 backend/tests/fixtures/protocols_io/search_response.json                          # new fixture
 backend/tests/fixtures/protocols_io/protocol_detail.json                          # new fixture (import-safe)
 backend/tests/fixtures/protocols_io/protocol_detail_nc.json                       # new fixture (license-restricted)
@@ -449,6 +529,7 @@ backend/tests/unit/test_openwetware_tools.py                                    
 backend/tests/unit/test_settings_external_protocols.py                            # per-source config shape
 backend/tests/unit/test_protocol_knowledgebase_config.py                          # per-source flag assertions
 backend/tests/integration/test_protocol_knowledgebase_handoff.py                  # + protocols.io + restricted paths
+backend/tests/unit/test_legal_content.py                                          # version-header assertions → 2026-05-19; new section check
 docs/superpowers/specs/2026-05-19-f-0090-additional-protocol-sources-evaluation.md # this doc
 docs/superpowers/specs/2026-05-12-f-0084-protocol-knowledgebase-subagent-design.md # forward-pointer (stale non-goal)
 CONTEXT.md                                                                        # Protocol Source + license gate glossary
@@ -464,13 +545,15 @@ CLAUDE.md                                                                       
   Service have been reviewed. The per-protocol CC license governs the *content*;
   the API ToS governs *API use* and can independently restrict redistribution.
   This task ships the adapter flag-disabled; enabling it is a separate decision.
-- **CC-BY-SA redistribution — TOS clause needed.** CC-BY-SA content is
-  import-safe, but a customer who redistributes an SA-derived protocol *outside
-  their org* inherits the ShareAlike obligation. The customer Terms of Service
-  must carry a clause allocating responsibility for that onward redistribution
-  to the customer. Drafting it needs counsel review before `protocols_io.enabled`
-  is flipped on — a non-code follow-up, tracked here rather than as a separate
-  task.
+- **Imported-content licensing — ToS clause authored and activated.**
+  Imported content carries its original CC license (attribution always;
+  ShareAlike on onward redistribution for CC-BY-SA). F-0090 authors the
+  Externally-Sourced Protocol Content clause, registers the 2026-05-19 ToS
+  version, and bumps `CURRENT_VERSION` to activate it (B.9) — safe to do now
+  because Batchrite is pre-launch with no production users, so there is no
+  re-acceptance churn. Counsel review of the clause folds into the existing
+  pre-paid-contract legal review carried by the `terms.md` TODO marker; it is
+  not a blocker for F-0090.
 - **Access token is a secret.** Env var only, never `settings.yaml`.
 - **API v4 schema drift.** Exact field paths are pinned at implementation
   against the live docs; the fixture-driven parser tests catch drift.
