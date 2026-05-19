@@ -27,6 +27,7 @@ restart; editing corpus `.md` files does not.)
 ## Pages
 
 - `getting-started.md` — What Batchrite is and how to navigate the app.
+- `protocols-and-editor.md` — Creating, editing, validating, and publishing protocols.
 
 ## Excluded (not shipped on production defaults)
 
