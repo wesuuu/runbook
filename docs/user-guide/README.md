@@ -26,7 +26,7 @@ restart; editing corpus `.md` files does not.)
 
 ## Pages
 
-<!-- Pages are listed here as each is authored in Phase 4 of the plan. -->
+- `getting-started.md` — What Batchrite is and how to navigate the app.
 
 ## Excluded (not shipped on production defaults)
 
