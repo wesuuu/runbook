@@ -219,6 +219,13 @@ async def send_message_streaming(
     await db.commit()
     await db.refresh(user_msg)
 
+    # Snapshot the user_msg fields now — the request session can be expired or
+    # detached by the time the agent run finishes (60s+), and pydantic ORM
+    # validation would trigger lazy I/O outside an async greenlet.
+    user_msg_payload = ChatMessageResponse.model_validate(user_msg).model_dump(
+        mode="json"
+    )
+
     # ── 2. Build CompactionState + ChatDeps ──────────────────────────────────
     state = CompactionState()
     deps = ChatDeps(
@@ -507,9 +514,7 @@ async def send_message_streaming(
     # ── 10. Emit done event ──────────────────────────────────────────────────
     yield {
         "type": "done",
-        "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(
-            mode="json"
-        ),
+        "user_message": user_msg_payload,
         "assistant_message": ChatMessageResponse.model_validate(
             assistant_msg
         ).model_dump(mode="json"),
@@ -570,6 +575,10 @@ async def resume_message_streaming(
     await db.flush()
     await db.commit()
     await db.refresh(user_msg)
+
+    user_msg_payload = ChatMessageResponse.model_validate(user_msg).model_dump(
+        mode="json"
+    )
 
     state = CompactionState()
     deps = ChatDeps(
@@ -746,9 +755,7 @@ async def resume_message_streaming(
 
     yield {
         "type": "done",
-        "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(
-            mode="json"
-        ),
+        "user_message": user_msg_payload,
         "assistant_message": ChatMessageResponse.model_validate(placeholder).model_dump(
             mode="json"
         ),

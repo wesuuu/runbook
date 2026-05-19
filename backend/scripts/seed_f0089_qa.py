@@ -42,6 +42,8 @@ from app.models.library import (
     DocumentChunk,
     DocumentStatus,
 )
+from app.services.ai.embedding import embed_texts
+from app.services.documents.document_processor import _pad_embedding
 
 SEED_TITLE = "[QA F-0089] Lyophilization SOP v2"
 SEED_CHUNKS = [
@@ -98,18 +100,21 @@ async def main(org_id: str | None) -> None:
         db.add(doc)
         await db.flush()
 
-        for i, content in enumerate(SEED_CHUNKS):
-            # Deterministic embedding: alternate magnitudes per chunk so they
-            # are not identical and the vector index can rank them.
-            magnitude = 0.1 if i % 2 == 0 else 0.05
-            embedding = [magnitude] * EMBEDDING_DIMENSIONS
+        # Real embeddings from the org's configured embedding model so
+        # semantic search actually retrieves these chunks for relevant
+        # queries (flat-constant placeholders match nothing).
+        from uuid import UUID
+        embeddings = await embed_texts(
+            SEED_CHUNKS, db, org_id=UUID(org_id)
+        )
+        for i, (content, embedding) in enumerate(zip(SEED_CHUNKS, embeddings)):
             db.add(
                 DocumentChunk(
                     document_id=doc.id,
                     chunk_index=i,
                     content=content,
                     token_count=len(content.split()),
-                    embedding=embedding,
+                    embedding=_pad_embedding(embedding),
                 )
             )
 

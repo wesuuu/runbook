@@ -697,7 +697,7 @@ async def search_documents(
         from app.services.ai.embedding import embed_query
         from app.services.documents.document_processor import _pad_embedding
 
-        raw = await embed_query(q, db)
+        raw = await embed_query(q, db, org_id=org_id)
         query_embedding = _pad_embedding(raw)
     except Exception:
         logger.warning(

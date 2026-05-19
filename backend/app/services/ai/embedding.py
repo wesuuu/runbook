@@ -91,9 +91,10 @@ async def embed_texts(
 async def embed_query(
     query: str,
     db: AsyncSession,
+    org_id: "UUID | None" = None,
 ) -> list[float]:
     """Embed a single query string. Convenience wrapper around embed_texts."""
-    results = await embed_texts([query], db)
+    results = await embed_texts([query], db, org_id=org_id)
     if not results:
         raise EmbeddingError("Failed to embed query")
     return results[0]

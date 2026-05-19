@@ -77,10 +77,12 @@ async def _retrieve_once(
         from app.services.ai.embedding import embed_query
         from app.services.documents.document_processor import _pad_embedding
 
-        raw = await embed_query(query, db)
+        raw = await embed_query(query, db, org_id=org_id)
         query_embedding = _pad_embedding(raw)
-    except Exception:
-        logger.debug("Embedding unavailable for RAG, using keyword-only")
+    except Exception as exc:
+        logger.warning(
+            "Embedding unavailable for RAG (%s); using keyword-only", exc
+        )
 
     fetch_limit = top_k * 3  # Fetch extra for filtering
 
@@ -99,6 +101,15 @@ async def _retrieve_once(
         )
 
         if has_embeddings.fetchone() is not None:
+            # HNSW index on (embedding vector_cosine_ops) returns its top-K
+            # candidates *before* the org_id filter is applied. With small
+            # per-org chunk counts (or sparse embedding regions) the index's
+            # global top-K can entirely miss the org's chunks. pgvector 0.8
+            # adds hnsw.iterative_scan to handle this — we're on 0.6, so
+            # force a seq scan instead. At the dev scale (~thousands of
+            # chunks per org) this is faster than the index anyway; revisit
+            # once pgvector is upgraded.
+            await db.execute(sa_text("SET LOCAL enable_indexscan = off"))
             # Hybrid search
             doc_filter = ""
             params: dict[str, Any] = {

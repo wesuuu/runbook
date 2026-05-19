@@ -43,6 +43,7 @@ class ExternalProtocolPayload:
     notes: str | None = None
     license: str = "CC BY-SA 3.0"
     attribution: str = ""
+    error: str | None = None
 
 
 @dataclass
@@ -411,35 +412,36 @@ async def fetch_openwetware_protocol(
         data = resp.json()
 
     # MediaWiki returns 200 with {"error": {...}} on missingtitle, invalid
-    # params, etc. Surface those so the agent can pick a different URL
-    # instead of handing the parent an empty payload.
+    # params, etc. Return a recoverable payload (steps=[], error set) so the
+    # subagent's loop can skip and try another hit instead of pydantic-ai
+    # bubbling the exception up through the task tool and killing the run.
     error = data.get("error")
     if isinstance(error, dict):
         info = error.get("info") or error.get("code") or "unknown error"
-        raise ValueError(
-            f"OpenWetWare fetch failed for {url!r}: {info}. Pick a URL from "
-            "search_openwetware results — do not guess wiki page slugs."
+        return ExternalProtocolPayload(
+            title=page_title,
+            source_url=url,
+            summary="",
+            error=f"fetch failed: {info}. Skip and try a different URL from search_openwetware.",
         )
     parse = data.get("parse") or {}
     raw_displaytitle = parse.get("displaytitle") or page_title
-    # MediaWiki wraps modern displaytitle in <span> markup — strip tags.
     displaytitle = _HTML_TAG_RE.sub("", raw_displaytitle).strip() or page_title
     wikitext = ((parse.get("wikitext") or {}).get("*")) or ""
     if not wikitext.strip():
-        raise ValueError(
-            f"OpenWetWare page at {url!r} has no wiki-text content. Pick "
-            "a URL from search_openwetware results — do not guess slugs."
+        return ExternalProtocolPayload(
+            title=displaytitle,
+            source_url=url,
+            summary="",
+            error="no wiki-text content. Skip and try a different URL.",
         )
 
     payload = parse_openwetware_wikitext(
         wikitext=wikitext, displaytitle=displaytitle, source_url=url
     )
     if not payload.steps:
-        raise ValueError(
-            f"OpenWetWare page at {url!r} parsed to 0 steps — likely a "
-            "stub, navigation page, or non-protocol article. Try a "
-            "different result from search_openwetware."
-        )
+        payload.error = "parsed to 0 steps (stub or non-protocol page). Skip and try another URL."
+        return payload
 
     # Cache the canonical payload so the approval tool can read it directly
     # without the LLM re-serializing multi-KB JSON. The payload is a

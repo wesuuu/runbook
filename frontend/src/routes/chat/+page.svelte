@@ -492,7 +492,7 @@
                 {#if messageError}
                     <p in:fade={{ duration: blockDuration() }} class="text-xs text-red-500 mt-1.5 max-w-4xl mx-auto">{messageError}</p>
                 {/if}
-                {#if !hasMessages && skills.length > 0}
+                {#if !hasMessages && skills.length > 0 && !activeSkill}
                     <div class="max-w-4xl mx-auto mt-2">
                         <ChatSkillButtons {skills} mode="chips" onactivate={activateSkill} />
                     </div>

@@ -156,7 +156,7 @@ async def list_unit_ops(ctx: RunContext[ChatDeps]) -> ListUnitOpsResult:
     ctx.deps.tool_calls.append(
         {
             "tool": "list_unit_ops",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "results": len(ops),
         }
     )
@@ -202,23 +202,24 @@ async def create_unit_op(
         scope: ``"org"`` (org-admin only) or ``"project"``.
         project_id: Required when scope is ``"project"``.
     """
-    op = await create_unit_op_definition(
-        ctx.deps.db,
-        user_id=ctx.deps.user_id,
-        org_id=ctx.deps.org_id,
-        is_org_admin=ctx.deps.is_org_admin,
-        scope=scope,
-        name=name,
-        category=category,
-        description=description,
-        param_schema=param_schema,
-        project_id=project_id,
-    )
+    async with ctx.deps.db_lock:
+        op = await create_unit_op_definition(
+            ctx.deps.db,
+            user_id=ctx.deps.user_id,
+            org_id=ctx.deps.org_id,
+            is_org_admin=ctx.deps.is_org_admin,
+            scope=scope,
+            name=name,
+            category=category,
+            description=description,
+            param_schema=param_schema,
+            project_id=project_id,
+        )
 
     ctx.deps.tool_calls.append(
         {
             "tool": "create_unit_op",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "name": name,
             "scope": scope,
         }
@@ -286,17 +287,18 @@ async def create_protocol(
         steps=spec_steps,
     )
 
-    protocol = await create_protocol_from_spec_service(
-        ctx.deps.db,
-        ctx.deps.user_id,
-        project_name,
-        spec,
-    )
+    async with ctx.deps.db_lock:
+        protocol = await create_protocol_from_spec_service(
+            ctx.deps.db,
+            ctx.deps.user_id,
+            project_name,
+            spec,
+        )
 
     ctx.deps.tool_calls.append(
         {
             "tool": "create_protocol",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": str(protocol.id),
             "protocol_name": protocol_name,
             "project_id": str(protocol.project_id),
@@ -381,7 +383,7 @@ async def validate_protocol(
     ctx.deps.tool_calls.append(
         {
             "tool": "validate_protocol",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "errors": error_count,
             "warnings": warning_count,
@@ -437,7 +439,7 @@ async def list_projects(ctx: RunContext[ChatDeps]) -> ListProjectsResult:
     ctx.deps.tool_calls.append(
         {
             "tool": "list_projects",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "results": len(projects),
         }
     )
@@ -529,7 +531,7 @@ async def update_protocol_step(
     ctx.deps.tool_calls.append(
         {
             "tool": "update_protocol_step",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "step_index": step_index,
             "fields_updated": fields_updated,
@@ -617,7 +619,7 @@ async def list_protocols(
     ctx.deps.tool_calls.append(
         {
             "tool": "list_protocols",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "results": len(items),
         }
     )
@@ -658,7 +660,7 @@ async def get_protocol(
         ctx.deps.tool_calls.append(
             {
                 "tool": "get_protocol",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -678,7 +680,7 @@ async def get_protocol(
     ctx.deps.tool_calls.append(
         {
             "tool": "get_protocol",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
         }
     )
@@ -751,7 +753,7 @@ async def create_draft(
         ctx.deps.tool_calls.append(
             {
                 "tool": "create_draft",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -765,7 +767,7 @@ async def create_draft(
     ctx.deps.tool_calls.append(
         {
             "tool": "create_draft",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "draft_version_number": draft.version_number,
             "created": created,
@@ -809,7 +811,7 @@ async def update_protocol_metadata(
         ctx.deps.tool_calls.append(
             {
                 "tool": "update_protocol_metadata",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -820,7 +822,7 @@ async def update_protocol_metadata(
     ctx.deps.tool_calls.append(
         {
             "tool": "update_protocol_metadata",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "fields_updated": fields,
         }
@@ -865,7 +867,7 @@ async def add_protocol_step(
         ctx.deps.tool_calls.append(
             {
                 "tool": "add_protocol_step",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -876,7 +878,7 @@ async def add_protocol_step(
     ctx.deps.tool_calls.append(
         {
             "tool": "add_protocol_step",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "name": name,
         }
@@ -906,7 +908,7 @@ async def remove_protocol_step(
         ctx.deps.tool_calls.append(
             {
                 "tool": "remove_protocol_step",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -914,7 +916,7 @@ async def remove_protocol_step(
     ctx.deps.tool_calls.append(
         {
             "tool": "remove_protocol_step",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "step_index": step_index,
         }
@@ -944,7 +946,7 @@ async def reorder_protocol_steps(
         ctx.deps.tool_calls.append(
             {
                 "tool": "reorder_protocol_steps",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -952,7 +954,7 @@ async def reorder_protocol_steps(
     ctx.deps.tool_calls.append(
         {
             "tool": "reorder_protocol_steps",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "order": ordered_step_indices,
         }
@@ -984,7 +986,7 @@ async def replace_step_unit_op(
         ctx.deps.tool_calls.append(
             {
                 "tool": "replace_step_unit_op",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -992,7 +994,7 @@ async def replace_step_unit_op(
     ctx.deps.tool_calls.append(
         {
             "tool": "replace_step_unit_op",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "step_index": step_index,
             "new_unit_op_name": new_unit_op_name,
@@ -1040,7 +1042,7 @@ async def set_node_position(
         ctx.deps.tool_calls.append(
             {
                 "tool": "set_node_position",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -1048,7 +1050,7 @@ async def set_node_position(
     ctx.deps.tool_calls.append(
         {
             "tool": "set_node_position",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "node_id": node_id,
             "x": x,
@@ -1107,7 +1109,7 @@ async def list_protocol_roles(
         ctx.deps.tool_calls.append(
             {
                 "tool": "list_protocol_roles",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -1115,7 +1117,7 @@ async def list_protocol_roles(
     ctx.deps.tool_calls.append(
         {
             "tool": "list_protocol_roles",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "results": len(roles),
         }
@@ -1158,7 +1160,7 @@ async def add_protocol_role(
         ctx.deps.tool_calls.append(
             {
                 "tool": "add_protocol_role",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -1166,7 +1168,7 @@ async def add_protocol_role(
     ctx.deps.tool_calls.append(
         {
             "tool": "add_protocol_role",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "protocol_id": protocol_id,
             "role_id": str(role.id),
         }
@@ -1200,7 +1202,7 @@ async def update_protocol_role(
         ctx.deps.tool_calls.append(
             {
                 "tool": "update_protocol_role",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -1217,7 +1219,7 @@ async def update_protocol_role(
     ctx.deps.tool_calls.append(
         {
             "tool": "update_protocol_role",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "role_id": role_id,
             "fields_updated": fields,
         }
@@ -1244,7 +1246,7 @@ async def remove_protocol_role(
         ctx.deps.tool_calls.append(
             {
                 "tool": "remove_protocol_role",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -1252,7 +1254,7 @@ async def remove_protocol_role(
     ctx.deps.tool_calls.append(
         {
             "tool": "remove_protocol_role",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "role_id": role_id,
         }
     )
@@ -1315,7 +1317,7 @@ async def update_unit_op(
         ctx.deps.tool_calls.append(
             {
                 "tool": "update_unit_op",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -1334,7 +1336,7 @@ async def update_unit_op(
     ctx.deps.tool_calls.append(
         {
             "tool": "update_unit_op",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "unit_op_id": unit_op_id,
             "fields_updated": fields,
         }
@@ -1365,7 +1367,7 @@ async def elevate_unit_op_scope(
         ctx.deps.tool_calls.append(
             {
                 "tool": "elevate_unit_op_scope",
-                "subagent": "protocol_builder",
+                "subagent": "protocol_creator",
                 "error": str(e),
             }
         )
@@ -1373,7 +1375,7 @@ async def elevate_unit_op_scope(
     ctx.deps.tool_calls.append(
         {
             "tool": "elevate_unit_op_scope",
-            "subagent": "protocol_builder",
+            "subagent": "protocol_creator",
             "unit_op_id": unit_op_id,
         }
     )

@@ -19,8 +19,12 @@ right now is OpenWetWare.
 2. **Fetch up to 3 promising hits**: call
    `fetch_openwetware_protocol(url)` on each. If the returned `steps`
    array is empty, that page is a review/survey article rather than a
-   protocol — skip it and try another hit. If every hit returns 0 steps,
-   say so and stop; don't fabricate steps.
+   protocol — skip it and try another hit. If a fetch errors (timeout,
+   parse failure, 404), skip that one and continue with the rest — a
+   single failed fetch is NOT grounds to abandon the turn. If every hit
+   returns 0 steps or errors, say so and stop; don't fabricate steps.
+   **As long as at least one fetch returned steps >= 1, you MUST surface
+   it as a candidate in step 3** — partial success is success.
 
 3. **Reply with structured candidates**. Format:
 

@@ -4,6 +4,7 @@ ChatDeps satisfies SubAgentDepsProtocol from subagents-pydantic-ai (structural
 typing — no inheritance).
 """
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 from uuid import UUID
@@ -44,6 +45,13 @@ class ChatDeps:
     # Setting event_stream_handler on a subagent forces streaming mode, which
     # some models (Ollama gpt-oss) reject — hence the deps-callback route.
     tool_event_callback: Callable[[str, str], Awaitable[None]] | None = None
+    # Serializes DB-mutating tool calls so that parallel tool dispatch from the
+    # LLM doesn't trigger concurrent flushes on the shared AsyncSession
+    # ("Session is already flushing"). Tools that write to the DB must
+    # acquire this lock for the duration of their service call. Sharing the
+    # same lock across the parent and any cloned subagent deps ensures cross-
+    # agent serialization too.
+    db_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def clone_for_subagent(self, max_depth: int = 0) -> "ChatDeps":
         """Create deps for a subagent run.
@@ -67,4 +75,5 @@ class ChatDeps:
             external_protocol_cache=self.external_protocol_cache,
             user_deviations=self.user_deviations,
             tool_event_callback=self.tool_event_callback,
+            db_lock=self.db_lock,
         )
