@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import EquipmentTable from './EquipmentTable.svelte';
 
 const rows = [
-    { id: '1', name: 'HPLC-1', status: 'ACTIVE', next_calibration_due: '2026-08-12',
+    { id: '1', name: 'HPLC-1', status: 'ACTIVE', next_calibration_date: '2026-08-12',
       room: 'QC Bay', location: 'Bench 2', tags: ['qc'], equipment_type: 'HPLC' },
 ];
 

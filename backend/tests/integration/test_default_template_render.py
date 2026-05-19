@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.endpoints.protocol_pdfs import _build_approval_context
 from app.core.security import hash_password
 from app.models.iam import OrganizationMember, User
-from app.models.science import Project, Protocol, ProtocolApprovalEvent
+from app.models.science import GlpSignoff, Project, Protocol
 from app.services.protocols.template_engine import build_context, render_to_docx
 
 
@@ -64,11 +64,14 @@ async def test_default_sop_renders_with_approval_block(
     await db_session.flush()
 
     db_session.add(
-        ProtocolApprovalEvent(
+        GlpSignoff(
             protocol_id=proto.id,
-            actor_id=approver.id,
+            signer_id=approver.id,
+            role="STUDY_DIRECTOR",
             action="APPROVED",
-            signature_statement="I have reviewed and approved this protocol",
+            attestation="I have reviewed and approved this protocol",
+            signed_at=datetime.now(timezone.utc),
+            signature_image_path="fixture/sig.png",
         )
     )
     await db_session.flush()
@@ -93,5 +96,9 @@ async def test_default_sop_renders_with_approval_block(
 
     docx_bytes = render_to_docx(template_path, context)
     text = _docx_text(docx_bytes)
-    assert "Approval" in text
+    # F-0087: SOP renders per-role sign-off blocks keyed by GlpSignoff.role.
+    # The fixture creates a STUDY_DIRECTOR approval, so the Study Director
+    # block must surface the approver's name and CFR cite.
+    assert "Study Director" in text
     assert "Approver Alice" in text
+    assert "§58.33" in text

@@ -44,6 +44,10 @@
 			location: string;
 			room?: string;
 			site_id?: string;
+			serial_number?: string;
+			last_calibration_date?: string | null;
+			next_calibration_date?: string | null;
+			calibration_certificate_path?: string;
 		}) => Promise<Equipment>;
 	}
 
@@ -87,6 +91,10 @@
 	let newEquipmentRoom = $state('');
 	let newEquipmentLocation = $state('');
 	let newSiteId = $state<string>(resolveInitialSiteId());
+	let newEquipmentSerial = $state('');
+	let newEquipmentLastCal = $state('');
+	let newEquipmentNextCal = $state('');
+	let newEquipmentCertPath = $state('');
 	let createError = $state('');
 
 	$effect(() => {
@@ -94,6 +102,14 @@
 			localStorage.setItem(STORAGE_KEY, newSiteId);
 		}
 	});
+
+	function handleCertificateFile(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (file) {
+			newEquipmentCertPath = file.name;
+		}
+	}
 
 	// Initialize selected items when modal opens
 	$effect(() => {
@@ -201,7 +217,11 @@
 				equipment_type: newEquipmentType,
 				location: newEquipmentLocation,
 				room: newEquipmentRoom,
-				site_id: newSiteId
+				site_id: newSiteId,
+				serial_number: newEquipmentSerial,
+				last_calibration_date: newEquipmentLastCal || null,
+				next_calibration_date: newEquipmentNextCal || null,
+				calibration_certificate_path: newEquipmentCertPath
 			});
 
 			// Add to selected items only in pick mode
@@ -219,6 +239,10 @@
 			newEquipmentType = '';
 			newEquipmentRoom = '';
 			newEquipmentLocation = '';
+			newEquipmentSerial = '';
+			newEquipmentLastCal = '';
+			newEquipmentNextCal = '';
+			newEquipmentCertPath = '';
 			showCreateForm = mode === 'create';
 
 			// In create-only mode, close the modal after create
@@ -429,6 +453,53 @@
 						<div class="form-group">
 							<label for="eq-site">Site *</label>
 							<SitePicker {sites} value={newSiteId} onChange={(v) => (newSiteId = v)} />
+						</div>
+
+						<div class="form-group">
+							<label for="eq-serial">Serial Number</label>
+							<input
+								id="eq-serial"
+								type="text"
+								placeholder="e.g., SN-12345"
+								bind:value={newEquipmentSerial}
+								class="form-input"
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-last-cal">Last Calibrated</label>
+							<input
+								id="eq-last-cal"
+								type="date"
+								bind:value={newEquipmentLastCal}
+								class="form-input"
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-next-cal">Calibration Due</label>
+							<input
+								id="eq-next-cal"
+								type="date"
+								bind:value={newEquipmentNextCal}
+								class="form-input"
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="eq-cert">Calibration Certificate</label>
+							<input
+								id="eq-cert"
+								type="file"
+								accept="application/pdf,image/*"
+								onchange={handleCertificateFile}
+								class="form-input"
+							/>
+							{#if newEquipmentCertPath}
+								<span class="text-xs text-muted-foreground">
+									Selected: {newEquipmentCertPath}
+								</span>
+							{/if}
 						</div>
 
 						{#if createError}

@@ -1,10 +1,24 @@
 import uuid
 from datetime import date, datetime
+from enum import Enum
 from typing import Any, List, Optional
 
-from sqlalchemy import (ARRAY, Boolean, CheckConstraint, Date, DateTime, Enum,
-                        ForeignKey, Index, Integer, String, Text,
-                        UniqueConstraint, desc, func, text)
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    desc,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -28,14 +42,7 @@ class RunStatus(str, Enum):
     ARCHIVED = "ARCHIVED"
 
 
-class ProtocolApprovalAction(str, Enum):
-    SUBMITTED = "SUBMITTED"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
-    REVERTED = "REVERTED"
-
-
-class ProtocolApprovalRequestStatus(str, Enum):
+class GlpSignoffRequestStatus(str, Enum):
     OPEN = "OPEN"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
@@ -46,6 +53,27 @@ class EquipmentStatus(str, Enum):
     ACTIVE = "ACTIVE"
     MAINTENANCE = "MAINTENANCE"
     RETIRED = "RETIRED"
+
+
+class GlpRole(str, Enum):
+    """21 CFR Part 58 roles used across protocol approval and run sign-off."""
+
+    SPONSOR = "SPONSOR"  # §58.10, §58.120(a)
+    STUDY_DIRECTOR = "STUDY_DIRECTOR"  # §58.33
+    QAU = "QAU"  # §58.35
+    OPERATOR = "OPERATOR"  # §58.29
+
+
+class GlpSignoffAction(str, Enum):
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    REQUESTED_CHANGES = "REQUESTED_CHANGES"
+
+
+class RunOutcome(str, Enum):
+    COMPLETED_NORMAL = "COMPLETED_NORMAL"
+    COMPLETED_WITH_DEVIATIONS = "COMPLETED_WITH_DEVIATIONS"
+    ABORTED = "ABORTED"
 
 
 class Project(Base, UUIDMixin, TimestampMixin):
@@ -185,20 +213,16 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     approved_by: Mapped[Optional["app.models.iam.User"]] = relationship(
         "app.models.iam.User", foreign_keys=[approved_by_id]
     )
-    approval_events: Mapped[List["ProtocolApprovalEvent"]] = relationship(
+    approval_requests: Mapped[List["GlpSignoffRequest"]] = relationship(
         back_populates="protocol",
         cascade="all, delete-orphan",
-        order_by="ProtocolApprovalEvent.created_at.desc()",
-    )
-    approval_requests: Mapped[List["ProtocolApprovalRequest"]] = relationship(
-        back_populates="protocol",
-        cascade="all, delete-orphan",
-        order_by="ProtocolApprovalRequest.created_at.desc()",
+        order_by="GlpSignoffRequest.created_at.desc()",
     )
 
 
 class Run(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "runs"
+    __table_args__ = (Index("ix_runs_outcome", "outcome"),)
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -256,6 +280,16 @@ class Run(Base, UUIDMixin, TimestampMixin):
     # Nullable because experiment-style runs may not have a manufacturing lot.
     lot_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     batch_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    # GLP run lifecycle timestamps and outcome (21 CFR Part 58)
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    outcome: Mapped[Optional[RunOutcome]] = mapped_column(String, nullable=True)
+    outcome_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="runs")
@@ -471,7 +505,10 @@ class Equipment(Base, UUIDMixin, TimestampMixin):
     )
     install_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     last_calibration_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    next_calibration_due: Mapped[date | None] = mapped_column(Date, nullable=True)
+    next_calibration_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    calibration_certificate_path: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
     room: Mapped[str | None] = mapped_column(String(120), nullable=True)
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(String),
@@ -605,44 +642,8 @@ class Site(Base, UUIDMixin, TimestampMixin):
     equipment = relationship("Equipment", back_populates="site", lazy="select")
 
 
-class ProtocolApprovalEvent(Base, UUIDMixin, TimestampMixin):
-    __tablename__ = "protocol_approval_events"
-    __table_args__ = (
-        CheckConstraint(
-            "action IN ('SUBMITTED','APPROVED','REJECTED','REVERTED')",
-            name="ck_proto_appr_event_action",
-        ),
-        Index(
-            "ix_proto_appr_event_protocol_created",
-            "protocol_id",
-            "created_at",
-        ),
-    )
-
-    protocol_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False
-    )
-    protocol_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("protocol_versions.id", ondelete="SET NULL"), nullable=True
-    )
-    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
-    action: Mapped[str] = mapped_column(String(20), nullable=False)
-    comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    signature_statement: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-
-    protocol: Mapped["Protocol"] = relationship(back_populates="approval_events")
-    actor: Mapped[Optional["app.models.iam.User"]] = relationship(
-        "app.models.iam.User", foreign_keys=[actor_id]
-    )
-    protocol_version: Mapped[Optional["ProtocolVersion"]] = relationship(
-        foreign_keys=[protocol_version_id]
-    )
-
-
-class ProtocolApprovalRequest(Base, UUIDMixin, TimestampMixin):
-    __tablename__ = "protocol_approval_requests"
+class GlpSignoffRequest(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "glp_signoff_requests"
     __table_args__ = (
         CheckConstraint(
             "status IN ('OPEN','APPROVED','REJECTED','WITHDRAWN')",
@@ -685,4 +686,118 @@ class ProtocolApprovalRequest(Base, UUIDMixin, TimestampMixin):
     )
     fulfilled_by: Mapped[Optional["app.models.iam.User"]] = relationship(
         "app.models.iam.User", foreign_keys=[fulfilled_by_id]
+    )
+
+
+class GlpSignoff(Base, UUIDMixin, TimestampMixin):
+    """Unified GLP signature event for both protocol approvals
+    (pre-execution) and run sign-offs (during/post-execution).
+    Partition by FK: exactly one of protocol_id/run_id is set.
+
+    This model is the single source of truth for signature events after
+    F-0087 Task 27 retired the legacy protocol-approval events table.
+    """
+
+    __tablename__ = "glp_signoffs"
+    __table_args__ = (
+        CheckConstraint(
+            "(protocol_id IS NOT NULL AND run_id IS NULL) OR "
+            "(protocol_id IS NULL AND run_id IS NOT NULL)",
+            name="ck_glp_signoff_scope",
+        ),
+        CheckConstraint(
+            "role IN ('SPONSOR','STUDY_DIRECTOR','QAU','OPERATOR')",
+            name="ck_glp_signoff_role",
+        ),
+        CheckConstraint(
+            "action IN ('APPROVED','REJECTED','REQUESTED_CHANGES')",
+            name="ck_glp_signoff_action",
+        ),
+        CheckConstraint(
+            "(protocol_id IS NULL) OR " "(role IN ('SPONSOR','STUDY_DIRECTOR','QAU'))",
+            name="ck_protocol_signoff_roles",
+        ),
+        CheckConstraint(
+            "(run_id IS NULL) OR " "(role IN ('OPERATOR','STUDY_DIRECTOR','QAU'))",
+            name="ck_run_signoff_roles",
+        ),
+        CheckConstraint(
+            "(action != 'APPROVED') OR "
+            "(attestation IS NOT NULL AND signature_image_path IS NOT NULL)",
+            name="ck_approved_requires_attestation",
+        ),
+        Index(
+            "ux_glp_signoff_active_protocol",
+            "protocol_id",
+            "role",
+            unique=True,
+            postgresql_where=text(
+                "protocol_id IS NOT NULL AND action='APPROVED' "
+                "AND invalidated_at IS NULL"
+            ),
+        ),
+        Index(
+            "ux_glp_signoff_active_run",
+            "run_id",
+            "role",
+            unique=True,
+            postgresql_where=text(
+                "run_id IS NOT NULL AND action='APPROVED' " "AND invalidated_at IS NULL"
+            ),
+        ),
+    )
+
+    protocol_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=True
+    )
+    run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), nullable=True
+    )
+
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+
+    signer_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    attestation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    signature_image_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    signoff_request_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey(
+            "glp_signoff_requests.id",
+            use_alter=True,
+            name="fk_glp_signoff_request",
+        ),
+        nullable=True,
+    )
+
+    invalidated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    invalidated_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    invalidated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # Grilling decision #15: distinguish edit-invalidation vs reopen-supersession.
+    # Both set invalidated_at; only reopen sets this FK to the audit event row.
+    superseded_by_reopen_audit_event_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey(
+            "audit_logs.id",
+            use_alter=True,
+            name="fk_glp_signoff_superseded_by",
+        ),
+        nullable=True,
+    )
+
+    protocol: Mapped[Optional["Protocol"]] = relationship(
+        "Protocol", foreign_keys=[protocol_id]
+    )
+    run: Mapped[Optional["Run"]] = relationship("Run", foreign_keys=[run_id])
+    signer: Mapped["app.models.iam.User"] = relationship(
+        "app.models.iam.User", foreign_keys=[signer_id]
+    )
+    invalidated_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[invalidated_by_id]
     )

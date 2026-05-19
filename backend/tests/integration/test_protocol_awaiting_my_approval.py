@@ -8,12 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.science import (
-    Project,
-    Protocol,
-    ProtocolApprovalEvent,
-    ProtocolApprovalRequest,
-)
+from app.models.science import GlpSignoffRequest, Project, Protocol
 
 
 async def _make_user(
@@ -68,20 +63,13 @@ async def _make_pending_protocol(
     await db.flush()
     if requested_user_id is not None:
         db.add(
-            ProtocolApprovalRequest(
+            GlpSignoffRequest(
                 protocol_id=proto.id,
                 requested_user_id=requested_user_id,
                 requested_by_id=submitter_id or creator_id,
                 status="OPEN",
             )
         )
-    db.add(
-        ProtocolApprovalEvent(
-            protocol_id=proto.id,
-            actor_id=submitter_id or creator_id,
-            action="SUBMITTED",
-        )
-    )
     await db.flush()
     return proto
 

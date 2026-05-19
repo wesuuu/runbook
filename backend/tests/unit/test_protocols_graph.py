@@ -6,21 +6,12 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import (
-    ObjectPermission,
-    ObjectType,
-    Organization,
-    PermissionLevel,
-    PrincipalType,
-    User,
-)
-from app.models.science import Project, Protocol, ProtocolRole, UnitOpDefinition
-from app.services.protocols.graph import (
-    add_step,
-    remove_step,
-    reorder_steps,
-    replace_step_unit_op,
-)
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            PermissionLevel, PrincipalType, User)
+from app.models.science import (Project, Protocol, ProtocolRole,
+                                UnitOpDefinition)
+from app.services.protocols.graph import (add_step, remove_step, reorder_steps,
+                                          replace_step_unit_op)
 
 
 def _seed_graph_with_n_steps(n: int) -> dict:

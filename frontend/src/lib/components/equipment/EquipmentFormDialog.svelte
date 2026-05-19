@@ -35,7 +35,7 @@
     let status = $state<'ACTIVE' | 'MAINTENANCE' | 'RETIRED'>(initial?.status ?? 'ACTIVE');
     let install_date = $state(initial?.install_date ?? '');
     let last_calibration_date = $state(initial?.last_calibration_date ?? '');
-    let next_calibration_due = $state(initial?.next_calibration_due ?? '');
+    let next_calibration_date = $state(initial?.next_calibration_date ?? '');
     let saving = $state(false);
 
     async function submit() {
@@ -57,7 +57,7 @@
                           status,
                           install_date: install_date || undefined,
                           last_calibration_date: last_calibration_date || undefined,
-                          next_calibration_due: next_calibration_due || undefined,
+                          next_calibration_date: next_calibration_date || undefined,
                       }
                     : {}),
             });
@@ -165,7 +165,7 @@
                             id="eq-nextcal"
                             class={inputMonoClass}
                             type="date"
-                            bind:value={next_calibration_due}
+                            bind:value={next_calibration_date}
                             disabled={!canManage}
                         />
                     </div>

@@ -113,6 +113,6 @@ def test_restricted_fields_set():
     assert "status" in registry.RESTRICTED_EQUIPMENT_FIELDS
     assert "install_date" in registry.RESTRICTED_EQUIPMENT_FIELDS
     assert "last_calibration_date" in registry.RESTRICTED_EQUIPMENT_FIELDS
-    assert "next_calibration_due" in registry.RESTRICTED_EQUIPMENT_FIELDS
+    assert "next_calibration_date" in registry.RESTRICTED_EQUIPMENT_FIELDS
     for f in ("name", "equipment_type", "room", "location", "description", "tags"):
         assert f not in registry.RESTRICTED_EQUIPMENT_FIELDS

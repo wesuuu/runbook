@@ -1,7 +1,7 @@
 """Integration tests for POST /science/protocols/{id}/approve."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -9,21 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
-from app.models.iam import (
-    ObjectPermission,
-    ObjectType,
-    Organization,
-    OrganizationMember,
-    PermissionLevel,
-    PrincipalType,
-    User,
-)
-from app.models.science import (
-    Project,
-    Protocol,
-    ProtocolApprovalEvent,
-    ProtocolApprovalRequest,
-)
+from app.models.execution import AuditLog
+from app.models.iam import (ObjectPermission, ObjectType, Organization,
+                            OrganizationMember, PermissionLevel, PrincipalType,
+                            User)
+from app.models.science import GlpSignoff, GlpSignoffRequest, Project, Protocol
 
 
 async def _make_pending_protocol(
@@ -43,7 +33,7 @@ async def _make_pending_protocol(
     await db.flush()
     if requested_user_id is not None:
         db.add(
-            ProtocolApprovalRequest(
+            GlpSignoffRequest(
                 protocol_id=proto.id,
                 requested_user_id=requested_user_id,
                 requested_by_id=creator_id,
@@ -122,27 +112,28 @@ async def test_approve_happy_path_via_project_perm(
     assert body["approved_by_id"] == str(approver.id)
     assert body["approved_at"] is not None
 
-    evs = (
+    audits = (
         (
             await db_session.execute(
-                select(ProtocolApprovalEvent).where(
-                    ProtocolApprovalEvent.protocol_id == proto.id
+                select(AuditLog).where(
+                    AuditLog.entity_type == "Protocol",
+                    AuditLog.entity_id == proto.id,
+                    AuditLog.action == "PROTOCOL_APPROVAL_APPROVED",
                 )
             )
         )
         .scalars()
         .all()
     )
-    assert len(evs) == 1
-    assert evs[0].action == "APPROVED"
-    assert evs[0].comment == "looks good"
-    assert evs[0].signature_statement == "I attest"
+    assert len(audits) == 1
+    assert audits[0].changes.get("comment") == "looks good"
+    assert audits[0].changes.get("has_signature_statement") is True
 
     reqs = (
         (
             await db_session.execute(
-                select(ProtocolApprovalRequest).where(
-                    ProtocolApprovalRequest.protocol_id == proto.id
+                select(GlpSignoffRequest).where(
+                    GlpSignoffRequest.protocol_id == proto.id
                 )
             )
         )
@@ -178,6 +169,202 @@ async def test_approve_via_org_protocol_approver_role(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "APPROVED"
+
+
+@pytest.mark.asyncio
+async def test_approve_blocked_when_glp_signoffs_missing(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_user: User,
+    test_org: Organization,
+    test_project: Project,
+):
+    """If GLP settings require SD/QAU sign-off but no APPROVED GlpSignoff
+    rows exist, /approve returns 400 with MISSING_GLP_SIGNOFFS."""
+    approver, headers = await _make_user(
+        db_session, test_org, roles=["MEMBER", "PROTOCOL_APPROVER"]
+    )
+    proto = Protocol(
+        name="GLP Pending Protocol",
+        project_id=test_project.id,
+        status="PENDING_APPROVAL",
+        created_by_id=test_user.id,
+        requires_approval=True,
+        graph={
+            "glpSettings": {
+                "require_study_director": True,
+                "require_qau": True,
+            }
+        },
+    )
+    db_session.add(proto)
+    await db_session.flush()
+
+    resp = await client.post(
+        f"/science/protocols/{proto.id}/approve",
+        json={},
+        headers=headers,
+    )
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert detail["error"] == "MISSING_GLP_SIGNOFFS"
+    assert set(detail["missing"]) == {"STUDY_DIRECTOR", "QAU"}
+
+
+@pytest.mark.asyncio
+async def test_approve_blocked_when_only_one_glp_role_signed(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_user: User,
+    test_org: Organization,
+    test_project: Project,
+):
+    """Partial sign-offs still block — both required roles must be signed."""
+    approver, headers = await _make_user(
+        db_session, test_org, roles=["MEMBER", "PROTOCOL_APPROVER"]
+    )
+    proto = Protocol(
+        name="GLP Partial",
+        project_id=test_project.id,
+        status="PENDING_APPROVAL",
+        created_by_id=test_user.id,
+        requires_approval=True,
+        graph={
+            "glpSettings": {
+                "require_study_director": True,
+                "require_qau": True,
+            }
+        },
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    db_session.add(
+        GlpSignoff(
+            protocol_id=proto.id,
+            role="STUDY_DIRECTOR",
+            action="APPROVED",
+            signer_id=approver.id,
+            signed_at=datetime.now(timezone.utc),
+            signature_image_path="signatures/test.png",
+            attestation="I attest as Study Director.",
+        )
+    )
+    await db_session.flush()
+
+    resp = await client.post(
+        f"/science/protocols/{proto.id}/approve",
+        json={},
+        headers=headers,
+    )
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert detail["error"] == "MISSING_GLP_SIGNOFFS"
+    assert detail["missing"] == ["QAU"]
+
+
+@pytest.mark.asyncio
+async def test_approve_succeeds_when_all_glp_signoffs_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_user: User,
+    test_org: Organization,
+    test_project: Project,
+):
+    """With both required roles signed (APPROVED, not invalidated), /approve
+    succeeds and the protocol transitions to APPROVED."""
+    approver, headers = await _make_user(
+        db_session, test_org, roles=["MEMBER", "PROTOCOL_APPROVER"]
+    )
+    proto = Protocol(
+        name="GLP Full",
+        project_id=test_project.id,
+        status="PENDING_APPROVAL",
+        created_by_id=test_user.id,
+        requires_approval=True,
+        graph={
+            "glpSettings": {
+                "require_study_director": True,
+                "require_qau": True,
+            }
+        },
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    for role, statement in (
+        ("STUDY_DIRECTOR", "SD attest"),
+        ("QAU", "QAU attest"),
+    ):
+        db_session.add(
+            GlpSignoff(
+                protocol_id=proto.id,
+                role=role,
+                action="APPROVED",
+                signer_id=approver.id,
+                signed_at=datetime.now(timezone.utc),
+                signature_image_path="signatures/test.png",
+                attestation=statement,
+            )
+        )
+    await db_session.flush()
+
+    resp = await client.post(
+        f"/science/protocols/{proto.id}/approve",
+        json={},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "APPROVED"
+
+
+@pytest.mark.asyncio
+async def test_approve_ignores_invalidated_glp_signoffs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_user: User,
+    test_org: Organization,
+    test_project: Project,
+):
+    """Invalidated GlpSignoff rows must not satisfy the gate."""
+    approver, headers = await _make_user(
+        db_session, test_org, roles=["MEMBER", "PROTOCOL_APPROVER"]
+    )
+    proto = Protocol(
+        name="GLP Invalidated",
+        project_id=test_project.id,
+        status="PENDING_APPROVAL",
+        created_by_id=test_user.id,
+        requires_approval=True,
+        graph={
+            "glpSettings": {
+                "require_study_director": True,
+                "require_qau": False,
+            }
+        },
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    db_session.add(
+        GlpSignoff(
+            protocol_id=proto.id,
+            role="STUDY_DIRECTOR",
+            action="APPROVED",
+            signer_id=approver.id,
+            signed_at=datetime.now(timezone.utc),
+            signature_image_path="signatures/test.png",
+            attestation="SD attest (revoked)",
+            invalidated_at=datetime.now(timezone.utc),
+            invalidated_reason="Revoked for re-review.",
+        )
+    )
+    await db_session.flush()
+
+    resp = await client.post(
+        f"/science/protocols/{proto.id}/approve",
+        json={},
+        headers=headers,
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["error"] == "MISSING_GLP_SIGNOFFS"
 
 
 @pytest.mark.asyncio

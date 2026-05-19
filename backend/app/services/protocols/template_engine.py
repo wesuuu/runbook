@@ -5,127 +5,21 @@ Pipeline: docxtpl fills .docx → LibreOffice headless converts to PDF.
 
 import subprocess
 import tempfile
-from datetime import datetime
+import uuid
+from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from docx.shared import Mm
+from docx.shared import Mm, Pt
 from docxtpl import DocxTemplate, InlineImage, RichText
 
-# SOP typography (raw half-points; see "Pt()" footnote below the RichText
-# helpers in this file). Body 11pt, meta 10pt, role header 14pt.
-_BODY_HP = 22
-_META_HP = 20
-_ROLE_HP = 28
-_INK = "#1F2937"
-_INK_DEEP = "#0F172A"
-_INK_MUTED = "#64748B"
-_SERIF = "Cambria"
-_SANS = "Calibri"
-
-
-def _build_sop_body(
-    step_number: int,
-    name: str,
-    desc: str,
-    param_sentence: str,
-    duration_min: int | None,
-) -> RichText:
-    """Compose a SOP procedure step as a single paragraph with soft
-    line breaks. Hanging indent + tab stop on the template paragraph
-    aligns the number column; wrapped lines hang under the step text.
-
-    Layout:
-        N.<TAB><bold step name>
-                <description>
-                <param sentence>
-                Allow N minutes for this step.
-    """
-    rt = RichText()
-    # Number column — sans, distinct from prose
-    rt.add(
-        f"{step_number}.\t",
-        bold=True,
-        size=_BODY_HP,
-        color=_INK_DEEP,
-        font=_SANS,
-    )
-    if name:
-        rt.add(name, bold=True, size=_BODY_HP, color=_INK_DEEP, font=_SERIF)
-    if desc:
-        rt.add("\n")
-        rt.add(desc, size=_BODY_HP, color=_INK, font=_SERIF)
-    if param_sentence:
-        rt.add("\n")
-        rt.add(
-            param_sentence,
-            italic=True,
-            size=_META_HP,
-            color=_INK_MUTED,
-            font=_SERIF,
-        )
-    if duration_min:
-        rt.add("\n")
-        rt.add(
-            f"Allow {duration_min} minutes for this step.",
-            italic=True,
-            size=_META_HP,
-            color=_INK_MUTED,
-            font=_SERIF,
-        )
-    return rt
-
-
-def _build_br_card_header(
-    step_number: int,
-    name: str,
-    duration_min: int | None,
-) -> RichText:
-    """Compose a Batch Record step-card header as a single paragraph.
-
-    Layout (two tab stops: 0.4in left, ~5.8in right):
-        NN.<TAB><bold step name><TAB><italic muted duration>
-
-    The number column is sans for distinction from the serif body; the
-    name is bold serif; the duration sits on a right-tab in muted sans
-    italic so it reads as metadata, not as part of the step name.
-    """
-    rt = RichText()
-    rt.add(
-        f"{step_number:02d}.\t",
-        bold=True,
-        size=_BODY_HP,
-        color=_INK_DEEP,
-        font=_SANS,
-    )
-    rt.add(
-        name or "Step",
-        bold=True,
-        size=_BODY_HP,
-        color=_INK_DEEP,
-        font=_SERIF,
-    )
-    if duration_min:
-        rt.add(
-            f"\t{duration_min} min",
-            italic=True,
-            size=_META_HP,
-            color=_INK_MUTED,
-            font=_SANS,
-        )
-    return rt
-
-
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
-from app.services.documents.pdf_base import (
-    _build_param_sentence,
-    _format_value,
-    _get_editable_params,
-    _get_initials,
-    _get_param_title,
-    _render_template,
-)
+from app.services.documents.pdf_base import (_build_param_sentence,
+                                             _format_value,
+                                             _get_editable_params,
+                                             _get_initials, _get_param_title,
+                                             _render_template)
 
 # ── Known template variables (for upload validation) ──
 
@@ -152,52 +46,15 @@ KNOWN_VARIABLES = {
     "notes",
     "figures",
     "non_image_attachments",
-    # Manual/optional loops — populated only when data is wired
-    "materials",
-    "equipment",
-    "target_yield",
-    # SOP-specific fields (time-course bioreactor SOP template)
-    "document_number",
-    "effective_date",
-    "purpose_text",
-    "scope_text",
-    "critical_requirement",
-    "is_time_based",
-    "time_points",
     # Approval (F-0066)
     "approval",
     "approval_history",
     "unapproved_warning",
-    # Time axis
-    "time_enabled",
-    "start_time",
-    # Reviewer
-    "reviewer_enabled",
-    # Equipment / revisions / responsibilities / deviations
-    "equipment_summary",
-    "revision_history",
-    "responsibilities",
-    "deviations",
-    # Document metadata
-    "doc_number",
-    "effective_date",
-    "supersedes_date",
-    # SOP sections
-    "purpose",
-    "scope",
-    "references",
-    "definitions",
-    # Run identifiers
-    "produces_lot",  # F-0086
-    "lot_number",
-    "batch_number",
-    # SOP time-course mode (bioreactor-style sampling SOPs)
-    "critical_requirement",
-    "is_time_based",
-    "time_points",
-    # Batch record GxP loops
-    "target_yield",
-    "materials",
+    "requires_approval",
+    # GLP sign-offs (F-0087)
+    "signoffs",
+    "protocol_approvals",
+    "run",
     "equipment",
 }
 
@@ -249,74 +106,74 @@ def _resolve_initials(
     return _get_initials(name)
 
 
-def _compute_scheduled_at(start_time: str, prior_minutes: int) -> str:
-    """Add ``prior_minutes`` to an ``HH:MM`` start time, returning ``HH:MM``."""
-    if not start_time:
-        return ""
-    try:
-        hh, mm = start_time.split(":")
-        total = int(hh) * 60 + int(mm) + max(0, int(prior_minutes))
-    except (ValueError, AttributeError):
-        return ""
-    return f"{(total // 60) % 24:02d}:{total % 60:02d}"
+def _signoff_to_block(signoff: Any, signer: Any) -> dict[str, Any]:
+    """Convert a GlpSignoff + its signer User to a template-friendly dict.
 
-
-def _apply_step_reviewer(
-    step_ctx: dict[str, Any],
-    *,
-    step_id: str,
-    execution_data: dict[str, Any],
-    user_map: dict[str, str],
-) -> None:
-    """Mutate ``step_ctx`` with reviewer fields from execution data.
-
-    Populates ``reviewer_initials`` (up to 3 uppercase initials derived
-    from the reviewer's display name), ``reviewed_at`` (ISO timestamp),
-    and the underscore-prefixed ``_reviewer_user_id`` /
-    ``_reviewer_name`` audit fields. All fields default to empty
-    strings when the step has not been reviewed.
-
-    Callers responsible for any aliasing must shallow-copy the dict
-    before passing it in.
+    Mirrors the shape consumed by the SOP/batch-record templates:
+    ``{name, email, signature_image, attestation, signed_at, initials}``.
+    ``signer`` may be ``None`` if the user row was deleted; fall back to a
+    deleted-user placeholder so templates keep rendering.
     """
-    exec_row = execution_data.get(step_id, {})
-    reviewer_uid = exec_row.get("reviewed_by_user_id", "")
-    reviewer_name = user_map.get(reviewer_uid, "") if reviewer_uid else ""
-    step_ctx["_reviewer_user_id"] = reviewer_uid
-    step_ctx["_reviewer_name"] = reviewer_name
-    step_ctx["reviewed_at"] = exec_row.get("reviewed_at", "")
-    if reviewer_uid and reviewer_name:
-        step_ctx["reviewer_initials"] = "".join(
-            p[0].upper() for p in reviewer_name.split() if p
-        )[:3]
+    if signer is None:
+        name = "(deleted user)"
+        email = ""
     else:
-        step_ctx["reviewer_initials"] = ""
+        name = getattr(signer, "full_name", None) or getattr(signer, "email", "")
+        email = getattr(signer, "email", "") or ""
+    return {
+        "name": name,
+        "email": email,
+        "signature_image": getattr(signoff, "signature_image_path", None),
+        "attestation": getattr(signoff, "attestation", None),
+        "signed_at": getattr(signoff, "signed_at", None),
+        "initials": (name or "")[:2].upper(),
+    }
 
 
-def _apply_step_timing(
-    step_ctx: dict[str, Any],
-    *,
-    start_time: str,
-    prior_minutes: int,
-    execution_data: dict[str, Any],
-) -> int:
-    """Mutate ``step_ctx`` in place with scheduled/actual timestamps.
+def _calibration_status(equipment: Any) -> str:
+    """Return "OK" / "OVERDUE" / "UNKNOWN" for an Equipment row.
 
-    Sets ``scheduled_at`` (derived from ``start_time`` + ``prior_minutes``)
-    and ``actual_started_at`` / ``actual_completed_at`` (looked up by the
-    step's ``id`` in ``execution_data``). Returns the new cumulative
-    minutes including this step's duration so callers can advance their
-    timeline counter.
-
-    Callers responsible for any aliasing must shallow-copy the dict
-    before passing it in.
+    ``Equipment.next_calibration_date`` is a ``date`` (not datetime); compare
+    against ``date.today()`` UTC. Missing dates yield ``"UNKNOWN"``.
     """
-    step_ctx["scheduled_at"] = _compute_scheduled_at(start_time, prior_minutes)
-    step_id = step_ctx.get("_step_id") or step_ctx.get("id", "")
-    exec_row = execution_data.get(step_id, {})
-    step_ctx["actual_started_at"] = exec_row.get("started_at", "")
-    step_ctx["actual_completed_at"] = exec_row.get("completed_at", "")
-    return prior_minutes + int(step_ctx.get("duration_min") or 0)
+    due = getattr(equipment, "next_calibration_date", None)
+    if not due:
+        return "UNKNOWN"
+    today_utc = datetime.now(timezone.utc).date()
+    return "OVERDUE" if due < today_utc else "OK"
+
+
+def _stacked_actual_value(step_exec: dict[str, Any]) -> str:
+    """Render a plain-text "Target / Recorded / initials • ts" block.
+
+    Templates may render this via ``{{r step.actual_value_block }}`` once
+    RichText support lands; for now the plain string is forwards-compatible.
+    """
+    if not step_exec:
+        return ""
+    results = step_exec.get("results") or {}
+    target = step_exec.get("target", "")
+    unit = step_exec.get("unit", "")
+    value = step_exec.get("value")
+    if value is None and results:
+        # Single-value steps store the result under whichever key the schema
+        # exposes; fall back to the first non-empty value.
+        for v in results.values():
+            if v not in (None, ""):
+                value = v
+                break
+    if value is None:
+        value = ""
+    delta = step_exec.get("delta_flag", "")
+    initials = step_exec.get("initials", "")
+    ts = step_exec.get("completed_at", "")
+    lines = []
+    if target != "":
+        lines.append(f"Target: {target} {unit}".rstrip())
+    lines.append(f"Recorded: {value} {unit} {delta}".rstrip())
+    if initials or ts:
+        lines.append(f"{initials} • {ts}".strip(" •"))
+    return "\n".join(lines)
 
 
 def build_context(
@@ -342,25 +199,14 @@ def build_context(
     attachments: list[dict[str, Any]] | None = None,
     storage: FileStorageService | None = None,
     equipment_context: dict[str, str] | None = None,
-    time_enabled: bool = False,
-    start_time: str = "",
-    doc_number: str = "",
-    effective_date: str = "",
-    supersedes_date: str = "",
-    purpose: str = "",
-    scope: str = "",
-    references: str = "",
-    definitions: str = "",
-    lot_number: str = "",
-    batch_number: str = "",
-    produces_lot: bool = False,
-    revision_history: list[dict[str, Any]] | None = None,
-    critical_requirement: str = "",
-    is_time_based: bool = False,
-    time_points: list[dict[str, Any]] | None = None,
-    target_yield: str = "",
-    materials: list[dict[str, Any]] | None = None,
-    equipment: list[dict[str, Any]] | None = None,
+    # F-0087 GLP additions — all optional and pre-resolved by the caller
+    # via assemble_signoff_context_args (keeps build_context sync).
+    outcome: str | None = None,
+    outcome_notes: str | None = None,
+    signoffs: list[Any] | None = None,
+    protocol_signoffs: list[Any] | None = None,
+    signer_lookup: dict[Any, Any] | None = None,
+    equipment_rows: list[Any] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Assemble the Jinja2 context dict for template rendering.
 
@@ -369,6 +215,11 @@ def build_context(
     resolved across all step renders. Pass ``equipment_context`` to make
     ``{{<local_id>_name}}`` / ``{{<local_id>_description}}`` resolvable;
     per-step params still win on key collision.
+
+    GLP context (F-0087) is layered via the ``signoffs``,
+    ``protocol_signoffs``, ``equipment_rows``, ``signer_lookup``,
+    ``outcome`` and ``outcome_notes`` kwargs — all optional and gathered
+    by :func:`assemble_signoff_context_args` so this function stays sync.
     """
     exec_data = execution_data or {}
     umap = user_map or {}
@@ -376,29 +227,6 @@ def build_context(
     eq_ctx = equipment_context or {}
     unresolved_all: list[str] = []
     _seen_unresolved: set[str] = set()
-
-    # Aggregate equipment referenced by individual steps into an ordered-
-    # unique summary list keyed by ``local_id``. Per-step entries always
-    # carry the lookup key + display name; the summary preserves the
-    # first description encountered.
-    _equipment_index: dict[str, dict[str, Any]] = {}
-
-    def _collect_equipment(
-        node_equipment: list[dict[str, Any]] | None,
-    ) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        for entry in node_equipment or []:
-            local_id = entry.get("local_id") or ""
-            if not local_id:
-                continue
-            if local_id not in _equipment_index:
-                _equipment_index[local_id] = {
-                    "local_id": local_id,
-                    "name": entry.get("name", ""),
-                    "description": entry.get("description", ""),
-                }
-            out.append({"local_id": local_id, "name": entry.get("name", "")})
-        return out
 
     def _merge_and_render(desc: str, params: dict[str, Any] | None) -> str:
         merged = {**eq_ctx, **(params or {})}
@@ -420,11 +248,9 @@ def build_context(
             if sid:
                 figure_map.setdefault(sid, []).append(fig_counter)
 
-    # Build step contexts for the flat step list (batch record table
-    # and flat-mode SOP procedure)
+    # Build step contexts for the flat step list (batch record table)
     step_contexts = []
-    _cumulative_min = 0
-    for _flat_idx, step in enumerate(flat_steps or [], start=1):
+    for step in flat_steps or []:
         step_id = step.get("id", "")
         sd = exec_data.get(step_id, {})
         results = sd.get("results", {})
@@ -527,46 +353,28 @@ def build_context(
         # Pre-computed value display as RichText (supports strikethrough
         # for GMP edits). Use {{r step.value_display}} in template.
         # Font size matches the template cell's 8pt.
-        # docxtpl RichText.add(size=…) expects raw half-points
-        # (Word's w:sz), not EMU. Pt() returns EMU and silently
-        # produces ~half-point*6350× sizes when passed through.
-        # Editorial pairing: Calibri sans label + Cambria serif value,
-        # deep ink for label, body ink for value, muted ink for edit
-        # annotations. 10pt body inside the step card.
-        VS = 20  # 10pt
+        VS = Pt(8)  # value font size — must match template cell
         rt = RichText()
         if len(editable) > 1:
             for idx, pd in enumerate(param_details):
                 if idx > 0:
                     rt.add("\a")  # new paragraph between params
-                rt.add(
-                    f"{pd['label']}  ",
-                    bold=True,
-                    size=VS,
-                    color=_INK_DEEP,
-                    font=_SANS,
-                )
+                rt.add(f"{pd['label']}: ", bold=True, size=VS)
                 if pd["is_edited"]:
                     rt.add(
                         pd["original_value"],
                         strike=True,
+                        color="#A0A0A0",
                         size=VS,
-                        color=_INK_MUTED,
-                        font=_SERIF,
                     )
                     annotation = ""
                     if pd["editor"] or pd["edited_at"]:
                         parts = [p for p in (pd["editor"], pd["edited_at"]) if p]
                         annotation = " " + " ".join(parts)
-                    rt.add(
-                        f"{annotation} \u2192 ",
-                        size=VS,
-                        color=_INK_MUTED,
-                        font=_SERIF,
-                    )
-                rt.add(pd["value"], size=VS, color=_INK, font=_SERIF)
+                    rt.add(f"{annotation} \u2192 ", size=VS, color="#64748B")
+                rt.add(pd["value"], size=VS)
         elif single_value:
-            rt.add(single_value, size=VS, color=_INK, font=_SERIF)
+            rt.add(single_value, size=VS)
         value_display = rt
 
         # Per-step notes text (from execution_data)
@@ -589,25 +397,12 @@ def build_context(
                 parts.append(figure_refs)
             notes_display = "  ".join(parts)
 
-        # sop_body is consumed by the flat-mode SOP procedure section.
-        # Role-based SOP uses the per-role sop_steps built below; this
-        # one is for the {%p else %} branch of the procedure template.
-        flat_sop_body = _build_sop_body(
-            step_number=_flat_idx,
-            name=step.get("name", ""),
-            desc=desc,
-            param_sentence=param_sentence,
-            duration_min=step.get("duration_min"),
-        )
-
-        # Batch-record step-card header — defaults to the flat numbering.
-        # The role-based branch overwrites this with per-role numbering
-        # in the role loop below.
-        card_header = _build_br_card_header(
-            step_number=_flat_idx,
-            name=step.get("name", ""),
-            duration_min=step.get("duration_min"),
-        )
+        # F-0087: stacked Target/Recorded/initials block + edit reason for
+        # GLP-compliant batch record rows. ``actual_value_block`` is a plain
+        # string today (templates can switch to {{r ...}} when they add
+        # RichText); ``edit_reason`` surfaces GMP-style change rationale.
+        actual_value_block = _stacked_actual_value(sd)
+        edit_reason = sd.get("edit_reason") or sd.get("change_reason")
 
         step_ctx = {
             "_step_id": step_id,
@@ -616,11 +411,12 @@ def build_context(
             "duration_min": step.get("duration_min"),
             "role_name": step.get("role_name", ""),
             "params": params,
-            "equipment": _collect_equipment(step.get("equipment")),
             "param_details": param_details,
             "has_multi_params": len(editable) > 1,
             "single_value": single_value,
             "value_display": value_display,
+            "actual_value_block": actual_value_block,
+            "edit_reason": edit_reason,
             "initials": initials,
             "_initials_user_id": initials_user_id,
             "_initials_name": completer_name,
@@ -628,22 +424,7 @@ def build_context(
             "notes_text": step_notes_text,
             "figure_refs": figure_refs,
             "notes_display": notes_display,
-            "sop_body": flat_sop_body,
-            "card_header": card_header,
         }
-        # Per-step scheduling on the global timeline.
-        _cumulative_min = _apply_step_timing(
-            step_ctx,
-            start_time=start_time,
-            prior_minutes=_cumulative_min,
-            execution_data=exec_data,
-        )
-        _apply_step_reviewer(
-            step_ctx,
-            step_id=step_id,
-            execution_data=exec_data,
-            user_map=umap,
-        )
         step_contexts.append(step_ctx)
 
     # Build role contexts — each role contains both SOP-style steps
@@ -656,9 +437,7 @@ def build_context(
     for role_data in roles_with_steps or []:
         sop_steps = []
         br_steps = []
-        # Per-role timeline restarts at start_time.
-        _cumulative_min = 0
-        for step_idx, s in enumerate(role_data.get("steps", []), start=1):
+        for s in role_data.get("steps", []):
             # SOP-style step
             desc = s.get("description", "") or ""
             params = s.get("params") or {}
@@ -670,13 +449,25 @@ def build_context(
             if not has_templates:
                 param_sentence = _build_param_sentence(params, param_schema)
 
-            sop_body = _build_sop_body(
-                step_number=step_idx,
-                name=s.get("name", ""),
-                desc=desc,
-                param_sentence=param_sentence,
-                duration_min=s.get("duration_min"),
-            )
+            # Pre-compute step body as RichText to avoid empty
+            # conditional paragraphs in the Word output
+            sop_body = RichText()
+            if desc:
+                sop_body.add(f"    {desc}", size=Pt(10), color="#334155")
+            if param_sentence:
+                if desc:
+                    sop_body.add("\a")
+                sop_body.add(f"    {param_sentence}", size=Pt(10), color="#334155")
+            duration = s.get("duration_min")
+            if duration:
+                if desc or param_sentence:
+                    sop_body.add("\a")
+                sop_body.add(
+                    f"    Allow {duration} minutes for this step.",
+                    size=Pt(10),
+                    color="#64748B",
+                    italic=True,
+                )
 
             sop_steps.append(
                 {
@@ -685,50 +476,27 @@ def build_context(
                 }
             )
 
-            # Batch-record-style step (reuse from step_contexts if available).
-            # Shallow-copy so the per-role timeline doesn't mutate the shared
-            # step_ctx dict already appended to the global step_contexts list.
+            # Batch-record-style step (reuse from step_contexts if available)
             step_id = s.get("id", "")
-            shared = step_ctx_by_id.get(step_id)
-            if shared:
-                br_step = dict(shared)
+            br_step = step_ctx_by_id.get(step_id)
+            if br_step:
+                br_steps.append(br_step)
             else:
                 # Fallback: build a minimal step context from role step data
-                br_step = {
-                    "_step_id": step_id,
-                    "name": s.get("name", ""),
-                    "description": desc or param_sentence or "--",
-                    "duration_min": s.get("duration_min"),
-                    "role_name": role_data.get("role_name", ""),
-                    "equipment": _collect_equipment(s.get("equipment")),
-                    "value_display": "",
-                    "initials": "",
-                    "_initials_user_id": "",
-                    "_initials_name": "",
-                    "notes_display": "",
-                    "card_header": RichText(),
-                }
-            # Per-step scheduling on the per-role timeline.
-            _cumulative_min = _apply_step_timing(
-                br_step,
-                start_time=start_time,
-                prior_minutes=_cumulative_min,
-                execution_data=exec_data,
-            )
-            _apply_step_reviewer(
-                br_step,
-                step_id=step_id,
-                execution_data=exec_data,
-                user_map=umap,
-            )
-            # Per-role step numbering for the BR card header (replaces
-            # the global flat-mode card_header inherited from step_ctx).
-            br_step["card_header"] = _build_br_card_header(
-                step_number=step_idx,
-                name=s.get("name", ""),
-                duration_min=s.get("duration_min"),
-            )
-            br_steps.append(br_step)
+                br_steps.append(
+                    {
+                        "_step_id": step_id,
+                        "name": s.get("name", ""),
+                        "description": desc or param_sentence or "--",
+                        "duration_min": s.get("duration_min"),
+                        "role_name": role_data.get("role_name", ""),
+                        "value_display": "",
+                        "initials": "",
+                        "_initials_user_id": "",
+                        "_initials_name": "",
+                        "notes_display": "",
+                    }
+                )
 
         # Pre-compute role header as RichText to avoid empty
         # conditional paragraphs that create whitespace gaps in Word
@@ -737,47 +505,25 @@ def build_context(
         process_desc = role_data.get("process_description", "")
         header_name = process_name or role_name
 
-        # Role header \u2014 a single paragraph the template paragraph wraps
-        # with a bottom border, so we don't draw a Unicode rule inline.
-        # process_desc (if any) sits on a soft line break in the same
-        # paragraph, italicized and muted; \f forces a page break before
-        # non-first roles so each role's procedure starts on its own page.
         sop_header = RichText()
         is_first_role = len(role_contexts) == 0
+        # Page break before non-first roles
         if not is_first_role:
             sop_header.add("\f")
         if header_name:
-            sop_header.add(
-                header_name,
-                bold=True,
-                size=_ROLE_HP,
-                color=_INK_DEEP,
-                font=_SANS,
-            )
+            sop_header.add(header_name, bold=True, size=Pt(14))
             if process_desc:
-                sop_header.add("\n")
-                sop_header.add(
-                    process_desc,
-                    italic=True,
-                    size=_META_HP,
-                    color=_INK_MUTED,
-                    font=_SERIF,
-                )
+                sop_header.add("\a")  # new paragraph
+                sop_header.add(process_desc, size=Pt(10), color="#64748B")
+            sop_header.add("\a")
+            sop_header.add("\u2500" * 50, size=Pt(6), color="#C8C8C8")
 
-        # Pre-compute batch record header (page break + uppercase role
-        # name in Calibri). The template paragraph adds the bottom rule
-        # and keep_with_next semantics.
+        # Pre-compute batch record header (page break + role name)
         br_header = RichText()
         if not is_first_role:
             br_header.add("\f")  # page break before non-first roles
         if header_name:
-            br_header.add(
-                header_name.upper(),
-                bold=True,
-                size=_ROLE_HP,
-                color=_INK_DEEP,
-                font=_SANS,
-            )
+            br_header.add(header_name, bold=True, size=Pt(14))
 
         role_contexts.append(
             {
@@ -851,13 +597,91 @@ def build_context(
     # to avoid empty conditional paragraphs
     protocol_subtitle = RichText()
     if run_name:
-        protocol_subtitle.add(f"Run: {run_name}", bold=True, size=20, color="#334155")
+        protocol_subtitle.add(
+            f"Run: {run_name}", bold=True, size=Pt(10), color="#334155"
+        )
     if protocol_description:
         if run_name:
             protocol_subtitle.add("\a")
-        protocol_subtitle.add(protocol_description, size=20, color="#64748B")
+        protocol_subtitle.add(protocol_description, size=Pt(10), color="#64748B")
 
-    context: dict[str, Any] = {
+    # ── F-0087 GLP context ──
+    # Build {role_lower: block} maps from the pre-resolved signoff lists.
+    # ``signer_lookup`` carries the User object for each signoff so the
+    # caller (which holds the AsyncSession) controls all DB I/O.
+    lookup = signer_lookup or {}
+
+    def _resolve_signer(s: Any) -> Any:
+        # Prefer the SQLAlchemy relationship when eagerly loaded; fall
+        # back to the explicit lookup keyed by signer_id.
+        try:
+            existing = getattr(s, "signer", None)
+        except Exception:
+            existing = None
+        if existing is not None:
+            return existing
+        return lookup.get(getattr(s, "signer_id", None))
+
+    run_signoffs_map: dict[str, dict[str, Any]] = {}
+    for s in signoffs or []:
+        role = (getattr(s, "role", "") or "").lower()
+        if role:
+            run_signoffs_map[role] = _signoff_to_block(s, _resolve_signer(s))
+
+    protocol_approvals_map: dict[str, dict[str, Any]] = {}
+    for s in protocol_signoffs or []:
+        role = (getattr(s, "role", "") or "").lower()
+        if role:
+            protocol_approvals_map[role] = _signoff_to_block(s, _resolve_signer(s))
+
+    # Back-compat: legacy templates reference ``approval.approver_name``.
+    # Prefer QAU > STUDY_DIRECTOR > SPONSOR so the strongest signature is
+    # the one rendered when the template only shows a single block.
+    approval_alias: dict[str, Any] | None = None
+    legacy_source = (
+        protocol_approvals_map.get("qau")
+        or protocol_approvals_map.get("study_director")
+        or protocol_approvals_map.get("sponsor")
+    )
+    if legacy_source:
+        approval_alias = {
+            "approver_name": legacy_source["name"],
+            "approver_email": legacy_source["email"],
+            "signature_image": legacy_source["signature_image"],
+            "signature_image_path": legacy_source["signature_image"],
+            "signature_statement": legacy_source["attestation"],
+            "approved_at": legacy_source["signed_at"],
+            "protocol_version": version_number,
+        }
+
+    run_block = {
+        "outcome": outcome,
+        "outcome_notes": outcome_notes,
+        "started_at": started_at or "",
+        "completed_at": completed_at or "",
+        "name": run_name or "",
+        "status": run_status or "",
+    }
+
+    # Equipment rows for the GLP "Equipment used" appendix. Each row exposes
+    # serial number + calibration status so the template can flag overdue
+    # instruments.
+    equipment_list: list[dict[str, Any]] = []
+    for eq in equipment_rows or []:
+        equipment_list.append(
+            {
+                "id": getattr(eq, "id", None),
+                "name": getattr(eq, "name", "") or "",
+                "description": getattr(eq, "description", "") or "",
+                "equipment_type": getattr(eq, "equipment_type", None),
+                "location": getattr(eq, "location", None),
+                "serial_number": getattr(eq, "serial_number", None),
+                "calibration_due_at": getattr(eq, "next_calibration_date", None),
+                "calibration_status": _calibration_status(eq),
+            }
+        )
+
+    ctx_out: dict[str, Any] = {
         "protocol_name": protocol_name,
         "protocol_subtitle": protocol_subtitle,
         "protocol_description": protocol_description,
@@ -870,68 +694,30 @@ def build_context(
         "project_name": project_name,
         "organization_name": organization_name,
         "is_role_based": is_role_based,
-        "time_enabled": bool(time_enabled),
-        "start_time": start_time or "",
         "page_break": RichText("\f"),
         "steps": step_contexts,
         "roles": role_contexts,
-        "equipment_summary": list(_equipment_index.values()),
         "notes": note_contexts,
         "figures": figure_contexts,
         "non_image_attachments": non_image_att_contexts,
         "_user_signatures": sigmap,
+        # F-0087 additions
+        "signoffs": run_signoffs_map,
+        "protocol_approvals": protocol_approvals_map,
+        "run": run_block,
+        "equipment": equipment_list,
     }
+    if approval_alias is not None:
+        # Only set when a protocol sign-off exists — preserves the
+        # endpoint-level _build_approval_context output when callers
+        # ``ctx.update(approval_ctx)`` after building (the legacy path
+        # has approver_name/approver_email/etc. with the same keys).
+        ctx_out["approval"] = approval_alias
 
-    for _k in (
-        "doc_number",
-        "effective_date",
-        "supersedes_date",
-        "purpose",
-        "scope",
-        "references",
-        "definitions",
-        "lot_number",
-        "batch_number",
-    ):
-        context[_k] = locals()[_k] or ""
-
-    # F-0086: explicit boolean — the batch-record template uses {%tr if produces_lot %}.
-    context["produces_lot"] = bool(produces_lot)
-
-    # Responsibilities matrix (role-based only)
-    if is_role_based:
-        context["responsibilities"] = [
-            {
-                "role_name": role.get("role_name", ""),
-                "step_summary": "; ".join(
-                    s.get("name", "") for s in role.get("steps", []) if s.get("name")
-                ),
-            }
-            for role in (roles_with_steps or [])
-        ]
-    else:
-        context["responsibilities"] = []
-
-    context["revision_history"] = list(revision_history or [])
-    context["critical_requirement"] = critical_requirement or ""
-    context["is_time_based"] = bool(is_time_based)
-    context["time_points"] = list(time_points or [])
-    context["target_yield"] = target_yield or ""
-    context["materials"] = list(materials or [])
-    context["equipment"] = list(equipment or [])
-
-    # Deviations: subset of notes where flags include "anomaly"
-    context["deviations"] = [
-        n for n in (notes or []) if "anomaly" in (n.get("flags") or [])
-    ]
-
-    # reviewer_enabled: True if any step has reviewed_by_user_id in execution_data
-    _exec = execution_data or {}
-    context["reviewer_enabled"] = any(
-        bool((_exec.get(sid) or {}).get("reviewed_by_user_id")) for sid in _exec
+    return (
+        ctx_out,
+        unresolved_all,
     )
-
-    return context, unresolved_all
 
 
 def render_to_docx(
@@ -941,56 +727,21 @@ def render_to_docx(
     """Render a .docx template with context, return .docx bytes."""
     doc = DocxTemplate(str(template_path))
 
-    # Convert figure file paths to InlineImage objects. We .get() rather
-    # than .pop() the path so render_to_pdf can call us twice — popping
-    # would leave the second pass with stale InlineImage refs pointing at
-    # the previous DocxTemplate, which Word silently renders as invisible.
+    # Convert figure file paths to InlineImage objects
     for fig in context.get("figures", []):
-        fpath_str = fig.get("_file_path")
+        fpath_str = fig.pop("_file_path", None)
         if fpath_str:
             fpath = Path(fpath_str)
             if fpath.exists():
                 fig["image"] = InlineImage(doc, str(fpath), width=Mm(150))
             else:
                 fig["image"] = f"[Image not found: {fpath.name}]"
-        elif "image" not in fig:
-            fig["image"] = ""
-
-    # Same handling for per-time-point figures (SOP time-course mode).
-    for tp in context.get("time_points", []) or []:
-        fig = tp.get("figure")
-        if not isinstance(fig, dict):
-            continue
-        fpath_str = fig.get("_file_path")
-        if fpath_str:
-            fpath = Path(fpath_str)
-            if fpath.exists():
-                fig["image"] = InlineImage(doc, str(fpath), width=Mm(120))
-            else:
-                fig["image"] = f"[Image not found: {fpath.name}]"
-        elif "image" not in fig:
-            fig["image"] = ""
-
-    # Same handling for per-time-point figures in SOP time-course mode.
-    for tp in context.get("time_points", []) or []:
-        fig = tp.get("figure")
-        if not isinstance(fig, dict):
-            continue
-        fpath_str = fig.get("_file_path")
-        if fpath_str:
-            fpath = Path(fpath_str)
-            if fpath.exists():
-                fig["image"] = InlineImage(doc, str(fpath), width=Mm(120))
-            else:
-                fig["image"] = f"[Image not found: {fpath.name}]"
-        elif "image" not in fig:
-            fig["image"] = ""
 
     # F-0080 — swap step.initials to an InlineImage of the user's drawn
     # signature, or a cursive RichText fallback. Mirrors the figure
     # handling above: build_context puts placeholders, render_to_docx
     # finalizes them against the open DocxTemplate.
-    user_signatures = context.get("_user_signatures") or {}
+    user_signatures = context.pop("_user_signatures", {}) or {}
 
     def _swap(steps_list):
         for step in steps_list or []:
@@ -1005,26 +756,29 @@ def render_to_docx(
                 docx=doc,
             )
 
-    def _swap_reviewer(steps_list):
-        for step in steps_list or []:
-            uid = step.get("_reviewer_user_id")
-            name = step.get("_reviewer_name", "")
-            if not uid:
-                continue
-            step["reviewer_initials"] = _resolve_initials(
-                user_id=uid,
-                name=name,
-                user_signatures=user_signatures,
-                docx=doc,
-            )
-
     _swap(context.get("steps"))
-    _swap_reviewer(context.get("steps"))
     for role in context.get("roles", []) or []:
         _swap(role.get("steps"))
         _swap(role.get("br_steps"))
-        _swap_reviewer(role.get("steps"))
-        _swap_reviewer(role.get("br_steps"))
+
+    # F-0087 — swap actual_value_block plain string to a RichText so newlines
+    # render as <w:br/> line breaks inside the cell. The template uses
+    # `{{r step.actual_value_block }}` which expects a RichText object.
+    def _swap_actual_value(steps_list):
+        for step in steps_list or []:
+            raw = step.get("actual_value_block")
+            if isinstance(raw, str) and raw:
+                rt = RichText()
+                for i, line in enumerate(raw.split("\n")):
+                    if i:
+                        rt.add("\a")  # RichText line break
+                    rt.add(line)
+                step["actual_value_block"] = rt
+
+    _swap_actual_value(context.get("steps"))
+    for role in context.get("roles", []) or []:
+        _swap_actual_value(role.get("steps"))
+        _swap_actual_value(role.get("br_steps"))
 
     # F-0066 — swap approval.signature_image_path to an InlineImage so
     # the template can render `{{ approval.signature_image }}`. Mirrors
@@ -1142,6 +896,100 @@ async def resolve_default_template_id(
     return result.scalar_one_or_none()
 
 
+# ── F-0087: async helper that pre-resolves the new GLP context vars ──
+
+
+async def assemble_signoff_context_args(
+    db: Any,
+    *,
+    run: Any = None,
+    protocol: Any = None,
+) -> dict[str, Any]:
+    """Gather GLP sign-off / equipment / outcome data for build_context.
+
+    Returns a dict suitable for ``**kwargs`` splatting into the sync
+    :func:`build_context`. Splits DB I/O from the pure-Python context
+    shaping so callers — most of which already pre-resolve protocol,
+    project, attachments and execution_data synchronously — don't have
+    to be turned async.
+
+    Looks up active GLP sign-offs on the run and/or its protocol,
+    resolves each signer User, materialises Equipment rows for the
+    run/protocol graph so per-row ``serial_number`` /
+    ``calibration_due_at`` are available, and surfaces
+    ``run.outcome`` / ``run.outcome_notes`` when present.
+    """
+    from sqlalchemy import select
+
+    from app.models.iam import User
+    from app.models.science import Equipment
+    from app.services.signoffs.queries import list_active_signoffs
+
+    args: dict[str, Any] = {}
+    signer_ids: set[Any] = set()
+    signer_lookup: dict[Any, User] = {}
+
+    if run is not None:
+        run_signoffs = list(await list_active_signoffs(db, "run", run.id))
+        args["signoffs"] = run_signoffs
+        for s in run_signoffs:
+            if s.signer_id:
+                signer_ids.add(s.signer_id)
+        args["outcome"] = getattr(run, "outcome", None)
+        args["outcome_notes"] = getattr(run, "outcome_notes", None)
+
+    proto_target = protocol if protocol is not None else getattr(run, "protocol", None)
+    if proto_target is not None:
+        proto_signoffs = list(
+            await list_active_signoffs(db, "protocol", proto_target.id)
+        )
+        args["protocol_signoffs"] = proto_signoffs
+        for s in proto_signoffs:
+            if s.signer_id:
+                signer_ids.add(s.signer_id)
+
+    # Load missing signers in one round-trip. ``list_active_signoffs``
+    # selectinloads the signer on each row, but explicit lookup keeps the
+    # sync helper independent of relationship loading state and tolerates
+    # detached instances inside test SAVEPOINTs.
+    if signer_ids:
+        result = await db.execute(select(User).where(User.id.in_(signer_ids)))
+        for u in result.scalars().all():
+            signer_lookup[u.id] = u
+    args["signer_lookup"] = signer_lookup
+
+    # Materialise Equipment rows referenced by the run/protocol graph so
+    # the template can render serial numbers and calibration status. The
+    # graph stores equipment_id strings on each unit-op node.
+    graph = None
+    if run is not None:
+        graph = run.graph or None
+    elif protocol is not None:
+        graph = protocol.graph or None
+
+    eq_uuids: set[uuid.UUID] = set()
+    if graph:
+        for node in graph.get("nodes") or []:
+            if node.get("type") != "unitOp":
+                continue
+            for eq in (node.get("data") or {}).get("equipment") or []:
+                eq_id = eq.get("equipment_id")
+                if not eq_id:
+                    continue
+                try:
+                    eq_uuids.add(uuid.UUID(eq_id))
+                except (ValueError, TypeError):
+                    continue
+
+    if eq_uuids:
+        result = await db.execute(select(Equipment).where(Equipment.id.in_(eq_uuids)))
+        args["equipment_rows"] = list(result.scalars().all())
+    else:
+        args["equipment_rows"] = []
+
+    return args
+
+
 # ── Mock data for template preview ──
 
 
@@ -1247,53 +1095,4 @@ def get_mock_context() -> dict[str, Any]:
             },
         ],
     )
-    ctx["time_enabled"] = True
-    ctx["start_time"] = "08:00"
-    ctx["reviewer_enabled"] = True
-    ctx["doc_number"] = "SOP-DEMO-001"
-    ctx["effective_date"] = "2026-01-01"
-    ctx["supersedes_date"] = "2025-01-01"
-    ctx["purpose"] = "Demonstrate the end-to-end template surface."
-    ctx["scope"] = "Applies to preview rendering only."
-    ctx["references"] = "ICH Q7; internal SOP-CORE-001"
-    ctx["definitions"] = "CIP = clean-in-place. SOP = Standard Operating Procedure."
-    ctx["lot_number"] = "LOT-DEMO-2026-001"
-    ctx["batch_number"] = "BAT-DEMO-7"
-    # F-0086: demo a lot-producing run so the batch-record template's
-    # {%tr if produces_lot %}-gated lot row is exercised in previews.
-    ctx["produces_lot"] = True
-    ctx["equipment_summary"] = [
-        {
-            "local_id": "E-001",
-            "name": "5L Bioreactor",
-            "description": "Sartorius BioStat B Plus",
-        },
-        {
-            "local_id": "E-002",
-            "name": "Peristaltic Pump",
-            "description": "Cole-Parmer Masterflex",
-        },
-    ]
-    ctx["revision_history"] = [
-        {
-            "version_number": 1,
-            "created_at": "2025-12-01",
-            "created_by": "Alice Author",
-            "change_summary": "Initial release",
-        },
-        {
-            "version_number": 2,
-            "created_at": "2026-01-15",
-            "created_by": "Bob Editor",
-            "change_summary": "Tightened acceptance criteria",
-        },
-    ]
-    ctx["responsibilities"] = [
-        {"role_name": "Operator", "step_summary": "Prep buffer; seed culture; harvest"},
-        {"role_name": "Reviewer", "step_summary": "Verify pH; verify volume; sign off"},
-    ]
-    ctx["deviations"] = []
-    ctx.setdefault("approval", None)
-    ctx.setdefault("approval_history", [])
-    ctx.setdefault("unapproved_warning", "")
     return ctx

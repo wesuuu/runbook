@@ -250,7 +250,14 @@ export function buildTestGraph(nodeCount: number): {
   nodeIds: string[];
 } {
   const nodeIds: string[] = [];
-  const nodes = [];
+  const nodes: Array<Record<string, unknown>> = [];
+  const processStartId = `e2e-ps-${Date.now()}`;
+  nodes.push({
+    id: processStartId,
+    type: 'processStart',
+    position: { x: 50, y: 200 },
+    data: { label: 'Process Start' },
+  });
   for (let i = 0; i < nodeCount; i++) {
     const id = `e2e-node-${i}-${Date.now()}`;
     nodeIds.push(id);
@@ -270,6 +277,13 @@ export function buildTestGraph(nodeCount: number): {
   }
 
   const edges: Array<Record<string, string>> = [];
+  if (nodeIds.length > 0) {
+    edges.push({
+      id: `e2e-edge-ps-${Date.now()}`,
+      source: processStartId,
+      target: nodeIds[0],
+    });
+  }
   for (let i = 0; i < nodeCount - 1; i++) {
     edges.push({
       id: `e2e-edge-${i}-${Date.now()}`,

@@ -36,7 +36,7 @@ export const EquipmentSchema = z.object({
     status: EquipmentStatusSchema,
     install_date: z.string().nullable().optional(),
     last_calibration_date: z.string().nullable().optional(),
-    next_calibration_due: z.string().nullable().optional(),
+    next_calibration_date: z.string().nullable().optional(),
     archived_at: z.string().nullable().optional(),
     archived_by_id: z.string().nullable().optional(),
     created_by_id: z.string().nullable().optional(),
@@ -61,7 +61,7 @@ export const EquipmentCreateSchema = z.object({
     status: EquipmentStatusSchema.default('ACTIVE'),
     install_date: z.string().optional(),
     last_calibration_date: z.string().optional(),
-    next_calibration_due: z.string().optional(),
+    next_calibration_date: z.string().optional(),
 });
 export type EquipmentCreate = z.infer<typeof EquipmentCreateSchema>;
 

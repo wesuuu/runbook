@@ -14,6 +14,9 @@
         nodes: Node[];
         canUndoAction: boolean;
         canRedoAction: boolean;
+        glpPanelOpen: boolean;
+        glpSettingsDirty: boolean;
+        glpActive: boolean;
         onUndo: () => void;
         onRedo: () => void;
         onInteractionModeChange: (mode: "pan" | "select") => void;
@@ -22,6 +25,7 @@
         onToggleTime: () => void;
         onToggleVersionHistory: () => void;
         onBrowseVersion: (dir: "prev" | "next") => void;
+        onToggleGlpPanel: () => void;
     }
 
     let {
@@ -36,6 +40,9 @@
         nodes,
         canUndoAction,
         canRedoAction,
+        glpPanelOpen,
+        glpSettingsDirty,
+        glpActive,
         onUndo,
         onRedo,
         onInteractionModeChange,
@@ -44,6 +51,7 @@
         onToggleTime,
         onToggleVersionHistory,
         onBrowseVersion,
+        onToggleGlpPanel,
     }: Props = $props();
 
     function handleHandleOrientationToggle() {
@@ -155,6 +163,29 @@
     >
         Time: {timeEnabled ? "ON" : "OFF"}
     </Button>
+
+    <div class="toolbar-divider"></div>
+
+    <button
+        type="button"
+        class="glp-btn"
+        class:active={glpPanelOpen}
+        onclick={onToggleGlpPanel}
+        aria-pressed={glpPanelOpen}
+        aria-label="Toggle GLP settings panel"
+        title="GLP settings"
+    >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 3v18"/><path d="M5 21h14"/><path d="M5 8h14"/>
+            <path d="m5 8 3 6h-6z"/><path d="m19 8 3 6h-6z"/>
+        </svg>
+        <span>GLP</span>
+        {#if glpActive}
+            <span class="glp-active-dot" aria-label="GLP sign-offs enabled"></span>
+        {:else if glpSettingsDirty}
+            <span class="glp-dirty-dot" aria-label="unsaved changes"></span>
+        {/if}
+    </button>
 
     <div class="toolbar-divider"></div>
 
@@ -291,5 +322,70 @@
         border-radius: 4px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
+    }
+
+    .glp-btn {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 28px;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 500;
+        background: white;
+        border: 1px solid hsl(240, 5.9%, 90%);
+        border-radius: 6px;
+        color: hsl(240, 5.9%, 10%);
+        cursor: pointer;
+        transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+    }
+
+    .glp-btn:hover {
+        background: hsl(240, 4.8%, 95.9%);
+    }
+
+    .glp-btn.active {
+        background: hsl(173, 58%, 39%);
+        color: white;
+        border-color: hsl(173, 58%, 39%);
+    }
+
+    .glp-btn.active:hover {
+        background: hsl(173, 58%, 34%);
+    }
+
+    .glp-dirty-dot {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: hsl(24, 95%, 53%);
+    }
+
+    .glp-active-dot {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: hsl(173, 80%, 40%);
+        box-shadow: 0 0 0 0 hsla(173, 80%, 40%, 0.7);
+        animation: glp-active-pulse 1.6s ease-out infinite;
+    }
+
+    @keyframes glp-active-pulse {
+        0% {
+            box-shadow: 0 0 0 0 hsla(173, 80%, 40%, 0.7);
+        }
+        70% {
+            box-shadow: 0 0 0 6px hsla(173, 80%, 40%, 0);
+        }
+        100% {
+            box-shadow: 0 0 0 0 hsla(173, 80%, 40%, 0);
+        }
     }
 </style>

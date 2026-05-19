@@ -26,6 +26,8 @@ export function parseGraphState(graph: any): GraphState {
 
 /**
  * Serialize current nodes/edges/layout state into a graph payload for the API.
+ * `glpSettings` is an optional protocol-level extension (F-0087) and is
+ * persisted under `graph.glpSettings` when provided.
  */
 export function serializeGraphData(
     nodes: Node[],
@@ -34,6 +36,7 @@ export function serializeGraphData(
     handleOrientation: string,
     timeEnabled: boolean,
     pixelsPerHour: number,
+    glpSettings?: Record<string, unknown>,
 ) {
     return {
         nodes: nodes.map((n) => ({
@@ -56,11 +59,14 @@ export function serializeGraphData(
         handleOrientation,
         timeEnabled,
         pixelsPerHour,
+        ...(glpSettings !== undefined ? { glpSettings } : {}),
     };
 }
 
 /**
- * Build a JSON snapshot string for change tracking.
+ * Build a JSON snapshot string for change tracking. Includes
+ * `glpSettings` when provided so changes to protocol-level GLP config
+ * mark the protocol dirty alongside graph edits.
  */
 export function buildStateSnapshot(
     nodes: Node[],
@@ -69,6 +75,7 @@ export function buildStateSnapshot(
     handleOrientation: string,
     timeEnabled: boolean,
     pixelsPerHour: number,
+    glpSettings?: Record<string, unknown>,
 ): string {
     return JSON.stringify({
         nodes,
@@ -77,6 +84,7 @@ export function buildStateSnapshot(
         handleOrientation,
         timeEnabled,
         pixelsPerHour,
+        ...(glpSettings !== undefined ? { glpSettings } : {}),
     });
 }
 

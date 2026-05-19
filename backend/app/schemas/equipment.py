@@ -25,7 +25,7 @@ class EquipmentCreate(BaseModel):
     status: EquipmentStatus = EquipmentStatus.ACTIVE
     install_date: date | None = None
     last_calibration_date: date | None = None
-    next_calibration_due: date | None = None
+    next_calibration_date: date | None = None
 
 
 class EquipmentUpdate(BaseModel):
@@ -45,7 +45,7 @@ class EquipmentUpdate(BaseModel):
     status: EquipmentStatus | None = None
     install_date: date | None = None
     last_calibration_date: date | None = None
-    next_calibration_due: date | None = None
+    next_calibration_date: date | None = None
 
 
 class EquipmentAttachmentResponse(BaseModel):
@@ -76,7 +76,7 @@ class EquipmentResponse(BaseModel):
     status: EquipmentStatus
     install_date: date | None
     last_calibration_date: date | None
-    next_calibration_due: date | None
+    next_calibration_date: date | None
     archived_at: datetime | None
     archived_by_id: UUID | None
     created_by_id: UUID | None

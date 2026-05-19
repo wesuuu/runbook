@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import User
-from app.models.science import Project, Protocol, ProtocolApprovalEvent, Run
+from app.models.science import GlpSignoff, Project, Protocol, Run
 
 
 @pytest.mark.asyncio
@@ -34,12 +34,14 @@ async def test_protocol_response_includes_approval_fields(
     db_session.add(proto)
     await db_session.flush()
     db_session.add(
-        ProtocolApprovalEvent(
+        GlpSignoff(
             protocol_id=proto.id,
-            actor_id=test_user.id,
+            signer_id=test_user.id,
+            role="STUDY_DIRECTOR",
             action="APPROVED",
-            comment="lgtm",
-            signature_statement="I approve in compliance with SOP.",
+            attestation="I approve in compliance with SOP.",
+            signed_at=datetime.now(timezone.utc),
+            signature_image_path="fixture/sig.png",
         )
     )
     await db_session.flush()
@@ -54,7 +56,8 @@ async def test_protocol_response_includes_approval_fields(
     assert body["created_by_id"] == str(test_user.id)
     assert body["approved_by_id"] == str(test_user.id)
     assert body["approved_at"] is not None
-    assert body["latest_approval_comment"] == "lgtm"
+    # latest_approval_comment has no equivalent in GlpSignoff (Task 27).
+    assert body["latest_approval_comment"] is None
     assert body["latest_signature_statement"] == "I approve in compliance with SOP."
 
 

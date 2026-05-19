@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,31 +20,29 @@ from app.models.iam import (
     User,
 )
 from app.models.science import (
+    GlpSignoff,
+    GlpSignoffRequest,
     Project,
     Protocol,
-    ProtocolApprovalEvent,
-    ProtocolApprovalRequest,
     ProtocolVersion,
     UnitOpDefinition,
 )
 from app.schemas.science import (
-    ApprovalActorRef,
     ApproveProtocolRequest,
     AwaitingApprovalItem,
-    ProtocolApprovalEventResponse,
     ProtocolResponse,
     ProtocolVersionListItem,
-    ProtocolVersionRef,
     ProtocolVersionResponse,
     PublishDraftRequest,
     RejectProtocolRequest,
     SubmitForApprovalRequest,
 )
-from app.services.approvals import fulfill_open_requests, write_event
+from app.services.approvals import fulfill_open_requests
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
-from app.services.protocols.validation import assert_no_branch_errors
+from app.services.protocols.validation import (assert_graph_ready_for_glp_approval,
+                                                 assert_no_branch_errors)
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +264,7 @@ async def revert_protocol_version(
 async def submit_protocol_for_approval(
     protocol_id: UUID,
     body: SubmitForApprovalRequest,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
@@ -314,6 +313,13 @@ async def submit_protocol_for_approval(
             detail="At least one approver must be requested.",
         )
 
+    # Block GLP approval on empty or structurally-broken graphs. Mirrors
+    # the frontend pre-flight in computeGlpApprovalBlockReason so the
+    # client and server agree on what "ready for approval" means.
+    graph = protocol.graph if isinstance(protocol.graph, dict) else {}
+    unit_op_rows = await db.execute(select(UnitOpDefinition))
+    assert_graph_ready_for_glp_approval(graph, list(unit_op_rows.scalars().all()))
+
     # Resolve org context — supports project-scoped protocols (the typical case
     # for approval). Org-scoped protocols still need an org for the role lookup.
     org_id: Optional[UUID] = None
@@ -350,6 +356,38 @@ async def submit_protocol_for_approval(
         )
         eligible.update(org_approver_rows.scalars().all())
 
+    # GLP-designated SD/QAU are eligible by virtue of their designation,
+    # independent of project APPROVE perms or PROTOCOL_APPROVER org role.
+    glp_settings = (
+        (protocol.graph or {}).get("glpSettings")
+        if isinstance(protocol.graph, dict)
+        else None
+    )
+    if isinstance(glp_settings, dict):
+        if glp_settings.get("require_study_director") and glp_settings.get(
+            "study_director_user_id"
+        ):
+            try:
+                eligible.add(UUID(str(glp_settings["study_director_user_id"])))
+            except (TypeError, ValueError):
+                pass
+        if glp_settings.get("require_qau"):
+            if glp_settings.get("qau_mode") == "SPECIFIC_USER" and glp_settings.get(
+                "qau_user_id"
+            ):
+                try:
+                    eligible.add(UUID(str(glp_settings["qau_user_id"])))
+                except (TypeError, ValueError):
+                    pass
+            elif glp_settings.get("qau_mode") == "ANY_ORG_QAU" and org_id is not None:
+                qau_rows = await db.execute(
+                    select(OrganizationMember.user_id).where(
+                        OrganizationMember.organization_id == org_id,
+                        OrganizationMember.roles.contains([OrgRole.QAU.value]),
+                    )
+                )
+                eligible.update(qau_rows.scalars().all())
+
     requested = set(body.requested_user_ids)
     ineligible = requested - eligible
     if ineligible:
@@ -366,7 +404,7 @@ async def submit_protocol_for_approval(
 
     for uid in requested:
         db.add(
-            ProtocolApprovalRequest(
+            GlpSignoffRequest(
                 protocol_id=protocol.id,
                 requested_user_id=uid,
                 requested_by_id=user.id,
@@ -374,14 +412,58 @@ async def submit_protocol_for_approval(
             )
         )
 
-    await write_event(
+    await log_audit(
         db,
-        protocol=protocol,
-        actor_id=user.id,
-        action="SUBMITTED",
+        user.id,
+        "PROTOCOL_APPROVAL_SUBMITTED",
+        "Protocol",
+        protocol.id,
+        {"requested_user_ids": [str(uid) for uid in requested]},
     )
 
     await db.commit()
+
+    # Notify each requested approver. Tag the role (STUDY_DIRECTOR / QAU)
+    # in context so the message reads naturally.
+    sd_id: Optional[UUID] = None
+    qau_specific_id: Optional[UUID] = None
+    if isinstance(glp_settings, dict):
+        try:
+            if glp_settings.get("study_director_user_id"):
+                sd_id = UUID(str(glp_settings["study_director_user_id"]))
+        except (TypeError, ValueError):
+            sd_id = None
+        try:
+            if (
+                glp_settings.get("qau_mode") == "SPECIFIC_USER"
+                and glp_settings.get("qau_user_id")
+            ):
+                qau_specific_id = UUID(str(glp_settings["qau_user_id"]))
+        except (TypeError, ValueError):
+            qau_specific_id = None
+
+    requester_name = user.full_name or user.email
+    for uid in requested:
+        if uid == sd_id:
+            role = "STUDY_DIRECTOR"
+        elif uid == qau_specific_id:
+            role = "QAU"
+        else:
+            role = "QAU"  # ANY_ORG_QAU fan-out
+        background_tasks.add_task(
+            send_notification,
+            db=db,
+            event_type="PROTOCOL_APPROVAL_REQUESTED",
+            org_id=org_id,
+            entity_type="protocol",
+            entity_id=protocol.id,
+            recipients=[uid],
+            context={
+                "protocol_name": protocol.name,
+                "requested_by": requester_name,
+                "role": role,
+            },
+        )
 
     result = await db.execute(
         select(Protocol)
@@ -432,17 +514,54 @@ async def approve_protocol(
             detail=f"Cannot approve: protocol is {protocol_obj.status}.",
         )
 
+    # GLP gating: if the protocol enables Study Director / QAU sign-off
+    # requirements, both required roles must have an active APPROVED
+    # GlpSignoff before the protocol can transition to APPROVED. This
+    # mirrors 21 CFR Part 58 §58.33 (SD) and §58.35 (QAU) approval order.
+    graph = protocol_obj.graph if isinstance(protocol_obj.graph, dict) else {}
+    glp = graph.get("glpSettings") if isinstance(graph.get("glpSettings"), dict) else {}
+    required_roles: list[str] = []
+    if glp.get("require_study_director"):
+        required_roles.append("STUDY_DIRECTOR")
+    if glp.get("require_qau"):
+        required_roles.append("QAU")
+    if required_roles:
+        signoff_rows = await db.execute(
+            select(GlpSignoff.role).where(
+                GlpSignoff.protocol_id == protocol_id,
+                GlpSignoff.action == "APPROVED",
+                GlpSignoff.invalidated_at.is_(None),
+            )
+        )
+        roles_signed = {r for (r,) in signoff_rows.all()}
+        missing = [r for r in required_roles if r not in roles_signed]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "MISSING_GLP_SIGNOFFS",
+                    "missing": missing,
+                    "message": (
+                        "Approval blocked: required GLP sign-off(s) missing: "
+                        + ", ".join(missing)
+                    ),
+                },
+            )
+
     protocol_obj.status = "APPROVED"
     protocol_obj.approved_by_id = user.id
     protocol_obj.approved_at = datetime.now(timezone.utc)
 
-    await write_event(
+    await log_audit(
         db,
-        protocol=protocol_obj,
-        actor_id=user.id,
-        action="APPROVED",
-        comment=body.comment,
-        signature_statement=body.signature_statement,
+        user.id,
+        "PROTOCOL_APPROVAL_APPROVED",
+        "Protocol",
+        protocol_obj.id,
+        {
+            "comment": body.comment,
+            "has_signature_statement": bool(body.signature_statement),
+        },
     )
     await fulfill_open_requests(
         db,
@@ -532,13 +651,16 @@ async def reject_protocol(
 
     protocol_obj.status = "DRAFT"
 
-    await write_event(
+    await log_audit(
         db,
-        protocol=protocol_obj,
-        actor_id=user.id,
-        action="REJECTED",
-        comment=body.comment,
-        signature_statement=body.signature_statement,
+        user.id,
+        "PROTOCOL_APPROVAL_REJECTED",
+        "Protocol",
+        protocol_obj.id,
+        {
+            "comment": body.comment,
+            "has_signature_statement": bool(body.signature_statement),
+        },
     )
     await fulfill_open_requests(
         db,
@@ -636,66 +758,3 @@ async def publish_draft_version(
         .where(Protocol.id == protocol.id)
     )
     return result.scalar_one()
-
-
-# --- Approval History ---
-
-
-@router.get(
-    "/protocols/{protocol_id}/approval-history",
-    response_model=List[ProtocolApprovalEventResponse],
-)
-async def list_approval_history(
-    protocol_id: UUID,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Return the protocol's approval events, newest first."""
-    allowed = await check_permission(
-        db,
-        user.id,
-        ObjectType.PROTOCOL,
-        protocol_id,
-        PermissionLevel.VIEW,
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await db.execute(
-        select(ProtocolApprovalEvent)
-        .options(
-            selectinload(ProtocolApprovalEvent.actor),
-            selectinload(ProtocolApprovalEvent.protocol_version),
-        )
-        .where(ProtocolApprovalEvent.protocol_id == protocol_id)
-        .order_by(ProtocolApprovalEvent.created_at.desc())
-    )
-    events = result.scalars().all()
-
-    response: list[ProtocolApprovalEventResponse] = []
-    for ev in events:
-        actor_ref = None
-        if ev.actor is not None:
-            actor_ref = ApprovalActorRef(
-                id=ev.actor.id,
-                name=ev.actor.full_name or ev.actor.email,
-                email=ev.actor.email,
-            )
-        version_ref = None
-        if ev.protocol_version is not None:
-            version_ref = ProtocolVersionRef(
-                id=ev.protocol_version.id,
-                version_number=ev.protocol_version.version_number,
-            )
-        response.append(
-            ProtocolApprovalEventResponse(
-                id=ev.id,
-                action=ev.action,
-                comment=ev.comment,
-                signature_statement=ev.signature_statement,
-                actor=actor_ref,
-                protocol_version=version_ref,
-                created_at=ev.created_at,
-            )
-        )
-    return response

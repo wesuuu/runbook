@@ -3,7 +3,8 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field, field_validator
+from pydantic import (BaseModel, ConfigDict, Field, computed_field,
+                      field_validator)
 
 
 # UnitOpDefinition Schemas
@@ -177,8 +178,6 @@ class PublishDraftRequest(BaseModel):
 
 
 # Protocol Approval Schemas
-class ProtocolApprovalAction(BaseModel):
-    comment: Optional[str] = None
 
 
 class DesignateApprovalRequest(BaseModel):
@@ -208,24 +207,15 @@ class RejectProtocolRequest(BaseModel):
 
 
 class ApprovalActorRef(BaseModel):
+    """Minimal reference to the user who acted on a protocol approval.
+
+    Kept as a shared type so the awaiting-approval list endpoint can
+    surface submitter identity without leaking the full User schema.
+    """
+
     id: UUID
     name: str
     email: str
-
-
-class ProtocolVersionRef(BaseModel):
-    id: UUID
-    version_number: int
-
-
-class ProtocolApprovalEventResponse(BaseModel):
-    id: UUID
-    action: str
-    comment: Optional[str] = None
-    signature_statement: Optional[str] = None
-    actor: Optional[ApprovalActorRef] = None
-    protocol_version: Optional[ProtocolVersionRef] = None
-    created_at: datetime
 
 
 class AwaitingApprovalItem(BaseModel):
@@ -397,6 +387,26 @@ class RunUpdate(BaseModel):
     batch_number: Optional[str] = None
 
 
+class RunStateUpdate(BaseModel):
+    """Body for PATCH /runs/{id}/state (F-0087).
+
+    ``state`` drives a run-level lifecycle transition (PLANNED -> ACTIVE,
+    ACTIVE/COMPLETED -> EDITED, etc.). ``edit_reasons`` and
+    ``execution_data_delta`` are the GLP audit-trail inputs when entering
+    the EDITED state: every modified step must carry a non-blank reason.
+    """
+
+    state: Optional[str] = None
+    edit_reasons: Optional[Dict[str, str]] = None
+    execution_data_delta: Optional[Dict[str, Dict[str, Any]]] = None
+
+
+class RunStepStateUpdate(BaseModel):
+    """Body for PATCH /runs/{id}/steps/{step_id} (F-0087)."""
+
+    status: str
+
+
 class RunResponse(RunBase):
     id: UUID
     project_id: UUID
@@ -412,6 +422,11 @@ class RunResponse(RunBase):
     # QA-0008: GxP execution metadata
     lot_number: Optional[str] = None
     batch_number: Optional[str] = None
+    # F-0087 GLP lifecycle
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    outcome: Optional[str] = None
+    outcome_notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -506,6 +521,10 @@ class EquipmentBase(BaseModel):
     description: Optional[str] = None
     equipment_type: Optional[str] = None
     location: Optional[str] = None
+    serial_number: Optional[str] = None
+    last_calibration_date: Optional[date] = None
+    next_calibration_date: Optional[date] = None
+    calibration_certificate_path: Optional[str] = None
 
 
 class EquipmentCreate(EquipmentBase):
@@ -517,6 +536,10 @@ class EquipmentUpdate(BaseModel):
     description: Optional[str] = None
     equipment_type: Optional[str] = None
     location: Optional[str] = None
+    serial_number: Optional[str] = None
+    last_calibration_date: Optional[date] = None
+    next_calibration_date: Optional[date] = None
+    calibration_certificate_path: Optional[str] = None
 
 
 class GraphPayload(BaseModel):
@@ -571,3 +594,75 @@ class ProtocolImportFinalizeRequest(BaseModel):
     project_id: Optional[UUID] = None
     organization_id: Optional[UUID] = None
     source_filename: str = ""
+
+
+# ── GLP Signoff Schemas ─────────────────────────────────────────────
+
+GLP_ROLES = ("SPONSOR", "STUDY_DIRECTOR", "QAU", "OPERATOR")
+GLP_ACTIONS = ("APPROVED", "REJECTED", "REQUESTED_CHANGES")
+RUN_OUTCOMES = ("COMPLETED_NORMAL", "COMPLETED_WITH_DEVIATIONS", "ABORTED")
+
+
+class GlpSignoffCreate(BaseModel):
+    role: str
+    action: str
+    attestation: Optional[str] = None
+    signature_image_path: Optional[str] = None
+    signoff_request_id: Optional[UUID] = None
+
+    @field_validator("role")
+    @classmethod
+    def _check_role(cls, v: str) -> str:
+        if v not in GLP_ROLES:
+            raise ValueError(f"role must be one of {GLP_ROLES}")
+        return v
+
+    @field_validator("action")
+    @classmethod
+    def _check_action(cls, v: str) -> str:
+        if v not in GLP_ACTIONS:
+            raise ValueError(f"action must be one of {GLP_ACTIONS}")
+        return v
+
+
+class GlpSignoffResponse(BaseModel):
+    id: UUID
+    protocol_id: Optional[UUID]
+    run_id: Optional[UUID]
+    role: str
+    action: str
+    signer_id: UUID
+    attestation: Optional[str]
+    signed_at: datetime
+    signature_image_path: Optional[str]
+    signoff_request_id: Optional[UUID]
+    invalidated_at: Optional[datetime]
+    invalidated_reason: Optional[str]
+    invalidated_by_id: Optional[UUID]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def signature_image_url(self) -> Optional[str]:
+        if not self.signature_image_path:
+            return None
+        return f"/science/signoffs/{self.id}/signature"
+
+
+class RunCompleteRequest(BaseModel):
+    outcome: str
+    outcome_notes: Optional[str] = None
+
+    @field_validator("outcome")
+    @classmethod
+    def _check_outcome(cls, v: str) -> str:
+        if v not in RUN_OUTCOMES:
+            raise ValueError(f"outcome must be one of {RUN_OUTCOMES}")
+        return v
+
+
+class RunReopenRequest(BaseModel):
+    reason: str = Field(min_length=1)

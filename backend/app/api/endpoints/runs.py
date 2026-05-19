@@ -18,6 +18,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -40,6 +41,7 @@ from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
 from app.models.science import (
+    GlpSignoff,
     Project,
     Protocol,
     ProtocolVersion,
@@ -49,17 +51,23 @@ from app.models.science import (
 )
 from app.schemas.science import (
     CheckLotNumberResponse,
+    GlpSignoffCreate,
+    GlpSignoffResponse,
     RunAttachment,
     RunAttachmentListResponse,
+    RunCompleteRequest,
     RunCreate,
     RunNote,
     RunNoteCreate,
     RunNoteListResponse,
     RunOverrides,
+    RunReopenRequest,
     RunResponse,
     RunRoleAssignmentCreate,
     RunRoleAssignmentListResponse,
     RunRoleAssignmentResponse,
+    RunStateUpdate,
+    RunStepStateUpdate,
     RunUpdate,
     SuggestLotNumberRequest,
     SuggestLotNumberResponse,
@@ -70,7 +78,8 @@ from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.equipment_context import build_equipment_context
-from app.services.protocols.template_engine import build_context, render_to_pdf
+from app.services.protocols.template_engine import (
+    assemble_signoff_context_args, build_context, render_to_pdf)
 from app.services.protocols.validation import assert_no_branch_errors
 from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
 from app.services.runs.overrides import (
@@ -78,6 +87,16 @@ from app.services.runs.overrides import (
     diff_unit_op_node,
     snapshot_unit_op_node,
 )
+from app.services.runs.validation import (
+    assert_can_edit_completed_run,
+    assert_no_unjustified_edit_errors,
+    assert_run_can_close,
+)
+from app.services.signoffs.queries import (
+    invalidate_active_signoffs,
+    list_active_signoffs,
+)
+from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
 
@@ -936,10 +955,18 @@ async def get_run_sop_pdf(
             "unapproved_warning": False,
         }
 
+    # F-0087: GLP sign-offs, run outcome, equipment calibration metadata.
+    glp_args = await assemble_signoff_context_args(db, run=run_obj, protocol=proto)
+
     context, unresolved = build_context(
         protocol_name=protocol_name,
         protocol_description=protocol_description,
         run_name=run_obj.name,
+        run_status=run_obj.status,
+        started_at=(run_obj.started_at.isoformat() if run_obj.started_at else None),
+        completed_at=(
+            run_obj.completed_at.isoformat() if run_obj.completed_at else None
+        ),
         version_number=proto_version,
         created_at=proto_modified or "",
         roles_with_steps=roles_with_steps,
@@ -947,8 +974,17 @@ async def get_run_sop_pdf(
         is_role_based=is_role_based,
         equipment_context=equipment_ctx,
         produces_lot=run_obj.produces_lot,
+        execution_data=run_obj.execution_data or {},
+        **glp_args,
     )
-    context.update(approval_ctx)
+    # Legacy approval context (F-0066) keeps approval_history /
+    # unapproved_warning; the build_context-supplied ``approval`` alias
+    # is preserved when no legacy event exists.
+    legacy_approval = approval_ctx.get("approval")
+    if legacy_approval is not None:
+        context["approval"] = legacy_approval
+    context["approval_history"] = approval_ctx.get("approval_history", [])
+    context["unapproved_warning"] = approval_ctx.get("unapproved_warning", False)
     pdf_bytes = await asyncio.to_thread(render_to_pdf, template_path, context)
 
     if unresolved:
@@ -1813,3 +1849,370 @@ async def get_run_audit_log(
         "offset": offset,
         "limit": limit,
     }
+
+
+# --- GLP Sign-offs (F-0087) -----------------------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/signoffs",
+    response_model=GlpSignoffResponse,
+    status_code=201,
+)
+async def create_run_signoff(
+    run_id: UUID,
+    payload: GlpSignoffCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> GlpSignoffResponse:
+    """Create a GLP sign-off on a run.
+
+    Replaces the originally-proposed standalone ``RunSignoff`` model; see
+    F-0087 design spec. Permission and QAU-independence checks run inside
+    :func:`app.services.signoffs.service.create_signoff` via the cross-context
+    validators. The role/entity compatibility matrix is enforced by the
+    ``ck_run_signoff_roles`` DB constraint and surfaced here as 400.
+    """
+    run = await get_or_404(db, Run, run_id)
+
+    try:
+        signoff = await create_signoff(
+            db,
+            entity_type="run",
+            entity_id=run.id,
+            role=payload.role,
+            action=payload.action,
+            signer=user,
+            attestation=payload.attestation,
+            signoff_request_id=payload.signoff_request_id,
+        )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "INVALID_SIGNOFF",
+                "role": payload.role,
+                "entity_type": "run",
+            },
+        ) from exc
+
+    return GlpSignoffResponse.model_validate(signoff)
+
+
+# --- Run lifecycle: complete (F-0087 Task 14) ------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/complete",
+    response_model=RunResponse,
+)
+async def complete_run(
+    run_id: UUID,
+    payload: RunCompleteRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Transition an ACTIVE/EDITED run to COMPLETED.
+
+    Gates closure on the GLP sign-off matrix resolved from the linked
+    protocol's ``graph["glpSettings"]`` snapshot (see
+    :func:`app.services.runs.validation.assert_run_can_close`). Records the
+    outcome, optional outcome_notes, and a UTC ``completed_at`` timestamp.
+    """
+    run = await get_or_404(db, Run, run_id)
+    status_str = _run_status_str(run)
+    if status_str not in ("ACTIVE", "EDITED"):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "INVALID_RUN_STATE", "status": status_str},
+        )
+
+    # Resolve effective glpSettings from the run's protocol snapshot.
+    glp_settings: dict = {}
+    if run.protocol_id is not None:
+        proto = await db.get(Protocol, run.protocol_id)
+        if proto is not None and isinstance(proto.graph, dict):
+            glp_settings = proto.graph.get("glpSettings") or {}
+
+    await assert_run_can_close(db, run, glp_settings)
+
+    run.status = "COMPLETED"
+    run.outcome = payload.outcome
+    run.outcome_notes = payload.outcome_notes
+    run.completed_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
+# --- Run lifecycle: reopen (F-0087 Task 15) --------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/reopen",
+    response_model=RunResponse,
+)
+async def reopen_run(
+    run_id: UUID,
+    payload: RunReopenRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Reopen a COMPLETED run, invalidating all active sign-offs.
+
+    Transitions the run back to EDITED, clears ``completed_at``, and writes a
+    ``run.reopen`` audit entry capturing the supplied justification reason.
+    """
+    run = await get_or_404(db, Run, run_id)
+    status_str = _run_status_str(run)
+    if status_str != "COMPLETED":
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "INVALID_RUN_STATE", "status": status_str},
+        )
+
+    await invalidate_active_signoffs(
+        db,
+        run.id,
+        reason=payload.reason,
+        user_id=user.id,
+    )
+    run.status = "EDITED"
+    run.completed_at = None
+    await log_audit(
+        db,
+        user.id,
+        "run.reopen",
+        "run",
+        run.id,
+        {"reason": payload.reason},
+    )
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
+# --- Run state lifecycle (F-0087 Tasks 17-18) ------------------------------
+
+
+_RUN_STATE_TRANSITIONS = {
+    "PLANNED": {"ACTIVE"},
+    "ACTIVE": {"COMPLETED", "EDITED"},
+    "COMPLETED": {"EDITED"},
+    "EDITED": {"EDITED", "COMPLETED"},
+}
+
+
+@router.patch(
+    "/runs/{run_id}/state",
+    response_model=RunResponse,
+)
+async def patch_run_state(
+    run_id: UUID,
+    payload: RunStateUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Transition a run's lifecycle state with GLP audit-trail inputs.
+
+    PLANNED -> ACTIVE stamps ``started_at`` and ``started_by_id``.
+    Any -> EDITED requires a non-blank ``edit_reason`` for each modified
+    step in ``execution_data_delta``; reasons are persisted onto the
+    matching ``execution_data[step_id].edit_reason`` so downstream readers
+    (PDFs, audit log views) can render them. A COMPLETED run with active
+    sign-offs cannot be edited without first reopening it.
+    """
+    run = await get_or_404(db, Run, run_id)
+    current_status = _run_status_str(run)
+    new_status = payload.state
+
+    if new_status is not None and new_status != current_status:
+        allowed_next = _RUN_STATE_TRANSITIONS.get(current_status, set())
+        if new_status not in allowed_next:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"Cannot transition from {current_status} to {new_status}"),
+            )
+
+    if new_status == "EDITED":
+        delta = payload.execution_data_delta or {}
+        reasons = payload.edit_reasons or {}
+        merged = {
+            sid: {**fields, "edit_reason": reasons.get(sid)}
+            for sid, fields in delta.items()
+        }
+        assert_no_unjustified_edit_errors(merged)
+        await assert_can_edit_completed_run(db, run)
+
+        # Persist the edit_reason into execution_data[sid].edit_reason and
+        # apply the per-step field delta so the audit trail stays consistent
+        # with the request payload.
+        exec_data = dict(run.execution_data or {})
+        for sid, fields in delta.items():
+            step = dict(exec_data.get(sid) or {})
+            for key, value in fields.items():
+                step[key] = value
+            step["edit_reason"] = reasons.get(sid)
+            exec_data[sid] = step
+        run.execution_data = exec_data
+        flag_modified(run, "execution_data")
+
+    if new_status is not None and new_status != current_status:
+        if new_status == "ACTIVE" and current_status == "PLANNED":
+            # F-0087 Task 18: stamp run-start metadata.
+            run.started_at = datetime.now(timezone.utc)
+            run.started_by_id = user.id
+        run.status = new_status
+
+    await log_audit(
+        db,
+        user.id,
+        "run.state",
+        "run",
+        run.id,
+        {
+            "from": current_status,
+            "to": new_status,
+            "edit_reasons": payload.edit_reasons or {},
+        },
+    )
+
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
+# --- Run step state (F-0087 Task 19) ---------------------------------------
+
+
+@router.patch(
+    "/runs/{run_id}/steps/{step_id}",
+    response_model=RunResponse,
+)
+async def patch_run_step_state(
+    run_id: UUID,
+    step_id: str,
+    payload: RunStepStateUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Transition a single step's status within a run.
+
+    On the ``not in_progress -> in_progress`` edge, captures the actor and
+    timestamp (F-0087 Task 19) so a later ``/review`` can enforce
+    second-set-of-eyes independence.
+    """
+    run = await get_or_404(db, Run, run_id)
+    exec_data = dict(run.execution_data or {})
+    step = dict(exec_data.get(step_id) or {})
+
+    old_status = step.get("status")
+    new_step_status = payload.status
+
+    if new_step_status == "in_progress" and old_status != "in_progress":
+        step["started_by_user_id"] = str(user.id)
+        step["started_at"] = datetime.now(timezone.utc).isoformat()
+
+    step["status"] = new_step_status
+    exec_data[step_id] = step
+    run.execution_data = exec_data
+    flag_modified(run, "execution_data")
+
+    await log_audit(
+        db,
+        user.id,
+        "run.step.state",
+        "run_step",
+        run.id,
+        {"step_id": step_id, "from": old_status, "to": new_step_status},
+    )
+
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
+# --- Run step review (F-0087 Task 20) --------------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/steps/{step_id}/review",
+    response_model=RunResponse,
+)
+async def review_run_step(
+    run_id: UUID,
+    step_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Record an independent reviewer's sign-off on a completed step.
+
+    The reviewer cannot be the same user who started the step (F-0087
+    Task 20). Sets ``reviewed_by_user_id`` and ``reviewed_at`` on the
+    matching ``execution_data`` entry and emits a ``run.step.review``
+    audit log row.
+    """
+    run = await get_or_404(db, Run, run_id)
+    step = (run.execution_data or {}).get(step_id)
+    if step is None or step.get("status") != "completed":
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "STEP_NOT_REVIEWABLE", "step_id": step_id},
+        )
+    if step.get("started_by_user_id") == str(user.id):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "REVIEWER_NOT_INDEPENDENT", "step_id": step_id},
+        )
+
+    step = dict(step)
+    step["reviewed_by_user_id"] = str(user.id)
+    step["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+    run.execution_data = {**(run.execution_data or {}), step_id: step}
+    flag_modified(run, "execution_data")
+
+    await log_audit(
+        db,
+        user.id,
+        "run.step.review",
+        "run_step",
+        run.id,
+        {"step_id": step_id},
+    )
+
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
+# --- Sign-off listing (F-0087 Task 16) -------------------------------------
+
+
+@router.get(
+    "/runs/{run_id}/signoffs",
+    response_model=List[GlpSignoffResponse],
+)
+async def list_run_signoffs(
+    run_id: UUID,
+    active: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> List[GlpSignoffResponse]:
+    """List sign-offs on a run.
+
+    ``active=true`` returns only non-invalidated APPROVED rows (the live
+    sign-off set). ``active=false`` (default) returns the full audit trail
+    including invalidated rows, ordered by ``signed_at`` ascending.
+    """
+    if active:
+        rows = await list_active_signoffs(db, "run", run_id)
+    else:
+        result = await db.execute(
+            select(GlpSignoff)
+            .where(GlpSignoff.run_id == run_id)
+            .order_by(GlpSignoff.signed_at)
+        )
+        rows = result.scalars().all()
+    return [GlpSignoffResponse.model_validate(r) for r in rows]

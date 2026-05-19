@@ -32,7 +32,7 @@
     </thead>
     <tbody>
         {#each rows as r (r.id)}
-            {@const pill = calPill(r.next_calibration_due)}
+            {@const pill = calPill(r.next_calibration_date)}
             <tr
                 class="cursor-pointer hover:bg-muted/50 transition-all duration-150"
                 onclick={() => onEdit(r)}

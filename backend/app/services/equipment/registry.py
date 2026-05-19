@@ -18,7 +18,7 @@ RESTRICTED_EQUIPMENT_FIELDS = frozenset(
         "status",
         "install_date",
         "last_calibration_date",
-        "next_calibration_due",
+        "next_calibration_date",
     }
 )
 

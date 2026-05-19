@@ -63,7 +63,7 @@ def upgrade() -> None:
     op.add_column("equipment", sa.Column("status", sa.String(20),
                                         server_default="ACTIVE", nullable=False))
     op.add_column("equipment", sa.Column("install_date", sa.Date()))
-    op.add_column("equipment", sa.Column("next_calibration_due", sa.Date()))
+    op.add_column("equipment", sa.Column("next_calibration_date", sa.Date()))
     op.add_column("equipment", sa.Column("room", sa.String(120)))
     op.add_column("equipment", sa.Column("tags", ARRAY(sa.String()),
                                         server_default=sa.text("ARRAY[]::varchar[]"),
@@ -178,7 +178,7 @@ def downgrade() -> None:
     op.drop_index("ix_equipment_org_status", "equipment")
     op.drop_index("ix_equipment_site", "equipment")
     for col in ("archived_by_id", "archived_at", "tags", "room",
-                "next_calibration_due", "last_calibration_date",
+                "next_calibration_date", "last_calibration_date",
                 "install_date", "status", "serial_number",
                 "model", "manufacturer",
                 "created_by_id", "site_id"):

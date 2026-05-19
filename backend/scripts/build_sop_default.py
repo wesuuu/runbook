@@ -41,19 +41,19 @@ OUT = (
 )
 
 # Palette tuned to the bioreactor SOP example.
-HEADER_FILL = "ECF0F1"      # cool light gray — KV / table headers
-FIGURE_FILL = "FDFDFD"       # near-white — figure box interior
+HEADER_FILL = "ECF0F1"  # cool light gray — KV / table headers
+FIGURE_FILL = "FDFDFD"  # near-white — figure box interior
 TEXT_BLACK = "000000"
-TEXT_HEADING = "2C3E50"      # dark charcoal-navy — section headings
+TEXT_HEADING = "2C3E50"  # dark charcoal-navy — section headings
 TEXT_MUTED = "5F6368"
-TEXT_FIGURE_CAP = "5F6368"   # caption color
+TEXT_FIGURE_CAP = "5F6368"  # caption color
 BORDER_GRAY = "BFBFBF"
 RULE_GRAY = "D1D5DB"
 FONT_NAME = "Arial"
 
 # Vertical padding inside cells (twentieths of a point — w:tcMar units).
-CELL_PAD_HEADER = 140        # ~7 pt top + bottom — table header rows
-CELL_PAD_BODY = 100          # ~5 pt — KV + body rows
+CELL_PAD_HEADER = 140  # ~7 pt top + bottom — table header rows
+CELL_PAD_BODY = 100  # ~5 pt — KV + body rows
 
 
 def _set_cell_shading(cell, hex_fill: str) -> None:
@@ -77,8 +77,9 @@ def _set_cell_border(cell, color: str = BORDER_GRAY, sz: int = 4) -> None:
     tc_pr.append(tc_borders)
 
 
-def _set_cell_margins(cell, *, top: int, bottom: int,
-                      left: int = 100, right: int = 100) -> None:
+def _set_cell_margins(
+    cell, *, top: int, bottom: int, left: int = 100, right: int = 100
+) -> None:
     """Per-cell top/bottom/left/right margins in 1/20 pt (w:tcMar).
 
     Word ignores paragraph spacing inside table cells once they're laid
@@ -91,8 +92,10 @@ def _set_cell_margins(cell, *, top: int, bottom: int,
         tc_pr.remove(existing)
     tc_mar = OxmlElement("w:tcMar")
     for edge, val in (
-        ("top", top), ("bottom", bottom),
-        ("left", left), ("right", right),
+        ("top", top),
+        ("bottom", bottom),
+        ("left", left),
+        ("right", right),
     ):
         m = OxmlElement(f"w:{edge}")
         m.set(qn("w:w"), str(val))
@@ -101,8 +104,14 @@ def _set_cell_margins(cell, *, top: int, bottom: int,
     tc_pr.append(tc_mar)
 
 
-def _apply_font(run, *, size: int = 10, bold: bool = False,
-                italic: bool = False, color: str = TEXT_BLACK):
+def _apply_font(
+    run,
+    *,
+    size: int = 10,
+    bold: bool = False,
+    italic: bool = False,
+    color: str = TEXT_BLACK,
+):
     run.font.name = FONT_NAME
     run.font.size = Pt(size)
     run.bold = bold
@@ -118,9 +127,17 @@ def _apply_font(run, *, size: int = 10, bold: bool = False,
     rfonts.set(qn("w:cs"), FONT_NAME)
 
 
-def _style_cell(cell, text: str = "", *, bold: bool = False, size: int = 10,
-                color: str = TEXT_BLACK, fill: str | None = None,
-                align=None, pad: int = CELL_PAD_BODY):
+def _style_cell(
+    cell,
+    text: str = "",
+    *,
+    bold: bool = False,
+    size: int = 10,
+    color: str = TEXT_BLACK,
+    fill: str | None = None,
+    align=None,
+    pad: int = CELL_PAD_BODY,
+):
     cell.text = ""
     p = cell.paragraphs[0]
     if align is not None:
@@ -134,10 +151,18 @@ def _style_cell(cell, text: str = "", *, bold: bool = False, size: int = 10,
     cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
 
-def _add_para(doc, text: str = "", *, bold: bool = False, italic: bool = False,
-              size: int = 10, color: str = TEXT_BLACK, align=None,
-              space_before: int | None = None,
-              space_after: int | None = None):
+def _add_para(
+    doc,
+    text: str = "",
+    *,
+    bold: bool = False,
+    italic: bool = False,
+    size: int = 10,
+    color: str = TEXT_BLACK,
+    align=None,
+    space_before: int | None = None,
+    space_after: int | None = None,
+):
     p = doc.add_paragraph()
     if align is not None:
         p.alignment = align
@@ -151,8 +176,9 @@ def _add_para(doc, text: str = "", *, bold: bool = False, italic: bool = False,
     return p
 
 
-def _add_section_heading(doc, text: str, *, level: int = 2,
-                         page_break_before: bool = False):
+def _add_section_heading(
+    doc, text: str, *, level: int = 2, page_break_before: bool = False
+):
     """Navy heading with a horizontal rule underneath (set as a bottom
     border on the paragraph)."""
     size = {1: 22, 2: 16, 3: 13}.get(level, 13)
@@ -214,8 +240,7 @@ def _set_table_layout(table, col_widths_pt: list[int] | None = None):
                     row.cells[ci].width = Pt(w)
 
 
-def _figure_block(doc, caption_var: str, desc_var: str,
-                  image_var: str | None = None):
+def _figure_block(doc, caption_var: str, desc_var: str, image_var: str | None = None):
     """Boxed figure: optional inline image, bold caption, italic
     description. Mirrors the bordered ``[Mock Figure N]`` blocks in the
     source SOP."""
@@ -240,14 +265,12 @@ def _figure_block(doc, caption_var: str, desc_var: str,
 
     cap_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     cap_p.paragraph_format.space_after = Pt(4)
-    _apply_font(cap_p.add_run(caption_var),
-                size=11, bold=True, color=TEXT_FIGURE_CAP)
+    _apply_font(cap_p.add_run(caption_var), size=11, bold=True, color=TEXT_FIGURE_CAP)
 
     desc_p = cell.add_paragraph()
     desc_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     desc_p.paragraph_format.space_after = Pt(8)
-    _apply_font(desc_p.add_run(desc_var),
-                size=10, italic=True, color=TEXT_FIGURE_CAP)
+    _apply_font(desc_p.add_run(desc_var), size=10, italic=True, color=TEXT_FIGURE_CAP)
 
 
 def build() -> Document:
@@ -268,37 +291,38 @@ def build() -> Document:
     _add_jinja_para(doc, "{%p if unapproved_warning %}")
     warn = doc.add_paragraph()
     warn.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _apply_font(warn.add_run("⚠ UNAPPROVED — DRAFT ONLY"),
-                size=11, bold=True, color="B91C1C")
+    _apply_font(
+        warn.add_run("⚠ UNAPPROVED — DRAFT ONLY"), size=11, bold=True, color="B91C1C"
+    )
     _add_jinja_para(doc, "{%p endif %}")
 
     # ── Title strip ──────────────────────────────────────────────
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_p.paragraph_format.space_after = Pt(6)
-    _apply_font(title_p.add_run("Standard Operating Procedure"),
-                size=12, bold=False, color=TEXT_MUTED)
+    _apply_font(
+        title_p.add_run("Standard Operating Procedure"),
+        size=12,
+        bold=False,
+        color=TEXT_MUTED,
+    )
 
     # ── Header KV table: doc # / revision / title / effective date ──
     th = doc.add_table(rows=3, cols=4)
     _set_table_layout(th, [120, 140, 100, 130])
 
-    _style_cell(th.rows[0].cells[0], "Document Number:",
-                bold=True, fill=HEADER_FILL)
+    _style_cell(th.rows[0].cells[0], "Document Number:", bold=True, fill=HEADER_FILL)
     _style_cell(th.rows[0].cells[1], "{{ doc_number }}")
-    _style_cell(th.rows[0].cells[2], "Revision:",
-                bold=True, fill=HEADER_FILL)
+    _style_cell(th.rows[0].cells[2], "Revision:", bold=True, fill=HEADER_FILL)
     _style_cell(th.rows[0].cells[3], "{{ version_number }}")
 
     # Title row — merge value across 3 columns
-    _style_cell(th.rows[1].cells[0], "Title:",
-                bold=True, fill=HEADER_FILL)
+    _style_cell(th.rows[1].cells[0], "Title:", bold=True, fill=HEADER_FILL)
     th.rows[1].cells[1].merge(th.rows[1].cells[2]).merge(th.rows[1].cells[3])
     _style_cell(th.rows[1].cells[1], "{{ protocol_name }}")
 
     # Effective date row — merge value across 3 columns
-    _style_cell(th.rows[2].cells[0], "Effective Date:",
-                bold=True, fill=HEADER_FILL)
+    _style_cell(th.rows[2].cells[0], "Effective Date:", bold=True, fill=HEADER_FILL)
     th.rows[2].cells[1].merge(th.rows[2].cells[2]).merge(th.rows[2].cells[3])
     _style_cell(th.rows[2].cells[1], "{{ effective_date }}")
 
@@ -313,7 +337,8 @@ def build() -> Document:
             "Project: {{ project_name }}    "
             "Generated: {{ created_at }}"
         ),
-        size=9, color=TEXT_MUTED,
+        size=9,
+        color=TEXT_MUTED,
     )
 
     # ── 1.0 Purpose ─────────────────────────────────────────────
@@ -336,8 +361,9 @@ def build() -> Document:
     crit = doc.add_paragraph()
     crit.paragraph_format.space_before = Pt(4)
     crit.paragraph_format.space_after = Pt(10)
-    _apply_font(crit.add_run("CRITICAL REQUIREMENT: "),
-                size=10, bold=True, color="B91C1C")
+    _apply_font(
+        crit.add_run("CRITICAL REQUIREMENT: "), size=10, bold=True, color="B91C1C"
+    )
     _apply_font(crit.add_run("{{ critical_requirement }}"), size=10)
     _add_jinja_para(doc, "{%p endif %}")
 
@@ -360,10 +386,12 @@ def build() -> Document:
 
     # Optional per-time-point figure
     _add_jinja_para(doc, "{%p if tp.figure %}")
-    _figure_block(doc,
-                  caption_var="{{ tp.figure.caption }}",
-                  desc_var="{{ tp.figure.description }}",
-                  image_var="{{ tp.figure.image }}")
+    _figure_block(
+        doc,
+        caption_var="{{ tp.figure.caption }}",
+        desc_var="{{ tp.figure.description }}",
+        image_var="{{ tp.figure.image }}",
+    )
     _add_para(doc, "", space_after=4)
     _add_jinja_para(doc, "{%p endif %}")
 
@@ -372,21 +400,33 @@ def build() -> Document:
     tp_tbl = doc.add_table(rows=4, cols=3)
     _set_table_layout(tp_tbl, [110, 240, 140])
     for ci, h in enumerate(["Time Target", "Action", "Expected Output / Log"]):
-        _style_cell(tp_tbl.rows[0].cells[ci], h, bold=True,
-                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER,
-                    pad=CELL_PAD_HEADER)
-    _style_cell(tp_tbl.rows[1].cells[0],
-                "{%tr for act in tp.actions %}", size=8,
-                color=TEXT_MUTED)
+        _style_cell(
+            tp_tbl.rows[0].cells[ci],
+            h,
+            bold=True,
+            fill=HEADER_FILL,
+            align=WD_ALIGN_PARAGRAPH.CENTER,
+            pad=CELL_PAD_HEADER,
+        )
+    _style_cell(
+        tp_tbl.rows[1].cells[0],
+        "{%tr for act in tp.actions %}",
+        size=8,
+        color=TEXT_MUTED,
+    )
     _style_cell(tp_tbl.rows[1].cells[1], "")
     _style_cell(tp_tbl.rows[1].cells[2], "")
-    _style_cell(tp_tbl.rows[2].cells[0], "{{ act.time }}", bold=True,
-                align=WD_ALIGN_PARAGRAPH.CENTER)
+    _style_cell(
+        tp_tbl.rows[2].cells[0],
+        "{{ act.time }}",
+        bold=True,
+        align=WD_ALIGN_PARAGRAPH.CENTER,
+    )
     _style_cell(tp_tbl.rows[2].cells[1], "{{ act.action }}")
-    _style_cell(tp_tbl.rows[2].cells[2], "{{ act.output }}",
-                align=WD_ALIGN_PARAGRAPH.CENTER)
-    _style_cell(tp_tbl.rows[3].cells[0], "{%tr endfor %}", size=8,
-                color=TEXT_MUTED)
+    _style_cell(
+        tp_tbl.rows[2].cells[2], "{{ act.output }}", align=WD_ALIGN_PARAGRAPH.CENTER
+    )
+    _style_cell(tp_tbl.rows[3].cells[0], "{%tr endfor %}", size=8, color=TEXT_MUTED)
     _style_cell(tp_tbl.rows[3].cells[1], "")
     _style_cell(tp_tbl.rows[3].cells[2], "")
 
@@ -396,29 +436,42 @@ def build() -> Document:
     # ── 3.x role-based / flat fallback ──────────────────────────
     _add_jinja_para(doc, "{%p if is_role_based and roles|length > 1 %}")
     _add_jinja_para(doc, "{%p for role in roles %}")
-    _add_subsection_heading(doc,
-                            "3.{{ loop.index }}  "
-                            "{{ role.process_name or role.name }}")
+    _add_subsection_heading(
+        doc, "3.{{ loop.index }}  " "{{ role.process_name or role.name }}"
+    )
     role_tbl = doc.add_table(rows=4, cols=4)
     _set_table_layout(role_tbl, [40, 130, 240, 80])
     for ci, h in enumerate(["Step", "Name", "Instruction", "Duration"]):
-        _style_cell(role_tbl.rows[0].cells[ci], h, bold=True,
-                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER,
-                    pad=CELL_PAD_HEADER)
-    _style_cell(role_tbl.rows[1].cells[0],
-                "{%tr for step in role.steps %}", size=8,
-                color=TEXT_MUTED)
+        _style_cell(
+            role_tbl.rows[0].cells[ci],
+            h,
+            bold=True,
+            fill=HEADER_FILL,
+            align=WD_ALIGN_PARAGRAPH.CENTER,
+            pad=CELL_PAD_HEADER,
+        )
+    _style_cell(
+        role_tbl.rows[1].cells[0],
+        "{%tr for step in role.steps %}",
+        size=8,
+        color=TEXT_MUTED,
+    )
     for i in range(1, 4):
         _style_cell(role_tbl.rows[1].cells[i], "")
-    _style_cell(role_tbl.rows[2].cells[0], "{{ loop.index }}",
-                bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    _style_cell(
+        role_tbl.rows[2].cells[0],
+        "{{ loop.index }}",
+        bold=True,
+        align=WD_ALIGN_PARAGRAPH.CENTER,
+    )
     _style_cell(role_tbl.rows[2].cells[1], "{{ step.name }}")
     _style_cell(role_tbl.rows[2].cells[2], "{{ step.description }}")
-    _style_cell(role_tbl.rows[2].cells[3],
-                "{{ step.duration_min }} min",
-                align=WD_ALIGN_PARAGRAPH.CENTER)
-    _style_cell(role_tbl.rows[3].cells[0], "{%tr endfor %}", size=8,
-                color=TEXT_MUTED)
+    _style_cell(
+        role_tbl.rows[2].cells[3],
+        "{{ step.duration_min }} min",
+        align=WD_ALIGN_PARAGRAPH.CENTER,
+    )
+    _style_cell(role_tbl.rows[3].cells[0], "{%tr endfor %}", size=8, color=TEXT_MUTED)
     for i in range(1, 4):
         _style_cell(role_tbl.rows[3].cells[i], "")
     _add_jinja_para(doc, "{%p endfor %}")
@@ -428,76 +481,102 @@ def build() -> Document:
     flat_tbl = doc.add_table(rows=4, cols=4)
     _set_table_layout(flat_tbl, [40, 130, 240, 80])
     for ci, h in enumerate(["Step", "Name", "Instruction", "Duration"]):
-        _style_cell(flat_tbl.rows[0].cells[ci], h, bold=True,
-                    fill=HEADER_FILL, align=WD_ALIGN_PARAGRAPH.CENTER,
-                    pad=CELL_PAD_HEADER)
-    _style_cell(flat_tbl.rows[1].cells[0],
-                "{%tr for step in steps %}", size=8, color=TEXT_MUTED)
+        _style_cell(
+            flat_tbl.rows[0].cells[ci],
+            h,
+            bold=True,
+            fill=HEADER_FILL,
+            align=WD_ALIGN_PARAGRAPH.CENTER,
+            pad=CELL_PAD_HEADER,
+        )
+    _style_cell(
+        flat_tbl.rows[1].cells[0], "{%tr for step in steps %}", size=8, color=TEXT_MUTED
+    )
     for i in range(1, 4):
         _style_cell(flat_tbl.rows[1].cells[i], "")
-    _style_cell(flat_tbl.rows[2].cells[0], "{{ loop.index }}",
-                bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    _style_cell(
+        flat_tbl.rows[2].cells[0],
+        "{{ loop.index }}",
+        bold=True,
+        align=WD_ALIGN_PARAGRAPH.CENTER,
+    )
     _style_cell(flat_tbl.rows[2].cells[1], "{{ step.name }}")
     _style_cell(flat_tbl.rows[2].cells[2], "{{ step.description }}")
-    _style_cell(flat_tbl.rows[2].cells[3],
-                "{{ step.duration_min }} min",
-                align=WD_ALIGN_PARAGRAPH.CENTER)
-    _style_cell(flat_tbl.rows[3].cells[0], "{%tr endfor %}", size=8,
-                color=TEXT_MUTED)
+    _style_cell(
+        flat_tbl.rows[2].cells[3],
+        "{{ step.duration_min }} min",
+        align=WD_ALIGN_PARAGRAPH.CENTER,
+    )
+    _style_cell(flat_tbl.rows[3].cells[0], "{%tr endfor %}", size=8, color=TEXT_MUTED)
     for i in range(1, 4):
         _style_cell(flat_tbl.rows[3].cells[i], "")
 
     _add_jinja_para(doc, "{%p endif %}")
     _add_jinja_para(doc, "{%p endif %}")
 
-    # ── Approval block (preserved from previous template) ──────
-    _add_jinja_para(doc, "{%p if approval %}")
+    # ── Approval & Signatures (F-0087 per-role blocks) ──────────
+    # Renders one block per GLP role from ``protocol_approvals.<role>``.
+    # Roles: sponsor (§58.10), study_director (§58.33), qau (§58.35).
     _add_section_heading(doc, "Approval & Signatures", level=2)
-    appr_p = doc.add_paragraph()
-    appr_p.paragraph_format.space_after = Pt(4)
-    _apply_font(appr_p.add_run(
-        "Approver: {{ approval.approver_name }} "
-        "<{{ approval.approver_email }}>"
-    ), size=10)
-    appr2 = doc.add_paragraph()
-    appr2.paragraph_format.space_after = Pt(4)
-    _apply_font(appr2.add_run(
-        "Approved at: {{ approval.approved_at }}    "
-        "Protocol version: {{ approval.protocol_version }}"
-    ), size=10, color=TEXT_MUTED)
-    _add_jinja_para(doc, "{%p if approval.signature_statement %}")
-    stmt = doc.add_paragraph()
-    _apply_font(stmt.add_run(
-        "Statement: {{ approval.signature_statement }}"
-    ), size=10, italic=True)
-    _add_jinja_para(doc, "{%p endif %}")
-    _add_jinja_para(doc, "{%p if approval.signature_image %}")
-    sig = doc.add_paragraph()
-    _apply_font(sig.add_run("Signature: "), size=10, bold=True)
-    _apply_font(sig.add_run("{{ approval.signature_image }}"), size=10)
-    _add_jinja_para(doc, "{%p endif %}")
-    _add_jinja_para(doc, "{%p endif %}")
 
-    _add_jinja_para(doc, "{%p if approval_history %}")
-    _add_section_heading(doc, "Approval History", level=2)
-    hist_tbl = doc.add_table(rows=4, cols=3)
-    _set_table_layout(hist_tbl, [140, 130, 220])
-    for ci, h in enumerate(["Timestamp", "Action", "Actor"]):
-        _style_cell(hist_tbl.rows[0].cells[ci], h, bold=True,
-                    fill=HEADER_FILL, pad=CELL_PAD_HEADER)
-    _style_cell(hist_tbl.rows[1].cells[0],
-                "{%tr for ev in approval_history %}", size=8,
-                color=TEXT_MUTED)
-    _style_cell(hist_tbl.rows[1].cells[1], "")
-    _style_cell(hist_tbl.rows[1].cells[2], "")
-    _style_cell(hist_tbl.rows[2].cells[0], "{{ ev.created_at }}")
-    _style_cell(hist_tbl.rows[2].cells[1], "{{ ev.action }}")
-    _style_cell(hist_tbl.rows[2].cells[2], "{{ ev.actor_name }}")
-    _style_cell(hist_tbl.rows[3].cells[0], "{%tr endfor %}", size=8,
-                color=TEXT_MUTED)
-    _style_cell(hist_tbl.rows[3].cells[1], "")
-    _style_cell(hist_tbl.rows[3].cells[2], "")
-    _add_jinja_para(doc, "{%p endif %}")
+    def _emit_role_block(role_key: str, label: str, cfr_cite: str):
+        _add_jinja_para(doc, f"{{%p if protocol_approvals.{role_key} %}}")
+        role_hdr = doc.add_paragraph()
+        role_hdr.paragraph_format.space_before = Pt(8)
+        role_hdr.paragraph_format.space_after = Pt(2)
+        role_hdr.paragraph_format.keep_with_next = True
+        _apply_font(
+            role_hdr.add_run(f"{label} "), size=11, bold=True, color=TEXT_HEADING
+        )
+        _apply_font(role_hdr.add_run(f"({cfr_cite})"), size=9, color=TEXT_MUTED)
+
+        name_p = doc.add_paragraph()
+        name_p.paragraph_format.space_after = Pt(2)
+        _apply_font(
+            name_p.add_run(
+                f"Name: {{{{ protocol_approvals.{role_key}.name }}}}    "
+                f"<{{{{ protocol_approvals.{role_key}.email }}}}>"
+            ),
+            size=10,
+        )
+
+        ts_p = doc.add_paragraph()
+        ts_p.paragraph_format.space_after = Pt(2)
+        _apply_font(
+            ts_p.add_run(
+                f"Signed at: " f"{{{{ protocol_approvals.{role_key}.signed_at }}}}"
+            ),
+            size=9,
+            color=TEXT_MUTED,
+        )
+
+        _add_jinja_para(doc, f"{{%p if protocol_approvals.{role_key}.attestation %}}")
+        att_p = doc.add_paragraph()
+        att_p.paragraph_format.space_after = Pt(2)
+        _apply_font(att_p.add_run("Attestation: "), size=10, bold=True)
+        _apply_font(
+            att_p.add_run(f"{{{{ protocol_approvals.{role_key}.attestation }}}}"),
+            size=10,
+            italic=True,
+        )
+        _add_jinja_para(doc, "{%p endif %}")
+
+        _add_jinja_para(
+            doc, f"{{%p if protocol_approvals.{role_key}.signature_image %}}"
+        )
+        sig_p = doc.add_paragraph()
+        sig_p.paragraph_format.space_after = Pt(6)
+        _apply_font(sig_p.add_run("Signature: "), size=10, bold=True)
+        _apply_font(
+            sig_p.add_run(f"{{{{ protocol_approvals.{role_key}.signature_image }}}}"),
+            size=10,
+        )
+        _add_jinja_para(doc, "{%p endif %}")
+        _add_jinja_para(doc, "{%p endif %}")
+
+    _emit_role_block("sponsor", "Sponsor", "21 CFR §58.10")
+    _emit_role_block("study_director", "Study Director", "21 CFR §58.33")
+    _emit_role_block("qau", "Quality Assurance Unit", "21 CFR §58.35")
 
     return doc
 

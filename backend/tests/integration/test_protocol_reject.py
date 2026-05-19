@@ -8,13 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
+from app.models.execution import AuditLog
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.science import (
-    Project,
-    Protocol,
-    ProtocolApprovalEvent,
-    ProtocolApprovalRequest,
-)
+from app.models.science import GlpSignoffRequest, Project, Protocol
 
 
 async def _make_pending_protocol(
@@ -34,7 +30,7 @@ async def _make_pending_protocol(
     await db.flush()
     if requested_user_id is not None:
         db.add(
-            ProtocolApprovalRequest(
+            GlpSignoffRequest(
                 protocol_id=proto.id,
                 requested_user_id=requested_user_id,
                 requested_by_id=creator_id,
@@ -123,26 +119,27 @@ async def test_reject_happy_path(
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "DRAFT"
 
-    evs = (
+    audits = (
         (
             await db_session.execute(
-                select(ProtocolApprovalEvent).where(
-                    ProtocolApprovalEvent.protocol_id == proto.id
+                select(AuditLog).where(
+                    AuditLog.entity_type == "Protocol",
+                    AuditLog.entity_id == proto.id,
+                    AuditLog.action == "PROTOCOL_APPROVAL_REJECTED",
                 )
             )
         )
         .scalars()
         .all()
     )
-    assert len(evs) == 1
-    assert evs[0].action == "REJECTED"
-    assert evs[0].comment == "needs more detail in step 3"
+    assert len(audits) == 1
+    assert audits[0].changes.get("comment") == "needs more detail in step 3"
 
     reqs = (
         (
             await db_session.execute(
-                select(ProtocolApprovalRequest).where(
-                    ProtocolApprovalRequest.protocol_id == proto.id
+                select(GlpSignoffRequest).where(
+                    GlpSignoffRequest.protocol_id == proto.id
                 )
             )
         )

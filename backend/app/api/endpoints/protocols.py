@@ -14,7 +14,9 @@ from fastapi import (
     Query,
     UploadFile,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,9 +34,18 @@ from app.models.iam import (
     PermissionLevel,
     User,
 )
-from app.models.science import Project, Protocol, ProtocolRole, ProtocolVersion, Run
+from app.models.science import (
+    GlpSignoff,
+    Project,
+    Protocol,
+    ProtocolRole,
+    ProtocolVersion,
+    Run,
+)
 from app.schemas.science import (
     DesignateApprovalRequest,
+    GlpSignoffCreate,
+    GlpSignoffResponse,
     ProtocolCreate,
     ProtocolImportFinalizeRequest,
     ProtocolImportProposalResponse,
@@ -45,12 +56,14 @@ from app.schemas.science import (
     ProtocolRoleUpdate,
     ProtocolUpdate,
 )
-from app.services.approvals import write_event
+from app.services.core.file_storage import FileStorageService
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.protocols.lookup import get_protocol_full, list_protocols
 from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
+from app.services.signoffs.queries import list_active_signoffs
+from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
 
@@ -393,27 +406,26 @@ async def get_protocol(
         options=[selectinload(Protocol.roles)],
     )
 
-    # F-0066: derive latest_signature_statement / latest_approval_comment
-    # from the most recent APPROVED ProtocolApprovalEvent.
-    from app.models.science import ProtocolApprovalEvent
-
+    # F-0087: derive latest_signature_statement from the most recent active
+    # APPROVED GlpSignoff. The legacy free-form "comment" field has no
+    # equivalent in the unified GLP signoff model; latest_approval_comment
+    # is therefore always None now.
     latest = await db.execute(
-        select(ProtocolApprovalEvent)
+        select(GlpSignoff)
         .where(
-            ProtocolApprovalEvent.protocol_id == protocol_id,
-            ProtocolApprovalEvent.action == "APPROVED",
+            GlpSignoff.protocol_id == protocol_id,
+            GlpSignoff.action == "APPROVED",
+            GlpSignoff.invalidated_at.is_(None),
         )
-        .order_by(ProtocolApprovalEvent.created_at.desc())
+        .order_by(GlpSignoff.signed_at.desc())
         .limit(1)
     )
     latest_ev = latest.scalar_one_or_none()
     # Stash on the ORM instance for `from_attributes` serialization.
     protocol.latest_signature_statement = (  # type: ignore[attr-defined]
-        latest_ev.signature_statement if latest_ev else None
+        latest_ev.attestation if latest_ev else None
     )
-    protocol.latest_approval_comment = (  # type: ignore[attr-defined]
-        latest_ev.comment if latest_ev else None
-    )
+    protocol.latest_approval_comment = None  # type: ignore[attr-defined]
 
     # Surface unpublished drafts so the editor's version toggle can jump to
     # them. Mirrors the same logic in list_project_protocols.
@@ -797,11 +809,13 @@ async def update_protocol(
         protocol.approved_by_id = None
         protocol.approved_at = None
 
-        await write_event(
+        await log_audit(
             db,
-            protocol=protocol,
-            actor_id=user.id,
-            action="REVERTED",
+            user.id,
+            "PROTOCOL_APPROVAL_REVERTED",
+            "Protocol",
+            protocol.id,
+            {"trigger": "edit_after_approved"},
         )
         # Flush so the metadata-only fast path below (which re-SELECTs
         # the protocol inside update_protocol_metadata) sees the new
@@ -879,6 +893,17 @@ async def update_protocol(
             protocol.graph = new_graph
 
         audit_changes = {"action": "saved_draft", "draft_version": draft_version_number}
+
+        # Auto-derive requires_approval from glpSettings on draft saves too.
+        if isinstance(protocol.graph, dict):
+            glp = (
+                protocol.graph.get("glpSettings")
+                if isinstance(protocol.graph.get("glpSettings"), dict)
+                else {}
+            )
+            protocol.requires_approval = bool(
+                glp.get("require_study_director") or glp.get("require_qau")
+            )
     else:
         # Normal save: update protocol graph and create version
         if "graph" in changes:
@@ -931,6 +956,21 @@ async def update_protocol(
         # Update protocol fields (name, description, etc.)
         for key, value in changes.items():
             setattr(protocol, key, value)
+
+        # Auto-derive requires_approval from glpSettings on every graph
+        # save: requires_approval ≡ (require_study_director || require_qau).
+        # The standalone "Requires approval" toggle was removed in F-0087
+        # so GLP is the sole approval gate. PENDING_APPROVAL is already
+        # blocked from edits above, so we don't need a status guard.
+        if "graph" in changes and isinstance(protocol.graph, dict):
+            glp = (
+                protocol.graph.get("glpSettings")
+                if isinstance(protocol.graph.get("glpSettings"), dict)
+                else {}
+            )
+            protocol.requires_approval = bool(
+                glp.get("require_study_director") or glp.get("require_qau")
+            )
 
         audit_changes = dict(changes)
         if "graph" in changes:
@@ -1055,3 +1095,130 @@ async def delete_protocol_role(
         raise HTTPException(status_code=403, detail=msg)
     await db.commit()
     return {"ok": True}
+
+
+# --- GLP Sign-offs (F-0087) -----------------------------------------------
+
+
+@router.post(
+    "/protocols/{protocol_id}/signoffs",
+    response_model=GlpSignoffResponse,
+    status_code=201,
+)
+async def create_protocol_signoff(
+    protocol_id: UUID,
+    payload: GlpSignoffCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> GlpSignoffResponse:
+    """Create a GLP sign-off on a protocol.
+
+    Sole entry point for protocol-level GLP signatures (F-0087 Task 27
+    removed the legacy F-0066 endpoint with no shim). The role/entity
+    compatibility matrix is enforced by ``ck_protocol_signoff_roles``
+    at the DB layer and surfaced here as 400.
+    """
+    protocol = await get_or_404(db, Protocol, protocol_id)
+
+    try:
+        signoff = await create_signoff(
+            db,
+            entity_type="protocol",
+            entity_id=protocol.id,
+            role=payload.role,
+            action=payload.action,
+            signer=user,
+            attestation=payload.attestation,
+            signoff_request_id=payload.signoff_request_id,
+        )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "INVALID_SIGNOFF",
+                "role": payload.role,
+                "entity_type": "protocol",
+            },
+        ) from exc
+
+    return GlpSignoffResponse.model_validate(signoff)
+
+
+@router.get(
+    "/protocols/{protocol_id}/signoffs",
+    response_model=List[GlpSignoffResponse],
+)
+async def list_protocol_signoffs(
+    protocol_id: UUID,
+    active: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> List[GlpSignoffResponse]:
+    """List sign-offs on a protocol.
+
+    ``active=true`` returns only non-invalidated APPROVED rows (the live
+    sign-off set). ``active=false`` (default) returns the full audit trail
+    including invalidated rows, ordered by ``signed_at`` ascending.
+    """
+    if active:
+        rows = await list_active_signoffs(db, "protocol", protocol_id)
+    else:
+        result = await db.execute(
+            select(GlpSignoff)
+            .where(GlpSignoff.protocol_id == protocol_id)
+            .order_by(GlpSignoff.signed_at)
+        )
+        rows = result.scalars().all()
+    return [GlpSignoffResponse.model_validate(r) for r in rows]
+
+
+@router.get("/signoffs/{signoff_id}/signature")
+async def get_signoff_signature(
+    signoff_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve the signature image pinned to a sign-off record.
+
+    Auth: the requester must belong to the same org as the signer (signoffs
+    are scoped per org via the signer's membership). The signature_image_path
+    is record-scoped at sign time so it represents an immutable snapshot.
+    """
+    signoff = (
+        await db.execute(select(GlpSignoff).where(GlpSignoff.id == signoff_id))
+    ).scalar_one_or_none()
+    if signoff is None or not signoff.signature_image_path:
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    if not current_user.selected_org_id:
+        raise HTTPException(status_code=400, detail="No organization selected")
+
+    same_org = (
+        await db.execute(
+            select(OrganizationMember.id).where(
+                OrganizationMember.user_id == signoff.signer_id,
+                OrganizationMember.organization_id == current_user.selected_org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if same_org is None:
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    storage = FileStorageService()
+    try:
+        full_path = storage.resolve_path(signoff.signature_image_path)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    media_type = "image/png"
+    suffix = full_path.suffix.lower()
+    if suffix in (".jpg", ".jpeg"):
+        media_type = "image/jpeg"
+    elif suffix == ".gif":
+        media_type = "image/gif"
+    elif suffix == ".svg":
+        media_type = "image/svg+xml"
+    return FileResponse(full_path, media_type=media_type)

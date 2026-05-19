@@ -3,10 +3,10 @@
     import { api } from "$lib/api";
     import { getNextRoleColor } from "$lib/components/protocol/protocolNodes";
     import { Button } from "$lib/components/ui/button";
-    import ApprovalDesignator from "$lib/components/protocol/ApprovalDesignator.svelte";
     import ApprovalHistory from "$lib/components/protocol/ApprovalHistory.svelte";
-    import SubmitForApprovalDialog from "$lib/components/protocol/SubmitForApprovalDialog.svelte";
     import ApprovalSignatureDialog from "$lib/components/protocol/ApprovalSignatureDialog.svelte";
+    import SignoffBlock from "$lib/components/shared/SignoffBlock.svelte";
+    import type { GlpRole, GlpSignoffResponse } from "$lib/schemas/glpSignoff";
     import { slide } from "svelte/transition";
     import { cubicOut } from "svelte/easing";
 
@@ -21,10 +21,14 @@
         previewingVersion: number | null;
         isHistoricalPreview: boolean;
         hasUnitOpNodes: boolean;
-        canDesignate?: boolean;
         canApprove?: boolean;
         currentUserId?: string;
-        projectSettingEnabled?: boolean;
+        signoffs?: GlpSignoffResponse[];
+        signoffRequiredRoles?: GlpRole[];
+        signerMap?: Record<string, { id: string; full_name: string; email: string }>;
+        signoffAttestationDefaults?: Partial<Record<GlpRole, string>>;
+        onSignoffClick?: (role: GlpRole, defaultAttestation: string) => void;
+        submitDisabledReason?: string | null;
         onNameSaved: (name: string) => void;
         onDescriptionSaved: (description: string) => void;
         onRoleCreated: (role: any) => void;
@@ -50,10 +54,14 @@
         previewingVersion,
         isHistoricalPreview,
         hasUnitOpNodes,
-        canDesignate = false,
         canApprove = false,
         currentUserId = '',
-        projectSettingEnabled = false,
+        signoffs = [],
+        signoffRequiredRoles = [],
+        signerMap = {},
+        signoffAttestationDefaults = {},
+        onSignoffClick,
+        submitDisabledReason = null,
         onNameSaved,
         onDescriptionSaved,
         onRoleCreated,
@@ -68,21 +76,19 @@
         onApprovalChange,
     }: Props = $props();
 
-    let submitDialogOpen = $state(false);
     let signatureDialogOpen = $state(false);
     let signatureMode = $state<'approve' | 'reject'>('approve');
 
-    const showApprovalSection = $derived(
+    // The Approval section was removed in F-0087: approval is now driven
+    // entirely by the GLP Settings inspector. We still need a compact
+    // workflow strip so approvers can act on PENDING_APPROVAL protocols
+    // and anyone can see the approval history.
+    const showWorkflowSection = $derived(
         !!protocol &&
-            (canDesignate ||
-                approvalRequired ||
+            (approvalRequired ||
                 protocolStatus === 'PENDING_APPROVAL' ||
                 protocolStatus === 'APPROVED'),
     );
-
-    function openSubmitDialog() {
-        submitDialogOpen = true;
-    }
 
     function openApproveDialog() {
         signatureMode = 'approve';
@@ -92,14 +98,6 @@
     function openRejectDialog() {
         signatureMode = 'reject';
         signatureDialogOpen = true;
-    }
-
-    function handleApprovalDesignated(_next: boolean) {
-        onApprovalChange?.();
-    }
-
-    function handleApprovalSubmitted() {
-        onApprovalChange?.();
     }
 
     function handleSignatureSuccess() {
@@ -561,37 +559,13 @@
         <span>Drag nodes to canvas to add</span>
     </div>
 
-    <!-- Approval Section -->
-    {#if showApprovalSection && protocol}
-        <div class="sidebar-section approval-section" data-testid="approval-section">
+    <!-- Workflow strip — appears when GLP approval is in play. The
+         designation that used to live here moved into GLP Settings. -->
+    {#if showWorkflowSection && protocol}
+        <div class="sidebar-section approval-section" data-testid="workflow-section">
             <div class="section-header-row">
-                <span class="section-title">APPROVAL</span>
+                <span class="section-title">WORKFLOW</span>
             </div>
-
-            {#if canDesignate}
-                <div class="approval-row">
-                    <ApprovalDesignator
-                        protocolId={protocol.id}
-                        requiresApproval={approvalRequired}
-                        status={protocolStatus}
-                        canManage={canDesignate}
-                        {projectSettingEnabled}
-                        onChanged={handleApprovalDesignated}
-                    />
-                </div>
-            {/if}
-
-            {#if approvalRequired && protocolStatus === 'DRAFT'}
-                <Button
-                    variant="default"
-                    class="approval-action-btn"
-                    onclick={openSubmitDialog}
-                    disabled={saving || isHistoricalPreview}
-                    data-testid="approval-submit-btn"
-                >
-                    Submit for Approval
-                </Button>
-            {/if}
 
             {#if canApprove && protocolStatus === 'PENDING_APPROVAL'}
                 <div class="approval-actions">
@@ -614,6 +588,26 @@
                 </div>
             {/if}
 
+            {#if protocol && signoffRequiredRoles.length > 0 && (protocolStatus === 'PENDING_APPROVAL' || protocolStatus === 'APPROVED') && onSignoffClick}
+                <div class="mt-3" data-testid="protocol-glp-signoffs">
+                    <div class="flex items-baseline justify-between mb-2">
+                        <h3 class="text-sm font-semibold">GLP Sign-offs</h3>
+                        <span class="text-[10px] font-mono text-muted-foreground">21 CFR Part 58</span>
+                    </div>
+                    <SignoffBlock
+                        entityType="protocol"
+                        entityId={protocol.id}
+                        requiredRoles={signoffRequiredRoles}
+                        {signoffs}
+                        signers={signerMap}
+                        {currentUserId}
+                        attestationDefaults={signoffAttestationDefaults}
+                        onSignClick={onSignoffClick}
+                        compact
+                    />
+                </div>
+            {/if}
+
             {#if approvalRequired}
                 <ApprovalHistory protocolId={protocol.id} />
             {/if}
@@ -622,16 +616,17 @@
 
     <!-- Save Button -->
     <div class="sidebar-footer">
-        {#if hasUnitOpNodes}
-            <Button
-                variant="outline"
-                class="preview-sop-btn"
-                onclick={onOpenPdfPreview}
-                disabled={!protocol}
-            >
-                Preview Documents
-            </Button>
-        {/if}
+        <Button
+            variant="outline"
+            class="preview-sop-btn"
+            onclick={onOpenPdfPreview}
+            disabled={!protocol || !hasUnitOpNodes}
+            title={hasUnitOpNodes
+                ? 'Preview the generated SOP and Batch Record'
+                : 'Add at least one unit operation to preview the SOP and Batch Record'}
+        >
+            Preview Documents
+        </Button>
         <div class="button-group">
             <Button
                 variant="default"
@@ -647,8 +642,8 @@
                 variant="default"
                 class="publish-btn"
                 onclick={onSaveAndPublish}
-                disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED" || isHistoricalPreview}
-                title={approvalRequired ? "Submit protocol for approval" : "Publish protocol"}
+                disabled={saving || !protocol || protocolStatus === "PENDING_APPROVAL" || protocolStatus === "APPROVED" || protocolStatus === "ARCHIVED" || isHistoricalPreview || !!submitDisabledReason}
+                title={submitDisabledReason ?? (approvalRequired ? "Submit protocol for approval" : "Publish protocol")}
             >
                 {saving ? "Saving..." : isHistoricalPreview ? "Previewing..." : approvalRequired ? "Submit for Approval" : "Publish"}
             </Button>
@@ -666,12 +661,6 @@
 </aside>
 
 {#if protocol}
-    <SubmitForApprovalDialog
-        bind:open={submitDialogOpen}
-        protocolId={protocol.id}
-        projectId={protocol.project_id}
-        onSuccess={handleApprovalSubmitted}
-    />
     <ApprovalSignatureDialog
         bind:open={signatureDialogOpen}
         mode={signatureMode}
@@ -1269,10 +1258,6 @@
 
     .approval-section {
         background: #fafafa;
-    }
-
-    .approval-row {
-        margin-bottom: 8px;
     }
 
     .approval-actions {

@@ -20,7 +20,15 @@ from app.models.iam import (ObjectPermission, ObjectType, Organization,
                             OrganizationMember, PermissionLevel, PrincipalType,
                             Team, TeamMember, User)
 from app.models.library import Document, DocumentStatus
-from app.models.science import Project
+from app.models.science import (
+    Equipment,
+    Project,
+    Protocol,
+    ProtocolRole,
+    Run,
+    RunOutcome,
+    RunStatus,
+)
 from app.models.templates import DocumentTemplate  # noqa: F401
 from app.services.billing import stripe_client as _stripe_client
 
@@ -773,3 +781,333 @@ async def archived_equipment_id(db_session, test_org, test_user, managed_site) -
     await db_session.commit()
     await db_session.refresh(eq)
     return str(eq.id)
+
+
+# ── F-0087 GLP fixtures ──────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def glp_org(test_org) -> Organization:
+    """Alias for test_org. GLP capability is currently org-agnostic; this
+    fixture exists so tests can express the intent and so future tier/flag
+    gating has a single attachment point."""
+    return test_org
+
+
+def _make_glp_user(
+    email: str,
+    full_name: str,
+    signature_basename: str,
+    glp_org: Organization,
+) -> User:
+    return User(
+        email=email,
+        hashed_password=hash_password("testpass"),
+        full_name=full_name,
+        selected_org_id=glp_org.id,
+        email_verified=True,
+        signature_full_path=f"signatures/default/{signature_basename}.png",
+    )
+
+
+@pytest_asyncio.fixture
+async def study_director_user(db_session, glp_org) -> User:
+    user = _make_glp_user(
+        "studydirector@example.com", "Dana Director", "dana_director", glp_org
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=glp_org.id,
+            roles=["MEMBER"],
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def qau_user(db_session, glp_org) -> User:
+    user = _make_glp_user("qau@example.com", "Quinn Auditor", "quinn_auditor", glp_org)
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=glp_org.id,
+            roles=["MEMBER", "QAU"],
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def operator_user(db_session, glp_org) -> User:
+    user = _make_glp_user(
+        "operator@example.com", "Oscar Operator", "oscar_operator", glp_org
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=user.id,
+            organization_id=glp_org.id,
+            roles=["MEMBER"],
+        )
+    )
+    await db_session.flush()
+    return user
+
+
+def _glp_protocol_graph(
+    sd_lane_role_id, op_lane_role_id, sd_user_id, qau_user_id
+) -> dict:
+    sd_lane = f"lane-{sd_lane_role_id}"
+    op_lane = f"lane-{op_lane_role_id}"
+    return {
+        "layout": "horizontal",
+        "handleOrientation": "horizontal",
+        "nodes": [
+            {"id": "ps", "type": "processStart", "data": {}},
+            {
+                "id": sd_lane,
+                "type": "swimLane",
+                "position": {"x": 0, "y": 0},
+                "data": {
+                    "label": "Study Director",
+                    "roleId": str(sd_lane_role_id),
+                    "orientation": "horizontal",
+                },
+                "style": "width: 800px; height: 200px;",
+            },
+            {
+                "id": op_lane,
+                "type": "swimLane",
+                "position": {"x": 0, "y": 220},
+                "data": {
+                    "label": "Operator",
+                    "roleId": str(op_lane_role_id),
+                    "orientation": "horizontal",
+                },
+                "style": "width: 800px; height: 200px;",
+            },
+            {
+                "id": "u0",
+                "type": "unitOp",
+                "parentId": sd_lane,
+                "position": {"x": 20, "y": 60},
+                "data": {"label": "Review", "params": {}},
+            },
+            {
+                "id": "u1",
+                "type": "unitOp",
+                "parentId": op_lane,
+                "position": {"x": 20, "y": 60},
+                "data": {"label": "Buffer Mix", "params": {}},
+            },
+            {
+                "id": "u2",
+                "type": "unitOp",
+                "parentId": op_lane,
+                "position": {"x": 220, "y": 60},
+                "data": {"label": "Seeding", "params": {}},
+            },
+        ],
+        "edges": [
+            {"id": "e0", "source": "ps", "target": "u0"},
+            {"id": "e1", "source": "u0", "target": "u1"},
+            {"id": "e2", "source": "u1", "target": "u2"},
+        ],
+        "glpSettings": {
+            "glp_enabled": True,
+            "require_study_director": True,
+            "require_qau": True,
+            "study_title": "Test GLP Study",
+            "sponsor_name": "Acme Pharma",
+            "study_director_id": str(sd_user_id),
+            "qau_id": str(qau_user_id),
+            "operator_attestation_text": "I performed this run accurately.",
+            "study_director_attestation_text": (
+                "I attest this study is in compliance with the protocol."
+            ),
+            "qau_attestation_text": ("I have audited this study for GLP compliance."),
+            "step_attestation_text": "Step recorded under GLP.",
+        },
+    }
+
+
+@pytest_asyncio.fixture
+async def glp_protocol(
+    db_session,
+    glp_org,
+    test_project,
+    study_director_user,
+    qau_user,
+) -> Protocol:
+    import uuid
+
+    sd_role_id = uuid.uuid4()
+    op_role_id = uuid.uuid4()
+
+    proto = Protocol(
+        name="GLP Test Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=1,
+        created_by_id=study_director_user.id,
+        graph=_glp_protocol_graph(
+            sd_role_id, op_role_id, study_director_user.id, qau_user.id
+        ),
+    )
+    db_session.add(proto)
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            ProtocolRole(
+                id=sd_role_id,
+                protocol_id=proto.id,
+                name="Study Director",
+                sort_order=0,
+            ),
+            ProtocolRole(
+                id=op_role_id,
+                protocol_id=proto.id,
+                name="Operator",
+                sort_order=1,
+            ),
+        ]
+    )
+    await db_session.flush()
+    return proto
+
+
+@pytest_asyncio.fixture
+async def glp_run_planned(db_session, test_project, glp_protocol) -> Run:
+    run = Run(
+        name="GLP Run (planned)",
+        project_id=test_project.id,
+        protocol_id=glp_protocol.id,
+        status=RunStatus.PLANNED,
+        graph=dict(glp_protocol.graph),
+        execution_data={},
+        notes=[],
+        attachments=[],
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest_asyncio.fixture
+async def glp_run_active(db_session, test_project, glp_protocol, operator_user) -> Run:
+    from datetime import datetime, timezone
+
+    run = Run(
+        name="GLP Run (active)",
+        project_id=test_project.id,
+        protocol_id=glp_protocol.id,
+        status=RunStatus.ACTIVE,
+        graph=dict(glp_protocol.graph),
+        execution_data={},
+        notes=[],
+        attachments=[],
+        started_by_id=operator_user.id,
+        created_by_id=operator_user.id,
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest_asyncio.fixture
+async def glp_run_completed(
+    db_session,
+    test_project,
+    glp_protocol,
+    operator_user,
+    study_director_user,
+    qau_user,
+) -> Run:
+    from datetime import datetime, timedelta, timezone
+
+    started = datetime.now(timezone.utc) - timedelta(hours=2)
+    run = Run(
+        name="GLP Run (completed)",
+        project_id=test_project.id,
+        protocol_id=glp_protocol.id,
+        status=RunStatus.COMPLETED,
+        graph=dict(glp_protocol.graph),
+        execution_data={},
+        notes=[],
+        attachments=[],
+        started_by_id=operator_user.id,
+        created_by_id=operator_user.id,
+        started_at=started,
+        completed_at=datetime.now(timezone.utc),
+        outcome=RunOutcome.COMPLETED_NORMAL.value,
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest_asyncio.fixture
+async def fresh_equipment(db_session, glp_org, default_site_id) -> Equipment:
+    """Equipment whose next_calibration_date is comfortably in the future."""
+    from datetime import date, timedelta
+
+    eq = Equipment(
+        organization_id=glp_org.id,
+        site_id=default_site_id,
+        name="Fresh Balance",
+        equipment_type="balance",
+        serial_number="BAL-FRESH-001",
+        last_calibration_date=date.today() - timedelta(days=30),
+        next_calibration_date=date.today() + timedelta(days=180),
+    )
+    db_session.add(eq)
+    await db_session.flush()
+    return eq
+
+
+@pytest_asyncio.fixture
+async def imminent_equipment(db_session, glp_org, default_site_id) -> Equipment:
+    """Equipment whose calibration expires within the IMMINENT window."""
+    from datetime import date, timedelta
+
+    eq = Equipment(
+        organization_id=glp_org.id,
+        site_id=default_site_id,
+        name="Imminent pH Meter",
+        equipment_type="ph_meter",
+        serial_number="PH-IMM-001",
+        last_calibration_date=date.today() - timedelta(days=358),
+        next_calibration_date=date.today() + timedelta(days=7),
+    )
+    db_session.add(eq)
+    await db_session.flush()
+    return eq
+
+
+@pytest_asyncio.fixture
+async def expired_equipment(db_session, glp_org, default_site_id) -> Equipment:
+    """Equipment whose calibration has lapsed."""
+    from datetime import date, timedelta
+
+    eq = Equipment(
+        organization_id=glp_org.id,
+        site_id=default_site_id,
+        name="Expired Bioreactor",
+        equipment_type="bioreactor",
+        serial_number="BR-EXP-001",
+        last_calibration_date=date.today() - timedelta(days=395),
+        next_calibration_date=date.today() - timedelta(days=30),
+    )
+    db_session.add(eq)
+    await db_session.flush()
+    return eq

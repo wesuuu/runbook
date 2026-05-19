@@ -13,12 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import (
-    Project,
-    Protocol,
-    ProtocolApprovalEvent,
-    UnitOpDefinition,
-)
+from app.models.science import GlpSignoff, Project, Protocol, UnitOpDefinition
 from app.models.templates import DocumentTemplate
 from app.schemas.science import GraphPayload
 from app.services.core.file_storage import FileStorageService
@@ -93,13 +88,18 @@ async def _build_approval_context(
     """Return {approval, approval_history, unapproved_warning} for a
     protocol, used by SOP/batch-record templates.
 
-    - ``approval``: the latest APPROVED event (or None) with approver
-      identity, version, statement, and the absolute path to the
-      approver's full-signature image when registered.
-    - ``approval_history``: every event for this protocol, newest
-      first. Each item exposes ``action``, ``actor_name``, ``comment``,
-      ``signature_statement``, ``created_at``. Missing actors fall back
-      to ``"(deleted user)"``.
+    Backed by ``glp_signoffs`` after Task 27 retired the legacy
+    legacy F-0066 protocol-approval table.
+
+    - ``approval``: the latest active APPROVED sign-off (or None) with
+      signer identity, version, attestation, and the record-scoped path
+      to the signature image that was pinned at sign time.
+    - ``approval_history``: every sign-off row for this protocol
+      (including invalidated ones), newest first. Each item exposes
+      ``action``, ``actor_name``, ``signature_statement`` (attestation),
+      ``role``, ``invalidated_at``, ``created_at``. Missing signers
+      fall back to ``"(deleted user)"``. ``comment`` is always None —
+      the GLP sign-off model has no free-form comment field.
     - ``unapproved_warning``: True iff the project requires approval
       AND the protocol is designated AND the protocol is not currently
       APPROVED.
@@ -112,58 +112,100 @@ async def _build_approval_context(
         and protocol.status != "APPROVED"
     )
 
-    events_result = await db.execute(
-        select(ProtocolApprovalEvent)
-        .where(ProtocolApprovalEvent.protocol_id == protocol.id)
-        .order_by(ProtocolApprovalEvent.created_at.desc())
-        .options(selectinload(ProtocolApprovalEvent.actor))
+    rows_result = await db.execute(
+        select(GlpSignoff)
+        .where(GlpSignoff.protocol_id == protocol.id)
+        .order_by(GlpSignoff.signed_at.desc())
+        .options(selectinload(GlpSignoff.signer))
     )
-    events = list(events_result.scalars().all())
+    rows = list(rows_result.scalars().all())
 
     history = []
-    latest_approved: ProtocolApprovalEvent | None = None
-    for ev in events:
-        actor = ev.actor
+    latest_approved: GlpSignoff | None = None
+    for so in rows:
+        signer = so.signer
         actor_name = (
-            (actor.full_name or actor.email) if actor is not None else "(deleted user)"
+            (signer.full_name or signer.email)
+            if signer is not None
+            else "(deleted user)"
         )
         history.append(
             {
-                "action": ev.action,
+                "action": so.action,
                 "actor_name": actor_name,
-                "comment": ev.comment,
-                "signature_statement": ev.signature_statement,
-                "created_at": ev.created_at,
+                "comment": None,
+                "signature_statement": so.attestation,
+                "role": so.role,
+                "invalidated_at": so.invalidated_at,
+                "created_at": so.signed_at,
             }
         )
-        if ev.action == "APPROVED" and latest_approved is None:
-            latest_approved = ev
+        if (
+            so.action == "APPROVED"
+            and so.invalidated_at is None
+            and latest_approved is None
+        ):
+            latest_approved = so
 
     approval = None
     if latest_approved is not None:
-        actor = latest_approved.actor
-        if actor is not None:
-            sigs = await _build_user_signatures(db, [actor.id])
-            sig_path = (sigs.get(str(actor.id), {}) or {}).get("signature_full_path")
-            approver_name = actor.full_name or actor.email
-            approver_email = actor.email
+        signer = latest_approved.signer
+        if signer is not None:
+            approver_name = signer.full_name or signer.email
+            approver_email = signer.email
         else:
-            sig_path = None
             approver_name = "(deleted user)"
             approver_email = ""
+        # GlpSignoff carries a record-scoped relative path pinned at sign
+        # time; resolve to an absolute path for the template renderer.
+        sig_path: str | None = None
+        if latest_approved.signature_image_path:
+            sig_path = str(storage.resolve_path(latest_approved.signature_image_path))
         approval = {
             "approver_name": approver_name,
             "approver_email": approver_email,
-            "approved_at": latest_approved.created_at,
-            "signature_statement": latest_approved.signature_statement,
+            "approved_at": latest_approved.signed_at,
+            "signature_statement": latest_approved.attestation,
             "signature_image_path": sig_path,
             "protocol_version": protocol.version_number,
+        }
+
+    # F-0087 — build per-role `protocol_approvals.<role>` blocks for the new
+    # SOP / batch-record templates. Latest active APPROVED sign-off per role
+    # wins. Mirrors template_engine._signoff_to_block().
+    protocol_approvals: dict[str, dict] = {}
+    for so in rows:
+        if so.action != "APPROVED" or so.invalidated_at is not None:
+            continue
+        role_key = (so.role or "").lower()
+        if not role_key or role_key in protocol_approvals:
+            continue
+        signer = so.signer
+        if signer is not None:
+            name = signer.full_name or signer.email or ""
+            email = signer.email or ""
+        else:
+            name = "(deleted user)"
+            email = ""
+        protocol_approvals[role_key] = {
+            "name": name,
+            "email": email,
+            "signature_image": so.signature_image_path,
+            "attestation": so.attestation,
+            "signed_at": so.signed_at,
+            "initials": (name or "")[:2].upper(),
         }
 
     return {
         "approval": approval,
         "approval_history": history,
         "unapproved_warning": unapproved_warning,
+        "protocol_approvals": protocol_approvals,
+        # Drives the top-level {% if requires_approval %} guard around the
+        # whole "Approval & Signatures" section of the SOP template — when
+        # the protocol isn't flagged for approval, the section is omitted
+        # entirely instead of rendering an empty header.
+        "requires_approval": bool(protocol.requires_approval),
     }
 
 
