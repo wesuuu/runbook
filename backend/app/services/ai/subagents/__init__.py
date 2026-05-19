@@ -5,6 +5,7 @@ disk this cycle.
 """
 
 from . import (
+    app_help,
     protocol_builder,
     protocol_creator,
     protocol_editor,
@@ -14,6 +15,7 @@ from . import (
 )
 
 __all__ = [
+    "app_help",
     "protocol_builder",
     "protocol_creator",
     "protocol_editor",
