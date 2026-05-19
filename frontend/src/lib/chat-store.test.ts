@@ -449,7 +449,7 @@ describe('chat-store skill activation (F-0089)', () => {
         store.setMessageInput('draft me a protocol');
         await store.sendMessage();
 
-        expect(capturedBody).toEqual({ content: 'draft me a protocol', skill_id: 'new-protocol' });
+        expect(capturedBody).toEqual({ content: 'draft me a protocol', skill_id: 'new-protocol', current_route: '/' });
         expect(store.getActiveSkill()).toBeNull();
     });
 
@@ -493,6 +493,38 @@ describe('chat-store skill activation (F-0089)', () => {
 
         store.setMessageInput('hello');
         await store.sendMessage();
-        expect(capturedBody).toEqual({ content: 'hello' });
+        expect(capturedBody).toEqual({ content: 'hello', current_route: '/' });
+    });
+
+    it('sendMessage attaches current_route from window.location', async () => {
+        store.__test_setActiveSession({
+            id: 'S1', messages: [], title: 'New Chat', created_at: '2026-01-01',
+            user_id: 'U1', org_id: 'O1', ai_message_history: null,
+        } as never);
+
+        const original = window.location.pathname;
+        window.history.pushState({}, '', '/protocols/abc-123/edit');
+
+        let capturedBody: Record<string, unknown> | null = null;
+        vi.spyOn(sse, 'streamSse').mockImplementation(
+            async (_ep, body, cb) => {
+                capturedBody = body as Record<string, unknown>;
+                cb({
+                    type: 'done',
+                    user_message: { id: 'u1', session_id: 'S1', role: 'user', content: 'how does this work?', metadata_: null, created_at: '2026-01-01' },
+                    assistant_message: { id: 'a1', session_id: 'S1', role: 'assistant', content: 'ok', metadata_: null, created_at: '2026-01-01' },
+                    sources: [],
+                });
+            },
+        );
+
+        store.setMessageInput('how does this work?');
+        await store.sendMessage();
+        window.history.pushState({}, '', original);
+
+        expect(capturedBody).toEqual({
+            content: 'how does this work?',
+            current_route: '/protocols/abc-123/edit',
+        });
     });
 });

@@ -488,7 +488,13 @@ export async function sendMessage(): Promise<void> {
     let errorCode: string | null = null;
 
     try {
-        const body: Record<string, string> = { content };
+        const body: Record<string, string> = {
+            content,
+            // F-0089: page-context awareness — the chat agent prepends a
+            // [page:<route>] marker so it can disambiguate vague questions
+            // ("how does this work?") against the route the user is viewing.
+            current_route: window.location.pathname,
+        };
         if (skillId) {
             body.skill_id = skillId;
         }
