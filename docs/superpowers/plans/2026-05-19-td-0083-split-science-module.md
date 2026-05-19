@@ -14,15 +14,29 @@
 
 - **Backend venv:** `backend/.venv` is already set up (symlinked to the complete
   dev environment). Activate it with `source .venv/bin/activate` from `backend/`.
-- **Pre-existing broken test — not in scope:** `tests/unit/test_lane_layout.py`
-  fails to collect on the base branch (it imports `relayout_all_lane_children`,
-  a function that does not exist — landed broken in commit `3622342`). A
-  collection error aborts the whole `pytest` run, so **every `pytest` command in
-  this plan must append `--ignore=tests/unit/test_lane_layout.py`**. Do not fix
-  or touch that test — it is unrelated to TD-0083. Example: where a step says
-  `pytest -q`, run `pytest -q --ignore=tests/unit/test_lane_layout.py`.
-- **Baseline:** the suite (minus that one module) is green before Task 1. Every
-  task's verification step must keep it green with unchanged pass counts.
+- **Every `pytest` command in this plan must append two ignores:**
+  `--ignore=tests/unit/test_lane_layout.py --ignore=tests/benchmarks`
+  - `tests/unit/test_lane_layout.py` fails to *collect* on the base branch (it
+    imports `relayout_all_lane_children`, which does not exist — landed broken
+    in commit `3622342`); a collection error aborts the whole run.
+  - `tests/benchmarks/` needs a live AI provider; its 16 failures are
+    environmental noise unrelated to TD-0083.
+  Do not fix or touch either — both are out of scope. Example: where a step
+  says `pytest -q`, run
+  `pytest -q --ignore=tests/unit/test_lane_layout.py --ignore=tests/benchmarks`.
+- **The base-branch baseline is RED — TD-0083 holds it constant, it does not
+  fix it.** With the two ignores above, `origin/main` already has **52 failing
+  tests + 3 errors**, all from unrelated in-flight feature work (template-engine
+  v2, the F-0088 sites/equipment registry, approval gating, ai-config). The
+  verification rule for every task is therefore: **no NEW failures and no NEW
+  collection/import errors** — the pre-existing 52 failures + 3 errors stay
+  exactly as they are, and the count of passing tests must not drop. Never try
+  to fix a baseline failure; if a previously-passing test starts failing, that
+  *is* a TD-0083 regression and must be fixed.
+- **pytest regenerates binary artifacts.** Template tests overwrite ~16
+  `.docx`/`.pdf` files under `backend/tests/artifacts/templates/`. These are
+  noise — never `git add` them; run `git checkout -- backend/tests/artifacts/`
+  before any commit, or stage paths selectively.
 
 ---
 
