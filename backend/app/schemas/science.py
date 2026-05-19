@@ -591,6 +591,13 @@ class GlpSignoffResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def signature_image_url(self) -> Optional[str]:
+        if not self.signature_image_path:
+            return None
+        return f"/science/signoffs/{self.id}/signature"
+
 
 class RunCompleteRequest(BaseModel):
     outcome: str

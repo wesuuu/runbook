@@ -1063,6 +1063,31 @@
                         />
                     {/if}
 
+                    <!-- GLP Sign-offs (visible during ACTIVE so OPERATOR / SD /
+                         QAU can sign before the run is closed). -->
+                    {#if resolveRequiredRoles(glpSettings).length > 0}
+                        <div class="mt-8 mb-8">
+                            <h2 class="text-lg font-semibold text-foreground mb-3">
+                                GLP Sign-offs
+                            </h2>
+                            <SignoffBlock
+                                entityType="run"
+                                entityId={run.id}
+                                requiredRoles={resolveRequiredRoles(glpSettings)}
+                                {signoffs}
+                                signers={signerMap}
+                                currentUserId={currentUser?.id ?? ''}
+                                attestationDefaults={{
+                                    OPERATOR: glpSettings.operator_attestation_text,
+                                    STUDY_DIRECTOR:
+                                        glpSettings.study_director_attestation_text,
+                                    QAU: glpSettings.qau_attestation_text,
+                                }}
+                                onSignClick={openSignoffModal}
+                            />
+                        </div>
+                    {/if}
+
                     <!-- Documents (available to all users) -->
                     {#if getAllUnitOpSteps().length > 0}
                         <div class="mt-8">

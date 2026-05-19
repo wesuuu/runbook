@@ -112,6 +112,21 @@ def protocol_reverted(ctx: dict, personal: bool = True) -> tuple[str, str]:
     return title, body
 
 
+def protocol_approval_requested(ctx: dict, personal: bool = True) -> tuple[str, str]:
+    """ctx: protocol_name, requested_by, role (optional: 'STUDY_DIRECTOR' | 'QAU')"""
+    role = ctx.get("role")
+    role_label = {
+        "STUDY_DIRECTOR": "Study Director",
+        "QAU": "QAU (Quality Assurance)",
+    }.get(role or "", "approver")
+    title = f"Approval requested: {ctx['protocol_name']}"
+    body = (
+        f"{ctx['requested_by']} requested your approval on protocol "
+        f"{ctx['protocol_name']} as {role_label}."
+    )
+    return title, body
+
+
 def step_deviation(ctx: dict, personal: bool = True) -> tuple[str, str]:
     """ctx: run_name, step_name, edited_by"""
     title = f"Step deviation on {ctx['run_name']}"
@@ -172,6 +187,7 @@ TEMPLATES = {
     "INVITE_ACCEPTED": invite_accepted,
     "PROTOCOL_APPROVED": protocol_approved,
     "PROTOCOL_REVERTED": protocol_reverted,
+    "PROTOCOL_APPROVAL_REQUESTED": protocol_approval_requested,
     "STEP_DEVIATION": step_deviation,
     "PENDING_IMAGE_ANALYSIS": pending_image_analysis,
     "OFFLINE_SYNC_PENDING": offline_sync_pending,

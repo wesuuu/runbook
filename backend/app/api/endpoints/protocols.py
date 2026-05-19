@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Query, UploadFile)
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from app.models.iam import (ObjectType, OrganizationMember, OrgRole,
                             PermissionLevel, User)
 from app.models.science import (GlpSignoff, Project, Protocol, ProtocolRole,
                                 ProtocolVersion, Run)
+from app.services.core.file_storage import FileStorageService
 from app.schemas.science import (DesignateApprovalRequest, GlpSignoffCreate,
                                  GlpSignoffResponse, ProtocolCreate,
                                  ProtocolImportFinalizeRequest,
@@ -854,6 +856,17 @@ async def update_protocol(
             protocol.graph = new_graph
 
         audit_changes = {"action": "saved_draft", "draft_version": draft_version_number}
+
+        # Auto-derive requires_approval from glpSettings on draft saves too.
+        if isinstance(protocol.graph, dict):
+            glp = (
+                protocol.graph.get("glpSettings")
+                if isinstance(protocol.graph.get("glpSettings"), dict)
+                else {}
+            )
+            protocol.requires_approval = bool(
+                glp.get("require_study_director") or glp.get("require_qau")
+            )
     else:
         # Normal save: update protocol graph and create version
         if "graph" in changes:
@@ -906,6 +919,21 @@ async def update_protocol(
         # Update protocol fields (name, description, etc.)
         for key, value in changes.items():
             setattr(protocol, key, value)
+
+        # Auto-derive requires_approval from glpSettings on every graph
+        # save: requires_approval ≡ (require_study_director || require_qau).
+        # The standalone "Requires approval" toggle was removed in F-0087
+        # so GLP is the sole approval gate. PENDING_APPROVAL is already
+        # blocked from edits above, so we don't need a status guard.
+        if "graph" in changes and isinstance(protocol.graph, dict):
+            glp = (
+                protocol.graph.get("glpSettings")
+                if isinstance(protocol.graph.get("glpSettings"), dict)
+                else {}
+            )
+            protocol.requires_approval = bool(
+                glp.get("require_study_director") or glp.get("require_qau")
+            )
 
         audit_changes = dict(changes)
         if "graph" in changes:
@@ -1106,3 +1134,54 @@ async def list_protocol_signoffs(
         )
         rows = result.scalars().all()
     return [GlpSignoffResponse.model_validate(r) for r in rows]
+
+
+@router.get("/signoffs/{signoff_id}/signature")
+async def get_signoff_signature(
+    signoff_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve the signature image pinned to a sign-off record.
+
+    Auth: the requester must belong to the same org as the signer (signoffs
+    are scoped per org via the signer's membership). The signature_image_path
+    is record-scoped at sign time so it represents an immutable snapshot.
+    """
+    signoff = (
+        await db.execute(select(GlpSignoff).where(GlpSignoff.id == signoff_id))
+    ).scalar_one_or_none()
+    if signoff is None or not signoff.signature_image_path:
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    if not current_user.selected_org_id:
+        raise HTTPException(status_code=400, detail="No organization selected")
+
+    same_org = (
+        await db.execute(
+            select(OrganizationMember.id).where(
+                OrganizationMember.user_id == signoff.signer_id,
+                OrganizationMember.organization_id == current_user.selected_org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if same_org is None:
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    storage = FileStorageService()
+    try:
+        full_path = storage.resolve_path(signoff.signature_image_path)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Signature not found")
+
+    media_type = "image/png"
+    suffix = full_path.suffix.lower()
+    if suffix in (".jpg", ".jpeg"):
+        media_type = "image/jpeg"
+    elif suffix == ".gif":
+        media_type = "image/gif"
+    elif suffix == ".svg":
+        media_type = "image/svg+xml"
+    return FileResponse(full_path, media_type=media_type)

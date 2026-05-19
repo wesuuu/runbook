@@ -30,6 +30,11 @@ class OrgRole(str, Enum):
     BILLING = "BILLING"
     MEMBER = "MEMBER"
     PROTOCOL_APPROVER = "PROTOCOL_APPROVER"
+    # 21 CFR Part 58 §58.35 — Quality Assurance Unit. Independent reviewer
+    # required for GLP studies. Distinct from PROTOCOL_APPROVER because the
+    # QAU role carries an independence requirement (cannot be on the study
+    # team) that generic approvers don't have to satisfy.
+    QAU = "QAU"
 
 
 _ALLOWED_ORG_ROLES = frozenset(r.value for r in OrgRole)
@@ -212,7 +217,7 @@ class OrganizationMember(Base, UUIDMixin, TimestampMixin):
         UniqueConstraint("user_id", "organization_id", name="uq_org_member"),
         CheckConstraint(
             "roles <@ ARRAY['ADMIN','BILLING','MEMBER',"
-            "'PROTOCOL_APPROVER']::varchar[]",
+            "'PROTOCOL_APPROVER','QAU']::varchar[]",
             name="ck_org_member_roles",
         ),
     )

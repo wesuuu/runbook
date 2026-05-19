@@ -170,3 +170,62 @@ export function computeProcessStartValidationErrors(
     }
     return errors;
 }
+
+/**
+ * Block GLP approval submission until the protocol has at least one
+ * Process Start node connected to at least one unit op, and no branch
+ * or process-start validation errors. Returns null when ready, else a
+ * short reason suitable for a toast / disabled-button tooltip.
+ */
+export function computeGlpApprovalBlockReason(
+    nodes: Node[],
+    edges: Edge[],
+    timeContext: BranchTimeContext,
+): string | null {
+    const unitOps = nodes.filter((n) => n.type === "unitOp");
+    if (unitOps.length === 0) {
+        return "Add a Process Start and at least one unit operation before submitting for approval.";
+    }
+    const processStarts = nodes.filter((n) => n.type === "processStart");
+    if (processStarts.length === 0) {
+        return "Add a Process Start node and connect it to a unit operation before submitting for approval.";
+    }
+
+    // Ensure at least one Process Start shares a connected component with a unit op.
+    const psIds = new Set(processStarts.map((n) => n.id));
+    const opIds = new Set(unitOps.map((n) => n.id));
+    const adj = new Map<string, Set<string>>();
+    for (const n of nodes) adj.set(n.id, new Set());
+    for (const e of edges) {
+        adj.get(e.source)?.add(e.target);
+        adj.get(e.target)?.add(e.source);
+    }
+    let connected = false;
+    for (const startId of psIds) {
+        const visited = new Set<string>();
+        const queue = [startId];
+        while (queue.length) {
+            const curr = queue.shift()!;
+            if (visited.has(curr)) continue;
+            visited.add(curr);
+            if (opIds.has(curr)) { connected = true; break; }
+            for (const nb of adj.get(curr) ?? []) {
+                if (!visited.has(nb)) queue.push(nb);
+            }
+        }
+        if (connected) break;
+    }
+    if (!connected) {
+        return "Connect the Process Start node to at least one unit operation before submitting for approval.";
+    }
+
+    const branchErrs = computeBranchValidationErrors(nodes, edges, timeContext);
+    if (branchErrs.length > 0) {
+        return `Resolve ${branchErrs.length} branching ${branchErrs.length === 1 ? "warning" : "warnings"} before submitting for approval.`;
+    }
+    const psErrs = computeProcessStartValidationErrors(nodes, edges);
+    if (psErrs.length > 0) {
+        return `Resolve ${psErrs.length} Process Start ${psErrs.length === 1 ? "warning" : "warnings"} before submitting for approval.`;
+    }
+    return null;
+}

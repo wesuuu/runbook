@@ -50,6 +50,7 @@ KNOWN_VARIABLES = {
     "approval",
     "approval_history",
     "unapproved_warning",
+    "requires_approval",
     # GLP sign-offs (F-0087)
     "signoffs",
     "protocol_approvals",

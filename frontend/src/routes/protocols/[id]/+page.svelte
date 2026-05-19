@@ -14,9 +14,17 @@
     } from "@xyflow/svelte";
     import "@xyflow/svelte/dist/style.css";
 
-    import { api, ApiError, getAwaitingMyApproval } from "$lib/api";
+    import {
+        api,
+        ApiError,
+        getAwaitingMyApproval,
+        submitProtocolForApproval,
+        listProtocolSignoffs,
+        createProtocolSignoff,
+    } from "$lib/api";
+    import { API_BASE } from "$lib/config";
     import { toast } from "$lib/toast";
-    import { getCurrentOrg, getUser } from "$lib/auth.svelte";
+    import { getCurrentOrg, getUser, getToken } from "$lib/auth.svelte";
     import { ProjectSchema } from "$lib/schemas";
     import type { NodeTypes } from "@xyflow/svelte";
     import ProtocolSidebar from "$lib/components/protocol/ProtocolSidebar.svelte";
@@ -25,7 +33,13 @@
     import CanvasToolbar from "$lib/components/protocol/CanvasToolbar.svelte";
     import GlpSettingsPanel from "$lib/components/protocol/GlpSettingsPanel.svelte";
     import ValidationBanners from "$lib/components/protocol/ValidationBanners.svelte";
-    import { GlpSettingsSchema, type GlpSettings } from "$lib/schemas/glpSignoff";
+    import SignoffModal from "$lib/components/shared/SignoffModal.svelte";
+    import {
+        GlpSettingsSchema,
+        type GlpSettings,
+        type GlpRole,
+        type GlpSignoffResponse,
+    } from "$lib/schemas/glpSignoff";
     import {
         serializeGraphData,
         buildStateSnapshot,
@@ -39,6 +53,7 @@
     } from "$lib/components/protocol/protocolGraph";
     import {
         computeBranchValidationErrors,
+        computeGlpApprovalBlockReason,
         computeProcessStartValidationErrors,
     } from "$lib/components/protocol/protocolValidation";
     import {
@@ -127,8 +142,6 @@
     let versions = $state<any[]>([]);
     let versionsLoading = $state(false);
     let approvalRequired = $state(false);
-    let projectSettingEnabled = $state(false);
-    let canDesignate = $state(false);
     let canApprove = $state(false);
     let revertOnEditDialogOpen = $state(false);
     let confirmedEditAfterApproval = $state(false);
@@ -366,10 +379,120 @@
         glpPanelOpen = !glpPanelOpen;
     }
 
+    // Approval is now driven entirely by GLP settings. The standalone
+    // "Requires approval" toggle was removed and the backend derives
+    // protocol.requires_approval from glpSettings on every save. We keep
+    // a client-side mirror so the footer button label ("Submit for
+    // Approval" vs "Publish") flips immediately when the user toggles
+    // GLP, without waiting for a round-trip.
+    const glpRequiresApproval = $derived(
+        glpSettings.require_study_director || glpSettings.require_qau,
+    );
+
     function handleGlpApply(next: GlpSettings): void {
         glpSettings = next;
         glpSettingsDirty = true;
         hasUnsavedChanges = true;
+        // Mirror the backend's derivation for instant UI feedback. The
+        // canonical value still lives on the server and is re-read on
+        // refresh; this just avoids one save+reload to update labels.
+        approvalRequired = glpRequiresApproval;
+    }
+
+    // GLP signoff state (F-0087)
+    let signoffs = $state<GlpSignoffResponse[]>([]);
+    let signoffModalOpen = $state(false);
+    let signoffModalRole = $state<GlpRole>('STUDY_DIRECTOR');
+    let signoffModalAttestation = $state('');
+    let projectMembers = $state<any[]>([]);
+
+    const currentUser = $derived(getUser());
+
+    const signerMap = $derived.by(() => {
+        const map: Record<
+            string,
+            { id: string; full_name: string; email: string }
+        > = {};
+        for (const member of projectMembers) {
+            if (member?.id) {
+                map[member.id] = {
+                    id: member.id,
+                    full_name: member.full_name ?? member.email ?? member.id,
+                    email: member.email ?? '',
+                };
+            }
+        }
+        for (const s of signoffs) {
+            if (s.signer && s.signer.id && !map[s.signer.id]) {
+                map[s.signer.id] = {
+                    id: s.signer.id,
+                    full_name:
+                        s.signer.name ?? s.signer.email ?? s.signer.id,
+                    email: s.signer.email ?? '',
+                };
+            }
+        }
+        return map;
+    });
+
+    const protocolRequiredRoles = $derived.by(() => {
+        const roles: GlpRole[] = [];
+        if (glpSettings.require_study_director) roles.push('STUDY_DIRECTOR');
+        if (glpSettings.require_qau) roles.push('QAU');
+        return roles;
+    });
+
+    function independenceMessageFor(
+        role: GlpRole,
+        existing: GlpSignoffResponse[],
+    ): string | undefined {
+        if (role !== 'QAU') return undefined;
+        const userId = currentUser?.id;
+        if (!userId) return undefined;
+        const conflicting = existing.find(
+            (s) =>
+                s.signer_id === userId &&
+                s.role === 'STUDY_DIRECTOR' &&
+                (s.invalidated_at === null || s.invalidated_at === undefined),
+        );
+        if (conflicting) {
+            return `Independence warning: you previously signed as ${conflicting.role}. QAU sign-off must come from a different person.`;
+        }
+        return undefined;
+    }
+
+    function signatureUrl(
+        user: { signature_full_url?: string | null } | null,
+    ): string | null {
+        if (!user?.signature_full_url) return null;
+        return `${API_BASE}${user.signature_full_url}?token=${getToken()}`;
+    }
+
+    async function refreshProtocolSignoffs(): Promise<void> {
+        if (!protocol?.id) return;
+        try {
+            signoffs = await listProtocolSignoffs(protocol.id, true);
+        } catch (e) {
+            console.error('Failed to load protocol signoffs', e);
+        }
+    }
+
+    function openSignoffModal(role: GlpRole, defaultAttestation: string) {
+        signoffModalRole = role;
+        signoffModalAttestation = defaultAttestation;
+        signoffModalOpen = true;
+    }
+
+    async function handleSignoffConfirm(attestation: string) {
+        if (!protocol?.id) return;
+        await createProtocolSignoff(protocol.id, {
+            role: signoffModalRole,
+            action: 'APPROVED',
+            attestation,
+        });
+        await refreshProtocolSignoffs();
+        toast.success(`${signoffModalRole} sign-off recorded`);
+        await refreshProtocol();
     }
 
     // Mutual exclusion: opening the GLP panel deselects any node so the
@@ -444,6 +567,21 @@
     );
     const processStartValidationErrors = $derived(() => computeProcessStartValidationErrors(nodes, edges));
 
+    // GLP-only gate: block "Submit for Approval" until the graph has at
+    // least a Process Start connected to a unit op and no branch/process-
+    // start validation errors. Non-GLP publish keeps its lighter gate
+    // (blockingBranchMessage). Lives near the validators so it always
+    // reflects the same nodes/edges/time context.
+    const glpApprovalBlockReason = $derived(() =>
+        approvalRequired
+            ? computeGlpApprovalBlockReason(nodes, edges, {
+                  timeEnabled,
+                  pixelsPerHour,
+                  layout,
+              })
+            : null,
+    );
+
     const branchInvalidNodeIds = $derived(() => {
         const ids = new Set<string>();
         for (const err of branchValidationErrors()) {
@@ -502,13 +640,6 @@
     // --- Capability Resolution ---
     async function resolveCapabilities() {
         if (!protocol?.project_id) return;
-        // canDesignate: project ADMIN — soft-detect via /projects/{id}/permissions (403 if not admin)
-        try {
-            await api.get(`/projects/${protocol.project_id}/permissions`);
-            canDesignate = true;
-        } catch {
-            canDesignate = false;
-        }
         // canApprove: only when status is PENDING_APPROVAL and the protocol appears in the
         // current user's awaiting-approval list.
         if (protocolStatus === 'PENDING_APPROVAL') {
@@ -532,6 +663,7 @@
             versionNumber = fresh.version_number || 0;
             approvalRequired = (fresh.requires_approval as boolean) || false;
             await resolveCapabilities();
+            await refreshProtocolSignoffs();
             // Reset edit-after-approval guard when status changes
             if (protocolStatus !== 'APPROVED') {
                 confirmedEditAfterApproval = false;
@@ -588,17 +720,33 @@
                 // Use protocol-level requires_approval as the canonical flag
                 approvalRequired = (protocol.requires_approval as boolean) || false;
 
-                // Fetch project settings for approval requirement and PDF format
+                // Fetch project settings for PDF format. Approval gating
+                // now lives on the protocol's glpSettings, not on a
+                // project-level toggle.
                 try {
                     const proj = await api.get(`/projects/${protocol.project_id}`, { schema: ProjectSchema });
-                    projectSettingEnabled = (proj.settings?.require_protocol_approval as boolean) || false;
                     projectPdfFormat = (proj.settings?.pdf_format as Record<string, any>) || {};
                 } catch {
-                    // Ignore — approval not required if project fetch fails
+                    // Ignore — best-effort load.
                 }
 
                 // Resolve capabilities (best-effort; failures default to false)
                 await resolveCapabilities();
+
+                // Load project members for signoff display, and any existing
+                // GLP signoffs so the SignoffBlock can render Signed / Pending
+                // rows.
+                try {
+                    if (protocol.project_id) {
+                        projectMembers =
+                            (await api.get(
+                                `/science/projects/${protocol.project_id}/members`,
+                            )) || [];
+                    }
+                } catch {
+                    projectMembers = [];
+                }
+                await refreshProtocolSignoffs();
 
                 if (protocol.graph && protocol.graph.nodes) {
                     applyGraphState(protocol.graph);
@@ -711,6 +859,18 @@
         const block = blockingBranchMessage();
         if (block) {
             toast.error(block);
+            return;
+        }
+
+        // GLP-gated protocols route through submit-for-approval (lands in
+        // PENDING_APPROVAL). Non-GLP protocols publish directly.
+        if (approvalRequired) {
+            const glpBlock = glpApprovalBlockReason();
+            if (glpBlock) {
+                toast.error(glpBlock);
+                return;
+            }
+            await submitForApproval();
             return;
         }
 
@@ -902,8 +1062,44 @@
     async function doSubmitForApproval() {
         if (!protocol) return;
         try {
-            const updated: any = await api.post(
-                `/science/protocols/${protocol.id}/submit-for-approval`,
+            // Approver designation lives in GLP Settings (F-0087): the
+            // Study Director is a single named user, and QAU is either a
+            // single named user or "any org member with the QAU role".
+            // We resolve that designation into the concrete user-id list
+            // the submit endpoint expects.
+            const requestedUserIds = new Set<string>();
+            if (glpSettings.require_study_director && glpSettings.study_director_user_id) {
+                requestedUserIds.add(glpSettings.study_director_user_id);
+            }
+            if (glpSettings.require_qau) {
+                if (glpSettings.qau_mode === 'SPECIFIC_USER' && glpSettings.qau_user_id) {
+                    requestedUserIds.add(glpSettings.qau_user_id);
+                } else if (glpSettings.qau_mode === 'ANY_ORG_QAU') {
+                    const org = getCurrentOrg();
+                    if (org) {
+                        const members = await api.get<any[]>(
+                            `/iam/organizations/${org.id}/members`,
+                        );
+                        for (const m of members ?? []) {
+                            const roles: string[] = Array.isArray(m.roles) ? m.roles : [];
+                            if (roles.includes('QAU') && m.user_id) {
+                                requestedUserIds.add(m.user_id);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (requestedUserIds.size === 0) {
+                toast.error(
+                    "No approvers designated. Set Study Director and/or QAU in GLP Settings.",
+                );
+                return;
+            }
+
+            const updated = await submitProtocolForApproval(
+                protocol.id,
+                Array.from(requestedUserIds),
             );
             protocolStatus = updated.status || "PENDING_APPROVAL";
             toast.success("Submitted for approval");
@@ -1324,10 +1520,17 @@
         {previewingVersion}
         {isHistoricalPreview}
         {hasUnitOpNodes}
-        {canDesignate}
         {canApprove}
         {currentUserId}
-        {projectSettingEnabled}
+        {signoffs}
+        signoffRequiredRoles={protocolRequiredRoles}
+        {signerMap}
+        signoffAttestationDefaults={{
+            STUDY_DIRECTOR: glpSettings.study_director_attestation_text,
+            QAU: glpSettings.qau_attestation_text,
+        }}
+        onSignoffClick={openSignoffModal}
+        submitDisabledReason={glpApprovalBlockReason()}
         onApprovalChange={refreshProtocol}
         onNameSaved={(name) => { protocol.name = name; }}
         onDescriptionSaved={(desc) => { protocol.description = desc; }}
@@ -1377,6 +1580,7 @@
             canRedoAction={canRedo(undoRedoState)}
             {glpPanelOpen}
             {glpSettingsDirty}
+            glpActive={glpRequiresApproval}
             onToggleGlpPanel={toggleGlpPanel}
             onUndo={handleUndo}
             onRedo={handleRedo}
@@ -1553,6 +1757,24 @@
     onConfirm={handleRevertConfirm}
     onCancel={handleRevertCancel}
 />
+
+{#if protocol}
+    <SignoffModal
+        bind:open={signoffModalOpen}
+        role={signoffModalRole}
+        entityType="protocol"
+        entityId={protocol.id}
+        defaultAttestation={signoffModalAttestation}
+        signerName={currentUser?.full_name ?? currentUser?.email ?? ''}
+        signatureImageUrl={signatureUrl(currentUser)}
+        independenceMessage={independenceMessageFor(
+            signoffModalRole,
+            signoffs,
+        )}
+        onConfirm={handleSignoffConfirm}
+        onCancel={() => (signoffModalOpen = false)}
+    />
+{/if}
 
 <!-- PROTOCOL TOUR MODAL -->
 <TourModal

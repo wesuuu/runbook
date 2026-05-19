@@ -20,9 +20,68 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import ObjectType, PermissionLevel
-from app.models.science import GlpSignoff, Protocol, Run, RunRoleAssignment
+from app.models.iam import ObjectType, OrganizationMember, OrgRole, PermissionLevel
+from app.models.science import GlpSignoff, Project, Protocol, Run, RunRoleAssignment
 from app.services.core.permissions import check_permission
+
+
+async def _glp_user_designated_for_role(
+    db: AsyncSession,
+    protocol_id: UUID,
+    user_id: UUID,
+    role: str,
+) -> bool:
+    """True if the user is designated as ``role`` on the protocol's glpSettings.
+
+    STUDY_DIRECTOR: matches ``study_director_user_id`` when
+    ``require_study_director`` is true.
+    QAU: matches ``qau_user_id`` when ``qau_mode == 'SPECIFIC_USER'``,
+    or any user with the QAU org role when ``qau_mode == 'ANY_ORG_QAU'``.
+    """
+    if role not in ("STUDY_DIRECTOR", "QAU"):
+        return False
+    proto_row = await db.execute(select(Protocol).where(Protocol.id == protocol_id))
+    protocol = proto_row.scalar_one_or_none()
+    if protocol is None:
+        return False
+    graph = protocol.graph if isinstance(protocol.graph, dict) else {}
+    glp = graph.get("glpSettings") if isinstance(graph.get("glpSettings"), dict) else {}
+    if role == "STUDY_DIRECTOR":
+        if not glp.get("require_study_director"):
+            return False
+        sd_id = glp.get("study_director_user_id")
+        try:
+            return sd_id is not None and UUID(str(sd_id)) == user_id
+        except (TypeError, ValueError):
+            return False
+    # QAU
+    if not glp.get("require_qau"):
+        return False
+    if glp.get("qau_mode") == "SPECIFIC_USER":
+        qau_id = glp.get("qau_user_id")
+        try:
+            return qau_id is not None and UUID(str(qau_id)) == user_id
+        except (TypeError, ValueError):
+            return False
+    if glp.get("qau_mode") == "ANY_ORG_QAU":
+        # Resolve org_id from project (or protocol if org-scoped).
+        org_id: Optional[UUID] = protocol.organization_id
+        if protocol.project_id is not None:
+            proj_row = await db.execute(
+                select(Project.organization_id).where(Project.id == protocol.project_id)
+            )
+            org_id = proj_row.scalar_one_or_none() or org_id
+        if org_id is None:
+            return False
+        member_row = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.roles.contains([OrgRole.QAU.value]),
+            )
+        )
+        return member_row.scalar_one_or_none() is not None
+    return False
 
 
 @dataclass
@@ -251,6 +310,14 @@ async def validate_signoff_role_assignable(
         # These roles sign the protocol (or the run's protocol).
         if protocol_id is None:
             # Run not linked to a protocol — no protocol permission to check.
+            return
+        # GLP designation grants signoff capability directly: a user designated
+        # as Study Director or QAU on the protocol's glpSettings is authorized
+        # to sign in that role regardless of project/org-role permissions.
+        designated = await _glp_user_designated_for_role(
+            db, protocol_id, user_id, role
+        )
+        if designated:
             return
         obj_type = ObjectType.PROTOCOL
         obj_id = protocol_id

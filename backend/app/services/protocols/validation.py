@@ -831,9 +831,109 @@ def assert_no_branch_errors(
         )
 
 
+def assert_graph_ready_for_glp_approval(
+    graph: dict[str, Any],
+    unit_ops: list[UnitOpDefinition],
+) -> None:
+    """Block submitting an empty or structurally invalid protocol for GLP
+    approval. A protocol needs at least one Process Start node connected
+    to at least one unit op, and no structural errors (missing/multiple
+    Process Starts, branching role conflicts).
+
+    Mirrors :func:`computeGlpApprovalBlockReason` on the frontend so the
+    UX pre-flight and the server contract stay in sync.
+    """
+    from fastapi import \
+        HTTPException  # noqa: PLC0415 — keep validation.py import-light
+
+    nodes = list(graph.get("nodes", []))
+    edges = list(graph.get("edges", []))
+    unit_op_nodes = [n for n in nodes if n.get("type") == "unitOp"]
+    process_start_nodes = [n for n in nodes if n.get("type") == "processStart"]
+
+    if not unit_op_nodes:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "empty_graph",
+                "message": (
+                    "Add a Process Start and at least one unit operation "
+                    "before submitting for approval."
+                ),
+            },
+        )
+    if not process_start_nodes:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "missing_process_start",
+                "message": (
+                    "Add a Process Start node and connect it to a unit "
+                    "operation before submitting for approval."
+                ),
+            },
+        )
+
+    # Check at least one Process Start shares a component with a unit op.
+    adjacency: dict[str, set[str]] = {n["id"]: set() for n in nodes if "id" in n}
+    for e in edges:
+        s, t = e.get("source"), e.get("target")
+        if s in adjacency and t in adjacency:
+            adjacency[s].add(t)
+            adjacency[t].add(s)
+    ps_ids = {n["id"] for n in process_start_nodes if "id" in n}
+    op_ids = {n["id"] for n in unit_op_nodes if "id" in n}
+    connected = False
+    for start_id in ps_ids:
+        visited: set[str] = set()
+        stack = [start_id]
+        while stack:
+            curr = stack.pop()
+            if curr in visited:
+                continue
+            visited.add(curr)
+            if curr in op_ids:
+                connected = True
+                break
+            stack.extend(adjacency.get(curr, set()))
+        if connected:
+            break
+    if not connected:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "process_start_not_connected",
+                "message": (
+                    "Connect the Process Start node to at least one unit "
+                    "operation before submitting for approval."
+                ),
+            },
+        )
+
+    result = validate_protocol_graph(graph, unit_ops)
+    blocking_codes = {
+        "branch_requires_distinct_roles",
+        "missing_process_start",
+        "multiple_process_starts",
+    }
+    blocking = [
+        i for i in result.issues
+        if i.severity == "error" and i.code in blocking_codes
+    ]
+    if blocking:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "protocol_not_ready_for_approval",
+                "issues": [i.model_dump() for i in blocking],
+            },
+        )
+
+
 __all__ = [
     "ValidationIssue",
     "ValidationResult",
     "validate_protocol_graph",
     "assert_no_branch_errors",
+    "assert_graph_ready_for_glp_approval",
 ]

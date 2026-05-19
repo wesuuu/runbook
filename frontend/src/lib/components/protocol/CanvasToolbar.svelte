@@ -16,6 +16,7 @@
         canRedoAction: boolean;
         glpPanelOpen: boolean;
         glpSettingsDirty: boolean;
+        glpActive: boolean;
         onUndo: () => void;
         onRedo: () => void;
         onInteractionModeChange: (mode: "pan" | "select") => void;
@@ -41,6 +42,7 @@
         canRedoAction,
         glpPanelOpen,
         glpSettingsDirty,
+        glpActive,
         onUndo,
         onRedo,
         onInteractionModeChange,
@@ -178,7 +180,9 @@
             <path d="m5 8 3 6h-6z"/><path d="m19 8 3 6h-6z"/>
         </svg>
         <span>GLP</span>
-        {#if glpSettingsDirty}
+        {#if glpActive}
+            <span class="glp-active-dot" aria-label="GLP sign-offs enabled"></span>
+        {:else if glpSettingsDirty}
             <span class="glp-dirty-dot" aria-label="unsaved changes"></span>
         {/if}
     </button>
@@ -359,5 +363,29 @@
         height: 6px;
         border-radius: 50%;
         background: hsl(24, 95%, 53%);
+    }
+
+    .glp-active-dot {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: hsl(173, 80%, 40%);
+        box-shadow: 0 0 0 0 hsla(173, 80%, 40%, 0.7);
+        animation: glp-active-pulse 1.6s ease-out infinite;
+    }
+
+    @keyframes glp-active-pulse {
+        0% {
+            box-shadow: 0 0 0 0 hsla(173, 80%, 40%, 0.7);
+        }
+        70% {
+            box-shadow: 0 0 0 6px hsla(173, 80%, 40%, 0);
+        }
+        100% {
+            box-shadow: 0 0 0 0 hsla(173, 80%, 40%, 0);
+        }
     }
 </style>

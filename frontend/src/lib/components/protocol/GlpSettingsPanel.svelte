@@ -2,7 +2,9 @@
     import { X } from 'lucide-svelte';
     import { Button } from '$lib/components/ui/button';
     import { Textarea } from '$lib/components/ui/textarea';
-    import type { GlpSettings } from '$lib/schemas/glpSignoff';
+    import { api } from '$lib/api';
+    import { getCurrentOrg } from '$lib/auth.svelte';
+    import type { GlpSettings, QauMode } from '$lib/schemas/glpSignoff';
 
     interface Props {
         open: boolean;
@@ -13,13 +15,27 @@
 
     let { open, glpSettings, onApply, onClose }: Props = $props();
 
+    interface MemberOption {
+        userId: string;
+        name: string;
+        email: string;
+        roles: string[];
+    }
+
     // Local working copy — edits are not propagated until Apply.
     let requireStudyDirector = $state(false);
-    let requireQau = $state(true);
+    let requireQau = $state(false);
+    let studyDirectorUserId = $state<string | null>(null);
+    let qauMode = $state<QauMode>('ANY_ORG_QAU');
+    let qauUserId = $state<string | null>(null);
     let operatorText = $state('');
     let studyDirectorText = $state('');
     let qauText = $state('');
     let stepText = $state('');
+
+    let members = $state<MemberOption[]>([]);
+    let membersLoading = $state(false);
+    let membersError = $state<string | null>(null);
 
     // Re-sync local state whenever the panel opens or the upstream
     // settings change (e.g., after a save round-trip). Reading the prop
@@ -32,16 +48,62 @@
         lastSyncedKey = key;
         requireStudyDirector = glpSettings.require_study_director;
         requireQau = glpSettings.require_qau;
+        studyDirectorUserId = glpSettings.study_director_user_id;
+        qauMode = glpSettings.qau_mode;
+        qauUserId = glpSettings.qau_user_id;
         operatorText = glpSettings.operator_attestation_text;
         studyDirectorText = glpSettings.study_director_attestation_text;
         qauText = glpSettings.qau_attestation_text;
         stepText = glpSettings.step_attestation_text;
     });
 
+    // Load org members on first open so the SD/QAU pickers can render.
+    $effect(() => {
+        if (!open) return;
+        if (members.length > 0 || membersLoading) return;
+        loadMembers();
+    });
+
+    async function loadMembers(): Promise<void> {
+        const org = getCurrentOrg();
+        if (!org) return;
+        membersLoading = true;
+        membersError = null;
+        try {
+            const raw = await api.get<any[]>(
+                `/iam/organizations/${org.id}/members`,
+            );
+            members = (raw ?? []).map((m) => ({
+                userId: m.user_id,
+                name: m.full_name ?? m.email ?? 'Unknown',
+                email: m.email ?? '',
+                roles: Array.isArray(m.roles) ? m.roles : [],
+            }));
+        } catch (e: unknown) {
+            membersError =
+                e instanceof Error ? e.message : 'Failed to load members.';
+        } finally {
+            membersLoading = false;
+        }
+    }
+
+    const qauMembers = $derived(
+        members.filter((m) => m.roles.includes('QAU')),
+    );
+
     function handleApply(): void {
         onApply({
             require_study_director: requireStudyDirector,
             require_qau: requireQau,
+            // Only persist designated IDs when the matching toggle is on;
+            // clearing the toggle nulls out the assignment so a future
+            // re-enable doesn't silently inherit a stale designation.
+            study_director_user_id: requireStudyDirector
+                ? studyDirectorUserId
+                : null,
+            qau_mode: qauMode,
+            qau_user_id:
+                requireQau && qauMode === 'SPECIFIC_USER' ? qauUserId : null,
             operator_attestation_text: operatorText,
             study_director_attestation_text: studyDirectorText,
             qau_attestation_text: qauText,
@@ -97,6 +159,34 @@
                         {requireStudyDirector ? 'On' : 'Off'}
                     </Button>
                 </div>
+
+                {#if requireStudyDirector}
+                    <div class="glp-field glp-field-indent">
+                        <label class="glp-field-label" for="glp-sd-picker">Designated Study Director</label>
+                        {#if membersLoading}
+                            <div class="glp-picker-help">Loading members…</div>
+                        {:else if membersError}
+                            <div class="glp-picker-error">{membersError}</div>
+                        {:else}
+                            <select
+                                id="glp-sd-picker"
+                                class="glp-select"
+                                bind:value={studyDirectorUserId}
+                                data-testid="glp-sd-picker"
+                            >
+                                <option value={null}>— Select a Study Director —</option>
+                                {#each members as m (m.userId)}
+                                    <option value={m.userId}>{m.name} ({m.email})</option>
+                                {/each}
+                            </select>
+                            <div class="glp-picker-help">
+                                Single named individual responsible for the
+                                study's overall conduct.
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+
                 <div class="glp-toggle-row">
                     <div class="glp-toggle-copy">
                         <div class="glp-toggle-title">Require QAU sign-off</div>
@@ -112,12 +202,72 @@
                         {requireQau ? 'On' : 'Off'}
                     </Button>
                 </div>
+
+                {#if requireQau}
+                    <div class="glp-field glp-field-indent">
+                        <div class="glp-field-label">QAU assignment</div>
+                        <div class="glp-radio-group" role="radiogroup">
+                            <label class="glp-radio-row">
+                                <input
+                                    type="radio"
+                                    name="qau-mode"
+                                    value="ANY_ORG_QAU"
+                                    checked={qauMode === 'ANY_ORG_QAU'}
+                                    onchange={() => (qauMode = 'ANY_ORG_QAU')}
+                                    data-testid="glp-qau-mode-any"
+                                />
+                                <span class="glp-radio-copy">
+                                    <span class="glp-radio-title">Any org-level QAU</span>
+                                    <span class="glp-radio-help">
+                                        Any organization member with the QAU
+                                        role can sign off.
+                                        {#if qauMembers.length > 0}
+                                            ({qauMembers.length} eligible)
+                                        {:else}
+                                            (No QAU-role members yet — assign
+                                            in Org Settings.)
+                                        {/if}
+                                    </span>
+                                </span>
+                            </label>
+                            <label class="glp-radio-row">
+                                <input
+                                    type="radio"
+                                    name="qau-mode"
+                                    value="SPECIFIC_USER"
+                                    checked={qauMode === 'SPECIFIC_USER'}
+                                    onchange={() => (qauMode = 'SPECIFIC_USER')}
+                                    data-testid="glp-qau-mode-specific"
+                                />
+                                <span class="glp-radio-copy">
+                                    <span class="glp-radio-title">Designate a person</span>
+                                    <span class="glp-radio-help">
+                                        Pin QAU sign-off to one named
+                                        individual for this protocol.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+
+                        {#if qauMode === 'SPECIFIC_USER'}
+                            <select
+                                class="glp-select glp-select-nested"
+                                bind:value={qauUserId}
+                                data-testid="glp-qau-picker"
+                            >
+                                <option value={null}>— Select QAU reviewer —</option>
+                                {#each members as m (m.userId)}
+                                    <option value={m.userId}>{m.name} ({m.email})</option>
+                                {/each}
+                            </select>
+                        {/if}
+                    </div>
+                {/if}
             </section>
 
             <section class="glp-section glp-section-divider">
                 <div class="glp-section-head">
                     <span class="glp-section-label">Attestation defaults</span>
-                    <span class="glp-section-hint">stored in graph.glpSettings</span>
                 </div>
 
                 <div class="glp-field">
@@ -254,12 +404,6 @@
         color: hsl(240, 5.9%, 10%);
     }
 
-    .glp-section-hint {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 10px;
-        color: hsl(240, 3.8%, 46.1%);
-    }
-
     .glp-toggle-row {
         display: flex;
         align-items: flex-start;
@@ -290,11 +434,77 @@
         gap: 4px;
     }
 
+    .glp-field-indent {
+        margin-left: 12px;
+        padding-left: 12px;
+        border-left: 2px solid hsl(173, 80%, 40%);
+    }
+
     .glp-field-label {
         font-size: 11px;
         font-weight: 500;
         text-transform: uppercase;
         letter-spacing: 0.04em;
+        color: hsl(240, 3.8%, 46.1%);
+    }
+
+    .glp-select {
+        height: 32px;
+        padding: 0 8px;
+        border: 1px solid hsl(240, 5.9%, 90%);
+        border-radius: 6px;
+        font-size: 13px;
+        background: white;
+        color: hsl(240, 5.9%, 10%);
+    }
+
+    .glp-select-nested {
+        margin-top: 6px;
+    }
+
+    .glp-picker-help {
+        font-size: 11px;
+        color: hsl(240, 3.8%, 46.1%);
+        font-style: italic;
+    }
+
+    .glp-picker-error {
+        font-size: 12px;
+        color: hsl(0, 72%, 51%);
+    }
+
+    .glp-radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .glp-radio-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        cursor: pointer;
+    }
+
+    .glp-radio-row input[type='radio'] {
+        margin-top: 3px;
+        cursor: pointer;
+    }
+
+    .glp-radio-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .glp-radio-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: hsl(240, 5.9%, 10%);
+    }
+
+    .glp-radio-help {
+        font-size: 11px;
         color: hsl(240, 3.8%, 46.1%);
     }
 

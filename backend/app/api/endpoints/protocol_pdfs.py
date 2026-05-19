@@ -200,6 +200,11 @@ async def _build_approval_context(
         "approval_history": history,
         "unapproved_warning": unapproved_warning,
         "protocol_approvals": protocol_approvals,
+        # Drives the top-level {% if requires_approval %} guard around the
+        # whole "Approval & Signatures" section of the SOP template — when
+        # the protocol isn't flagged for approval, the section is omitted
+        # entirely instead of rendering an empty header.
+        "requires_approval": bool(protocol.requires_approval),
     }
 
 
