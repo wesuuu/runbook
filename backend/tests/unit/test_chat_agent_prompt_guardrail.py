@@ -64,3 +64,14 @@ def test_chat_agent_prompt_includes_app_help_contract() -> None:
     assert (
         "own data" in text
     ), "Guardrail must include the negative-routing rule referencing 'own data'"
+
+
+def test_chat_agent_prompt_includes_page_context_contract() -> None:
+    """[page:<route>] marker section must be documented in the prompt."""
+    text = PROMPT_PATH.read_text(encoding="utf-8")
+    assert (
+        "[page:" in text
+    ), "chat_agent.md must reference the [page:<route>] marker so the model knows what it means"
+    assert (
+        "### Page context" in text
+    ), "chat_agent.md must contain the ### Page context subsection documenting the marker"
