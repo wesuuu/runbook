@@ -67,7 +67,7 @@ class DocumentTemplate(Base, UUIDMixin, TimestampMixin):
     organization: Mapped[Optional["app.models.iam.Organization"]] = relationship(
         foreign_keys=[org_id]
     )
-    project: Mapped[Optional["app.models.science.Project"]] = relationship(
+    project: Mapped[Optional["app.models.projects.Project"]] = relationship(
         foreign_keys=[project_id]
     )
     uploaded_by: Mapped[Optional["app.models.iam.User"]] = relationship(
