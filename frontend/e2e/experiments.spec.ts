@@ -203,21 +203,21 @@ test.describe('Experiments — Full Workflow', () => {
 
     // Archive via API
     const token = await page.evaluate(() => localStorage.getItem('auth_token'));
-    const resp = await page.request.fetch(`http://localhost:8000/science/experiments/${expId}`, {
+    const resp = await page.request.fetch(`http://localhost:8000/experiments/${expId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(resp.status()).toBe(200);
 
     // Verify experiment is archived
-    const expResp = await page.request.fetch(`http://localhost:8000/science/experiments/${expId}`, {
+    const expResp = await page.request.fetch(`http://localhost:8000/experiments/${expId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const expData = await expResp.json();
     expect(expData.status).toBe('ARCHIVED');
 
     // Verify run is also archived
-    const runResp = await page.request.fetch(`http://localhost:8000/science/runs/${runId}`, {
+    const runResp = await page.request.fetch(`http://localhost:8000/runs/${runId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const runData = await runResp.json();

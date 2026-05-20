@@ -213,7 +213,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     await updateProtocolGraph(page, proto.id as string, graph1, true);
     // Publish the draft
     const v1Response = await page.request.post(
-      `http://localhost:8000/science/protocols/${proto.id}/publish-draft?version_number=1`,
+      `http://localhost:8000/protocols/${proto.id}/publish-draft?version_number=1`,
       {
         headers: {
           Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('auth_token'))}`,
@@ -227,7 +227,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     const { graph: graph2 } = buildTestGraph(3);
     await updateProtocolGraph(page, proto.id as string, graph2, true);
     const v2Response = await page.request.post(
-      `http://localhost:8000/science/protocols/${proto.id}/publish-draft?version_number=2`,
+      `http://localhost:8000/protocols/${proto.id}/publish-draft?version_number=2`,
       {
         headers: {
           Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('auth_token'))}`,
@@ -292,7 +292,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     // Verify protocol is actually gone (API should 404)
     const token = await page.evaluate(() => localStorage.getItem('auth_token'));
     const resp = await page.request.fetch(
-      `http://localhost:8000/science/protocols/${protoId}`,
+      `http://localhost:8000/protocols/${protoId}`,
       {
         headers: { Authorization: `Bearer ${token}` },
       },
@@ -316,7 +316,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     const { graph } = buildTestGraph(2);
     await updateProtocolGraph(page, proto.id as string, graph, true);
     const publishResp = await page.request.post(
-      `http://localhost:8000/science/protocols/${proto.id}/publish-draft?version_number=1`,
+      `http://localhost:8000/protocols/${proto.id}/publish-draft?version_number=1`,
       {
         headers: {
           Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('auth_token'))}`,

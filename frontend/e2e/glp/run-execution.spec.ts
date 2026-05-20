@@ -45,10 +45,10 @@ test.describe('GLP — run execution → completion', () => {
             //
             // Self-provision path (when promoting this spec):
             //   1. log in as admin via API
-            //   2. POST /science/protocols  (org-scoped)
-            //   3. PUT  /science/protocols/{id} with the glpProtocolGraph
+            //   2. POST /protocols  (org-scoped)
+            //   3. PUT  /protocols/{id} with the glpProtocolGraph
             //      fixture under graph.glpSettings.glp_enabled=true
-            //   4. POST /science/protocols/{id}/publish-version
+            //   4. POST /protocols/{id}/publish-version
             //   5. switch session to scientist1 for the operator flow
             await page.goto(await projectUrl(page, SEED.PROJECT_MAB_ID));
             await page.getByRole('button', { name: /\+ New Run/i }).click();
