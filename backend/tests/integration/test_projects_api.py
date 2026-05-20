@@ -241,3 +241,38 @@ async def test_delete_project_edit_only_forbidden(
         headers=second_auth_headers,
     )
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_project_members(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    """Test getting members of a project."""
+    resp = await client.get(
+        f"/projects/{test_project.id}/members",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    members = resp.json()
+    assert isinstance(members, list)
+    # test_user is the owner of test_project and should be in the list
+    member_ids = [m["id"] for m in members]
+    assert str(test_user.id) in member_ids
+
+
+@pytest.mark.asyncio
+async def test_get_project_members_no_perm(
+    client: AsyncClient,
+    second_auth_headers: dict,
+    test_project: Project,
+):
+    """Test that user without VIEW perm cannot get members."""
+    resp = await client.get(
+        f"/projects/{test_project.id}/members",
+        headers=second_auth_headers,
+    )
+    assert resp.status_code == 403
