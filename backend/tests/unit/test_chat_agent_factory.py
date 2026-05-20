@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.ai.chat_agent import build_chat_agent
+from app.services.ai.chat_agent import _SUMMARY_PROMPT, build_chat_agent
 from app.services.ai.runtime.compaction import CompactionState
 
 
@@ -39,3 +39,20 @@ async def test_build_chat_agent_returns_agent_with_capabilities():
     ), patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-unit"}):
         agent = await build_chat_agent(db, org_id, state)
     assert agent is not None
+
+
+def test_summary_prompt_has_messages_placeholder():
+    """The summarization prompt must carry a ``{messages}`` slot.
+
+    ``SummarizationProcessor._create_summary`` injects the conversation via
+    ``summary_prompt.format(messages=...)``. A prompt missing the placeholder
+    silently drops the conversation, so the summarization model is handed an
+    empty task and replies with a confused "paste the conversation" message
+    that then leaks into user-facing chat output (BUG-004).
+    """
+    assert "{messages}" in _SUMMARY_PROMPT
+
+    conversation = "User: hello\nAssistant: hi there"
+    rendered = _SUMMARY_PROMPT.format(messages=conversation)
+    assert conversation in rendered
+    assert "{messages}" not in rendered
