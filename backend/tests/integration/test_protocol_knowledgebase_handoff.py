@@ -44,7 +44,11 @@ async def _create_session(client: AsyncClient, auth_headers: dict) -> str:
 
 
 async def _persist_placeholder(
-    db: AsyncSession, session_id: str, tool_call_id: str
+    db: AsyncSession,
+    session_id: str,
+    tool_call_id: str,
+    source_url: str = "https://openwetware.org/wiki/X",
+    license: str = "CC BY-SA 3.0",
 ) -> ChatMessage:
     """Mirror what send_message_streaming would persist when it pauses."""
     msg = ChatMessage(
@@ -56,12 +60,12 @@ async def _persist_placeholder(
                 "tool_call_id": tool_call_id,
                 "tool_name": "create_protocol_from_external_source",
                 "title": "Heat-shock transformation",
-                "source_url": "https://openwetware.org/wiki/X",
+                "source_url": source_url,
                 "payload_preview": {
                     "title": "Heat-shock transformation",
-                    "source_url": "https://openwetware.org/wiki/X",
+                    "source_url": source_url,
                     "step_count": 5,
-                    "license": "CC BY-SA 3.0",
+                    "license": license,
                     "deviations": [],
                 },
             }
@@ -221,3 +225,96 @@ async def test_rejection_path_resumes_cleanly(
 
     events = _parse_sse_lines(body)
     assert events[-1]["type"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_protocols_io_source_approval_composes(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_org: Organization,
+    db_session: AsyncSession,
+):
+    """The approval handshake is source-agnostic: a protocols.io candidate
+    streams approval_required and resolves to done on approve."""
+    session_id = await _create_session(client, auth_headers)
+    tool_call_id = "call_protocols_io_1"
+    source_url = "https://www.protocols.io/view/plasmid-miniprep-abc123"
+    placeholder = await _persist_placeholder(
+        db_session,
+        session_id,
+        tool_call_id,
+        source_url=source_url,
+        license="CC BY 4.0",
+    )
+
+    stream_events = [
+        {
+            "type": "approval_required",
+            "tool_call_id": tool_call_id,
+            "tool_name": "create_protocol_from_external_source",
+            "title": "Plasmid Miniprep",
+            "source_url": source_url,
+            "payload_preview": {
+                "title": "Plasmid Miniprep",
+                "source_url": source_url,
+                "step_count": 6,
+                "license": "CC BY 4.0",
+                "deviations": [],
+            },
+            "assistant_message_id": str(placeholder.id),
+        },
+    ]
+    with patch(
+        "app.api.endpoints.chat.send_message_streaming",
+        return_value=_yield_canned(*stream_events),
+    ):
+        async with client.stream(
+            "POST",
+            f"/chat/sessions/{session_id}/messages/stream",
+            json={"content": "find a protocols.io miniprep"},
+            headers=auth_headers,
+        ) as resp:
+            assert resp.status_code == 200
+            body = ""
+            async for chunk in resp.aiter_text():
+                body += chunk
+    assert "approval_required" in [e["type"] for e in _parse_sse_lines(body)]
+
+    resume_events = [
+        {
+            "type": "done",
+            "user_message": {
+                "id": str(uuid.uuid4()),
+                "session_id": session_id,
+                "role": "USER",
+                "content": "Approved external protocol conversion.",
+                "metadata_": None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "assistant_message": {
+                "id": str(placeholder.id),
+                "session_id": session_id,
+                "role": "ASSISTANT",
+                "content": "Drafted Plasmid Miniprep.",
+                "metadata_": None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "sources": [],
+        }
+    ]
+    with patch(
+        "app.api.endpoints.chat.resume_message_streaming",
+        return_value=_yield_canned(*resume_events),
+    ):
+        resp = await client.post(
+            f"/chat/sessions/{session_id}/messages/approve",
+            json={"tool_call_id": tool_call_id, "approved": True},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = ""
+        async for chunk in resp.aiter_text():
+            body += chunk
+    events = _parse_sse_lines(body)
+    assert [e["type"] for e in events] == ["done"]
+    assert "Drafted" in events[0]["assistant_message"]["content"]
