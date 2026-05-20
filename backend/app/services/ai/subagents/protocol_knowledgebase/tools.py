@@ -7,22 +7,18 @@ protocol_creator after a human-in-the-loop approval.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import math
 import re
-import time
 import urllib.parse
-from collections import deque
 from dataclasses import asdict
-from typing import Callable
-from uuid import UUID
 
 import httpx
 from pydantic_ai import RunContext
 
 from app.core.config import settings
 from app.services.ai.deps import ChatDeps
+from app.services.ai.subagents.protocol_knowledgebase import rate_limit
 from app.services.ai.subagents.protocol_knowledgebase.types import (
     ExternalProtocolPayload,
     ExternalProtocolStep,
@@ -226,14 +222,6 @@ _OWW_HOST = "openwetware.org"
 # `/wiki/` path is for human-readable pages and 404s the api.php script.
 _OWW_API = "https://openwetware.org/mediawiki/api.php"
 
-# Test-injectable monotonic clock — tests override this.
-_now: Callable[[], float] = time.monotonic
-
-# In-process token bucket — per-org timestamps for the last 60s window.
-# Single-replica deploy assumption; revisit when we go multi-worker.
-_RECENT_REQUESTS: dict[UUID, deque[float]] = {}
-_LIMIT_LOCK = asyncio.Lock()
-
 
 def _require_enabled() -> None:
     if not settings.features.external_protocols.enabled:
@@ -241,21 +229,6 @@ def _require_enabled() -> None:
             "External protocols feature is disabled. Ask an admin to enable "
             "BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__ENABLED."
         )
-
-
-async def _check_rate_limit(org_id: UUID) -> None:
-    limit = settings.features.external_protocols.openwetware.rate_limit_per_minute
-    async with _LIMIT_LOCK:
-        now = _now()
-        bucket = _RECENT_REQUESTS.setdefault(org_id, deque())
-        cutoff = now - 60.0
-        while bucket and bucket[0] < cutoff:
-            bucket.popleft()
-        if len(bucket) >= limit:
-            raise ValueError(
-                f"OpenWetWare rate limit hit ({limit}/min). Try again in a minute."
-            )
-        bucket.append(now)
 
 
 def _require_oww_url(url: str) -> None:
@@ -303,7 +276,8 @@ async def search_openwetware(
         limit: Maximum number of hits to return (default 5, capped at 10).
     """
     _require_enabled()
-    await _check_rate_limit(ctx.deps.org_id)
+    _rate_limit = settings.features.external_protocols.openwetware.rate_limit_per_minute
+    await rate_limit.check_rate_limit(ctx.deps.org_id, "openwetware", _rate_limit)
 
     limit = max(1, min(int(limit), 10))
     timeout = settings.features.external_protocols.openwetware.request_timeout_seconds
@@ -365,7 +339,8 @@ async def fetch_openwetware_protocol(
     """
     _require_enabled()
     _require_oww_url(url)
-    await _check_rate_limit(ctx.deps.org_id)
+    limit = settings.features.external_protocols.openwetware.rate_limit_per_minute
+    await rate_limit.check_rate_limit(ctx.deps.org_id, "openwetware", limit)
 
     page_title = _page_title_from_url(url)
     timeout = settings.features.external_protocols.openwetware.request_timeout_seconds

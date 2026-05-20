@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.core.config import settings
+from app.services.ai.subagents.protocol_knowledgebase import rate_limit
 from app.services.ai.subagents.protocol_knowledgebase import tools as kb
 
 FIX_DIR = Path(__file__).parent.parent / "fixtures" / "openwetware"
@@ -50,9 +51,9 @@ def _fake_get(json_path: Path):
 
 @pytest.fixture(autouse=True)
 def _reset_rate_bucket():
-    kb._RECENT_REQUESTS.clear()
+    rate_limit._RECENT_REQUESTS.clear()
     yield
-    kb._RECENT_REQUESTS.clear()
+    rate_limit._RECENT_REQUESTS.clear()
 
 
 @pytest.fixture
@@ -130,7 +131,7 @@ async def test_rate_limit_trips_after_threshold(_enabled, monkeypatch):
     )
     org = uuid4()
     fake_now = {"t": 0.0}
-    monkeypatch.setattr(kb, "_now", lambda: fake_now["t"])
+    monkeypatch.setattr(rate_limit, "_now", lambda: fake_now["t"])
     ctx = _FakeCtx(deps=_FakeDeps(org_id=org))
     with patch(
         "httpx.AsyncClient.get", new=_fake_get(FIX_DIR / "opensearch_response.json")
