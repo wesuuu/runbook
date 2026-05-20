@@ -26,6 +26,7 @@
     import { toast } from "$lib/toast";
     import { getCurrentOrg, getUser, getToken } from "$lib/auth.svelte";
     import { ProjectSchema } from "$lib/schemas";
+    import { paths } from "$lib/paths";
     import type { NodeTypes } from "@xyflow/svelte";
     import ProtocolSidebar from "$lib/components/protocol/ProtocolSidebar.svelte";
     import PublishVersionDialog from "$lib/components/protocol/PublishVersionDialog.svelte";
@@ -104,7 +105,7 @@
     }
     let { initialGraph, embedded = false, onGraphChange }: Props = $props();
 
-    const id = $derived(embedded ? undefined : $page.params.id);
+    const slug = $derived(embedded ? undefined : $page.params.slug);
 
     // --- Node Types ---
     const nodeTypes = { unitOp: UnitOpNode, swimLane: SwimLaneNode, processStart: ProcessStartNode } as Record<string, any> as NodeTypes;
@@ -153,6 +154,8 @@
     // PDF preview drawer
     let showPdfDrawer = $state(false);
     let projectPdfFormat = $state<Record<string, any>>({});
+    // F-0091: project slug for slug-based navigation back to the project page.
+    let projectSlug = $state<string | null>(null);
 
     // Version browsing (prev/next navigation)
     let previewingVersion = $state<number | null>(null);
@@ -656,9 +659,9 @@
     }
 
     async function refreshProtocol() {
-        if (!protocol?.id) return;
+        if (!protocol?.slug) return;
         try {
-            const fresh: any = await api.get(`/protocols/${protocol.id}`);
+            const fresh: any = await api.get(`/protocols/by-slug/${protocol.slug}`);
             protocol = fresh;
             protocolStatus = fresh.status || 'DRAFT';
             versionNumber = fresh.version_number || 0;
@@ -712,8 +715,8 @@
                 sites = st;
             }
 
-            if (id && id !== "new") {
-                protocol = await api.get(`/protocols/${id}`);
+            if (slug && slug !== "new") {
+                protocol = await api.get(`/protocols/by-slug/${slug}`);
                 roles = protocol.roles || [];
                 protocolStatus = protocol.status || "DRAFT";
                 versionNumber = protocol.version_number || 0;
@@ -732,6 +735,7 @@
                 try {
                     const proj = await api.get(`/projects/${protocol.project_id}`, { schema: ProjectSchema });
                     projectPdfFormat = (proj.settings?.pdf_format as Record<string, any>) || {};
+                    projectSlug = proj.slug;
                 } catch {
                     // Ignore — best-effort load.
                 }
@@ -781,7 +785,7 @@
 
             // Populate version list so the save toast can tell whether it
             // is creating a new draft vs editing the existing one.
-            if (id && id !== "new") {
+            if (slug && slug !== "new") {
                 await loadVersions();
             }
         } catch (e: unknown) {
@@ -1135,8 +1139,10 @@
             onConfirm: async () => {
                 try {
                     await api.delete(`/protocols/${protocol!.id}`);
-                    if (protocol!.project_id) {
-                        window.location.href = `/projects/${protocol!.project_id}`;
+                    if (projectSlug) {
+                        window.location.href = paths.project(projectSlug);
+                    } else if (protocol!.project_id) {
+                        window.location.href = paths.projects();
                     } else {
                         window.location.href = '/';
                     }

@@ -16,7 +16,7 @@
         formatFileSize,
     } from '$lib/utils/document-utils';
     import type { ProtocolImportProposal, StepProposal } from '$lib/schemas/protocolImport';
-    import ProtocolEditor from '../../../routes/protocols/[id]/+page.svelte';
+    import ProtocolEditor from '../../../routes/[org]/protocols/[slug]/+page.svelte';
 
     interface Props {
         open: boolean;
