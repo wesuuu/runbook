@@ -57,4 +57,5 @@ pythonpath = ["."]
 testpaths = ["tests"]
 markers = [
     "benchmark: LLM accuracy and E2E protocol import benchmarks (requires AI provider)",
+    "live: hits a real external API (requires network + credentials); run with -m live",
 ]

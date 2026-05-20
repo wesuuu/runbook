@@ -1,0 +1,23 @@
+{
+  "payload": {
+    "id": 12345,
+    "title": "Plasmid Miniprep (Alkaline Lysis)",
+    "url": "https://www.protocols.io/view/plasmid-miniprep-alkaline-lysis-abc123",
+    "authors": [
+      {"name": "Jane Doe"},
+      {"name": "John Roe"}
+    ],
+    "license": {"title": "CC BY 4.0"},
+    "description": "{\"blocks\":[{\"key\":\"a1\",\"text\":\"Standard alkaline-lysis plasmid miniprep for purifying plasmid DNA from overnight E. coli cultures.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}",
+    "materials": [],
+    "materials_text": "{\"blocks\":[{\"key\":\"m1\",\"text\":\"Resuspension buffer (P1)\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"m2\",\"text\":\"Lysis buffer (P2)\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"m3\",\"text\":\"Neutralization buffer (P3)\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"m4\",\"text\":\"Silica spin columns\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}",
+    "steps": [
+      {"id": 1, "step": "{\"blocks\":[{\"key\":\"s1\",\"text\":\"Pellet 5 mL of overnight culture by centrifugation at 8000 x g for 3 min.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}"},
+      {"id": 2, "step": "{\"blocks\":[{\"key\":\"s2\",\"text\":\"Resuspend the pellet in 250 uL P1 buffer by vortexing.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}"},
+      {"id": 3, "step": "{\"blocks\":[{\"key\":\"s3\",\"text\":\"Add 250 uL P2 buffer and mix gently by inverting 6 times.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}"},
+      {"id": 4, "step": "{\"blocks\":[{\"key\":\"s4\",\"text\":\"Add 350 uL P3 buffer and mix immediately; incubate on ice for 5 min.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}"},
+      {"id": 5, "step": "{\"blocks\":[{\"key\":\"s5\",\"text\":\"Centrifuge at 13000 x g for 10 min and load the supernatant onto a spin column.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}"},
+      {"id": 6, "step": "{\"blocks\":[{\"key\":\"s6\",\"text\":\"Wash the column once and elute in 50 uL elution buffer.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}"}
+    ]
+  }
+}

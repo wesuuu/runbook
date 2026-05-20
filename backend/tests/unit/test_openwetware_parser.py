@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
-from app.services.ai.subagents.protocol_knowledgebase.tools import (
+from app.services.ai.subagents.protocol_knowledgebase.openwetware import (
+    parse_openwetware_wikitext,
+)
+from app.services.ai.subagents.protocol_knowledgebase.types import (
     ExternalProtocolPayload,
     ExternalProtocolStep,
-    parse_openwetware_wikitext,
 )
 
 FIXTURE = (
@@ -163,3 +165,11 @@ def test_parser_skips_sub_bullets_and_biblio():
     assert any(t.startswith("Add 100") and "aliquot" in t for t in texts)
     # The page has exactly 9 numbered (`#`) top-level steps in source order.
     assert len(p.steps) == 9, f"Expected 9 top-level steps, got {len(p.steps)}: {texts}"
+
+
+def test_payload_defaults_import_allowed_true():
+    """import_allowed defaults True so the OpenWetWare path (CC-BY-SA,
+    import-safe) is unaffected; license_note defaults None."""
+    p = ExternalProtocolPayload(title="t", source_url="u", summary="s")
+    assert p.import_allowed is True
+    assert p.license_note is None

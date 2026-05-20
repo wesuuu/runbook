@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.core.config import settings
+from app.services.ai.subagents.protocol_knowledgebase import rate_limit
 from app.services.ai.subagents.protocol_knowledgebase import tools as kb
 
 FIX_DIR = Path(__file__).parent.parent / "fixtures" / "openwetware"
@@ -50,16 +51,16 @@ def _fake_get(json_path: Path):
 
 @pytest.fixture(autouse=True)
 def _reset_rate_bucket():
-    kb._RECENT_REQUESTS.clear()
+    rate_limit._RECENT_REQUESTS.clear()
     yield
-    kb._RECENT_REQUESTS.clear()
+    rate_limit._RECENT_REQUESTS.clear()
 
 
 @pytest.fixture
 def _enabled(monkeypatch):
     monkeypatch.setattr(settings.features.external_protocols, "enabled", True)
     monkeypatch.setattr(
-        settings.features.external_protocols, "rate_limit_per_minute", 10
+        settings.features.external_protocols.openwetware, "rate_limit_per_minute", 10
     )
     yield
 
@@ -69,6 +70,16 @@ async def test_search_disabled_when_flag_off():
     settings.features.external_protocols.enabled = False
     ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
     with pytest.raises(ValueError, match="disabled"):
+        await kb.search_openwetware(ctx, "anything")
+
+
+@pytest.mark.asyncio
+async def test_search_disabled_when_openwetware_source_off(_enabled, monkeypatch):
+    monkeypatch.setattr(
+        settings.features.external_protocols.openwetware, "enabled", False
+    )
+    ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
+    with pytest.raises(ValueError, match="OpenWetWare source is disabled"):
         await kb.search_openwetware(ctx, "anything")
 
 
@@ -126,11 +137,11 @@ async def test_fetch_populates_external_protocol_cache(_enabled):
 @pytest.mark.asyncio
 async def test_rate_limit_trips_after_threshold(_enabled, monkeypatch):
     monkeypatch.setattr(
-        settings.features.external_protocols, "rate_limit_per_minute", 2
+        settings.features.external_protocols.openwetware, "rate_limit_per_minute", 2
     )
     org = uuid4()
     fake_now = {"t": 0.0}
-    monkeypatch.setattr(kb, "_now", lambda: fake_now["t"])
+    monkeypatch.setattr(rate_limit, "_now", lambda: fake_now["t"])
     ctx = _FakeCtx(deps=_FakeDeps(org_id=org))
     with patch(
         "httpx.AsyncClient.get", new=_fake_get(FIX_DIR / "opensearch_response.json")

@@ -1,0 +1,41 @@
+{
+  "payload": {
+    "title": "Monarch Spin Plasmid Miniprep (NEB) ",
+    "description": "{\"blocks\":[{\"key\":\"vpeds\",\"text\":\"This protocol uses the Monarch‱ Spin Plasmid Miniprep Kit from NEB (Cat # T1110). The protocol has been adapted from the NEB recommended protocol using centrifugation. The goal of this protocol is to extract plasmid DNA from overnight cultures of E. coli. \",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[{\"style\":\"sup\",\"offset\":30,\"length\":1},{\"style\":\"italic\",\"offset\":246,\"length\":8}],\"entityRanges\":[{\"key\":0,\"offset\":30,\"length\":1},{\"key\":1,\"offset\":32,\"length\":25},{\"key\":2,\"offset\":121,\"length\":24}],\"data\":{}}],\"entityMap\":{\"0\":{\"type\":\"emoji\",\"mutability\":\"MUTABLE\",\"data\":{\"guid\":\"5AE959BE26C311F187320A58A9FEAC02\",\"name\":\":registered:\"}},\"1\":{\"type\":\"link\",\"mutability\":\"MUTABLE\",\"data\":{\"guid\":\"95CC10713E394192BE555EA337D8F3CE\",\"url\":\"https://www.neb.com/en-us/products/t1110-monarch-spin-plasmid-miniprep-kit\"}},\"2\":{\"type\":\"link\",\"mutability\":\"MUTABLE\",\"data\":{\"guid\":\"4038C36EAF27484B9B618841DE65FE55\",\"url\":\"https://www.neb.com/en-us/protocols/plasmid-miniprep-protocol-using-centrifugation-t1110\"}}}}",
+    "authors": [
+      {
+        "name": "Owen Butler"
+      },
+      {
+        "name": "Raven Coffer"
+      }
+    ],
+    "materials": [],
+    "materials_text": "{\"blocks\":[{\"key\":\"oblh3\",\"text\":\"- Overnight cultures\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"wzbsk\",\"text\":\"- Culture media\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"cjsqb\",\"text\":\"         - LB, M9, etc\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"le0rm\",\"text\":\"- Clear, round-bottom 96w plate\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"yqssy\",\"text\":\"- Eppendorf tubes (1.5 mL)\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"kh094\",\"text\":\"- Bunsen burner\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"ybamd\",\"text\":\"- Pipette / tips\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"ql6gi\",\"text\":\"- Centrifuge\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"fhxqq\",\"text\":\"- Plate reader\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"xjc9g\",\"text\":\"- Bleach (10%)\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"b6yge\",\"text\":\"- Nuclease Free Water\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"s0ek9\",\"text\":\"- Bleach waste beaker\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"kcoct\",\"text\":\"- Ethanol waste beaker\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}",
+    "published_on": 1778647219,
+    "public": true,
+    "doi": "dx.doi.org/10.17504/protocols.io.n92ld46yxl5b/v1",
+    "steps": [
+      {
+        "id": 12963346,
+        "step": "{\"blocks\":[{\"key\":\"eyd3n\",\"text\":\"Add   of Buffer B3, gently invert the tube until neutralized, and incubate at room temperature for  . The color should be uniformly yellow when neutralized.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[{\"style\":\"bold\",\"offset\":9,\"length\":9}],\"entityRanges\":[{\"key\":0,\"offset\":4,\"length\":1},{\"key\":1,\"offset\":99,\"length\":1}],\"data\":{}}],\"entityMap\":{\"0\":{\"type\":\"amount\",\"mutability\":\"MUTABLE\",\"data\":{\"amount\":\"400\",\"error\":false,\"guid\":\"\",\"id\":0,\"label\":\"\",\"scientificNotation\":false,\"unit\":1}},\"1\":{\"type\":\"duration\",\"mutability\":\"MUTABLE\",\"data\":{\"duration\":120,\"guid\":\"\",\"id\":0,\"label\":\"\",\"pause\":null,\"preset\":[],\"start\":null}}}}",
+        "description": null
+      },
+      {
+        "id": 12963347,
+        "step": "{\"blocks\":[{\"key\":\"uivgv\",\"text\":\"Add   of Buffer B2, gently invert the tube 10 times (do not vortex), and incubate at room temperature for  . Color should change to dark pink, and solution will become transparent and viscous. \",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[{\"style\":\"bold\",\"offset\":9,\"length\":9}],\"entityRanges\":[{\"key\":0,\"offset\":4,\"length\":1},{\"key\":1,\"offset\":106,\"length\":1}],\"data\":{}},{\"key\":\"ah776\",\"text\":\" \",\"type\":\"atomic\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[{\"key\":2,\"offset\":0,\"length\":1}],\"data\":{}},{\"key\":\"70mfg\",\"text\":\"\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{\"0\":{\"type\":\"amount\",\"mutability\":\"MUTABLE\",\"data\":{\"amount\":\"200\",\"error\":false,\"guid\":\"\",\"id\":0,\"label\":\"\",\"scientificNotation\":false,\"unit\":1}},\"1\":{\"type\":\"duration\",\"mutability\":\"MUTABLE\",\"data\":{\"duration\":60,\"guid\":\"\",\"id\":0,\"label\":\"\",\"pause\":null,\"preset\":[],\"start\":null}},\"2\":{\"type\":\"notes\",\"mutability\":\"IMMUTABLE\",\"data\":{\"blocks\":[{\"data\":{},\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"f22vv\",\"text\":\"Avoid incubating longer than 1 minute to prevent irreversible plasmid denaturation\",\"type\":\"unstyled\"}],\"collapsed\":false,\"entityMap\":{}}}}}",
+        "description": null
+      },
+      {
+        "id": 12963348,
+        "step": "{\"blocks\":[{\"key\":\"sllf0\",\"text\":\"Resuspend the pellet in   of Buffer B1. Gently pipette to mix. Transfer to a pre-labeled 1.5 mL eppendorf tube.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[{\"style\":\"bold\",\"offset\":29,\"length\":9},{\"style\":\"italic\",\"offset\":40,\"length\":23}],\"entityRanges\":[{\"key\":0,\"offset\":24,\"length\":1}],\"data\":{}}],\"entityMap\":{\"0\":{\"type\":\"amount\",\"mutability\":\"MUTABLE\",\"data\":{\"amount\":\"200\",\"error\":false,\"guid\":\"\",\"id\":0,\"label\":\"\",\"scientificNotation\":false,\"unit\":1}}}}",
+        "description": null
+      },
+      {
+        "id": 12963350,
+        "step": "{\"blocks\":[{\"key\":\"6f52i\",\"text\":\"\",\"type\":\"align-center\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"2pcmq\",\"text\":\"Isolating and Resuspending Culture\",\"type\":\"align-center\",\"depth\":0,\"inlineStyleRanges\":[{\"style\":\"bold\",\"offset\":0,\"length\":34}],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}",
+        "description": null
+      }
+    ]
+  }
+}

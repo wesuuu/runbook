@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "id": 12345,
+      "title": "Plasmid Miniprep (Alkaline Lysis)",
+      "url": "https://www.protocols.io/view/plasmid-miniprep-alkaline-lysis-abc123",
+      "description": "<p>Standard alkaline-lysis plasmid miniprep for E. coli.</p>"
+    }
+  ],
+  "pagination": {"total_results": 1}
+}

@@ -18,12 +18,34 @@ class OfflineModeFeatureConfig(BaseModel):
     enabled: bool = False
 
 
-class ExternalProtocolsFeatureConfig(BaseModel):
-    """External protocol knowledgebase feature flag (F-0084)."""
+class OpenWetWareSourceConfig(BaseModel):
+    """OpenWetWare protocol source (F-0084). Default-on within the master flag."""
 
-    enabled: bool = False
+    enabled: bool = True
     request_timeout_seconds: float = 10.0
     rate_limit_per_minute: int = 10
+
+
+class ProtocolsIoSourceConfig(BaseModel):
+    """protocols.io protocol source (F-0090). Opt-in; needs an access token."""
+
+    enabled: bool = False
+    access_token: str = ""  # long-lived API token — secret, env-var only
+    request_timeout_seconds: float = 10.0
+    rate_limit_per_minute: int = 10
+
+
+class ExternalProtocolsFeatureConfig(BaseModel):
+    """External protocol knowledgebase feature flag (F-0084, F-0090).
+
+    `enabled` is the master capability switch. Each source has its own
+    nested sub-block with an independent enable flag and throttle. A source
+    is live iff the master flag AND that source's flag are both on.
+    """
+
+    enabled: bool = False
+    openwetware: OpenWetWareSourceConfig = OpenWetWareSourceConfig()
+    protocols_io: ProtocolsIoSourceConfig = ProtocolsIoSourceConfig()
 
 
 class FeaturesConfig(BaseModel):

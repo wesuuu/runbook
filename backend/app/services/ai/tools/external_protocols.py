@@ -64,6 +64,22 @@ async def create_protocol_from_external_source(
             f"{source_url!r}. Call fetch_openwetware_protocol first."
         )
 
+    # Re-check the license verdict straight off the cached payload — a plain
+    # boolean read, no classify_license call. A stale cache (or a payload
+    # mutated by the resume path) cannot slip a license-restricted protocol
+    # past the import. The connector already set this; we only enforce it.
+    try:
+        import_allowed = json.loads(cached).get("import_allowed", True)
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        # Fail closed: an unparseable cache entry is unverifiable, so it
+        # must not slip a possibly license-restricted protocol through.
+        import_allowed = False
+    if not import_allowed:
+        raise ValueError(
+            "This protocol is under a license that does not permit automatic "
+            "import. It can only be added to the library manually."
+        )
+
     deviation_list = [
         d.strip()
         for d in (ctx.deps.user_deviations or [])

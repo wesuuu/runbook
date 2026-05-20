@@ -1,0 +1,16 @@
+{
+  "payload": {
+    "id": 67890,
+    "title": "Proprietary Assay Protocol",
+    "url": "https://www.protocols.io/view/proprietary-assay-protocol-xyz789",
+    "authors": [{"name": "Acme Labs"}],
+    "license": {"title": "CC BY-NC 4.0"},
+    "description": "{\"blocks\":[{\"key\":\"d1\",\"text\":\"A non-commercially licensed assay protocol.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}",
+    "materials": [],
+    "materials_text": "{\"blocks\":[{\"key\":\"m1\",\"text\":\"Assay buffer\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}},{\"key\":\"m2\",\"text\":\"Detection reagent\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}",
+    "steps": [
+      {"id": 1, "step": "{\"blocks\":[{\"key\":\"s1\",\"text\":\"SECRET STEP TEXT THAT MUST NOT BE COPIED.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}"},
+      {"id": 2, "step": "{\"blocks\":[{\"key\":\"s2\",\"text\":\"ANOTHER SECRET STEP.\",\"type\":\"unstyled\",\"depth\":0,\"inlineStyleRanges\":[],\"entityRanges\":[],\"data\":{}}],\"entityMap\":{}}"}
+    ]
+  }
+}

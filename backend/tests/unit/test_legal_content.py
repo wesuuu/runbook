@@ -50,14 +50,14 @@ def test_privacy_contains_required_sections():
 
 def test_terms_has_version_header():
     terms = legal_service.get_document(CURRENT_VERSION, "terms")["markdown"]
-    assert "**Version:** 2026-04-27" in terms
-    assert "**Effective Date:** 2026-04-27" in terms
+    assert "**Version:** 2026-05-19" in terms
+    assert "**Effective Date:** 2026-05-19" in terms
 
 
 def test_privacy_has_version_header():
     privacy = legal_service.get_document(CURRENT_VERSION, "privacy")["markdown"]
-    assert "**Version:** 2026-04-27" in privacy
-    assert "**Effective Date:** 2026-04-27" in privacy
+    assert "**Version:** 2026-05-19" in privacy
+    assert "**Effective Date:** 2026-05-19" in privacy
 
 
 def test_terms_includes_counsel_todo_marker():
@@ -69,3 +69,14 @@ def test_terms_includes_counsel_todo_marker():
 def test_privacy_includes_counsel_todo_marker():
     privacy = legal_service.get_document(CURRENT_VERSION, "privacy")["markdown"]
     assert "TODO: Have counsel review" in privacy
+
+
+def test_terms_contains_externally_sourced_content_section():
+    terms = legal_service.get_document(CURRENT_VERSION, "terms")["markdown"]
+    assert "Externally-Sourced Protocol Content" in terms
+
+
+def test_2026_05_19_version_registered_and_loadable():
+    assert "2026-05-19" in legal_service.list_versions()
+    doc = legal_service.get_document("2026-05-19", "terms")
+    assert doc["effective_date"] == "2026-05-19"
