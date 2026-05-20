@@ -21,6 +21,24 @@ list.
 Free-text on-bench spot description (e.g. "Bench 4, north wall"). Distinct
 from Room: Room says *which room*, `location` says *where in the room*.
 
+## External protocol source
+
+A public repository the `protocol_knowledgebase` subagent searches (OpenWetWare,
+protocols.io). Each has its own connector module and feature sub-flag under
+`external_protocols`.
+
+## `import_allowed`
+
+Field on `ExternalProtocolPayload`. `False` means a license-restricted protocol
+parsed to metadata only (no step text copied); the subagent surfaces it as a
+link, never an automatic import.
+
+## License-compatibility gate
+
+`licenses.classify_license`: a pure classifier that only marks a protocol
+import-safe if its license permits commercial use AND derivatives
+(CC0/CC-BY/CC-BY-SA/public-domain). Fails closed on NC/ND/unknown.
+
 ## SITE_MANAGER
 
 Additive org role for the person accountable for the facility's equipment

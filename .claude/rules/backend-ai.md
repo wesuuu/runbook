@@ -50,7 +50,14 @@ services/ai/
 - New **subagent**: new package under `subagents/<name>/` with `config.py` exposing `build(model)` and `prompt.md`. Tool functions go in the subagent's own `tools.py` unless multiple subagents need them — then put them in `subagents/shared/<domain>/tools.py`. Register the subagent in `chat_agent.py` `subagents = [...]`.
 - New **tool on an existing subagent**: add to that subagent's `tools.py` and append to its `agent_kwargs["tools"]` in `config.py`.
 - New **one-shot Agent** (called from a service, not via chat): add under `services/ai/workflows/` and call from the relevant domain service.
-- **Pure validators / business rules** the agent uses (e.g. graph validation): live in the domain service, not here. Example: `services/protocols/validation.py`. Tools wrap them.
+- **Pure logic the agent uses** — connectors, parsers, source-specific gates,
+  validators. If it is genuinely shared across multiple consumers (a non-chat
+  path also calls it), put it in the domain service — e.g.
+  `services/protocols/validation.py`. If it is owned by a single subagent, keep
+  it as sibling modules inside that subagent's own package (e.g.
+  `subagents/protocol_knowledgebase/openwetware.py`, `licenses.py`) so the
+  agent's logic stays next to the agent and stays independently testable.
+  Tools wrap it either way.
 
 ## Provider Resolution (`ai_config.py`)
 

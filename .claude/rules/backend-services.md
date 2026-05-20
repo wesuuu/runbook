@@ -106,7 +106,13 @@ For the broader chat-agent architecture (harness, capabilities, subagents, workf
 
 ## AI Tools vs Domain Services
 
-Tools called by chat subagents (under `services/ai/subagents/<name>/tools.py`) must stay thin: argument mapping, domain-service delegation, and `tool_calls` audit logging. Pure business logic — graph validation, parameter checks, structural transforms — belongs in `services/<domain>/`, not in the AI package.
+Tools called by chat subagents (under `services/ai/subagents/<name>/tools.py`) must stay thin: argument mapping, domain-service delegation, and `tool_calls` audit logging. Pure business logic belongs in `services/<domain>/` **when it is genuinely
+shared** — a non-chat code path also calls it (e.g. graph validation, used by
+both the chat tool and the publish endpoint). Logic owned by a single subagent
+— connectors, parsers, source-specific gates — lives as sibling modules inside
+that subagent's own package (e.g. `subagents/protocol_knowledgebase/openwetware.py`,
+`licenses.py`), keeping the agent's logic next to the agent and independently
+testable. Favor locality; reserve `services/<domain>/` for shared code.
 
 Example: `services/protocols/validation.py` exposes `validate_protocol_graph(graph, unit_ops) -> ValidationResult` with no DB or LLM dependency. The chat tool `validate_protocol(ctx, protocol_id)` loads the row, calls the validator, returns the dataclass. This keeps the validator unit-testable without pydantic-ai and reusable from non-chat code paths.
 

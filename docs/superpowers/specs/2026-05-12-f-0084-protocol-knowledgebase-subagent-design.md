@@ -6,7 +6,7 @@
 
 Add a chat subagent `protocol_knowledgebase` that searches OpenWetWare for public protocols, presents structured candidates in the chat, lets the user refine them in natural language, and — only after an explicit human-in-the-loop approval — hands the chosen payload to `protocol_creator` to draft a Batchrite protocol. The HITL gate uses pydantic-ai's native `requires_approval` / `DeferredToolRequests` primitive; this is the same shape pydantic-deepagents wraps, adapted to our existing à-la-carte capabilities stack.
 
-Out of scope (explicitly deferred per the task): protocols.io, auto-mapping external steps onto Batchrite unit-op categories, background ingestion into the org library, silent RAG-style augmentation.
+Out of scope (explicitly deferred per the task): protocols.io, auto-mapping external steps onto Batchrite unit-op categories, background ingestion into the org library, silent RAG-style augmentation. (Superseded by F-0090, which adds protocols.io as a second source — see docs/superpowers/specs/2026-05-19-f-0090-additional-protocol-sources-evaluation.md.)
 
 ## 2. User flow
 
