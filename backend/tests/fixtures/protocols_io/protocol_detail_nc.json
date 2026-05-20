@@ -1,0 +1,18 @@
+{
+  "payload": {
+    "id": 67890,
+    "title": "Proprietary Assay Protocol",
+    "url": "https://www.protocols.io/view/proprietary-assay-protocol-xyz789",
+    "authors": [{"name": "Acme Labs"}],
+    "license": {"title": "CC BY-NC 4.0"},
+    "description": "<p>A non-commercially licensed assay protocol.</p>",
+    "materials": [
+      {"name": "Assay buffer"},
+      {"name": "Detection reagent"}
+    ],
+    "steps": [
+      {"description": "SECRET STEP TEXT THAT MUST NOT BE COPIED."},
+      {"description": "ANOTHER SECRET STEP."}
+    ]
+  }
+}

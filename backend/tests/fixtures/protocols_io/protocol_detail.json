@@ -1,0 +1,27 @@
+{
+  "payload": {
+    "id": 12345,
+    "title": "Plasmid Miniprep (Alkaline Lysis)",
+    "url": "https://www.protocols.io/view/plasmid-miniprep-alkaline-lysis-abc123",
+    "authors": [
+      {"name": "Jane Doe"},
+      {"name": "John Roe"}
+    ],
+    "license": {"title": "CC BY 4.0"},
+    "description": "<p>Standard alkaline-lysis plasmid miniprep for purifying plasmid DNA from overnight E. coli cultures.</p>",
+    "materials": [
+      {"name": "Resuspension buffer (P1)"},
+      {"name": "Lysis buffer (P2)"},
+      {"name": "Neutralization buffer (P3)"},
+      {"name": "Silica spin columns"}
+    ],
+    "steps": [
+      {"description": "Pellet 5 mL of overnight culture by centrifugation at 8000 x g for 3 min."},
+      {"description": "Resuspend the pellet in 250 uL P1 buffer by vortexing."},
+      {"description": "Add 250 uL P2 buffer and mix gently by inverting 6 times."},
+      {"description": "Add 350 uL P3 buffer and mix immediately; incubate on ice for 5 min."},
+      {"description": "Centrifuge at 13000 x g for 10 min and load the supernatant onto a spin column."},
+      {"description": "Wash the column once and elute in 50 uL elution buffer."}
+    ]
+  }
+}
