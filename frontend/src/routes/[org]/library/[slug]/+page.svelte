@@ -28,6 +28,7 @@
     import IndexingPipeline from '$lib/components/library/IndexingPipeline.svelte';
     import IndexingStatusBanner from '$lib/components/library/IndexingStatusBanner.svelte';
     import ProcessingAuditCard from '$lib/components/library/ProcessingAuditCard.svelte';
+    import { paths } from '$lib/paths';
     import { z } from 'zod';
 
     // --- Schemas ---
@@ -61,6 +62,7 @@
 
     const DocumentDetailSchema = z.object({
         id: z.string(),
+        slug: z.string(),
         title: z.string(),
         original_filename: z.string(),
         mime_type: z.string(),
@@ -113,7 +115,9 @@
     // exist (PDF + indexed); non-PDFs render the reader unconditionally.
     let viewMode = $state<'refined' | 'source'>('refined');
 
-    const documentId = $derived($page.params.id ?? '');
+    // Route param is the doc slug; sub-resource/mutation endpoints are
+    // keyed by the document UUID, resolved once the doc loads.
+    const documentId = $derived(document?.id ?? '');
     const isPdf = $derived(document?.mime_type === 'application/pdf');
     const isEnriched = $derived(
         document?.status === 'ENRICHED' || document?.status === 'READY'
@@ -266,7 +270,7 @@
 
     async function loadDocument() {
         try {
-            const doc = await api.get(`/library/documents/${documentId}`, { schema: DocumentDetailSchema });
+            const doc = await api.get(`/library/documents/by-slug/${$page.params.slug}`, { schema: DocumentDetailSchema });
             document = doc;
             allChunks = doc.chunks_preview;
 
@@ -332,7 +336,7 @@
         try {
             await api.delete(`/library/documents/${documentId}`);
             toast.success('Document deleted');
-            goto('/library');
+            goto(paths.library());
         } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : 'Delete failed';
             if (msg.includes('403') || msg.includes('permission')) {
@@ -430,7 +434,7 @@
         <!-- ─── Topbar: breadcrumbs + doc id ─── -->
         <div in:fade={{ duration: blockDuration() }} class="flex justify-between items-center text-sm text-muted-foreground mb-7 gap-4">
             <nav class="flex items-center min-w-0">
-                <a href="/library" class="hover:text-foreground transition-colors inline-flex items-center gap-1">
+                <a href={paths.library()} class="hover:text-foreground transition-colors inline-flex items-center gap-1">
                     <ArrowLeft class="h-3.5 w-3.5" />
                     Library
                 </a>
@@ -479,7 +483,7 @@
                     </Button>
                 {/if}
                 {#if document.status === 'AWAITING_REFINEMENT'}
-                    <a href="/library/documents/{document.id}/refine">
+                    <a href={paths.libraryDocRefine(document.slug)}>
                         <Button size="sm">Refine document</Button>
                     </a>
                 {:else if canToggleView}
@@ -652,7 +656,7 @@
                             <p class="text-sm text-muted-foreground leading-relaxed">
                                 The raw markdown has been pulled out of your document. Open the refinement editor to review docling's output, fix any artifacts, and approve the file for indexing.
                             </p>
-                            <a href="/library/documents/{document.id}/refine">
+                            <a href={paths.libraryDocRefine(document.slug)}>
                                 <Button>Refine document</Button>
                             </a>
                         </div>

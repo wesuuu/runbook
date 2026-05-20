@@ -25,10 +25,13 @@
     import RefinementSidebar from '$lib/components/document-refinement/RefinementSidebar.svelte';
     import RefinementQueue from '$lib/components/document-refinement/RefinementQueue.svelte';
     import RefinementEditor from '$lib/components/document-refinement/RefinementEditor.svelte';
-
-    const documentId = $derived($page.params.id as string);
+    import { paths } from '$lib/paths';
 
     let doc = $state<DocumentResponse | null>(null);
+
+    // Route param is the doc slug; sub-resource endpoints are keyed by the
+    // document UUID, resolved once the doc loads.
+    const documentId = $derived(doc?.id ?? '');
     let initialMarkdown = $state('');
     let loading = $state(true);
     let error = $state<string | null>(null);
@@ -67,16 +70,19 @@
 
     async function load(): Promise<void> {
         try {
-            const fetched = await api.get(`/library/documents/${documentId}`, {
-                schema: DocumentResponseSchema,
-            });
+            const fetched = await api.get(
+                `/library/documents/by-slug/${$page.params.slug}`,
+                {
+                    schema: DocumentResponseSchema,
+                },
+            );
             doc = fetched;
 
             if (
                 fetched.status === 'AWAITING_REFINEMENT' &&
                 initialMarkdown === ''
             ) {
-                const md = await getDocumentMarkdown(documentId);
+                const md = await getDocumentMarkdown(fetched.id);
                 initialMarkdown = md.markdown;
             }
 
@@ -85,7 +91,7 @@
                 fetched.refinement_status === 'COMPLETE' ||
                 ['INDEXING', 'READY', 'INDEXED', 'ENRICHED'].includes(fetched.status)
             ) {
-                goto(`/library/${documentId}`);
+                goto(paths.libraryDoc(fetched.slug));
                 return;
             }
 
@@ -154,7 +160,7 @@
             toast.success('Refinement complete — indexing started');
             completeDialogOpen = false;
             hasUnsavedChanges = false;
-            goto(`/library/${documentId}`);
+            if (doc) goto(paths.libraryDoc(doc.slug));
         } catch (e: unknown) {
             toast.error(
                 e instanceof Error ? e.message : 'Could not complete refinement',
@@ -185,13 +191,15 @@
 </script>
 
 <div class="mx-auto max-w-[1600px] space-y-4 px-4 py-4">
-    <a
-        href="/library/{documentId}"
-        class="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-    >
-        <ArrowLeft class="h-4 w-4" />
-        Back to document
-    </a>
+    {#if doc}
+        <a
+            href={paths.libraryDoc(doc.slug)}
+            class="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+            <ArrowLeft class="h-4 w-4" />
+            Back to document
+        </a>
+    {/if}
 
     {#if loading}
         <div in:fade={{ duration: blockDuration() }}>
