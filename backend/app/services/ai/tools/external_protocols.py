@@ -71,7 +71,9 @@ async def create_protocol_from_external_source(
     try:
         import_allowed = json.loads(cached).get("import_allowed", True)
     except (json.JSONDecodeError, AttributeError, TypeError):
-        import_allowed = True
+        # Fail closed: an unparseable cache entry is unverifiable, so it
+        # must not slip a possibly license-restricted protocol through.
+        import_allowed = False
     if not import_allowed:
         raise ValueError(
             "This protocol is under a license that does not permit automatic "

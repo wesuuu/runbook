@@ -162,5 +162,20 @@ async def test_raises_when_payload_license_restricted():
         )
 
 
+@pytest.mark.asyncio
+async def test_raises_when_cached_payload_is_corrupt():
+    """A cache entry that is not valid JSON (corruption, or a non-dict
+    value) must fail closed — the license re-check refuses an import it
+    cannot verify rather than letting an unparseable payload through."""
+    url = "https://www.protocols.io/view/corrupt"
+    deps = _FakeDeps()
+    deps.external_protocol_cache[url] = "}{ not json"
+    ctx = _FakeCtx(deps=deps)
+    with pytest.raises(ValueError, match="license"):
+        await create_protocol_from_external_source(
+            ctx, source_url=url, title="X", project_name="P"
+        )
+
+
 def test_label_present():
     assert TOOL_LABELS["create_protocol_from_external_source"].endswith("…")
