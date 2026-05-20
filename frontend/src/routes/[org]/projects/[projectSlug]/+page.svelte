@@ -2,20 +2,9 @@
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
-    import { getCurrentOrg } from "$lib/auth.svelte";
+    import { paths } from "$lib/paths";
     import * as Dialog from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
-    import { Input } from "$lib/components/ui/input";
-    import { Label } from "$lib/components/ui/label";
-    import { Textarea } from "$lib/components/ui/textarea";
-    import {
-        Card,
-        CardContent,
-        CardDescription,
-        CardFooter,
-        CardHeader,
-        CardTitle,
-    } from "$lib/components/ui/card";
     import ProtocolsTab from "$lib/components/project/ProtocolsTab.svelte";
     import ExperimentsTab from "$lib/components/project/ExperimentsTab.svelte";
     import RunsTab from "$lib/components/project/RunsTab.svelte";
@@ -29,7 +18,7 @@
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
 
-    const id = $derived($page.params.id ?? "");
+    const projectSlug = $derived($page.params.projectSlug ?? "");
 
     let project = $state<any>(null);
     let protocols = $state<any[]>([]);
@@ -37,6 +26,9 @@
     let experiments = $state<any[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
+
+    // Resolved project UUID — used for nested API calls and child props.
+    const id = $derived(project?.id ?? "");
 
     // -- Tab State (derived from URL ?tab= param) --
     type TabName = "protocols" | "experiments" | "runs" | "activity" | "settings";
@@ -66,10 +58,6 @@
     let showExperimentModal = $state(false);
     let newExperimentName = $state("");
     let newExperimentDescription = $state("");
-
-    // -- Form State for "New Project" mode --
-    let form = $state({ name: "", description: "", organization_id: "" });
-    let organizations = $state<any[]>([]);
 
     // -- Onboarding Tour --
     let projectTourModalOpen = $state(false);
@@ -125,35 +113,33 @@
         project?.id ? "PRJ-" + project.id.slice(0, 6).toUpperCase() : "",
     );
 
-    // Reload data whenever the project id changes
+    // Reload data whenever the project slug changes
     $effect(() => {
-        const currentId = id;
+        // Track the slug so the effect re-runs on navigation.
+        void projectSlug;
         project = null;
         protocols = [];
         runs = [];
         experiments = [];
         error = null;
-
-        if (currentId === "new") {
-            loadCreateData();
-        } else {
-            loadData();
-        }
+        loadData();
     });
 
     async function loadData() {
         loading = true;
         try {
-            if (id === "new") return;
+            const slug = projectSlug;
+            if (!slug) return;
 
-            const [p, protos, projectRuns, projectExperiments] = await Promise.all([
-                api.get(`/projects/${id}`),
-                api.get(`/projects/${id}/protocols`),
-                api.get(`/projects/${id}/runs`),
-                api.get(`/projects/${id}/experiments`),
+            const p: any = await api.get(`/projects/by-slug/${slug}`);
+            project = p;
+
+            const [protos, projectRuns, projectExperiments] = await Promise.all([
+                api.get(`/projects/${p.id}/protocols`),
+                api.get(`/projects/${p.id}/runs`),
+                api.get(`/projects/${p.id}/experiments`),
             ]);
 
-            project = p;
             protocols = protos as any[];
             runs = projectRuns as any[];
             experiments = projectExperiments as any[];
@@ -217,78 +203,9 @@
         }
     }
 
-    async function loadCreateData() {
-        const org = getCurrentOrg();
-        organizations = await api.get("/iam/organizations");
-        if (org) {
-            form.organization_id = org.id;
-        } else if (organizations.length > 0) {
-            form.organization_id = organizations[0].id;
-        }
-        loading = false;
-    }
-
-    async function saveNewProject() {
-        try {
-            await api.post("/projects", form);
-            goto("/projects");
-        } catch (e: unknown) {
-            console.error(e instanceof Error ? e.message : e);
-        }
-    }
 </script>
 
-{#if id === "new"}
-    <!-- CREATE MODE -->
-    <div class="max-w-4xl mx-auto py-8 px-4">
-        <div class="max-w-xl mx-auto">
-            <h1 class="text-3xl font-bold text-slate-900 mb-6">New Project</h1>
-            <Card>
-                <CardHeader>
-                    <CardTitle>Project Details</CardTitle>
-                    <CardDescription
-                        >Create a new project to organize your work.</CardDescription
-                    >
-                </CardHeader>
-                <CardContent class="space-y-4">
-                    <div class="space-y-2">
-                        <Label for="name">Name</Label>
-                        <Input
-                            id="name"
-                            bind:value={form.name}
-                            placeholder="My Project"
-                        />
-                    </div>
-                    <div class="space-y-2">
-                        <Label for="desc">Description</Label>
-                        <Textarea
-                            id="desc"
-                            bind:value={form.description}
-                            placeholder="Describe the project..."
-                        />
-                    </div>
-                    <div class="space-y-2">
-                        <Label for="org">Organization</Label>
-                        <select
-                            id="org"
-                            bind:value={form.organization_id}
-                            class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {#each organizations as org}
-                                <option value={org.id}>{org.name}</option>
-                            {/each}
-                        </select>
-                    </div>
-                </CardContent>
-                <CardFooter>
-                    <Button onclick={saveNewProject} class="w-full"
-                        >Create Project</Button
-                    >
-                </CardFooter>
-            </Card>
-        </div>
-    </div>
-{:else if loading}
+{#if loading}
     <div
         in:fade={{ duration: blockDuration() }}
         class="flex items-center justify-center min-h-[calc(100vh-57px)] bg-gray-100 text-sm text-slate-400"
@@ -314,7 +231,7 @@
                 <!-- Breadcrumb -->
                 <nav class="flex items-center gap-2 mb-2.5 text-[13px]">
                     <a
-                        href="/projects"
+                        href={paths.projects()}
                         class="text-teal-600 font-medium hover:underline"
                         >Projects</a
                     >
@@ -490,7 +407,7 @@
 <!-- IMPORT PROTOCOL MODAL -->
 <ProtocolImportModal
     bind:open={showImportModal}
-    preselectedProjectId={id !== 'new' ? id : undefined}
+    preselectedProjectId={id || undefined}
     onSuccess={(protocolId) => {
         loadData();
         goto(`/protocols/${protocolId}`);

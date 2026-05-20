@@ -6,8 +6,13 @@
     import { blockDuration, listDuration } from '$lib/transitions';
     import { api } from '$lib/api';
     import { getCurrentOrg } from '$lib/auth.svelte';
-    import { Button, buttonVariants } from '$lib/components/ui/button';
+    import { paths } from '$lib/paths';
+    import { Button } from '$lib/components/ui/button';
     import * as Table from '$lib/components/ui/table';
+    import * as Dialog from '$lib/components/ui/dialog';
+    import { Input } from '$lib/components/ui/input';
+    import { Label } from '$lib/components/ui/label';
+    import { Textarea } from '$lib/components/ui/textarea';
     import {
         Card,
         CardContent,
@@ -18,7 +23,7 @@
     import { Plus } from 'lucide-svelte';
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
-    import { ProjectListSchema, type Project } from '$lib/schemas';
+    import { ProjectListSchema, ProjectSchema, type Project } from '$lib/schemas';
     import { EmptyState } from '$lib/components/ui/empty-state';
     import TourModal from '$lib/onboarding/TourModal.svelte';
     import { markAllDismissed } from '$lib/onboarding/tourStore.svelte';
@@ -27,6 +32,13 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
     let welcomeOpen = $state(false);
+
+    // -- New Project dialog --
+    let showCreateModal = $state(false);
+    let newProjectName = $state('');
+    let newProjectDescription = $state('');
+    let creating = $state(false);
+    let createError = $state<string | null>(null);
 
     async function loadProjects() {
         loading = true;
@@ -42,12 +54,39 @@
         }
     }
 
+    async function createProject() {
+        if (!newProjectName.trim()) return;
+        creating = true;
+        createError = null;
+        try {
+            const org = getCurrentOrg();
+            const created = await api.post(
+                '/projects',
+                {
+                    name: newProjectName.trim(),
+                    description: newProjectDescription.trim() || null,
+                    organization_id: org?.id,
+                },
+                { schema: ProjectSchema },
+            );
+            showCreateModal = false;
+            newProjectName = '';
+            newProjectDescription = '';
+            goto(paths.project(created.slug));
+        } catch (e: unknown) {
+            createError = e instanceof Error ? e.message : 'An error occurred';
+        } finally {
+            creating = false;
+        }
+    }
+
     async function startProjectTourFromWelcome() {
         welcomeOpen = false;
         const { project_id } = await api.post<{ project_id: string }>(
             '/onboarding/tour/project/start', {},
         );
-        goto(`/projects/${project_id}?tour=project`);
+        const created = await api.get(`/projects/${project_id}`, { schema: ProjectSchema });
+        goto(`${paths.project(created.slug)}?tour=project`);
     }
 
     async function dismissWelcome() {
@@ -66,9 +105,9 @@
                 Manage your scientific projects.
             </p>
         </div>
-        <a href="/projects/new" class={buttonVariants()}>
+        <Button onclick={() => (showCreateModal = true)}>
             <Plus class="mr-2 h-4 w-4" /> New Project
-        </a>
+        </Button>
     </div>
 
     {#if loading}
@@ -98,7 +137,7 @@
                     <!-- Mobile card layout -->
                     <div class="sm:hidden divide-y divide-border">
                         {#each projects as project (project.id)}
-                            <a href="/projects/{project.id}" class="block py-3 px-1 min-h-11" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
+                            <a href={paths.project(project.slug)} class="block py-3 px-1 min-h-11" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="font-semibold text-sm text-primary">{project.name}</div>
                                 {#if project.description}
                                     <div class="text-xs text-muted-foreground mt-1 line-clamp-2">{project.description}</div>
@@ -126,7 +165,7 @@
                                     <Table.Row>
                                         <Table.Cell class="font-medium">
                                             <a
-                                                href="/projects/{project.id}"
+                                                href={paths.project(project.slug)}
                                                 class="font-semibold text-primary hover:underline"
                                             >
                                                 {project.name}
@@ -135,7 +174,7 @@
                                         <Table.Cell class="hidden md:table-cell">{project.description || '-'}</Table.Cell>
                                         <Table.Cell class="hidden md:table-cell">{project.organization?.name || 'N/A'}</Table.Cell>
                                         <Table.Cell class="text-right">
-                                            <a href="/projects/{project.id}">
+                                            <a href={paths.project(project.slug)}>
                                                 <Button variant="ghost" size="sm">View</Button>
                                             </a>
                                         </Table.Cell>
@@ -150,6 +189,53 @@
         </div>
     {/if}
 </div>
+
+<!-- NEW PROJECT MODAL -->
+<Dialog.Root bind:open={showCreateModal}>
+    <Dialog.Content class="sm:max-w-md">
+        <Dialog.Header>
+            <Dialog.Title>New Project</Dialog.Title>
+            <Dialog.Description>Create a new project to organize your work.</Dialog.Description>
+        </Dialog.Header>
+        <div class="space-y-4">
+            <div class="space-y-2">
+                <Label for="new-project-name">Name</Label>
+                <Input
+                    id="new-project-name"
+                    bind:value={newProjectName}
+                    placeholder="My Project"
+                />
+            </div>
+            <div class="space-y-2">
+                <Label for="new-project-desc">Description</Label>
+                <Textarea
+                    id="new-project-desc"
+                    bind:value={newProjectDescription}
+                    placeholder="Describe the project..."
+                />
+            </div>
+            {#if createError}
+                <p class="text-sm text-red-600">{createError}</p>
+            {/if}
+        </div>
+        <Dialog.Footer>
+            <Button
+                variant="secondary"
+                onclick={() => {
+                    showCreateModal = false;
+                    newProjectName = '';
+                    newProjectDescription = '';
+                    createError = null;
+                }}
+            >
+                Cancel
+            </Button>
+            <Button onclick={createProject} disabled={!newProjectName.trim() || creating}>
+                {creating ? 'Creating...' : 'Create Project'}
+            </Button>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>
 
 <TourModal
     bind:open={welcomeOpen}
