@@ -412,6 +412,16 @@ export async function initialize(): Promise<void> {
     }
 }
 
+let initPromise: Promise<void> | null = null;
+
+/** Idempotent: runs `initialize()` once, returns the same promise after. */
+export function ensureInitialized(): Promise<void> {
+    if (!initPromise) {
+        initPromise = initialize();
+    }
+    return initPromise;
+}
+
 // Test-only: allow tests to inject a user state. Not for production use.
 export function __setUserForTest(value: User | null): void {
     user = value;

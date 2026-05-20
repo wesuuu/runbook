@@ -3,7 +3,7 @@
     import { page } from '$app/stores';
     import { beforeNavigate } from '$app/navigation';
     import { goto } from '$app/navigation';
-    import { initialize, isAuthenticated, isEmailVerified, isInitialized, isTosCurrent, getCurrentOrg, getUserPreferences, handleVerificationCallback } from '$lib/auth.svelte';
+    import { ensureInitialized, isAuthenticated, isEmailVerified, isInitialized, isTosCurrent, getCurrentOrg, getUserPreferences, handleVerificationCallback } from '$lib/auth.svelte';
     import { decideRedirect, PUBLIC_ROUTES } from '$lib/auth-gate';
     import { initConnectivity, destroyConnectivity } from '$lib/pwa.svelte';
     import { initFieldMode } from '$lib/field-mode.svelte';
@@ -71,7 +71,7 @@
             await handleVerificationCallback(authToken);
         }
 
-        await initialize();
+        await ensureInitialized();
         await initFieldMode();
 
         // Initial redirect check
