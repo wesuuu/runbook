@@ -165,6 +165,14 @@ class Settings(BaseSettings):
         Path(__file__).resolve().parent.parent / "services" / "ai" / "skills"
     )
 
+    # App-help corpus directory (F-0089). Repo-root docs/user-guide — an
+    # absolute path computed from __file__ so it resolves regardless of the
+    # process CWD (backend/ at runtime). parents[3] is the repo root, the
+    # same anchor docling_script_path uses. Override via env in deploy.
+    user_guide_dir: str = str(
+        Path(__file__).resolve().parents[3] / "docs" / "user-guide"
+    )
+
     # Chat context window management
     max_message_length: int = 10000
     compaction_threshold: float = 0.6

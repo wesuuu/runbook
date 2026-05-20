@@ -24,6 +24,7 @@ from app.services.ai.deps import ChatDeps
 from app.services.ai.runtime.compaction import CompactionState
 from app.services.ai.runtime.token_counting import tiktoken_counter
 from app.services.ai.subagents import (
+    app_help,
     protocol_creator,
     protocol_editor,
     protocol_knowledgebase,
@@ -185,6 +186,7 @@ async def build_chat_agent(
             protocol_editor.build(editing_model),
             run_planner.build(subagent_model),
             protocol_knowledgebase.build(subagent_model),
+            app_help.build(subagent_model),
         ]
 
         # Wrap each subagent's tool functions so their tool calls surface in

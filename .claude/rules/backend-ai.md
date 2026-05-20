@@ -32,6 +32,9 @@ services/ai/
 │   ├── token_counting.py#   tiktoken_counter
 │   └── sanitize.py      #   _sanitize_llm_output
 ├── subagents/           # Each subagent is its own package
+│   ├── app_help/        #   build(model) -> SubAgentConfig (F-0089)
+│   │   ├── config.py    #   product Q&A from docs/user-guide/
+│   │   └── tools.py     #   list_user_guide_pages, read_user_guide_page
 │   ├── protocol_creator/ #   build(model) -> SubAgentConfig
 │   │   ├── config.py    #   imports tools from shared/protocols/
 │   │   └── prompt.md    #   creator-focused system prompt

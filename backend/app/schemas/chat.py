@@ -15,6 +15,7 @@ class ChatSessionCreate(BaseModel):
 class ChatMessageCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=10000)
     skill_id: Optional[str] = None
+    current_route: Optional[str] = Field(default=None, max_length=512)
 
 
 class ChatSessionUpdate(BaseModel):

@@ -1,0 +1,49 @@
+# Batchrite User Guide
+
+This directory is the curated knowledge corpus for the in-app **App Help**
+chat subagent (`app_help`, F-0089). Each `.md` page documents one shipped
+Batchrite feature surface in end-user voice.
+
+## How it works
+
+The chat agent dispatches the `app_help` subagent for product questions
+("how do I…", "what is…", "where is…"). The subagent lists these pages by
+their frontmatter, reads the relevant one, and answers with a citation.
+Adding or editing a page takes effect immediately — the tools read disk on
+every call. (Adding a *new subagent* or changing prompts needs a process
+restart; editing corpus `.md` files does not.)
+
+## Authoring rules
+
+- End-user voice — second person ("You can…"), no developer jargon, no
+  internal file paths in user-facing prose.
+- Document only features shipped and on-by-default. Flag-gated-off features
+  (offline mode, external protocols) and unbuilt features (voice/dictation)
+  are excluded until shipped on by default.
+- Every page starts with YAML frontmatter: `title`, `summary`, `keywords`.
+- ~150–500 words per page. Follow the template: overview → "What you can
+  do" bullets → "How to …" sections.
+
+## Pages
+
+- `getting-started.md` — What Batchrite is and how to navigate the app.
+- `feature-availability.md` — What Batchrite supports today, and features that are not available (voice input, offline mode).
+- `protocols-and-editor.md` — Creating, editing, validating, and publishing protocols.
+- `experiments-and-runs.md` — Planning, executing, completing, and recording deviations in runs.
+- `library-and-documents.md` — Uploading documents to the library and searching them via the chat assistant.
+- `chat-agent.md` — What the in-app chat assistant can do, how to open it, use skills, and read source citations.
+- `glp-and-signoffs.md` — GLP mode, how to enable sign-offs on a protocol, how to sign, and how approval gating works.
+- `ai-configuration.md` — Where AI settings live and how to choose a provider and model for each capability.
+- `org-roles-permissions.md` — Inviting members, assigning org roles, and controlling project-level access.
+- `sites-and-equipment.md` — Registering sites, adding equipment, tracking calibration and expiry, and archiving locations.
+- `billing.md` — Subscription plans, billing settings, managing your plan, and opening the billing portal.
+
+## Excluded (not shipped on production defaults)
+
+These features get no how-to pages. Where users are likely to ask whether
+they exist, `feature-availability.md` states plainly that they are not
+available — so the subagent answers honestly instead of hallucinating.
+
+- Offline / PWA mode — flag-gated off (`features.offline_mode`).
+- External protocols / OpenWetWare — flag-gated off (`features.external_protocols`).
+- Voice / dictation — not built.
