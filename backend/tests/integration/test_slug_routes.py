@@ -370,3 +370,14 @@ async def test_get_document_by_slug(client, auth_headers, mock_document_processo
     resp = await client.get("/library/documents/by-slug/sop-one", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["id"] == created["id"]
+
+
+@pytest.mark.asyncio
+async def test_organizations_list_exposes_derived_slug(client, auth_headers):
+    resp = await client.get("/iam/organizations", headers=auth_headers)
+    assert resp.status_code == 200
+    orgs = resp.json()
+    assert orgs, "expected the caller to belong to at least one org"
+    for org in orgs:
+        assert "slug" in org
+        assert org["slug"] == org["slug"].lower()
