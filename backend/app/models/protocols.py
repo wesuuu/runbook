@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import date, datetime
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -18,11 +18,16 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.mixins import TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.iam import Organization, User
+    from app.models.projects import Project
+    from app.models.runs import Run
+    from app.models.signoffs import GlpSignoffRequest
 
 
 class Protocol(Base, UUIDMixin, TimestampMixin):
@@ -89,7 +94,8 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     # Relationships
     project: Mapped[Optional["Project"]] = relationship(back_populates="protocols")
     organization: Mapped[Optional["Organization"]] = relationship(
-        "app.models.iam.Organization", foreign_keys=[organization_id]
+        "app.models.iam.Organization",
+        foreign_keys=[organization_id],
     )
     runs: Mapped[List["Run"]] = relationship(back_populates="protocol")
     roles: Mapped[List["ProtocolRole"]] = relationship(
@@ -102,10 +108,10 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="ProtocolVersion.version_number.desc()",
     )
-    created_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+    created_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[created_by_id]
     )
-    approved_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+    approved_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[approved_by_id]
     )
     approval_requests: Mapped[List["GlpSignoffRequest"]] = relationship(
@@ -174,7 +180,7 @@ class ProtocolVersion(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     protocol: Mapped["Protocol"] = relationship(back_populates="versions")
-    created_by: Mapped[Optional["app.models.iam.User"]] = relationship()
+    created_by: Mapped[Optional["User"]] = relationship()
 
 
 class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
@@ -223,7 +229,7 @@ class UnitOpDefinition(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    organization: Mapped[Optional["app.models.iam.Organization"]] = relationship(
+    organization: Mapped[Optional["Organization"]] = relationship(
         "app.models.iam.Organization", foreign_keys=[organization_id]
     )
     project: Mapped[Optional["Project"]] = relationship(foreign_keys=[project_id])
@@ -250,7 +256,7 @@ class UnitOpLibrarySubscription(Base, UUIDMixin, TimestampMixin):
         nullable=False,
     )
 
-    organization: Mapped["app.models.iam.Organization"] = relationship(
+    organization: Mapped["Organization"] = relationship(
         "app.models.iam.Organization",
         foreign_keys=[organization_id],
     )

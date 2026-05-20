@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -11,6 +11,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.mixins import TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.iam import User
+    from app.models.projects import Project
+    from app.models.protocols import Protocol
 
 
 class RunStatus(str, Enum):
@@ -140,7 +145,7 @@ class RunRoleAssignment(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     run: Mapped["Run"] = relationship(back_populates="role_assignments")
-    user: Mapped["app.models.iam.User"] = relationship()
+    user: Mapped["User"] = relationship()
 
 
 class Experiment(Base, UUIDMixin, TimestampMixin):

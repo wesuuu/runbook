@@ -1,7 +1,7 @@
 """Project domain models (TD-0083): Project."""
 
 import uuid
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
@@ -9,6 +9,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.mixins import TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.iam import Organization
+    from app.models.protocols import Protocol
+    from app.models.runs import Experiment, Run
 
 
 class Project(Base, UUIDMixin, TimestampMixin):

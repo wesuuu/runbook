@@ -3,13 +3,18 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.mixins import TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.iam import User
+    from app.models.protocols import Protocol
+    from app.models.runs import Run
 
 
 class GlpRole(str, Enum):
@@ -140,10 +145,10 @@ class GlpSignoff(Base, UUIDMixin, TimestampMixin):
         "Protocol", foreign_keys=[protocol_id]
     )
     run: Mapped[Optional["Run"]] = relationship("Run", foreign_keys=[run_id])
-    signer: Mapped["app.models.iam.User"] = relationship(
+    signer: Mapped["User"] = relationship(
         "app.models.iam.User", foreign_keys=[signer_id]
     )
-    invalidated_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+    invalidated_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[invalidated_by_id]
     )
 
@@ -184,12 +189,12 @@ class GlpSignoffRequest(Base, UUIDMixin, TimestampMixin):
     )
 
     protocol: Mapped["Protocol"] = relationship(back_populates="approval_requests")
-    requested_user: Mapped[Optional["app.models.iam.User"]] = relationship(
+    requested_user: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[requested_user_id]
     )
-    requested_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+    requested_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[requested_by_id]
     )
-    fulfilled_by: Mapped[Optional["app.models.iam.User"]] = relationship(
+    fulfilled_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[fulfilled_by_id]
     )
