@@ -155,3 +155,45 @@ async def test_read_non_markdown_returns_error(tmp_path, monkeypatch):
     _write(tmp_path, "notes.txt", "plain text")
     result = await app_help_tools.read_user_guide_page(_ctx(), "notes.txt")
     assert result.error is not None
+
+
+# ─── load_user_guide_text (corpus inlining) ────────────────────────────────
+
+
+def test_load_user_guide_text_concatenates_bodies(tmp_path, monkeypatch):
+    """Every page body is concatenated; frontmatter is stripped."""
+    monkeypatch.setattr(app_help_tools.settings, "user_guide_dir", str(tmp_path))
+    _write(tmp_path, "alpha.md", _PAGE)
+    _write(tmp_path, "zebra.md", _PAGE)
+
+    text = app_help_tools.load_user_guide_text()
+
+    # Frontmatter stripped: only the markdown body survives.
+    assert "---" not in text
+    assert "title: Protocols" not in text
+    # Both pages present, each starting at its heading.
+    assert text.count("# Protocols and the protocol editor") == 2
+
+
+def test_load_user_guide_text_skips_readme(tmp_path, monkeypatch):
+    """README.md is the human index and must not be inlined."""
+    monkeypatch.setattr(app_help_tools.settings, "user_guide_dir", str(tmp_path))
+    _write(tmp_path, "README.md", "# index\n\nHuman-facing index.\n")
+    _write(tmp_path, "protocols.md", _PAGE)
+
+    text = app_help_tools.load_user_guide_text()
+
+    assert "Human-facing index" not in text
+    assert "# Protocols and the protocol editor" in text
+
+
+def test_load_user_guide_text_missing_directory_returns_empty(
+    tmp_path, monkeypatch
+):
+    """An absent corpus directory yields an empty string, not an error."""
+    monkeypatch.setattr(
+        app_help_tools.settings,
+        "user_guide_dir",
+        str(tmp_path / "does-not-exist"),
+    )
+    assert app_help_tools.load_user_guide_text() == ""

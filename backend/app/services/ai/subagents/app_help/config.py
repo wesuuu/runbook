@@ -7,12 +7,13 @@ from pathlib import Path
 from subagents_pydantic_ai import SubAgentConfig
 
 from app.services.ai.cache_settings import CHAT_AGENT_MODEL_SETTINGS
-from app.services.ai.subagents.app_help.tools import (
-    list_user_guide_pages,
-    read_user_guide_page,
-)
+from app.services.ai.subagents.app_help.tools import load_user_guide_text
 
 _PROMPT_PATH = Path(__file__).parent / "prompt.md"
+
+# Separator line the prompt preamble points to. The builder inserts it
+# between the instruction preamble (prompt.md) and the concatenated corpus.
+_GUIDE_MARKER = "=== BATCHRITE USER GUIDE ==="
 
 
 def build(model: str) -> SubAgentConfig:
@@ -21,7 +22,9 @@ def build(model: str) -> SubAgentConfig:
     Args:
         model: The model string to use (e.g. ``"openai:gpt-4.1-mini"``).
     """
-    instructions = _PROMPT_PATH.read_text(encoding="utf-8")
+    preamble = _PROMPT_PATH.read_text(encoding="utf-8").rstrip()
+    corpus = load_user_guide_text()
+    instructions = f"{preamble}\n\n{_GUIDE_MARKER}\n\n{corpus}\n"
     return SubAgentConfig(
         name="app_help",
         description=(
@@ -38,6 +41,5 @@ def build(model: str) -> SubAgentConfig:
         typically_needs_context=False,
         agent_kwargs={
             "model_settings": CHAT_AGENT_MODEL_SETTINGS,
-            "tools": [list_user_guide_pages, read_user_guide_page],
         },
     )

@@ -1,10 +1,16 @@
-"""Tools for the app_help subagent (F-0089).
+"""User-guide corpus access for the app_help subagent (F-0089).
 
-Two filesystem tools over the curated docs/user-guide corpus:
-``list_user_guide_pages`` returns a cheap frontmatter index, and
-``read_user_guide_page`` returns one page body. No retrieval engine — the
-LLM picks the relevant page from the index. Both tools re-read disk on
-every call (no caching), so corpus edits take effect immediately.
+``load_user_guide_text`` concatenates the whole curated docs/user-guide
+corpus into one string, which the subagent builder inlines into the system
+prompt — so editing a doc page never means editing the prompt.
+
+The two filesystem tools — ``list_user_guide_pages`` and
+``read_user_guide_page`` — expose the same corpus page-by-page for an LLM
+to retrieve on demand. They are kept for that retrieval mode but are not
+registered while the prompt is inlined.
+
+Everything re-reads disk on every call (no caching), so corpus edits take
+effect on the next agent build.
 """
 
 from __future__ import annotations
@@ -128,6 +134,40 @@ def _page_meta(filename: str, raw: str) -> UserGuidePageMeta:
         summary=summary.strip(),
         keywords=list(keywords),
     )
+
+
+# ─── Corpus inlining ───────────────────────────────────────────────────────
+
+
+def load_user_guide_text() -> str:
+    """Concatenate every user-guide page into one reference-doc string.
+
+    Used by the app_help subagent builder to inline the whole corpus into
+    the system prompt. Pages are sorted by filename, ``README.md`` is
+    skipped (human-facing index, not a help page), and YAML frontmatter is
+    stripped so each page contributes only its Markdown body — starting at
+    its ``# Title`` heading. Bodies are joined with a blank line between
+    pages. Re-reads disk on every call, so corpus edits take effect on the
+    next agent build. An absent or empty corpus directory returns ``""``.
+    """
+    root = Path(settings.user_guide_dir)
+    bodies: list[str] = []
+    if root.is_dir():
+        for path in sorted(root.glob("*.md")):
+            if path.name == "README.md":
+                continue  # human-facing index, not a help page
+            try:
+                raw = path.read_text(encoding="utf-8")
+            except OSError:
+                logger.warning(
+                    "user-guide page %s unreadable; skipping", path.name
+                )
+                continue
+            _, body = _split_frontmatter(raw)
+            body = body.strip()
+            if body:
+                bodies.append(body)
+    return "\n\n".join(bodies)
 
 
 # ─── Tools ─────────────────────────────────────────────────────────────────
