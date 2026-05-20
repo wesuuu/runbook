@@ -17,6 +17,7 @@ from app.models.iam import Organization, User
 from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Run, RunStatus
+from app.services.slugs import assign_slug
 
 SAMPLE_PROJECT_NAME = "My First Project"
 SAMPLE_PROTOCOL_NAME = "Sample Protocol"
@@ -173,6 +174,15 @@ async def find_or_create_sample_protocol(
         status="DRAFT",
         graph=get_sample_protocol_graph(),
         is_tour_sample=True,
+    )
+    # F-0091: resolve owning org and assign a slug.
+    protocol.owner_org_id = project.organization_id
+    protocol.slug = await assign_slug(
+        db,
+        Protocol,
+        Protocol.owner_org_id,
+        protocol.owner_org_id,
+        protocol.name,
     )
     db.add(protocol)
     await db.commit()

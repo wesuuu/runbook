@@ -115,6 +115,7 @@ class ProtocolUpdate(BaseModel):
 
 class ProtocolResponse(ProtocolBase):
     id: UUID
+    slug: str
     project_id: Optional[UUID] = None
     organization_id: Optional[UUID] = None
     status: str = "DRAFT"

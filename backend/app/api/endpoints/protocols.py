@@ -59,6 +59,7 @@ from app.services.protocols.lookup import get_protocol_full, list_protocols
 from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
 from app.services.signoffs.queries import list_active_signoffs
 from app.services.signoffs.service import create_signoff
+from app.services.slugs import assign_slug
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,23 @@ router = APIRouter()
 # outright rejected. Anything outside this set is allowed to flow
 # through unchanged.
 APPROVED_EDIT_FIELDS = {"name", "description", "graph"}
+
+
+def _slug_conflict_error(name: str | None = None) -> HTTPException:
+    """Build the consistent 422 raised when a protocol name collides.
+
+    F-0091: protocol slugs are unique per owning org, so a duplicate name
+    surfaces as ``SLUG_CONFLICT`` from ``assign_slug``. Callers convert it
+    into this HTTP error at every create/rename site.
+    """
+    if name:
+        message = f"A protocol named '{name}' already exists in this organization."
+    else:
+        message = "A protocol with that name already exists in this organization."
+    return HTTPException(
+        status_code=422,
+        detail={"code": "SLUG_CONFLICT", "message": message},
+    )
 
 
 # --- Protocols ---
@@ -159,6 +177,24 @@ async def create_protocol(
         references=protocol.references,
         definitions=protocol.definitions,
     )
+    # F-0091: resolve the always-populated owning org, then assign a slug.
+    if new_protocol.organization_id is not None:
+        new_protocol.owner_org_id = new_protocol.organization_id
+    else:
+        owning_project = await get_or_404(db, Project, new_protocol.project_id)
+        new_protocol.owner_org_id = owning_project.organization_id
+    try:
+        new_protocol.slug = await assign_slug(
+            db,
+            Protocol,
+            Protocol.owner_org_id,
+            new_protocol.owner_org_id,
+            new_protocol.name,
+        )
+    except ValueError as exc:
+        if str(exc) == "SLUG_CONFLICT":
+            raise _slug_conflict_error(new_protocol.name)
+        raise
     db.add(new_protocol)
     await db.flush()
 
@@ -379,12 +415,16 @@ async def finalize_protocol_import(
     return result.scalar_one()
 
 
-@router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
-async def get_protocol(
+async def _build_protocol_response(
+    db: AsyncSession,
+    user: User,
     protocol_id: UUID,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
+) -> Protocol:
+    """Run the access check and assemble the full protocol response.
+
+    Shared by the by-id and by-slug GET handlers; the only thing that
+    differs between them is how ``protocol_id`` is resolved.
+    """
     try:
         await get_protocol_full(db, user_id=user.id, protocol_id=protocol_id)
     except ValueError as e:
@@ -435,6 +475,34 @@ async def get_protocol(
         protocol.latest_draft_version_number = draft_v  # type: ignore[attr-defined]
 
     return protocol
+
+
+@router.get("/protocols/by-slug/{slug}", response_model=ProtocolResponse)
+async def get_protocol_by_slug(
+    slug: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Look up a protocol by slug within the caller's current organization."""
+    row = await db.execute(
+        select(Protocol.id).where(
+            Protocol.owner_org_id == user.selected_org_id,
+            Protocol.slug == slug,
+        )
+    )
+    protocol_id = row.scalar_one_or_none()
+    if protocol_id is None:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+    return await _build_protocol_response(db, user, protocol_id)
+
+
+@router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
+async def get_protocol(
+    protocol_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _build_protocol_response(db, user, protocol_id)
 
 
 @router.get(
@@ -837,6 +905,8 @@ async def update_protocol(
             )
         except ValueError as e:
             msg = str(e)
+            if msg == "SLUG_CONFLICT":
+                raise _slug_conflict_error(changes.get("name"))
             if "published" in msg:
                 raise HTTPException(status_code=409, detail=msg)
             raise HTTPException(status_code=403, detail=msg)
@@ -950,6 +1020,20 @@ async def update_protocol(
 
         # Update protocol fields (name, description, etc.)
         for key, value in changes.items():
+            if key == "name" and value != protocol.name:
+                try:
+                    protocol.slug = await assign_slug(
+                        db,
+                        Protocol,
+                        Protocol.owner_org_id,
+                        protocol.owner_org_id,
+                        value,
+                        exclude_id=protocol.id,
+                    )
+                except ValueError as exc:
+                    if str(exc) == "SLUG_CONFLICT":
+                        raise _slug_conflict_error(value)
+                    raise
             setattr(protocol, key, value)
 
         # Auto-derive requires_approval from glpSettings on every graph

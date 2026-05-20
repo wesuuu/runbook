@@ -17,6 +17,7 @@ from app.models.projects import Project
 from app.models.protocols import Protocol, UnitOpDefinition
 from app.services.core.permissions import check_permission
 from app.services.protocols.lane_layout import grow_lane_to_fit, lane_relative_position
+from app.services.slugs import assign_slug
 
 
 class ProtocolStep(BaseModel):
@@ -107,6 +108,15 @@ async def create_protocol_from_spec(
         project_id=project.id,
         status="DRAFT",
         graph=graph,
+    )
+    # F-0091: resolve owning org and assign a slug.
+    protocol.owner_org_id = project.organization_id
+    protocol.slug = await assign_slug(
+        db,
+        Protocol,
+        Protocol.owner_org_id,
+        protocol.owner_org_id,
+        protocol.name,
     )
     db.add(protocol)
     await db.flush()
@@ -246,6 +256,17 @@ async def update_protocol_metadata(
             wg.version.description = description
     else:
         if name is not None:
+            if name != proto.name:
+                # F-0091: re-slug when the protocol is renamed.
+                new_slug = await assign_slug(
+                    db,
+                    Protocol,
+                    Protocol.owner_org_id,
+                    proto.owner_org_id,
+                    name,
+                    exclude_id=proto.id,
+                )
+                proto.slug = new_slug
             proto.name = name
         if description is not None:
             proto.description = description
