@@ -8,6 +8,7 @@ import {
     buildTestGraph,
 } from '../helpers/protocol';
 import { API_BASE } from '../helpers/apiBase';
+import { protocolUrl } from '../helpers/slug-urls';
 
 /**
  * F-0087 Task 41b — full GLP approval flow exercised against the live UI.
@@ -112,7 +113,9 @@ test.describe('GLP — full protocol approval flow', () => {
         expect(submitResp.status).toBe(200);
 
         // --- Step 3: SD signs via SignoffBlock UI ---
-        await loginAndNavigate(page, 'upstreamLead', `/protocols/${protocolId}`);
+        await loginViaApi(page, 'upstreamLead');
+        await page.goto(await protocolUrl(page, protocolId));
+        await page.waitForLoadState('networkidle');
         const signoffBlock = page.locator('[data-testid="protocol-glp-signoffs"]');
         await expect(signoffBlock).toBeVisible();
 
@@ -137,7 +140,9 @@ test.describe('GLP — full protocol approval flow', () => {
         await expect(sdSignButton).toHaveCount(0);
 
         // --- Step 4: QAU signs via SignoffBlock UI ---
-        await loginAndNavigate(page, 'scientist2', `/protocols/${protocolId}`);
+        await loginViaApi(page, 'scientist2');
+        await page.goto(await protocolUrl(page, protocolId));
+        await page.waitForLoadState('networkidle');
         const qauSignButton = signoffBlock.getByRole('button', {
             name: /sign as qau/i,
         });

@@ -146,7 +146,7 @@ test.describe('Email Verification Flow', () => {
     await registerUser(page, email);
 
     // Try navigating to a protected route
-    await page.goto('/projects');
+    await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
     // Should be redirected to /check-email (not /projects)

@@ -4,6 +4,7 @@ import {
   SEED,
   createProtocolViaApi,
   getProtocolViaApi,
+  getProtocolBySlugViaApi,
   updateProtocolGraph,
   submitForApprovalViaApi,
   approveProtocolViaApi,
@@ -13,6 +14,7 @@ import {
   createRoleViaApi,
   buildTestGraph,
 } from './helpers/protocol';
+import { protocolUrl, projectUrl } from './helpers/slug-urls';
 
 /**
  * TD-0064: Playwright E2E — Protocol Creation & Update Workflow
@@ -50,7 +52,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
 
   test('create protocol from project page navigates to editor', async () => {
     // Navigate to the project page, protocols tab
-    await page.goto(`/projects/${SEED.PROJECT_MAB_ID}`);
+    await page.goto(await projectUrl(page, SEED.PROJECT_MAB_ID));
     await page.waitForLoadState('networkidle');
 
     // Click the Protocols tab if not already active
@@ -64,11 +66,14 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     await expect(createBtn).toBeVisible({ timeout: 10_000 });
     await createBtn.click();
 
-    // Should navigate to the protocol editor
+    // Should navigate to the protocol editor — URL is now /[org]/protocols/[slug]
     await page.waitForURL(/\/protocols\//, { timeout: 15_000 });
-    const url = page.url();
-    const protocolId = url.split('/protocols/')[1]?.split(/[?#]/)[0];
-    expect(protocolId).toBeTruthy();
+    expect(page.url()).toMatch(/\/protocols\/[a-z0-9-]+$/);
+    const protocolSlug = page.url().split('/protocols/')[1]?.split(/[?#]/)[0];
+    expect(protocolSlug).toBeTruthy();
+    // API endpoints stay UUID-keyed — resolve the id from the slug.
+    const proto = await getProtocolBySlugViaApi(page, protocolSlug);
+    const protocolId = proto.id as string;
     createdProtocolIds.push(protocolId);
 
     // Editor should be loaded — sidebar visible with protocol name
@@ -78,9 +83,9 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
     // Protocol should be in DRAFT status
-    const proto = await getProtocolViaApi(page, protocolId);
-    expect(proto.status).toBe('DRAFT');
-    expect(proto.version_number).toBe(0);
+    const fresh = await getProtocolViaApi(page, protocolId);
+    expect(fresh.status).toBe('DRAFT');
+    expect(fresh.version_number).toBe(0);
   });
 
   test('publish increments version and persists across reload', async () => {
@@ -97,7 +102,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     await updateProtocolGraph(page, proto.id as string, graph);
 
     // Navigate to the protocol editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -140,7 +145,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     const versionBeforeDraft = beforeDraft.version_number as number;
 
     // Navigate to editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -175,7 +180,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     await updateProtocolGraph(page, proto.id as string, graph);
 
     // Navigate to editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -233,7 +238,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     expect(v2Response.ok()).toBeTruthy();
 
     // Navigate to the editor — should show 3 nodes (v2)
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
     expect(await page.locator('.svelte-flow__node').count()).toBe(3);
@@ -271,7 +276,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     createdProtocolIds.push(protoId);
 
     // Navigate to the protocol editor
-    await page.goto(`/protocols/${protoId}`);
+    await page.goto(await protocolUrl(page, protoId));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.sidebar')).toBeVisible({ timeout: 10_000 });
 
@@ -322,7 +327,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     expect(publishResp.ok()).toBeTruthy();
 
     // Navigate to editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -342,7 +347,7 @@ test.describe('Protocol CRUD & Lifecycle', () => {
     expect(archived.status).toBe('ARCHIVED');
 
     // Navigate back to the protocol editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
 
     // Archive banner should be visible
@@ -425,7 +430,7 @@ test.describe('Approval Workflow', () => {
     expect(submitted.status).toBe('PENDING_APPROVAL');
 
     // Navigate to editor and verify UI reflects PENDING_APPROVAL state
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -464,7 +469,7 @@ test.describe('Approval Workflow', () => {
     expect(approved.status).toBe('APPROVED');
 
     // Navigate to the editor and verify UI reflects APPROVED state
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -494,7 +499,7 @@ test.describe('Approval Workflow', () => {
     await rejectProtocolViaApi(page, proto.id as string, 'Needs revision');
 
     // Navigate to editor and verify it's back to DRAFT
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -540,7 +545,7 @@ test.describe('Approval Workflow', () => {
 
     // The direct PUT may or may not revert to DRAFT depending on backend behavior.
     // Either way, navigate to editor and verify the UI state is consistent.
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -593,7 +598,7 @@ test.describe('Canvas Interactions', () => {
     createdProtocolIds.push(proto.id as string);
 
     // Navigate to editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -744,7 +749,7 @@ test.describe('Canvas Interactions', () => {
     });
 
     // Navigate to editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -842,7 +847,7 @@ test.describe('Canvas Interactions', () => {
     });
 
     // Navigate to editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 
@@ -888,7 +893,7 @@ test.describe('Canvas Interactions', () => {
     createdProtocolIds.push(proto.id as string);
 
     // Navigate to editor
-    await page.goto(`/protocols/${proto.id}`);
+    await page.goto(await protocolUrl(page, proto.id as string));
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 10_000 });
 

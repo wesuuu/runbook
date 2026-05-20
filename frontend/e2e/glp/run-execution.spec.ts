@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loginAndNavigate } from '../helpers/auth';
 import { SEED } from '../helpers/protocol';
+import { projectUrl } from '../helpers/slug-urls';
 
 /**
  * F-0087 Task 41b — GLP golden path: run execution → completion.
@@ -49,7 +50,7 @@ test.describe('GLP — run execution → completion', () => {
             //      fixture under graph.glpSettings.glp_enabled=true
             //   4. POST /science/protocols/{id}/publish-version
             //   5. switch session to scientist1 for the operator flow
-            await page.goto(`/projects/${SEED.PROJECT_MAB_ID}`);
+            await page.goto(await projectUrl(page, SEED.PROJECT_MAB_ID));
             await page.getByRole('button', { name: /\+ New Run/i }).click();
             await expect(
                 page.getByRole('heading', { name: /New Run/i }),
@@ -75,7 +76,7 @@ test.describe('GLP — run execution → completion', () => {
             // Step 4 — review & create
             await page.getByRole('button', { name: /Create run/i }).click();
 
-            await expect(page).toHaveURL(/\/runs\/[0-9a-f-]+/);
+            await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+\/runs\/[a-z0-9-]+$/);
 
             // Role assignment + start (RoleAssignmentPanel)
             await page.getByRole('button', { name: /assign me/i }).click();

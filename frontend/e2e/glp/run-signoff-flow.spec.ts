@@ -8,6 +8,7 @@ import {
     buildTestGraph,
 } from '../helpers/protocol';
 import { API_BASE } from '../helpers/apiBase';
+import { runUrl } from '../helpers/slug-urls';
 
 /**
  * F-0087 — GLP run sign-off flow exercised against the live UI.
@@ -213,7 +214,9 @@ test.describe('GLP — run sign-off flow', () => {
         expect(stateResp.data.status).toBe('ACTIVE');
 
         // --- Step 5: operator signs via SignoffBlock UI on the run page ---
-        await loginAndNavigate(page, 'admin', `/runs/${runId}`);
+        await loginViaApi(page, 'admin');
+        await page.goto(await runUrl(page, runId));
+        await page.waitForLoadState('networkidle');
 
         // Wait for the GLP sign-offs heading to confirm the section rendered.
         await expect(
@@ -272,7 +275,7 @@ test.describe('GLP — run sign-off flow', () => {
         expect(completeResp.data.outcome).toBe('COMPLETED_NORMAL');
 
         // --- Step 9: verify the run page now shows all three signed rows ---
-        await page.goto(`/runs/${runId}`);
+        await page.goto(await runUrl(page, runId));
         await expect(
             page.getByRole('heading', { name: /GLP Sign-offs/i }),
         ).toBeVisible({ timeout: 10_000 });

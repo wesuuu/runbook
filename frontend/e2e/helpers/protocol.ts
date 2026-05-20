@@ -66,6 +66,22 @@ export async function getProtocolViaApi(
   return data;
 }
 
+/** Fetch a protocol by slug within the caller's current org. */
+export async function getProtocolBySlugViaApi(
+  page: Page,
+  slug: string,
+): Promise<Record<string, unknown>> {
+  const { status, data } = await apiRequest(
+    page,
+    'GET',
+    `/protocols/by-slug/${slug}`,
+  );
+  if (status !== 200) {
+    throw new Error(`Failed to get protocol by slug ${slug}: ${status}`);
+  }
+  return data;
+}
+
 /** Update a protocol's graph via the API. */
 export async function updateProtocolGraph(
   page: Page,

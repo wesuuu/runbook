@@ -72,7 +72,7 @@ test.describe('Authentication', () => {
   test('unauthenticated user is redirected to /login', async ({ page }) => {
     await page.evaluate(() => localStorage.removeItem('auth_token'));
 
-    await page.goto('/projects');
+    await page.goto('/settings');
     await page.waitForURL('**/login');
 
     await expect(page).toHaveURL(/.*login/);
@@ -115,7 +115,7 @@ test.describe('Authentication', () => {
     expect(token).toBeNull();
 
     // Protected routes should redirect back to login
-    await page.goto('/projects');
+    await page.goto('/settings');
     await page.waitForURL('**/login');
     await expect(page).toHaveURL(/.*login/);
   });

@@ -7,6 +7,7 @@ import {
   getProjectProtocols,
   cleanupE2eExperiments,
 } from './helpers/experiment';
+import { projectUrl, experimentUrl } from './helpers/slug-urls';
 
 /**
  * F-0063: Experiments — Run Organization Under Hypotheses
@@ -39,7 +40,7 @@ test.describe('Experiments — Full Workflow', () => {
   });
 
   test('create experiment from project page', async () => {
-    await page.goto(`/projects/${PROJECT_ID}?tab=experiments`);
+    await page.goto(`${await projectUrl(page, PROJECT_ID)}?tab=experiments`);
     await page.waitForLoadState('networkidle');
 
     // Click "+ New Experiment"
@@ -72,7 +73,7 @@ test.describe('Experiments — Full Workflow', () => {
     const expId = await createExperimentViaApi(page, `E2E Detail ${ts}`, PROJECT_ID, 'Detail testing');
     const runId = await createRunViaApi(page, `E2E Run Alpha ${ts}`, PROJECT_ID, protocol.id, expId);
 
-    await page.goto(`/experiments/${expId}`);
+    await page.goto(await experimentUrl(page, expId));
     await page.waitForLoadState('networkidle');
 
     // Verify run appears (use td locator to avoid mobile card duplicate)
@@ -99,7 +100,7 @@ test.describe('Experiments — Full Workflow', () => {
     await createRunViaApi(page, `E2E TabRun1 ${ts}`, PROJECT_ID, protocol.id, expId);
     await createRunViaApi(page, `E2E TabRun2 ${ts}`, PROJECT_ID, protocol.id, expId);
 
-    await page.goto(`/projects/${PROJECT_ID}?tab=experiments`);
+    await page.goto(`${await projectUrl(page, PROJECT_ID)}?tab=experiments`);
     await page.waitForLoadState('networkidle');
 
     // Verify experiment appears
@@ -116,7 +117,7 @@ test.describe('Experiments — Full Workflow', () => {
 
   test('all runs tab shows experiment column', async () => {
     // Uses experiment created in previous test
-    await page.goto(`/projects/${PROJECT_ID}?tab=runs`);
+    await page.goto(`${await projectUrl(page, PROJECT_ID)}?tab=runs`);
     await page.waitForLoadState('networkidle');
 
     // Verify column header
@@ -134,7 +135,7 @@ test.describe('Experiments — Full Workflow', () => {
     const expId = await createExperimentViaApi(page, `E2E AssignTarget ${ts}`, PROJECT_ID);
     await createRunViaApi(page, `E2E Standalone ${ts}`, PROJECT_ID, protocol.id);
 
-    await page.goto(`/projects/${PROJECT_ID}?tab=runs`);
+    await page.goto(`${await projectUrl(page, PROJECT_ID)}?tab=runs`);
     await page.waitForLoadState('networkidle');
 
     // Find the standalone run and click Assign
@@ -165,7 +166,7 @@ test.describe('Experiments — Full Workflow', () => {
   test('create run within experiment via experiments tab', async () => {
     const expId = await createExperimentViaApi(page, `E2E EmptyExp ${ts}`, PROJECT_ID);
 
-    await page.goto(`/projects/${PROJECT_ID}?tab=experiments`);
+    await page.goto(`${await projectUrl(page, PROJECT_ID)}?tab=experiments`);
     await page.waitForLoadState('networkidle');
 
     // Select the empty experiment
