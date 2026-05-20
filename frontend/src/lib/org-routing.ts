@@ -10,16 +10,16 @@ export interface OrgLike {
   slug: string;
 }
 
-export type OrgResolution =
-  | { kind: 'current'; org: OrgLike }
-  | { kind: 'switch'; org: OrgLike }
+export type OrgResolution<T extends OrgLike = OrgLike> =
+  | { kind: 'current'; org: T }
+  | { kind: 'switch'; org: T }
   | { kind: 'notfound' };
 
-export function resolveOrgSlug(
+export function resolveOrgSlug<T extends OrgLike>(
   urlSlug: string,
-  currentOrg: OrgLike | null,
-  orgs: OrgLike[],
-): OrgResolution {
+  currentOrg: T | null,
+  orgs: T[],
+): OrgResolution<T> {
   if (currentOrg && currentOrg.slug === urlSlug) {
     return { kind: 'current', org: currentOrg };
   }
