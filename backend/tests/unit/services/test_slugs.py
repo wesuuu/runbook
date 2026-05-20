@@ -4,11 +4,11 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 
 from app.models.iam import Organization
 from app.models.projects import Project
-from app.services.slugs import assign_slug
-
+from app.services.slugs import assign_slug, assign_slug_or_422
 
 # ---------------------------------------------------------------------------
 # Local fixtures — inline org/project factories scoped to this test module.
@@ -23,9 +23,7 @@ async def org_factory(db_session):
     """Return an async callable that creates a fresh Organization."""
 
     async def _make(**kwargs):
-        org = Organization(
-            name=kwargs.get("name", f"org-{uuid.uuid4().hex[:8]}")
-        )
+        org = Organization(name=kwargs.get("name", f"org-{uuid.uuid4().hex[:8]}"))
         db_session.add(org)
         await db_session.flush()
         return org
@@ -68,7 +66,9 @@ async def test_assign_slug_returns_slugified_name(db_session, org_factory):
 
 
 @pytest.mark.asyncio
-async def test_assign_slug_raises_on_collision(db_session, org_factory, project_factory):
+async def test_assign_slug_raises_on_collision(
+    db_session, org_factory, project_factory
+):
     org = await org_factory()
     await project_factory(
         organization_id=org.id, name="Buffer Prep", slug="buffer-prep"
@@ -121,3 +121,38 @@ async def test_assign_slug_falls_back_for_degenerate_name(db_session, org_factor
         db_session, Project, Project.organization_id, org.id, "🎉🎉"
     )
     assert slug.startswith("untitled-")
+
+
+@pytest.mark.asyncio
+async def test_assign_slug_or_422_returns_slug_on_success(db_session, org_factory):
+    org = await org_factory()
+    slug = await assign_slug_or_422(
+        db_session,
+        Project,
+        Project.organization_id,
+        org.id,
+        "Buffer Prep",
+        "project",
+    )
+    assert slug == "buffer-prep"
+
+
+@pytest.mark.asyncio
+async def test_assign_slug_or_422_raises_http_422_on_collision(
+    db_session, org_factory, project_factory
+):
+    org = await org_factory()
+    await project_factory(
+        organization_id=org.id, name="Buffer Prep", slug="buffer-prep"
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await assign_slug_or_422(
+            db_session,
+            Project,
+            Project.organization_id,
+            org.id,
+            "buffer prep",
+            "project",
+        )
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "SLUG_CONFLICT"

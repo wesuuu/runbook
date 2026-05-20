@@ -59,7 +59,7 @@ from app.services.protocols.lookup import get_protocol_full, list_protocols
 from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
 from app.services.signoffs.queries import list_active_signoffs
 from app.services.signoffs.service import create_signoff
-from app.services.slugs import assign_slug, slug_conflict_error
+from app.services.slugs import assign_slug_or_422, slug_conflict_error
 
 logger = logging.getLogger(__name__)
 
@@ -166,18 +166,14 @@ async def create_protocol(
     else:
         owning_project = await get_or_404(db, Project, new_protocol.project_id)
         new_protocol.owner_org_id = owning_project.organization_id
-    try:
-        new_protocol.slug = await assign_slug(
-            db,
-            Protocol,
-            Protocol.owner_org_id,
-            new_protocol.owner_org_id,
-            new_protocol.name,
-        )
-    except ValueError as exc:
-        if str(exc) == "SLUG_CONFLICT":
-            raise slug_conflict_error("protocol", new_protocol.name)
-        raise
+    new_protocol.slug = await assign_slug_or_422(
+        db,
+        Protocol,
+        Protocol.owner_org_id,
+        new_protocol.owner_org_id,
+        new_protocol.name,
+        "protocol",
+    )
     db.add(new_protocol)
     await db.flush()
 
@@ -1004,19 +1000,15 @@ async def update_protocol(
         # Update protocol fields (name, description, etc.)
         for key, value in changes.items():
             if key == "name" and value != protocol.name:
-                try:
-                    protocol.slug = await assign_slug(
-                        db,
-                        Protocol,
-                        Protocol.owner_org_id,
-                        protocol.owner_org_id,
-                        value,
-                        exclude_id=protocol.id,
-                    )
-                except ValueError as exc:
-                    if str(exc) == "SLUG_CONFLICT":
-                        raise slug_conflict_error("protocol", value)
-                    raise
+                protocol.slug = await assign_slug_or_422(
+                    db,
+                    Protocol,
+                    Protocol.owner_org_id,
+                    protocol.owner_org_id,
+                    value,
+                    "protocol",
+                    exclude_id=protocol.id,
+                )
             setattr(protocol, key, value)
 
         # Auto-derive requires_approval from glpSettings on every graph

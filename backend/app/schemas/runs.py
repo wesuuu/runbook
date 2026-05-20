@@ -187,6 +187,8 @@ class RunStepStateUpdate(BaseModel):
 
 class RunResponse(RunBase):
     id: UUID
+    slug: str
+    project_slug: str
     project_id: UUID
     protocol_id: Optional[UUID]
     experiment_id: Optional[UUID] = None

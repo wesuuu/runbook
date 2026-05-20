@@ -208,6 +208,7 @@ async def find_or_create_sample_run(
         started_by_id=user.id,
         is_tour_sample=True,
     )
+    run.slug = await assign_slug(db, Run, Run.project_id, run.project_id, run.name)
     db.add(run)
     await db.commit()
     await db.refresh(run)

@@ -28,6 +28,7 @@ from app.schemas.runs import (
 )
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission
+from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +325,10 @@ async def add_run_to_experiment(
             if protocol.status and protocol.status.upper() == "ARCHIVED":
                 raise HTTPException(400, "Cannot create run from archived protocol")
             run.graph = protocol.graph.copy() if protocol.graph else {}
+
+        run.slug = await assign_slug_or_422(
+            db, Run, Run.project_id, run.project_id, run.name, "run"
+        )
 
         db.add(run)
         await db.flush()

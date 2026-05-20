@@ -36,6 +36,30 @@ async def assign_slug(
     return base
 
 
+async def assign_slug_or_422(
+    db: AsyncSession,
+    model: type,
+    scope_attr,
+    scope_value,
+    name: str,
+    entity_label: str,
+    exclude_id: Optional[object] = None,
+) -> str:
+    """Assign a unique slug, raising the standard HTTP 422 on collision.
+
+    Wraps assign_slug: on a SLUG_CONFLICT ValueError, raises
+    slug_conflict_error(entity_label, name); any other ValueError propagates.
+    """
+    try:
+        return await assign_slug(
+            db, model, scope_attr, scope_value, name, exclude_id=exclude_id
+        )
+    except ValueError as exc:
+        if str(exc) == "SLUG_CONFLICT":
+            raise slug_conflict_error(entity_label, name)
+        raise
+
+
 def slug_conflict_error(entity_label: str, name: str | None = None) -> HTTPException:
     """Build the standard HTTP 422 for a slug-uniqueness collision.
 

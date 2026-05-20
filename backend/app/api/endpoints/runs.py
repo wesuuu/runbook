@@ -94,6 +94,7 @@ from app.services.signoffs.queries import (
     list_active_signoffs,
 )
 from app.services.signoffs.service import create_signoff
+from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,9 @@ async def create_run(
         lot_number=run_in.lot_number,
         batch_number=run_in.batch_number,
     )
+    run_obj.slug = await assign_slug_or_422(
+        db, Run, Run.project_id, run_obj.project_id, run_obj.name, "run"
+    )
     db.add(run_obj)
     await db.flush()
 
@@ -363,6 +367,34 @@ async def check_lot_number(
     )
     count = int((await db.execute(stmt)).scalar() or 0)
     return CheckLotNumberResponse(exists=count > 0, count=count)
+
+
+@router.get("/runs/by-slug/{project_slug}/{slug}", response_model=RunResponse)
+async def get_run_by_slug(
+    project_slug: str,
+    slug: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Look up a run by project slug + run slug within the current org."""
+    result = await db.execute(
+        select(Run)
+        .join(Project, Run.project_id == Project.id)
+        .where(
+            Project.organization_id == user.selected_org_id,
+            Project.slug == project_slug,
+            Run.slug == slug,
+        )
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN, run.id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return run
 
 
 @router.get("/runs/{run_id}", response_model=RunResponse)
@@ -792,6 +824,16 @@ async def update_run(
                 )
 
     changes = update_dict
+    if "name" in changes and changes["name"] != run_obj.name:
+        run_obj.slug = await assign_slug_or_422(
+            db,
+            Run,
+            Run.project_id,
+            run_obj.project_id,
+            changes["name"],
+            "run",
+            exclude_id=run_obj.id,
+        )
     for key, value in changes.items():
         setattr(run_obj, key, value)
 

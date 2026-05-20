@@ -39,7 +39,7 @@ from app.schemas.project import (
 )
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission, get_visible_project_ids
-from app.services.slugs import assign_slug, slug_conflict_error
+from app.services.slugs import assign_slug_or_422
 
 router = APIRouter()
 
@@ -86,18 +86,14 @@ async def create_project(
         owner_type=owner_type,
         owner_id=owner_id,
     )
-    try:
-        db_project.slug = await assign_slug(
-            db,
-            Project,
-            Project.organization_id,
-            organization_id,
-            db_project.name,
-        )
-    except ValueError as exc:
-        if str(exc) == "SLUG_CONFLICT":
-            raise slug_conflict_error("project", db_project.name)
-        raise
+    db_project.slug = await assign_slug_or_422(
+        db,
+        Project,
+        Project.organization_id,
+        organization_id,
+        db_project.name,
+        "project",
+    )
     db.add(db_project)
     await db.flush()
 
@@ -221,19 +217,15 @@ async def update_project(
             )
 
     if "name" in changes and changes["name"] != project.name:
-        try:
-            project.slug = await assign_slug(
-                db,
-                Project,
-                Project.organization_id,
-                project.organization_id,
-                changes["name"],
-                exclude_id=project.id,
-            )
-        except ValueError as exc:
-            if str(exc) == "SLUG_CONFLICT":
-                raise slug_conflict_error("project", changes["name"])
-            raise
+        project.slug = await assign_slug_or_422(
+            db,
+            Project,
+            Project.organization_id,
+            project.organization_id,
+            changes["name"],
+            "project",
+            exclude_id=project.id,
+        )
 
     for key, value in changes.items():
         setattr(project, key, value)

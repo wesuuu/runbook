@@ -33,6 +33,7 @@ from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
 from app.services.core.task_runner import get_task_runner
+from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,9 @@ async def finalize_batch_record_import(
                 "deleted": False,
             }
         ],
+    )
+    run.slug = await assign_slug_or_422(
+        db, Run, Run.project_id, run.project_id, run.name, "run"
     )
     db.add(run)
     await db.flush()
