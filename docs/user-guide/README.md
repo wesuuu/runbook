@@ -34,6 +34,7 @@ restart; editing corpus `.md` files does not.)
 - `glp-and-signoffs.md` — GLP mode, how to enable sign-offs on a protocol, how to sign, and how approval gating works.
 - `ai-configuration.md` — Where AI settings live and how to choose a provider and model for each capability.
 - `org-roles-permissions.md` — Inviting members, assigning org roles, and controlling project-level access.
+- `sites-and-equipment.md` — Registering sites, adding equipment, tracking calibration and expiry, and archiving locations.
 
 ## Excluded (not shipped on production defaults)
 
