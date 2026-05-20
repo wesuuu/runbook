@@ -42,6 +42,8 @@ async def test_reset_wipes_user_generated_data(
         name="Test Protocol",
         project_id=test_project.id,
         graph={"nodes": [], "edges": []},
+        slug="test-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -52,6 +54,7 @@ async def test_reset_wipes_user_generated_data(
         protocol_id=protocol.id,
         status="DRAFT",
         graph={"nodes": [], "edges": []},
+        slug="test-run",
     )
     db_session.add(run)
 
@@ -170,11 +173,14 @@ async def test_reset_preserves_baseline_rows(db_session):
 
     # Add a stray Protocol so the next reset has actual work to do.
     proj_id = next(iter(before_projects))
+    # All seeded projects belong to ORG_ID.
     db_session.add(
         Protocol(
             name="ephemeral",
             project_id=proj_id,
             graph={"nodes": [], "edges": []},
+            slug="ephemeral",
+            owner_org_id=ORG_ID,
         )
     )
     await db_session.flush()

@@ -33,6 +33,8 @@ async def test_protocol_response_includes_approval_fields(
         created_by_id=test_user.id,
         approved_by_id=test_user.id,
         approved_at=datetime.now(timezone.utc),
+        slug="approved-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -79,6 +81,7 @@ async def test_run_response_includes_is_strict(
         status="PLANNED",
         created_by_id=test_user.id,
         is_strict=True,
+        slug="strict-run",
     )
     db_session.add(run)
     await db_session.flush()

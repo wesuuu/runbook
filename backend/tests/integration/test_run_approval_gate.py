@@ -44,13 +44,16 @@ async def _make_protocol(
     status: str = "DRAFT",
     requires_approval: bool = True,
 ) -> Protocol:
+    _hex = uuid.uuid4().hex[:6]
     p = Protocol(
-        name=f"P-{uuid.uuid4().hex[:6]}",
+        name=f"P-{_hex}",
         project_id=project.id,
         status=status,
         requires_approval=requires_approval,
         version_number=1,
         graph=_minimal_graph(),
+        slug=f"p-{_hex}",
+        owner_org_id=project.organization_id,
     )
     db.add(p)
     await db.flush()

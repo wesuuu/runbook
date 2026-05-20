@@ -77,6 +77,8 @@ async def active_run_with_completed_step(
         name="Test Protocol",
         project_id=test_project.id,
         graph=SAMPLE_GRAPH,
+        slug="test-protocol-phase1",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -86,6 +88,7 @@ async def active_run_with_completed_step(
         project_id=test_project.id,
         protocol_id=protocol.id,
         status=RunStatus.ACTIVE,
+        slug="test-run-phase1",
         graph=SAMPLE_GRAPH,
         execution_data={
             "step-1": {

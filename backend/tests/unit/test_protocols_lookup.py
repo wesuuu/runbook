@@ -27,7 +27,7 @@ from app.services.protocols.lookup import get_protocol_full, list_protocols
 async def project_with_perm(
     db_session: AsyncSession, test_org: Organization, test_user: User
 ) -> Project:
-    p = Project(name="proj1", organization_id=test_org.id, owner_id=test_user.id)
+    p = Project(name="proj1", organization_id=test_org.id, owner_id=test_user.id, slug="proj1")
     db_session.add(p)
     await db_session.flush()
     db_session.add(
@@ -50,13 +50,15 @@ async def test_list_protocols_returns_user_visible_protocols(
     test_user: User,
     project_with_perm: Project,
 ):
-    p1 = Protocol(name="A", project_id=project_with_perm.id, status="DRAFT", graph={})
+    p1 = Protocol(name="A", project_id=project_with_perm.id, status="DRAFT", graph={}, slug="a", owner_org_id=test_org.id)
     p2 = Protocol(
         name="B",
         project_id=project_with_perm.id,
         status="APPROVED",
         version_number=2,
         graph={},
+        slug="b",
+        owner_org_id=test_org.id,
     )
     db_session.add_all([p1, p2])
     await db_session.flush()
@@ -85,6 +87,8 @@ async def test_list_protocols_marks_has_draft(
         status="APPROVED",
         version_number=1,
         graph={},
+        slug="p-approved",
+        owner_org_id=test_org.id,
     )
     db_session.add(p)
     await db_session.flush()
@@ -106,12 +110,12 @@ async def test_list_protocols_excludes_unauthorized(
     db_session.add(other_org)
     await db_session.flush()
     other_proj = Project(
-        name="other-proj", organization_id=other_org.id, owner_id=uuid.uuid4()
+        name="other-proj", organization_id=other_org.id, owner_id=uuid.uuid4(), slug="other-proj"
     )
     db_session.add(other_proj)
     await db_session.flush()
     db_session.add(
-        Protocol(name="Hidden", project_id=other_proj.id, status="DRAFT", graph={})
+        Protocol(name="Hidden", project_id=other_proj.id, status="DRAFT", graph={}, slug="hidden", owner_org_id=other_org.id)
     )
     await db_session.flush()
     items = await list_protocols(db_session, user_id=test_user.id, org_id=test_org.id)
@@ -129,6 +133,7 @@ async def test_list_protocols_filters_by_project_id(
         name="proj2",
         organization_id=project_with_perm.organization_id,
         owner_id=test_user.id,
+        slug="proj2",
     )
     db_session.add(other)
     await db_session.flush()
@@ -144,9 +149,9 @@ async def test_list_protocols_filters_by_project_id(
     db_session.add_all(
         [
             Protocol(
-                name="A", project_id=project_with_perm.id, status="DRAFT", graph={}
+                name="A", project_id=project_with_perm.id, status="DRAFT", graph={}, slug="a-p1", owner_org_id=test_org.id
             ),
-            Protocol(name="B", project_id=other.id, status="DRAFT", graph={}),
+            Protocol(name="B", project_id=other.id, status="DRAFT", graph={}, slug="b-p2", owner_org_id=test_org.id),
         ]
     )
     await db_session.flush()
@@ -170,11 +175,12 @@ async def test_list_protocols_includes_org_admin_visibility(
         name="admin-only-proj",
         organization_id=test_org.id,
         owner_id=uuid.uuid4(),  # owned by someone else
+        slug="admin-only-proj",
     )
     db_session.add(proj)
     await db_session.flush()
     db_session.add(
-        Protocol(name="AdminVisible", project_id=proj.id, status="DRAFT", graph={})
+        Protocol(name="AdminVisible", project_id=proj.id, status="DRAFT", graph={}, slug="admin-visible", owner_org_id=test_org.id)
     )
     await db_session.flush()
 
@@ -218,6 +224,7 @@ async def test_list_protocols_includes_team_permission_visibility(
         organization_id=test_org.id,
         owner_id=uuid.uuid4(),
         settings={"permissions_enabled": True},
+        slug="team-proj",
     )
     db_session.add(proj)
     await db_session.flush()
@@ -231,7 +238,7 @@ async def test_list_protocols_includes_team_permission_visibility(
         )
     )
     db_session.add(
-        Protocol(name="TeamVisible", project_id=proj.id, status="DRAFT", graph={})
+        Protocol(name="TeamVisible", project_id=proj.id, status="DRAFT", graph={}, slug="team-visible", owner_org_id=test_org.id)
     )
     await db_session.flush()
 
@@ -250,6 +257,8 @@ async def test_get_protocol_full_returns_metadata_graph_roles(
         project_id=project_with_perm.id,
         status="DRAFT",
         graph={"nodes": [], "edges": []},
+        slug="p-full",
+        owner_org_id=test_org.id,
     )
     db_session.add(p)
     await db_session.flush()
@@ -271,10 +280,10 @@ async def test_get_protocol_full_raises_without_view_perm(
     other_org = Organization(name="x", subscription_tier="ESSENTIALS")
     db_session.add(other_org)
     await db_session.flush()
-    proj = Project(name="x-proj", organization_id=other_org.id, owner_id=uuid.uuid4())
+    proj = Project(name="x-proj", organization_id=other_org.id, owner_id=uuid.uuid4(), slug="x-proj")
     db_session.add(proj)
     await db_session.flush()
-    p = Protocol(name="P", project_id=proj.id, status="DRAFT", graph={})
+    p = Protocol(name="P", project_id=proj.id, status="DRAFT", graph={}, slug="p-x", owner_org_id=other_org.id)
     db_session.add(p)
     await db_session.flush()
     with pytest.raises(ValueError, match="permission"):

@@ -110,6 +110,7 @@ async def test_list_documents_filters_to_viewable_statuses(
                 file_size_bytes=1024,
                 file_path=f"/tmp/{title}.pdf",
                 status=status.value,
+                slug=title.lower().replace(" ", "-"),
             )
         )
     await db_session.flush()

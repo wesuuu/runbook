@@ -31,6 +31,7 @@ async def active_run(db_session, test_user, test_project):
         status=RunStatus.ACTIVE,
         graph={"nodes": [], "edges": []},
         execution_data={},
+        slug="sync-test-run",
     )
     db_session.add(run)
     await db_session.flush()
@@ -87,6 +88,7 @@ async def test_sync_offline_token_wrong_run(
         status=RunStatus.ACTIVE,
         graph={},
         execution_data={},
+        slug="other-run",
     )
     db_session.add(run2)
     await db_session.flush()

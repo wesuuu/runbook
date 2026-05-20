@@ -71,6 +71,7 @@ async def test_project(db_session, test_org) -> Project:
     project = Project(
         name="Test Project",
         organization_id=test_org.id,
+        slug="test-project",
     )
     db_session.add(project)
     await db_session.flush()

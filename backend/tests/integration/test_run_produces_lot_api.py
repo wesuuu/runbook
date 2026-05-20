@@ -20,6 +20,7 @@ async def test_run(db_session, test_project, test_user):
         notes=[],
         attachments=[],
         lot_number=None,
+        slug="test-run",
     )
     db_session.add(run)
     await db_session.flush()

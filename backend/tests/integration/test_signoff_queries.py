@@ -28,6 +28,7 @@ async def test_run(db_session: AsyncSession, test_project):
         execution_data={},
         notes=[],
         attachments=[],
+        slug="signoff-query-test-run",
     )
     db_session.add(run)
     await db_session.flush()

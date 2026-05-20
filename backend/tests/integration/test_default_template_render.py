@@ -61,6 +61,8 @@ async def test_default_sop_renders_with_approval_block(
         approved_by_id=approver.id,
         approved_at=datetime.now(timezone.utc),
         created_by_id=test_user.id,
+        slug="default-tpl-proto",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()

@@ -31,6 +31,7 @@ async def sample_run(db_session: AsyncSession, test_project) -> Run:
     run = Run(
         name="Signoff Lifecycle Test Run",
         project_id=test_project.id,
+        slug="signoff-lifecycle-test-run",
         status="PLANNED",
         graph={"nodes": [], "edges": []},
         execution_data={},
@@ -53,6 +54,8 @@ async def sample_protocol(
         status="DRAFT",
         version_number=1,
         created_by_id=test_user.id,
+        slug="signoff-lifecycle-test-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -191,6 +194,8 @@ async def sample_active_protocol(
         version_number=1,
         created_by_id=test_user.id,
         graph={"nodes": [], "edges": [], "glpSettings": {}},
+        slug="run-lifecycle-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -211,6 +216,7 @@ async def sample_active_run(
         project_id=test_project.id,
         protocol_id=sample_active_protocol.id,
         status="ACTIVE",
+        slug="run-lifecycle-active",
         graph={"nodes": [], "edges": []},
         execution_data={},
         notes=[],
@@ -461,6 +467,7 @@ async def sample_planned_run(
         project_id=test_project.id,
         protocol_id=sample_active_protocol.id,
         status="PLANNED",
+        slug="run-lifecycle-planned",
         graph={"nodes": [], "edges": []},
         execution_data={},
         notes=[],
@@ -534,6 +541,7 @@ async def sample_completed_step_run(
         project_id=test_project.id,
         protocol_id=sample_active_protocol.id,
         status="ACTIVE",
+        slug="run-lifecycle-step-review",
         graph={"nodes": [], "edges": []},
         execution_data={
             "step1": {

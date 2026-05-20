@@ -201,6 +201,8 @@ async def test_p1_endpoint_renders_batch_record_pdf(
         scope=kw.get("scope"),
         references=kw.get("references"),
         definitions=kw.get("definitions"),
+        slug="template-permutation-proto",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()

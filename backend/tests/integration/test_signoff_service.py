@@ -29,6 +29,7 @@ async def sample_run(db_session: AsyncSession, test_project) -> Run:
         execution_data={},
         notes=[],
         attachments=[],
+        slug="signoff-service-test-run",
     )
     db_session.add(run)
     await db_session.flush()

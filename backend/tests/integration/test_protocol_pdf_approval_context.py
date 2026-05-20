@@ -60,6 +60,8 @@ async def test_approval_context_for_approved_protocol_with_signature(
         approved_by_id=approver.id,
         approved_at=datetime.now(timezone.utc),
         created_by_id=test_user.id,
+        slug="approved-proto",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -103,6 +105,7 @@ async def test_approval_context_for_unapproved_required(
         owner_type="USER",
         owner_id=test_user.id,
         settings={"require_protocol_approval": True},
+        slug="strict-project",
     )
     db_session.add(project)
     await db_session.flush()
@@ -113,6 +116,8 @@ async def test_approval_context_for_unapproved_required(
         status="DRAFT",
         requires_approval=True,
         created_by_id=test_user.id,
+        slug="draft-proto",
+        owner_org_id=test_org.id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -134,6 +139,8 @@ async def test_approval_context_when_setting_off(
         status="DRAFT",
         requires_approval=True,
         created_by_id=test_user.id,
+        slug="no-setting-proto",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -162,6 +169,8 @@ async def test_approval_history_newest_first(
         status="APPROVED",
         requires_approval=True,
         created_by_id=test_user.id,
+        slug="hist-proto",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -218,6 +227,8 @@ async def test_actor_deleted_falls_back(
         status="DRAFT",
         requires_approval=False,
         created_by_id=test_user.id,
+        slug="deleted-actor-proto",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()

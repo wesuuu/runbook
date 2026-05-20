@@ -17,6 +17,8 @@ async def test_list_protocol_roles(
         name="Role Protocol",
         project_id=test_project.id,
         graph={},
+        slug="role-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -40,6 +42,8 @@ async def test_create_protocol_role(
         name="Role Creation Protocol",
         project_id=test_project.id,
         graph={},
+        slug="role-creation-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -66,6 +70,8 @@ async def test_update_protocol_role(
         name="Role Update Protocol",
         project_id=test_project.id,
         graph={},
+        slug="role-update-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -101,6 +107,8 @@ async def test_delete_protocol_role(
         name="Role Delete Protocol",
         project_id=test_project.id,
         graph={},
+        slug="role-delete-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()

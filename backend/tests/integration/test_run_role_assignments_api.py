@@ -30,6 +30,7 @@ async def test_create_role_assignment(
             ]
         },
         execution_data={},
+        slug="assignment-test-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -74,6 +75,7 @@ async def test_get_role_assignments(
             ]
         },
         execution_data={},
+        slug="list-assignment-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -121,6 +123,7 @@ async def test_update_role_assignment(
             ]
         },
         execution_data={},
+        slug="update-assignment-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -176,6 +179,7 @@ async def test_delete_role_assignment(
             ]
         },
         execution_data={},
+        slug="delete-assignment-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -221,6 +225,7 @@ async def test_transition_to_active_with_all_roles_assigned(
             ]
         },
         execution_data={},
+        slug="ready-to-start",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -272,6 +277,7 @@ async def test_transition_to_active_without_all_roles_assigned(
             ]
         },
         execution_data={},
+        slug="not-ready-to-start",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -307,6 +313,7 @@ async def test_assignment_operations_audit_logged(
         project_id=test_project.id,
         graph={"nodes": []},
         execution_data={},
+        slug="test-audit-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
