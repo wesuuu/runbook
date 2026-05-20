@@ -157,7 +157,7 @@ async def test_update_protocol_metadata_patches_name_and_description(
     project: Project,
 ):
     proto = Protocol(
-        name="Old", description="o", project_id=project.id, status="DRAFT", graph={}, slug="old", owner_org_id=test_org.id
+        name="Old", description="o", project_id=project.id, status="DRAFT", graph={}, slug="old", owner_org_id=project.organization_id
     )
     db_session.add(proto)
     await db_session.flush()
@@ -179,7 +179,7 @@ async def test_update_protocol_metadata_refuses_on_published(
     project: Project,
 ):
     proto = Protocol(
-        name="P", project_id=project.id, status="APPROVED", version_number=1, graph={}, slug="p-approved", owner_org_id=test_org.id
+        name="P", project_id=project.id, status="APPROVED", version_number=1, graph={}, slug="p-approved", owner_org_id=project.organization_id
     )
     db_session.add(proto)
     await db_session.flush()

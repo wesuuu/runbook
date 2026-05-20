@@ -209,7 +209,7 @@ async def test_list_protocols_includes_team_permission_visibility(
         OrganizationMember(
             user_id=member.id,
             organization_id=test_org.id,
-            role="MEMBER",
+            roles=["MEMBER"],
         )
     )
     # Team they belong to.
@@ -258,7 +258,7 @@ async def test_get_protocol_full_returns_metadata_graph_roles(
         status="DRAFT",
         graph={"nodes": [], "edges": []},
         slug="p-full",
-        owner_org_id=test_org.id,
+        owner_org_id=project_with_perm.organization_id,
     )
     db_session.add(p)
     await db_session.flush()
