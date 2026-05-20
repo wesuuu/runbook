@@ -26,7 +26,7 @@ interface User {
     tos_current: boolean;
 }
 
-interface Org {
+export interface Org {
     id: string;
     name: string;
     slug: string;

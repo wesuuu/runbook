@@ -1,6 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { getUser, getCurrentOrg, getOrgs, switchOrg, logout } from '$lib/auth.svelte';
+    import { getUser, getCurrentOrg, getOrgs, switchOrg, logout, type Org } from '$lib/auth.svelte';
     import { API_BASE } from '$lib/config';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
     import { Button } from '$lib/components/ui/button';
@@ -29,7 +29,7 @@
         goto('/login');
     }
 
-    function handleSwitchOrg(org: { id: string; name: string; slug: string; created_at: string; updated_at: string; subscription_tier: string }) {
+    function handleSwitchOrg(org: Org) {
         switchOrg(org);
         // Reload current page to reflect new org context
         window.location.reload();
