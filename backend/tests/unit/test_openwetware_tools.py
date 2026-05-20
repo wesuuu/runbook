@@ -74,6 +74,16 @@ async def test_search_disabled_when_flag_off():
 
 
 @pytest.mark.asyncio
+async def test_search_disabled_when_openwetware_source_off(_enabled, monkeypatch):
+    monkeypatch.setattr(
+        settings.features.external_protocols.openwetware, "enabled", False
+    )
+    ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
+    with pytest.raises(ValueError, match="OpenWetWare source is disabled"):
+        await kb.search_openwetware(ctx, "anything")
+
+
+@pytest.mark.asyncio
 async def test_fetch_rejects_non_openwetware_host(_enabled):
     ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
     with pytest.raises(ValueError, match="openwetware.org"):
