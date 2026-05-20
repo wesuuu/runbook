@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
-from app.services.ai.subagents.protocol_knowledgebase.tools import (
+from app.services.ai.subagents.protocol_knowledgebase.openwetware import (
+    parse_openwetware_wikitext,
+)
+from app.services.ai.subagents.protocol_knowledgebase.types import (
     ExternalProtocolPayload,
     ExternalProtocolStep,
-    parse_openwetware_wikitext,
 )
 
 FIXTURE = (
