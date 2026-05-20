@@ -35,6 +35,7 @@ restart; editing corpus `.md` files does not.)
 - `ai-configuration.md` — Where AI settings live and how to choose a provider and model for each capability.
 - `org-roles-permissions.md` — Inviting members, assigning org roles, and controlling project-level access.
 - `sites-and-equipment.md` — Registering sites, adding equipment, tracking calibration and expiry, and archiving locations.
+- `billing.md` — Subscription plans, billing settings, managing your plan, and opening the billing portal.
 
 ## Excluded (not shipped on production defaults)
 
