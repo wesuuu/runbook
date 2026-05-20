@@ -31,6 +31,7 @@ restart; editing corpus `.md` files does not.)
 - `experiments-and-runs.md` — Planning, executing, completing, and recording deviations in runs.
 - `library-and-documents.md` — Uploading documents to the library and searching them via the chat assistant.
 - `chat-agent.md` — What the in-app chat assistant can do, how to open it, use skills, and read source citations.
+- `glp-and-signoffs.md` — GLP mode, how to enable sign-offs on a protocol, how to sign, and how approval gating works.
 
 ## Excluded (not shipped on production defaults)
 
