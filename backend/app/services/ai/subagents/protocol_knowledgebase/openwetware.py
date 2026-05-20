@@ -116,9 +116,7 @@ def _parse_duration_minutes(text: str) -> int | None:
     return max(1, math.ceil(minutes))
 
 
-def _find_matching_section(
-    sections: dict[str, str], synonyms: set[str]
-) -> str | None:
+def _find_matching_section(sections: dict[str, str], synonyms: set[str]) -> str | None:
     """Body of the first section whose normalized heading contains a synonym."""
     for heading, body in sections.items():
         if not heading:
