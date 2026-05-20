@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.core.slug import slugify
 from app.db.session import AsyncSessionLocal
 from app.models.iam import (
     ObjectPermission,
@@ -179,6 +180,7 @@ async def seed_projects(db: AsyncSession):
         Project,
         PROJECT_MAB,
         name="mAb Production v2",
+        slug=slugify("mAb Production v2"),
         description="Monoclonal antibody production optimization",
         organization_id=ORG_ID,
         owner_type="TEAM",
@@ -189,6 +191,7 @@ async def seed_projects(db: AsyncSession):
         Project,
         PROJECT_VACCINE,
         name="Vaccine Formulation Study",
+        slug=slugify("Vaccine Formulation Study"),
         description="Novel vaccine formulation research",
         organization_id=ORG_ID,
         owner_type="USER",
@@ -337,6 +340,7 @@ async def seed_newbie_user(db: AsyncSession):
         Project,
         PROJECT_NEWBIE,
         name="My First Project",
+        slug=slugify("My First Project"),
         description="Created for you — rename or delete as you like.",
         organization_id=ORG_ID_NEWBIE,
     )
