@@ -12,6 +12,7 @@ import_allowed=False so it surfaces as a link, never an automatic import.
 from __future__ import annotations
 
 import html
+import json
 import re
 import urllib.parse
 
@@ -35,6 +36,34 @@ def _clean_html(text: str) -> str:
     return _WS_RE.sub(" ", html.unescape(stripped)).strip()
 
 
+def _draftjs_to_text(raw: str | None) -> str:
+    """Extract plain text from a Draft.js JSON blob or fall back to _clean_html.
+
+    protocols.io v4 stores rich-text fields (description, step, materials_text)
+    as Draft.js JSON strings.  Plain-HTML strings (legacy or alternative shape)
+    are handled by _clean_html as before.
+
+    Empty / None / un-parseable inputs return an empty string.
+    """
+    if not raw:
+        return ""
+    # If the string looks like JSON, try to parse it as a Draft.js document.
+    stripped = raw.strip()
+    if stripped.startswith("{"):
+        try:
+            doc = json.loads(stripped)
+            texts = [
+                (b.get("text") or "").strip()
+                for b in (doc.get("blocks") or [])
+                if (b.get("text") or "").strip()
+            ]
+            return _WS_RE.sub(" ", " ".join(texts)).strip()
+        except (ValueError, AttributeError):
+            pass
+    # Fallback: treat as HTML.
+    return _clean_html(raw)
+
+
 def parse_protocols_io_json(
     detail_json: dict, source_url: str
 ) -> ExternalProtocolPayload:
@@ -42,10 +71,14 @@ def parse_protocols_io_json(
 
     Pure — no HTTP. ``detail_json`` is the full response body; the protocol
     lives under the ``payload`` key.
+
+    The v4 API stores rich-text fields as Draft.js JSON strings (``step``,
+    ``description``, ``materials_text``).  ``_draftjs_to_text`` extracts plain
+    text from these, with an HTML fallback for any older or alternative shapes.
     """
     obj = detail_json.get("payload") or {}
     title = (obj.get("title") or "").strip() or "Untitled protocol"
-    summary = _clean_html(obj.get("description") or "")
+    summary = _draftjs_to_text(obj.get("description") or "")
 
     raw_license = (obj.get("license") or {}).get("title") or ""
     verdict = classify_license(raw_license)
@@ -74,16 +107,40 @@ def parse_protocols_io_json(
             license_note=verdict.reason,
         )
 
-    materials = [
-        (m.get("name") or "").strip()
-        for m in (obj.get("materials") or [])
-        if (m.get("name") or "").strip()
-    ]
-    steps = [
-        ExternalProtocolStep(text=text, duration_min=None)
-        for s in (obj.get("steps") or [])
-        if (text := _clean_html(s.get("description") or ""))
-    ]
+    # Materials: v4 API returns an empty ``materials`` array and stores the
+    # list in ``materials_text`` (Draft.js JSON).  Support both shapes.
+    raw_materials = obj.get("materials") or []
+    if raw_materials:
+        materials = [
+            (m.get("name") or "").strip()
+            for m in raw_materials
+            if (m.get("name") or "").strip()
+        ]
+    else:
+        # ``materials_text`` is a Draft.js JSON string; each block is one item.
+        raw_mt = (obj.get("materials_text") or "").strip()
+        if raw_mt.startswith("{"):
+            try:
+                doc = json.loads(raw_mt)
+                materials = [
+                    (b.get("text") or "").strip()
+                    for b in (doc.get("blocks") or [])
+                    if (b.get("text") or "").strip()
+                ]
+            except (ValueError, AttributeError):
+                materials = []
+        else:
+            materials = []
+
+    # Steps: v4 API encodes step text in ``step`` (Draft.js JSON).  The legacy
+    # ``description`` key (plain HTML) is also supported as a fallback.
+    steps = []
+    for s in obj.get("steps") or []:
+        text = _draftjs_to_text(s.get("step") or "") or _clean_html(
+            s.get("description") or ""
+        )
+        if text:
+            steps.append(ExternalProtocolStep(text=text, duration_min=None))
     return ExternalProtocolPayload(
         title=title,
         source_url=source_url,
