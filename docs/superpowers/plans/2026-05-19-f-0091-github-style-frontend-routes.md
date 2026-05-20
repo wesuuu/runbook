@@ -817,15 +817,29 @@ async def get_protocol_by_slug(
 
 (Mirror the exact return/permission shape of the existing `get_protocol` handler at protocols.py:387-442 — reuse its body verbatim after resolving `protocol_id`.)
 
+- [ ] **Step 7b: Wire slug + `owner_org_id` into the remaining Protocol create paths**
+
+`Protocol` is constructed in four places beyond `create_protocol`. Every one must set `owner_org_id` **and** `slug`, or the `NOT NULL` columns raise `IntegrityError`. At each site, apply the **same `owner_org_id` resolution and `assign_slug` call as Step 4** (all sites are project-scoped, so resolve the org via the owning `Project`). Add `from app.services.slugs import assign_slug` (and import `Project` where needed) to each module.
+
+1. `backend/app/services/protocols/creation.py` — `create_protocol_from_spec` (~104). `project` is already loaded above (~57). After the `Protocol(...)` and before `db.add`: `protocol.owner_org_id = project.organization_id`, then `protocol.slug = await assign_slug(db, Protocol, Protocol.owner_org_id, protocol.owner_org_id, protocol.name)`. This is a service — let `assign_slug` raise `ValueError("SLUG_CONFLICT")`; the calling endpoint converts it (Step 6 extends the metadata-path handler).
+
+2. `backend/app/services/core/onboarding.py` — `find_or_create_sample_protocol` (~169). `project` is in scope (~168). Set `owner_org_id`/`slug` the same way. This is find-or-create (no collision possible); let any `ValueError` propagate.
+
+3. `backend/app/services/ai/workflows/protocol_generator.py` (~114). Load the owning project: `owning_project = await db.get(Project, project_id)`, set `protocol.owner_org_id = owning_project.organization_id`, assign the slug. Let `ValueError` propagate to the chat endpoint's existing error handling.
+
+4. `backend/app/services/protocols/protocol_importer.py` (~806). The constructor sets both `project_id` and `organization_id`; resolve `owner_org_id` with the Step-4 conditional (`organization_id` if non-null, else the owning project's org). Assign the slug; let `ValueError` propagate.
+
 - [ ] **Step 8: Run the protocol tests to verify they pass**
 
 Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_slug_routes.py -k protocol -v`
 Expected: PASS (5 tests).
 
+Then confirm the secondary create paths: `pytest tests/unit/test_protocols_creation.py tests/unit/test_protocols_lookup.py -q` — all PASS.
+
 - [ ] **Step 9: Commit**
 
 ```bash
-git add backend/app/api/endpoints/protocols.py backend/app/services/protocols/creation.py backend/app/schemas/protocols.py backend/tests/integration/test_slug_routes.py
+git add backend/app/api/endpoints/protocols.py backend/app/services/protocols/creation.py backend/app/services/core/onboarding.py backend/app/services/ai/workflows/protocol_generator.py backend/app/services/protocols/protocol_importer.py backend/app/schemas/protocols.py backend/tests/integration/test_slug_routes.py
 git commit -m "feat(F-0091): protocol slug assignment and by-slug lookup"
 ```
 
@@ -965,15 +979,25 @@ async def get_project_by_slug(
 
 (Use the project's existing permission helper — `get_project` at projects.py:120-133 uses the `require_permission` route dependency; replicate that VIEW check here in the body via `check_permission`, matching how protocols/runs do body-level checks.)
 
+- [ ] **Step 6b: Wire slug into the remaining Project create paths**
+
+`Project` is constructed in two places beyond `create_project`. Apply the **Step 4 `assign_slug` pattern** (scope = `Project.organization_id`). Add `from app.services.slugs import assign_slug` to each module. Both paths create a project in a brand-new / find-or-create context where no collision is possible — let any `ValueError` propagate rather than wrapping it.
+
+1. `backend/app/services/core/onboarding.py` — `find_or_create_sample_project` (~136). After the `Project(...)` and before `db.add`: `project.slug = await assign_slug(db, Project, Project.organization_id, org.id, project.name)`.
+
+2. `backend/app/api/endpoints/auth.py` — registration seeds "My First Project" (~240). The `Project(...)` is currently passed inline to `db.add(...)`. Refactor to a local variable: build the `Project`, call `assign_slug` (scope value `org.id`), then `db.add(project)`.
+
 - [ ] **Step 7: Run to verify the project tests pass**
 
 Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_slug_routes.py -k project -v`
 Expected: PASS (4 tests).
 
+Then confirm the secondary create paths: `pytest tests/unit/test_onboarding_service.py -k project -q` — PASS.
+
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/app/api/endpoints/projects.py backend/app/schemas/project.py backend/tests/integration/test_slug_routes.py
+git add backend/app/api/endpoints/projects.py backend/app/api/endpoints/auth.py backend/app/services/core/onboarding.py backend/app/schemas/project.py backend/tests/integration/test_slug_routes.py
 git commit -m "feat(F-0091): project slug assignment and by-slug lookup"
 ```
 
@@ -1136,15 +1160,27 @@ async def get_run_by_slug(
 
 (Match the VIEW-permission style used by the existing `get_run` handler at runs.py:371-387.)
 
+- [ ] **Step 6b: Wire slug into the remaining Run create paths**
+
+`Run` is constructed in three places beyond `create_run`. Apply the **Step 4 `assign_slug` pattern** (scope = `Run.project_id`). Add `from app.services.slugs import assign_slug` to each module.
+
+1. `backend/app/api/endpoints/experiments.py` — run created within an experiment (~315). After the `Run(...)` and the protocol-graph copy, before `db.add`: assign `run.slug` with `assign_slug(db, Run, Run.project_id, run.project_id, run.name)`, wrapped in the Step-4 try/except that raises `HTTPException(422, {"code": "SLUG_CONFLICT", ...})`.
+
+2. `backend/app/api/endpoints/batch_record_import.py` — finalized-import run (~232). After the `Run(...)`, before `db.add`: same `assign_slug` call + 422 wrapper.
+
+3. `backend/app/services/core/onboarding.py` — `find_or_create_sample_run` (~189). After the `Run(...)`, before `db.add`: `run.slug = await assign_slug(db, Run, Run.project_id, run.project_id, run.name)`. Find-or-create — no collision; let any `ValueError` propagate.
+
 - [ ] **Step 7: Run to verify the run tests pass**
 
 Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_slug_routes.py -k run -v`
 Expected: PASS (4 tests).
 
+Then confirm the secondary create paths: `pytest tests/unit/test_onboarding_service.py -k run tests/integration/test_batch_record_import_api.py -q` — PASS.
+
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/app/api/endpoints/runs.py backend/app/schemas/runs.py backend/tests/integration/test_slug_routes.py
+git add backend/app/api/endpoints/runs.py backend/app/api/endpoints/experiments.py backend/app/api/endpoints/batch_record_import.py backend/app/services/core/onboarding.py backend/app/schemas/runs.py backend/tests/integration/test_slug_routes.py
 git commit -m "feat(F-0091): run slug assignment and nested by-slug lookup"
 ```
 
@@ -1406,15 +1442,21 @@ async def get_document_by_slug(
 
 (Delegates to the existing `get_document` handler at library.py:306-400 so the detailed response — chunks, TOC, progress — is identical.)
 
+- [ ] **Step 5b: Wire slug into the URL-import Document create path**
+
+`Document` is also constructed in `backend/app/services/protocols/url_importer.py` (~184). Before the `Document(...)` constructor, resolve the slug: `doc_slug = await assign_slug(db, Document, Document.org_id, org_id, title)`, then pass `slug=doc_slug` into the constructor. This service runs behind a HITL approval flow — let `assign_slug` raise `ValueError("SLUG_CONFLICT")` and let the caller's existing error handling surface it. Add `from app.services.slugs import assign_slug`.
+
 - [ ] **Step 6: Run to verify the document tests pass**
 
 Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_slug_routes.py -k document -v`
 Expected: PASS (3 tests).
 
+Then confirm the broader library suite: `pytest tests/integration/test_library_api.py -q` — PASS.
+
 - [ ] **Step 7: Commit**
 
 ```bash
-git add backend/app/api/endpoints/library.py backend/app/schemas/library.py backend/tests/integration/test_slug_routes.py
+git add backend/app/api/endpoints/library.py backend/app/services/protocols/url_importer.py backend/app/schemas/library.py backend/tests/integration/test_slug_routes.py
 git commit -m "feat(F-0091): library document slug assignment and by-slug lookup"
 ```
 
