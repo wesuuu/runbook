@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 @dataclass
 class RetrievedChunk:
     document_id: UUID
+    document_slug: str
     document_title: str
     chunk_id: UUID
     chunk_index: int

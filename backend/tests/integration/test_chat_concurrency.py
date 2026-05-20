@@ -43,6 +43,7 @@ async def test_sequential_runs_do_not_share_sources(
 
     fake_chunk_a = RetrievedChunk(
         document_id=uuid4(),
+        document_slug="a",
         document_title="A",
         chunk_id=uuid4(),
         chunk_index=0,
@@ -52,6 +53,7 @@ async def test_sequential_runs_do_not_share_sources(
     )
     fake_chunk_b = RetrievedChunk(
         document_id=uuid4(),
+        document_slug="b",
         document_title="B",
         chunk_id=uuid4(),
         chunk_index=0,

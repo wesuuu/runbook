@@ -1,6 +1,7 @@
 <script lang="ts">
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
     import { api } from "$lib/api";
+    import { paths } from "$lib/paths";
     import { getNextRoleColor } from "$lib/components/protocol/protocolNodes";
     import { Button } from "$lib/components/ui/button";
     import ApprovalHistory from "$lib/components/protocol/ApprovalHistory.svelte";
@@ -357,7 +358,7 @@
                 </Button>
             {/if}
 
-            <a href="/projects/{protocol.project_id}?tab=protocols" class="back-link">
+            <a href="{paths.project(protocol.project_slug)}?tab=protocols" class="back-link">
                 &#8592; Back to Project
             </a>
         {/if}

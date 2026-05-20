@@ -75,6 +75,7 @@ def _build_run_summary(
     project_name: str,
     protocol_name: str | None,
     role_name: str | None = None,
+    project_slug: str = "",
 ) -> RunSummary:
     graph = run.graph or {}
     exec_data = run.execution_data or {}
@@ -82,8 +83,10 @@ def _build_run_summary(
     return RunSummary(
         id=run.id,
         name=run.name,
+        slug=run.slug,
         project_id=run.project_id,
         project_name=project_name,
+        project_slug=project_slug,
         protocol_name=protocol_name,
         status=status_str,
         role_name=role_name,
@@ -97,15 +100,19 @@ async def _resolve_names(
     db: AsyncSession,
     project_ids: set[UUID],
     protocol_ids: set[UUID],
-) -> tuple[dict[UUID, str], dict[UUID, str]]:
-    """Batch-resolve project and protocol names."""
+) -> tuple[dict[UUID, str], dict[UUID, str], dict[UUID, str]]:
+    """Batch-resolve project names, protocol names, and project slugs."""
     project_map: dict[UUID, str] = {}
+    project_slug_map: dict[UUID, str] = {}
     if project_ids:
         result = await db.execute(
-            select(Project.id, Project.name).where(Project.id.in_(project_ids))
+            select(Project.id, Project.name, Project.slug).where(
+                Project.id.in_(project_ids)
+            )
         )
-        for pid, name in result.all():
+        for pid, name, slug in result.all():
             project_map[pid] = name
+            project_slug_map[pid] = slug
 
     proto_map: dict[UUID, str] = {}
     if protocol_ids:
@@ -115,7 +122,7 @@ async def _resolve_names(
         for pid, name in result.all():
             proto_map[pid] = name
 
-    return project_map, proto_map
+    return project_map, proto_map, project_slug_map
 
 
 def _compute_completion_trend(runs: list, days: int = 7) -> list[CompletionTrendItem]:
@@ -194,7 +201,9 @@ async def get_dashboard(
     # Batch-resolve project/protocol names
     project_ids_set = {r.project_id for r in all_runs}
     protocol_ids_set = {r.protocol_id for r in all_runs if r.protocol_id}
-    project_map, proto_map = await _resolve_names(db, project_ids_set, protocol_ids_set)
+    project_map, proto_map, project_slug_map = await _resolve_names(
+        db, project_ids_set, protocol_ids_set
+    )
 
     # ── Classify runs into My Work buckets ──
     needs_action: list[RunSummary] = []
@@ -207,6 +216,7 @@ async def get_dashboard(
     for run in all_runs:
         status = run.status if isinstance(run.status, str) else run.status.value
         proj_name = project_map.get(run.project_id, "")
+        proj_slug = project_slug_map.get(run.project_id, "")
         proto_name = proto_map.get(run.protocol_id, "") if run.protocol_id else None
         assignments = user_assignments.get(run.id, [])
         role_name = assignments[0].role_name if assignments else None
@@ -216,7 +226,9 @@ async def get_dashboard(
 
         if status == "ACTIVE":
             if user_involved:
-                summary = _build_run_summary(run, proj_name, proto_name, role_name)
+                summary = _build_run_summary(
+                    run, proj_name, proto_name, role_name, proj_slug
+                )
                 # Check if user's lanes have incomplete steps
                 lane_ids = {a.lane_node_id for a in assignments}
                 graph = run.graph or {}
@@ -229,12 +241,14 @@ async def get_dashboard(
         elif status in ("COMPLETED", "EDITED"):
             if user_involved and run.updated_at and run.updated_at >= two_weeks_ago:
                 recently_completed.append(
-                    _build_run_summary(run, proj_name, proto_name, role_name)
+                    _build_run_summary(
+                        run, proj_name, proto_name, role_name, proj_slug
+                    )
                 )
 
         elif status == "PLANNED":
             planned_runs.append(
-                _build_run_summary(run, proj_name, proto_name, role_name)
+                _build_run_summary(run, proj_name, proto_name, role_name, proj_slug)
             )
 
     # Sort buckets
@@ -392,8 +406,8 @@ async def _fetch_activity(
     result = await db.execute(query)
     logs = list(result.scalars().all())
 
-    # Batch-resolve entity names
-    entity_names = await _resolve_entity_names(
+    # Batch-resolve entity names and slugs
+    entity_names, entity_slugs, project_slugs = await _resolve_entity_names(
         db, logs, set(project_ids), set(protocol_ids), set(run_ids)
     )
 
@@ -409,6 +423,8 @@ async def _fetch_activity(
             (log.entity_type, log.entity_id),
             log.changes.get("name", ""),
         )
+        entity_slug = entity_slugs.get((log.entity_type, log.entity_id))
+        project_slug = project_slugs.get((log.entity_type, log.entity_id))
 
         items.append(
             ActivityItem(
@@ -417,6 +433,8 @@ async def _fetch_activity(
                 entity_type=log.entity_type,
                 entity_id=log.entity_id,
                 entity_name=entity_name,
+                entity_slug=entity_slug,
+                project_slug=project_slug,
                 actor_name=actor_name,
                 actor_email=actor_email,
                 changes=log.changes or {},
@@ -433,35 +451,56 @@ async def _resolve_entity_names(
     project_ids: set[UUID],
     protocol_ids: set[UUID],
     run_ids: set[UUID],
-) -> dict[tuple[str, UUID], str]:
-    """Resolve entity names from IDs for display."""
+) -> tuple[
+    dict[tuple[str, UUID], str],
+    dict[tuple[str, UUID], str],
+    dict[tuple[str, UUID], str],
+]:
+    """Resolve entity names, own slugs, and (for runs) project slugs from IDs."""
     names: dict[tuple[str, UUID], str] = {}
+    slugs: dict[tuple[str, UUID], str] = {}
+    # Only populated for Run / RunRoleAssignment entities (nested URLs).
+    project_slugs: dict[tuple[str, UUID], str] = {}
 
     # Projects
     if project_ids:
         result = await db.execute(
-            select(Project.id, Project.name).where(Project.id.in_(project_ids))
+            select(Project.id, Project.name, Project.slug).where(
+                Project.id.in_(project_ids)
+            )
         )
-        for pid, name in result.all():
+        for pid, name, slug in result.all():
             names[("Project", pid)] = name
+            slugs[("Project", pid)] = slug
 
     # Protocols
     if protocol_ids:
         result = await db.execute(
-            select(Protocol.id, Protocol.name).where(Protocol.id.in_(protocol_ids))
+            select(Protocol.id, Protocol.name, Protocol.slug).where(
+                Protocol.id.in_(protocol_ids)
+            )
         )
-        for pid, name in result.all():
+        for pid, name, slug in result.all():
             names[("Protocol", pid)] = name
+            slugs[("Protocol", pid)] = slug
 
-    # Runs
+    # Runs — also resolve the owning project's slug for nested URLs.
     if run_ids:
-        result = await db.execute(select(Run.id, Run.name).where(Run.id.in_(run_ids)))
-        for rid, name in result.all():
+        result = await db.execute(
+            select(Run.id, Run.name, Run.slug, Project.slug)
+            .join(Project, Run.project_id == Project.id)
+            .where(Run.id.in_(run_ids))
+        )
+        for rid, name, slug, proj_slug in result.all():
             names[("Run", rid)] = name
+            slugs[("Run", rid)] = slug
+            project_slugs[("Run", rid)] = proj_slug
             # RunRoleAssignment entity_id is the run_id
             names[("RunRoleAssignment", rid)] = name
+            slugs[("RunRoleAssignment", rid)] = slug
+            project_slugs[("RunRoleAssignment", rid)] = proj_slug
 
-    return names
+    return names, slugs, project_slugs
 
 
 @router.get("/activity", response_model=ActivityPage)

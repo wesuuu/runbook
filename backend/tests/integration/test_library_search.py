@@ -107,6 +107,9 @@ class TestKeywordSearch:
         assert body["search_mode"] == "keyword"
         assert body["total"] >= 1
         assert body["items"][0]["document_title"] == "Cell Culture Protocol"
+        # F-0091: the search result group carries the document's slug so the
+        # frontend can build /<org>/library/<slug> links.
+        assert body["items"][0]["document_slug"].startswith("cell-culture-protocol")
 
     @pytest.mark.asyncio
     async def test_keyword_search_returns_highlights(

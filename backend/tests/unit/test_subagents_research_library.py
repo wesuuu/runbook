@@ -47,6 +47,7 @@ async def test_search_documents_appends_to_sources(monkeypatch):
     fake_chunks = [
         RetrievedChunk(
             document_id=uuid.uuid4(),
+            document_slug="t",
             document_title="t",
             chunk_id=uuid.uuid4(),
             chunk_index=0,

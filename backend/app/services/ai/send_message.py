@@ -467,6 +467,7 @@ async def send_message_streaming(
         meta["sources"] = [
             {
                 "document_id": str(s.document_id),
+                "document_slug": s.document_slug,
                 "document_title": s.document_title,
                 "chunk_id": str(s.chunk_id),
                 "chunk_index": s.chunk_index,
@@ -536,6 +537,7 @@ async def send_message_streaming(
         "sources": [
             ChatSourceReference(
                 document_id=s.document_id,
+                document_slug=s.document_slug,
                 document_title=s.document_title,
                 chunk_id=s.chunk_id,
                 chunk_index=s.chunk_index,
@@ -726,6 +728,7 @@ async def resume_message_streaming(
         meta["sources"] = [
             {
                 "document_id": str(s.document_id),
+                "document_slug": s.document_slug,
                 "document_title": s.document_title,
                 "chunk_id": str(s.chunk_id),
                 "chunk_index": s.chunk_index,
@@ -777,6 +780,7 @@ async def resume_message_streaming(
         "sources": [
             ChatSourceReference(
                 document_id=s.document_id,
+                document_slug=s.document_slug,
                 document_title=s.document_title,
                 chunk_id=s.chunk_id,
                 chunk_index=s.chunk_index,

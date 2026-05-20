@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { getAwaitingMyApproval } from '$lib/api';
     import type { AwaitingApprovalItem } from '$lib/schemas/glpSignoff';
+    import { paths } from '$lib/paths';
 
     let items = $state<AwaitingApprovalItem[]>([]);
     let loaded = $state(false);
@@ -25,7 +26,7 @@
                 <li>
                     <a
                         class="text-primary hover:underline"
-                        href={`/protocols/${item.protocol_id}`}
+                        href={paths.protocol(item.protocol_slug)}
                         data-testid="pending-approval-row"
                     >
                         {#if item.project_name}

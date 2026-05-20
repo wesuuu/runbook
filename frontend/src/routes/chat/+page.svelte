@@ -525,7 +525,7 @@
             <div class="flex-1 overflow-y-auto p-3 space-y-3">
                 {#each activeSources as source, i (`${source.document_id}-${source.chunk_index}`)}
                     <a
-                        href="/library/{source.document_id}?chunk={source.chunk_index}"
+                        href="{paths.libraryDoc(source.document_slug)}?chunk={source.chunk_index}"
                         class="block rounded-lg border border-border/40 p-3 hover:bg-muted/50 transition-colors group"
                         animate:flip={{ duration: listDuration() }}
                         in:fade={{ duration: listDuration() }}

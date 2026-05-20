@@ -21,14 +21,18 @@
 
     async function loadSampleProtocol() {
         try {
-            const { protocol_id } = await api.post<{ project_id: string; protocol_id: string }>(
+            const { protocol_slug } = await api.post<{
+                project_id: string;
+                protocol_id: string;
+                protocol_slug: string;
+            }>(
                 '/onboarding/tour/protocol/start',
                 {},
             );
             // Backend resets the protocol segment in tour_state; refresh local store so the
             // pulsing dot re-appears on arrival.
             await hydrateTourState();
-            goto(`/protocols/${protocol_id}`);
+            goto(paths.protocol(protocol_slug));
         } catch (e: any) {
             console.error('Failed to load sample protocol:', e);
         }

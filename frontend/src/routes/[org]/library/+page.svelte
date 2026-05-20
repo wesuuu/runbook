@@ -61,6 +61,7 @@
 
     const SearchResultGroupSchema = z.object({
         document_id: z.string(),
+        document_slug: z.string(),
         document_title: z.string(),
         match_count: z.number(),
         best_score: z.number(),
@@ -250,7 +251,7 @@
                 {:else}
                     <div class="divide-y divide-border">
                         {#each searchResults as group (group.document_id)}
-                            <a href="/library/{group.document_id}" class="block py-4 px-2 hover:bg-muted/50 rounded-md transition-colors -mx-2" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
+                            <a href={paths.libraryDoc(group.document_slug)} class="block py-4 px-2 hover:bg-muted/50 rounded-md transition-colors -mx-2" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="flex items-center justify-between">
                                     <span class="font-semibold text-sm text-primary">{group.document_title}</span>
                                     <div class="flex items-center gap-2">

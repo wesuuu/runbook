@@ -117,6 +117,7 @@ class ProtocolResponse(ProtocolBase):
     id: UUID
     slug: str
     project_id: Optional[UUID] = None
+    project_slug: Optional[str] = None
     organization_id: Optional[UUID] = None
     status: str = "DRAFT"
     version_number: int = 0
@@ -223,6 +224,7 @@ class AwaitingApprovalItem(BaseModel):
     """Single entry in GET /protocols/awaiting-my-approval response."""
 
     protocol_id: UUID
+    protocol_slug: str
     name: str
     project_id: Optional[UUID] = None
     project_name: Optional[str] = None

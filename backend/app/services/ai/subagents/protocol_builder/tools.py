@@ -89,6 +89,7 @@ class CreateProtocolResult:
     """Result of a create_protocol call."""
 
     protocol_id: str
+    protocol_slug: str
     protocol_name: str
     project_id: str
 
@@ -266,6 +267,7 @@ async def create_protocol(
             "tool": "create_protocol",
             "subagent": "protocol_builder",
             "protocol_id": str(protocol.id),
+            "protocol_slug": protocol.slug,
             "protocol_name": protocol_name,
             "project_id": str(protocol.project_id),
             "project_name": project_name,
@@ -275,6 +277,7 @@ async def create_protocol(
 
     return CreateProtocolResult(
         protocol_id=str(protocol.id),
+        protocol_slug=protocol.slug,
         protocol_name=protocol.name,
         project_id=str(protocol.project_id),
     )

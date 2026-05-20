@@ -398,9 +398,9 @@
     bind:open={showBatchImportModal}
     projectId={id}
     {protocols}
-    onSuccess={(runId) => {
+    onSuccess={({ runSlug, projectSlug }) => {
         loadData();
-        goto(`/runs/${runId}`);
+        goto(paths.run(projectSlug, runSlug));
     }}
 />
 

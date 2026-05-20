@@ -381,3 +381,68 @@ async def test_organizations_list_exposes_derived_slug(client, auth_headers):
     for org in orgs:
         assert "slug" in org
         assert org["slug"] == org["slug"].lower()
+
+
+# ─── F-0091 Task 20b: slug exposure on navigation responses ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_project_scoped_protocol_response_exposes_project_slug(
+    client, auth_headers
+):
+    """A project-scoped protocol surfaces its owning project's slug."""
+    proj = (
+        await client.post(
+            "/projects/", json={"name": "CHO Line"}, headers=auth_headers
+        )
+    ).json()
+    resp = await client.post(
+        "/protocols",
+        json={"name": "Seed Train", "project_id": proj["id"]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["project_slug"] == "cho-line"
+
+
+@pytest.mark.asyncio
+async def test_org_scoped_protocol_response_has_null_project_slug(
+    client, auth_headers, test_org
+):
+    """A library (org-scoped) protocol has no project, so project_slug is null."""
+    resp = await client.post(
+        "/protocols",
+        json={"name": "Buffer Prep", "organization_id": str(test_org.id)},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["project_slug"] is None
+
+
+@pytest.mark.asyncio
+async def test_dashboard_run_summary_exposes_run_and_project_slug(
+    client, auth_headers, test_org
+):
+    """RunSummary rows in the dashboard carry the run slug + project slug."""
+    proj = (
+        await client.post(
+            "/projects/", json={"name": "CHO Line"}, headers=auth_headers
+        )
+    ).json()
+    run = (
+        await client.post(
+            "/runs",
+            json={"name": "Seeding Run", "project_id": proj["id"]},
+            headers=auth_headers,
+        )
+    ).json()
+
+    resp = await client.get(
+        f"/dashboard?org_id={test_org.id}", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    planned = resp.json()["my_work"]["planned_runs"]
+    summary = next(r for r in planned if r["id"] == run["id"])
+    assert summary["slug"] == run["slug"]
+    assert summary["project_slug"] == "cho-line"

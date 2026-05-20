@@ -573,6 +573,9 @@ async def test_finalize_creates_completed_run(
     run = await db_session.get(Run, uuid.UUID(body["run_id"]))
     assert run is not None
     assert run.status == "COMPLETED"
+    # F-0091: finalize response carries run + project slugs for nav.
+    assert body["run_slug"] == run.slug
+    assert body["project_slug"] == run.project.slug
     assert run.execution_data["node-buf"]["status"] == "completed"
     assert run.execution_data["node-buf"]["results"]["ph_value"] == 7.2
     assert run.execution_data["node-cent"]["results"]["speed_g"] == 3000

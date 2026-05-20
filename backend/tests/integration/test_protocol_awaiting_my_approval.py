@@ -103,6 +103,7 @@ async def test_awaiting_open_request_user_sees_protocol(
     items = resp.json()
     assert len(items) == 1
     assert items[0]["protocol_id"] == str(proto.id)
+    assert items[0]["protocol_slug"] == proto.slug
     assert items[0]["name"] == "P-Request"
     assert items[0]["project_id"] == str(test_project.id)
     assert items[0]["organization_id"] == str(test_org.id)

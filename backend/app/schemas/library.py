@@ -116,6 +116,7 @@ class SearchResultItem(BaseModel):
 
 class SearchResultGroup(BaseModel):
     document_id: UUID
+    document_slug: str
     document_title: str
     match_count: int
     best_score: float

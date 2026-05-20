@@ -86,7 +86,9 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    project: Mapped[Optional["Project"]] = relationship(back_populates="protocols")
+    project: Mapped[Optional["Project"]] = relationship(
+        back_populates="protocols", lazy="selectin"
+    )
     organization: Mapped[Optional["Organization"]] = relationship(
         "app.models.iam.Organization",
         foreign_keys=[organization_id],
@@ -113,6 +115,14 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="GlpSignoffRequest.created_at.desc()",
     )
+
+    @property
+    def project_slug(self) -> Optional[str]:
+        """Slug of the owning project — for building project back-links.
+
+        ``None`` for org-scoped (library) protocols, which have no project.
+        """
+        return self.project.slug if self.project else None
 
 
 class ProtocolRole(Base, UUIDMixin, TimestampMixin):

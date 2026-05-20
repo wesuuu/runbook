@@ -34,6 +34,7 @@ export const ChatSessionListResponseSchema = z.object({
 
 export const ChatSourceReferenceSchema = z.object({
     document_id: z.string(),
+    document_slug: z.string(),
     document_title: z.string(),
     chunk_id: z.string(),
     chunk_index: z.number(),

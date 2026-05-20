@@ -88,6 +88,7 @@ def _make_streaming_mock(content: str, sources: list):
                     "sources": [
                         {
                             "document_id": str(s.document_id),
+                            "document_slug": s.document_slug,
                             "document_title": s.document_title,
                             "chunk_id": str(s.chunk_id),
                             "chunk_index": s.chunk_index,
@@ -108,6 +109,7 @@ def _make_streaming_mock(content: str, sources: list):
         source_dicts = [
             {
                 "document_id": str(s.document_id),
+                "document_slug": s.document_slug,
                 "document_title": s.document_title,
                 "chunk_id": str(s.chunk_id),
                 "chunk_index": s.chunk_index,
@@ -505,6 +507,7 @@ class TestSendChatMessageWithRAG:
         fake_sources = [
             RetrievedChunk(
                 document_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                document_slug="buffer-prep-sop",
                 document_title="Buffer Prep SOP",
                 chunk_id=uuid.UUID("00000000-0000-0000-0000-000000000010"),
                 chunk_index=3,
@@ -537,6 +540,8 @@ class TestSendChatMessageWithRAG:
         assert len(done["sources"]) == 1
         source = done["sources"][0]
         assert source["document_title"] == "Buffer Prep SOP"
+        # F-0091: source carries the document slug for /<org>/library/<slug> links.
+        assert source["document_slug"] == "buffer-prep-sop"
         assert source["chunk_index"] == 3
         assert source["page_number"] == 2
         assert source["score"] == 0.85

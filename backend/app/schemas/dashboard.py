@@ -8,8 +8,10 @@ from pydantic import BaseModel
 class RunSummary(BaseModel):
     id: UUID
     name: str
+    slug: str
     project_id: UUID
     project_name: str
+    project_slug: str
     protocol_name: Optional[str] = None
     status: str
     role_name: Optional[str] = None
@@ -24,6 +26,8 @@ class ActivityItem(BaseModel):
     entity_type: str
     entity_id: UUID
     entity_name: Optional[str] = None
+    entity_slug: Optional[str] = None
+    project_slug: Optional[str] = None
     actor_name: Optional[str] = None
     actor_email: Optional[str] = None
     changes: dict[str, Any] = {}
