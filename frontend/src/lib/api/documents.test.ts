@@ -23,6 +23,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 const DOC = {
     id: 'doc-1',
     org_id: 'org-1',
+    slug: 'sop',
     uploaded_by_id: 'user-1',
     title: 'SOP',
     original_filename: 'sop.pdf',
