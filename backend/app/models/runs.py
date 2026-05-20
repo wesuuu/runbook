@@ -5,7 +5,8 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, List, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import (Boolean, DateTime, ForeignKey, Index, String, Text,
+                        UniqueConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,9 +42,13 @@ class ExperimentStatus(str, Enum):
 
 class Run(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "runs"
-    __table_args__ = (Index("ix_runs_outcome", "outcome"),)
+    __table_args__ = (
+        Index("ix_runs_outcome", "outcome"),
+        UniqueConstraint("project_id", "slug", name="uq_runs_project_slug"),
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id"), nullable=False
     )
@@ -111,7 +116,7 @@ class Run(Base, UUIDMixin, TimestampMixin):
     outcome_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
-    project: Mapped["Project"] = relationship(back_populates="runs")
+    project: Mapped["Project"] = relationship(back_populates="runs", lazy="selectin")
     protocol: Mapped["Protocol"] = relationship(back_populates="runs")
     experiment: Mapped[Optional["Experiment"]] = relationship(back_populates="runs")
     started_by: Mapped[Optional["User"]] = relationship(
@@ -123,6 +128,11 @@ class Run(Base, UUIDMixin, TimestampMixin):
     role_assignments: Mapped[List["RunRoleAssignment"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
+
+    @property
+    def project_slug(self) -> str:
+        """Slug of the owning project — for building nested run URLs."""
+        return self.project.slug
 
 
 class RunRoleAssignment(Base, UUIDMixin, TimestampMixin):
@@ -150,6 +160,9 @@ class RunRoleAssignment(Base, UUIDMixin, TimestampMixin):
 
 class Experiment(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "experiments"
+    __table_args__ = (
+        UniqueConstraint("project_id", "slug", name="uq_experiments_project_slug"),
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String)
@@ -161,7 +174,15 @@ class Experiment(Base, UUIDMixin, TimestampMixin):
         ForeignKey("projects.id"), nullable=False
     )
     notes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
 
     # Relationships
-    project: Mapped["Project"] = relationship(back_populates="experiments")
+    project: Mapped["Project"] = relationship(
+        back_populates="experiments", lazy="selectin"
+    )
     runs: Mapped[List["Run"]] = relationship(back_populates="experiment")
+
+    @property
+    def project_slug(self) -> str:
+        """Slug of the owning project — for building nested experiment URLs."""
+        return self.project.slug

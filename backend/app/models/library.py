@@ -4,7 +4,8 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (DateTime, ForeignKey, Index, Integer, String, Text,
+                        UniqueConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -111,6 +112,7 @@ def validate_file_content(content: bytes, claimed_mime: str) -> bool:
 
 class Document(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "documents"
+    __table_args__ = (UniqueConstraint("org_id", "slug", name="uq_documents_org_slug"),)
 
     org_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False
@@ -170,6 +172,7 @@ class Document(Base, UUIDMixin, TimestampMixin):
     last_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
 
     # Relationships
     chunks: Mapped[List["DocumentChunk"]] = relationship(
