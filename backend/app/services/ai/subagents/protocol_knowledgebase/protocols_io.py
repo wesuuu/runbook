@@ -2,11 +2,14 @@
 
 Harness-free: functions take primitives, not a pydantic-ai RunContext.
 
-protocols.io public content is uniformly CC-BY. The license field is still
-classified on every payload (fail-closed verification): if a payload comes
-back as anything other than an import-safe license, the protocol is parsed
-to metadata only — no step or material text is copied — and flagged
-import_allowed=False so it surfaces as a link, never an automatic import.
+protocols.io's v4 API exposes no per-protocol license field. Per protocols.io
+platform policy every *published* public protocol is released under CC-BY 4.0,
+so a non-zero ``published_on`` timestamp stands in as the license signal; the
+result is still run through ``classify_license`` (fail-closed). A payload that
+classifies as anything other than an import-safe license — or an unpublished
+draft with no ``published_on`` — is parsed to metadata only (no step or
+material text copied) and flagged import_allowed=False, so it surfaces as a
+link, never an automatic import.
 """
 
 from __future__ import annotations
@@ -81,6 +84,15 @@ def parse_protocols_io_json(
     summary = _draftjs_to_text(obj.get("description") or "")
 
     raw_license = (obj.get("license") or {}).get("title") or ""
+    if not raw_license and obj.get("published_on"):
+        # protocols.io's v4 API exposes no per-protocol license field. Per
+        # protocols.io platform policy every *published* public protocol is
+        # released under CC-BY 4.0, so a non-zero ``published_on`` timestamp
+        # is the authoritative license signal. An unpublished draft (no
+        # ``published_on``) still falls through to UNKNOWN — fail-closed.
+        # An explicit ``license`` field, if a future API adds one, still
+        # wins so a genuinely restricted protocol is classified correctly.
+        raw_license = "CC-BY 4.0"
     verdict = classify_license(raw_license)
 
     authors = ", ".join(
