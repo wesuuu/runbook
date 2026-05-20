@@ -51,10 +51,16 @@
     import { z } from 'zod';
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';
+    import { paths } from '$lib/paths';
 
-    const id = $derived($page.params.id);
+    // Route params: runs nest under their project (F-0091). The run is
+    // fetched by project slug + run slug; once loaded, `id` resolves to the
+    // run's real UUID for sub-resource endpoints and updates.
+    const projectSlug = $derived($page.params.projectSlug ?? '');
+    const slug = $derived($page.params.slug ?? '');
 
     let run = $state<any>(null);
+    const id = $derived(run?.id ?? '');
     let protocol = $state<any>(null);
     let roleAssignments = $state<any[]>([]);
     let projectMembers = $state<any[]>([]);
@@ -246,7 +252,7 @@
         try {
             completingRun = true;
             await completeRunApi(run.id, outcome, outcomeNotes);
-            run = await api.get(`/runs/${id}`);
+            run = await api.get(`/runs/by-slug/${projectSlug}/${slug}`);
             await refreshSignoffs();
             showCompleteConfirm = false;
         } catch (e: unknown) {
@@ -259,7 +265,7 @@
     async function handleReopen(reason: string) {
         await reopenRun(run.id, reason);
         signoffs = [];
-        run = await api.get(`/runs/${id}`);
+        run = await api.get(`/runs/by-slug/${projectSlug}/${slug}`);
         await refreshSignoffs();
         toast.success('Run reopened. Sign-offs invalidated.');
     }
@@ -312,7 +318,7 @@
                 execution_data: editExecutionData,
                 edit_reasons: reasons,
             });
-            run = await api.get(`/runs/${id}`);
+            run = await api.get(`/runs/by-slug/${projectSlug}/${slug}`);
             await refreshSignoffs();
             isEditMode = false;
             editExecutionData = {};
@@ -354,9 +360,9 @@
         await markDismissed('run');
     }
 
-    // Load data whenever id changes
+    // Load data whenever the routed run changes.
     $effect(() => {
-        if (id) {
+        if (projectSlug && slug) {
             loading = true;
             error = null;
             loadData();
@@ -365,7 +371,7 @@
 
     async function loadData() {
         try {
-            run = await api.get(`/runs/${id}`);
+            run = await api.get(`/runs/by-slug/${projectSlug}/${slug}`);
 
             if (run.protocol_id) {
                 protocol = await api.get(`/protocols/${run.protocol_id}`);
@@ -488,7 +494,7 @@
         try {
             savingStatus = true;
             await api.put(`/runs/${id}`, { status: "ACTIVE" });
-            run = await api.get(`/runs/${id}`);
+            run = await api.get(`/runs/by-slug/${projectSlug}/${slug}`);
             showStartConfirm = false;
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
@@ -593,7 +599,7 @@
                 status: 'COMPLETED',
                 execution_data: run.execution_data,
             });
-            run = await api.get(`/runs/${id}`);
+            run = await api.get(`/runs/by-slug/${projectSlug}/${slug}`);
             showCompleteConfirm = false;
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
@@ -620,7 +626,7 @@
                 status: 'EDITED',
                 execution_data: editExecutionData,
             });
-            run = await api.get(`/runs/${id}`);
+            run = await api.get(`/runs/by-slug/${projectSlug}/${slug}`);
             isEditMode = false;
             editExecutionData = {};
         } catch (e: unknown) {
@@ -853,7 +859,7 @@
                         </div>
                     </div>
                     <a
-                        href="/projects/{run.project_id}?tab=runs"
+                        href={`${paths.project(projectSlug)}?tab=runs`}
                         class="text-sm text-muted-foreground hover:text-foreground/80"
                     >
                         &larr; Back to project
@@ -976,7 +982,7 @@
                 <!-- Action Buttons -->
                 <div class="flex justify-between items-center">
                     <a
-                        href="/projects/{run.project_id}?tab=runs"
+                        href={`${paths.project(projectSlug)}?tab=runs`}
                         class="text-muted-foreground hover:text-foreground text-sm font-medium"
                     >
                         &larr; Back to project
@@ -1041,7 +1047,7 @@
                             </div>
                         </div>
                         <a
-                            href="/projects/{run.project_id}?tab=runs"
+                            href={`${paths.project(projectSlug)}?tab=runs`}
                             class="text-sm text-muted-foreground hover:text-foreground/80"
                         >
                             &larr; Back to project
@@ -1252,7 +1258,7 @@
                             </span>
                         </div>
                         <a
-                            href="/projects/{run.project_id}?tab=runs"
+                            href={`${paths.project(projectSlug)}?tab=runs`}
                             class="text-sm text-muted-foreground hover:text-foreground/80"
                         >
                             &larr; Back to project
@@ -1331,7 +1337,7 @@
                     <!-- Footer -->
                     <div class="flex justify-between items-center gap-3">
                         <a
-                            href="/projects/{run.project_id}?tab=runs"
+                            href={`${paths.project(projectSlug)}?tab=runs`}
                             class="text-muted-foreground hover:text-foreground font-medium"
                         >
                             &larr; Back to project
@@ -1394,7 +1400,7 @@
                             </span>
                         </div>
                         <a
-                            href="/projects/{run.project_id}?tab=runs"
+                            href={`${paths.project(projectSlug)}?tab=runs`}
                             class="text-sm text-muted-foreground hover:text-foreground/80"
                         >
                             &larr; Back to project
@@ -1457,7 +1463,7 @@
                     <!-- Footer -->
                     <div class="flex justify-between items-center">
                         <a
-                            href="/projects/{run.project_id}?tab=runs"
+                            href={`${paths.project(projectSlug)}?tab=runs`}
                             class="text-muted-foreground hover:text-foreground font-medium"
                         >
                             &larr; Back to project
@@ -1501,7 +1507,7 @@
                         </span>
                     </div>
                     <a
-                        href="/projects/{run.project_id}?tab=runs"
+                        href={`${paths.project(projectSlug)}?tab=runs`}
                         class="text-sm text-muted-foreground hover:text-foreground/80"
                     >
                         &larr; Back to project
