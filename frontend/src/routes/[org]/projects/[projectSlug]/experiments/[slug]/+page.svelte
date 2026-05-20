@@ -17,6 +17,7 @@
     import { fade } from "svelte/transition";
     import { flip } from "svelte/animate";
     import { blockDuration, listDuration } from "$lib/transitions";
+    import { paths } from "$lib/paths";
     // Edra rich text editor — lazy loaded to avoid SSR issues
     let EdraEditor: any = $state(null);
     let EdraToolBar: any = $state(null);
@@ -33,9 +34,15 @@
         }
     });
 
-    const id = $derived($page.params.id ?? "");
+    // Route params: experiments nest under their project (F-0091). The
+    // experiment is fetched by project slug + experiment slug; once loaded,
+    // `id` resolves to the experiment's real UUID for sub-resource endpoints
+    // and updates.
+    const projectSlug = $derived($page.params.projectSlug ?? "");
+    const slug = $derived($page.params.slug ?? "");
 
     let experiment = $state<any>(null);
+    const id = $derived(experiment?.id ?? "");
     let project = $state<any>(null);
     let protocols = $state<any[]>([]);
     let loading = $state(true);
@@ -63,15 +70,18 @@
     const statusOptions = ["DRAFT", "ACTIVE", "COMPLETED", "ARCHIVED"];
 
     $effect(() => {
-        const currentId = id;
-        if (currentId) loadData();
+        const ps = projectSlug;
+        const s = slug;
+        if (ps && s) loadData();
     });
 
     async function loadData() {
         loading = true;
         error = null;
         try {
-            experiment = await api.get(`/experiments/${id}`);
+            experiment = await api.get(
+                `/experiments/by-slug/${projectSlug}/${slug}`,
+            );
             name = experiment.name;
             description = experiment.description ?? "";
             status = experiment.status;
@@ -157,14 +167,14 @@
             <!-- Breadcrumb -->
             <nav class="flex items-center gap-2 mb-2.5 text-[13px]">
                 <a
-                    href="/projects"
+                    href={paths.projects()}
                     class="text-teal-600 font-medium hover:underline"
                     >Projects</a
                 >
                 <span class="text-slate-400">&rsaquo;</span>
                 {#if project}
                     <a
-                        href="/projects/{project.id}"
+                        href={paths.project(projectSlug)}
                         class="text-teal-600 font-medium hover:underline"
                         >{project.name}</a
                     >
