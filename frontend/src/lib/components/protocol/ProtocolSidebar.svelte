@@ -358,9 +358,11 @@
                 </Button>
             {/if}
 
-            <a href="{paths.project(protocol.project_slug)}?tab=protocols" class="back-link">
-                &#8592; Back to Project
-            </a>
+            {#if protocol.project_slug}
+                <a href="{paths.project(protocol.project_slug)}?tab=protocols" class="back-link">
+                    &#8592; Back to Project
+                </a>
+            {/if}
         {/if}
     </div>
 
