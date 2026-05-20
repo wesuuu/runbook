@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 # --- Request schemas ---
 
@@ -51,6 +51,18 @@ class ChatSessionResponse(BaseModel):
 
 class ChatSessionDetailResponse(ChatSessionResponse):
     messages: list[ChatMessageResponse] = []
+    active_turn_heartbeat_at: Optional[datetime] = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def turn_in_progress(self) -> bool:
+        """True while a chat turn is actively running for this session (BUG-005)."""
+        # Imported lazily inside the property: a module-level import would
+        # cycle (app.services.ai/__init__ eagerly imports send_message, which
+        # imports this schema module).
+        from app.services.ai.turn_status import is_turn_in_progress
+
+        return is_turn_in_progress(self.active_turn_heartbeat_at)
 
 
 class ChatSessionListResponse(BaseModel):
