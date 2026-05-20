@@ -256,6 +256,8 @@ RunCreate.model_rebuild()
 class ExperimentResponse(BaseModel):
     id: UUID
     project_id: UUID
+    slug: str
+    project_slug: str
     name: str
     description: Optional[str] = None
     content: Dict[str, Any] = Field(default_factory=dict)

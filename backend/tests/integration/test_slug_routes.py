@@ -226,3 +226,78 @@ async def test_run_rename_reslugs(client, auth_headers):
     resp = await client.get("/runs/by-slug/cho-line/expansion", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["id"] == created["id"]
+
+
+@pytest.mark.asyncio
+async def test_create_experiment_assigns_slug_and_project_slug(client, auth_headers):
+    proj = (
+        await client.post("/projects/", json={"name": "CHO Line"}, headers=auth_headers)
+    ).json()
+    resp = await client.post(
+        "/experiments",
+        json={"name": "Passage 3", "project_id": proj["id"]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["slug"] == "passage-3"
+    assert body["project_slug"] == "cho-line"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_experiment_name_in_project_is_rejected(client, auth_headers):
+    proj = (
+        await client.post("/projects/", json={"name": "CHO Line"}, headers=auth_headers)
+    ).json()
+    body = {"name": "Passage 3", "project_id": proj["id"]}
+    assert (
+        await client.post("/experiments", json=body, headers=auth_headers)
+    ).status_code == 201
+    dup = await client.post("/experiments", json=body, headers=auth_headers)
+    assert dup.status_code == 422
+    assert dup.json()["detail"]["code"] == "SLUG_CONFLICT"
+
+
+@pytest.mark.asyncio
+async def test_get_experiment_by_slug(client, auth_headers):
+    proj = (
+        await client.post("/projects/", json={"name": "CHO Line"}, headers=auth_headers)
+    ).json()
+    created = (
+        await client.post(
+            "/experiments",
+            json={"name": "Passage 3", "project_id": proj["id"]},
+            headers=auth_headers,
+        )
+    ).json()
+    resp = await client.get(
+        "/experiments/by-slug/cho-line/passage-3", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["id"] == created["id"]
+
+
+@pytest.mark.asyncio
+async def test_experiment_rename_reslugs(client, auth_headers):
+    proj = (
+        await client.post("/projects/", json={"name": "CHO Line"}, headers=auth_headers)
+    ).json()
+    created = (
+        await client.post(
+            "/experiments",
+            json={"name": "Passage 3", "project_id": proj["id"]},
+            headers=auth_headers,
+        )
+    ).json()
+    renamed = await client.put(
+        f"/experiments/{created['id']}",
+        json={"name": "Passage 4"},
+        headers=auth_headers,
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["slug"] == "passage-4"
+    resp = await client.get(
+        "/experiments/by-slug/cho-line/passage-4", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["id"] == created["id"]
