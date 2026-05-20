@@ -80,7 +80,10 @@ await get_or_404(db, Project, project_id)  # returns instance or raises 404
 ## Router Organization
 
 Routers in `api/endpoints/` are mounted in `api/router.py`:
-- `science.py`: protocols, experiments, runs, unit ops
+- `protocols.py`, `protocol_versions.py`, `protocol_pdfs.py`: protocol CRUD, versioning, PDF export
+- `runs.py`: run CRUD and execution
+- `experiments.py`: experiment CRUD
+- `unit_ops.py`: unit operation library
 - `iam.py`: organizations, teams, memberships, permissions
 - `projects.py`: project CRUD
 - `chat.py`: chat sessions and messages
