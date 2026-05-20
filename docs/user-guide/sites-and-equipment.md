@@ -55,7 +55,7 @@ checkmark when calibration is current, an amber countdown when it is due
 within 30 days, and a red "Expired" badge when overdue.
 
 To edit an existing item, click its row in the table. To archive an item,
-hover over its row and click **Archive** (Site Manager or Admin only).
+click **Archive** on its row (Site Manager or Admin only).
 
 ## How to archive a site
 
