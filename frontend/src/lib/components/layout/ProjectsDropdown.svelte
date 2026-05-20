@@ -5,7 +5,7 @@
     import { api } from '$lib/api';
     import { paths } from '$lib/paths';
     import { getCurrentOrg } from '$lib/auth.svelte';
-    import { getCurrentProjectId, setCurrentProjectId } from '$lib/project-context.svelte';
+    import { getCurrentProjectSlug, setCurrentProjectSlug } from '$lib/project-context.svelte';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
     import { Button } from '$lib/components/ui/button';
     import { ChevronDown, Plus, FolderOpen } from 'lucide-svelte';
@@ -20,24 +20,29 @@
     let projects = $state<Project[]>([]);
     let loading = $state(true);
 
-    const isActive = $derived($page.url.pathname.startsWith('/projects'));
-    const routeProjectId = $derived.by(() => {
-        const match = $page.url.pathname.match(/^\/projects\/([^/]+)/);
-        const id = match ? match[1] : null;
-        return id && id !== 'new' ? id : null;
+    const isActive = $derived(/\/projects(\/|$)/.test($page.url.pathname));
+
+    const routeProjectSlug = $derived.by(() => {
+        // Match /[org]/projects/[slug] — slug is the segment after /projects/.
+        const match = $page.url.pathname.match(/\/projects\/([^/]+)/);
+        const slug = match ? match[1] : null;
+        return slug && slug !== 'new' ? slug : null;
     });
 
-    // Persist the project context whenever the URL exposes one. Sticky across
-    // navigation to non-project routes (protocols, runs, etc.).
+    // Persist the project the user last drilled into so the dropdown stays
+    // "sticky" on routes that aren't project-scoped (e.g. settings, dashboard).
     $effect(() => {
-        if (routeProjectId && routeProjectId !== getCurrentProjectId()) {
-            setCurrentProjectId(routeProjectId);
+        if (routeProjectSlug) {
+            setCurrentProjectSlug(routeProjectSlug);
         }
     });
 
-    const activeProjectId = $derived(routeProjectId ?? getCurrentProjectId());
+    const activeProjectSlug = $derived(routeProjectSlug ?? getCurrentProjectSlug());
+
     const currentProject = $derived(
-        activeProjectId ? projects.find((p) => p.id === activeProjectId) ?? null : null
+        activeProjectSlug
+            ? (projects.find((p) => p.slug === activeProjectSlug) ?? null)
+            : null
     );
 
     async function loadProjects() {

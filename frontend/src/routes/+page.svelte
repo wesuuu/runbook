@@ -269,7 +269,7 @@
     const counterData = $derived.by(() => {
         if (!dashboard) return [];
         const base = [
-            { label: 'Active Runs', value: dashboard.counters.active_runs, color: 'text-primary', link: '/projects' },
+            { label: 'Active Runs', value: dashboard.counters.active_runs, color: 'text-primary', link: paths.projects() },
             { label: 'Completed', value: dashboard.counters.completed_this_week, color: 'text-emerald-600', link: null },
             { label: 'Planned', value: dashboard.counters.planned_runs, color: 'text-foreground', link: null },
         ];

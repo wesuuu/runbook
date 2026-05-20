@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'batchrite.current_project_id';
+const STORAGE_KEY = 'batchrite.current_project_slug';
 
 function loadInitial(): string | null {
     if (typeof localStorage === 'undefined') return null;
@@ -9,17 +9,17 @@ function loadInitial(): string | null {
     }
 }
 
-let currentProjectId = $state<string | null>(loadInitial());
+let currentProjectSlug = $state<string | null>(loadInitial());
 
-export function getCurrentProjectId(): string | null {
-    return currentProjectId;
+export function getCurrentProjectSlug(): string | null {
+    return currentProjectSlug;
 }
 
-export function setCurrentProjectId(id: string | null): void {
-    currentProjectId = id;
+export function setCurrentProjectSlug(slug: string | null): void {
+    currentProjectSlug = slug;
     try {
-        if (id) {
-            localStorage.setItem(STORAGE_KEY, id);
+        if (slug) {
+            localStorage.setItem(STORAGE_KEY, slug);
         } else {
             localStorage.removeItem(STORAGE_KEY);
         }
@@ -28,6 +28,6 @@ export function setCurrentProjectId(id: string | null): void {
     }
 }
 
-export function clearCurrentProjectId(): void {
-    setCurrentProjectId(null);
+export function clearCurrentProjectSlug(): void {
+    setCurrentProjectSlug(null);
 }

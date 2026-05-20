@@ -339,8 +339,8 @@ export function logout(): void {
     clearCachedAuthData();
     // Lazy import to avoid circular dependency at module load time
     import('$lib/chat-store.svelte').then(({ resetChat }) => resetChat());
-    import('$lib/project-context.svelte').then(({ clearCurrentProjectId }) =>
-        clearCurrentProjectId()
+    import('$lib/project-context.svelte').then(({ clearCurrentProjectSlug }) =>
+        clearCurrentProjectSlug()
     );
 }
 
@@ -359,8 +359,8 @@ export async function switchOrg(org: Org): Promise<void> {
     cacheAuthData();
     // Re-derive permission state for the newly-selected org.
     await Promise.all([refreshCurrentOrgRoles(), refreshManagedSites()]);
-    import('$lib/project-context.svelte').then(({ clearCurrentProjectId }) =>
-        clearCurrentProjectId()
+    import('$lib/project-context.svelte').then(({ clearCurrentProjectSlug }) =>
+        clearCurrentProjectSlug()
     );
 }
 
