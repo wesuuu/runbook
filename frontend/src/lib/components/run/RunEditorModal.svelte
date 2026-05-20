@@ -165,7 +165,7 @@
 
         if (run.protocol_id) {
             api
-                .get<{ roles?: ProtocolRole[] }>(`/science/protocols/${run.protocol_id}`)
+                .get<{ roles?: ProtocolRole[] }>(`/protocols/${run.protocol_id}`)
                 .then((p) => {
                     const sorted = (p.roles ?? [])
                         .slice()
@@ -272,7 +272,7 @@
                 );
                 if (existing) {
                     await api.delete(
-                        `/science/runs/${run.id}/role-assignments/${existing.id}`,
+                        `/runs/${run.id}/role-assignments/${existing.id}`,
                     );
                 }
                 continue;
@@ -282,7 +282,7 @@
                 const lane = hasLanes ? swimLaneNodes.find((l) => l.id === key) : null;
                 const lane_node_id = hasLanes ? key : '__run__';
                 const role_name = hasLanes ? lane?.data.label ?? 'Role' : 'Operator';
-                await api.post(`/science/runs/${run.id}/role-assignments`, {
+                await api.post(`/runs/${run.id}/role-assignments`, {
                     lane_node_id,
                     role_name,
                     user_id: newUserId,
@@ -300,7 +300,7 @@
             if (nameDirty) body.name = runName.trim();
             if (edits.length > 0) body.graph = stripGraph(currentGraph);
             if (Object.keys(body).length > 0) {
-                await api.put(`/science/runs/${run.id}`, body);
+                await api.put(`/runs/${run.id}`, body);
             }
             if (assignmentsDirty) {
                 await persistAssignmentDiff();

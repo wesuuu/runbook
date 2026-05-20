@@ -73,7 +73,7 @@
         deleteConfirmOpen = false;
         pendingDeleteId = null;
         try {
-            await api.delete(`/science/protocols/${id}`);
+            await api.delete(`/protocols/${id}`);
             await onReloadProtocols(showArchived);
         } catch (e: any) {
             console.error('Failed to delete/archive protocol:', e);
@@ -82,7 +82,7 @@
 
     async function unarchiveProtocol(protocolId: string) {
         try {
-            await api.put(`/science/protocols/${protocolId}/unarchive`, {});
+            await api.put(`/protocols/${protocolId}/unarchive`, {});
             await onReloadProtocols(showArchived);
         } catch (e: any) {
             console.error('Failed to unarchive protocol:', e);

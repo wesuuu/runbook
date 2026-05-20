@@ -127,7 +127,7 @@
             return;
         }
         try {
-            await api.put(`/science/protocols/${protocol.id}`, {
+            await api.put(`/protocols/${protocol.id}`, {
                 name: nameInput.trim(),
             });
             onNameSaved(nameInput.trim());
@@ -154,7 +154,7 @@
             return;
         }
         try {
-            await api.put(`/science/protocols/${protocol.id}`, {
+            await api.put(`/protocols/${protocol.id}`, {
                 description: descriptionInput.trim(),
             });
             onDescriptionSaved(descriptionInput.trim());
@@ -173,7 +173,7 @@
         if (!protocol || !newRoleName.trim()) return;
         try {
             const role = await api.post(
-                `/science/protocols/${protocol.id}/roles`,
+                `/protocols/${protocol.id}/roles`,
                 {
                     name: newRoleName.trim(),
                     color: getNextRoleColor(roles.length),
@@ -192,7 +192,7 @@
         if (!protocol) return;
         try {
             await api.delete(
-                `/science/protocols/${protocol.id}/roles/${roleId}`,
+                `/protocols/${protocol.id}/roles/${roleId}`,
             );
             onRoleDeleted(roleId);
         } catch (e: unknown) {

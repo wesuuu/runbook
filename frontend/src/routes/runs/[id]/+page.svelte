@@ -246,7 +246,7 @@
         try {
             completingRun = true;
             await completeRunApi(run.id, outcome, outcomeNotes);
-            run = await api.get(`/science/runs/${id}`);
+            run = await api.get(`/runs/${id}`);
             await refreshSignoffs();
             showCompleteConfirm = false;
         } catch (e: unknown) {
@@ -259,7 +259,7 @@
     async function handleReopen(reason: string) {
         await reopenRun(run.id, reason);
         signoffs = [];
-        run = await api.get(`/science/runs/${id}`);
+        run = await api.get(`/runs/${id}`);
         await refreshSignoffs();
         toast.success('Run reopened. Sign-offs invalidated.');
     }
@@ -307,12 +307,12 @@
         try {
             savingEdits = true;
             error = null;
-            await api.put(`/science/runs/${id}`, {
+            await api.put(`/runs/${id}`, {
                 status: 'EDITED',
                 execution_data: editExecutionData,
                 edit_reasons: reasons,
             });
-            run = await api.get(`/science/runs/${id}`);
+            run = await api.get(`/runs/${id}`);
             await refreshSignoffs();
             isEditMode = false;
             editExecutionData = {};
@@ -365,23 +365,23 @@
 
     async function loadData() {
         try {
-            run = await api.get(`/science/runs/${id}`);
+            run = await api.get(`/runs/${id}`);
 
             if (run.protocol_id) {
-                protocol = await api.get(`/science/protocols/${run.protocol_id}`);
+                protocol = await api.get(`/protocols/${run.protocol_id}`);
                 applyGlpSettingsFromProtocol(protocol);
             } else {
                 applyGlpSettingsFromProtocol(null);
             }
 
             const assignResp = await api.get(
-                `/science/runs/${id}/role-assignments`,
+                `/runs/${id}/role-assignments`,
                 { schema: RunRoleAssignmentListSchema },
             );
             roleAssignments = assignResp.items || [];
 
             const membersResp = await api.get(
-                `/science/projects/${run.project_id}/members`,
+                `/projects/${run.project_id}/members`,
                 { schema: z.array(UserSearchSchema) },
             );
             projectMembers = membersResp || [];
@@ -407,7 +407,7 @@
     async function loadEditPermissions() {
         try {
             const perms = await api.get<{ can_edit_planned: boolean; is_creator: boolean }>(
-                `/science/runs/${id}/permissions`,
+                `/runs/${id}/permissions`,
             );
             canEditPlanned = !!perms?.can_edit_planned;
         } catch {
@@ -453,7 +453,7 @@
                 );
                 if (existing) {
                     await api.delete(
-                        `/science/runs/${id}/role-assignments/${existing.id}`
+                        `/runs/${id}/role-assignments/${existing.id}`
                     );
                     roleAssignments = roleAssignments.filter(
                         (a) => a.lane_node_id !== laneNodeId
@@ -461,7 +461,7 @@
                 }
             } else {
                 const resp = await api.post(
-                    `/science/runs/${id}/role-assignments`,
+                    `/runs/${id}/role-assignments`,
                     {
                         lane_node_id: laneNodeId,
                         role_name: roleName,
@@ -487,8 +487,8 @@
     async function startRun() {
         try {
             savingStatus = true;
-            await api.put(`/science/runs/${id}`, { status: "ACTIVE" });
-            run = await api.get(`/science/runs/${id}`);
+            await api.put(`/runs/${id}`, { status: "ACTIVE" });
+            run = await api.get(`/runs/${id}`);
             showStartConfirm = false;
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
@@ -546,7 +546,7 @@
     function downloadSop() {
         const name = run.name.replace(/\s+/g, '_');
         api.downloadBlob(
-            `/science/runs/${id}/pdf/sop`,
+            `/runs/${id}/pdf/sop`,
             `SOP_${name}.pdf`
         );
     }
@@ -560,7 +560,7 @@
 
         const ext = includeAttachments ? 'zip' : 'pdf';
         api.downloadBlob(
-            `/science/runs/${id}/pdf/batch-record?${params}`,
+            `/runs/${id}/pdf/batch-record?${params}`,
             `BatchRecord_${name}_${suffix}.${ext}`
         );
     }
@@ -589,11 +589,11 @@
     async function completeRun() {
         try {
             completingRun = true;
-            await api.put(`/science/runs/${id}`, {
+            await api.put(`/runs/${id}`, {
                 status: 'COMPLETED',
                 execution_data: run.execution_data,
             });
-            run = await api.get(`/science/runs/${id}`);
+            run = await api.get(`/runs/${id}`);
             showCompleteConfirm = false;
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
@@ -616,11 +616,11 @@
         try {
             savingEdits = true;
             error = null;
-            await api.put(`/science/runs/${id}`, {
+            await api.put(`/runs/${id}`, {
                 status: 'EDITED',
                 execution_data: editExecutionData,
             });
-            run = await api.get(`/science/runs/${id}`);
+            run = await api.get(`/runs/${id}`);
             isEditMode = false;
             editExecutionData = {};
         } catch (e: unknown) {
@@ -662,7 +662,7 @@
         if (!run) return;
         try {
             const res = await api.post<{ lot_number: string }>(
-                '/science/runs/suggest-lot-number',
+                '/runs/suggest-lot-number',
                 { project_id: run.project_id },
             );
             lotDraftLotNumber = res.lot_number;
@@ -678,7 +678,7 @@
             return;
         }
         const res = await api.get<{ exists: boolean; count: number }>(
-            `/science/runs/check-lot-number?project_id=${encodeURIComponent(run.project_id)}&lot_number=${encodeURIComponent(lotDraftLotNumber.trim())}`,
+            `/runs/check-lot-number?project_id=${encodeURIComponent(run.project_id)}&lot_number=${encodeURIComponent(lotDraftLotNumber.trim())}`,
         );
         // Subtract this run's own row if its current lot_number matches.
         const ownCount = run.lot_number === lotDraftLotNumber.trim() ? 1 : 0;
@@ -689,7 +689,7 @@
         if (!run) return;
         lotSaving = true;
         try {
-            const updated = await api.put(`/science/runs/${run.id}`, {
+            const updated = await api.put(`/runs/${run.id}`, {
                 produces_lot: lotDraftProducesLot,
                 lot_number: lotDraftProducesLot ? lotDraftLotNumber.trim() : null,
             });

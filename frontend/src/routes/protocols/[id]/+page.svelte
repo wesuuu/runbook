@@ -658,7 +658,7 @@
     async function refreshProtocol() {
         if (!protocol?.id) return;
         try {
-            const fresh: any = await api.get(`/science/protocols/${protocol.id}`);
+            const fresh: any = await api.get(`/protocols/${protocol.id}`);
             protocol = fresh;
             protocolStatus = fresh.status || 'DRAFT';
             versionNumber = fresh.version_number || 0;
@@ -713,7 +713,7 @@
             }
 
             if (id && id !== "new") {
-                protocol = await api.get(`/science/protocols/${id}`);
+                protocol = await api.get(`/protocols/${id}`);
                 roles = protocol.roles || [];
                 protocolStatus = protocol.status || "DRAFT";
                 versionNumber = protocol.version_number || 0;
@@ -721,7 +721,7 @@
 
                 // Load unit ops scoped to this protocol's project
                 const projectParam = protocol.project_id ? `?project_id=${protocol.project_id}` : '';
-                unitOps = await api.get(`/science/unit-ops${projectParam}`);
+                unitOps = await api.get(`/unit-ops${projectParam}`);
 
                 // Use protocol-level requires_approval as the canonical flag
                 approvalRequired = (protocol.requires_approval as boolean) || false;
@@ -746,7 +746,7 @@
                     if (protocol.project_id) {
                         projectMembers =
                             (await api.get(
-                                `/science/projects/${protocol.project_id}/members`,
+                                `/projects/${protocol.project_id}/members`,
                             )) || [];
                     }
                 } catch {
@@ -765,7 +765,7 @@
                 }
             } else {
                 // New protocol — load global + org ops only
-                unitOps = await api.get("/science/unit-ops");
+                unitOps = await api.get("/unit-ops");
                 nodes = [createProcessStartNode({ x: 80, y: 80 }, undefined)];
             }
             // Apply timeline sizing if loaded with timeline enabled
@@ -825,7 +825,7 @@
             );
 
             // Save as draft (creates draft version without modifying main protocol)
-            const updated: any = await api.put(`/science/protocols/${protocol.id}?save_as_draft=true`, {
+            const updated: any = await api.put(`/protocols/${protocol.id}?save_as_draft=true`, {
                 graph: graphData,
             });
             // Reload versions to show the new draft
@@ -893,14 +893,14 @@
             const graphData = serializeGraphData(nodes, edges, layout, handleOrientation, timeEnabled, pixelsPerHour, glpSettings);
 
             // Save as draft first
-            const draftResponse: any = await api.put(`/science/protocols/${protocol.id}?save_as_draft=true`, {
+            const draftResponse: any = await api.put(`/protocols/${protocol.id}?save_as_draft=true`, {
                 graph: graphData,
             });
             const draftVersionNumber = versionNumber + 1;
 
             // Then publish the draft (with optional metadata from the dialog)
             const publishResponse: any = await api.post(
-                `/science/protocols/${protocol.id}/publish-draft?version_number=${draftVersionNumber}`,
+                `/protocols/${protocol.id}/publish-draft?version_number=${draftVersionNumber}`,
                 payload,
             );
 
@@ -925,7 +925,7 @@
         if (!protocol) return;
         versionsLoading = true;
         try {
-            versions = await api.get(`/science/protocols/${protocol.id}/versions`);
+            versions = await api.get(`/protocols/${protocol.id}/versions`);
             // Refresh draft-version pointer so the toolbar's "next" arrow
             // stays accurate after save/publish/revert flows reload versions.
             const draftAbove = versions
@@ -955,7 +955,7 @@
         if (!protocol) return;
         try {
             const updated: any = await api.post(
-                `/science/protocols/${protocol.id}/revert/${versionNum}`,
+                `/protocols/${protocol.id}/revert/${versionNum}`,
             );
             // Reload everything from the response
             protocol = updated;
@@ -1013,7 +1013,7 @@
             }
 
             const ver: any = await api.get(
-                `/science/protocols/${protocol.id}/versions/${targetVersion}`,
+                `/protocols/${protocol.id}/versions/${targetVersion}`,
             );
 
             if (ver.graph && ver.graph.nodes) {
@@ -1118,7 +1118,7 @@
     async function unarchiveProtocol() {
         if (!protocol) return;
         try {
-            await api.put(`/science/protocols/${protocol.id}/unarchive`, {});
+            await api.put(`/protocols/${protocol.id}/unarchive`, {});
             await loadData();
         } catch (e: unknown) {
             toast.error(e instanceof Error ? e.message : 'Failed to unarchive');
@@ -1134,7 +1134,7 @@
             variant: 'danger',
             onConfirm: async () => {
                 try {
-                    await api.delete(`/science/protocols/${protocol!.id}`);
+                    await api.delete(`/protocols/${protocol!.id}`);
                     if (protocol!.project_id) {
                         window.location.href = `/projects/${protocol!.project_id}`;
                     } else {
@@ -1411,7 +1411,7 @@
     // --- Custom Unit Op ---
     async function handleCreateUnitOp(opData: any) {
         try {
-            const created = await api.post("/science/unit-ops", opData);
+            const created = await api.post("/unit-ops", opData);
             unitOps = [...unitOps, created];
             showCreateModal = false;
         } catch (e: unknown) {
@@ -1429,7 +1429,7 @@
         category: string,
     ): Promise<void> {
         try {
-            const created = await api.post('/science/unit-ops', {
+            const created = await api.post('/unit-ops', {
                 name,
                 category: category || 'General',
                 description: '',

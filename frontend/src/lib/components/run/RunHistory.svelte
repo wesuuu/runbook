@@ -26,7 +26,7 @@
                 limit: String(limit),
                 offset: String(newOffset),
             });
-            const resp = await api.get<{ items: AuditEntry[]; total: number; offset: number }>(`/science/runs/${runId}/audit-log?${params}`);
+            const resp = await api.get<{ items: AuditEntry[]; total: number; offset: number }>(`/runs/${runId}/audit-log?${params}`);
             entries = (resp.items ?? []).filter((e) => {
                 if (e.action !== 'UPDATE') return true;
                 const keys = Object.keys(e.changes ?? {}).filter(

@@ -33,7 +33,7 @@
         submitting = true;
         error = null;
         try {
-            await api.post(`/science/experiments/${selectedExpId}/runs`, {
+            await api.post(`/experiments/${selectedExpId}/runs`, {
                 run_id: runId,
             });
             const expName = availableExperiments.find((e: any) => e.id === selectedExpId)?.name ?? 'experiment';

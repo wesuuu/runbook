@@ -90,7 +90,7 @@
         error = null;
         previewPage = 0;
         try {
-            const resp: any = await api.post('/science/export/preview', {
+            const resp: any = await api.post('/export/preview', {
                 run_ids: runIds,
                 layout,
             });
@@ -176,7 +176,7 @@
                 : `export_${runCount}_runs.${format}`;
 
             await api.postDownloadBlob(
-                '/science/export/download',
+                '/export/download',
                 {
                     run_ids: runIds,
                     format,

@@ -23,7 +23,7 @@
         submitting = true;
         error = null;
         try {
-            const note = await api.post<RunNote>(`/science/runs/${runId}/notes`, {
+            const note = await api.post<RunNote>(`/runs/${runId}/notes`, {
                 content,
                 flags: isAnomaly ? ['anomaly'] : [],
             });

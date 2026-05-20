@@ -197,7 +197,7 @@ describe('RunCreatorNameStep · produces_lot', () => {
         });
         await fireEvent.click(getByText('Auto-generate'));
         expect(api.post).toHaveBeenCalledWith(
-            '/science/runs/suggest-lot-number',
+            '/runs/suggest-lot-number',
             { project_id: 'p1' },
         );
         expect(latest?.lotNumber).toBe('LOT-000042');

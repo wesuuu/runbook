@@ -169,7 +169,7 @@
     async function fetchOriginalPreview() {
         if (!conversionId || originalBlobUrl) return;
         const token = getToken();
-        const url = `/science/templates/conversions/${conversionId}/original.pdf`;
+        const url = `/templates/conversions/${conversionId}/original.pdf`;
         const resp = await fetch(`${API_BASE}${url}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
@@ -182,7 +182,7 @@
     async function fetchTemplatePreview() {
         if (!conversionId) return;
         const token = getToken();
-        const url = `/science/templates/conversions/${conversionId}/template.pdf`;
+        const url = `/templates/conversions/${conversionId}/template.pdf`;
         const cacheBust = `_t=${Date.now()}`;
         const resp = await fetch(
             `${API_BASE}${url}?${cacheBust}`,
@@ -207,7 +207,7 @@
 
         try {
             const startResult = await api.uploadWithFields<{ conversion_id: string; status: string }>(
-                '/science/templates/convert',
+                '/templates/convert',
                 selectedFile,
                 { template_type: templateType },
             );
@@ -225,7 +225,7 @@
         stopSSE();
         sseActive = true;
         sseCleanup = api.connectSSE(
-            `/science/templates/conversions/${id}/events`,
+            `/templates/conversions/${id}/events`,
             {
                 onToolCall(data) {
                     activities = [...activities, {
@@ -278,7 +278,7 @@
 
         try {
             const result = await api.post<ConvertResponse>(
-                `/science/templates/conversions/${conversionId}/refine`,
+                `/templates/conversions/${conversionId}/refine`,
                 { instruction },
             );
 
@@ -322,7 +322,7 @@
         refining = true;
         try {
             const result = await api.uploadWithFields<ConvertResponse>(
-                `/science/templates/conversions/${conversionId}/reupload`,
+                `/templates/conversions/${conversionId}/reupload`,
                 file,
                 {},
             );
@@ -353,7 +353,7 @@
 
         try {
             await api.post(
-                `/science/templates/conversions/${conversionId}/save`,
+                `/templates/conversions/${conversionId}/save`,
                 {
                     name: saveName,
                     template_type: templateType,

@@ -158,7 +158,7 @@
 
         try {
             const result = await api.uploadFile<ProtocolImportProposal>(
-                '/science/protocols/import',
+                '/protocols/import',
                 selectedFile,
             );
             proposal = result;
@@ -318,7 +318,7 @@
         refining = true;
 
         try {
-            const updatedGraph = await api.post('/science/protocols/refine', {
+            const updatedGraph = await api.post('/protocols/refine', {
                 graph: currentGraph,
                 instruction,
             }) as Record<string, unknown>;
@@ -377,7 +377,7 @@
                 body.project_id = selectedProjectId;
             }
 
-            const result: any = await api.post('/science/protocols/finalize-import', body);
+            const result: any = await api.post('/protocols/finalize-import', body);
             toast.success(`Protocol "${result.name}" created`);
             open = false;
             resetState();

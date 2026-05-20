@@ -90,7 +90,7 @@
         autoGenerating = true;
         try {
             const res = await api.post<{ lot_number: string }>(
-                '/science/runs/suggest-lot-number',
+                '/runs/suggest-lot-number',
                 { project_id: projectId },
             );
             setLotNumber(res.lot_number);
@@ -105,7 +105,7 @@
         const trimmed = lotNumber.trim();
         if (!trimmed) { duplicateCount = 0; return; }
         const res = await api.get<{ exists: boolean; count: number }>(
-            `/science/runs/check-lot-number?project_id=${encodeURIComponent(projectId)}&lot_number=${encodeURIComponent(trimmed)}`,
+            `/runs/check-lot-number?project_id=${encodeURIComponent(projectId)}&lot_number=${encodeURIComponent(trimmed)}`,
         );
         // Subtract this run's own pending entry if needed — for a creator
         // flow the run doesn't exist yet, so the raw count is correct.

@@ -148,9 +148,9 @@
 
             const [p, protos, projectRuns, projectExperiments] = await Promise.all([
                 api.get(`/projects/${id}`),
-                api.get(`/science/projects/${id}/protocols`),
-                api.get(`/science/projects/${id}/runs`),
-                api.get(`/science/projects/${id}/experiments`),
+                api.get(`/projects/${id}/protocols`),
+                api.get(`/projects/${id}/runs`),
+                api.get(`/projects/${id}/experiments`),
             ]);
 
             project = p;
@@ -167,8 +167,8 @@
     async function reloadProtocols(showArchived: boolean) {
         try {
             const protocolsUrl = showArchived
-                ? `/science/projects/${id}/protocols?include_archived=true`
-                : `/science/projects/${id}/protocols`;
+                ? `/projects/${id}/protocols?include_archived=true`
+                : `/projects/${id}/protocols`;
             const result = await api.get(protocolsUrl);
             protocols = result as any[];
         } catch (e: unknown) {
@@ -188,7 +188,7 @@
                 name = `Untitled Protocol ${i}`;
             }
 
-            const newProto: any = await api.post("/science/protocols", {
+            const newProto: any = await api.post("/protocols", {
                 name,
                 project_id: project.id,
                 description: "",
@@ -203,7 +203,7 @@
         if (!newExperimentName) return;
 
         try {
-            const newExp: any = await api.post("/science/experiments", {
+            const newExp: any = await api.post("/experiments", {
                 name: newExperimentName,
                 project_id: project.id,
                 description: newExperimentDescription || null,

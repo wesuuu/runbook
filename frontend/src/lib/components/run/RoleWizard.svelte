@@ -162,7 +162,7 @@
                 // In draft mode, only update local state — no API call
                 onDataUpdate?.(updatedExecutionData);
             } else {
-                await api.put(`/science/runs/${runId}`, {
+                await api.put(`/runs/${runId}`, {
                     execution_data: updatedExecutionData,
                 });
                 onDataUpdate?.(updatedExecutionData);
