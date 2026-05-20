@@ -168,11 +168,11 @@ class ConversionState:
 
     @property
     def preview_url(self) -> str:
-        return f"/science/templates/conversions/" f"{self.conversion_id}/preview.pdf"
+        return f"/templates/conversions/" f"{self.conversion_id}/preview.pdf"
 
     @property
     def template_url(self) -> str:
-        return f"/science/templates/conversions/" f"{self.conversion_id}/template.docx"
+        return f"/templates/conversions/" f"{self.conversion_id}/template.docx"
 
 
 # ── Helper Functions ──

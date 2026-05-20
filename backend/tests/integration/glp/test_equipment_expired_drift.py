@@ -77,7 +77,7 @@ async def test_start_with_expired_equipment_returns_equipment_expired(
 
     headers = await _auth_headers_for(operator_user, glp_org)
     res = await client.patch(
-        f"/science/runs/{glp_run_planned.id}/state",
+        f"/runs/{glp_run_planned.id}/state",
         headers=headers,
         json={"state": "ACTIVE"},
     )

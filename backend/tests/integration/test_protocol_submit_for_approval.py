@@ -1,4 +1,4 @@
-"""Integration tests for POST /science/protocols/{id}/submit-for-approval."""
+"""Integration tests for POST /protocols/{id}/submit-for-approval."""
 
 import uuid
 
@@ -86,7 +86,7 @@ async def test_submit_for_approval_requires_designation(
         db_session, test_project.organization, roles=["MEMBER"]
     )  # noqa: E501
     resp = await client.post(
-        f"/science/protocols/{proto.id}/submit-for-approval",
+        f"/protocols/{proto.id}/submit-for-approval",
         json={"requested_user_ids": [str(other.id)]},
         headers=auth_headers,
     )
@@ -107,7 +107,7 @@ async def test_submit_for_approval_rejects_ineligible_user(
     proto = await _make_protocol(db_session, test_project, test_user.id)
     rando = await _make_org_member(db_session, test_org, roles=["MEMBER"])
     resp = await client.post(
-        f"/science/protocols/{proto.id}/submit-for-approval",
+        f"/protocols/{proto.id}/submit-for-approval",
         json={"requested_user_ids": [str(rando.id)]},
         headers=auth_headers,
     )
@@ -133,7 +133,7 @@ async def test_submit_for_approval_happy_path(
     )
 
     resp = await client.post(
-        f"/science/protocols/{proto.id}/submit-for-approval",
+        f"/protocols/{proto.id}/submit-for-approval",
         json={"requested_user_ids": [str(approver.id)]},
         headers=auth_headers,
     )
@@ -199,7 +199,7 @@ async def test_submit_for_approval_project_approve_perm_eligible(
     )
     await db_session.flush()
     resp = await client.post(
-        f"/science/protocols/{proto.id}/submit-for-approval",
+        f"/protocols/{proto.id}/submit-for-approval",
         json={"requested_user_ids": [str(user.id)]},
         headers=auth_headers,
     )

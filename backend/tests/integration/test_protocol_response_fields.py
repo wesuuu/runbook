@@ -50,7 +50,7 @@ async def test_protocol_response_includes_approval_fields(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/protocols/{proto.id}",
+        f"/protocols/{proto.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200, resp.text
@@ -84,7 +84,7 @@ async def test_run_response_includes_is_strict(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/projects/{test_project.id}/runs",
+        f"/projects/{test_project.id}/runs",
         headers=auth_headers,
     )
     assert resp.status_code == 200, resp.text

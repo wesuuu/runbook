@@ -135,7 +135,7 @@ async def test_complete_run_with_unanalyzed_images_succeeds(
 
     # Complete the run — should succeed
     resp = await client.put(
-        f"/science/runs/{run.id}",
+        f"/runs/{run.id}",
         json={
             "status": "COMPLETED",
             "execution_data": run.execution_data,
@@ -168,7 +168,7 @@ async def test_complete_run_with_unanalyzed_images_creates_notification(
 
     # Complete the run
     await client.put(
-        f"/science/runs/{run.id}",
+        f"/runs/{run.id}",
         json={
             "status": "COMPLETED",
             "execution_data": run.execution_data,
@@ -219,7 +219,7 @@ async def test_complete_run_all_images_analyzed_no_notification(
 
     # Complete the run
     await client.put(
-        f"/science/runs/{run.id}",
+        f"/runs/{run.id}",
         json={
             "status": "COMPLETED",
             "execution_data": run.execution_data,

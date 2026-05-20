@@ -1,4 +1,4 @@
-"""Integration tests for POST /science/protocols/{id}/designate-approval."""
+"""Integration tests for POST /protocols/{id}/designate-approval."""
 
 import uuid
 
@@ -90,7 +90,7 @@ async def test_designate_approval_requires_project_setting(
     # test_project fixture only sets permissions_enabled — flag is absent.
     proto = await _make_protocol(db_session, test_project, test_user.id)
     resp = await client.post(
-        f"/science/protocols/{proto.id}/designate-approval",
+        f"/protocols/{proto.id}/designate-approval",
         json={"requires_approval": True},
         headers=auth_headers,
     )
@@ -115,7 +115,7 @@ async def test_designate_approval_non_creator_non_admin_403(
     proto = await _make_protocol(db_session, test_project, test_user.id)
     _, edit_headers = await _make_edit_user(db_session, test_org, test_project)
     resp = await client.post(
-        f"/science/protocols/{proto.id}/designate-approval",
+        f"/protocols/{proto.id}/designate-approval",
         json={"requires_approval": True},
         headers=edit_headers,
     )
@@ -138,7 +138,7 @@ async def test_designate_approval_creator_with_setting_succeeds(
     await db_session.flush()
     proto = await _make_protocol(db_session, test_project, test_user.id)
     resp = await client.post(
-        f"/science/protocols/{proto.id}/designate-approval",
+        f"/protocols/{proto.id}/designate-approval",
         json={"requires_approval": True},
         headers=auth_headers,
     )
@@ -164,7 +164,7 @@ async def test_designate_approval_blocked_when_not_draft(
         db_session, test_project, test_user.id, status="PENDING_APPROVAL"
     )
     resp = await client.post(
-        f"/science/protocols/{proto.id}/designate-approval",
+        f"/protocols/{proto.id}/designate-approval",
         json={"requires_approval": True},
         headers=auth_headers,
     )

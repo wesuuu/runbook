@@ -239,14 +239,14 @@ class TestConversionState:
         conv_id = uuid4()
         state = ConversionState(uuid4(), conv_id)
         assert state.preview_url == (
-            f"/science/templates/conversions/{conv_id}/preview.pdf"
+            f"/templates/conversions/{conv_id}/preview.pdf"
         )
 
     def test_template_url(self):
         conv_id = uuid4()
         state = ConversionState(uuid4(), conv_id)
         assert state.template_url == (
-            f"/science/templates/conversions/{conv_id}/template.docx"
+            f"/templates/conversions/{conv_id}/template.docx"
         )
 
 

@@ -1,4 +1,4 @@
-"""Integration tests for POST /science/protocols/{id}/reject."""
+"""Integration tests for POST /protocols/{id}/reject."""
 
 import uuid
 
@@ -85,14 +85,14 @@ async def test_reject_requires_comment(
     )
     # missing comment
     resp = await client.post(
-        f"/science/protocols/{proto.id}/reject",
+        f"/protocols/{proto.id}/reject",
         json={},
         headers=headers,
     )
     assert resp.status_code == 422, resp.text
     # empty comment
     resp = await client.post(
-        f"/science/protocols/{proto.id}/reject",
+        f"/protocols/{proto.id}/reject",
         json={"comment": ""},
         headers=headers,
     )
@@ -114,7 +114,7 @@ async def test_reject_happy_path(
         db_session, test_project, test_user.id, requested_user_id=approver.id
     )
     resp = await client.post(
-        f"/science/protocols/{proto.id}/reject",
+        f"/protocols/{proto.id}/reject",
         json={"comment": "needs more detail in step 3"},
         headers=headers,
     )

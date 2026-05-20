@@ -347,7 +347,7 @@ async def test_verification_scope_blocks_protected(
         headers = {"Authorization": f"Bearer {temp_token}"}
 
     # Should be blocked from protected endpoints
-    resp = await client.get("/science/projects", headers=headers)
+    resp = await client.get("/projects", headers=headers)
     assert resp.status_code == 403
     assert "not verified" in resp.json()["detail"].lower()
 

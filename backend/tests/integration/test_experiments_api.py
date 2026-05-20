@@ -59,7 +59,7 @@ async def test_create_experiment(
     test_project: Project,
 ):
     resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "MOI Optimization",
             "project_id": str(test_project.id),
@@ -90,7 +90,7 @@ async def test_create_experiment_minimal(
 ):
     """Create with only required fields."""
     resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Quick Experiment",
             "project_id": str(test_project.id),
@@ -115,13 +115,13 @@ async def test_list_experiments_for_project(
     # Create two experiments
     for name in ["Exp A", "Exp B"]:
         await client.post(
-            "/science/experiments",
+            "/experiments",
             json={"name": name, "project_id": str(test_project.id)},
             headers=auth_headers,
         )
 
     resp = await client.get(
-        f"/science/projects/{test_project.id}/experiments",
+        f"/projects/{test_project.id}/experiments",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -145,7 +145,7 @@ async def test_get_experiment_with_runs(
 ):
     # Create experiment
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Detail Test",
             "project_id": str(test_project.id),
@@ -156,7 +156,7 @@ async def test_get_experiment_with_runs(
 
     # Create a run within the experiment
     await client.post(
-        f"/science/experiments/{exp_id}/runs",
+        f"/experiments/{exp_id}/runs",
         json={
             "name": "Run 1",
             "project_id": str(test_project.id),
@@ -167,7 +167,7 @@ async def test_get_experiment_with_runs(
 
     # Get detail
     resp = await client.get(
-        f"/science/experiments/{exp_id}",
+        f"/experiments/{exp_id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -188,7 +188,7 @@ async def test_update_experiment(
     test_project: Project,
 ):
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Original Name",
             "project_id": str(test_project.id),
@@ -198,7 +198,7 @@ async def test_update_experiment(
     exp_id = create_resp.json()["id"]
 
     resp = await client.put(
-        f"/science/experiments/{exp_id}",
+        f"/experiments/{exp_id}",
         json={
             "name": "Updated Name",
             "description": "New description",
@@ -223,7 +223,7 @@ async def test_update_experiment_partial(
 ):
     """Only update fields that are provided."""
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Keep This Name",
             "project_id": str(test_project.id),
@@ -234,7 +234,7 @@ async def test_update_experiment_partial(
     exp_id = create_resp.json()["id"]
 
     resp = await client.put(
-        f"/science/experiments/{exp_id}",
+        f"/experiments/{exp_id}",
         json={"status": "COMPLETED"},
         headers=auth_headers,
     )
@@ -257,7 +257,7 @@ async def test_archive_experiment_cascades_to_runs(
 ):
     # Create experiment with a run
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "To Archive",
             "project_id": str(test_project.id),
@@ -267,7 +267,7 @@ async def test_archive_experiment_cascades_to_runs(
     exp_id = create_resp.json()["id"]
 
     run_resp = await client.post(
-        f"/science/experiments/{exp_id}/runs",
+        f"/experiments/{exp_id}/runs",
         json={
             "name": "Run in Experiment",
             "project_id": str(test_project.id),
@@ -279,21 +279,21 @@ async def test_archive_experiment_cascades_to_runs(
 
     # Archive
     resp = await client.delete(
-        f"/science/experiments/{exp_id}",
+        f"/experiments/{exp_id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
 
     # Verify experiment is archived
     exp_resp = await client.get(
-        f"/science/experiments/{exp_id}",
+        f"/experiments/{exp_id}",
         headers=auth_headers,
     )
     assert exp_resp.json()["status"] == "ARCHIVED"
 
     # Verify run is archived too
     run_resp = await client.get(
-        f"/science/runs/{run_id}",
+        f"/runs/{run_id}",
         headers=auth_headers,
     )
     assert run_resp.json()["status"] == "ARCHIVED"
@@ -310,7 +310,7 @@ async def test_create_run_in_experiment(
     protocol: Protocol,
 ):
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "With Runs",
             "project_id": str(test_project.id),
@@ -320,7 +320,7 @@ async def test_create_run_in_experiment(
     exp_id = create_resp.json()["id"]
 
     resp = await client.post(
-        f"/science/experiments/{exp_id}/runs",
+        f"/experiments/{exp_id}/runs",
         json={
             "name": "New Run",
             "project_id": str(test_project.id),
@@ -343,7 +343,7 @@ async def test_link_existing_standalone_run(
     standalone_run: Run,
 ):
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Link Target",
             "project_id": str(test_project.id),
@@ -353,7 +353,7 @@ async def test_link_existing_standalone_run(
     exp_id = create_resp.json()["id"]
 
     resp = await client.post(
-        f"/science/experiments/{exp_id}/runs",
+        f"/experiments/{exp_id}/runs",
         json={"run_id": str(standalone_run.id)},
         headers=auth_headers,
     )
@@ -371,14 +371,14 @@ async def test_link_run_already_in_experiment_blocked(
 ):
     # Create two experiments
     exp1_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={"name": "Exp 1", "project_id": str(test_project.id)},
         headers=auth_headers,
     )
     exp1_id = exp1_resp.json()["id"]
 
     exp2_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={"name": "Exp 2", "project_id": str(test_project.id)},
         headers=auth_headers,
     )
@@ -386,7 +386,7 @@ async def test_link_run_already_in_experiment_blocked(
 
     # Create a run in exp1
     run_resp = await client.post(
-        f"/science/experiments/{exp1_id}/runs",
+        f"/experiments/{exp1_id}/runs",
         json={
             "name": "Claimed Run",
             "project_id": str(test_project.id),
@@ -398,7 +398,7 @@ async def test_link_run_already_in_experiment_blocked(
 
     # Try to link to exp2 — should fail
     resp = await client.post(
-        f"/science/experiments/{exp2_id}/runs",
+        f"/experiments/{exp2_id}/runs",
         json={"run_id": run_id},
         headers=auth_headers,
     )
@@ -416,7 +416,7 @@ async def test_unlink_run_from_experiment(
     protocol: Protocol,
 ):
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Unlink Test",
             "project_id": str(test_project.id),
@@ -426,7 +426,7 @@ async def test_unlink_run_from_experiment(
     exp_id = create_resp.json()["id"]
 
     run_resp = await client.post(
-        f"/science/experiments/{exp_id}/runs",
+        f"/experiments/{exp_id}/runs",
         json={
             "name": "To Unlink",
             "project_id": str(test_project.id),
@@ -438,14 +438,14 @@ async def test_unlink_run_from_experiment(
 
     # Unlink
     resp = await client.delete(
-        f"/science/experiments/{exp_id}/runs/{run_id}",
+        f"/experiments/{exp_id}/runs/{run_id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
 
     # Verify run is standalone now
     run_detail = await client.get(
-        f"/science/runs/{run_id}",
+        f"/runs/{run_id}",
         headers=auth_headers,
     )
     assert run_detail.json()["experiment_id"] is None
@@ -461,7 +461,7 @@ async def test_add_and_list_experiment_notes(
     test_project: Project,
 ):
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Notes Test",
             "project_id": str(test_project.id),
@@ -472,7 +472,7 @@ async def test_add_and_list_experiment_notes(
 
     # Add a note
     note_resp = await client.post(
-        f"/science/experiments/{exp_id}/notes",
+        f"/experiments/{exp_id}/notes",
         json={"content": "Observed elevated pH in all runs"},
         headers=auth_headers,
     )
@@ -485,7 +485,7 @@ async def test_add_and_list_experiment_notes(
 
     # List notes
     list_resp = await client.get(
-        f"/science/experiments/{exp_id}/notes",
+        f"/experiments/{exp_id}/notes",
         headers=auth_headers,
     )
     assert list_resp.status_code == 200
@@ -501,7 +501,7 @@ async def test_experiment_note_with_flags(
     test_project: Project,
 ):
     create_resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Flag Test",
             "project_id": str(test_project.id),
@@ -511,7 +511,7 @@ async def test_experiment_note_with_flags(
     exp_id = create_resp.json()["id"]
 
     resp = await client.post(
-        f"/science/experiments/{exp_id}/notes",
+        f"/experiments/{exp_id}/notes",
         json={
             "content": "Anomalous result",
             "flags": ["observation"],
@@ -533,7 +533,7 @@ async def test_create_experiment_without_permission_fails(
 ):
     """User from a different org cannot create experiments in this project."""
     resp = await client.post(
-        "/science/experiments",
+        "/experiments",
         json={
             "name": "Should Fail",
             "project_id": str(test_project.id),

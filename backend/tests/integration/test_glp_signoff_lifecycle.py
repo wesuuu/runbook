@@ -2,12 +2,12 @@
 
 Tasks 12, 13, 14, 15, and 16 of F-0087 GLP Gap Fixes:
 
-* ``POST /science/runs/{run_id}/signoffs``
-* ``POST /science/protocols/{protocol_id}/signoffs``
-* ``POST /science/runs/{run_id}/complete``
-* ``POST /science/runs/{run_id}/reopen``
-* ``GET  /science/runs/{run_id}/signoffs``
-* ``GET  /science/protocols/{protocol_id}/signoffs``
+* ``POST /runs/{run_id}/signoffs``
+* ``POST /protocols/{protocol_id}/signoffs``
+* ``POST /runs/{run_id}/complete``
+* ``POST /runs/{run_id}/reopen``
+* ``GET  /runs/{run_id}/signoffs``
+* ``GET  /protocols/{protocol_id}/signoffs``
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def _isolated_storage_root(tmp_path, monkeypatch):
     return tmp_path / "uploads"
 
 
-# --- Task 12: POST /science/runs/{run_id}/signoffs --------------------------
+# --- Task 12: POST /runs/{run_id}/signoffs --------------------------
 
 
 @pytest.mark.asyncio
@@ -92,7 +92,7 @@ async def test_post_run_signoff_creates_active_row(
 ):
     """Happy path: OPERATOR/APPROVED returns 201 with signature path set."""
     res = await client.post(
-        f"/science/runs/{sample_run.id}/signoffs",
+        f"/runs/{sample_run.id}/signoffs",
         headers=auth_headers,
         json={
             "role": "OPERATOR",
@@ -117,7 +117,7 @@ async def test_post_run_signoff_rejects_invalid_role_for_run(
 ):
     """ck_run_signoff_roles refuses SPONSOR on a run."""
     res = await client.post(
-        f"/science/runs/{sample_run.id}/signoffs",
+        f"/runs/{sample_run.id}/signoffs",
         headers=auth_headers,
         json={
             "role": "SPONSOR",
@@ -128,7 +128,7 @@ async def test_post_run_signoff_rejects_invalid_role_for_run(
     assert res.status_code in (400, 422), res.text
 
 
-# --- Task 13: POST /science/protocols/{protocol_id}/signoffs ---------------
+# --- Task 13: POST /protocols/{protocol_id}/signoffs ---------------
 
 
 @pytest.mark.asyncio
@@ -141,7 +141,7 @@ async def test_post_protocol_signoff_creates_active_row(
 ):
     """Happy path: QAU/APPROVED on a protocol returns 201."""
     res = await client.post(
-        f"/science/protocols/{sample_protocol.id}/signoffs",
+        f"/protocols/{sample_protocol.id}/signoffs",
         headers=auth_headers,
         json={
             "role": "QAU",
@@ -165,7 +165,7 @@ async def test_post_protocol_signoff_rejects_operator_role(
 ):
     """ck_protocol_signoff_roles refuses OPERATOR on a protocol."""
     res = await client.post(
-        f"/science/protocols/{sample_protocol.id}/signoffs",
+        f"/protocols/{sample_protocol.id}/signoffs",
         headers=auth_headers,
         json={
             "role": "OPERATOR",
@@ -242,7 +242,7 @@ async def sample_active_run_with_operator_signoff(
     return sample_active_run
 
 
-# --- Task 14: POST /science/runs/{run_id}/complete -------------------------
+# --- Task 14: POST /runs/{run_id}/complete -------------------------
 
 
 @pytest.mark.asyncio
@@ -253,7 +253,7 @@ async def test_run_complete_requires_operator_signoff(
 ):
     """Without an OPERATOR sign-off, /complete returns 400 SIGNOFF_REQUIRED."""
     res = await client.post(
-        f"/science/runs/{sample_active_run.id}/complete",
+        f"/runs/{sample_active_run.id}/complete",
         headers=auth_headers,
         json={"outcome": "COMPLETED_NORMAL"},
     )
@@ -271,7 +271,7 @@ async def test_run_complete_sets_outcome_and_completed_at(
 ):
     """Happy path: outcome and completed_at populated; status -> COMPLETED."""
     res = await client.post(
-        f"/science/runs/{sample_active_run_with_operator_signoff.id}/complete",
+        f"/runs/{sample_active_run_with_operator_signoff.id}/complete",
         headers=auth_headers,
         json={
             "outcome": "COMPLETED_WITH_DEVIATIONS",
@@ -325,7 +325,7 @@ async def completed_run_with_signoffs(
     return sample_active_run
 
 
-# --- Task 15: POST /science/runs/{run_id}/reopen ---------------------------
+# --- Task 15: POST /runs/{run_id}/reopen ---------------------------
 
 
 @pytest.mark.asyncio
@@ -339,7 +339,7 @@ async def test_reopen_invalidates_all_active_signoffs(
     from sqlalchemy import select
 
     res = await client.post(
-        f"/science/runs/{completed_run_with_signoffs.id}/reopen",
+        f"/runs/{completed_run_with_signoffs.id}/reopen",
         headers=auth_headers,
         json={"reason": "pH probe drift on step 7-9"},
     )
@@ -367,14 +367,14 @@ async def test_reopen_requires_reason(
 ):
     """Empty/missing reason returns 400 or 422 from Pydantic min_length."""
     res = await client.post(
-        f"/science/runs/{completed_run_with_signoffs.id}/reopen",
+        f"/runs/{completed_run_with_signoffs.id}/reopen",
         headers=auth_headers,
         json={"reason": ""},
     )
     assert res.status_code in (400, 422), res.text
 
 
-# --- Task 16: GET /science/runs|protocols/{id}/signoffs --------------------
+# --- Task 16: GET /runs|protocols/{id}/signoffs --------------------
 
 
 @pytest.mark.asyncio
@@ -385,14 +385,14 @@ async def test_list_run_signoffs_includes_invalidated_when_requested(
 ):
     """After reopen, active=false returns invalidated rows; active=true is empty."""
     res = await client.post(
-        f"/science/runs/{completed_run_with_signoffs.id}/reopen",
+        f"/runs/{completed_run_with_signoffs.id}/reopen",
         headers=auth_headers,
         json={"reason": "fix step 8"},
     )
     assert res.status_code == 200, res.text
 
     res_all = await client.get(
-        f"/science/runs/{completed_run_with_signoffs.id}/signoffs",
+        f"/runs/{completed_run_with_signoffs.id}/signoffs",
         headers=auth_headers,
     )
     assert res_all.status_code == 200, res_all.text
@@ -401,7 +401,7 @@ async def test_list_run_signoffs_includes_invalidated_when_requested(
     assert any(r["invalidated_at"] is not None for r in rows)
 
     res_active = await client.get(
-        f"/science/runs/{completed_run_with_signoffs.id}/signoffs?active=true",
+        f"/runs/{completed_run_with_signoffs.id}/signoffs?active=true",
         headers=auth_headers,
     )
     assert res_active.status_code == 200, res_active.text
@@ -418,7 +418,7 @@ async def test_edited_transition_requires_edit_reason_per_modified_step(
     sample_active_run,
 ):
     res = await client.patch(
-        f"/science/runs/{sample_active_run.id}/state",
+        f"/runs/{sample_active_run.id}/state",
         headers=auth_headers,
         json={
             "state": "EDITED",
@@ -437,7 +437,7 @@ async def test_edited_transition_passes_when_reasons_provided(
     sample_active_run,
 ):
     res = await client.patch(
-        f"/science/runs/{sample_active_run.id}/state",
+        f"/runs/{sample_active_run.id}/state",
         headers=auth_headers,
         json={
             "state": "EDITED",
@@ -478,7 +478,7 @@ async def test_active_transition_sets_started_at(
     sample_planned_run,
 ):
     res = await client.patch(
-        f"/science/runs/{sample_planned_run.id}/state",
+        f"/runs/{sample_planned_run.id}/state",
         headers=auth_headers,
         json={"state": "ACTIVE"},
     )
@@ -499,13 +499,13 @@ async def test_step_in_progress_records_started_by(
     test_user,
 ):
     res = await client.patch(
-        f"/science/runs/{sample_active_run.id}/steps/step1",
+        f"/runs/{sample_active_run.id}/steps/step1",
         headers=auth_headers,
         json={"status": "in_progress"},
     )
     assert res.status_code == 200, res.text
     run_after = await client.get(
-        f"/science/runs/{sample_active_run.id}",
+        f"/runs/{sample_active_run.id}",
         headers=auth_headers,
     )
     assert run_after.status_code == 200, run_after.text
@@ -558,14 +558,14 @@ async def test_step_review_sets_reviewed_by_and_audit(
     test_user,
 ):
     res = await client.post(
-        f"/science/runs/{sample_completed_step_run.id}/steps/step1/review",
+        f"/runs/{sample_completed_step_run.id}/steps/step1/review",
         headers=auth_headers,
         json={},
     )
     assert res.status_code == 200, res.text
     run = (
         await client.get(
-            f"/science/runs/{sample_completed_step_run.id}",
+            f"/runs/{sample_completed_step_run.id}",
             headers=auth_headers,
         )
     ).json()

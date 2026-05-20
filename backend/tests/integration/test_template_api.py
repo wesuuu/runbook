@@ -431,7 +431,7 @@ async def test_protocol_creation_stamps_defaults(
     await db_session.flush()
 
     resp = await client.post(
-        "/science/protocols",
+        "/protocols",
         json={
             "name": "Test Protocol",
             "project_id": str(test_project.id),

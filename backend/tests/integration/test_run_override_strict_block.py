@@ -2,8 +2,8 @@
 
 Once Run.is_strict is True (snapshotted from a designated protocol), the
 endpoint must reject any incoming overrides — both at run-creation time
-(POST /science/runs with `overrides`) and during edits to the run's graph
-(PUT /science/runs/{run_id} with a `graph` diff that touches a unit op).
+(POST /runs with `overrides`) and during edits to the run's graph
+(PUT /runs/{run_id} with a `graph` diff that touches a unit op).
 """
 
 import copy
@@ -71,7 +71,7 @@ async def test_create_run_overrides_blocked_when_strict(
     """APPROVED designated protocol + overrides payload → 403 RUN_IS_STRICT."""
     proto = await _make_protocol(db_session, test_project, requires_approval=True)
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Strict run with overrides",
             "project_id": str(test_project.id),
@@ -100,7 +100,7 @@ async def test_create_run_overrides_ok_when_not_strict(
         db_session, test_project, requires_approval=False, status="DRAFT"
     )
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Loose run with overrides",
             "project_id": str(test_project.id),
@@ -125,7 +125,7 @@ async def test_update_run_override_edit_blocked_when_strict(
     # Create the strict run via endpoint to ensure is_strict is set the same
     # way the production code path does.
     create_resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Strict run",
             "project_id": str(test_project.id),
@@ -146,7 +146,7 @@ async def test_update_run_override_edit_blocked_when_strict(
             break
 
     resp = await client.put(
-        f"/science/runs/{run_id}",
+        f"/runs/{run_id}",
         json={"graph": new_graph},
         headers=auth_headers,
     )
@@ -170,7 +170,7 @@ async def test_update_run_override_edit_ok_when_not_strict(
         db_session, test_project, requires_approval=False, status="DRAFT"
     )
     create_resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Loose run",
             "project_id": str(test_project.id),
@@ -190,7 +190,7 @@ async def test_update_run_override_edit_ok_when_not_strict(
             break
 
     resp = await client.put(
-        f"/science/runs/{run_id}",
+        f"/runs/{run_id}",
         json={"graph": new_graph},
         headers=auth_headers,
     )

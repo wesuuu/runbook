@@ -31,7 +31,7 @@ async def _auth_headers_for(user, glp_org: Organization) -> dict:
 @pytest.mark.xfail(
     reason=(
         "assert_can_start() exists in app/services/runs/validation.py but is "
-        "not yet wired into PATCH /science/runs/{id}/state. When the wiring "
+        "not yet wired into PATCH /runs/{id}/state. When the wiring "
         "lands the xfail strip should turn the test green."
     ),
     strict=False,
@@ -49,7 +49,7 @@ async def test_planned_to_active_with_unassigned_lanes_returns_lanes_unassigned(
     headers = await _auth_headers_for(operator_user, glp_org)
 
     res = await client.patch(
-        f"/science/runs/{glp_run_planned.id}/state",
+        f"/runs/{glp_run_planned.id}/state",
         headers=headers,
         json={"state": "ACTIVE"},
     )

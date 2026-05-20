@@ -58,4 +58,4 @@ class GlpSignoffResponse(BaseModel):
     def signature_image_url(self) -> Optional[str]:
         if not self.signature_image_path:
             return None
-        return f"/science/signoffs/{self.id}/signature"
+        return f"/signoffs/{self.id}/signature"

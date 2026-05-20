@@ -457,18 +457,18 @@ app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])
 app.include_router(iam.router, prefix="/iam", tags=["iam"])
-app.include_router(unit_ops.router, prefix="/science", tags=["science"])
+app.include_router(unit_ops.router, tags=["unit-ops"])
 # protocol_versions registered first so its literal-path routes (e.g.
 # /protocols/awaiting-my-approval) win over /protocols/{protocol_id} in
 # protocols.router. (F-0066)
-app.include_router(protocol_versions.router, prefix="/science", tags=["science"])
-app.include_router(protocols.router, prefix="/science", tags=["science"])
-app.include_router(protocol_pdfs.router, prefix="/science", tags=["science"])
-app.include_router(runs.router, prefix="/science", tags=["science"])
-app.include_router(experiments.router, prefix="/science", tags=["science"])
-app.include_router(batch_record_import.router, prefix="/science", tags=["science"])
-app.include_router(export_data.router, prefix="/science", tags=["science"])
-app.include_router(project_members.router, prefix="/science", tags=["science"])
+app.include_router(protocol_versions.router, tags=["protocol-versions"])
+app.include_router(protocols.router, tags=["protocols"])
+app.include_router(protocol_pdfs.router, tags=["protocol-pdfs"])
+app.include_router(runs.router, tags=["runs"])
+app.include_router(experiments.router, tags=["experiments"])
+app.include_router(batch_record_import.router, tags=["batch-record-import"])
+app.include_router(export_data.router, tags=["export"])
+app.include_router(project_members.router, tags=["project-members"])
 app.include_router(sites.router, tags=["sites"])
 app.include_router(equipment.router)  # prefix="/equipment" defined on the router
 app.include_router(ai.router, prefix="/ai", tags=["ai"])
@@ -479,7 +479,7 @@ app.include_router(
 app.include_router(library.router, prefix="/library", tags=["library"])
 app.include_router(templates.router, tags=["templates"])
 app.include_router(
-    template_convert.router, prefix="/science", tags=["template-convert"]
+    template_convert.router, tags=["template-convert"]
 )
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 

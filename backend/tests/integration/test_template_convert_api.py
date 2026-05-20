@@ -42,13 +42,13 @@ def _make_template_docx() -> bytes:
 
 
 class TestConvertEndpoint:
-    """POST /science/templates/convert"""
+    """POST /templates/convert"""
 
     @pytest.mark.asyncio
     async def test_rejects_unauthenticated(self, client):
         """Should return 401 without auth header."""
         resp = await client.post(
-            "/science/templates/convert",
+            "/templates/convert",
             data={"template_type": "SOP"},
             files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
         )
@@ -58,7 +58,7 @@ class TestConvertEndpoint:
     async def test_rejects_invalid_template_type(self, client, auth_headers):
         """Should return 422 for invalid template_type."""
         resp = await client.post(
-            "/science/templates/convert",
+            "/templates/convert",
             headers=auth_headers,
             data={"template_type": "INVALID"},
             files={"file": ("test.docx", _make_filled_docx(), DOCX_MIME)},
@@ -69,7 +69,7 @@ class TestConvertEndpoint:
     async def test_rejects_unsupported_file_type(self, client, auth_headers):
         """Should return 422 for unsupported MIME type."""
         resp = await client.post(
-            "/science/templates/convert",
+            "/templates/convert",
             headers=auth_headers,
             data={"template_type": "SOP"},
             files={"file": ("test.txt", b"hello", "text/plain")},
@@ -84,7 +84,7 @@ class TestConvertEndpoint:
             new_callable=AsyncMock,
         ):
             resp = await client.post(
-                "/science/templates/convert",
+                "/templates/convert",
                 headers=auth_headers,
                 data={"template_type": "SOP"},
                 files={
@@ -102,14 +102,14 @@ class TestConvertEndpoint:
 
 
 class TestEventsEndpoint:
-    """GET /science/templates/conversions/{id}/events"""
+    """GET /templates/conversions/{id}/events"""
 
     @pytest.mark.asyncio
     async def test_returns_error_for_missing_conversion(self, client, auth_headers):
         """Should return an SSE error event for a nonexistent conversion."""
         fake_id = uuid4()
         resp = await client.get(
-            f"/science/templates/conversions/{fake_id}/events",
+            f"/templates/conversions/{fake_id}/events",
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -118,14 +118,14 @@ class TestEventsEndpoint:
 
 
 class TestRefineEndpoint:
-    """POST /science/templates/conversions/{id}/refine"""
+    """POST /templates/conversions/{id}/refine"""
 
     @pytest.mark.asyncio
     async def test_returns_404_for_missing_conversion(self, client, auth_headers):
         """Should return 404 if conversion_id doesn't exist."""
         fake_id = uuid4()
         resp = await client.post(
-            f"/science/templates/conversions/{fake_id}/refine",
+            f"/templates/conversions/{fake_id}/refine",
             headers=auth_headers,
             json={"instruction": "rename lot_number to batch_id"},
         )
@@ -133,14 +133,14 @@ class TestRefineEndpoint:
 
 
 class TestReuploadEndpoint:
-    """POST /science/templates/conversions/{id}/reupload"""
+    """POST /templates/conversions/{id}/reupload"""
 
     @pytest.mark.asyncio
     async def test_returns_404_for_missing_conversion(self, client, auth_headers):
         """Should return 404 if conversion_id doesn't exist."""
         fake_id = uuid4()
         resp = await client.post(
-            f"/science/templates/conversions/{fake_id}/reupload",
+            f"/templates/conversions/{fake_id}/reupload",
             headers=auth_headers,
             files={
                 "file": (
@@ -154,14 +154,14 @@ class TestReuploadEndpoint:
 
 
 class TestSaveEndpoint:
-    """POST /science/templates/conversions/{id}/save"""
+    """POST /templates/conversions/{id}/save"""
 
     @pytest.mark.asyncio
     async def test_returns_404_for_missing_conversion(self, client, auth_headers):
         """Should return 404 if conversion_id doesn't exist."""
         fake_id = uuid4()
         resp = await client.post(
-            f"/science/templates/conversions/{fake_id}/save",
+            f"/templates/conversions/{fake_id}/save",
             headers=auth_headers,
             json={
                 "name": "Test Template",
@@ -181,7 +181,7 @@ class TestSaveEndpoint:
         state.write("template.docx", _make_template_docx())
 
         resp = await client.post(
-            f"/science/templates/conversions/{conv_id}/save",
+            f"/templates/conversions/{conv_id}/save",
             headers=auth_headers,
             json={
                 "name": "Test Template",
@@ -199,7 +199,7 @@ class TestFileServingEndpoints:
         """Should return 404 when preview doesn't exist."""
         fake_id = uuid4()
         resp = await client.get(
-            f"/science/templates/conversions/{fake_id}/preview.pdf",
+            f"/templates/conversions/{fake_id}/preview.pdf",
             headers=auth_headers,
         )
         assert resp.status_code == 404
@@ -209,7 +209,7 @@ class TestFileServingEndpoints:
         """Should return 404 when template doesn't exist."""
         fake_id = uuid4()
         resp = await client.get(
-            f"/science/templates/conversions/{fake_id}/template.docx",
+            f"/templates/conversions/{fake_id}/template.docx",
             headers=auth_headers,
         )
         assert resp.status_code == 404
@@ -226,7 +226,7 @@ class TestFileServingEndpoints:
         state.write("template.docx", template_bytes)
 
         resp = await client.get(
-            f"/science/templates/conversions/{conv_id}/template.docx",
+            f"/templates/conversions/{conv_id}/template.docx",
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -244,7 +244,7 @@ class TestFileServingEndpoints:
         state.write("preview.pdf", fake_pdf)
 
         resp = await client.get(
-            f"/science/templates/conversions/{conv_id}/preview.pdf",
+            f"/templates/conversions/{conv_id}/preview.pdf",
             headers=auth_headers,
         )
         assert resp.status_code == 200

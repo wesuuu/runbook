@@ -148,7 +148,7 @@ async def _create_protocol_with_draft(
 
     # Save the graph as a draft version (creates ProtocolVersion is_draft=True)
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": graph},
         headers=auth_headers,
     )
@@ -168,14 +168,14 @@ async def test_publish_draft_rejects_invalid_branching_graph(
     test_project: Project,
     db_session: AsyncSession,
 ):
-    """POST /science/protocols/{id}/publish-draft should 400 on branch error."""
+    """POST /protocols/{id}/publish-draft should 400 on branch error."""
     graph = _branching_invalid_graph()
     protocol = await _create_protocol_with_draft(
         client, auth_headers, db_session, test_project, graph
     )
 
     resp = await client.post(
-        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        f"/protocols/{protocol.id}/publish-draft?version_number=1",
         headers=auth_headers,
     )
     _assert_branch_role_error(resp)
@@ -192,7 +192,7 @@ async def test_create_run_rejects_invalid_branching_protocol(
     test_project: Project,
     db_session: AsyncSession,
 ):
-    """POST /science/runs should 400 when protocol graph violates branch rule."""
+    """POST /runs should 400 when protocol graph violates branch rule."""
     # Store the invalid graph directly on the Protocol so runs picks it up.
     protocol = Protocol(
         name="QA-0006 Run Test Protocol",
@@ -205,7 +205,7 @@ async def test_create_run_rejects_invalid_branching_protocol(
     await db_session.flush()
 
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "QA-0006 Test Run",
             "project_id": str(test_project.id),
@@ -227,7 +227,7 @@ async def test_pdf_sop_get_rejects_invalid_branching_protocol(
     test_project: Project,
     db_session: AsyncSession,
 ):
-    """GET /science/protocols/{id}/pdf/sop should 400 on branch error."""
+    """GET /protocols/{id}/pdf/sop should 400 on branch error."""
     protocol = Protocol(
         name="QA-0006 SOP PDF Protocol",
         project_id=test_project.id,
@@ -239,7 +239,7 @@ async def test_pdf_sop_get_rejects_invalid_branching_protocol(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/protocols/{protocol.id}/pdf/sop",
+        f"/protocols/{protocol.id}/pdf/sop",
         headers=auth_headers,
     )
     _assert_branch_role_error(resp)
@@ -256,7 +256,7 @@ async def test_pdf_batch_record_post_rejects_invalid_branching_payload(
     test_project: Project,
     db_session: AsyncSession,
 ):
-    """POST /science/protocols/{id}/pdf/batch-record should 400 on branch error."""
+    """POST /protocols/{id}/pdf/batch-record should 400 on branch error."""
     # The POST endpoint validates body.graph, not protocol.graph.
     # The protocol still needs to exist and be accessible.
     protocol = Protocol(
@@ -270,7 +270,7 @@ async def test_pdf_batch_record_post_rejects_invalid_branching_payload(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/protocols/{protocol.id}/pdf/batch-record",
+        f"/protocols/{protocol.id}/pdf/batch-record",
         json={"graph": _branching_invalid_graph()},
         headers=auth_headers,
     )

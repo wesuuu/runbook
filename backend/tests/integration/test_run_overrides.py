@@ -1,4 +1,4 @@
-"""Integration tests for run override behavior on POST/PUT /science/runs.
+"""Integration tests for run override behavior on POST/PUT /runs.
 
 These exercise the full HTTP path so the service-layer helpers and the
 endpoint plumbing are tested together.
@@ -85,7 +85,7 @@ async def test_create_run_no_overrides_populates_mirror_fields(
     original_graph = copy.deepcopy(protocol.graph)
 
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run 1",
             "project_id": str(test_project.id),
@@ -131,7 +131,7 @@ async def test_create_run_sparse_value_overrides(
     protocol = await _seed_protocol(db_session, test_project)
 
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run pH",
             "project_id": str(test_project.id),
@@ -178,7 +178,7 @@ async def test_create_run_equipment_swap(
 ):
     protocol = await _seed_protocol(db_session, test_project)
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run swap",
             "project_id": str(test_project.id),
@@ -218,7 +218,7 @@ async def test_create_run_paramSchema_override(
         }
     }
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run schema",
             "project_id": str(test_project.id),
@@ -248,7 +248,7 @@ async def test_create_run_description_override(
     protocol = await _seed_protocol(db_session, test_project)
     new_desc = "Adjust to {{pH}} using 1M HCl, then incubate at {{temp_c}}°C"
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run desc",
             "project_id": str(test_project.id),
@@ -308,7 +308,7 @@ async def test_create_run_from_specific_version(
     await db_session.flush()
 
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run from v1",
             "project_id": str(test_project.id),
@@ -334,7 +334,7 @@ async def test_create_run_with_unknown_version_returns_404(
 ):
     protocol = await _seed_protocol(db_session, test_project)
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run from missing version",
             "project_id": str(test_project.id),
@@ -355,7 +355,7 @@ async def test_update_run_graph_allowed_while_planned(
 ):
     protocol = await _seed_protocol(db_session, test_project)
     create_resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run",
             "project_id": str(test_project.id),
@@ -371,7 +371,7 @@ async def test_update_run_graph_allowed_while_planned(
     n1["data"]["params"]["pH"] = 6.8
 
     resp = await client.put(
-        f"/science/runs/{run_id}",
+        f"/runs/{run_id}",
         json={"graph": new_graph},
         headers=auth_headers,
     )
@@ -391,7 +391,7 @@ async def test_update_run_graph_rejected_when_not_planned(
     """Once a run leaves PLANNED, graph edits return 422."""
     protocol = await _seed_protocol(db_session, test_project)
     create_resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run",
             "project_id": str(test_project.id),
@@ -412,7 +412,7 @@ async def test_update_run_graph_rejected_when_not_planned(
     n1["data"]["params"]["pH"] = 6.8
 
     resp = await client.put(
-        f"/science/runs/{run_id}",
+        f"/runs/{run_id}",
         json={"graph": new_graph},
         headers=auth_headers,
     )
@@ -431,7 +431,7 @@ async def test_update_run_emits_override_edit_audit(
     entry per changed (node, field) tuple."""
     protocol = await _seed_protocol(db_session, test_project)
     create_resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run",
             "project_id": str(test_project.id),
@@ -450,7 +450,7 @@ async def test_update_run_emits_override_edit_audit(
     n2["data"]["equipment"] = [{"id": "cf-B", "name": "Centrifuge B"}]
 
     resp = await client.put(
-        f"/science/runs/{run_id}",
+        f"/runs/{run_id}",
         json={"graph": new_graph},
         headers=auth_headers,
     )

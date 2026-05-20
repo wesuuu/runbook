@@ -24,14 +24,14 @@ async def test_list_unit_ops_authenticated(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    resp = await client.get("/science/unit-ops", headers=auth_headers)
+    resp = await client.get("/unit-ops", headers=auth_headers)
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
 
 
 @pytest.mark.asyncio
 async def test_list_unit_ops_unauthenticated(client: AsyncClient):
-    resp = await client.get("/science/unit-ops")
+    resp = await client.get("/unit-ops")
     assert resp.status_code == 401
 
 
@@ -41,7 +41,7 @@ async def test_create_unit_op(
     auth_headers: dict,
 ):
     resp = await client.post(
-        "/science/unit-ops",
+        "/unit-ops",
         json={
             "name": "Test Op",
             "category": "General",
@@ -64,7 +64,7 @@ async def test_create_protocol(
     test_project: Project,
 ):
     resp = await client.post(
-        "/science/protocols",
+        "/protocols",
         json={
             "name": "New Protocol",
             "project_id": str(test_project.id),
@@ -84,7 +84,7 @@ async def test_create_protocol_no_project_perm(
     second_user: User,
 ):
     resp = await client.post(
-        "/science/protocols",
+        "/protocols",
         json={
             "name": "Should Fail",
             "project_id": str(test_project.id),
@@ -111,7 +111,7 @@ async def test_get_protocol_with_project_perm(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/protocols/{protocol.id}",
+        f"/protocols/{protocol.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -135,7 +135,7 @@ async def test_get_protocol_without_perm(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/protocols/{protocol.id}",
+        f"/protocols/{protocol.id}",
         headers=second_auth_headers,
     )
     assert resp.status_code == 403
@@ -157,7 +157,7 @@ async def test_update_protocol_with_edit_perm(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/protocols/{protocol.id}",
+        f"/protocols/{protocol.id}",
         json={"name": "Updated Protocol"},
         headers=auth_headers,
     )
@@ -202,7 +202,7 @@ async def test_update_protocol_view_only_forbidden(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/protocols/{protocol.id}",
+        f"/protocols/{protocol.id}",
         json={"name": "Should Fail"},
         headers=second_auth_headers,
     )
@@ -225,7 +225,7 @@ async def test_list_protocols_for_project(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/projects/{test_project.id}/protocols",
+        f"/projects/{test_project.id}/protocols",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -258,7 +258,7 @@ async def test_list_protocols_filters_archived_by_default(
 
     # Default: archived hidden
     resp = await client.get(
-        f"/science/projects/{test_project.id}/protocols",
+        f"/projects/{test_project.id}/protocols",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -268,7 +268,7 @@ async def test_list_protocols_filters_archived_by_default(
 
     # include_archived=true: archived included
     resp = await client.get(
-        f"/science/projects/{test_project.id}/protocols",
+        f"/projects/{test_project.id}/protocols",
         params={"include_archived": "true"},
         headers=auth_headers,
     )
@@ -327,7 +327,7 @@ async def test_list_protocols_surfaces_latest_draft_version(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/projects/{test_project.id}/protocols",
+        f"/projects/{test_project.id}/protocols",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -369,7 +369,7 @@ async def test_get_protocol_surfaces_latest_draft_version(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/protocols/{protocol.id}",
+        f"/protocols/{protocol.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -395,7 +395,7 @@ async def test_list_protocol_roles(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/protocols/{protocol.id}/roles",
+        f"/protocols/{protocol.id}/roles",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -418,7 +418,7 @@ async def test_create_protocol_role(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/protocols/{protocol.id}/roles",
+        f"/protocols/{protocol.id}/roles",
         json={"name": "Operator", "color": "#ff0000", "sort_order": 0},
         headers=auth_headers,
     )
@@ -453,7 +453,7 @@ async def test_update_protocol_role(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/protocols/{protocol.id}/roles/{role.id}",
+        f"/protocols/{protocol.id}/roles/{role.id}",
         json={"name": "NewName"},
         headers=auth_headers,
     )
@@ -488,7 +488,7 @@ async def test_delete_protocol_role(
     await db_session.flush()
 
     resp = await client.delete(
-        f"/science/protocols/{protocol.id}/roles/{role.id}",
+        f"/protocols/{protocol.id}/roles/{role.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -504,7 +504,7 @@ async def test_create_run(
     test_project: Project,
 ):
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "New Run",
             "project_id": str(test_project.id),
@@ -523,7 +523,7 @@ async def test_create_run_no_project_perm(
     second_user: User,
 ):
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Should Fail",
             "project_id": str(test_project.id),
@@ -550,7 +550,7 @@ async def test_get_run_with_perm(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -575,7 +575,7 @@ async def test_get_run_without_perm(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         headers=second_auth_headers,
     )
     assert resp.status_code == 403
@@ -598,7 +598,7 @@ async def test_update_run_with_edit_perm(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         json={"name": "Updated Run"},
         headers=auth_headers,
     )
@@ -623,7 +623,7 @@ async def test_list_runs_for_project(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/projects/{test_project.id}/runs",
+        f"/projects/{test_project.id}/runs",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -643,7 +643,7 @@ async def test_get_project_members(
 ):
     """Test getting members of a project."""
     resp = await client.get(
-        f"/science/projects/{test_project.id}/members",
+        f"/projects/{test_project.id}/members",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -662,7 +662,7 @@ async def test_get_project_members_no_perm(
 ):
     """Test that user without VIEW perm cannot get members."""
     resp = await client.get(
-        f"/science/projects/{test_project.id}/members",
+        f"/projects/{test_project.id}/members",
         headers=second_auth_headers,
     )
     assert resp.status_code == 403
@@ -698,7 +698,7 @@ async def test_create_role_assignment(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/runs/{run_obj.id}/role-assignments",
+        f"/runs/{run_obj.id}/role-assignments",
         json={
             "lane_node_id": "lane-role-1",
             "role_name": "Scientist",
@@ -751,7 +751,7 @@ async def test_get_role_assignments(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/runs/{run_obj.id}/role-assignments",
+        f"/runs/{run_obj.id}/role-assignments",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -790,7 +790,7 @@ async def test_update_role_assignment(
 
     # Create initial assignment
     resp = await client.post(
-        f"/science/runs/{run_obj.id}/role-assignments",
+        f"/runs/{run_obj.id}/role-assignments",
         json={
             "lane_node_id": "lane-role-1",
             "role_name": "Scientist",
@@ -802,7 +802,7 @@ async def test_update_role_assignment(
 
     # Update to assign to second_user
     resp = await client.post(
-        f"/science/runs/{run_obj.id}/role-assignments",
+        f"/runs/{run_obj.id}/role-assignments",
         json={
             "lane_node_id": "lane-role-1",
             "role_name": "Scientist",
@@ -853,7 +853,7 @@ async def test_delete_role_assignment(
     await db_session.flush()
 
     resp = await client.delete(
-        f"/science/runs/{run_obj.id}/role-assignments/{assignment.id}",
+        f"/runs/{run_obj.id}/role-assignments/{assignment.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -900,7 +900,7 @@ async def test_transition_to_active_with_all_roles_assigned(
 
     # Transition to ACTIVE
     resp = await client.put(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )
@@ -943,7 +943,7 @@ async def test_transition_to_active_without_all_roles_assigned(
 
     # Try to transition to ACTIVE - should fail
     resp = await client.put(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )
@@ -975,7 +975,7 @@ async def test_publish_protocol_success(
 
     # Save as draft (creates draft version v1)
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": {"nodes": [{"id": "test"}], "edges": []}},
         headers=auth_headers,
     )
@@ -983,7 +983,7 @@ async def test_publish_protocol_success(
 
     # Publish the draft
     resp = await client.post(
-        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        f"/protocols/{protocol.id}/publish-draft?version_number=1",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -1018,7 +1018,7 @@ async def test_save_as_draft_creates_draft_version(
 
     # Save as draft
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": {"nodes": [{"id": "draft"}], "edges": []}},
         headers=auth_headers,
     )
@@ -1030,7 +1030,7 @@ async def test_save_as_draft_creates_draft_version(
 
     # Check versions list includes the draft
     resp = await client.get(
-        f"/science/protocols/{protocol.id}/versions",
+        f"/protocols/{protocol.id}/versions",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -1058,7 +1058,7 @@ async def test_publish_draft_not_found(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/protocols/{protocol.id}/publish-draft?version_number=999",
+        f"/protocols/{protocol.id}/publish-draft?version_number=999",
         headers=auth_headers,
     )
     assert resp.status_code == 404
@@ -1088,7 +1088,7 @@ async def test_save_draft_always_creates_version(
 
     # Save the exact same graph
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": {"nodes": [{"id": "1"}], "edges": []}},
         headers=auth_headers,
     )
@@ -1096,7 +1096,7 @@ async def test_save_draft_always_creates_version(
 
     # A draft v1 should now exist so publish can find it
     resp = await client.get(
-        f"/science/protocols/{protocol.id}/versions",
+        f"/protocols/{protocol.id}/versions",
         headers=auth_headers,
     )
     versions = resp.json()
@@ -1128,7 +1128,7 @@ async def test_save_as_draft_syncs_live_graph_for_unpublished_protocol(
 
     new_graph = {"nodes": [{"id": "fresh"}], "edges": []}
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": new_graph},
         headers=auth_headers,
     )
@@ -1158,7 +1158,7 @@ async def test_save_as_draft_preserves_live_graph_for_published_protocol(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": {"nodes": [{"id": "wip"}], "edges": []}},
         headers=auth_headers,
     )
@@ -1186,7 +1186,7 @@ async def test_start_run_without_assignments_fails(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )
@@ -1239,7 +1239,7 @@ async def test_start_run_with_swimlanes_requires_all_assigned(
 
     # Try to start - should fail because second role is not assigned
     resp = await client.put(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )
@@ -1277,7 +1277,7 @@ async def test_start_run_succeeds_with_one_assignment_no_swimlanes(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )
@@ -1336,7 +1336,7 @@ async def test_start_run_succeeds_with_all_swimlanes_assigned(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )
@@ -1376,7 +1376,7 @@ async def test_started_by_id_set_on_active_transition(
 
     # Transition to ACTIVE
     resp = await client.put(
-        f"/science/runs/{run_obj.id}",
+        f"/runs/{run_obj.id}",
         json={"status": "ACTIVE"},
         headers=auth_headers,
     )
@@ -1412,7 +1412,7 @@ async def test_assignment_operations_audit_logged(
 
     # Create assignment
     resp = await client.post(
-        f"/science/runs/{run_obj.id}/role-assignments",
+        f"/runs/{run_obj.id}/role-assignments",
         json={
             "lane_node_id": "general",
             "role_name": "General",
@@ -1439,7 +1439,7 @@ async def test_assignment_operations_audit_logged(
 
     # Update assignment (same endpoint, replaces existing assignment)
     resp = await client.post(
-        f"/science/runs/{run_obj.id}/role-assignments",
+        f"/runs/{run_obj.id}/role-assignments",
         json={
             "lane_node_id": "general",
             "role_name": "General",
@@ -1464,7 +1464,7 @@ async def test_assignment_operations_audit_logged(
 
     # Delete assignment
     resp = await client.delete(
-        f"/science/runs/{run_obj.id}/role-assignments/{assignment_id}",
+        f"/runs/{run_obj.id}/role-assignments/{assignment_id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -1516,7 +1516,7 @@ async def test_list_versions_returns_description(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/protocols/{protocol.id}/versions",
+        f"/protocols/{protocol.id}/versions",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -1546,21 +1546,21 @@ async def test_publish_draft_persists_description(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": {"nodes": [{"id": "n1"}], "edges": []}},
         headers=auth_headers,
     )
     assert resp.status_code == 200
 
     resp = await client.post(
-        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        f"/protocols/{protocol.id}/publish-draft?version_number=1",
         json={"description": "Switched buffer from PBS to TBS"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
 
     resp = await client.get(
-        f"/science/protocols/{protocol.id}/versions/1",
+        f"/protocols/{protocol.id}/versions/1",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -1586,21 +1586,21 @@ async def test_publish_draft_persists_change_summary(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": {"nodes": [{"id": "n1"}], "edges": []}},
         headers=auth_headers,
     )
     assert resp.status_code == 200
 
     resp = await client.post(
-        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        f"/protocols/{protocol.id}/publish-draft?version_number=1",
         json={"change_summary": "DO range tightened"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
 
     resp = await client.get(
-        f"/science/protocols/{protocol.id}/versions/1",
+        f"/protocols/{protocol.id}/versions/1",
         headers=auth_headers,
     )
     assert resp.json()["change_summary"] == "DO range tightened"
@@ -1626,14 +1626,14 @@ async def test_publish_draft_without_body_still_works(
     await db_session.flush()
 
     resp = await client.put(
-        f"/science/protocols/{protocol.id}?save_as_draft=true",
+        f"/protocols/{protocol.id}?save_as_draft=true",
         json={"graph": {"nodes": [{"id": "n1"}], "edges": []}},
         headers=auth_headers,
     )
     assert resp.status_code == 200
 
     resp = await client.post(
-        f"/science/protocols/{protocol.id}/publish-draft?version_number=1",
+        f"/protocols/{protocol.id}/publish-draft?version_number=1",
         headers=auth_headers,
     )
     assert resp.status_code == 200

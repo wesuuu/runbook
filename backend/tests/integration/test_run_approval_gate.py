@@ -78,7 +78,7 @@ async def test_run_create_blocked_when_protocol_not_approved(
         db_session, test_project, status="DRAFT", requires_approval=True
     )
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run blocked",
             "project_id": str(test_project.id),
@@ -108,7 +108,7 @@ async def test_run_create_snapshots_is_strict_from_protocol(
         db_session, test_project, status="APPROVED", requires_approval=True
     )
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run strict",
             "project_id": str(test_project.id),
@@ -134,7 +134,7 @@ async def test_run_create_allowed_when_setting_off(
         db_session, test_project, status="DRAFT", requires_approval=True
     )
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run setting off",
             "project_id": str(test_project.id),
@@ -160,7 +160,7 @@ async def test_run_create_allowed_when_protocol_not_designated(
         db_session, test_project, status="DRAFT", requires_approval=False
     )
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         json={
             "name": "Run not designated",
             "project_id": str(test_project.id),

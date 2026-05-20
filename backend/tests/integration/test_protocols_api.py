@@ -30,7 +30,7 @@ async def test_delete_sample_protocol_hard_deletes(
     protocol_id = proto.id
 
     resp = await client.delete(
-        f"/science/protocols/{protocol_id}",
+        f"/protocols/{protocol_id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200, resp.text

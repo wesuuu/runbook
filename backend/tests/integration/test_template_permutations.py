@@ -164,7 +164,7 @@ async def test_p1_endpoint_renders_batch_record_pdf(
     client, db_session, test_user, test_org, test_project, auth_headers
 ):
     """End-to-end: a real Protocol row + the system BR template renders
-    a PDF through ``/science/protocols/{id}/pdf/batch-record`` with no
+    a PDF through ``/protocols/{id}/pdf/batch-record`` with no
     leaked Jinja tokens.
 
     Persists a Protocol carrying P1's kitchen-sink metadata and graph;
@@ -213,7 +213,7 @@ async def test_p1_endpoint_renders_batch_record_pdf(
         return_value=str(BR_PATH),
     ):
         resp = await client.get(
-            f"/science/protocols/{protocol.id}/pdf/batch-record",
+            f"/protocols/{protocol.id}/pdf/batch-record",
             headers=auth_headers,
         )
 
