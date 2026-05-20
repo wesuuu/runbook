@@ -13,10 +13,11 @@ Activation commit message convention (grep-able):
     feat(legal): activate ToS/Privacy version <date>
 """
 
-CURRENT_VERSION = "2026-04-27"
+CURRENT_VERSION = "2026-05-19"
 
 ALL_VERSIONS = [
     "2026-04-27",
+    "2026-05-19",
 ]
 
 assert (
