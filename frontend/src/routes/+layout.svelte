@@ -31,9 +31,11 @@
     let { children } = $props();
 
     function shouldHideChatIcon(path: string): boolean {
-        return /^\/protocols\/[^/]+$/.test(path) ||
-               /^\/runs\/[^/]+$/.test(path) ||
-               /^\/library\/[^/]+$/.test(path) ||
+        // Detail pages are now org-prefixed: /[org]/protocols/[slug],
+        // /[org]/projects/[projectSlug]/runs/[slug], /[org]/library/[slug].
+        return /^\/[^/]+\/protocols\/[^/]+$/.test(path) ||
+               /^\/[^/]+\/projects\/[^/]+\/runs\/[^/]+$/.test(path) ||
+               /^\/[^/]+\/library\/[^/]+$/.test(path) ||
                path.startsWith('/chat') ||
                path === '/export';
     }
@@ -56,7 +58,7 @@
     // markup never invokes the throwing path builder pre-auth.
     const libraryHref = $derived(currentOrg ? paths.library() : '');
     const isFullBleed = $derived(
-        ($page?.url?.pathname ?? '').startsWith('/protocols/') ||
+        /^\/[^/]+\/protocols\//.test($page?.url?.pathname ?? '') ||
         ($page?.url?.pathname ?? '').startsWith('/export') ||
         ($page?.url?.pathname ?? '').startsWith('/chat') ||
         isFieldMode
@@ -187,7 +189,7 @@
                     </a>
                     <a
                         href={libraryHref}
-                        class="hidden md:block relative py-1 transition-colors {$page.url.pathname.startsWith('/library') ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
+                        class="hidden md:block relative py-1 transition-colors {/^\/[^/]+\/library/.test($page.url.pathname) ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
                     >
                         Library
                     </a>
