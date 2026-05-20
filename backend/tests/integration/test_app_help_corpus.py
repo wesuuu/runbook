@@ -48,11 +48,9 @@ async def test_real_corpus_pages_are_readable_and_non_empty():
     """Every listed page reads back with a non-empty body."""
     listing = await app_help_tools.list_user_guide_pages(_ctx())
     for page in listing.pages:
-        read = await app_help_tools.read_user_guide_page(
-            _ctx(), page.filename
-        )
+        read = await app_help_tools.read_user_guide_page(_ctx(), page.filename)
         assert read.error is None, f"{page.filename}: {read.error}"
         assert len(read.content) > 50, f"{page.filename} body too short"
-        assert read.content.startswith("#"), (
-            f"{page.filename} body should start with a heading"
-        )
+        assert read.content.startswith(
+            "#"
+        ), f"{page.filename} body should start with a heading"
