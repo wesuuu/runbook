@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import html
 import re
+import urllib.parse
+
+import httpx
 
 from app.services.ai.subagents.protocol_knowledgebase.licenses import classify_license
 from app.services.ai.subagents.protocol_knowledgebase.types import (
     ExternalProtocolPayload,
     ExternalProtocolStep,
+    ProtocolsIoHit,
+    ProtocolsIoSearchResult,
 )
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -91,3 +96,108 @@ def parse_protocols_io_json(
         import_allowed=True,
         license_note=verdict.reason,
     )
+
+
+_PROTOCOLS_IO_HOSTS = {"protocols.io", "www.protocols.io"}
+_SEARCH_URL = "https://www.protocols.io/api/v3/protocols"
+_DETAIL_URL = "https://www.protocols.io/api/v4/protocols"
+
+
+def require_protocols_io_url(url: str) -> None:
+    """Raise ValueError unless ``url`` is hosted on protocols.io."""
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+    except Exception as exc:  # noqa: BLE001 — malformed URL → caller-facing error
+        raise ValueError(f"Invalid URL: {url}") from exc
+    if host not in _PROTOCOLS_IO_HOSTS:
+        raise ValueError(f"URL must be on protocols.io (got {host!r}).")
+
+
+def _protocol_id_from_url(url: str) -> str:
+    """``…/view/<slug>`` → ``<slug>`` (v4 detail accepts the slug as id)."""
+    parts = [p for p in urllib.parse.urlparse(url).path.split("/") if p]
+    if "view" in parts:
+        i = parts.index("view")
+        if i + 1 < len(parts):
+            return parts[i + 1]
+    return parts[-1] if parts else ""
+
+
+async def search_protocols_io(
+    query: str, *, access_token: str, limit: int, timeout: float
+) -> ProtocolsIoSearchResult:
+    """Search public protocols.io protocols matching a free-text query."""
+    limit = max(1, min(int(limit), 10))
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = {"filter": "public", "key": query, "page_size": str(limit)}
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            _SEARCH_URL, params=params, headers=headers, timeout=timeout
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    raw = data.get("items") or []
+    hits = [
+        ProtocolsIoHit(
+            id=str(it.get("id") or ""),
+            title=(it.get("title") or "").strip(),
+            url=(it.get("url") or "").strip(),
+            snippet=_clean_html(it.get("description") or "")[:280],
+        )
+        for it in raw
+        if it.get("id") and it.get("title") and it.get("url")
+    ]
+    if not hits:
+        return ProtocolsIoSearchResult(
+            total=0, message="No protocols.io protocols match this query."
+        )
+    return ProtocolsIoSearchResult(total=len(hits), hits=hits)
+
+
+async def fetch_protocols_io(
+    url: str, *, access_token: str, timeout: float
+) -> ExternalProtocolPayload:
+    """Fetch one protocols.io protocol and parse it into a payload.
+
+    Has its own terminal logic — a license-restricted protocol legitimately
+    parses to ``steps=[]`` with ``import_allowed=False`` and ``error=None``;
+    only an *import-safe* protocol that parsed 0 steps is a stub (error set).
+    """
+    require_protocols_io_url(url)
+    protocol_id = _protocol_id_from_url(url)
+    if not protocol_id:
+        return ExternalProtocolPayload(
+            title="",
+            source_url=url,
+            summary="",
+            error="could not extract a protocol id from the URL. Skip it.",
+        )
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{_DETAIL_URL}/{protocol_id}", headers=headers, timeout=timeout
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    # protocols.io wraps responses with a status_code (0/absent = success).
+    status = data.get("status_code")
+    if status not in (None, 0):
+        info = data.get("error_message") or f"status {status}"
+        return ExternalProtocolPayload(
+            title="",
+            source_url=url,
+            summary="",
+            error=f"protocols.io fetch failed: {info}. Skip and try another URL.",
+        )
+
+    payload = parse_protocols_io_json(data, url)
+    # The 0-steps stub guard applies ONLY to an import-safe protocol — a
+    # restricted protocol's empty steps are intentional, not a stub.
+    if payload.import_allowed and not payload.steps:
+        payload.error = (
+            "parsed to 0 steps (stub or non-protocol page). "
+            "Skip and try another URL."
+        )
+    return payload
