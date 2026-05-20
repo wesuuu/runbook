@@ -27,6 +27,7 @@ restart; editing corpus `.md` files does not.)
 ## Pages
 
 - `getting-started.md` — What Batchrite is and how to navigate the app.
+- `feature-availability.md` — What Batchrite supports today, and features that are not available (voice input, offline mode).
 - `protocols-and-editor.md` — Creating, editing, validating, and publishing protocols.
 - `experiments-and-runs.md` — Planning, executing, completing, and recording deviations in runs.
 - `library-and-documents.md` — Uploading documents to the library and searching them via the chat assistant.
@@ -38,6 +39,10 @@ restart; editing corpus `.md` files does not.)
 - `billing.md` — Subscription plans, billing settings, managing your plan, and opening the billing portal.
 
 ## Excluded (not shipped on production defaults)
+
+These features get no how-to pages. Where users are likely to ask whether
+they exist, `feature-availability.md` states plainly that they are not
+available — so the subagent answers honestly instead of hallucinating.
 
 - Offline / PWA mode — flag-gated off (`features.offline_mode`).
 - External protocols / OpenWetWare — flag-gated off (`features.external_protocols`).
