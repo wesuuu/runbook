@@ -65,6 +65,7 @@ from app.services.documents.refinement.refinement_service import (
     save_markdown,
 )
 from app.services.protocols.url_importer import import_from_url
+from app.services.slugs import assign_slug_or_422
 
 router = APIRouter()
 
@@ -202,12 +203,19 @@ async def upload_document(
         max_size_bytes=MAX_DOCUMENT_SIZE_BYTES,
     )
 
+    # Assign an org-unique slug derived from the title (assigned once at
+    # upload; documents are never re-slugged).
+    doc_slug = await assign_slug_or_422(
+        db, Document, Document.org_id, org_id, title, "document"
+    )
+
     # Create document record
     doc = Document(
         org_id=org_id,
         project_id=project_id,
         uploaded_by_id=current_user.id,
         title=title,
+        slug=doc_slug,
         original_filename=original_filename,
         mime_type=mime_type,
         file_size_bytes=stored.size_bytes,
@@ -304,6 +312,28 @@ async def list_documents(
 
 
 @router.get(
+    "/documents/by-slug/{slug}",
+    response_model=DocumentDetailResponse,
+)
+async def get_document_by_slug(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Look up a library document by slug within the current organization."""
+    result = await db.execute(
+        select(Document.id).where(
+            Document.org_id == current_user.selected_org_id,
+            Document.slug == slug,
+        )
+    )
+    document_id = result.scalar_one_or_none()
+    if document_id is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return await get_document(document_id=document_id, db=db, current_user=current_user)
+
+
+@router.get(
     "/documents/{document_id}",
     response_model=DocumentDetailResponse,
 )
@@ -373,6 +403,7 @@ async def get_document(
         project_id=doc.project_id,
         uploaded_by_id=doc.uploaded_by_id,
         title=doc.title,
+        slug=doc.slug,
         original_filename=doc.original_filename,
         mime_type=doc.mime_type,
         file_size_bytes=doc.file_size_bytes,

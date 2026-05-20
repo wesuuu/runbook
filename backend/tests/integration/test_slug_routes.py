@@ -1,6 +1,28 @@
 """Integration tests for F-0091 slug assignment and by-slug lookup."""
 
+import io
+from unittest.mock import patch
+
 import pytest
+
+# Minimal valid PDF payload — text/plain is no longer an allowed document
+# type (TD-0085), so document upload tests use a PDF with real magic bytes.
+_PDF_CONTENT = b"%PDF-1.4\n%minimal\n"
+
+
+@pytest.fixture
+def mock_document_processor():
+    """Stub the background handler so document uploads don't spawn jobs."""
+
+    class _FakeHandler:
+        async def launch(self, job, **kwargs):
+            pass
+
+    with patch(
+        "app.api.endpoints.library.get_background_handler",
+        return_value=_FakeHandler(),
+    ):
+        yield
 
 
 @pytest.mark.asyncio
@@ -299,5 +321,52 @@ async def test_experiment_rename_reslugs(client, auth_headers):
     resp = await client.get(
         "/experiments/by-slug/cho-line/passage-4", headers=auth_headers
     )
+    assert resp.status_code == 200
+    assert resp.json()["id"] == created["id"]
+
+
+@pytest.mark.asyncio
+async def test_upload_document_assigns_slug(
+    client, auth_headers, mock_document_processor
+):
+    resp = await client.post(
+        "/library/documents",
+        data={"title": "SOP Aseptic Technique"},
+        files={"file": ("sop.pdf", io.BytesIO(_PDF_CONTENT), "application/pdf")},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["slug"] == "sop-aseptic-technique"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_document_title_is_rejected(
+    client, auth_headers, mock_document_processor
+):
+    def _upload():
+        return client.post(
+            "/library/documents",
+            data={"title": "SOP One"},
+            files={"file": ("sop.pdf", io.BytesIO(_PDF_CONTENT), "application/pdf")},
+            headers=auth_headers,
+        )
+
+    assert (await _upload()).status_code == 201
+    dup = await _upload()
+    assert dup.status_code == 422
+    assert dup.json()["detail"]["code"] == "SLUG_CONFLICT"
+
+
+@pytest.mark.asyncio
+async def test_get_document_by_slug(client, auth_headers, mock_document_processor):
+    created = (
+        await client.post(
+            "/library/documents",
+            data={"title": "SOP One"},
+            files={"file": ("sop.pdf", io.BytesIO(_PDF_CONTENT), "application/pdf")},
+            headers=auth_headers,
+        )
+    ).json()
+    resp = await client.get("/library/documents/by-slug/sop-one", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["id"] == created["id"]

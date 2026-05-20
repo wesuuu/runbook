@@ -11,6 +11,7 @@ class DocumentResponse(BaseModel):
     project_id: Optional[UUID] = None
     uploaded_by_id: UUID
     title: str
+    slug: str
     original_filename: str
     mime_type: str
     file_size_bytes: int
