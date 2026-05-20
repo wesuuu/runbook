@@ -29,7 +29,7 @@
         goto('/login');
     }
 
-    function handleSwitchOrg(org: { id: string; name: string; created_at: string; updated_at: string; subscription_tier: string }) {
+    function handleSwitchOrg(org: { id: string; name: string; slug: string; created_at: string; updated_at: string; subscription_tier: string }) {
         switchOrg(org);
         // Reload current page to reflect new org context
         window.location.reload();

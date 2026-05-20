@@ -41,6 +41,8 @@ export const RunAttachmentListSchema = z.object({
 export const RunSchema = z.object({
     id: z.string(),
     project_id: z.string(),
+    project_slug: z.string(),
+    slug: z.string(),
     protocol_id: z.string().nullable().optional(),
     name: z.string(),
     status: RunStatusEnum.default('PLANNED'),

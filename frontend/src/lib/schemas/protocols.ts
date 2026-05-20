@@ -15,6 +15,7 @@ export type ProtocolRole = z.infer<typeof ProtocolRoleSchema>;
 export const ProtocolSchema = z.object({
     id: z.string(),
     project_id: z.string(),
+    slug: z.string(),
     name: z.string(),
     description: z.string().nullable().optional(),
     status: z.string().default('DRAFT'),

@@ -24,6 +24,8 @@ export const ExperimentNoteListSchema = z.object({
 export const ExperimentSchema = z.object({
     id: z.string().uuid(),
     project_id: z.string().uuid(),
+    project_slug: z.string(),
+    slug: z.string(),
     name: z.string(),
     description: z.string().nullable().optional(),
     content: z.record(z.string(), z.unknown()).default({}),

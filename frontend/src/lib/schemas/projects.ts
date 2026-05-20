@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const ProjectSchema = z.object({
     id: z.string(),
+    slug: z.string(),
     name: z.string(),
     description: z.string().nullable().optional(),
     organization_id: z.string(),
