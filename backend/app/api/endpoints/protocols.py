@@ -59,7 +59,7 @@ from app.services.protocols.lookup import get_protocol_full, list_protocols
 from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
 from app.services.signoffs.queries import list_active_signoffs
 from app.services.signoffs.service import create_signoff
-from app.services.slugs import assign_slug
+from app.services.slugs import assign_slug, slug_conflict_error
 
 logger = logging.getLogger(__name__)
 
@@ -70,23 +70,6 @@ router = APIRouter()
 # outright rejected. Anything outside this set is allowed to flow
 # through unchanged.
 APPROVED_EDIT_FIELDS = {"name", "description", "graph"}
-
-
-def _slug_conflict_error(name: str | None = None) -> HTTPException:
-    """Build the consistent 422 raised when a protocol name collides.
-
-    F-0091: protocol slugs are unique per owning org, so a duplicate name
-    surfaces as ``SLUG_CONFLICT`` from ``assign_slug``. Callers convert it
-    into this HTTP error at every create/rename site.
-    """
-    if name:
-        message = f"A protocol named '{name}' already exists in this organization."
-    else:
-        message = "A protocol with that name already exists in this organization."
-    return HTTPException(
-        status_code=422,
-        detail={"code": "SLUG_CONFLICT", "message": message},
-    )
 
 
 # --- Protocols ---
@@ -193,7 +176,7 @@ async def create_protocol(
         )
     except ValueError as exc:
         if str(exc) == "SLUG_CONFLICT":
-            raise _slug_conflict_error(new_protocol.name)
+            raise slug_conflict_error("protocol", new_protocol.name)
         raise
     db.add(new_protocol)
     await db.flush()
@@ -906,7 +889,7 @@ async def update_protocol(
         except ValueError as e:
             msg = str(e)
             if msg == "SLUG_CONFLICT":
-                raise _slug_conflict_error(changes.get("name"))
+                raise slug_conflict_error("protocol", changes.get("name"))
             if "published" in msg:
                 raise HTTPException(status_code=409, detail=msg)
             raise HTTPException(status_code=403, detail=msg)
@@ -1032,7 +1015,7 @@ async def update_protocol(
                     )
                 except ValueError as exc:
                     if str(exc) == "SLUG_CONFLICT":
-                        raise _slug_conflict_error(value)
+                        raise slug_conflict_error("protocol", value)
                     raise
             setattr(protocol, key, value)
 

@@ -5,13 +5,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 
-class ProjectBase(BaseModel):
+class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    organization_id: UUID
-
-
-class ProjectCreate(ProjectBase):
+    # Optional: defaults to the caller's selected org when omitted.
+    organization_id: Optional[UUID] = None
     owner_type: Optional[str] = None
     owner_id: Optional[UUID] = None
 
@@ -22,8 +20,12 @@ class ProjectUpdate(BaseModel):
     settings: Optional[Dict[str, Any]] = None
 
 
-class ProjectResponse(ProjectBase):
+class ProjectResponse(BaseModel):
     id: UUID
+    name: str
+    description: Optional[str] = None
+    organization_id: UUID
+    slug: str
     owner_type: Optional[str] = None
     owner_id: Optional[UUID] = None
     settings: Dict[str, Any] = {}

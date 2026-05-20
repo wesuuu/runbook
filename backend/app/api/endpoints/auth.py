@@ -235,14 +235,17 @@ async def register(
 
     # Seed "My First Project" for onboarding (F-0015)
     from app.models.projects import Project
+    from app.services.slugs import assign_slug
 
-    db.add(
-        Project(
-            name="My First Project",
-            description="Created for you — rename or delete as you like.",
-            organization_id=org.id,
-        )
+    first_project = Project(
+        name="My First Project",
+        description="Created for you — rename or delete as you like.",
+        organization_id=org.id,
     )
+    first_project.slug = await assign_slug(
+        db, Project, Project.organization_id, org.id, first_project.name
+    )
+    db.add(first_project)
 
     # Create verification token
     token_str = generate_verification_token()

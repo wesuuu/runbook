@@ -139,6 +139,9 @@ async def find_or_create_sample_project(
         description="Seeded by the onboarding tour.",
         organization_id=org.id,
     )
+    project.slug = await assign_slug(
+        db, Project, Project.organization_id, org.id, project.name
+    )
     db.add(project)
     await db.commit()
     await db.refresh(project)

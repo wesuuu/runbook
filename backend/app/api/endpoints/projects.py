@@ -39,6 +39,7 @@ from app.schemas.project import (
 )
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission, get_visible_project_ids
+from app.services.slugs import assign_slug, slug_conflict_error
 
 router = APIRouter()
 
@@ -50,11 +51,22 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
 ):
+    # Default the org to the caller's selected org when not supplied.
+    organization_id = project.organization_id or user.selected_org_id
+    if organization_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "ORGANIZATION_REQUIRED",
+                "message": "An organization_id is required to create a project.",
+            },
+        )
+
     # Verify user is org member
     result = await db.execute(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user.id,
-            OrganizationMember.organization_id == project.organization_id,
+            OrganizationMember.organization_id == organization_id,
         )
     )
     if result.scalar_one_or_none() is None:
@@ -70,10 +82,22 @@ async def create_project(
     db_project = Project(
         name=project.name,
         description=project.description,
-        organization_id=project.organization_id,
+        organization_id=organization_id,
         owner_type=owner_type,
         owner_id=owner_id,
     )
+    try:
+        db_project.slug = await assign_slug(
+            db,
+            Project,
+            Project.organization_id,
+            organization_id,
+            db_project.name,
+        )
+    except ValueError as exc:
+        if str(exc) == "SLUG_CONFLICT":
+            raise slug_conflict_error("project", db_project.name)
+        raise
     db.add(db_project)
     await db.flush()
 
@@ -117,6 +141,30 @@ async def list_projects(
         select(Project).where(Project.id.in_(visible_ids)).offset(skip).limit(limit)
     )
     return result.scalars().all()
+
+
+@router.get("/by-slug/{slug}", response_model=ProjectResponse)
+async def get_project_by_slug(
+    slug: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Look up a project by slug within the caller's current organization."""
+    result = await db.execute(
+        select(Project).where(
+            Project.organization_id == user.selected_org_id,
+            Project.slug == slug,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, project.id, PermissionLevel.VIEW
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return project
 
 
 @router.get(
@@ -171,6 +219,21 @@ async def update_project(
                 status_code=403,
                 detail="ADMIN permission required to update settings",
             )
+
+    if "name" in changes and changes["name"] != project.name:
+        try:
+            project.slug = await assign_slug(
+                db,
+                Project,
+                Project.organization_id,
+                project.organization_id,
+                changes["name"],
+                exclude_id=project.id,
+            )
+        except ValueError as exc:
+            if str(exc) == "SLUG_CONFLICT":
+                raise slug_conflict_error("project", changes["name"])
+            raise
 
     for key, value in changes.items():
         setattr(project, key, value)

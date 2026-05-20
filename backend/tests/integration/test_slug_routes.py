@@ -63,3 +63,44 @@ async def test_protocol_rename_reslugs(client, auth_headers, test_org):
     assert (
         await client.get("/protocols/by-slug/wash-buffer", headers=auth_headers)
     ).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_create_project_assigns_slug(client, auth_headers):
+    resp = await client.post(
+        "/projects/", json={"name": "CHO Cell Line Dev"}, headers=auth_headers
+    )
+    assert resp.status_code == 201
+    assert resp.json()["slug"] == "cho-cell-line-dev"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_project_name_is_rejected(client, auth_headers):
+    await client.post("/projects/", json={"name": "CHO Line"}, headers=auth_headers)
+    dup = await client.post(
+        "/projects/", json={"name": "cho  line"}, headers=auth_headers
+    )
+    assert dup.status_code == 422
+    assert dup.json()["detail"]["code"] == "SLUG_CONFLICT"
+
+
+@pytest.mark.asyncio
+async def test_get_project_by_slug(client, auth_headers):
+    created = await client.post(
+        "/projects/", json={"name": "CHO Line"}, headers=auth_headers
+    )
+    resp = await client.get("/projects/by-slug/cho-line", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == created.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_project_rename_reslugs(client, auth_headers):
+    created = await client.post(
+        "/projects/", json={"name": "CHO Line"}, headers=auth_headers
+    )
+    pid = created.json()["id"]
+    renamed = await client.put(
+        f"/projects/{pid}", json={"name": "HEK Line"}, headers=auth_headers
+    )
+    assert renamed.json()["slug"] == "hek-line"

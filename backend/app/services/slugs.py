@@ -3,6 +3,7 @@
 import secrets
 from typing import Optional
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,3 +34,22 @@ async def assign_slug(
     if (await db.execute(stmt)).first() is not None:
         raise ValueError("SLUG_CONFLICT")
     return base
+
+
+def slug_conflict_error(entity_label: str, name: str | None = None) -> HTTPException:
+    """Build the standard HTTP 422 for a slug-uniqueness collision.
+
+    entity_label is the lowercase singular noun ("protocol", "project", ...).
+    """
+    if name:
+        message = (
+            f"A {entity_label} named '{name}' already exists in this organization."
+        )
+    else:
+        message = (
+            f"A {entity_label} with that name already exists in this organization."
+        )
+    return HTTPException(
+        status_code=422,
+        detail={"code": "SLUG_CONFLICT", "message": message},
+    )
