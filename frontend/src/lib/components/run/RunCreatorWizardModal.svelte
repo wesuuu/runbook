@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { getCurrentOrg } from '$lib/auth.svelte';
     import { Button } from '$lib/components/ui/button';
     import FullScreenModal from '$lib/components/ui/FullScreenModal.svelte';
@@ -377,11 +378,14 @@
             if (protocolVersionNumber) payload.protocol_version_number = protocolVersionNumber;
             const overrides = buildOverridesPayload(edits, currentGraph);
             if (overrides) payload.overrides = overrides;
-            const newRun = await api.post<{ id: string }>('/runs', payload);
+            const newRun = await api.post<{ id: string; slug: string; project_slug: string }>(
+                '/runs',
+                payload,
+            );
             await persistAssignments(newRun.id);
             onCreated?.(newRun);
             open = false;
-            goto(`/runs/${newRun.id}`);
+            goto(paths.run(newRun.project_slug, newRun.slug));
         } catch (e) {
             createError = e instanceof Error ? e.message : 'Failed to create run';
         } finally {

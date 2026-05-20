@@ -18,6 +18,7 @@
     import { toast } from 'svelte-sonner';
     import { getCurrentOrg } from '$lib/auth.svelte';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import {
         getChatSessions, getActiveSession, getMessageInput, isSending,
         isLoading, isCreatingSession, isSidebarCollapsed, isSourcePanelOpen,
@@ -565,7 +566,7 @@
 <!-- IMPORT PROTOCOL MODAL -->
 <ProtocolImportModal
     bind:open={showImportModal}
-    onSuccess={(protocolId) => goto(`/protocols/${protocolId}`)}
+    onSuccess={(protocolSlug) => goto(paths.protocol(protocolSlug))}
 />
 
 <style>

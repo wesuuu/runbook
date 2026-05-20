@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { Button } from '$lib/components/ui/button';
     import { Badge } from '$lib/components/ui/badge';
     import { Input } from '$lib/components/ui/input';
@@ -29,6 +30,7 @@
     // --- Schemas ---
     const DocumentItemSchema = z.object({
         id: z.string(),
+        slug: z.string(),
         title: z.string(),
         original_filename: z.string(),
         mime_type: z.string(),
@@ -297,7 +299,7 @@
                     <!-- Mobile card layout -->
                     <div class="sm:hidden divide-y divide-border">
                         {#each documents as doc (doc.id)}
-                            <a href="/library/{doc.id}" class="block py-3 px-1 min-h-11" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
+                            <a href={paths.libraryDoc(doc.slug)} class="block py-3 px-1 min-h-11" animate:flip={{ duration: listDuration() }} in:fade={{ duration: listDuration() }}>
                                 <div class="flex items-center gap-2">
                                     <span class="font-semibold text-sm text-primary">{doc.title}</span>
                                     <IndexingStatusBadge document={doc} verbose />
@@ -331,7 +333,7 @@
                                     <Table.Row>
                                         <Table.Cell class="font-medium max-w-[300px] whitespace-normal break-words">
                                             <a
-                                                href="/library/{doc.id}"
+                                                href={paths.libraryDoc(doc.slug)}
                                                 class="font-semibold text-primary hover:underline"
                                             >
                                                 {doc.title}
@@ -351,11 +353,11 @@
                                         </Table.Cell>
                                         <Table.Cell class="text-right">
                                             {#if doc.status === 'AWAITING_REFINEMENT'}
-                                                <a href="/library/documents/{doc.id}/refine">
+                                                <a href={paths.libraryDocRefine(doc.slug)}>
                                                     <Button variant="outline" size="sm">Refine</Button>
                                                 </a>
                                             {:else}
-                                                <a href="/library/{doc.id}">
+                                                <a href={paths.libraryDoc(doc.slug)}>
                                                     <Button variant="ghost" size="sm">View</Button>
                                                 </a>
                                             {/if}

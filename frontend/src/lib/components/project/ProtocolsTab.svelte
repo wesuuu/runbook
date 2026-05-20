@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
+    import { paths } from "$lib/paths";
     import { hydrateTourState } from "$lib/onboarding/tourStore.svelte";
     import { shortId, formatDate, protocolStatusClasses, protocolStatusLabel } from "./projectUtils";
     import ProjectDataTable from "./ProjectDataTable.svelte";
@@ -95,10 +96,10 @@
     {columns}
     filterPlaceholder="Filter protocols..."
     {filterFn}
-    onRowClick={(proto) => goto(`/protocols/${proto.id}`)}
+    onRowClick={(proto) => goto(paths.protocol(proto.slug))}
 >
     {#snippet mobileCard(proto)}
-        <Button variant="ghost" class="w-full h-auto min-h-11 py-3 px-0 flex-col items-stretch justify-start text-left" onclick={() => goto(`/protocols/${proto.id}`)}>
+        <Button variant="ghost" class="w-full h-auto min-h-11 py-3 px-0 flex-col items-stretch justify-start text-left" onclick={() => goto(paths.protocol(proto.slug))}>
             <div class="flex items-center justify-between mb-1">
                 <span class="text-sm font-medium text-slate-800">
                     {proto.name}

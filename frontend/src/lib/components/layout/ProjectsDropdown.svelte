@@ -3,6 +3,7 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { getCurrentOrg } from '$lib/auth.svelte';
     import { getCurrentProjectId, setCurrentProjectId } from '$lib/project-context.svelte';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
@@ -11,6 +12,7 @@
 
     interface Project {
         id: string;
+        slug: string;
         name: string;
         description?: string;
     }
@@ -80,7 +82,7 @@
             <div class="px-3 py-4 text-center text-sm text-muted-foreground">No projects yet.</div>
         {:else}
             {#each projects as project}
-                <DropdownMenu.Item onclick={() => goto(`/projects/${project.id}`)}>
+                <DropdownMenu.Item onclick={() => goto(paths.project(project.slug))}>
                     <span class="flex items-center gap-2 w-full">
                         <FolderOpen class="h-4 w-4 shrink-0 text-muted-foreground" />
                         <span class="truncate">{project.name}</span>
@@ -89,10 +91,10 @@
             {/each}
         {/if}
         <DropdownMenu.Separator />
-        <DropdownMenu.Item onclick={() => goto('/projects')}>
+        <DropdownMenu.Item onclick={() => goto(paths.projects())}>
             <span class="text-muted-foreground">View All Projects</span>
         </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={() => goto('/projects/new')}>
+        <DropdownMenu.Item onclick={() => goto(paths.projects())}>
             <span class="flex items-center gap-2">
                 <Plus class="h-4 w-4" />
                 New Project

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
+    import { paths } from "$lib/paths";
     import { tick } from "svelte";
     import {
         formatDate,
@@ -76,7 +77,7 @@
 
     function selectExperiment(e: any) {
         if (selectedExperimentId === e.id) {
-            goto(`/experiments/${e.id}`);
+            goto(paths.experiment(e.project_slug, e.slug));
         } else {
             selectedExperimentId = e.id;
         }
@@ -187,7 +188,7 @@
         <div class="flex items-center gap-3 mb-3">
             <div class="h-px flex-1 bg-slate-200"></div>
             <a
-                href="/experiments/{selectedExperiment.id}"
+                href={paths.experiment(selectedExperiment.project_slug, selectedExperiment.slug)}
                 class="text-xs font-medium text-teal-600 uppercase tracking-wider hover:underline"
             >
                 {selectedExperiment.name} — Runs ({experimentRuns.length})

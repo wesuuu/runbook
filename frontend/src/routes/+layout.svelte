@@ -5,6 +5,7 @@
     import { goto } from '$app/navigation';
     import { ensureInitialized, isAuthenticated, isEmailVerified, isInitialized, isTosCurrent, getCurrentOrg, getUserPreferences, handleVerificationCallback } from '$lib/auth.svelte';
     import { decideRedirect, PUBLIC_ROUTES } from '$lib/auth-gate';
+    import { paths } from '$lib/paths';
     import { initConnectivity, destroyConnectivity } from '$lib/pwa.svelte';
     import { initFieldMode } from '$lib/field-mode.svelte';
     import { initSyncManager, destroySyncManager } from '$lib/sync-manager';
@@ -51,6 +52,9 @@
     const shouldShowChat = $derived(!shouldHideChatIcon($page?.url?.pathname ?? ''));
     const currentOrg = $derived(getCurrentOrg());
     const canShowFab = $derived(isOrgPro(currentOrg));
+    // Org-prefixed library URL; empty until an org is available so the nav
+    // markup never invokes the throwing path builder pre-auth.
+    const libraryHref = $derived(currentOrg ? paths.library() : '');
     const isFullBleed = $derived(
         ($page?.url?.pathname ?? '').startsWith('/protocols/') ||
         ($page?.url?.pathname ?? '').startsWith('/export') ||
@@ -182,7 +186,7 @@
                         Dashboard
                     </a>
                     <a
-                        href="/library"
+                        href={libraryHref}
                         class="hidden md:block relative py-1 transition-colors {$page.url.pathname.startsWith('/library') ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
                     >
                         Library

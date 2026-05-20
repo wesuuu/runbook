@@ -179,7 +179,7 @@
                 project_id: project.id,
                 description: "",
             });
-            goto(`/protocols/${newProto.id}`);
+            goto(paths.protocol(newProto.slug));
         } catch (e: unknown) {
             console.error(e instanceof Error ? e.message : e);
         }
@@ -197,7 +197,7 @@
             showExperimentModal = false;
             newExperimentName = "";
             newExperimentDescription = "";
-            goto(`/experiments/${newExp.id}`);
+            goto(paths.experiment(newExp.project_slug, newExp.slug));
         } catch (e: unknown) {
             console.error(e instanceof Error ? e.message : e);
         }
@@ -408,9 +408,9 @@
 <ProtocolImportModal
     bind:open={showImportModal}
     preselectedProjectId={id || undefined}
-    onSuccess={(protocolId) => {
+    onSuccess={(protocolSlug) => {
         loadData();
-        goto(`/protocols/${protocolId}`);
+        goto(paths.protocol(protocolSlug));
     }}
 />
 

@@ -882,7 +882,7 @@
                                 <p class="text-muted-foreground text-sm">{protocol.description}</p>
                             {/if}
                             <a
-                                href="/protocols/{protocol.id}"
+                                href={paths.protocol(protocol.slug)}
                                 class="inline-block text-sm text-primary hover:text-primary/80 font-medium mt-2"
                             >
                                 View protocol &rarr;

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
+    import { paths } from "$lib/paths";
     import { shortId, formatDate, statusClasses, statusLabel } from "./projectUtils";
     import ProjectDataTable from "./ProjectDataTable.svelte";
     import AssignToExperimentModal from "./AssignToExperimentModal.svelte";
@@ -29,6 +30,10 @@
 
     const experimentMap = $derived(
         new Map(experiments.map((e: any) => [e.id, e.name]))
+    );
+
+    const experimentById = $derived(
+        new Map(experiments.map((e: any) => [e.id, e]))
     );
 
     const protocolMap = $derived(
@@ -130,7 +135,7 @@
     {columns}
     filterPlaceholder="Filter runs..."
     {filterFn}
-    onRowClick={(r) => goto(`/runs/${r.id}`)}
+    onRowClick={(r) => goto(paths.run(r.project_slug, r.slug))}
     rowClass={(r) => selectedRunIds.has(r.id) ? 'bg-blue-50/50' : ''}
 >
     {#snippet toolbar()}
@@ -165,7 +170,7 @@
     {/snippet}
 
     {#snippet mobileCard(r)}
-        <Button variant="ghost" class="w-full h-auto min-h-11 py-3 px-0 flex-col items-stretch justify-start text-left" onclick={() => goto(`/runs/${r.id}`)}>
+        <Button variant="ghost" class="w-full h-auto min-h-11 py-3 px-0 flex-col items-stretch justify-start text-left" onclick={() => goto(paths.run(r.project_slug, r.slug))}>
             <div class="flex items-center justify-between mb-1">
                 <span class="text-sm font-medium text-slate-800">{r.name}</span>
                 <span class="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full {statusClasses(r.status)}">
@@ -189,13 +194,18 @@
         {#if !hideExperimentColumn}
             <td class="hidden md:table-cell py-3 px-4 text-sm text-slate-800 whitespace-nowrap">
                 {#if r.experiment_id}
-                    <a
-                        href="/experiments/{r.experiment_id}"
-                        class="text-teal-600 hover:underline"
-                        onclick={(e: MouseEvent) => e.stopPropagation()}
-                    >
-                        {r.experiment_name}
-                    </a>
+                    {@const exp = experimentById.get(r.experiment_id)}
+                    {#if exp}
+                        <a
+                            href={paths.experiment(exp.project_slug, exp.slug)}
+                            class="text-teal-600 hover:underline"
+                            onclick={(e: MouseEvent) => e.stopPropagation()}
+                        >
+                            {r.experiment_name}
+                        </a>
+                    {:else}
+                        <span>{r.experiment_name}</span>
+                    {/if}
                 {:else}
                     <Button
                         variant="outline"

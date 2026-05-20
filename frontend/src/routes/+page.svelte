@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { getCurrentOrg, getUser } from '$lib/auth.svelte';
     import { getOrphanedActions, type QueuedAction } from '$lib/offline-db';
     import { syncNow } from '$lib/sync-manager';
@@ -532,7 +533,7 @@
                             title="No runs yet"
                             description="Get started by creating a project and running a protocol."
                             actionLabel="View Projects"
-                            onAction={() => goto('/projects')}
+                            onAction={() => goto(paths.projects())}
                             secondaryActionLabel="Take the tour"
                             secondaryOnAction={() => (welcomeOpen = true)}
                             class="py-14"
