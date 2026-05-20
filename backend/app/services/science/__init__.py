@@ -1,3 +1,6 @@
-# DEPRECATED (TD-0083): the services/science/ package is being removed.
-# library_registry.py moves to services/protocols/; this package will be
-# deleted. Do NOT add new modules here.
+"""Transitional shim (TD-0083) — re-exports the moved library_registry.
+
+Deleted once all imports migrate to `app.services.protocols`.
+"""
+
+from app.services.protocols import library_registry  # noqa: F401
