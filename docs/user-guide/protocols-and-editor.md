@@ -41,8 +41,8 @@ Protocols live inside projects. There is no standalone protocols list.
 
 1. Resolve any validation errors shown in the banner at the top of the canvas. Common issues include branches where steps are not assigned to distinct roles.
 2. Click **Save Draft** in the sidebar footer to save your current work without publishing.
-3. When the protocol is ready for use, click **Publish**. A dialog asks for an optional description and change summary before confirming.
-4. Published protocols show a status of **Approved** and receive a version number (e.g. v1). They can be used to create runs immediately.
+3. When the protocol is ready for use, click **Publish** — or **Submit for Approval**, if your project requires protocols to be approved before use. A dialog asks for an optional description and change summary before confirming.
+4. Once published, the protocol shows as **Published** in the project's **Protocols** list and receives a version number (e.g. v1). It can be used to create runs immediately.
 
 ## How to edit a step
 
