@@ -12,7 +12,7 @@ from app.models.iam import (
     SubscriptionTier,
     User,
 )
-from app.models.science import Project
+from app.models.projects import Project
 
 
 async def _setup_locked_out_org(db_session, status: str = "canceled"):

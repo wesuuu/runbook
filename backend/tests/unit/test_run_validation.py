@@ -8,10 +8,13 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.services.runs.validation import (assert_can_edit_completed_run,
-                                          assert_can_reopen, assert_can_start,
-                                          assert_no_unjustified_edit_errors,
-                                          assert_run_can_close)
+from app.services.runs.validation import (
+    assert_can_edit_completed_run,
+    assert_can_reopen,
+    assert_can_start,
+    assert_no_unjustified_edit_errors,
+    assert_run_can_close,
+)
 
 # ---------------------------------------------------------------------------
 # assert_no_unjustified_edit_errors

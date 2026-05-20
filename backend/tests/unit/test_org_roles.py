@@ -1,4 +1,4 @@
-from app.models.iam import OrgRole, _ALLOWED_ORG_ROLES
+from app.models.iam import _ALLOWED_ORG_ROLES, OrgRole
 from app.schemas.iam import _LEGACY_ROLE_RANK
 
 

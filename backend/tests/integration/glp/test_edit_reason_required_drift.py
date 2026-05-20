@@ -13,7 +13,7 @@ from httpx import AsyncClient
 
 from app.core.security import create_access_token
 from app.models.iam import Organization
-from app.models.science import Run
+from app.models.runs import Run
 
 
 async def _auth_headers_for(operator_user, glp_org: Organization) -> dict:
@@ -32,13 +32,13 @@ async def test_edited_transition_missing_edit_reason_returns_400_with_stable_cod
     operator_user,
     glp_org,
 ) -> None:
-    """PATCH /science/runs/{id}/state with a step delta but no edit_reason
+    """PATCH /runs/{id}/state with a step delta but no edit_reason
     must return 400 with ``detail.error == 'EDIT_REASON_REQUIRED'``.
     """
     headers = await _auth_headers_for(operator_user, glp_org)
 
     res = await client.patch(
-        f"/science/runs/{glp_run_active.id}/state",
+        f"/runs/{glp_run_active.id}/state",
         headers=headers,
         json={
             "state": "EDITED",
@@ -64,7 +64,7 @@ async def test_edited_transition_blank_edit_reason_returns_400(
     headers = await _auth_headers_for(operator_user, glp_org)
 
     res = await client.patch(
-        f"/science/runs/{glp_run_active.id}/state",
+        f"/runs/{glp_run_active.id}/state",
         headers=headers,
         json={
             "state": "EDITED",
@@ -87,7 +87,7 @@ async def test_edited_transition_with_reason_succeeds(
     headers = await _auth_headers_for(operator_user, glp_org)
 
     res = await client.patch(
-        f"/science/runs/{glp_run_active.id}/state",
+        f"/runs/{glp_run_active.id}/state",
         headers=headers,
         json={
             "state": "EDITED",

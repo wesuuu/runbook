@@ -14,7 +14,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models.science import ProtocolRole, UnitOpDefinition
+from app.models.protocols import ProtocolRole, UnitOpDefinition
 
 # Visual-bbox defaults used by layout-quality rules. These mirror the
 # frontend node defaults (see protocolNodes.ts) and the lane-layout
@@ -842,8 +842,7 @@ def assert_graph_ready_for_glp_approval(
     Mirrors :func:`computeGlpApprovalBlockReason` on the frontend so the
     UX pre-flight and the server contract stay in sync.
     """
-    from fastapi import \
-        HTTPException  # noqa: PLC0415 — keep validation.py import-light
+    from fastapi import HTTPException  # noqa: PLC0415 — keep validation.py import-light
 
     nodes = list(graph.get("nodes", []))
     edges = list(graph.get("edges", []))
@@ -916,8 +915,7 @@ def assert_graph_ready_for_glp_approval(
         "multiple_process_starts",
     }
     blocking = [
-        i for i in result.issues
-        if i.severity == "error" and i.code in blocking_codes
+        i for i in result.issues if i.severity == "error" and i.code in blocking_codes
     ]
     if blocking:
         raise HTTPException(

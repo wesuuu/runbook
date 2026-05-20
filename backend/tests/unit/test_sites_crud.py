@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.models.science import Equipment
+from app.models.equipment import Equipment
 from app.schemas.sites import SiteArchiveRequest, SiteCreate, SiteUpdate
 from app.services.sites import crud
 

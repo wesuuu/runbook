@@ -19,7 +19,9 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project, Protocol, Run, RunStatus
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run, RunStatus
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 

@@ -8,8 +8,13 @@ from sqlalchemy.orm import selectinload
 
 from app.core.security import TokenPayload
 from app.db.session import get_db
-from app.models.iam import (TIER_RANK, ObjectType, PermissionLevel,
-                            SubscriptionTier, User)
+from app.models.iam import (
+    TIER_RANK,
+    ObjectType,
+    PermissionLevel,
+    SubscriptionTier,
+    User,
+)
 from app.services.core.permissions import check_permission
 
 T = TypeVar("T")

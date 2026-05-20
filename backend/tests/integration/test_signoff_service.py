@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.execution import AuditLog
 from app.models.iam import User
-from app.models.science import Run
+from app.models.runs import Run
 from app.services.core.file_storage import FileStorageService
 from app.services.signoffs.service import create_signoff
 

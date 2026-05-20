@@ -20,7 +20,9 @@ from app.models.iam import (
     has_any_org_role,
     has_org_role,
 )
-from app.models.science import Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
 from app.services.core.permissions import check_permission
 
 # --- Helpers ---

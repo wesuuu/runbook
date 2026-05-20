@@ -15,7 +15,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Equipment
+from app.models.equipment import Equipment
 
 logger = logging.getLogger(__name__)
 

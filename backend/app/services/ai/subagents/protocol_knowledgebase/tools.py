@@ -440,7 +440,9 @@ async def fetch_openwetware_protocol(
         wikitext=wikitext, displaytitle=displaytitle, source_url=url
     )
     if not payload.steps:
-        payload.error = "parsed to 0 steps (stub or non-protocol page). Skip and try another URL."
+        payload.error = (
+            "parsed to 0 steps (stub or non-protocol page). Skip and try another URL."
+        )
         return payload
 
     # Cache the canonical payload so the approval tool can read it directly

@@ -14,7 +14,8 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project, Protocol, ProtocolRole
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolRole
 from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
 
 

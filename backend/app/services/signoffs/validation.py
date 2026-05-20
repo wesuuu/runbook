@@ -21,7 +21,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import ObjectType, OrganizationMember, OrgRole, PermissionLevel
-from app.models.science import GlpSignoff, Project, Protocol, Run, RunRoleAssignment
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run, RunRoleAssignment
+from app.models.signoffs import GlpSignoff
 from app.services.core.permissions import check_permission
 
 
@@ -314,9 +317,7 @@ async def validate_signoff_role_assignable(
         # GLP designation grants signoff capability directly: a user designated
         # as Study Director or QAU on the protocol's glpSettings is authorized
         # to sign in that role regardless of project/org-role permissions.
-        designated = await _glp_user_designated_for_role(
-            db, protocol_id, user_id, role
-        )
+        designated = await _glp_user_designated_for_role(db, protocol_id, user_id, role)
         if designated:
             return
         obj_type = ObjectType.PROTOCOL

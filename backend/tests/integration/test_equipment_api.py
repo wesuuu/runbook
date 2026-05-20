@@ -370,7 +370,7 @@ async def test_delete_attachment_admin(
     sample_equipment_attachment,
 ):
     """ADMIN can delete an existing attachment; row is removed from DB."""
-    from app.models.science import EquipmentAttachment
+    from app.models.equipment import EquipmentAttachment
 
     att_id = str(sample_equipment_attachment.id)
     resp = await authed_admin_client.delete(f"/equipment/attachments/{att_id}")
@@ -401,7 +401,7 @@ async def test_delete_attachment_cross_org_returns_404(
     other_org_site,
 ):
     """Attachment belonging to another org → 404 (not 403)."""
-    from app.models.science import Equipment, EquipmentAttachment
+    from app.models.equipment import Equipment, EquipmentAttachment
 
     eq = Equipment(
         organization_id=second_org.id,

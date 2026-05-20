@@ -39,7 +39,7 @@ def test_snapshot_is_idempotent():
 
 
 def test_apply_value_overrides_merges_sparsely():
-    from app.schemas.science import NodeOverrides
+    from app.schemas.runs import NodeOverrides
     from app.services.runs.overrides import apply_node_overrides, snapshot_unit_op_node
 
     node = {
@@ -70,7 +70,7 @@ def test_apply_value_overrides_merges_sparsely():
 
 
 def test_apply_equipment_swap_emits_one_diff():
-    from app.schemas.science import NodeOverrides
+    from app.schemas.runs import NodeOverrides
     from app.services.runs.overrides import apply_node_overrides, snapshot_unit_op_node
 
     node = {
@@ -95,7 +95,7 @@ def test_apply_equipment_swap_emits_one_diff():
 
 
 def test_apply_paramSchema_replacement_emits_one_diff():
-    from app.schemas.science import NodeOverrides
+    from app.schemas.runs import NodeOverrides
     from app.services.runs.overrides import apply_node_overrides, snapshot_unit_op_node
 
     node = {
@@ -119,7 +119,7 @@ def test_apply_paramSchema_replacement_emits_one_diff():
 
 
 def test_apply_description_override_emits_one_diff():
-    from app.schemas.science import NodeOverrides
+    from app.schemas.runs import NodeOverrides
     from app.services.runs.overrides import apply_node_overrides, snapshot_unit_op_node
 
     node = {
@@ -141,7 +141,7 @@ def test_apply_description_override_emits_one_diff():
 
 
 def test_apply_no_override_returns_no_diffs():
-    from app.schemas.science import NodeOverrides
+    from app.schemas.runs import NodeOverrides
     from app.services.runs.overrides import apply_node_overrides, snapshot_unit_op_node
 
     node = {"id": "n1", "data": {"label": "X", "params": {"a": 1}}}
@@ -153,7 +153,7 @@ def test_apply_no_override_returns_no_diffs():
 
 def test_apply_same_value_emits_no_diff():
     """If override equals current value, no audit entry should be produced."""
-    from app.schemas.science import NodeOverrides
+    from app.schemas.runs import NodeOverrides
     from app.services.runs.overrides import apply_node_overrides, snapshot_unit_op_node
 
     node = {

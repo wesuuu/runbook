@@ -36,7 +36,7 @@
     }
 
     function downloadEndpoint(att: RunAttachment) {
-        return `/science/runs/${runId}/attachments/${att.id}/download`;
+        return `/runs/${runId}/attachments/${att.id}/download`;
     }
 
     async function downloadFile(att: RunAttachment) {
@@ -86,7 +86,7 @@
         error = null;
         try {
             const att = await api.uploadFile<RunAttachment>(
-                `/science/runs/${runId}/attachments`,
+                `/runs/${runId}/attachments`,
                 file,
             );
             attachments = [...attachments, att];
@@ -100,7 +100,7 @@
 
     async function deleteAttachment(id: string) {
         try {
-            await api.delete(`/science/runs/${runId}/attachments/${id}`);
+            await api.delete(`/runs/${runId}/attachments/${id}`);
             attachments = attachments.map((a) =>
                 a.id === id ? { ...a, deleted: true } : a,
             );

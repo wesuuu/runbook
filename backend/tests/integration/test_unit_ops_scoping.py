@@ -17,7 +17,8 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project, UnitOpDefinition
+from app.models.projects import Project
+from app.models.protocols import UnitOpDefinition
 
 # --- Fixtures ---
 
@@ -106,7 +107,7 @@ async def other_org_unit_op(
     return op
 
 
-# --- GET /science/unit-ops (scoped listing) ---
+# --- GET /unit-ops (scoped listing) ---
 
 
 @pytest.mark.asyncio
@@ -116,7 +117,7 @@ async def test_list_returns_org_ops(
     org_unit_op: UnitOpDefinition,
 ):
     """Org-scoped ops for the user's org should be returned."""
-    resp = await client.get("/science/unit-ops", headers=auth_headers)
+    resp = await client.get("/unit-ops", headers=auth_headers)
     assert resp.status_code == 200
     names = [op["name"] for op in resp.json()]
     assert "Org Wash Step" in names
@@ -129,7 +130,7 @@ async def test_list_excludes_other_org_ops(
     other_org_unit_op: UnitOpDefinition,
 ):
     """Ops from other orgs should NOT be returned."""
-    resp = await client.get("/science/unit-ops", headers=auth_headers)
+    resp = await client.get("/unit-ops", headers=auth_headers)
     assert resp.status_code == 200
     names = [op["name"] for op in resp.json()]
     assert "Other Org Step" not in names
@@ -144,7 +145,7 @@ async def test_list_returns_project_ops_with_param(
 ):
     """Project-scoped ops should be returned when project_id is specified."""
     resp = await client.get(
-        f"/science/unit-ops?project_id={test_project.id}",
+        f"/unit-ops?project_id={test_project.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -159,7 +160,7 @@ async def test_list_excludes_project_ops_without_param(
     project_unit_op: UnitOpDefinition,
 ):
     """Project-scoped ops should NOT be returned without project_id param."""
-    resp = await client.get("/science/unit-ops", headers=auth_headers)
+    resp = await client.get("/unit-ops", headers=auth_headers)
     assert resp.status_code == 200
     names = [op["name"] for op in resp.json()]
     assert "Project Test Step" not in names
@@ -176,7 +177,7 @@ async def test_list_union_returns_all_scopes(
 ):
     """With project_id param, returns library ops + org + project, not other orgs."""
     resp = await client.get(
-        f"/science/unit-ops?project_id={test_project.id}",
+        f"/unit-ops?project_id={test_project.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -200,7 +201,7 @@ async def test_response_includes_scope_field(
 ):
     """Response should include computed scope field."""
     resp = await client.get(
-        f"/science/unit-ops?project_id={test_project.id}",
+        f"/unit-ops?project_id={test_project.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -210,7 +211,7 @@ async def test_response_includes_scope_field(
     assert ops["Project Test Step"]["scope"] == "project"
 
 
-# --- POST /science/unit-ops (create with scoping) ---
+# --- POST /unit-ops (create with scoping) ---
 
 
 @pytest.mark.asyncio
@@ -220,7 +221,7 @@ async def test_create_org_scoped_op_as_admin(
 ):
     """Org admin can create org-scoped ops (no project_id)."""
     resp = await client.post(
-        "/science/unit-ops",
+        "/unit-ops",
         json={"name": "New Org Op", "category": "General"},
         headers=auth_headers,
     )
@@ -266,7 +267,7 @@ async def test_create_org_scoped_op_as_member_forbidden(
     headers = {"Authorization": f"Bearer {token}"}
 
     resp = await client.post(
-        "/science/unit-ops",
+        "/unit-ops",
         json={"name": "Blocked Op", "category": "General"},
         headers=headers,
     )
@@ -281,7 +282,7 @@ async def test_create_project_scoped_op(
 ):
     """User with project EDIT permission can create project-scoped ops."""
     resp = await client.post(
-        "/science/unit-ops",
+        "/unit-ops",
         json={
             "name": "Project Step",
             "category": "Reaction",
@@ -306,7 +307,7 @@ async def test_create_global_op_forbidden(
     # Any create without project_id creates org-scoped, not global.
     # This test just confirms the response is org-scoped, not global.
     resp = await client.post(
-        "/science/unit-ops",
+        "/unit-ops",
         json={"name": "Would-Be Global", "category": "General"},
         headers=auth_headers,
     )
@@ -314,7 +315,7 @@ async def test_create_global_op_forbidden(
     assert resp.json()["scope"] == "organization"
 
 
-# --- PUT /science/unit-ops/{id} (edit with permissions) ---
+# --- PUT /unit-ops/{id} (edit with permissions) ---
 
 
 @pytest.mark.asyncio
@@ -325,7 +326,7 @@ async def test_update_org_op_as_admin(
 ):
     """Org admin can edit org-scoped ops."""
     resp = await client.put(
-        f"/science/unit-ops/{org_unit_op.id}",
+        f"/unit-ops/{org_unit_op.id}",
         json={"name": "Renamed Wash Step"},
         headers=auth_headers,
     )
@@ -341,7 +342,7 @@ async def test_update_other_org_op_forbidden(
 ):
     """Cannot edit ops belonging to another org."""
     resp = await client.put(
-        f"/science/unit-ops/{other_org_unit_op.id}",
+        f"/unit-ops/{other_org_unit_op.id}",
         json={"name": "Hacked"},
         headers=auth_headers,
     )
@@ -356,7 +357,7 @@ async def test_update_project_op_with_permission(
 ):
     """User with project EDIT permission can edit project-scoped ops."""
     resp = await client.put(
-        f"/science/unit-ops/{project_unit_op.id}",
+        f"/unit-ops/{project_unit_op.id}",
         json={"description": "Updated description"},
         headers=auth_headers,
     )
@@ -373,7 +374,7 @@ async def test_list_returns_subscribed_library_ops(
     auth_headers: dict,
 ):
     """An org subscribed to 'core' sees all 12 core ops."""
-    resp = await client.get("/science/unit-ops", headers=auth_headers)
+    resp = await client.get("/unit-ops", headers=auth_headers)
     assert resp.status_code == 200
     ops = resp.json()
     names = {op["name"] for op in ops}
@@ -396,7 +397,7 @@ async def test_list_excludes_unsubscribed_library_ops(
     from sqlalchemy import delete
 
     from app.core.security import create_access_token
-    from app.models.science import UnitOpLibrarySubscription
+    from app.models.protocols import UnitOpLibrarySubscription
 
     await db_session.execute(
         delete(UnitOpLibrarySubscription).where(
@@ -435,7 +436,7 @@ async def test_list_excludes_unsubscribed_library_ops(
     )
     headers = {"Authorization": f"Bearer {token}"}
 
-    resp = await client.get("/science/unit-ops", headers=headers)
+    resp = await client.get("/unit-ops", headers=headers)
     assert resp.status_code == 200
     assert resp.json() == []  # no library, no custom ops
 
@@ -451,13 +452,13 @@ async def test_put_on_library_op_creates_override(
     test_org,
 ):
     """PUT on a JSON op id inserts an override row in this org."""
-    from app.models.science import UnitOpDefinition
-    from app.services.science import library_registry
+    from app.models.protocols import UnitOpDefinition
+    from app.services.protocols import library_registry
 
     synth_id = library_registry.synthetic_uuid("core", "mixing")
 
     resp = await client.put(
-        f"/science/unit-ops/{synth_id}",
+        f"/unit-ops/{synth_id}",
         json={"name": "Custom Mixing"},
         headers=auth_headers,
     )
@@ -484,18 +485,18 @@ async def test_second_put_updates_existing_override(
 ):
     from sqlalchemy import func, select
 
-    from app.models.science import UnitOpDefinition
-    from app.services.science import library_registry
+    from app.models.protocols import UnitOpDefinition
+    from app.services.protocols import library_registry
 
     synth_id = library_registry.synthetic_uuid("core", "mixing")
 
     await client.put(
-        f"/science/unit-ops/{synth_id}",
+        f"/unit-ops/{synth_id}",
         json={"name": "First Rename"},
         headers=auth_headers,
     )
     await client.put(
-        f"/science/unit-ops/{synth_id}",
+        f"/unit-ops/{synth_id}",
         json={"name": "Second Rename"},
         headers=auth_headers,
     )
@@ -520,17 +521,17 @@ async def test_override_isolated_per_org(
     second_auth_headers,
 ):
     """An override in org A doesn't leak into org B's listing."""
-    from app.services.science import library_registry
+    from app.services.protocols import library_registry
 
     synth_id = library_registry.synthetic_uuid("core", "mixing")
 
     await client.put(
-        f"/science/unit-ops/{synth_id}",
+        f"/unit-ops/{synth_id}",
         json={"name": "Org-A Mixing"},
         headers=auth_headers,
     )
 
-    resp_b = await client.get("/science/unit-ops", headers=second_auth_headers)
+    resp_b = await client.get("/unit-ops", headers=second_auth_headers)
     assert resp_b.status_code == 200
     by_id = {op["id"]: op for op in resp_b.json()}
     # Org B still sees the original Mixing, not "Org-A Mixing"
@@ -546,7 +547,7 @@ async def test_put_on_unknown_uuid_returns_404(
 
     bogus = _uuid.uuid4()
     resp = await client.put(
-        f"/science/unit-ops/{bogus}",
+        f"/unit-ops/{bogus}",
         json={"name": "Whatever"},
         headers=auth_headers,
     )

@@ -29,10 +29,9 @@ from app.services.ai.workflows.document_extraction import (  # noqa: E402
     extract_pdf,
     render_html,
 )
-from app.services.ai.workflows.document_extraction.models import (  # noqa: E402
+from app.services.ai.workflows.document_extraction.models import (
     StructuredDoc,
-)
-
+)  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"

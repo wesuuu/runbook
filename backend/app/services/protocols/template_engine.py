@@ -15,11 +15,14 @@ from docx.shared import Mm, Pt
 from docxtpl import DocxTemplate, InlineImage, RichText
 
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
-from app.services.documents.pdf_base import (_build_param_sentence,
-                                             _format_value,
-                                             _get_editable_params,
-                                             _get_initials, _get_param_title,
-                                             _render_template)
+from app.services.documents.pdf_base import (
+    _build_param_sentence,
+    _format_value,
+    _get_editable_params,
+    _get_initials,
+    _get_param_title,
+    _render_template,
+)
 
 # ── Known template variables (for upload validation) ──
 
@@ -860,7 +863,7 @@ async def resolve_default_template_id(
     from sqlalchemy import select
 
     from app.models.iam import Organization
-    from app.models.science import Project
+    from app.models.projects import Project
     from app.models.templates import DocumentTemplate
 
     col_attr = (
@@ -921,8 +924,8 @@ async def assemble_signoff_context_args(
     """
     from sqlalchemy import select
 
+    from app.models.equipment import Equipment
     from app.models.iam import User
-    from app.models.science import Equipment
     from app.services.signoffs.queries import list_active_signoffs
 
     args: dict[str, Any] = {}

@@ -69,17 +69,17 @@ def test_protocol_creator_prompt_instructs_external_param_extraction():
 
 def test_prompt_documents_grounding_section() -> None:
     text = PROMPT_PATH.read_text(encoding="utf-8").lower()
-    assert "grounding:" in text, (
-        "protocol_creator prompt must describe the brief's grounding: section"
-    )
+    assert (
+        "grounding:" in text
+    ), "protocol_creator prompt must describe the brief's grounding: section"
 
 
 def test_prompt_documents_citation_footer_format() -> None:
     text = PROMPT_PATH.read_text(encoding="utf-8")
     assert "Grounded in:" in text, "Prompt must specify the citation footer literal"
-    assert "library document" in text.lower(), (
-        "Footer template must include 'library document(s)'"
-    )
+    assert (
+        "library document" in text.lower()
+    ), "Footer template must include 'library document(s)'"
 
 
 def test_prompt_disallows_retrieval_tool_calls() -> None:
@@ -92,6 +92,6 @@ def test_prompt_disallows_retrieval_tool_calls() -> None:
 
 def test_prompt_disallows_page_numbers_in_footer() -> None:
     text = PROMPT_PATH.read_text(encoding="utf-8").lower()
-    assert "no page numbers" in text or "page number" in text, (
-        "Prompt must call out that page numbers are unavailable"
-    )
+    assert (
+        "no page numbers" in text or "page number" in text
+    ), "Prompt must call out that page numbers are unavailable"

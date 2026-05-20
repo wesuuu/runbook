@@ -16,7 +16,9 @@ from app.models.iam import (
     has_org_role,
 )
 from app.models.library import Document
-from app.models.science import Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
 
 
 def _meets_level(actual: str, required: PermissionLevel) -> bool:

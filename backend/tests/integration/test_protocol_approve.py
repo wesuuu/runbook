@@ -1,4 +1,4 @@
-"""Integration tests for POST /science/protocols/{id}/approve."""
+"""Integration tests for POST /protocols/{id}/approve."""
 
 import uuid
 from datetime import datetime, timezone
@@ -10,10 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
 from app.models.execution import AuditLog
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            User)
-from app.models.science import GlpSignoff, GlpSignoffRequest, Project, Protocol
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.signoffs import GlpSignoff, GlpSignoffRequest
 
 
 async def _make_pending_protocol(
@@ -102,7 +110,7 @@ async def test_approve_happy_path_via_project_perm(
     )
 
     resp = await client.post(
-        f"/science/protocols/{proto.id}/approve",
+        f"/protocols/{proto.id}/approve",
         json={"comment": "looks good", "signature_statement": "I attest"},
         headers=headers,
     )
@@ -163,7 +171,7 @@ async def test_approve_via_org_protocol_approver_role(
     )
 
     resp = await client.post(
-        f"/science/protocols/{proto.id}/approve",
+        f"/protocols/{proto.id}/approve",
         json={},
         headers=headers,
     )
@@ -201,7 +209,7 @@ async def test_approve_blocked_when_glp_signoffs_missing(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/protocols/{proto.id}/approve",
+        f"/protocols/{proto.id}/approve",
         json={},
         headers=headers,
     )
@@ -252,7 +260,7 @@ async def test_approve_blocked_when_only_one_glp_role_signed(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/protocols/{proto.id}/approve",
+        f"/protocols/{proto.id}/approve",
         json={},
         headers=headers,
     )
@@ -308,7 +316,7 @@ async def test_approve_succeeds_when_all_glp_signoffs_present(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/protocols/{proto.id}/approve",
+        f"/protocols/{proto.id}/approve",
         json={},
         headers=headers,
     )
@@ -359,7 +367,7 @@ async def test_approve_ignores_invalidated_glp_signoffs(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/protocols/{proto.id}/approve",
+        f"/protocols/{proto.id}/approve",
         json={},
         headers=headers,
     )
@@ -386,7 +394,7 @@ async def test_approve_blocked_when_not_pending(
     db_session.add(proto)
     await db_session.flush()
     resp = await client.post(
-        f"/science/protocols/{proto.id}/approve",
+        f"/protocols/{proto.id}/approve",
         json={},
         headers=auth_headers,
     )

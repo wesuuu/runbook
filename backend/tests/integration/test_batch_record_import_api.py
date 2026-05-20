@@ -24,7 +24,9 @@ from app.models.iam import (
     User,
 )
 from app.models.jobs import BackgroundJob, JobStatus
-from app.models.science import Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
 from app.services.batch.batch_record_extractor import (
     BatchRecordExtraction,
     ParamMapping,
@@ -253,7 +255,7 @@ async def test_upload_returns_extracting(
     protocol: Protocol,
 ):
     resp = await client.post(
-        "/science/batch-record-imports",
+        "/batch-record-imports",
         files={"file": ("batch.pdf", io.BytesIO(b"%PDF-1.4 test"), "application/pdf")},
         data={"project_id": str(test_project.id), "protocol_id": str(protocol.id)},
         headers=auth_headers,
@@ -280,7 +282,7 @@ async def test_upload_invalid_file_type(
     )
 
     resp = await client.post(
-        "/science/batch-record-imports",
+        "/batch-record-imports",
         files={"file": ("notes.txt", io.BytesIO(b"hello"), "text/plain")},
         data={"project_id": str(test_project.id), "protocol_id": str(protocol.id)},
         headers=auth_headers,
@@ -296,7 +298,7 @@ async def test_upload_no_permission(
     protocol: Protocol,
 ):
     resp = await client.post(
-        "/science/batch-record-imports",
+        "/batch-record-imports",
         files={"file": ("batch.pdf", io.BytesIO(b"%PDF-1.4 test"), "application/pdf")},
         data={"project_id": str(test_project.id), "protocol_id": str(protocol.id)},
         headers=second_auth_headers,
@@ -322,7 +324,7 @@ async def test_upload_archived_protocol(
     await db_session.flush()
 
     resp = await client.post(
-        "/science/batch-record-imports",
+        "/batch-record-imports",
         files={"file": ("batch.pdf", io.BytesIO(b"%PDF-1.4 test"), "application/pdf")},
         data={"project_id": str(test_project.id), "protocol_id": str(archived.id)},
         headers=auth_headers,
@@ -376,7 +378,7 @@ async def test_get_progress_while_extracting(
     )
 
     resp = await client.get(
-        f"/science/batch-record-imports/{row.id}",
+        f"/batch-record-imports/{row.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -395,7 +397,7 @@ async def test_get_extraction_when_review(
     import_in_review: BatchRecordImport,
 ):
     resp = await client.get(
-        f"/science/batch-record-imports/{import_in_review.id}",
+        f"/batch-record-imports/{import_in_review.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -448,7 +450,7 @@ async def test_get_returns_run_id_when_finalized(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/batch-record-imports/{row.id}",
+        f"/batch-record-imports/{row.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -482,7 +484,7 @@ async def test_get_returns_error_when_failed(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/batch-record-imports/{row.id}",
+        f"/batch-record-imports/{row.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -496,7 +498,7 @@ async def test_get_nonexistent_import(
     auth_headers: dict,
 ):
     resp = await client.get(
-        f"/science/batch-record-imports/{uuid.uuid4()}",
+        f"/batch-record-imports/{uuid.uuid4()}",
         headers=auth_headers,
     )
     assert resp.status_code == 404
@@ -514,7 +516,7 @@ async def test_finalize_creates_completed_run(
     protocol: Protocol,
 ):
     resp = await client.post(
-        f"/science/batch-record-imports/{import_in_review.id}/finalize",
+        f"/batch-record-imports/{import_in_review.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "Imported Run LOT-042",
@@ -583,7 +585,7 @@ async def test_finalize_with_user_resolved_mapping(
 ):
     """User manually assigned an extracted value to node-filter."""
     resp = await client.post(
-        f"/science/batch-record-imports/{import_in_review.id}/finalize",
+        f"/batch-record-imports/{import_in_review.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "User Resolved Run",
@@ -641,7 +643,7 @@ async def test_finalize_with_na_step(
     protocol: Protocol,
 ):
     resp = await client.post(
-        f"/science/batch-record-imports/{import_in_review.id}/finalize",
+        f"/batch-record-imports/{import_in_review.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "NA Step Run",
@@ -688,7 +690,7 @@ async def test_finalize_links_source_document(
     protocol: Protocol,
 ):
     resp = await client.post(
-        f"/science/batch-record-imports/{import_in_review.id}/finalize",
+        f"/batch-record-imports/{import_in_review.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "Attachment Run",
@@ -729,7 +731,7 @@ async def test_finalize_creates_audit_log(
     test_user: User,
 ):
     resp = await client.post(
-        f"/science/batch-record-imports/{import_in_review.id}/finalize",
+        f"/batch-record-imports/{import_in_review.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "Audit Run",
@@ -797,7 +799,7 @@ async def test_finalize_with_edited_values(
 ):
     """User edited a value — original preserved in reviewed_data."""
     resp = await client.post(
-        f"/science/batch-record-imports/{import_in_review.id}/finalize",
+        f"/batch-record-imports/{import_in_review.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "Edited Values Run",
@@ -873,7 +875,7 @@ async def test_finalize_rejects_already_finalized(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/batch-record-imports/{row.id}/finalize",
+        f"/batch-record-imports/{row.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "Should Fail",
@@ -894,7 +896,7 @@ async def test_finalize_preserves_timestamps_signatures_deviations(
 ):
     """Finalize carries timestamps/signatures/deviations into Run.execution_data."""
     resp = await client.post(
-        f"/science/batch-record-imports/{import_in_review.id}/finalize",
+        f"/batch-record-imports/{import_in_review.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "Timestamped Run",
@@ -987,7 +989,7 @@ async def test_finalize_rejects_extracting_status(
     await db_session.flush()
 
     resp = await client.post(
-        f"/science/batch-record-imports/{row.id}/finalize",
+        f"/batch-record-imports/{row.id}/finalize",
         json={
             "protocol_id": str(protocol.id),
             "run_name": "Should Fail",

@@ -14,7 +14,8 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project, Protocol, ProtocolRole
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolRole
 from app.services.protocols.creation import (
     ProtocolSpec,
     ProtocolStep,

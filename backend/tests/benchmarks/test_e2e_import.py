@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
-from app.models.science import Protocol, ProtocolRole, UnitOpDefinition
+from app.models.protocols import Protocol, ProtocolRole, UnitOpDefinition
 from tests.benchmarks.conftest import (
     all_benchmark_scores,
     discover_fixtures,
@@ -57,7 +57,7 @@ class TestProtocolImportE2E:
         # -- Step 1: Upload and get proposal --
         with open(doc_path, "rb") as f:
             response = await client.post(
-                "/science/protocols/import",
+                "/protocols/import",
                 files={"file": (doc_path.name, f, mime_type)},
                 headers=auth_headers,
             )
@@ -103,7 +103,7 @@ class TestProtocolImportE2E:
         }
 
         finalize_response = await client.post(
-            "/science/protocols/finalize-import",
+            "/protocols/finalize-import",
             json=finalize_payload,
             headers=auth_headers,
         )

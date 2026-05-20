@@ -14,7 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization, User
-from app.models.science import Project, Protocol, Run, RunStatus
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run, RunStatus
 
 SAMPLE_PROJECT_NAME = "My First Project"
 SAMPLE_PROTOCOL_NAME = "Sample Protocol"

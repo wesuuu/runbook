@@ -198,7 +198,7 @@ async def register(
         setattr(org, col, result.scalar_one_or_none())
 
     # F-0075: subscribe new org to default unit op libraries
-    from app.services.science import library_registry
+    from app.services.protocols import library_registry
 
     await library_registry.subscribe_default_libraries(db, org.id)
 
@@ -234,7 +234,7 @@ async def register(
     lifecycle_events.emit_trial_started(user, org)
 
     # Seed "My First Project" for onboarding (F-0015)
-    from app.models.science import Project
+    from app.models.projects import Project
 
     db.add(
         Project(

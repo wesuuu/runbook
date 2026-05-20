@@ -10,20 +10,41 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import (get_current_user, get_or_404,
-                           require_active_subscription)
+from app.core.deps import get_current_user, get_or_404, require_active_subscription
 from app.core.security import generate_verification_token
 from app.db.session import get_db
-from app.models.iam import (_ALLOWED_ORG_ROLES, Invitation, InvitationStatus,
-                            ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, OrgRole, PermissionLevel, Team,
-                            TeamMember, TeamRole, User, has_org_role)
-from app.schemas.iam import (InvitationCreate, InvitationResponse,
-                             OrganizationCreate, OrganizationResponse,
-                             OrgMemberAdd, OrgMemberResponse, OrgMemberUpdate,
-                             PermissionGrant, PermissionResponse, TeamCreate,
-                             TeamMemberAdd, TeamMemberResponse, TeamResponse,
-                             UserSearchResponse)
+from app.models.iam import (
+    _ALLOWED_ORG_ROLES,
+    Invitation,
+    InvitationStatus,
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    OrgRole,
+    PermissionLevel,
+    Team,
+    TeamMember,
+    TeamRole,
+    User,
+    has_org_role,
+)
+from app.schemas.iam import (
+    InvitationCreate,
+    InvitationResponse,
+    OrganizationCreate,
+    OrganizationResponse,
+    OrgMemberAdd,
+    OrgMemberResponse,
+    OrgMemberUpdate,
+    PermissionGrant,
+    PermissionResponse,
+    TeamCreate,
+    TeamMemberAdd,
+    TeamMemberResponse,
+    TeamResponse,
+    UserSearchResponse,
+)
 from app.services.billing import seat_limits
 from app.services.core.permissions import check_permission
 
@@ -141,7 +162,7 @@ async def create_organization(
         setattr(org, col, result.scalar_one_or_none())
 
     # F-0075: subscribe new org to default unit op libraries
-    from app.services.science import library_registry
+    from app.services.protocols import library_registry
 
     await library_registry.subscribe_default_libraries(db, org.id)
 
@@ -982,5 +1003,3 @@ async def list_permissions(
         )
     )
     return result.scalars().all()
-
-

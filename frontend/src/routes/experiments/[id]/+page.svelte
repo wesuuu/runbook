@@ -71,7 +71,7 @@
         loading = true;
         error = null;
         try {
-            experiment = await api.get(`/science/experiments/${id}`);
+            experiment = await api.get(`/experiments/${id}`);
             name = experiment.name;
             description = experiment.description ?? "";
             status = experiment.status;
@@ -80,8 +80,8 @@
             // Load project, protocols, and all runs for breadcrumb and modals
             const [proj, protos, projectRuns] = await Promise.all([
                 api.get(`/projects/${experiment.project_id}`),
-                api.get(`/science/projects/${experiment.project_id}/protocols`),
-                api.get(`/science/projects/${experiment.project_id}/runs`),
+                api.get(`/projects/${experiment.project_id}/protocols`),
+                api.get(`/projects/${experiment.project_id}/runs`),
             ]);
             project = proj;
             protocols = protos as any[];
@@ -97,7 +97,7 @@
         saving = true;
         try {
             const content = editor?.getJSON() ?? experiment.content ?? {};
-            await api.put(`/science/experiments/${id}`, {
+            await api.put(`/experiments/${id}`, {
                 name,
                 description: description || null,
                 content,
@@ -120,7 +120,7 @@
         submittingNote = true;
         try {
             const note = await api.post(
-                `/science/experiments/${id}/notes`,
+                `/experiments/${id}/notes`,
                 { content, flags: [] },
             );
             notes = [...notes, note as any];

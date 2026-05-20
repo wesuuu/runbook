@@ -37,7 +37,7 @@ from app.models.ai import (
     RunImage,
 )
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.science import Run, RunStatus
+from app.models.runs import Run, RunStatus
 from app.schemas.ai import (
     AiProviderConfigResponse,
     AiProviderConfigUpdate,

@@ -8,7 +8,10 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import User
-from app.models.science import GlpSignoff, Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
+from app.models.signoffs import GlpSignoff
 
 
 @pytest.mark.asyncio
@@ -47,7 +50,7 @@ async def test_protocol_response_includes_approval_fields(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/protocols/{proto.id}",
+        f"/protocols/{proto.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200, resp.text
@@ -81,7 +84,7 @@ async def test_run_response_includes_is_strict(
     await db_session.flush()
 
     resp = await client.get(
-        f"/science/projects/{test_project.id}/runs",
+        f"/projects/{test_project.id}/runs",
         headers=auth_headers,
     )
     assert resp.status_code == 200, resp.text

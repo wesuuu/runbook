@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Equipment
+from app.models.equipment import Equipment
 
 _DISALLOWED = re.compile(r"[^a-z0-9-]+")
 _MULTI_HYPHEN = re.compile(r"-+")

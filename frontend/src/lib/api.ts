@@ -259,7 +259,7 @@ export function designateProtocolApproval(
     requiresApproval: boolean,
 ): Promise<Protocol> {
     return api.post<Protocol>(
-        `/science/protocols/${protocolId}/designate-approval`,
+        `/protocols/${protocolId}/designate-approval`,
         { requires_approval: requiresApproval },
         { schema: ProtocolSchema },
     );
@@ -270,7 +270,7 @@ export function submitProtocolForApproval(
     requestedUserIds: string[],
 ): Promise<Protocol> {
     return api.post<Protocol>(
-        `/science/protocols/${protocolId}/submit-for-approval`,
+        `/protocols/${protocolId}/submit-for-approval`,
         { requested_user_ids: requestedUserIds },
         { schema: ProtocolSchema },
     );
@@ -281,7 +281,7 @@ export function approveProtocol(
     body: ApproveProtocolRequest = {},
 ): Promise<Protocol> {
     return api.post<Protocol>(
-        `/science/protocols/${protocolId}/approve`,
+        `/protocols/${protocolId}/approve`,
         body,
         { schema: ProtocolSchema },
     );
@@ -292,7 +292,7 @@ export function rejectProtocol(
     body: RejectProtocolRequest,
 ): Promise<Protocol> {
     return api.post<Protocol>(
-        `/science/protocols/${protocolId}/reject`,
+        `/protocols/${protocolId}/reject`,
         body,
         { schema: ProtocolSchema },
     );
@@ -302,14 +302,14 @@ export function getProtocolSignoffs(
     protocolId: string,
 ): Promise<GlpSignoffResponseList> {
     return api.get<GlpSignoffResponseList>(
-        `/science/protocols/${protocolId}/signoffs`,
+        `/protocols/${protocolId}/signoffs`,
         { schema: GlpSignoffResponseListSchema },
     );
 }
 
 export function getAwaitingMyApproval(): Promise<AwaitingApprovalList> {
     return api.get<AwaitingApprovalList>(
-        '/science/protocols/awaiting-my-approval',
+        '/protocols/awaiting-my-approval',
         { schema: AwaitingApprovalListSchema },
     );
 }
@@ -319,7 +319,7 @@ export function listRunSignoffs(
     activeOnly = false,
 ): Promise<GlpSignoffResponseList> {
     return api.get<GlpSignoffResponseList>(
-        `/science/runs/${runId}/signoffs?active=${activeOnly}`,
+        `/runs/${runId}/signoffs?active=${activeOnly}`,
         { schema: GlpSignoffResponseListSchema },
     );
 }
@@ -329,7 +329,7 @@ export function createRunSignoff(
     payload: GlpSignoffCreate,
 ): Promise<GlpSignoffResponse> {
     return api.post<GlpSignoffResponse>(
-        `/science/runs/${runId}/signoffs`,
+        `/runs/${runId}/signoffs`,
         payload,
         { schema: GlpSignoffResponseSchema },
     );
@@ -340,7 +340,7 @@ export function listProtocolSignoffs(
     activeOnly = false,
 ): Promise<GlpSignoffResponseList> {
     return api.get<GlpSignoffResponseList>(
-        `/science/protocols/${protocolId}/signoffs?active=${activeOnly}`,
+        `/protocols/${protocolId}/signoffs?active=${activeOnly}`,
         { schema: GlpSignoffResponseListSchema },
     );
 }
@@ -350,7 +350,7 @@ export function createProtocolSignoff(
     payload: GlpSignoffCreate,
 ): Promise<GlpSignoffResponse> {
     return api.post<GlpSignoffResponse>(
-        `/science/protocols/${protocolId}/signoffs`,
+        `/protocols/${protocolId}/signoffs`,
         payload,
         { schema: GlpSignoffResponseSchema },
     );
@@ -361,14 +361,14 @@ export function completeRun(
     outcome: string,
     outcomeNotes?: string,
 ): Promise<unknown> {
-    return api.post<unknown>(`/science/runs/${runId}/complete`, {
+    return api.post<unknown>(`/runs/${runId}/complete`, {
         outcome,
         outcome_notes: outcomeNotes,
     });
 }
 
 export function reopenRun(runId: string, reason: string): Promise<unknown> {
-    return api.post<unknown>(`/science/runs/${runId}/reopen`, { reason });
+    return api.post<unknown>(`/runs/${runId}/reopen`, { reason });
 }
 
 export const glpSignoffApi = {

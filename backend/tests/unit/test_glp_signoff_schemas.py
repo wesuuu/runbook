@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.schemas.science import (GlpSignoffCreate, GlpSignoffResponse,
-                                 RunCompleteRequest, RunReopenRequest)
+from app.schemas.runs import RunCompleteRequest, RunReopenRequest
+from app.schemas.signoffs import GlpSignoffCreate, GlpSignoffResponse
 
 
 def test_signoff_create_validates_role():

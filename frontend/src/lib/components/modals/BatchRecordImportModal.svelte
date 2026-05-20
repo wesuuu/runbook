@@ -156,7 +156,7 @@
 
         try {
             const result = await api.uploadWithFields<BatchRecordImportResponse>(
-                '/science/batch-record-imports',
+                '/batch-record-imports',
                 selectedFile,
                 { project_id: projectId, protocol_id: selectedProtocolId },
             );
@@ -188,7 +188,7 @@
         if (!importResult) return;
         try {
             const result = await api.get<BatchRecordImportResponse>(
-                `/science/batch-record-imports/${importResult.import_id}`,
+                `/batch-record-imports/${importResult.import_id}`,
             );
             importResult = result;
 
@@ -454,7 +454,7 @@
             });
 
             const result = await api.post<{ run_id: string; run_name: string }>(
-                `/science/batch-record-imports/${importResult.import_id}/finalize`,
+                `/batch-record-imports/${importResult.import_id}/finalize`,
                 {
                     protocol_id: importResult.protocol_id,
                     run_name: runName.trim(),

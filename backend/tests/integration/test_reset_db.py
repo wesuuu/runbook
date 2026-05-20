@@ -28,7 +28,9 @@ from app.db.seed import (
 from app.models.execution import AuditLog
 from app.models.iam import Organization, Team, User
 from app.models.library import Document
-from app.models.science import Project, Protocol, Run, UnitOpLibrarySubscription
+from app.models.projects import Project
+from app.models.protocols import Protocol, UnitOpLibrarySubscription
+from app.models.runs import Run
 
 
 @pytest.mark.asyncio

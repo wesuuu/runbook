@@ -21,7 +21,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import ObjectType, PermissionLevel
-from app.models.science import GlpSignoff, Project, Run
+from app.models.projects import Project
+from app.models.runs import Run
+from app.models.signoffs import GlpSignoff
 from app.services.core.permissions import check_permission
 from app.services.signoffs.queries import list_active_signoffs
 

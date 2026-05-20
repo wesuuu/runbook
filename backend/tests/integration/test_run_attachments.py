@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 
 from app.models.iam import ObjectPermission, ObjectType, PermissionLevel, PrincipalType
-from app.models.science import Run, RunRoleAssignment
+from app.models.runs import Run, RunRoleAssignment
 
 
 @pytest_asyncio.fixture
@@ -54,7 +54,7 @@ async def active_run(db_session, test_project, test_user):
 @pytest.mark.asyncio
 async def test_upload_pdf_attachment(client, auth_headers, active_run):
     resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("report.pdf", BytesIO(b"%PDF-content"), "application/pdf")},
         headers=auth_headers,
     )
@@ -70,7 +70,7 @@ async def test_upload_pdf_attachment(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_upload_with_step_id(client, auth_headers, active_run):
     resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("gel.jpg", BytesIO(b"\xff\xd8\xff\xe0"), "image/jpeg")},
         data={"step_id": "unitOp-abc123"},
         headers=auth_headers,
@@ -82,7 +82,7 @@ async def test_upload_with_step_id(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_upload_rejected_file_type(client, auth_headers, active_run):
     resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("malware.exe", BytesIO(b"evil"), "application/x-msdownload")},
         headers=auth_headers,
     )
@@ -92,7 +92,7 @@ async def test_upload_rejected_file_type(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_upload_csv(client, auth_headers, active_run):
     resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("data.csv", BytesIO(b"a,b,c\n1,2,3"), "text/csv")},
         headers=auth_headers,
     )
@@ -107,18 +107,18 @@ async def test_upload_csv(client, auth_headers, active_run):
 async def test_list_attachments(client, auth_headers, active_run):
     # Upload two attachments
     await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("a.pdf", BytesIO(b"%PDF-a"), "application/pdf")},
         headers=auth_headers,
     )
     await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("b.csv", BytesIO(b"x,y"), "text/csv")},
         headers=auth_headers,
     )
 
     resp = await client.get(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -130,12 +130,12 @@ async def test_list_attachments(client, auth_headers, active_run):
 async def test_list_attachments_filter_by_step(client, auth_headers, active_run):
     # Upload run-level and step-level
     await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("run.pdf", BytesIO(b"%PDF"), "application/pdf")},
         headers=auth_headers,
     )
     await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("step.csv", BytesIO(b"x"), "text/csv")},
         data={"step_id": "step-1"},
         headers=auth_headers,
@@ -143,7 +143,7 @@ async def test_list_attachments_filter_by_step(client, auth_headers, active_run)
 
     # Filter by step
     resp = await client.get(
-        f"/science/runs/{active_run.id}/attachments?step_id=step-1",
+        f"/runs/{active_run.id}/attachments?step_id=step-1",
         headers=auth_headers,
     )
     assert len(resp.json()["items"]) == 1
@@ -157,7 +157,7 @@ async def test_list_attachments_filter_by_step(client, auth_headers, active_run)
 async def test_soft_delete_attachment(client, auth_headers, active_run):
     # Upload
     upload_resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("del.pdf", BytesIO(b"%PDF"), "application/pdf")},
         headers=auth_headers,
     )
@@ -165,14 +165,14 @@ async def test_soft_delete_attachment(client, auth_headers, active_run):
 
     # Delete
     del_resp = await client.delete(
-        f"/science/runs/{active_run.id}/attachments/{att_id}",
+        f"/runs/{active_run.id}/attachments/{att_id}",
         headers=auth_headers,
     )
     assert del_resp.status_code == 204
 
     # Should be hidden from list
     list_resp = await client.get(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         headers=auth_headers,
     )
     ids = [a["id"] for a in list_resp.json()["items"]]
@@ -182,18 +182,18 @@ async def test_soft_delete_attachment(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_delete_already_deleted_returns_404(client, auth_headers, active_run):
     upload_resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("f.pdf", BytesIO(b"%PDF"), "application/pdf")},
         headers=auth_headers,
     )
     att_id = upload_resp.json()["id"]
 
     await client.delete(
-        f"/science/runs/{active_run.id}/attachments/{att_id}",
+        f"/runs/{active_run.id}/attachments/{att_id}",
         headers=auth_headers,
     )
     resp = await client.delete(
-        f"/science/runs/{active_run.id}/attachments/{att_id}",
+        f"/runs/{active_run.id}/attachments/{att_id}",
         headers=auth_headers,
     )
     assert resp.status_code == 404
@@ -206,19 +206,19 @@ async def test_delete_already_deleted_returns_404(client, auth_headers, active_r
 async def test_restore_attachment(client, auth_headers, active_run):
     # Upload + delete
     upload_resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("r.pdf", BytesIO(b"%PDF"), "application/pdf")},
         headers=auth_headers,
     )
     att_id = upload_resp.json()["id"]
     await client.delete(
-        f"/science/runs/{active_run.id}/attachments/{att_id}",
+        f"/runs/{active_run.id}/attachments/{att_id}",
         headers=auth_headers,
     )
 
     # Restore (user has ADMIN)
     resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments/{att_id}/restore",
+        f"/runs/{active_run.id}/attachments/{att_id}/restore",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -226,7 +226,7 @@ async def test_restore_attachment(client, auth_headers, active_run):
 
     # Should be back in list
     list_resp = await client.get(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         headers=auth_headers,
     )
     ids = [a["id"] for a in list_resp.json()["items"]]
@@ -239,14 +239,14 @@ async def test_restore_attachment(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_download_attachment(client, auth_headers, active_run):
     upload_resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("dl.txt", BytesIO(b"hello world"), "text/plain")},
         headers=auth_headers,
     )
     att_id = upload_resp.json()["id"]
 
     resp = await client.get(
-        f"/science/runs/{active_run.id}/attachments/{att_id}/download",
+        f"/runs/{active_run.id}/attachments/{att_id}/download",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -258,18 +258,18 @@ async def test_download_deleted_attachment_returns_404(
     client, auth_headers, active_run
 ):
     upload_resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("x.txt", BytesIO(b"data"), "text/plain")},
         headers=auth_headers,
     )
     att_id = upload_resp.json()["id"]
     await client.delete(
-        f"/science/runs/{active_run.id}/attachments/{att_id}",
+        f"/runs/{active_run.id}/attachments/{att_id}",
         headers=auth_headers,
     )
 
     resp = await client.get(
-        f"/science/runs/{active_run.id}/attachments/{att_id}/download",
+        f"/runs/{active_run.id}/attachments/{att_id}/download",
         headers=auth_headers,
     )
     assert resp.status_code == 404
@@ -278,7 +278,7 @@ async def test_download_deleted_attachment_returns_404(
 @pytest.mark.asyncio
 async def test_unauthenticated_download_rejected(client, active_run):
     resp = await client.get(
-        f"/science/runs/{active_run.id}/attachments/fake-id/download",
+        f"/runs/{active_run.id}/attachments/fake-id/download",
     )
     assert resp.status_code in (401, 403)
 
@@ -290,7 +290,7 @@ async def test_unauthenticated_download_rejected(client, active_run):
 async def test_attachment_operations_in_audit_log(client, auth_headers, active_run):
     # Upload
     upload_resp = await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("audit.pdf", BytesIO(b"%PDF"), "application/pdf")},
         headers=auth_headers,
     )
@@ -298,19 +298,19 @@ async def test_attachment_operations_in_audit_log(client, auth_headers, active_r
 
     # Delete
     await client.delete(
-        f"/science/runs/{active_run.id}/attachments/{att_id}",
+        f"/runs/{active_run.id}/attachments/{att_id}",
         headers=auth_headers,
     )
 
     # Restore
     await client.post(
-        f"/science/runs/{active_run.id}/attachments/{att_id}/restore",
+        f"/runs/{active_run.id}/attachments/{att_id}/restore",
         headers=auth_headers,
     )
 
     # Check audit log
     resp = await client.get(
-        f"/science/runs/{active_run.id}/audit-log",
+        f"/runs/{active_run.id}/audit-log",
         headers=auth_headers,
     )
     actions = [e["action"] for e in resp.json()["items"]]
@@ -325,12 +325,12 @@ async def test_attachment_operations_in_audit_log(client, auth_headers, active_r
 @pytest.mark.asyncio
 async def test_attachments_in_run_response(client, auth_headers, active_run):
     await client.post(
-        f"/science/runs/{active_run.id}/attachments",
+        f"/runs/{active_run.id}/attachments",
         files={"file": ("inc.pdf", BytesIO(b"%PDF"), "application/pdf")},
         headers=auth_headers,
     )
     resp = await client.get(
-        f"/science/runs/{active_run.id}",
+        f"/runs/{active_run.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200

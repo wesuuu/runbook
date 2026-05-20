@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 
 from app.models.iam import ObjectPermission, ObjectType, PermissionLevel, PrincipalType
-from app.models.science import Run, RunRoleAssignment
+from app.models.runs import Run, RunRoleAssignment
 
 
 @pytest_asyncio.fixture
@@ -113,7 +113,7 @@ async def completed_run(db_session, test_project, test_user):
 @pytest.mark.asyncio
 async def test_add_note_to_planned_run(client, auth_headers, test_run):
     resp = await client.post(
-        f"/science/runs/{test_run.id}/notes",
+        f"/runs/{test_run.id}/notes",
         json={"content": "Pre-run setup note", "flags": []},
         headers=auth_headers,
     )
@@ -131,7 +131,7 @@ async def test_add_note_to_planned_run(client, auth_headers, test_run):
 @pytest.mark.asyncio
 async def test_add_note_to_active_run(client, auth_headers, active_run):
     resp = await client.post(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         json={"content": "Culture looked cloudy", "flags": ["anomaly"]},
         headers=auth_headers,
     )
@@ -147,7 +147,7 @@ async def test_add_note_to_completed_run_does_not_change_status(
     client, auth_headers, completed_run
 ):
     resp = await client.post(
-        f"/science/runs/{completed_run.id}/notes",
+        f"/runs/{completed_run.id}/notes",
         json={"content": "Post-run observation"},
         headers=auth_headers,
     )
@@ -156,7 +156,7 @@ async def test_add_note_to_completed_run_does_not_change_status(
 
     # Verify run status is still COMPLETED
     run_resp = await client.get(
-        f"/science/runs/{completed_run.id}",
+        f"/runs/{completed_run.id}",
         headers=auth_headers,
     )
     assert run_resp.json()["status"] == "COMPLETED"
@@ -165,18 +165,18 @@ async def test_add_note_to_completed_run_does_not_change_status(
 @pytest.mark.asyncio
 async def test_notes_are_append_only(client, auth_headers, active_run):
     await client.post(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         json={"content": "Note 1"},
         headers=auth_headers,
     )
     await client.post(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         json={"content": "Note 2"},
         headers=auth_headers,
     )
 
     resp = await client.get(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -189,7 +189,7 @@ async def test_notes_are_append_only(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_invalid_flag_rejected(client, auth_headers, active_run):
     resp = await client.post(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         json={"content": "Test", "flags": ["invalid_flag"]},
         headers=auth_headers,
     )
@@ -199,7 +199,7 @@ async def test_invalid_flag_rejected(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_empty_content_rejected(client, auth_headers, active_run):
     resp = await client.post(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         json={"content": "", "flags": []},
         headers=auth_headers,
     )
@@ -209,12 +209,12 @@ async def test_empty_content_rejected(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_note_included_in_run_response(client, auth_headers, active_run):
     await client.post(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         json={"content": "Observation"},
         headers=auth_headers,
     )
     resp = await client.get(
-        f"/science/runs/{active_run.id}",
+        f"/runs/{active_run.id}",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -226,12 +226,12 @@ async def test_note_included_in_run_response(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_note_audit_log(client, auth_headers, active_run):
     await client.post(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         json={"content": "Audit test note", "flags": ["anomaly"]},
         headers=auth_headers,
     )
     resp = await client.get(
-        f"/science/runs/{active_run.id}/audit-log",
+        f"/runs/{active_run.id}/audit-log",
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -246,7 +246,7 @@ async def test_note_audit_log(client, auth_headers, active_run):
 @pytest.mark.asyncio
 async def test_unauthenticated_note_rejected(client, active_run):
     resp = await client.post(
-        f"/science/runs/{active_run.id}/notes",
+        f"/runs/{active_run.id}/notes",
         json={"content": "Should fail"},
     )
     assert resp.status_code in (401, 403)

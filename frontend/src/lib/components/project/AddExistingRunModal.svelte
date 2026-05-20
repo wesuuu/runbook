@@ -37,7 +37,7 @@
         submitting = runId;
         error = null;
         try {
-            await api.post(`/science/experiments/${experimentId}/runs`, {
+            await api.post(`/experiments/${experimentId}/runs`, {
                 run_id: runId,
             });
             onAdded?.();

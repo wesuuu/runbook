@@ -5,8 +5,9 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.equipment import Equipment
 from app.models.iam import Organization
-from app.models.science import Equipment, Site
+from app.models.sites import Site
 from app.services.protocols.equipment_context import build_equipment_context
 
 

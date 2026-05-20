@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-
 DB_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite"
 POLL_INTERVAL = 2  # seconds
 
@@ -70,7 +69,9 @@ async def fetch_jobs(engine, show_all: bool, doc_id: str | None):
 
         where = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
-        r = await conn.execute(text(f"""
+        r = await conn.execute(
+            text(
+                f"""
             SELECT
                 j.id,
                 j.job_type,
@@ -92,30 +93,40 @@ async def fetch_jobs(engine, show_all: bool, doc_id: str | None):
             {where}
             ORDER BY j.created_at DESC
             LIMIT 20
-        """))
+        """
+            )
+        )
         return r.fetchall()
 
 
 async def reset_job(engine, job_id: str):
     async with engine.begin() as conn:
-        r = await conn.execute(text(f"""
+        r = await conn.execute(
+            text(
+                f"""
             UPDATE background_jobs
             SET status = 'FAILED',
                 error_message = 'Manually reset via job_monitor',
                 completed_at = now()
             WHERE id = '{job_id}' AND status IN ('PENDING', 'RUNNING')
             RETURNING id, entity_id
-        """))
+        """
+            )
+        )
         row = r.fetchone()
         if row:
             # Also reset the document if it's stuck in PROCESSING
-            await conn.execute(text(f"""
+            await conn.execute(
+                text(
+                    f"""
                 UPDATE documents
                 SET status = 'UPLOADED',
                     processing_started_at = NULL,
                     error_message = NULL
                 WHERE id = '{row[1]}' AND status = 'PROCESSING'
-            """))
+            """
+                )
+            )
             return row[0]
         return None
 
@@ -125,7 +136,9 @@ def render(jobs, clear: bool = True):
         print("\033[2J\033[H", end="")  # clear screen
 
     now = datetime.now(timezone.utc)
-    print(f"{BOLD}Background Job Monitor{RESET}  {DIM}{now.strftime('%H:%M:%S')}{RESET}")
+    print(
+        f"{BOLD}Background Job Monitor{RESET}  {DIM}{now.strftime('%H:%M:%S')}{RESET}"
+    )
     print(f"{DIM}{'─' * 90}{RESET}")
 
     if not jobs:
@@ -134,10 +147,21 @@ def render(jobs, clear: bool = True):
 
     for row in jobs:
         (
-            job_id, job_type, status, entity_id, output_data,
-            error_msg, started_at, completed_at, created_at,
-            worker_id, attempts, running_secs,
-            doc_title, doc_status, page_count,
+            job_id,
+            job_type,
+            status,
+            entity_id,
+            output_data,
+            error_msg,
+            started_at,
+            completed_at,
+            created_at,
+            worker_id,
+            attempts,
+            running_secs,
+            doc_title,
+            doc_status,
+            page_count,
         ) = row
 
         c = color(status)
@@ -154,7 +178,9 @@ def render(jobs, clear: bool = True):
         # Document info
         if doc_title:
             title_display = doc_title[:50] + "..." if len(doc_title) > 50 else doc_title
-            print(f"           {DIM}Document:{RESET} {title_display}  {DIM}({doc_status}, {page_count or '?'} pages){RESET}")
+            print(
+                f"           {DIM}Document:{RESET} {title_display}  {DIM}({doc_status}, {page_count or '?'} pages){RESET}"
+            )
 
         # Duration
         if status == "RUNNING" and running_secs is not None:
@@ -177,7 +203,9 @@ def render(jobs, clear: bool = True):
                 current = output_data.get("current", 0)
                 total = output_data.get("total", 0)
                 percent = output_data.get("percent", 0)
-                print(f"           {CYAN}{label}{RESET}: {current}/{total}  {progress_bar(percent)}")
+                print(
+                    f"           {CYAN}{label}{RESET}: {current}/{total}  {progress_bar(percent)}"
+                )
             elif "chunk_count" in output_data:
                 # Completed job summary
                 pc = output_data.get("page_count", "?")
@@ -186,7 +214,9 @@ def render(jobs, clear: bool = True):
             elif "pages_classified" in output_data:
                 pc = output_data.get("pages_classified", "?")
                 roles = output_data.get("roles", [])
-                print(f"           {DIM}Result:{RESET} {pc} pages classified, roles: {', '.join(roles)}")
+                print(
+                    f"           {DIM}Result:{RESET} {pc} pages classified, roles: {', '.join(roles)}"
+                )
 
         # Error
         if error_msg:
@@ -219,19 +249,29 @@ async def do_reset(job_id: str):
     try:
         result = await reset_job(engine, job_id)
         if result:
-            print(f"{GREEN}Reset job {job_id} to FAILED and document to UPLOADED.{RESET}")
+            print(
+                f"{GREEN}Reset job {job_id} to FAILED and document to UPLOADED.{RESET}"
+            )
         else:
-            print(f"{RED}Job {job_id} not found or not in PENDING/RUNNING state.{RESET}")
+            print(
+                f"{RED}Job {job_id} not found or not in PENDING/RUNNING state.{RESET}"
+            )
     finally:
         await engine.dispose()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Monitor background jobs")
-    parser.add_argument("--all", action="store_true", help="Show all jobs (including completed/failed)")
+    parser.add_argument(
+        "--all", action="store_true", help="Show all jobs (including completed/failed)"
+    )
     parser.add_argument("--doc", type=str, help="Filter by document ID")
-    parser.add_argument("--reset", type=str, metavar="JOB_ID", help="Reset a stuck job to FAILED")
-    parser.add_argument("--once", action="store_true", help="Print once and exit (no live watch)")
+    parser.add_argument(
+        "--reset", type=str, metavar="JOB_ID", help="Reset a stuck job to FAILED"
+    )
+    parser.add_argument(
+        "--once", action="store_true", help="Print once and exit (no live watch)"
+    )
     args = parser.parse_args()
 
     if args.reset:

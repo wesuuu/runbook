@@ -1,4 +1,4 @@
-"""Integration tests for GET /science/protocols/awaiting-my-approval."""
+"""Integration tests for GET /protocols/awaiting-my-approval."""
 
 import uuid
 
@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.science import GlpSignoffRequest, Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.signoffs import GlpSignoffRequest
 
 
 async def _make_user(
@@ -93,7 +95,7 @@ async def test_awaiting_open_request_user_sees_protocol(
         submitter_id=test_user.id,
     )
 
-    resp = await client.get("/science/protocols/awaiting-my-approval", headers=headers)
+    resp = await client.get("/protocols/awaiting-my-approval", headers=headers)
     assert resp.status_code == 200, resp.text
     items = resp.json()
     assert len(items) == 1
@@ -121,7 +123,7 @@ async def test_awaiting_org_approver_sees_pending_in_org(
         db_session, test_project, test_user.id, name="P-Org"
     )
 
-    resp = await client.get("/science/protocols/awaiting-my-approval", headers=headers)
+    resp = await client.get("/protocols/awaiting-my-approval", headers=headers)
     assert resp.status_code == 200, resp.text
     items = resp.json()
     assert len(items) == 1
@@ -149,7 +151,7 @@ async def test_awaiting_dedupes_when_both_paths_match(
         submitter_id=test_user.id,
     )
 
-    resp = await client.get("/science/protocols/awaiting-my-approval", headers=headers)
+    resp = await client.get("/protocols/awaiting-my-approval", headers=headers)
     assert resp.status_code == 200, resp.text
     items = resp.json()
     assert len(items) == 1
@@ -167,6 +169,6 @@ async def test_awaiting_empty_when_no_context(
     """A plain MEMBER with no requests gets an empty list."""
     plain, headers = await _make_user(db_session, test_org)
     await _make_pending_protocol(db_session, test_project, test_user.id, name="P-Other")
-    resp = await client.get("/science/protocols/awaiting-my-approval", headers=headers)
+    resp = await client.get("/protocols/awaiting-my-approval", headers=headers)
     assert resp.status_code == 200, resp.text
     assert resp.json() == []

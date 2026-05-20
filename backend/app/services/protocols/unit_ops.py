@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import UnitOpDefinition
+from app.models.protocols import UnitOpDefinition
 
 
 async def create_unit_op_definition(

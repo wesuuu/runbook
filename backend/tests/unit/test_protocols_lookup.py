@@ -18,7 +18,8 @@ from app.models.iam import (
     TeamMember,
     User,
 )
-from app.models.science import Project, Protocol, ProtocolRole, ProtocolVersion
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolRole, ProtocolVersion
 from app.services.protocols.lookup import get_protocol_full, list_protocols
 
 

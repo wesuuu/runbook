@@ -17,9 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from app.services.protocols.template_seeder import (SYSTEM_TEMPLATES_DEST,
-                                                    SYSTEM_TEMPLATES_SOURCE,
-                                                    seed_system_templates)
+from app.services.protocols.template_seeder import (
+    SYSTEM_TEMPLATES_DEST,
+    SYSTEM_TEMPLATES_SOURCE,
+    seed_system_templates,
+)
 
 TEMPLATES = ["sop_default.docx", "batch_record_default.docx"]
 

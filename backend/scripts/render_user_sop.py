@@ -4,6 +4,7 @@ Reads the edited template at /home/wesuuu/Code/trellisbio/sop_default.docx,
 runs each SOP permutation through build_context + render_to_docx, writes
 .docx + .pdf into tests/fixtures/template-permutations/rendered-user-edit/.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -27,11 +28,24 @@ OUT_ROOT = (
 def _convert_to_pdf(docx_path: Path) -> Path | None:
     try:
         subprocess.run(
-            ["libreoffice", "--headless", "--convert-to", "pdf",
-             "--outdir", str(docx_path.parent), str(docx_path)],
-            check=True, capture_output=True, timeout=60,
+            [
+                "libreoffice",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(docx_path.parent),
+                str(docx_path),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=60,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ) as e:
         print(f"  PDF conversion failed: {e}")
         return None
     pdf_path = docx_path.with_suffix(".pdf")

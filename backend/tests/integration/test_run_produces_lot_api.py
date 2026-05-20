@@ -5,7 +5,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 
 from app.models.iam import ObjectPermission, ObjectType, PermissionLevel, PrincipalType
-from app.models.science import Run
+from app.models.runs import Run
 
 
 @pytest_asyncio.fixture
@@ -42,7 +42,7 @@ async def test_create_run_produces_lot_without_lot_number_rejected(
     client: AsyncClient, auth_headers, test_project
 ):
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         headers=auth_headers,
         json={
             "name": "lot-without-number",
@@ -59,7 +59,7 @@ async def test_create_run_produces_lot_with_lot_number_ok(
     client: AsyncClient, auth_headers, test_project
 ):
     resp = await client.post(
-        "/science/runs",
+        "/runs",
         headers=auth_headers,
         json={
             "name": "ok-producer",
@@ -79,7 +79,7 @@ async def test_update_run_produces_lot_without_lot_number_rejected(
     client: AsyncClient, auth_headers, test_run
 ):
     resp = await client.put(
-        f"/science/runs/{test_run.id}",
+        f"/runs/{test_run.id}",
         headers=auth_headers,
         json={"produces_lot": True},
     )
@@ -93,7 +93,7 @@ async def test_list_project_runs_filter_produces_lot(
 ):
     # Create two runs: one producer, one not.
     await client.post(
-        "/science/runs",
+        "/runs",
         headers=auth_headers,
         json={
             "name": "non-producer",
@@ -101,7 +101,7 @@ async def test_list_project_runs_filter_produces_lot(
         },
     )
     await client.post(
-        "/science/runs",
+        "/runs",
         headers=auth_headers,
         json={
             "name": "producer",
@@ -112,7 +112,7 @@ async def test_list_project_runs_filter_produces_lot(
     )
 
     resp_true = await client.get(
-        f"/science/projects/{test_project.id}/runs?produces_lot=true",
+        f"/projects/{test_project.id}/runs?produces_lot=true",
         headers=auth_headers,
     )
     assert resp_true.status_code == 200
@@ -120,13 +120,13 @@ async def test_list_project_runs_filter_produces_lot(
     assert names == {"producer"}
 
     resp_false = await client.get(
-        f"/science/projects/{test_project.id}/runs?produces_lot=false",
+        f"/projects/{test_project.id}/runs?produces_lot=false",
         headers=auth_headers,
     )
     assert {r["name"] for r in resp_false.json()} == {"non-producer"}
 
     resp_all = await client.get(
-        f"/science/projects/{test_project.id}/runs",
+        f"/projects/{test_project.id}/runs",
         headers=auth_headers,
     )
     assert {r["name"] for r in resp_all.json()} >= {"producer", "non-producer"}
@@ -137,7 +137,7 @@ async def test_suggest_lot_number_empty_org_returns_first(
     client: AsyncClient, auth_headers, test_project
 ):
     resp = await client.post(
-        "/science/runs/suggest-lot-number",
+        "/runs/suggest-lot-number",
         headers=auth_headers,
         json={"project_id": str(test_project.id)},
     )
@@ -150,7 +150,7 @@ async def test_suggest_lot_number_increments_after_existing(
     client: AsyncClient, auth_headers, test_project
 ):
     await client.post(
-        "/science/runs",
+        "/runs",
         headers=auth_headers,
         json={
             "name": "first",
@@ -160,7 +160,7 @@ async def test_suggest_lot_number_increments_after_existing(
         },
     )
     resp = await client.post(
-        "/science/runs/suggest-lot-number",
+        "/runs/suggest-lot-number",
         headers=auth_headers,
         json={"project_id": str(test_project.id)},
     )
@@ -174,7 +174,7 @@ async def test_suggest_lot_number_ignores_non_matching_values(
     # Manual entry that does not match the LOT-NNNNNN pattern is ignored
     # by the sequence calculation.
     await client.post(
-        "/science/runs",
+        "/runs",
         headers=auth_headers,
         json={
             "name": "custom",
@@ -184,7 +184,7 @@ async def test_suggest_lot_number_ignores_non_matching_values(
         },
     )
     resp = await client.post(
-        "/science/runs/suggest-lot-number",
+        "/runs/suggest-lot-number",
         headers=auth_headers,
         json={"project_id": str(test_project.id)},
     )
@@ -196,7 +196,7 @@ async def test_check_lot_number_not_exists(
     client: AsyncClient, auth_headers, test_project
 ):
     resp = await client.get(
-        "/science/runs/check-lot-number",
+        "/runs/check-lot-number",
         headers=auth_headers,
         params={"project_id": str(test_project.id), "lot_number": "NEW-1"},
     )
@@ -209,7 +209,7 @@ async def test_check_lot_number_exists_within_org(
     client: AsyncClient, auth_headers, test_project
 ):
     await client.post(
-        "/science/runs",
+        "/runs",
         headers=auth_headers,
         json={
             "name": "dup-1",
@@ -219,7 +219,7 @@ async def test_check_lot_number_exists_within_org(
         },
     )
     await client.post(
-        "/science/runs",
+        "/runs",
         headers=auth_headers,
         json={
             "name": "dup-2",
@@ -229,7 +229,7 @@ async def test_check_lot_number_exists_within_org(
         },
     )
     resp = await client.get(
-        "/science/runs/check-lot-number",
+        "/runs/check-lot-number",
         headers=auth_headers,
         params={"project_id": str(test_project.id), "lot_number": "DUP-1"},
     )

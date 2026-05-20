@@ -1,8 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.schemas.equipment import (EquipmentCreate, EquipmentStatus,
-                                   EquipmentUpdate)
+from app.schemas.equipment import EquipmentCreate, EquipmentStatus, EquipmentUpdate
 from app.services.equipment import registry
 
 

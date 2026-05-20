@@ -1,7 +1,10 @@
 import pytest
 
-from app.services.sites.defaults import (DEFAULT_SITE_NAME,
-                                         ensure_default_site, is_default_site)
+from app.services.sites.defaults import (
+    DEFAULT_SITE_NAME,
+    ensure_default_site,
+    is_default_site,
+)
 
 
 @pytest.mark.asyncio

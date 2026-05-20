@@ -49,7 +49,7 @@ async def test_register_seeds_first_project(
     db_session: AsyncSession,
 ):
     from app.models.iam import Organization
-    from app.models.science import Project
+    from app.models.projects import Project
 
     with patch("app.api.endpoints.auth.get_email_provider") as mock_provider:
         mock_provider.return_value = AsyncMock()
@@ -347,7 +347,7 @@ async def test_verification_scope_blocks_protected(
         headers = {"Authorization": f"Bearer {temp_token}"}
 
     # Should be blocked from protected endpoints
-    resp = await client.get("/science/projects", headers=headers)
+    resp = await client.get("/projects", headers=headers)
     assert resp.status_code == 403
     assert "not verified" in resp.json()["detail"].lower()
 

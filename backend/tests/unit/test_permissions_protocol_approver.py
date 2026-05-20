@@ -14,7 +14,8 @@ from app.models.iam import (
     PermissionLevel,
     User,
 )
-from app.models.science import Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
 from app.services.core.permissions import check_permission
 
 

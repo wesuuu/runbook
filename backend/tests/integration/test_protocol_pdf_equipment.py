@@ -5,7 +5,9 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select
 
-from app.models.science import Equipment, Protocol, Site
+from app.models.equipment import Equipment
+from app.models.protocols import Protocol
+from app.models.sites import Site
 from app.models.templates import DocumentTemplate
 
 
@@ -95,7 +97,7 @@ async def test_pdf_endpoint_attaches_unresolved_header(
         return_value=fake_pdf_bytes,
     ):
         resp = await client.get(
-            f"/science/protocols/{proto.id}/pdf/sop", headers=auth_headers
+            f"/protocols/{proto.id}/pdf/sop", headers=auth_headers
         )
 
     assert resp.status_code == 200
@@ -143,7 +145,7 @@ async def test_pdf_endpoint_no_header_when_all_resolved(
         return_value=fake_pdf_bytes,
     ):
         resp = await client.get(
-            f"/science/protocols/{proto.id}/pdf/sop", headers=auth_headers
+            f"/protocols/{proto.id}/pdf/sop", headers=auth_headers
         )
 
     assert resp.status_code == 200

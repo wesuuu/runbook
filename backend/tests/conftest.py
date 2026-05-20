@@ -8,27 +8,29 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            Team, TeamMember, User)
-from app.models.library import Document, DocumentStatus
-from app.models.science import (
-    Equipment,
-    Project,
-    Protocol,
-    ProtocolRole,
-    Run,
-    RunOutcome,
-    RunStatus,
+from app.models.equipment import Equipment
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    Team,
+    TeamMember,
+    User,
 )
+from app.models.library import Document, DocumentStatus
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolRole
+from app.models.runs import Run, RunOutcome, RunStatus
 from app.models.templates import DocumentTemplate  # noqa: F401
 from app.services.billing import stripe_client as _stripe_client
 
@@ -65,7 +67,7 @@ async def _seed_library_registry():
     """
     from pathlib import Path
 
-    from app.services.science import library_registry as lr
+    from app.services.protocols import library_registry as lr
 
     lr._reset_for_tests()
     lr.register_source(
@@ -230,7 +232,7 @@ async def test_org(db_session) -> Organization:
     db_session.add(org)
     await db_session.flush()
     # Mirror production: every org auto-subscribes to default libraries.
-    from app.services.science import library_registry
+    from app.services.protocols import library_registry
 
     if library_registry.list_libraries():  # registry seeded by app startup
         await library_registry.subscribe_default_libraries(db_session, org.id)
@@ -281,7 +283,7 @@ async def second_org(db_session) -> Organization:
     org = Organization(name="Second Org")
     db_session.add(org)
     await db_session.flush()
-    from app.services.science import library_registry
+    from app.services.protocols import library_registry
 
     if library_registry.list_libraries():
         await library_registry.subscribe_default_libraries(db_session, org.id)
@@ -439,7 +441,7 @@ async def extracted_document(db_session: AsyncSession, test_org, test_user) -> D
 @pytest.fixture
 def make_equipment(db_session, test_org):
     async def _factory(*, site_id, name="Eq"):
-        from app.models.science import Equipment
+        from app.models.equipment import Equipment
 
         e = Equipment(organization_id=test_org.id, name=name, site_id=site_id)
         db_session.add(e)
@@ -515,7 +517,7 @@ async def other_org_site(db_session, second_org, second_user):
 
 @pytest.fixture
 async def sample_equipment(db_session, test_org, test_user, sample_site):
-    from app.models.science import Equipment
+    from app.models.equipment import Equipment
 
     eq = Equipment(
         organization_id=test_org.id,
@@ -531,7 +533,7 @@ async def sample_equipment(db_session, test_org, test_user, sample_site):
 
 @pytest.fixture
 async def sample_equipment_attachment(db_session, sample_equipment, test_user):
-    from app.models.science import EquipmentAttachment
+    from app.models.equipment import EquipmentAttachment
 
     att = EquipmentAttachment(
         equipment_id=sample_equipment.id,
@@ -729,7 +731,7 @@ async def member_owned_equipment_id(
 
     Used by tests where SITE_MANAGER with grant should be authorized for
     restricted edits, but the equipment was created by any member."""
-    from app.models.science import Equipment
+    from app.models.equipment import Equipment
 
     eq = Equipment(
         organization_id=test_org.id,
@@ -748,7 +750,7 @@ async def equipment_on_unmanaged_site_id(
     db_session, test_org, test_user, unmanaged_site
 ) -> str:
     """Equipment on a site nobody has a grant on (other than ADMINs)."""
-    from app.models.science import Equipment
+    from app.models.equipment import Equipment
 
     eq = Equipment(
         organization_id=test_org.id,
@@ -767,7 +769,7 @@ async def archived_equipment_id(db_session, test_org, test_user, managed_site) -
     """An archived equipment row to test the read-only guard."""
     from datetime import datetime, timezone
 
-    from app.models.science import Equipment
+    from app.models.equipment import Equipment
 
     eq = Equipment(
         organization_id=test_org.id,

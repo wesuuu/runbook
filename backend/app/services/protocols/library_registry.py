@@ -128,7 +128,7 @@ async def subscribe_default_libraries(
     """Insert subscription rows for every default library. Idempotent."""
     from sqlalchemy import select
 
-    from app.models.science import UnitOpLibrarySubscription  # noqa: WPS433
+    from app.models.protocols import UnitOpLibrarySubscription
 
     existing_q = await db.execute(
         select(UnitOpLibrarySubscription.library_slug).where(

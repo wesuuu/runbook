@@ -24,7 +24,7 @@ describe('_normalizeEndpoint', () => {
     });
 
     it('handles nested paths with trailing slash', () => {
-        expect(_normalizeEndpoint('/science/projects/123/protocols/')).toBe('/science/projects/123/protocols');
+        expect(_normalizeEndpoint('/projects/123/protocols/')).toBe('/projects/123/protocols');
     });
 
     it('handles root path', () => {

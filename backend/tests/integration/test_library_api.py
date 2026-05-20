@@ -7,7 +7,7 @@ from httpx import AsyncClient
 
 from app.models.iam import Organization, OrganizationMember, User
 from app.models.library import Document, DocumentStatus
-from app.models.science import Project
+from app.models.projects import Project
 
 
 # Mock the background handler to avoid async task issues in tests

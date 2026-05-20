@@ -23,10 +23,15 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.equipment import Equipment
 from app.models.iam import User
-from app.models.science import Equipment, GlpSignoff, Protocol, Run
+from app.models.protocols import Protocol
+from app.models.runs import Run
+from app.models.signoffs import GlpSignoff
 from app.services.protocols.template_engine import (
-    assemble_signoff_context_args, build_context)
+    assemble_signoff_context_args,
+    build_context,
+)
 
 
 def _signoff(

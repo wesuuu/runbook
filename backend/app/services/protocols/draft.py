@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import ObjectType, PermissionLevel
-from app.models.science import Protocol, ProtocolVersion
+from app.models.protocols import Protocol, ProtocolVersion
 from app.services.core.permissions import check_permission
 
 

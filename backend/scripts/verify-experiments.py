@@ -11,19 +11,22 @@ from uuid import uuid4
 # Add parent directory to path
 sys.path.insert(0, "/home/wesuuu/Code/trellisbio/backend")
 
+from sqlalchemy import select
+
+from app.core.security import hash_password
 from app.db.session import AsyncSessionLocal
 from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
     Organization,
     OrganizationMember,
-    User,
-    ObjectPermission,
-    PrincipalType,
-    ObjectType,
     PermissionLevel,
+    PrincipalType,
+    User,
 )
-from app.models.science import Project, Protocol, Run, ProtocolRole, RunRoleAssignment
-from app.core.security import hash_password
-from sqlalchemy import select
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolRole
+from app.models.runs import Run, RunRoleAssignment
 
 
 async def main():
@@ -52,9 +55,7 @@ async def main():
         db.add(org)
         await db.flush()
         db.add(
-            OrganizationMember(
-                user_id=user.id, organization_id=org.id, role="ADMIN"
-            )
+            OrganizationMember(user_id=user.id, organization_id=org.id, role="ADMIN")
         )
         await db.flush()
         print(f"   ✓ Organization created: {org.id}")
@@ -159,18 +160,14 @@ async def main():
         print("\n7. Verifying relationships...")
 
         # Check run is linked to protocol
-        result = await db.execute(
-            select(Run).where(Run.id == run_obj.id)
-        )
+        result = await db.execute(select(Run).where(Run.id == run_obj.id))
         fetched_run = result.scalar_one()
         assert fetched_run.protocol_id == protocol.id
         print("   ✓ Run linked to protocol")
 
         # Check role assignments
         result = await db.execute(
-            select(RunRoleAssignment).where(
-                RunRoleAssignment.run_id == run_obj.id
-            )
+            select(RunRoleAssignment).where(RunRoleAssignment.run_id == run_obj.id)
         )
         assignments = result.scalars().all()
         assert len(assignments) == 1

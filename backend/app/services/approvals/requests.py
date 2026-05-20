@@ -18,7 +18,7 @@ from typing import Optional
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import GlpSignoffRequest
+from app.models.signoffs import GlpSignoffRequest
 
 VALID_FULFILL_STATES = ("APPROVED", "REJECTED", "WITHDRAWN")
 

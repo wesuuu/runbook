@@ -25,7 +25,9 @@ from app.models.iam import (
     Team,
     User,
 )
-from app.models.science import Experiment, Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Experiment, Run
 from app.schemas.project import (
     ApproverEntry,
     ApproverGrant,

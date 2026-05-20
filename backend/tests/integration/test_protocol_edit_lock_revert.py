@@ -18,10 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
 from app.models.execution import AuditLog
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            User)
-from app.models.science import Project, Protocol
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
+from app.models.projects import Project
+from app.models.protocols import Protocol
 
 
 def _minimal_graph() -> dict:
@@ -139,7 +146,7 @@ async def test_edit_blocked_for_unauthorized_when_approved(
         label="editor",
     )
     resp = await client.put(
-        f"/science/protocols/{proto.id}",
+        f"/protocols/{proto.id}",
         json={"name": "Renamed by editor"},
         headers=edit_headers,
     )
@@ -161,7 +168,7 @@ async def test_edit_by_creator_reverts_to_draft(
     proto_id = proto.id
 
     resp = await client.put(
-        f"/science/protocols/{proto_id}",
+        f"/protocols/{proto_id}",
         json={"name": "Renamed by creator"},
         headers=auth_headers,
     )
@@ -212,7 +219,7 @@ async def test_edit_by_admin_reverts_to_draft(
     )
 
     resp = await client.put(
-        f"/science/protocols/{proto_id}",
+        f"/protocols/{proto_id}",
         json={"name": "Renamed by admin"},
         headers=admin_headers,
     )
@@ -243,7 +250,7 @@ async def test_pending_approval_blocks_name_edit(
         status="PENDING_APPROVAL",
     )
     resp = await client.put(
-        f"/science/protocols/{proto.id}",
+        f"/protocols/{proto.id}",
         json={"name": "Try to rename"},
         headers=auth_headers,
     )

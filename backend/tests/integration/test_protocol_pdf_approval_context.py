@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.endpoints.protocol_pdfs import _build_approval_context
 from app.core.security import hash_password
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.science import GlpSignoff, Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.signoffs import GlpSignoff
 
 
 async def _make_user(db: AsyncSession, *, full_name: str, email: str, **kwargs) -> User:

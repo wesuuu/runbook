@@ -10,13 +10,9 @@ from app.api.endpoints import sync as _sync_endpoints
 from app.core.security import create_access_token, create_offline_token, hash_password
 from app.main import app as _app
 from app.models.iam import User
-from app.models.science import (
-    Project,
-    Run,
-    RunRoleAssignment,
-    RunStatus,
-    UnitOpDefinition,
-)
+from app.models.projects import Project
+from app.models.protocols import UnitOpDefinition
+from app.models.runs import Run, RunRoleAssignment, RunStatus
 
 # TD-0082: offline + sync routers are gated off by default. These tests need
 # them registered. Idempotent: only register if not already present.

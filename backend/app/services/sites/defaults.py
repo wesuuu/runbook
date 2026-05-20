@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Site
+from app.models.sites import Site
 from app.services.core.audit import log_audit
 
 DEFAULT_SITE_NAME = "Default Site"
@@ -48,9 +48,7 @@ def is_default_site(site: Site) -> bool:
     return bool(site.is_default)
 
 
-async def set_default_site(
-    db: AsyncSession, *, site: Site, actor_id: UUID
-) -> Site:
+async def set_default_site(db: AsyncSession, *, site: Site, actor_id: UUID) -> Site:
     """Promote `site` to be the org's default. Atomically unsets the
     previous default. No-op if `site` is already default."""
     if site.archived_at is not None:
@@ -71,9 +69,7 @@ async def set_default_site(
         await db.execute(
             update(Site).where(Site.id == previous.id).values(is_default=False)
         )
-    await db.execute(
-        update(Site).where(Site.id == site.id).values(is_default=True)
-    )
+    await db.execute(update(Site).where(Site.id == site.id).values(is_default=True))
 
     await log_audit(
         db,
@@ -82,9 +78,7 @@ async def set_default_site(
         entity_type="site",
         entity_id=site.id,
         changes={
-            "previous_default_id": (
-                str(previous.id) if previous is not None else None
-            ),
+            "previous_default_id": (str(previous.id) if previous is not None else None),
             "new_default_id": str(site.id),
         },
     )

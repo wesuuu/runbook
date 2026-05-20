@@ -152,7 +152,7 @@
         loadingMembers = true;
         try {
             const members = await api.get<ProjectMember[]>(
-                `/science/projects/${pid}/members`,
+                `/projects/${pid}/members`,
             );
             projectMembers = members ?? [];
             loadedMembersForProject = pid;
@@ -184,7 +184,7 @@
     async function loadVersions(pid: string) {
         loadingVersions = true;
         try {
-            versions = await api.get<ProtocolVersion[]>(`/science/protocols/${pid}/versions`);
+            versions = await api.get<ProtocolVersion[]>(`/protocols/${pid}/versions`);
         } finally {
             loadingVersions = false;
         }
@@ -196,7 +196,7 @@
             activeRoleId = null;
             return;
         }
-        api.get<{ roles?: ProtocolRole[] }>(`/science/protocols/${protocolId}`)
+        api.get<{ roles?: ProtocolRole[] }>(`/protocols/${protocolId}`)
             .then((p) => {
                 const sorted = (p.roles ?? []).slice().sort(
                     (a, b) => a.sort_order - b.sort_order,
@@ -321,13 +321,13 @@
             };
 
             // Step 1: PUT the edited graph as a draft version (creates ProtocolVersion is_draft=True)
-            await api.put(`/science/protocols/${protocolId}?save_as_draft=true`, {
+            await api.put(`/protocols/${protocolId}?save_as_draft=true`, {
                 graph: cleanGraph,
             });
 
             // Step 2: Publish the draft — sets is_draft=False and updates the main protocol
             await api.post(
-                `/science/protocols/${protocolId}/publish-draft?version_number=${nextVer}`,
+                `/protocols/${protocolId}/publish-draft?version_number=${nextVer}`,
                 { description: description || undefined },
             );
             await loadVersions(protocolId);
@@ -349,7 +349,7 @@
                 ? (lane?.data.label ?? 'Role')
                 : 'Operator';
             try {
-                await api.post(`/science/runs/${runId}/role-assignments`, {
+                await api.post(`/runs/${runId}/role-assignments`, {
                     lane_node_id,
                     role_name,
                     user_id: userId,
@@ -377,7 +377,7 @@
             if (protocolVersionNumber) payload.protocol_version_number = protocolVersionNumber;
             const overrides = buildOverridesPayload(edits, currentGraph);
             if (overrides) payload.overrides = overrides;
-            const newRun = await api.post<{ id: string }>('/science/runs', payload);
+            const newRun = await api.post<{ id: string }>('/runs', payload);
             await persistAssignments(newRun.id);
             onCreated?.(newRun);
             open = false;

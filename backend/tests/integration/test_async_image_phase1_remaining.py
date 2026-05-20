@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import ImageConversation, RunImage
 from app.models.notifications import Notification
-from app.models.science import Project, Protocol, Run, RunStatus
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run, RunStatus
 
 # ── Fixtures ─────────────────────────────────────────────────────────
 
@@ -133,7 +135,7 @@ async def test_complete_run_with_unanalyzed_images_succeeds(
 
     # Complete the run — should succeed
     resp = await client.put(
-        f"/science/runs/{run.id}",
+        f"/runs/{run.id}",
         json={
             "status": "COMPLETED",
             "execution_data": run.execution_data,
@@ -166,7 +168,7 @@ async def test_complete_run_with_unanalyzed_images_creates_notification(
 
     # Complete the run
     await client.put(
-        f"/science/runs/{run.id}",
+        f"/runs/{run.id}",
         json={
             "status": "COMPLETED",
             "execution_data": run.execution_data,
@@ -217,7 +219,7 @@ async def test_complete_run_all_images_analyzed_no_notification(
 
     # Complete the run
     await client.put(
-        f"/science/runs/{run.id}",
+        f"/runs/{run.id}",
         json={
             "status": "COMPLETED",
             "execution_data": run.execution_data,

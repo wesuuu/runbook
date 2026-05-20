@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.science import Site, SiteManagerGrant
+from app.models.sites import Site, SiteManagerGrant
 from app.services.core.audit import log_audit
 
 

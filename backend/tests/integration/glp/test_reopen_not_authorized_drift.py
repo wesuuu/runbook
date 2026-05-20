@@ -2,7 +2,7 @@
 
 A user without one of the authorized reopen tiers (Study Director on the
 protocol, Org Admin, or Project Lead/ADMIN) must be rejected when calling
-POST /science/runs/{id}/reopen with stable error code
+POST /runs/{id}/reopen with stable error code
 ``REOPEN_NOT_AUTHORIZED``.
 
 Companion to the vitest preflight test
@@ -17,7 +17,7 @@ from httpx import AsyncClient
 
 from app.core.security import create_access_token
 from app.models.iam import Organization
-from app.models.science import Run
+from app.models.runs import Run
 
 
 async def _auth_headers_for(user, org: Organization) -> dict:
@@ -33,7 +33,7 @@ async def _auth_headers_for(user, org: Organization) -> dict:
 @pytest.mark.xfail(
     reason=(
         "assert_can_reopen() exists in app/services/runs/validation.py but "
-        "is not yet wired into POST /science/runs/{id}/reopen. The current "
+        "is not yet wired into POST /runs/{id}/reopen. The current "
         "endpoint allows any authenticated user to reopen, so the 403 "
         "REOPEN_NOT_AUTHORIZED code is unreachable until the wiring lands."
     ),
@@ -52,7 +52,7 @@ async def test_reopen_unauthorized_user_returns_reopen_not_authorized(
     headers = await _auth_headers_for(operator_user, glp_org)
 
     res = await client.post(
-        f"/science/runs/{glp_run_completed.id}/reopen",
+        f"/runs/{glp_run_completed.id}/reopen",
         headers=headers,
         json={"reason": "Attempting unauthorized reopen"},
     )

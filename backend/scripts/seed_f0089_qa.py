@@ -21,11 +21,11 @@ from sqlalchemy import select
 # this transitively).
 from app import models  # noqa: F401
 from app.db.session import AsyncSessionLocal
-from app.models import (  # noqa: F401
+from app.models import (
     ai,
     batch_record_import,
     billing,
-    chat,
+    chat,  # noqa: F401
     execution,
     iam,
     jobs,
@@ -62,27 +62,29 @@ async def main(org_id: str | None) -> None:
         # Find a user that is a member of this org for uploaded_by_id.
         member = (
             await db.execute(
-                select(OrganizationMember).where(
-                    OrganizationMember.organization_id == org_id
-                ).limit(1)
+                select(OrganizationMember)
+                .where(OrganizationMember.organization_id == org_id)
+                .limit(1)
             )
         ).scalar_one_or_none()
         if member is not None:
             uploaded_by_id = member.user_id
         else:
             # Fallback: any user in the system.
-            uploaded_by_id = (
-                await db.execute(select(User).limit(1))
-            ).scalar_one().id
+            uploaded_by_id = (await db.execute(select(User).limit(1))).scalar_one().id
 
         # Idempotency: remove any prior seed doc with the same title in this org.
         prior = (
-            await db.execute(
-                select(Document).where(
-                    Document.org_id == org_id, Document.title == SEED_TITLE
+            (
+                await db.execute(
+                    select(Document).where(
+                        Document.org_id == org_id, Document.title == SEED_TITLE
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for d in prior:
             await db.delete(d)
         await db.flush()
@@ -104,9 +106,8 @@ async def main(org_id: str | None) -> None:
         # semantic search actually retrieves these chunks for relevant
         # queries (flat-constant placeholders match nothing).
         from uuid import UUID
-        embeddings = await embed_texts(
-            SEED_CHUNKS, db, org_id=UUID(org_id)
-        )
+
+        embeddings = await embed_texts(SEED_CHUNKS, db, org_id=UUID(org_id))
         for i, (content, embedding) in enumerate(zip(SEED_CHUNKS, embeddings)):
             db.add(
                 DocumentChunk(
@@ -119,15 +120,11 @@ async def main(org_id: str | None) -> None:
             )
 
         await db.commit()
-        print(
-            f"Seeded {SEED_TITLE} ({len(SEED_CHUNKS)} chunks) into org {org_id}"
-        )
+        print(f"Seeded {SEED_TITLE} ({len(SEED_CHUNKS)} chunks) into org {org_id}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--org-id", default=None, help="Override target org UUID"
-    )
+    parser.add_argument("--org-id", default=None, help="Override target org UUID")
     args = parser.parse_args()
     asyncio.run(main(args.org_id))

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from app.services.science import library_registry as lr
+from app.services.protocols import library_registry as lr
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -166,7 +166,7 @@ async def test_subscribe_default_libraries_idempotent(
     """subscribe_default_libraries can be called repeatedly without error."""
     from sqlalchemy import func, select
 
-    from app.models.science import UnitOpLibrarySubscription
+    from app.models.protocols import UnitOpLibrarySubscription
 
     # test_org fixture already subscribed once. Calling again does nothing.
     await lr.subscribe_default_libraries(db_session, test_org.id)
@@ -207,7 +207,7 @@ async def test_register_endpoint_subscribes_new_org_to_core(
     from sqlalchemy import select
 
     from app.models.iam import Organization
-    from app.models.science import UnitOpLibrarySubscription
+    from app.models.protocols import UnitOpLibrarySubscription
 
     resp = await client.post(
         "/auth/register",
@@ -243,7 +243,7 @@ async def test_create_org_endpoint_subscribes_to_core(
     from sqlalchemy import select
 
     from app.models.iam import Organization
-    from app.models.science import UnitOpLibrarySubscription
+    from app.models.protocols import UnitOpLibrarySubscription
 
     resp = await client.post(
         "/iam/organizations",

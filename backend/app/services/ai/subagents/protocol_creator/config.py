@@ -8,8 +8,15 @@ from subagents_pydantic_ai import SubAgentConfig
 
 from app.services.ai.cache_settings import CHAT_AGENT_MODEL_SETTINGS
 from app.services.ai.subagents.shared.protocols.tools import (
-    create_draft, create_protocol, create_unit_op, get_protocol, list_projects,
-    list_protocol_roles, list_protocols, list_unit_ops)
+    create_draft,
+    create_protocol,
+    create_unit_op,
+    get_protocol,
+    list_projects,
+    list_protocol_roles,
+    list_protocols,
+    list_unit_ops,
+)
 
 _PROMPT_PATH = Path(__file__).parent / "prompt.md"
 

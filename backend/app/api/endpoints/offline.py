@@ -11,7 +11,8 @@ from app.core.deps import get_current_user, get_db, require_active_subscription
 from app.core.security import create_offline_token, verify_password
 from app.models.iam import User
 from app.models.offline import RevokedOfflineToken
-from app.models.science import Run, RunRoleAssignment, UnitOpDefinition
+from app.models.protocols import UnitOpDefinition
+from app.models.runs import Run, RunRoleAssignment
 from app.schemas.offline import (
     OfflineSessionRequest,
     OfflineSessionResponse,
@@ -88,7 +89,7 @@ async def create_offline_session(
     project_result = await db.execute(
         select(Run.project_id).where(Run.id == body.run_id)
     )
-    from app.models.science import Project
+    from app.models.projects import Project
 
     proj_result = await db.execute(
         select(Project.organization_id).where(Project.id == run_obj.project_id)

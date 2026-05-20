@@ -15,7 +15,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.science import GlpSignoff
+from app.models.signoffs import GlpSignoff
 
 
 async def list_active_signoffs(

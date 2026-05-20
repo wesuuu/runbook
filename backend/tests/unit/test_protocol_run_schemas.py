@@ -2,14 +2,8 @@
 
 from datetime import date
 
-from app.schemas.science import (
-    ProtocolCreate,
-    ProtocolResponse,
-    ProtocolUpdate,
-    RunCreate,
-    RunResponse,
-    RunUpdate,
-)
+from app.schemas.protocols import ProtocolCreate, ProtocolResponse, ProtocolUpdate
+from app.schemas.runs import RunCreate, RunResponse, RunUpdate
 
 
 def test_protocol_create_accepts_gxp_fields():

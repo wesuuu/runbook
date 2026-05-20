@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.models.iam import Organization
-from app.models.science import Site
+from app.models.sites import Site
 
 
 async def _make_bare_org(db_session, name="Bare Org"):

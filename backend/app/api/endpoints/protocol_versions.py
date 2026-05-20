@@ -19,15 +19,10 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import (
-    GlpSignoff,
-    GlpSignoffRequest,
-    Project,
-    Protocol,
-    ProtocolVersion,
-    UnitOpDefinition,
-)
-from app.schemas.science import (
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolVersion, UnitOpDefinition
+from app.models.signoffs import GlpSignoff, GlpSignoffRequest
+from app.schemas.protocols import (
     ApproveProtocolRequest,
     AwaitingApprovalItem,
     ProtocolResponse,
@@ -41,8 +36,10 @@ from app.services.approvals import fulfill_open_requests
 from app.services.core.audit import log_audit
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
-from app.services.protocols.validation import (assert_graph_ready_for_glp_approval,
-                                                 assert_no_branch_errors)
+from app.services.protocols.validation import (
+    assert_graph_ready_for_glp_approval,
+    assert_no_branch_errors,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -434,9 +431,8 @@ async def submit_protocol_for_approval(
         except (TypeError, ValueError):
             sd_id = None
         try:
-            if (
-                glp_settings.get("qau_mode") == "SPECIFIC_USER"
-                and glp_settings.get("qau_user_id")
+            if glp_settings.get("qau_mode") == "SPECIFIC_USER" and glp_settings.get(
+                "qau_user_id"
             ):
                 qau_specific_id = UUID(str(glp_settings["qau_user_id"]))
         except (TypeError, ValueError):

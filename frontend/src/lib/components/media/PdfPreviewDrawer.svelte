@@ -57,7 +57,7 @@
 
     async function loadProtocolTemplates() {
         try {
-            const proto: any = await api.get(`/science/protocols/${protocolId}`);
+            const proto: any = await api.get(`/protocols/${protocolId}`);
             protocolSopTemplateId = proto.sop_template_id || null;
             protocolBrTemplateId = proto.batch_record_template_id || null;
             selectedTemplateId =
@@ -90,12 +90,12 @@
 
         if (activeTab === "sop") {
             return mode === "run" && runId
-                ? `/science/runs/${runId}/pdf/sop?${params}`
-                : `/science/protocols/${protocolId}/pdf/sop?${params}`;
+                ? `/runs/${runId}/pdf/sop?${params}`
+                : `/protocols/${protocolId}/pdf/sop?${params}`;
         }
         return mode === "run" && runId
-            ? `/science/runs/${runId}/pdf/batch-record?${params}`
-            : `/science/protocols/${protocolId}/pdf/batch-record?${params}`;
+            ? `/runs/${runId}/pdf/batch-record?${params}`
+            : `/protocols/${protocolId}/pdf/batch-record?${params}`;
     }
 
     async function loadPreview() {
@@ -138,7 +138,7 @@
         try {
             const field =
                 activeTab === "sop" ? "sop_template_id" : "batch_record_template_id";
-            await api.put(`/science/protocols/${protocolId}`, {
+            await api.put(`/protocols/${protocolId}`, {
                 [field]: selectedTemplateId,
             });
             if (activeTab === "sop") {
@@ -164,18 +164,18 @@
 
         if (activeTab === "sop") {
             if (mode === "run" && runId) {
-                endpoint = `/science/runs/${runId}/pdf/sop?${params}`;
+                endpoint = `/runs/${runId}/pdf/sop?${params}`;
                 filename = `SOP_${(runName || "Run").replace(/\s+/g, "_")}.pdf`;
             } else {
-                endpoint = `/science/protocols/${protocolId}/pdf/sop?${params}`;
+                endpoint = `/protocols/${protocolId}/pdf/sop?${params}`;
                 filename = `SOP_Preview_${protocolName.replace(/\s+/g, "_")}.pdf`;
             }
         } else {
             if (mode === "run" && runId) {
-                endpoint = `/science/runs/${runId}/pdf/batch-record?${params}`;
+                endpoint = `/runs/${runId}/pdf/batch-record?${params}`;
                 filename = `BatchRecord_${(runName || "Run").replace(/\s+/g, "_")}_BLANK.pdf`;
             } else {
-                endpoint = `/science/protocols/${protocolId}/pdf/batch-record?${params}`;
+                endpoint = `/protocols/${protocolId}/pdf/batch-record?${params}`;
                 filename = `BatchRecord_Preview_${protocolName.replace(/\s+/g, "_")}.pdf`;
             }
         }
