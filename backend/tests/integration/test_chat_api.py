@@ -63,7 +63,14 @@ def _make_streaming_mock(content: str, sources: list):
     """
 
     async def _fake_streaming(
-        db, session, user_content, *, user_id, is_org_admin, skill_id=None
+        db,
+        session,
+        user_content,
+        *,
+        user_id,
+        is_org_admin,
+        skill_id=None,
+        current_route=None,
     ):
         from app.models.chat import ChatMessage, ChatMessageRole
         from app.schemas.chat import ChatMessageResponse, ChatSourceReference
