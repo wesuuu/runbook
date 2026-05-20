@@ -16,7 +16,7 @@ from app.models.iam import (
     TeamMember,
     User,
 )
-from app.models.science import Project
+from app.models.projects import Project
 
 # --- Organizations ---
 

@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.science import GlpSignoffRequest, Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.signoffs import GlpSignoffRequest
 
 
 async def _make_user(

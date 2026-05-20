@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pytest
 from docx import Document
 
-from app.models.science import Protocol
+from app.models.protocols import Protocol
 from app.models.templates import DocumentTemplate
 from app.services.protocols.template_engine import build_context, render_to_docx
 from tests.integration.fixtures.template_permutations import builders

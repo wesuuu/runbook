@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
-from app.models.science import Protocol, ProtocolRole
+from app.models.protocols import Protocol, ProtocolRole
 from app.services.protocols.roles import _build_lane_node, _graph_layout, _lane_id
 
 

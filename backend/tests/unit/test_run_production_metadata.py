@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Run, RunStatus
+from app.models.runs import Run, RunStatus
 
 
 @pytest.mark.asyncio

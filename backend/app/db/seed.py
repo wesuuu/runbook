@@ -28,7 +28,7 @@ from app.models.iam import (
     TeamRole,
     User,
 )
-from app.models.science import Project
+from app.models.projects import Project
 from app.models.templates import DocumentTemplate, TemplateType
 from app.services.protocols.template_seeder import seed_system_templates
 
@@ -276,7 +276,7 @@ async def seed_library_subscriptions(db: AsyncSession):
     from sqlalchemy import select
 
     from app.models.iam import Organization
-    from app.services.science import library_registry
+    from app.services.protocols import library_registry
 
     if not library_registry.list_libraries():
         # Lifespan didn't run (we're called from a CLI script). Bootstrap.

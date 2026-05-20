@@ -5,8 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
-from pydantic_ai.messages import (ModelMessage, ModelResponse, TextPart,
-                                  ToolCallPart)
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 
 

@@ -13,7 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import ObjectType, PermissionLevel
-from app.models.science import Project, Protocol, UnitOpDefinition
+from app.models.projects import Project
+from app.models.protocols import Protocol, UnitOpDefinition
 from app.services.core.permissions import check_permission
 from app.services.protocols.lane_layout import grow_lane_to_fit, lane_relative_position
 

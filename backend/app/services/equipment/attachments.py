@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Equipment, EquipmentAttachment
+from app.models.equipment import Equipment, EquipmentAttachment
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import FileStorageService
 

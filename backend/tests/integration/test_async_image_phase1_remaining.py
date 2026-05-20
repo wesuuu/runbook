@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import ImageConversation, RunImage
 from app.models.notifications import Notification
-from app.models.science import Project, Protocol, Run, RunStatus
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run, RunStatus
 
 # ── Fixtures ─────────────────────────────────────────────────────────
 

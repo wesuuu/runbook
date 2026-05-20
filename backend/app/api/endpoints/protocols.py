@@ -34,18 +34,12 @@ from app.models.iam import (
     PermissionLevel,
     User,
 )
-from app.models.science import (
-    GlpSignoff,
-    Project,
-    Protocol,
-    ProtocolRole,
-    ProtocolVersion,
-    Run,
-)
-from app.schemas.science import (
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolRole, ProtocolVersion
+from app.models.runs import Run
+from app.models.signoffs import GlpSignoff
+from app.schemas.protocols import (
     DesignateApprovalRequest,
-    GlpSignoffCreate,
-    GlpSignoffResponse,
     ProtocolCreate,
     ProtocolImportFinalizeRequest,
     ProtocolImportProposalResponse,
@@ -56,8 +50,9 @@ from app.schemas.science import (
     ProtocolRoleUpdate,
     ProtocolUpdate,
 )
-from app.services.core.file_storage import FileStorageService
+from app.schemas.signoffs import GlpSignoffCreate, GlpSignoffResponse
 from app.services.core.audit import log_audit
+from app.services.core.file_storage import FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
 from app.services.protocols.lookup import get_protocol_full, list_protocols
@@ -200,7 +195,7 @@ async def import_protocol(
     _: User = Depends(require_active_subscription()),
 ):
     """Upload a protocol document and get an AI-generated import proposal."""
-    from app.models.science import UnitOpDefinition
+    from app.models.protocols import UnitOpDefinition
     from app.services.protocols.protocol_importer import (
         build_proposal,
         extract_text,
@@ -272,7 +267,7 @@ async def refine_protocol_endpoint(
 
     General-purpose: works for imported protocols and existing ones.
     """
-    from app.models.science import UnitOpDefinition
+    from app.models.protocols import UnitOpDefinition
     from app.services.protocols.protocol_importer import refine_protocol
 
     org_id = user.selected_org_id

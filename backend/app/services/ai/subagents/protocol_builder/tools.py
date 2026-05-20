@@ -15,7 +15,8 @@ from uuid import UUID
 from pydantic_ai import RunContext
 from sqlalchemy import select
 
-from app.models.science import Project, Protocol, ProtocolRole, UnitOpDefinition
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolRole, UnitOpDefinition
 from app.services.ai.deps import ChatDeps
 from app.services.protocols.creation import ProtocolSpec, ProtocolStep
 from app.services.protocols.creation import (
@@ -106,7 +107,7 @@ async def list_unit_ops(ctx: RunContext[ChatDeps]) -> ListUnitOpsResult:
     """
     from sqlalchemy import or_, select
 
-    from app.models.science import UnitOpDefinition
+    from app.models.protocols import UnitOpDefinition
 
     result = await ctx.deps.db.execute(
         select(UnitOpDefinition)

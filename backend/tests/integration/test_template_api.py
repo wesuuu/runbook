@@ -9,7 +9,8 @@ from docx import Document
 
 from app.core.security import create_access_token, hash_password
 from app.models.iam import Organization, OrganizationMember, User
-from app.models.science import Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
 from app.models.templates import DocumentTemplate
 
 # ── Helpers ──

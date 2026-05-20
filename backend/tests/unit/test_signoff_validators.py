@@ -7,8 +7,11 @@ import pytest
 from fastapi import HTTPException
 
 from app.services.signoffs.validation import (
-    SignoffPayload, assert_attestation_and_image_present,
-    assert_qau_independent, validate_signoff_role_assignable)
+    SignoffPayload,
+    assert_attestation_and_image_present,
+    assert_qau_independent,
+    validate_signoff_role_assignable,
+)
 
 # ---------------------------------------------------------------------------
 # assert_attestation_and_image_present

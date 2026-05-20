@@ -16,8 +16,9 @@ from app.models.iam import (
     PermissionLevel,
     User,
 )
-from app.models.science import Project, UnitOpDefinition
-from app.schemas.science import (
+from app.models.projects import Project
+from app.models.protocols import UnitOpDefinition
+from app.schemas.protocols import (
     UnitOpDefinitionCreate,
     UnitOpDefinitionResponse,
     UnitOpDefinitionUpdate,
@@ -60,8 +61,8 @@ async def list_unit_ops(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.models.science import UnitOpLibrarySubscription
-    from app.services.science import library_registry
+    from app.models.protocols import UnitOpLibrarySubscription
+    from app.services.protocols import library_registry
 
     org_id = user.selected_org_id
     if org_id is None:
@@ -304,8 +305,8 @@ async def _find_subscribed_json_op(
 ):
     """Walk every subscribed library; return (slug, op) if its synthetic
     UUID equals target_id, else None."""
-    from app.models.science import UnitOpLibrarySubscription
-    from app.services.science import library_registry
+    from app.models.protocols import UnitOpLibrarySubscription
+    from app.services.protocols import library_registry
 
     sub_q = await db.execute(
         select(UnitOpLibrarySubscription.library_slug).where(

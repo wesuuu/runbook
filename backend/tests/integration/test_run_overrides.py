@@ -12,7 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.execution import AuditLog
-from app.models.science import Project, Protocol, ProtocolVersion, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolVersion
+from app.models.runs import Run
 
 
 def _sample_protocol_graph() -> dict:

@@ -2,8 +2,9 @@
 
 from sqlalchemy import Date
 
-from app.models.science import (Equipment, GlpRole, GlpSignoff,
-                                GlpSignoffAction, Run, RunOutcome)
+from app.models.equipment import Equipment
+from app.models.runs import Run, RunOutcome
+from app.models.signoffs import GlpRole, GlpSignoff, GlpSignoffAction
 
 
 def test_glp_role_values():

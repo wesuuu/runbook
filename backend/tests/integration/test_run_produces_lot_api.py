@@ -5,7 +5,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 
 from app.models.iam import ObjectPermission, ObjectType, PermissionLevel, PrincipalType
-from app.models.science import Run
+from app.models.runs import Run
 
 
 @pytest_asyncio.fixture

@@ -14,19 +14,16 @@ Usage:
 
 import asyncio
 import json
-import sys
 import re
+import sys
 from uuid import UUID
 
 # Add parent dir to path
 sys.path.insert(0, ".")
 
 from app.db.session import AsyncSessionLocal
-from app.services.ai.sessions import (
-    create_session,
-    get_session,
-)
 from app.services.ai.send_message import send_message
+from app.services.ai.sessions import create_session, get_session
 
 ORG_ID = UUID("10000000-0000-0000-0000-000000000001")
 USER_ID = UUID("20000000-0000-0000-0000-000000000001")
@@ -37,14 +34,14 @@ CONVERSATION = [
         "msg": "What documents do you have about buffer or media preparation?",
         "check": lambda resp, tc: (
             any(t.get("tool") in ("search_documents", "list_documents") for t in tc),
-            "Should call search_documents or list_documents"
+            "Should call search_documents or list_documents",
         ),
     },
     {
         "msg": "Can you look up how to prepare a PBS buffer? There should be something in the library about it.",
         "check": lambda resp, tc: (
             any(t.get("tool") == "search_documents" for t in tc),
-            "Should call search_documents for PBS"
+            "Should call search_documents for PBS",
         ),
     },
     {
@@ -54,14 +51,14 @@ CONVERSATION = [
             or "step" in resp.lower()
             or "scale" in resp.lower()
             or "what" in resp.lower(),
-            "Should load generate-protocol skill OR start asking about the process"
+            "Should load generate-protocol skill OR start asking about the process",
         ),
     },
     {
         "msg": "Lab scale, about 1 liter.",
         "check": lambda resp, tc: (
             "?" in resp,
-            "Should ask a follow-up question (one at a time)"
+            "Should ask a follow-up question (one at a time)",
         ),
     },
     {
@@ -72,7 +69,7 @@ CONVERSATION = [
             or "draft" in resp.lower()
             or "confirm" in resp.lower()
             or "project" in resp.lower(),
-            "Should create the protocol or ask for final confirmation"
+            "Should create the protocol or ask for final confirmation",
         ),
     },
 ]
@@ -81,15 +78,15 @@ CONVERSATION = [
 QUALITY_CHECKS = [
     (
         lambda resp: "<think>" not in resp,
-        "FAIL: Thought leakage — <think> tags in response"
+        "FAIL: Thought leakage — <think> tags in response",
     ),
     (
         lambda resp: not re.search(r'[\{\[]\s*"[a-z_]+"\s*:', resp),
-        "WARN: Raw JSON in response (should be readable text)"
+        "WARN: Raw JSON in response (should be readable text)",
     ),
     (
         lambda resp: len(resp) < 5000,
-        "WARN: Response too long (>5000 chars) — may be dumping"
+        "WARN: Response too long (>5000 chars) — may be dumping",
     ),
 ]
 
@@ -121,7 +118,9 @@ async def run_test(attempt: int):
 
             try:
                 user_msg, asst_msg, sources = await send_message(
-                    db, session, step["msg"],
+                    db,
+                    session,
+                    step["msg"],
                     user_id=USER_ID,
                     is_org_admin=True,
                 )
@@ -156,6 +155,7 @@ async def run_test(attempt: int):
 
         # Cleanup
         from app.services.ai.sessions import delete_session
+
         session = await get_session(db, session.id)
         if session:
             await delete_session(db, session)

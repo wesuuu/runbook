@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Run, RunStatus
+from app.models.runs import Run, RunStatus
 
 
 @pytest.mark.asyncio
@@ -43,7 +43,7 @@ async def test_run_produces_lot_can_be_set_true(db_session: AsyncSession, test_p
     assert r.lot_number == "LOT-000001"
 
 
-from app.schemas.science import RunCreate, RunResponse, RunUpdate
+from app.schemas.runs import RunCreate, RunResponse, RunUpdate
 
 
 def test_run_create_default_produces_lot_false():

@@ -446,7 +446,7 @@ async def test_list_protocol_roles_tool(monkeypatch):
     ctx = make_ctx()
 
     async def fake(db, **kwargs):
-        from app.models.science import ProtocolRole
+        from app.models.protocols import ProtocolRole
 
         r1 = ProtocolRole(name="Op", color="#fff", sort_order=0)
         r1.id = _uuid.uuid4()
@@ -468,7 +468,7 @@ async def test_add_protocol_role_tool(monkeypatch):
 
     async def fake(db, **kwargs):
         captured.update(kwargs)
-        from app.models.science import ProtocolRole
+        from app.models.protocols import ProtocolRole
 
         r = ProtocolRole(name=kwargs["name"], color="#fff", sort_order=0)
         r.id = _uuid.uuid4()
@@ -494,7 +494,7 @@ async def test_update_protocol_role_tool(monkeypatch):
 
     async def fake(db, **kwargs):
         captured.update(kwargs)
-        from app.models.science import ProtocolRole
+        from app.models.protocols import ProtocolRole
 
         r = ProtocolRole(name=kwargs.get("name") or "X", color="#fff", sort_order=0)
         r.id = kwargs["role_id"]

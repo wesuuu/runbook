@@ -14,7 +14,8 @@ from app.db.session import get_db
 from app.models.batch_record_import import BatchRecordImport, BatchRecordImportStatus
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import Protocol, Run, RunStatus
+from app.models.protocols import Protocol
+from app.models.runs import Run, RunStatus
 from app.schemas.batch_record_import import (
     BatchRecordFinalizeRequest,
     BatchRecordFinalizeResponse,

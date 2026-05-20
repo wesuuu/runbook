@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
-from app.models.science import Protocol, ProtocolRole, UnitOpDefinition
+from app.models.protocols import Protocol, ProtocolRole, UnitOpDefinition
 from tests.benchmarks.conftest import (
     all_benchmark_scores,
     discover_fixtures,

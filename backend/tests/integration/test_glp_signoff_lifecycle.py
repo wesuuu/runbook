@@ -19,7 +19,9 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import User
-from app.models.science import GlpSignoff, Protocol, Run
+from app.models.protocols import Protocol
+from app.models.runs import Run
+from app.models.signoffs import GlpSignoff
 from app.services.core.file_storage import FileStorageService
 
 

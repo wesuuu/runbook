@@ -80,9 +80,7 @@ async def _retrieve_once(
         raw = await embed_query(query, db, org_id=org_id)
         query_embedding = _pad_embedding(raw)
     except Exception as exc:
-        logger.warning(
-            "Embedding unavailable for RAG (%s); using keyword-only", exc
-        )
+        logger.warning("Embedding unavailable for RAG (%s); using keyword-only", exc)
 
     fetch_limit = top_k * 3  # Fetch extra for filtering
 

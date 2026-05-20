@@ -40,19 +40,12 @@ from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import (
-    GlpSignoff,
-    Project,
-    Protocol,
-    ProtocolVersion,
-    Run,
-    RunRoleAssignment,
-    UnitOpDefinition,
-)
-from app.schemas.science import (
+from app.models.projects import Project
+from app.models.protocols import Protocol, ProtocolVersion, UnitOpDefinition
+from app.models.runs import Run, RunRoleAssignment
+from app.models.signoffs import GlpSignoff
+from app.schemas.runs import (
     CheckLotNumberResponse,
-    GlpSignoffCreate,
-    GlpSignoffResponse,
     RunAttachment,
     RunAttachmentListResponse,
     RunCompleteRequest,
@@ -72,6 +65,7 @@ from app.schemas.science import (
     SuggestLotNumberRequest,
     SuggestLotNumberResponse,
 )
+from app.schemas.signoffs import GlpSignoffCreate, GlpSignoffResponse
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
@@ -79,7 +73,10 @@ from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import (
-    assemble_signoff_context_args, build_context, render_to_pdf)
+    assemble_signoff_context_args,
+    build_context,
+    render_to_pdf,
+)
 from app.services.protocols.validation import assert_no_branch_errors
 from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
 from app.services.runs.overrides import (

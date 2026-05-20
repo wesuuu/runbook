@@ -2,10 +2,12 @@ import pytest
 
 from app.core.security import hash_password
 from app.models.iam import OrganizationMember, User
-from app.models.science import Site, SiteManagerGrant
+from app.models.sites import Site, SiteManagerGrant
 from app.services.permissions.equipment import (
-    user_can_edit_restricted_equipment, user_can_move_equipment,
-    user_can_rename_site)
+    user_can_edit_restricted_equipment,
+    user_can_move_equipment,
+    user_can_rename_site,
+)
 
 
 async def _make_member(db, *, org_id, roles, email):

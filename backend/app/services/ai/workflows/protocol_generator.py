@@ -31,7 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat import ChatMessage, ChatSession
-from app.models.science import Protocol, UnitOpDefinition
+from app.models.protocols import Protocol, UnitOpDefinition
 from app.services.ai.ai_config import get_model
 
 logger = logging.getLogger(__name__)

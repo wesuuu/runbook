@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.models.batch_record_import import BatchRecordImport, BatchRecordImportStatus
 from app.models.jobs import BackgroundJob
-from app.models.science import Protocol
+from app.models.protocols import Protocol
 from app.services.ai.ai_config import get_full_config, get_model
 from app.services.core.background_jobs import BackgroundJobService
 from app.services.data.graph_processing import _parse_graph_roles_and_steps

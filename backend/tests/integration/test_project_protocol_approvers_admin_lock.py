@@ -16,7 +16,7 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project
+from app.models.projects import Project
 
 
 async def _make_edit_user_and_headers(

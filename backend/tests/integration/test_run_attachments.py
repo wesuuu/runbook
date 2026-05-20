@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 
 from app.models.iam import ObjectPermission, ObjectType, PermissionLevel, PrincipalType
-from app.models.science import Run, RunRoleAssignment
+from app.models.runs import Run, RunRoleAssignment
 
 
 @pytest_asyncio.fixture

@@ -5,11 +5,14 @@ from fastapi import HTTPException
 
 from app.core.security import hash_password
 from app.models.iam import OrganizationMember, User
-from app.models.science import Site
-from app.services.sites.grants import (grant_site_manager,
-                                       list_grants_for_site,
-                                       list_managed_sites_for_user,
-                                       revoke_site_manager, user_has_grant)
+from app.models.sites import Site
+from app.services.sites.grants import (
+    grant_site_manager,
+    list_grants_for_site,
+    list_managed_sites_for_user,
+    revoke_site_manager,
+    user_has_grant,
+)
 
 
 @pytest.fixture
@@ -120,7 +123,7 @@ async def test_list_managed_sites_for_user_excludes_archived(
         granted_by_id=test_admin.id,
     )
     # Insert grant on archived site directly (bypassing the archive guard)
-    from app.models.science import SiteManagerGrant
+    from app.models.sites import SiteManagerGrant
 
     db_session.add(
         SiteManagerGrant(

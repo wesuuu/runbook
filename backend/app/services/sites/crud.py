@@ -5,7 +5,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Equipment, Site
+from app.models.equipment import Equipment
+from app.models.sites import Site
 from app.schemas.sites import SiteCreate, SiteUpdate
 from app.services.core.audit import log_audit
 from app.services.sites.defaults import is_default_site

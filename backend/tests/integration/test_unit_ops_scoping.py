@@ -17,7 +17,8 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project, UnitOpDefinition
+from app.models.projects import Project
+from app.models.protocols import UnitOpDefinition
 
 # --- Fixtures ---
 
@@ -396,7 +397,7 @@ async def test_list_excludes_unsubscribed_library_ops(
     from sqlalchemy import delete
 
     from app.core.security import create_access_token
-    from app.models.science import UnitOpLibrarySubscription
+    from app.models.protocols import UnitOpLibrarySubscription
 
     await db_session.execute(
         delete(UnitOpLibrarySubscription).where(
@@ -451,8 +452,8 @@ async def test_put_on_library_op_creates_override(
     test_org,
 ):
     """PUT on a JSON op id inserts an override row in this org."""
-    from app.models.science import UnitOpDefinition
-    from app.services.science import library_registry
+    from app.models.protocols import UnitOpDefinition
+    from app.services.protocols import library_registry
 
     synth_id = library_registry.synthetic_uuid("core", "mixing")
 
@@ -484,8 +485,8 @@ async def test_second_put_updates_existing_override(
 ):
     from sqlalchemy import func, select
 
-    from app.models.science import UnitOpDefinition
-    from app.services.science import library_registry
+    from app.models.protocols import UnitOpDefinition
+    from app.services.protocols import library_registry
 
     synth_id = library_registry.synthetic_uuid("core", "mixing")
 
@@ -520,7 +521,7 @@ async def test_override_isolated_per_org(
     second_auth_headers,
 ):
     """An override in org A doesn't leak into org B's listing."""
-    from app.services.science import library_registry
+    from app.services.protocols import library_registry
 
     synth_id = library_registry.synthetic_uuid("core", "mixing")
 

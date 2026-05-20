@@ -8,10 +8,13 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.execution import AuditLog
-from app.models.science import GlpSignoff, Run
-from app.services.signoffs.queries import (get_signoff_by_role,
-                                           invalidate_active_signoffs,
-                                           list_active_signoffs)
+from app.models.runs import Run
+from app.models.signoffs import GlpSignoff
+from app.services.signoffs.queries import (
+    get_signoff_by_role,
+    invalidate_active_signoffs,
+    list_active_signoffs,
+)
 
 
 @pytest_asyncio.fixture

@@ -10,10 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
 from app.models.execution import AuditLog
-from app.models.iam import (ObjectPermission, ObjectType, Organization,
-                            OrganizationMember, PermissionLevel, PrincipalType,
-                            User)
-from app.models.science import GlpSignoff, GlpSignoffRequest, Project, Protocol
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    Organization,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.signoffs import GlpSignoff, GlpSignoffRequest
 
 
 async def _make_pending_protocol(

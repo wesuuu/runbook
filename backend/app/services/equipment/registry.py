@@ -5,7 +5,8 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Equipment, Site
+from app.models.equipment import Equipment
+from app.models.sites import Site
 from app.schemas.equipment import EquipmentCreate, EquipmentUpdate
 from app.services.core.audit import log_audit
 from app.services.equipment.tags import normalize_tags

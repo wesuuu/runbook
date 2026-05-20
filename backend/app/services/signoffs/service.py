@@ -32,12 +32,15 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import User
-from app.models.science import GlpSignoff
+from app.models.signoffs import GlpSignoff
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import FileStorageService
 from app.services.signoffs.validation import (
-    SignoffPayload, assert_attestation_and_image_present,
-    assert_qau_independent, validate_signoff_role_assignable)
+    SignoffPayload,
+    assert_attestation_and_image_present,
+    assert_qau_independent,
+    validate_signoff_role_assignable,
+)
 
 
 def _record_scoped_signature_path(org_id: UUID, signoff_id: UUID, source: str) -> str:

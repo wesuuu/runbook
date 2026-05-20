@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user_or_offline, get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.iam import User
-from app.models.science import Run
+from app.models.runs import Run
 from app.schemas.offline import (
     SyncAction,
     SyncActionResult,
@@ -165,7 +165,7 @@ async def _handle_image_upload(
         )
 
     # Resolve org_id from run → project
-    from app.models.science import Project
+    from app.models.projects import Project
 
     proj_result = await db.execute(
         select(Project.organization_id).where(Project.id == run.project_id)

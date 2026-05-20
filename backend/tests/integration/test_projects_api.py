@@ -11,7 +11,7 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project
+from app.models.projects import Project
 
 
 @pytest.mark.asyncio

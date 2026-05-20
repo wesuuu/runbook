@@ -84,10 +84,7 @@ async def test_chat_agent_includes_skills_capability(monkeypatch) -> None:
 
     from pydantic_ai_skills import SkillsCapability
 
-    from app.services.ai.chat_agent import (
-        _reset_cache_for_tests,
-        build_chat_agent,
-    )
+    from app.services.ai.chat_agent import _reset_cache_for_tests, build_chat_agent
     from app.services.ai.runtime.compaction import CompactionState
 
     db = MagicMock()

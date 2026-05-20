@@ -21,17 +21,22 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_any_org_role
+from app.models.equipment import EquipmentAttachment
 from app.models.iam import OrgRole, User
-from app.models.science import EquipmentAttachment
-from app.schemas.equipment import (EquipmentAttachmentResponse,
-                                   EquipmentCreate, EquipmentResponse,
-                                   EquipmentUpdate)
+from app.schemas.equipment import (
+    EquipmentAttachmentResponse,
+    EquipmentCreate,
+    EquipmentResponse,
+    EquipmentUpdate,
+)
 from app.services.equipment import attachments as att_svc
 from app.services.equipment import registry as eq_svc
 from app.services.equipment.registry import RESTRICTED_EQUIPMENT_FIELDS
 from app.services.equipment.tags import list_distinct_tags
 from app.services.permissions.equipment import (
-    user_can_edit_restricted_equipment, user_can_move_equipment)
+    user_can_edit_restricted_equipment,
+    user_can_move_equipment,
+)
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 

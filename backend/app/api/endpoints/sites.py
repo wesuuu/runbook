@@ -5,10 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_org_role
 from app.models.iam import OrgRole, User
-from app.schemas.sites import (ManagedSiteResponse, SiteArchiveRequest,
-                               SiteCreate, SiteManagerGrantCreate,
-                               SiteManagerGrantResponse, SiteResponse,
-                               SiteUpdate)
+from app.schemas.sites import (
+    ManagedSiteResponse,
+    SiteArchiveRequest,
+    SiteCreate,
+    SiteManagerGrantCreate,
+    SiteManagerGrantResponse,
+    SiteResponse,
+    SiteUpdate,
+)
 from app.services.permissions.equipment import user_can_rename_site
 from app.services.sites import crud, grants
 from app.services.sites.defaults import set_default_site
@@ -178,9 +183,7 @@ async def list_my_managed_sites_endpoint(
     member can call this. Used by the frontend `canManageEquipmentLifecycle`
     helper (F-0088 decision 4) to know which sites the user can edit
     regulated metadata on."""
-    rows = await grants.list_managed_sites_for_user(
-        db, user.id, include_archived=False
-    )
+    rows = await grants.list_managed_sites_for_user(db, user.id, include_archived=False)
     # Filter to current org to keep cross-org isolation explicit, even
     # though grants are scoped to a single org via Site.organization_id.
     rows = [g for g in rows if g.site.organization_id == user.selected_org_id]

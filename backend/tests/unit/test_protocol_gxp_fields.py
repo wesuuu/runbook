@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Protocol, ProtocolVersion
+from app.models.protocols import Protocol, ProtocolVersion
 
 
 @pytest.mark.asyncio

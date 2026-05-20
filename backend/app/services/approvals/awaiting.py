@@ -9,7 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import OrganizationMember, OrgRole, User
-from app.models.science import GlpSignoffRequest, Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.signoffs import GlpSignoffRequest
 
 
 async def list_awaiting_for_user(

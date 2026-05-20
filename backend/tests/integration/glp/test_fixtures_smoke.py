@@ -11,9 +11,10 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.models.equipment import Equipment
 from app.models.iam import Organization, User
-from app.models.science import (Equipment, Protocol, ProtocolRole, Run,
-                                RunOutcome, RunStatus)
+from app.models.protocols import Protocol, ProtocolRole
+from app.models.runs import Run, RunOutcome, RunStatus
 
 
 @pytest.mark.asyncio

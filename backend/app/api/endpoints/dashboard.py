@@ -14,7 +14,9 @@ from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
 from app.models.iam import OrganizationMember, OrgRole, User, has_org_role
-from app.models.science import Project, Protocol, Run, RunRoleAssignment
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run, RunRoleAssignment
 from app.schemas.dashboard import (
     ActivityItem,
     ActivityPage,

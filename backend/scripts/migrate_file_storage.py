@@ -93,7 +93,8 @@ async def migrate_documents(conn, dry_run: bool) -> tuple[int, int]:
             shutil.move(str(src), str(new_full))
             await conn.execute(
                 "UPDATE documents SET file_path = $1 WHERE id = $2",
-                new_relative, doc_id,
+                new_relative,
+                doc_id,
             )
         migrated += 1
 
@@ -102,12 +103,14 @@ async def migrate_documents(conn, dry_run: bool) -> tuple[int, int]:
 
 async def migrate_run_images(conn, dry_run: bool) -> tuple[int, int]:
     """Migrate run image files to org-scoped directories."""
-    rows = await conn.fetch("""
+    rows = await conn.fetch(
+        """
         SELECT ri.id, ri.file_path, ri.run_id, ri.step_id, p.organization_id
         FROM run_images ri
         JOIN runs r ON r.id = ri.run_id
         JOIN projects p ON p.id = r.project_id
-    """)
+    """
+    )
 
     migrated = 0
     skipped = 0
@@ -150,8 +153,7 @@ async def migrate_run_images(conn, dry_run: bool) -> tuple[int, int]:
         # Build new relative path: {org_id}/images/{run_id}/{step_id}/{filename}
         filename = src.name
         new_relative = str(
-            Path(str(org_id)) / "images" / str(run_id)
-            / str(step_id) / filename
+            Path(str(org_id)) / "images" / str(run_id) / str(step_id) / filename
         )
         new_full = UPLOADS_ROOT / new_relative
 
@@ -162,7 +164,8 @@ async def migrate_run_images(conn, dry_run: bool) -> tuple[int, int]:
             shutil.move(str(src), str(new_full))
             await conn.execute(
                 "UPDATE run_images SET file_path = $1 WHERE id = $2",
-                new_relative, img_id,
+                new_relative,
+                img_id,
             )
         migrated += 1
 
@@ -171,12 +174,14 @@ async def migrate_run_images(conn, dry_run: bool) -> tuple[int, int]:
 
 async def migrate_avatars(conn, dry_run: bool) -> tuple[int, int]:
     """Migrate avatar files to org-scoped directories."""
-    rows = await conn.fetch("""
+    rows = await conn.fetch(
+        """
         SELECT u.id, u.avatar_path, om.organization_id
         FROM users u
         JOIN organization_members om ON om.user_id = u.id
         WHERE u.avatar_path IS NOT NULL
-    """)
+    """
+    )
 
     migrated = 0
     skipped = 0
@@ -215,7 +220,8 @@ async def migrate_avatars(conn, dry_run: bool) -> tuple[int, int]:
             shutil.move(str(src), str(new_full))
             await conn.execute(
                 "UPDATE users SET avatar_path = $1 WHERE id = $2",
-                new_relative, user_id,
+                new_relative,
+                user_id,
             )
         migrated += 1
 

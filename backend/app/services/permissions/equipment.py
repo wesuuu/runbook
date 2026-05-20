@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import OrganizationMember
-from app.models.science import SiteManagerGrant
+from app.models.sites import SiteManagerGrant
 
 
 async def _is_admin(db: AsyncSession, *, user_id: UUID, org_id: UUID) -> bool:

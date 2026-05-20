@@ -5,7 +5,9 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import select
 
-from app.models.science import Equipment, Protocol, Site
+from app.models.equipment import Equipment
+from app.models.protocols import Protocol
+from app.models.sites import Site
 from app.models.templates import DocumentTemplate
 
 

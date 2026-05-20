@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import ObjectType, PermissionLevel
-from app.models.science import Protocol
+from app.models.protocols import Protocol
 from app.services.core.permissions import check_permission
 from app.services.protocols.lane_layout import (
     LANE_DEFAULT_HORIZONTAL,
@@ -260,7 +260,7 @@ async def replace_step_unit_op(
     are taken from the matched catalog row. Existing params are kept
     (caller can clear via update_protocol_step if needed).
     """
-    from app.models.science import UnitOpDefinition
+    from app.models.protocols import UnitOpDefinition
 
     wg = await _load_and_guard(db, user_id, protocol_id)
     graph = dict(wg.graph)

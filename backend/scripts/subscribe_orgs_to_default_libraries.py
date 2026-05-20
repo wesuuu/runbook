@@ -7,6 +7,7 @@ Idempotent: skips orgs that already have the subscription.
 Usage (from backend/):
     python scripts/subscribe_orgs_to_default_libraries.py
 """
+
 import asyncio
 import logging
 import sys
@@ -19,10 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+
 # Import all models to ensure ORM relationships are registered
 from app.models import iam, jobs, science  # noqa: F401
 from app.models.iam import Organization
-from app.services.science import library_registry
+from app.services.protocols import library_registry
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)

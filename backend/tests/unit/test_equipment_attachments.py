@@ -3,9 +3,12 @@ import io
 import pytest
 from fastapi import UploadFile
 
-from app.services.equipment.attachments import (ALLOWED_MIMES, MAX_BYTES,
-                                                add_attachment,
-                                                remove_attachment)
+from app.services.equipment.attachments import (
+    ALLOWED_MIMES,
+    MAX_BYTES,
+    add_attachment,
+    remove_attachment,
+)
 
 
 def _upload(name: str, content_type: str, content: bytes) -> UploadFile:

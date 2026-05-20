@@ -12,7 +12,9 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
 
 # --- Unit Ops ---
 
@@ -285,7 +287,7 @@ async def test_list_protocols_surfaces_latest_draft_version(
 ):
     """Approved protocols with an unpublished draft should expose
     latest_draft_version_number so the project table can badge them."""
-    from app.models.science import ProtocolVersion
+    from app.models.protocols import ProtocolVersion
 
     with_draft = Protocol(
         name="Has Draft",
@@ -344,7 +346,7 @@ async def test_get_protocol_surfaces_latest_draft_version(
     """The single-protocol GET endpoint must surface
     latest_draft_version_number so the editor's version toggle can jump
     to an unpublished draft."""
-    from app.models.science import ProtocolVersion
+    from app.models.protocols import ProtocolVersion
 
     protocol = Protocol(
         name="Toggle Draft",
@@ -431,7 +433,7 @@ async def test_update_protocol_role(
     test_project: Project,
     db_session: AsyncSession,
 ):
-    from app.models.science import ProtocolRole
+    from app.models.protocols import ProtocolRole
 
     protocol = Protocol(
         name="Role Update Protocol",
@@ -466,7 +468,7 @@ async def test_delete_protocol_role(
     test_project: Project,
     db_session: AsyncSession,
 ):
-    from app.models.science import ProtocolRole
+    from app.models.protocols import ProtocolRole
 
     protocol = Protocol(
         name="Role Delete Protocol",
@@ -720,7 +722,7 @@ async def test_get_role_assignments(
     db_session: AsyncSession,
 ):
     """Test listing role assignments."""
-    from app.models.science import RunRoleAssignment
+    from app.models.runs import RunRoleAssignment
 
     run_obj = Run(
         name="List Assignment Run",
@@ -822,7 +824,7 @@ async def test_delete_role_assignment(
     db_session: AsyncSession,
 ):
     """Test deleting a role assignment."""
-    from app.models.science import RunRoleAssignment
+    from app.models.runs import RunRoleAssignment
 
     run_obj = Run(
         name="Delete Assignment Run",
@@ -866,7 +868,7 @@ async def test_transition_to_active_with_all_roles_assigned(
     db_session: AsyncSession,
 ):
     """Test that run can transition to ACTIVE when all roles are assigned."""
-    from app.models.science import RunRoleAssignment
+    from app.models.runs import RunRoleAssignment
 
     run_obj = Run(
         name="Ready to Start",
@@ -1224,7 +1226,7 @@ async def test_start_run_with_swimlanes_requires_all_assigned(
     await db_session.flush()
 
     # Assign only one role
-    from app.models.science import RunRoleAssignment
+    from app.models.runs import RunRoleAssignment
 
     assignment = RunRoleAssignment(
         run_id=run_obj.id,
@@ -1263,7 +1265,7 @@ async def test_start_run_succeeds_with_one_assignment_no_swimlanes(
     db_session.add(run_obj)
     await db_session.flush()
 
-    from app.models.science import RunRoleAssignment
+    from app.models.runs import RunRoleAssignment
 
     assignment = RunRoleAssignment(
         run_id=run_obj.id,
@@ -1315,7 +1317,7 @@ async def test_start_run_succeeds_with_all_swimlanes_assigned(
     db_session.add(run_obj)
     await db_session.flush()
 
-    from app.models.science import RunRoleAssignment
+    from app.models.runs import RunRoleAssignment
 
     assignment1 = RunRoleAssignment(
         run_id=run_obj.id,
@@ -1360,7 +1362,7 @@ async def test_started_by_id_set_on_active_transition(
     db_session.add(run_obj)
     await db_session.flush()
 
-    from app.models.science import RunRoleAssignment
+    from app.models.runs import RunRoleAssignment
 
     # Assign at least one person
     assignment = RunRoleAssignment(
@@ -1499,7 +1501,7 @@ async def test_list_versions_returns_description(
     db_session.add(protocol)
     await db_session.flush()
 
-    from app.models.science import ProtocolVersion
+    from app.models.protocols import ProtocolVersion
 
     version = ProtocolVersion(
         protocol_id=protocol.id,

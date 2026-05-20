@@ -13,9 +13,11 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import get_current_user, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
-from app.models.science import GlpSignoff, Project, Protocol, UnitOpDefinition
+from app.models.projects import Project
+from app.models.protocols import Protocol, UnitOpDefinition
+from app.models.signoffs import GlpSignoff
 from app.models.templates import DocumentTemplate
-from app.schemas.science import GraphPayload
+from app.schemas.protocols import GraphPayload
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
 from app.services.data.graph_processing import _parse_graph_roles_and_steps

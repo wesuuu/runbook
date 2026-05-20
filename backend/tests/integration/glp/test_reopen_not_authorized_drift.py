@@ -17,7 +17,7 @@ from httpx import AsyncClient
 
 from app.core.security import create_access_token
 from app.models.iam import Organization
-from app.models.science import Run
+from app.models.runs import Run
 
 
 async def _auth_headers_for(user, org: Organization) -> dict:

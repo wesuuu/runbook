@@ -16,7 +16,8 @@ from app.models.iam import (
     PrincipalType,
     User,
 )
-from app.models.science import Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
 
 
 async def _make_protocol(

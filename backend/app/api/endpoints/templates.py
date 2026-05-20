@@ -27,7 +27,7 @@ from app.models.iam import (
     PermissionLevel,
     User,
 )
-from app.models.science import Project
+from app.models.projects import Project
 from app.models.templates import DocumentTemplate
 from app.schemas.templates import DocumentTemplateResponse, DocumentTemplateUpdate
 from app.services.core.file_storage import FileStorageService

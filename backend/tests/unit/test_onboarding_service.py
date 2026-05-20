@@ -5,7 +5,9 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization, User
-from app.models.science import Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
 from app.services.core.onboarding import (
     delete_sample_run,
     find_or_create_sample_project,

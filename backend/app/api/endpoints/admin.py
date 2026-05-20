@@ -16,7 +16,7 @@ from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.iam import OrganizationMember, OrgRole, User
 from app.services.core.audit import log_audit
-from app.services.science import library_registry
+from app.services.protocols import library_registry
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

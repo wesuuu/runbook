@@ -24,7 +24,9 @@ from app.models.iam import (
     User,
 )
 from app.models.jobs import BackgroundJob, JobStatus
-from app.models.science import Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
 from app.services.batch.batch_record_extractor import (
     BatchRecordExtraction,
     ParamMapping,

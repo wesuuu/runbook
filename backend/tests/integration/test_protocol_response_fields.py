@@ -8,7 +8,10 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import User
-from app.models.science import GlpSignoff, Project, Protocol, Run
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Run
+from app.models.signoffs import GlpSignoff
 
 
 @pytest.mark.asyncio

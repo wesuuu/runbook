@@ -49,7 +49,7 @@ async def test_register_seeds_first_project(
     db_session: AsyncSession,
 ):
     from app.models.iam import Organization
-    from app.models.science import Project
+    from app.models.projects import Project
 
     with patch("app.api.endpoints.auth.get_email_provider") as mock_provider:
         mock_provider.return_value = AsyncMock()

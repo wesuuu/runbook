@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Protocol, ProtocolRole, UnitOpDefinition
+from app.models.protocols import Protocol, ProtocolRole, UnitOpDefinition
 from app.services.ai.ai_config import get_model
 from app.services.ai.workflows.protocol_generator import (
     GeneratedProtocol,
@@ -765,7 +765,7 @@ async def finalize_import(
     """
     org_id = organization_id
     if project_id:
-        from app.models.science import Project
+        from app.models.projects import Project
 
         result = await db.execute(
             select(Project.organization_id).where(Project.id == project_id)

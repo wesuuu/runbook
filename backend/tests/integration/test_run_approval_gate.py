@@ -14,7 +14,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.science import Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
 
 
 def _minimal_graph() -> dict:

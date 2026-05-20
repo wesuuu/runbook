@@ -8,7 +8,7 @@ returned diffs as audit entries.
 import copy
 from typing import Any, List, TypedDict
 
-from app.schemas.science import NodeOverrides
+from app.schemas.runs import NodeOverrides
 from app.services.runs.graph import derive_field_label
 
 

@@ -4,8 +4,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.equipment import Equipment
 from app.models.iam import Organization
-from app.models.science import Equipment
 
 
 @pytest.fixture

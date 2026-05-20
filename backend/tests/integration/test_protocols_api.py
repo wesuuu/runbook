@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import Organization
-from app.models.science import Project, Protocol
+from app.models.projects import Project
+from app.models.protocols import Protocol
 
 
 @pytest.mark.asyncio

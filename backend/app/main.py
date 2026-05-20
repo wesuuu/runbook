@@ -196,8 +196,7 @@ async def _recover_stalled_documents() -> None:
     Uses SELECT … FOR UPDATE SKIP LOCKED so multiple pods starting
     simultaneously won't double-process.
     """
-    from app.models.library import (STALE_PROCESSING_SECONDS, Document,
-                                    DocumentStatus)
+    from app.models.library import STALE_PROCESSING_SECONDS, Document, DocumentStatus
 
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -318,7 +317,7 @@ async def _recovery_loop() -> None:
 async def lifespan(app: FastAPI):
     """Application lifespan: recover stalled work and start heartbeat."""
     # F-0075: load unit op libraries
-    from app.services.science import library_registry
+    from app.services.protocols import library_registry
 
     library_registry.register_source(
         library_registry.BundledJSONSource(
@@ -357,8 +356,7 @@ async def lifespan(app: FastAPI):
 
     # Make the cursive fallback font visible to LibreOffice for PDF
     # rendering (F-0080)
-    from app.services.documents.font_setup import \
-        ensure_cursive_font_registered
+    from app.services.documents.font_setup import ensure_cursive_font_registered
 
     ensure_cursive_font_registered()
 
@@ -423,13 +421,36 @@ async def health_check():
     return {"status": "ok", "service": "batchrite-backend"}
 
 
-from app.api.endpoints import (admin, ai, auth, batch_record_import, billing,
-                               chat, dashboard, equipment, experiments,
-                               export_data, iam, internal, legal, library,
-                               notifications, offline, onboarding,
-                               project_members, projects, protocol_pdfs,
-                               protocol_versions, protocols, runs, sites, sync,
-                               template_convert, templates, unit_ops)
+from app.api.endpoints import (
+    admin,
+    ai,
+    auth,
+    batch_record_import,
+    billing,
+    chat,
+    dashboard,
+    equipment,
+    experiments,
+    export_data,
+    iam,
+    internal,
+    legal,
+    library,
+    notifications,
+    offline,
+    onboarding,
+    project_members,
+    projects,
+    protocol_pdfs,
+    protocol_versions,
+    protocols,
+    runs,
+    sites,
+    sync,
+    template_convert,
+    templates,
+    unit_ops,
+)
 
 app.include_router(internal.router)  # no prefix — router already has /internal
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
