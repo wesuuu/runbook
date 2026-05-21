@@ -176,6 +176,29 @@ def offline_value_discrepancy(ctx: dict, personal: bool = True) -> tuple[str, st
     return title, body
 
 
+def run_signoff_requested(ctx: dict, personal: bool = True) -> tuple[str, str]:
+    """ctx: run_name, role ('STUDY_DIRECTOR' | 'QAU')"""
+    role_label = {
+        "STUDY_DIRECTOR": "Study Director",
+        "QAU": "QAU (Quality Assurance)",
+    }.get(ctx.get("role") or "", "reviewer")
+    title = f"Review requested: {ctx['run_name']}"
+    body = (
+        f"Run {ctx['run_name']} is awaiting your sign-off as {role_label}."
+    )
+    return title, body
+
+
+def run_signoff_cancelled(ctx: dict, personal: bool = True) -> tuple[str, str]:
+    """ctx: run_name"""
+    title = f"Review cancelled: {ctx['run_name']}"
+    body = (
+        f"The sign-off request for run {ctx['run_name']} was cancelled "
+        f"because the run was reopened."
+    )
+    return title, body
+
+
 # Registry mapping event types to template functions
 TEMPLATES = {
     "ROLE_ASSIGNED": role_assigned,
@@ -192,4 +215,6 @@ TEMPLATES = {
     "PENDING_IMAGE_ANALYSIS": pending_image_analysis,
     "OFFLINE_SYNC_PENDING": offline_sync_pending,
     "OFFLINE_VALUE_DISCREPANCY": offline_value_discrepancy,
+    "RUN_SIGNOFF_REQUESTED": run_signoff_requested,
+    "RUN_SIGNOFF_CANCELLED": run_signoff_cancelled,
 }
