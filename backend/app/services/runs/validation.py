@@ -90,9 +90,18 @@ async def assert_run_can_close(
 ) -> None:
     """Verify required sign-offs exist before a run is closed.
 
-    The OPERATOR sign-off is always required.  Additional roles are
-    gated by the ``glp_settings`` dict (drawn from
-    ``run.graph["glpSettings"]`` or a GLP settings record):
+    Sign-offs are a GLP feature.  A run counts as GLP iff its protocol's
+    ``glpSettings`` enable at least one reviewer role —
+    ``require_study_director`` or ``require_qau``.  That is the same
+    signal the protocol editor uses to derive ``protocol.requires_approval``
+    (see :mod:`app.api.endpoints.protocols`).  A "basic" (non-GLP)
+    protocol enables neither, so its runs close with no sign-off gate at
+    all — not even OPERATOR (#18).
+
+    For a GLP run the OPERATOR sign-off is always required.  The
+    STUDY_DIRECTOR and QAU sign-offs are each required only when their
+    flag in ``glp_settings`` is set (drawn from ``run.graph["glpSettings"]``
+    or a GLP settings record):
 
         require_study_director: bool — SD sign-off required to close
         require_qau: bool           — QAU sign-off required to close
@@ -101,6 +110,13 @@ async def assert_run_can_close(
         HTTPException(400): detail={error: "SIGNOFF_REQUIRED",
                                     missing_roles: [...]}
     """
+    require_sd = bool(glp_settings.get("require_study_director"))
+    require_qau = bool(glp_settings.get("require_qau"))
+
+    # Basic (non-GLP) run: no reviewer role enabled, no sign-off gate (#18).
+    if not (require_sd or require_qau):
+        return
+
     active = await list_active_signoffs(db, "run", run.id)
     have_roles = {s.role for s in active}
     missing = missing_signoff_roles(have_roles, glp_settings)

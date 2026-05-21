@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { TEST_USERS, loginAndNavigate, loginViaApi } from './helpers/auth';
+import { API_BASE } from './helpers/apiBase';
 
-const API_BASE = process.env.E2E_API_BASE || 'http://localhost:8000';
 const MAILPIT_API = process.env.E2E_MAILPIT_API || 'http://localhost:8025';
 const ORG_ID_1 = '10000000-0000-0000-0000-000000000001'; // BioProcess Inc
 const ORG_ID_2 = '10000000-0000-0000-0000-000000000002'; // Acme Biologics
@@ -102,7 +102,20 @@ test.describe('Org Membership — Switch Org', () => {
     await expect(menu).toContainText('BioProcess Inc');
     await expect(menu).toContainText('Acme Biologics');
     await menu.getByText('Acme Biologics').click();
-    await page.waitForLoadState('networkidle');
+
+    // switchOrg persists the new org id only after an async API round-trip,
+    // then triggers a full reload. waitForLoadState('networkidle') resolves
+    // immediately (the document already reached networkidle), so poll the
+    // stored org id — the observable effect of a successful switch.
+    await expect
+      .poll(
+        () =>
+          page
+            .evaluate(() => localStorage.getItem('current_org_id'))
+            .catch(() => null),
+        { timeout: 15_000 },
+      )
+      .not.toBe(initialOrgId);
 
     // Org ID in localStorage should have changed
     const newOrgId = await page.evaluate(() => localStorage.getItem('current_org_id'));
@@ -120,7 +133,19 @@ test.describe('Org Membership — Switch Org', () => {
     // Switch to Acme Biologics
     await page.locator('[data-slot="dropdown-menu-trigger"]').last().click();
     await page.locator('[data-slot="dropdown-menu-content"]').getByText('Acme Biologics').click();
-    await page.waitForLoadState('networkidle');
+
+    // switchOrg persists the new org id only after an async API round-trip;
+    // poll rather than relying on waitForLoadState('networkidle'), which
+    // resolves immediately against the already-idle document.
+    await expect
+      .poll(
+        () =>
+          page
+            .evaluate(() => localStorage.getItem('current_org_id'))
+            .catch(() => null),
+        { timeout: 15_000 },
+      )
+      .not.toBe(null);
 
     const orgIdAfterSwitch = await page.evaluate(() => localStorage.getItem('current_org_id'));
 

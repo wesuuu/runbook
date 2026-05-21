@@ -25,6 +25,8 @@ async def protocol(db_session: AsyncSession, test_project: Project):
         name="Test Protocol",
         project_id=test_project.id,
         graph={"nodes": [], "edges": []},
+        slug="test-protocol-exp",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -42,6 +44,7 @@ async def standalone_run(
         name="Standalone Run",
         project_id=test_project.id,
         protocol_id=protocol.id,
+        slug="standalone-run",
         graph=protocol.graph.copy() if protocol.graph else {},
     )
     db_session.add(run)

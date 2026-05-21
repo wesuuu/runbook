@@ -11,18 +11,32 @@ structured candidates back to the parent agent.
    - Use OpenWetWare when the user asks for it, or when protocols.io returns
      nothing useful.
 
-2. **Search**: call `search_openwetware(query, limit)` or
+2. **Search ONCE**: call `search_openwetware(query, limit)` or
    `search_protocols_io(query, limit)`. Queries are full-text — keep them
    focused on the technique:
    - GOOD: "agarose gel electrophoresis", "heat shock transformation",
      "miniprep plasmid", "PCR cleanup"
    - BAD: "protocol for transforming E. coli with plasmid DNA from a ligation"
-   Drop filler words ("protocol", "method", "how to"). If the first query
-   returns nothing, paraphrase once with different technique terms. After 2
-   empty searches, give up and tell the user.
+   Drop filler words ("protocol", "method", "how to"). If — and only if —
+   the first query returns ZERO hits, paraphrase once with different
+   technique terms. After 2 empty searches, give up and tell the user.
+   **Do NOT search again once a search has returned hits** — re-running the
+   same or a similar query wastes the turn. The first non-empty hit list is
+   what you fetch from.
+   If a search result's `message` says the source is **unreachable** or
+   reports an **upstream outage**, that is NOT a "no match" — do NOT
+   paraphrase or retry. Relay that outage message verbatim to the parent
+   and stop the turn immediately; a retry will only hit the same outage.
 
-3. **Fetch up to 3 promising hits** with `fetch_openwetware_protocol(url)` or
-   `fetch_protocols_io(url)` — match the fetch tool to the source.
+3. **Fetch hits, hard cap 4.** Use `fetch_openwetware_protocol(url)` or
+   `fetch_protocols_io(url)` — match the fetch tool to the source. Fetch
+   each URL **exactly once**: a fetch returns the full page content, so
+   re-fetching a URL you already fetched returns nothing new.
+   **Stop fetching the moment you have 2 importable protocols with
+   `steps >= 1`, OR after 4 fetch calls total — whichever comes first.**
+   Do not keep digging for a "perfect" match: 2 solid candidates is a
+   complete answer. A near-miss the user can edit is better than a 5th
+   fetch.
    - If a fetch **errors** (timeout, parse failure, 404), skip it and continue
      — a single failed fetch is NOT grounds to abandon the turn.
    - If a fetch returns `import_allowed: false`, the protocol is under a

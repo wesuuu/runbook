@@ -56,8 +56,9 @@ async def _make_protocol(
     status: str = "APPROVED",
     requires_approval: bool = True,
 ) -> Protocol:
+    _hex = uuid.uuid4().hex[:6]
     proto = Protocol(
-        name=f"P-{uuid.uuid4().hex[:6]}",
+        name=f"P-{_hex}",
         project_id=project.id,
         status=status,
         requires_approval=requires_approval,
@@ -65,6 +66,8 @@ async def _make_protocol(
         version_number=1,
         graph=_minimal_graph(),
         approved_by_id=creator_id if status == "APPROVED" else None,
+        slug=f"p-{_hex}",
+        owner_org_id=project.organization_id,
     )
     db.add(proto)
     await db.flush()

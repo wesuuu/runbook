@@ -1,12 +1,14 @@
 import { describe, it, expect } from "vitest";
-import type { Node } from "@xyflow/svelte";
+import type { Edge, Node } from "@xyflow/svelte";
 import {
     adoptOrphanUnitOpsToLanes,
     applyDragStopReparenting,
+    buildStateSnapshot,
     findSwimLaneParent,
     parseGraphState,
     reparentNode,
     sortNodesForParenting,
+    topologicalSortNodes,
 } from "./protocolGraph";
 
 function lane(id: string, x: number, y: number, w: number, h: number): Node {
@@ -373,5 +375,127 @@ describe("applyDragStopReparenting", () => {
         const updated = applyDragStopReparenting(nodes, "n1");
         const n1 = updated.find((n) => n.id === "n1")!;
         expect(n1.parentId).toBe("lane-A");
+    });
+});
+
+describe("buildStateSnapshot", () => {
+    function unitOp(id: string, selected: boolean): Node {
+        return {
+            id,
+            type: "unitOp",
+            position: { x: 10, y: 20 },
+            data: { label: id, params: {} },
+            // Transient SvelteFlow UI fields that change on selection / drag.
+            selected,
+            dragging: selected,
+            measured: { width: 120, height: 60 },
+        } as unknown as Node;
+    }
+
+    it("ignores transient UI fields so selecting a node is not a change", () => {
+        const unselected = [unitOp("n1", false)];
+        const selected = [unitOp("n1", true)];
+        const a = buildStateSnapshot(unselected, [], "horizontal", "vertical", false, 200);
+        const b = buildStateSnapshot(selected, [], "horizontal", "vertical", false, 200);
+        expect(a).toBe(b);
+    });
+
+    it("still reflects a real edit (node moved)", () => {
+        const before = [unitOp("n1", false)];
+        const moved = [
+            { ...unitOp("n1", false), position: { x: 999, y: 20 } } as Node,
+        ];
+        const a = buildStateSnapshot(before, [], "horizontal", "vertical", false, 200);
+        const b = buildStateSnapshot(moved, [], "horizontal", "vertical", false, 200);
+        expect(a).not.toBe(b);
+    });
+
+    it("reflects a glpSettings change", () => {
+        const nodes = [unitOp("n1", false)];
+        const a = buildStateSnapshot(nodes, [], "horizontal", "vertical", false, 200, {
+            requireOperator: false,
+        });
+        const b = buildStateSnapshot(nodes, [], "horizontal", "vertical", false, 200, {
+            requireOperator: true,
+        });
+        expect(a).not.toBe(b);
+    });
+});
+
+describe("topologicalSortNodes", () => {
+    function node(id: string, x: number, y = 0): Node {
+        return {
+            id,
+            type: "unitOp",
+            position: { x, y },
+            data: { label: id },
+        } as unknown as Node;
+    }
+    function edge(source: string, target: string): Edge {
+        return { id: `${source}-${target}`, source, target } as Edge;
+    }
+
+    it("orders nodes by edge direction, not canvas position (#19)", () => {
+        // Canvas x-positions run backwards relative to the edge chain.
+        const nodes = [node("a", 300), node("b", 200), node("c", 100)];
+        const edges = [edge("a", "b"), edge("b", "c")];
+        const sorted = topologicalSortNodes(nodes, edges).map((n) => n.id);
+        expect(sorted).toEqual(["a", "b", "c"]);
+    });
+
+    it("is stable when nodes are nudged but edges are unchanged (#19)", () => {
+        const edges = [edge("a", "b"), edge("b", "c")];
+        const order1 = topologicalSortNodes(
+            [node("a", 0), node("b", 100), node("c", 200)],
+            edges,
+        ).map((n) => n.id);
+        const order2 = topologicalSortNodes(
+            [node("a", 999), node("b", 5), node("c", 42)],
+            edges,
+        ).map((n) => n.id);
+        expect(order1).toEqual(order2);
+    });
+
+    it("falls back to position order when there are no edges", () => {
+        const nodes = [node("c", 300), node("a", 100), node("b", 200)];
+        const sorted = topologicalSortNodes(nodes, []).map((n) => n.id);
+        expect(sorted).toEqual(["a", "b", "c"]);
+    });
+
+    it("breaks ties between ready nodes by position", () => {
+        // Two independent chains; left chain should interleave first.
+        const nodes = [
+            node("a", 0),
+            node("b", 100),
+            node("x", 50),
+            node("y", 150),
+        ];
+        const edges = [edge("a", "b"), edge("x", "y")];
+        const sorted = topologicalSortNodes(nodes, edges).map((n) => n.id);
+        expect(sorted).toEqual(["a", "x", "b", "y"]);
+    });
+
+    it("respects a join where a node has two upstream parents", () => {
+        const nodes = [node("a", 0), node("b", 10), node("c", 100)];
+        const edges = [edge("a", "c"), edge("b", "c")];
+        const sorted = topologicalSortNodes(nodes, edges).map((n) => n.id);
+        expect(sorted[2]).toBe("c");
+        expect(sorted.slice(0, 2).sort()).toEqual(["a", "b"]);
+    });
+
+    it("appends cycle members in position order without looping forever", () => {
+        const nodes = [node("a", 0), node("b", 100), node("c", 200)];
+        const edges = [edge("a", "b"), edge("b", "c"), edge("c", "b")];
+        const sorted = topologicalSortNodes(nodes, edges).map((n) => n.id);
+        expect(sorted[0]).toBe("a");
+        expect(sorted.slice(1).sort()).toEqual(["b", "c"]);
+        expect(sorted).toHaveLength(3);
+    });
+
+    it("ignores edges that dangle to an unknown node", () => {
+        const nodes = [node("a", 0), node("b", 100)];
+        const edges = [edge("a", "b"), edge("b", "ghost")];
+        const sorted = topologicalSortNodes(nodes, edges).map((n) => n.id);
+        expect(sorted).toEqual(["a", "b"]);
     });
 });

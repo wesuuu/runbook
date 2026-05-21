@@ -131,6 +131,8 @@ class BatchRecordFinalizeRequest(BaseModel):
 
 class BatchRecordFinalizeResponse(BaseModel):
     run_id: UUID
+    run_slug: str
     run_name: str
+    project_slug: str
     import_id: UUID
     status: str = "FINALIZED"

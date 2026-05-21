@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loginAndNavigate } from './helpers/auth';
+import { loginAndNavigate, loginViaApi } from './helpers/auth';
 import {
     uploadDocumentViaApi,
     deleteDocumentViaApi,
 } from './helpers/library';
+import { libraryUrl, libraryDocUrl } from './helpers/slug-urls';
 
 test.describe('Document Library', () => {
     const createdDocumentIds: string[] = [];
@@ -29,14 +30,18 @@ test.describe('Document Library', () => {
     });
 
     test('shows empty state when no documents', async ({ page }) => {
-        await loginAndNavigate(page, 'admin', '/library');
+        await loginViaApi(page, 'admin');
+        await page.goto(await libraryUrl(page));
+        await page.waitForLoadState('networkidle');
         // Verify empty state text is visible
         const emptyText = page.getByText('Upload your SOPs');
         await expect(emptyText).toBeVisible();
     });
 
     test('upload text document via dialog', async ({ page }) => {
-        await loginAndNavigate(page, 'admin', '/library');
+        await loginViaApi(page, 'admin');
+        await page.goto(await libraryUrl(page));
+        await page.waitForLoadState('networkidle');
 
         // Click "Upload Document" button
         await page.getByRole('button', { name: /Upload Document/i }).click();
@@ -74,14 +79,16 @@ test.describe('Document Library', () => {
     });
 
     test('document detail shows metadata and reader view', async ({ page }) => {
-        await loginAndNavigate(page, 'admin', '/library');
+        await loginViaApi(page, 'admin');
+        await page.goto(await libraryUrl(page));
+        await page.waitForLoadState('networkidle');
 
         // Upload via API
         const doc = await uploadDocumentViaApi(page, 'Detail Test Doc');
         createdDocumentIds.push(doc.id);
 
         // Navigate to detail page
-        await page.goto(`/library/${doc.id}`);
+        await page.goto(await libraryDocUrl(page, doc.id));
         await page.waitForLoadState('networkidle');
 
         // Verify title is visible
@@ -92,13 +99,15 @@ test.describe('Document Library', () => {
     });
 
     test('delete document from detail page', async ({ page }) => {
-        await loginAndNavigate(page, 'admin', '/library');
+        await loginViaApi(page, 'admin');
+        await page.goto(await libraryUrl(page));
+        await page.waitForLoadState('networkidle');
 
         // Upload via API
         const doc = await uploadDocumentViaApi(page, 'Delete Test Doc');
 
         // Navigate to detail
-        await page.goto(`/library/${doc.id}`);
+        await page.goto(await libraryDocUrl(page, doc.id));
         await page.waitForLoadState('networkidle');
 
         // Click delete button
@@ -116,7 +125,9 @@ test.describe('Document Library', () => {
     });
 
     test('upload dialog rejects invalid file type', async ({ page }) => {
-        await loginAndNavigate(page, 'admin', '/library');
+        await loginViaApi(page, 'admin');
+        await page.goto(await libraryUrl(page));
+        await page.waitForLoadState('networkidle');
 
         // Open upload dialog
         await page.getByRole('button', { name: /Upload Document/i }).click();

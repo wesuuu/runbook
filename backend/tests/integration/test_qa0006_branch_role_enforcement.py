@@ -142,6 +142,8 @@ async def _create_protocol_with_draft(
         status="DRAFT",
         version_number=0,
         graph={},
+        slug="qa0006-test-protocol",
+        owner_org_id=project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -200,6 +202,8 @@ async def test_create_run_rejects_invalid_branching_protocol(
         status="DRAFT",
         version_number=0,
         graph=_branching_invalid_graph(),
+        slug="qa0006-run-test-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -234,6 +238,8 @@ async def test_pdf_sop_get_rejects_invalid_branching_protocol(
         status="DRAFT",
         version_number=0,
         graph=_branching_invalid_graph(),
+        slug="qa0006-sop-pdf-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -265,6 +271,8 @@ async def test_pdf_batch_record_post_rejects_invalid_branching_payload(
         status="DRAFT",
         version_number=0,
         graph={},
+        slug="qa0006-batch-record-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()

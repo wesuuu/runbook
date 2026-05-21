@@ -28,6 +28,7 @@ async def run_with_assignment(db_session, test_user, test_project):
     run = Run(
         name="Offline Test Run",
         project_id=test_project.id,
+        slug="offline-test-run",
         status=RunStatus.ACTIVE,
         graph={
             "nodes": [
@@ -92,6 +93,7 @@ async def test_create_offline_session_planned_run(
     run = Run(
         name="Planned Run",
         project_id=test_project.id,
+        slug="planned-run",
         status=RunStatus.PLANNED,
         graph={},
         execution_data={},
@@ -125,6 +127,7 @@ async def test_create_offline_session_completed_run_rejected(
     run = Run(
         name="Completed Run",
         project_id=test_project.id,
+        slug="completed-run",
         status=RunStatus.COMPLETED,
         graph={},
         execution_data={},
@@ -155,6 +158,7 @@ async def test_create_offline_session_no_role(
     run = Run(
         name="No Role Run",
         project_id=test_project.id,
+        slug="no-role-run",
         status=RunStatus.ACTIVE,
         graph={},
         execution_data={},
@@ -214,6 +218,7 @@ async def test_prefetch_includes_unit_op_defs(
     run = Run(
         name="Run With UnitOps",
         project_id=test_project.id,
+        slug="run-with-unit-ops",
         status=RunStatus.ACTIVE,
         graph={
             "nodes": [

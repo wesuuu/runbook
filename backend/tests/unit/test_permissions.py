@@ -55,9 +55,11 @@ async def _setup_org_and_user(db, role="MEMBER"):
 
 
 async def _create_project(db, org):
+    import uuid as _uuid
     project = Project(
         name="Test Project",
         organization_id=org.id,
+        slug=f"test-project-{_uuid.uuid4().hex[:8]}",
         settings={"permissions_enabled": True},
     )
     db.add(project)
@@ -90,7 +92,7 @@ async def test_org_admin_no_cross_org(db_session: AsyncSession):
     db_session.add(org2)
     await db_session.flush()
 
-    project = Project(name="Other Project", organization_id=org2.id)
+    project = Project(name="Other Project", organization_id=org2.id, slug="other-project")
     db_session.add(project)
     await db_session.flush()
 
@@ -308,6 +310,8 @@ async def test_protocol_inherits_project(db_session: AsyncSession):
         name="Test Protocol",
         project_id=project.id,
         graph={},
+        slug="test-protocol",
+        owner_org_id=org.id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -344,6 +348,7 @@ async def test_run_inherits_project(db_session: AsyncSession):
         project_id=project.id,
         graph={},
         execution_data={},
+        slug="test-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -392,7 +397,7 @@ async def test_non_org_member_denied(db_session: AsyncSession):
     db_session.add(user)
     await db_session.flush()
 
-    project = Project(name="Foreign Project", organization_id=org.id)
+    project = Project(name="Foreign Project", organization_id=org.id, slug="foreign-project")
     db_session.add(project)
     await db_session.flush()
 
@@ -422,6 +427,7 @@ async def _create_document(db, org, user, project=None):
         project_id=project.id if project else None,
         uploaded_by_id=user.id,
         title="Test Document",
+        slug=f"test-document-{__import__('uuid').uuid4().hex[:8]}",
         original_filename="test.pdf",
         mime_type="application/pdf",
         file_size_bytes=1024,
@@ -649,7 +655,7 @@ async def test_resolver_multi_role_member_has_admin_access(db_session: AsyncSess
             roles=["MEMBER", "ADMIN", "BILLING"],
         )
     )
-    project = Project(name="P", organization_id=org.id)
+    project = Project(name="P", organization_id=org.id, slug="p-multi-role")
     db_session.add(project)
     await db_session.flush()
 

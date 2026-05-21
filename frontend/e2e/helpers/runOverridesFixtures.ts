@@ -73,10 +73,10 @@ export async function cleanupAllFixtures(page: Page): Promise<void> {
     }
     for (const f of REGISTRY) {
         for (const runId of f.runIds) {
-            await apiDelete(page, `/science/runs/${runId}`).catch(() => undefined);
+            await apiDelete(page, `/runs/${runId}`).catch(() => undefined);
         }
         for (const expId of f.experimentIds) {
-            await apiDelete(page, `/science/experiments/${expId}`).catch(() => undefined);
+            await apiDelete(page, `/experiments/${expId}`).catch(() => undefined);
         }
         await forceCleanupProtocol(page, f.protocolId).catch(() => undefined);
     }
@@ -91,7 +91,7 @@ export async function seedExperimentForFixture(
     name: string,
 ): Promise<string> {
     const token = await apiToken(page);
-    const resp = await page.request.fetch(`${API_BASE}/science/experiments`, {
+    const resp = await page.request.fetch(`${API_BASE}/experiments`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         data: { name, project_id: projectId },

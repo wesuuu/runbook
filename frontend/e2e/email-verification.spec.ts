@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { API_BASE } from './helpers/apiBase';
 
-const API_BASE = process.env.E2E_API_BASE || 'http://localhost:8000';
 const MAILPIT_API = process.env.E2E_MAILPIT_API || 'http://localhost:8025';
 
 /**
@@ -146,7 +146,7 @@ test.describe('Email Verification Flow', () => {
     await registerUser(page, email);
 
     // Try navigating to a protected route
-    await page.goto('/projects');
+    await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
     // Should be redirected to /check-email (not /projects)

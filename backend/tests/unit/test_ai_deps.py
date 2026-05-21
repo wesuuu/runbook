@@ -44,6 +44,7 @@ def test_clone_shares_sources_list_for_aggregation():
     cloned.sources.append(
         RetrievedChunk(
             document_id=uuid.uuid4(),
+            document_slug="t",
             document_title="t",
             chunk_id=uuid.uuid4(),
             chunk_index=0,

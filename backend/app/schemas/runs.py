@@ -187,6 +187,8 @@ class RunStepStateUpdate(BaseModel):
 
 class RunResponse(RunBase):
     id: UUID
+    slug: str
+    project_slug: str
     project_id: UUID
     protocol_id: Optional[UUID]
     experiment_id: Optional[UUID] = None
@@ -254,6 +256,8 @@ RunCreate.model_rebuild()
 class ExperimentResponse(BaseModel):
     id: UUID
     project_id: UUID
+    slug: str
+    project_slug: str
     name: str
     description: Optional[str] = None
     content: Dict[str, Any] = Field(default_factory=dict)

@@ -2,6 +2,8 @@
     import { slide, fade } from 'svelte/transition';
     import { Button } from '$lib/components/ui/button';
     import Logo from '$lib/components/layout/Logo.svelte';
+    import { paths } from '$lib/paths';
+    import { getCurrentOrg } from '$lib/auth.svelte';
 
     let { open = $bindable(false), currentPath = '' } = $props();
 
@@ -9,13 +11,23 @@
         open = false;
     }
 
-    const links = [
-        { href: '/', label: 'Dashboard' },
-        { href: '/library', label: 'Library' },
-        { href: '/chat', label: 'AI Chat' },
-        { href: '/projects', label: 'Projects' },
-        { href: '/settings', label: 'Settings' },
-    ];
+    // Routed links resolve to org-prefixed URLs; built reactively so the
+    // throwing path builder is only invoked once an org is in the store.
+    const links = $derived(
+        getCurrentOrg()
+            ? [
+                  { href: '/', label: 'Dashboard' },
+                  { href: paths.library(), label: 'Library' },
+                  { href: '/chat', label: 'AI Chat' },
+                  { href: paths.projects(), label: 'Projects' },
+                  { href: '/settings', label: 'Settings' },
+              ]
+            : [
+                  { href: '/', label: 'Dashboard' },
+                  { href: '/chat', label: 'AI Chat' },
+                  { href: '/settings', label: 'Settings' },
+              ],
+    );
 
     function isActive(href: string): boolean {
         if (href === '/') return currentPath === '/';
@@ -41,11 +53,8 @@
     >
         <!-- Header -->
         <div class="flex items-center justify-between px-5 py-4 border-b border-border">
-            <a href="/" class="flex items-center gap-2.5" onclick={close}>
-                <div class="shadow-sm shadow-primary/20 rounded-md">
-                    <Logo size="sm" />
-                </div>
-                <span class="text-[15px] font-semibold text-foreground tracking-tight">Batchrite</span>
+            <a href="/" class="flex items-center" onclick={close}>
+                <Logo size="sm" />
             </a>
             <Button
                 variant="ghost"

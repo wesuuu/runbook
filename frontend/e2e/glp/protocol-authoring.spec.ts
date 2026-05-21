@@ -7,6 +7,7 @@ import {
     updateProtocolGraph,
     buildTestGraph,
 } from '../helpers/protocol';
+import { protocolUrl } from '../helpers/slug-urls';
 
 /**
  * F-0087 Task 41b — GLP golden path: protocol authoring → approval.
@@ -58,7 +59,7 @@ test.describe('GLP — protocol authoring → approval', () => {
             );
             createdProtocolIds.push(proto.id as string);
 
-            await page.goto(`/protocols/${proto.id}`);
+            await page.goto(await protocolUrl(page, proto.id as string));
             await page.waitForLoadState('networkidle');
 
             // Open the GLP panel via toolbar ⚖ button.
@@ -113,7 +114,7 @@ test.describe('GLP — protocol authoring → approval', () => {
                 },
             });
 
-            await page.goto(`/protocols/${proto.id}`);
+            await page.goto(await protocolUrl(page, proto.id as string));
             await page.waitForLoadState('networkidle');
 
             await page

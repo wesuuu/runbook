@@ -35,6 +35,7 @@ def _stale_indexing_doc(test_org, test_user) -> Document:
         heartbeat_token="dead-worker-token",
         created_at=stale_when,
         updated_at=stale_when,
+        slug=f"t-{uuid.uuid4().hex[:8]}",
     )
 
 
@@ -111,6 +112,7 @@ async def test_recovery_marks_stalled_index_job_failed_after_max_attempts(
         org_id=test_org.id,
         uploaded_by_id=test_user.id,
         title="t",
+        slug=f"t-{uuid.uuid4().hex[:8]}",
         original_filename="t.pdf",
         mime_type="application/pdf",
         file_size_bytes=1,

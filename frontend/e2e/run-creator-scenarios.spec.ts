@@ -9,6 +9,7 @@ import {
     FIXTURE_PREFIX,
     type RoleSpec,
 } from './helpers/runOverridesFixtures';
+import { projectUrl, experimentUrl } from './helpers/slug-urls';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 test.describe.configure({ mode: 'serial' });
@@ -42,7 +43,7 @@ test.describe('F-0081 Run Creator — scenario matrix', () => {
     }
 
     async function openWizardOnProtocol(protocolId: string, runName: string): Promise<void> {
-        await page.goto(`/projects/${PROJECT_ID}`);
+        await page.goto(await projectUrl(page, PROJECT_ID));
         await page.getByRole('button', { name: /^All Runs$/i }).click();
         await page.getByRole('button', { name: /\+ New Run/i }).click();
         await expect(page.getByRole('heading', { name: /Step 1 · Name your run/i })).toBeVisible();
@@ -306,7 +307,7 @@ test.describe('F-0081 Run Creator — scenario matrix', () => {
             page, fx, PROJECT_ID, `${FIXTURE_PREFIX} exp-s14`,
         );
 
-        await page.goto(`/experiments/${expId}`);
+        await page.goto(await experimentUrl(page, expId));
         await page.getByRole('button', { name: /\+ New Run/i }).click();
         await expect(
             page.getByRole('heading', { name: new RegExp(`New Run for ${FIXTURE_PREFIX} exp-s14`) }),

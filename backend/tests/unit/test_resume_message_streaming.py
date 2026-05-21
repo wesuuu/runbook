@@ -34,20 +34,36 @@ def _make_placeholder(pending: dict):
 
 
 class _FakeWriter:
+    def __init__(self, executed_sql: list[str] | None = None):
+        self._executed_sql = executed_sql
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *a):
         return None
 
-    async def execute(self, *a, **kw):
+    async def execute(self, stmt, *a, **kw):
+        if self._executed_sql is not None:
+            self._executed_sql.append(str(stmt))
         return None
 
     async def commit(self):
         return None
 
 
-def _install_fakes(monkeypatch, run_fn):
+@pytest.fixture(autouse=True)
+def _stub_turn_heartbeat(monkeypatch):
+    """The heartbeat refresher opens its own DB session — stub the low-level
+    writer so the 15s background refresh never touches a real DB during these
+    fast unit tests. Resume turns here complete well within one interval, so
+    the refresh never fires anyway; this is belt-and-suspenders."""
+    monkeypatch.setattr(
+        "app.services.ai.turn_status._write_heartbeat", AsyncMock()
+    )
+
+
+def _install_fakes(monkeypatch, run_fn, executed_sql: list[str] | None = None):
     fake_agent = SimpleNamespace(run=run_fn)
     monkeypatch.setattr(
         "app.services.ai.send_message.build_chat_agent",
@@ -55,7 +71,7 @@ def _install_fakes(monkeypatch, run_fn):
     )
     monkeypatch.setattr(
         "app.services.ai.send_message.AsyncSessionLocal",
-        lambda: _FakeWriter(),
+        lambda: _FakeWriter(executed_sql),
     )
 
 
@@ -298,3 +314,42 @@ async def test_resume_no_longer_injects_user_prompt(monkeypatch):
 
     assert "user_prompt" not in captured_kwargs
     assert "deferred_tool_results" in captured_kwargs
+
+
+@pytest.mark.asyncio
+async def test_resume_sets_then_clears_turn_heartbeat(monkeypatch):
+    """BUG-005: resume stamps active_turn_heartbeat_at on the session when the
+    decision message is committed, and the resume writer clears it back to NULL
+    once the assistant reply lands — so turn_in_progress flips true then false
+    across the resume turn."""
+    session = _make_session()
+    placeholder = _make_placeholder(
+        {
+            "tool_call_id": "call_abc",
+            "tool_name": "create_protocol_from_external_source",
+            "source_url": "https://openwetware.org/wiki/X",
+            "payload_json": "{}",
+        }
+    )
+
+    async def _fake_run(*a, **kw):
+        return SimpleNamespace(output="Drafted X.", all_messages=lambda: [])
+
+    executed_sql: list[str] = []
+    _install_fakes(monkeypatch, _fake_run, executed_sql)
+
+    async for _ in resume_message_streaming(
+        db=_make_db(),
+        session=session,
+        placeholder=placeholder,
+        tool_call_id="call_abc",
+        approved=True,
+        user_id=uuid.uuid4(),
+        is_org_admin=False,
+    ):
+        pass
+
+    # The decision-message commit stamps the heartbeat on the live session.
+    assert isinstance(session.active_turn_heartbeat_at, datetime)
+    # The resume writer's ChatSession UPDATE clears it once the reply lands.
+    assert any("active_turn_heartbeat_at" in sql for sql in executed_sql)

@@ -71,6 +71,7 @@ async def list_awaiting_for_user(
             continue
         awaiting[proto.id] = {
             "protocol_id": proto.id,
+            "protocol_slug": proto.slug,
             "name": proto.name,
             "project_id": project.id if project is not None else None,
             "project_name": project.name if project is not None else None,

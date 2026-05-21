@@ -47,6 +47,7 @@ async def test_search_documents_appends_to_sources(monkeypatch):
     fake_chunks = [
         RetrievedChunk(
             document_id=uuid.uuid4(),
+            document_slug="t",
             document_title="t",
             chunk_id=uuid.uuid4(),
             chunk_index=0,
@@ -110,6 +111,7 @@ async def test_list_documents_filters_to_viewable_statuses(
                 file_size_bytes=1024,
                 file_path=f"/tmp/{title}.pdf",
                 status=status.value,
+                slug=title.lower().replace(" ", "-"),
             )
         )
     await db_session.flush()

@@ -43,7 +43,7 @@ export async function createProtocolViaApi(
   projectId: string,
   name: string,
 ): Promise<Record<string, unknown>> {
-  const { status, data } = await apiRequest(page, 'POST', '/science/protocols', {
+  const { status, data } = await apiRequest(page, 'POST', '/protocols', {
     name,
     project_id: projectId,
     description: '',
@@ -59,9 +59,25 @@ export async function getProtocolViaApi(
   page: Page,
   protocolId: string,
 ): Promise<Record<string, unknown>> {
-  const { status, data } = await apiRequest(page, 'GET', `/science/protocols/${protocolId}`);
+  const { status, data } = await apiRequest(page, 'GET', `/protocols/${protocolId}`);
   if (status !== 200) {
     throw new Error(`Failed to get protocol ${protocolId}: ${status}`);
+  }
+  return data;
+}
+
+/** Fetch a protocol by slug within the caller's current org. */
+export async function getProtocolBySlugViaApi(
+  page: Page,
+  slug: string,
+): Promise<Record<string, unknown>> {
+  const { status, data } = await apiRequest(
+    page,
+    'GET',
+    `/protocols/by-slug/${slug}`,
+  );
+  if (status !== 200) {
+    throw new Error(`Failed to get protocol by slug ${slug}: ${status}`);
   }
   return data;
 }
@@ -77,7 +93,7 @@ export async function updateProtocolGraph(
   const { status, data } = await apiRequest(
     page,
     'PUT',
-    `/science/protocols/${protocolId}${qs}`,
+    `/protocols/${protocolId}${qs}`,
     { graph },
   );
   if (status !== 200) {
@@ -94,7 +110,7 @@ export async function submitForApprovalViaApi(
   const { status, data } = await apiRequest(
     page,
     'POST',
-    `/science/protocols/${protocolId}/submit-for-approval`,
+    `/protocols/${protocolId}/submit-for-approval`,
   );
   if (status !== 200) {
     throw new Error(`Failed to submit for approval: ${status} ${JSON.stringify(data)}`);
@@ -111,7 +127,7 @@ export async function approveProtocolViaApi(
   const { status, data } = await apiRequest(
     page,
     'POST',
-    `/science/protocols/${protocolId}/approve`,
+    `/protocols/${protocolId}/approve`,
     { comment },
   );
   if (status !== 200) {
@@ -129,7 +145,7 @@ export async function rejectProtocolViaApi(
   const { status, data } = await apiRequest(
     page,
     'POST',
-    `/science/protocols/${protocolId}/reject`,
+    `/protocols/${protocolId}/reject`,
     { comment },
   );
   if (status !== 200) {
@@ -146,7 +162,7 @@ export async function unarchiveProtocolViaApi(
   const { status, data } = await apiRequest(
     page,
     'PUT',
-    `/science/protocols/${protocolId}/unarchive`,
+    `/protocols/${protocolId}/unarchive`,
   );
   if (status !== 200) {
     throw new Error(`Failed to unarchive: ${status} ${JSON.stringify(data)}`);
@@ -161,7 +177,7 @@ export async function deleteProtocolViaApi(
   const { status, data } = await apiRequest(
     page,
     'DELETE',
-    `/science/protocols/${protocolId}`,
+    `/protocols/${protocolId}`,
   );
   if (status !== 200) {
     throw new Error(`Failed to delete protocol: ${status} ${JSON.stringify(data)}`);
@@ -232,7 +248,7 @@ export async function createRoleViaApi(
   const { status, data } = await apiRequest(
     page,
     'POST',
-    `/science/protocols/${protocolId}/roles`,
+    `/protocols/${protocolId}/roles`,
     { name, color, sort_order: 0 },
   );
   if (status !== 200 && status !== 201) {

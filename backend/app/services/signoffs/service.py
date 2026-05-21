@@ -90,7 +90,11 @@ async def create_signoff(
             )
             dest = storage.storage_root / relative
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(signer.signature_full_path, dest)
+            # signature_full_path is stored relative to the storage root (see
+            # auth.upload_signature); resolve it before copying so the source
+            # isn't looked up against the process CWD.
+            src = storage.resolve_path(signer.signature_full_path)
+            shutil.copyfile(src, dest)
         else:
             # No uploaded signature — generate a cursive image from the
             # signer's name so the §11.50 attestation-and-image requirement is

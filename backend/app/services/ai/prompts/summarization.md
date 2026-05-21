@@ -9,3 +9,7 @@ Preserve:
 
 Be concise (2-3 paragraphs). Write in third person ("The user discussed...").
 Do NOT include greetings, pleasantries, or meta-commentary about the summary itself.
+
+<messages>
+{messages}
+</messages>

@@ -61,7 +61,7 @@ def _seed_graph_with_n_steps(n: int) -> dict:
 async def draft_proto(
     db_session: AsyncSession, test_org: Organization, test_user: User
 ) -> Protocol:
-    proj = Project(name="g1", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="g1", organization_id=test_org.id, owner_id=test_user.id, slug="g1")
     db_session.add(proj)
     await db_session.flush()
     db_session.add(
@@ -78,6 +78,8 @@ async def draft_proto(
         project_id=proj.id,
         status="DRAFT",
         graph=_seed_graph_with_n_steps(2),
+        slug="p-draft",
+        owner_org_id=test_org.id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -204,7 +206,7 @@ async def test_add_step_stacks_children_inside_lane(
 async def test_add_step_refuses_on_published(
     db_session: AsyncSession, test_org: Organization, test_user: User
 ):
-    proj = Project(name="g2", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="g2", organization_id=test_org.id, owner_id=test_user.id, slug="g2")
     db_session.add(proj)
     await db_session.flush()
     db_session.add(
@@ -222,6 +224,8 @@ async def test_add_step_refuses_on_published(
         status="APPROVED",
         version_number=1,
         graph=_seed_graph_with_n_steps(1),
+        slug="pub",
+        owner_org_id=test_org.id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -242,7 +246,7 @@ async def test_add_step_refuses_without_edit_perm(
     other_org = Organization(name="oo", subscription_tier="ESSENTIALS")
     db_session.add(other_org)
     await db_session.flush()
-    proj = Project(name="hidden", organization_id=other_org.id, owner_id=uuid.uuid4())
+    proj = Project(name="hidden", organization_id=other_org.id, owner_id=uuid.uuid4(), slug="hidden")
     db_session.add(proj)
     await db_session.flush()
     proto = Protocol(
@@ -250,6 +254,8 @@ async def test_add_step_refuses_without_edit_perm(
         project_id=proj.id,
         status="DRAFT",
         graph=_seed_graph_with_n_steps(1),
+        slug="h",
+        owner_org_id=other_org.id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -313,7 +319,7 @@ async def test_remove_step_index_out_of_range(
 async def test_reorder_steps_reverses_chain(
     db_session: AsyncSession, test_user: User, test_org: Organization
 ):
-    proj = Project(name="ro", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="ro", organization_id=test_org.id, owner_id=test_user.id, slug="ro")
     db_session.add(proj)
     await db_session.flush()
     db_session.add(
@@ -330,6 +336,8 @@ async def test_reorder_steps_reverses_chain(
         project_id=proj.id,
         status="DRAFT",
         graph=_seed_graph_with_n_steps(3),
+        slug="r",
+        owner_org_id=test_org.id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -673,7 +681,7 @@ async def test_set_node_position_refuses_on_published(
 ):
     from app.services.protocols.graph import set_node_position
 
-    proj = Project(name="g3", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="g3", organization_id=test_org.id, owner_id=test_user.id, slug="g3")
     db_session.add(proj)
     await db_session.flush()
     db_session.add(
@@ -691,6 +699,8 @@ async def test_set_node_position_refuses_on_published(
         status="APPROVED",
         version_number=1,
         graph=_seed_graph_with_n_steps(1),
+        slug="pub-g3",
+        owner_org_id=test_org.id,
     )
     db_session.add(proto)
     await db_session.flush()

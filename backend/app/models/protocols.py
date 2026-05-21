@@ -4,19 +4,8 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, List, Optional
 
-from sqlalchemy import (
-    Boolean,
-    CheckConstraint,
-    Date,
-    DateTime,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    func,
-)
+from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, ForeignKey,
+                        Index, Integer, String, Text, UniqueConstraint, func)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +28,7 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
             "(project_id IS NULL AND organization_id IS NOT NULL)",
             name="ck_protocol_scope",
         ),
+        UniqueConstraint("owner_org_id", "slug", name="uq_protocols_owner_org_slug"),
     )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -56,6 +46,10 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("organizations.id"), nullable=True
     )
+    owner_org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(
         String, default="DRAFT", server_default="DRAFT", nullable=False
     )
@@ -92,7 +86,9 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    project: Mapped[Optional["Project"]] = relationship(back_populates="protocols")
+    project: Mapped[Optional["Project"]] = relationship(
+        back_populates="protocols", lazy="selectin"
+    )
     organization: Mapped[Optional["Organization"]] = relationship(
         "app.models.iam.Organization",
         foreign_keys=[organization_id],
@@ -119,6 +115,14 @@ class Protocol(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="GlpSignoffRequest.created_at.desc()",
     )
+
+    @property
+    def project_slug(self) -> Optional[str]:
+        """Slug of the owning project — for building project back-links.
+
+        ``None`` for org-scoped (library) protocols, which have no project.
+        """
+        return self.project.slug if self.project else None
 
 
 class ProtocolRole(Base, UUIDMixin, TimestampMixin):

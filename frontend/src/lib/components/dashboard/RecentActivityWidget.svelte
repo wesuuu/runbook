@@ -1,6 +1,7 @@
 <script lang="ts">
     import { timeAgo } from '$lib/utils';
     import { EmptyState } from '$lib/components/ui/empty-state';
+    import { paths } from '$lib/paths';
 
     interface ActivityItem {
         id: string;
@@ -8,6 +9,8 @@
         entity_type: string;
         entity_id: string;
         entity_name: string | null;
+        entity_slug: string | null;
+        project_slug: string | null;
         actor_name: string | null;
         changes: Record<string, any>;
         created_at: string;
@@ -46,11 +49,18 @@
     }
 
     function activityLink(item: ActivityItem): string {
+        // Runs nest under their project; both slugs are required to build a
+        // resolvable URL (F-0091). Fall back to a no-op anchor when missing.
         if (item.entity_type === 'Run' || item.entity_type === 'RunRoleAssignment') {
-            return `/runs/${item.entity_id}`;
+            if (!item.entity_slug || !item.project_slug) return '#';
+            return paths.run(item.project_slug, item.entity_slug);
         }
-        if (item.entity_type === 'Protocol') return `/protocols/${item.entity_id}`;
-        if (item.entity_type === 'Project') return `/projects/${item.entity_id}`;
+        if (item.entity_type === 'Protocol') {
+            return item.entity_slug ? paths.protocol(item.entity_slug) : '#';
+        }
+        if (item.entity_type === 'Project') {
+            return item.entity_slug ? paths.project(item.entity_slug) : '#';
+        }
         return '#';
     }
 

@@ -10,6 +10,12 @@
     import ImageAnalysisDialog from "$lib/components/modals/ImageAnalysisDialog.svelte";
     import ImageGallery from "$lib/components/media/ImageGallery.svelte";
     import { Button } from "$lib/components/ui/button";
+    import { renderTemplate } from "$lib/utils/template";
+    import {
+        stepProgressPercent,
+        areStepFieldsLocked,
+        barcodeScanApplies,
+    } from "./roleWizardState";
 
     interface SchemaProperty {
         type?: string;
@@ -128,19 +134,22 @@
     );
     const hasSchema = $derived(editableFields.length > 0);
 
-    const progress = $derived({
-        current: currentStepIdx + 1,
-        total: steps.length,
-        percent:
-            steps.length > 0
-                ? ((currentStepIdx + 1) / steps.length) * 100
-                : 0,
-    });
     const completed = $derived(
         Object.values(stepData).filter((s) => s.status === "completed").length,
     );
+    const progress = $derived({
+        current: currentStepIdx + 1,
+        total: steps.length,
+        // Driven by completed steps, not the viewed step index (#24).
+        percent: stepProgressPercent(completed, steps.length),
+    });
     const allComplete = $derived(
         steps.length > 0 && completed === steps.length,
+    );
+    // A completed step's recordable fields are locked until it is reopened;
+    // observer (read-only) mode locks them too (#23).
+    const fieldsLocked = $derived(
+        areStepFieldsLocked(readonly, currentData.status),
     );
 
     async function saveStepData() {
@@ -537,8 +546,10 @@
                 </div>
 
                 {#if currentStep.description}
+                    <!-- Substitute {{param}} placeholders so the operator
+                         sees concrete values, not raw template tokens (#21). -->
                     <p class="text-slate-600 text-base leading-relaxed">
-                        {currentStep.description}
+                        {renderTemplate(currentStep.description, currentStep.params)}
                     </p>
                 {/if}
 
@@ -590,7 +601,8 @@
                                             prop.type,
                                         )}
                                     onblur={saveStepData}
-                                    class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
+                                    disabled={fieldsLocked}
+                                    class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
                                 >
                                     <option value="">Select...</option>
                                     {#each prop.enum as option}
@@ -611,10 +623,11 @@
                                                 prop.type,
                                             )}
                                         onblur={saveStepData}
+                                        disabled={fieldsLocked}
                                         placeholder={expected !== undefined ? `Expected: ${expected}` : `Enter ${(prop.title || key).toLowerCase()}`}
-                                        class="flex-1 px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
+                                        class="flex-1 px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 {firstError(fieldErrors, key) ? 'border-red-400' : isAiFilled ? 'border-teal-400 bg-teal-50/50' : 'border-slate-300'}"
                                     />
-                                    {#if !readonly}
+                                    {#if !fieldsLocked && barcodeScanApplies(prop.type)}
                                         <Button
                                             variant="outline"
                                             size="icon"
@@ -655,8 +668,9 @@
                             onchange={(e) =>
                                 updateLegacyValue(e.currentTarget.value)}
                             onblur={saveStepData}
+                            disabled={fieldsLocked}
                             placeholder="Enter result or measurement"
-                            class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent {firstError(fieldErrors, 'value') ? 'border-red-400' : 'border-slate-300'}"
+                            class="w-full px-4 py-3.5 border rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 {firstError(fieldErrors, 'value') ? 'border-red-400' : 'border-slate-300'}"
                         />
                         {#if firstError(fieldErrors, "value")}
                             <p class="mt-1.5 text-sm text-red-600">
@@ -679,14 +693,15 @@
                         value={currentData.notes || ""}
                         onchange={(e) => updateNotes(e.currentTarget.value)}
                         onblur={saveStepData}
+                        disabled={fieldsLocked}
                         placeholder="Enter any notes or observations"
                         rows="5"
-                        class="w-full px-4 py-3.5 border border-slate-300 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        class="w-full px-4 py-3.5 border border-slate-300 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                     ></textarea>
                 </div>
 
                 <!-- Media Input Buttons -->
-                {#if !readonly && !draftMode}
+                {#if !fieldsLocked && !draftMode}
                     <div class="pt-2">
                         <p class="text-sm text-slate-500 mb-3 font-medium">
                             Capture data
@@ -700,6 +715,12 @@
                             >
                                 <span class="text-xl">🎤</span>
                                 <span>Voice Memo</span>
+                                <!-- Visible "coming soon" marker — the title
+                                     tooltip never appears on a tablet, so the
+                                     disabled state looked broken (#27). -->
+                                <span class="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500 text-xs font-semibold uppercase tracking-wide">
+                                    Soon
+                                </span>
                             </Button>
                             <Button
                                 variant="outline"

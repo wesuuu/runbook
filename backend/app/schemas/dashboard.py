@@ -13,8 +13,10 @@ class BlockerReason(BaseModel):
 class RunSummary(BaseModel):
     id: UUID
     name: str
+    slug: str
     project_id: UUID
     project_name: str
+    project_slug: str
     protocol_name: Optional[str] = None
     status: str
     role_name: Optional[str] = None
@@ -30,6 +32,8 @@ class ActivityItem(BaseModel):
     entity_type: str
     entity_id: UUID
     entity_name: Optional[str] = None
+    entity_slug: Optional[str] = None
+    project_slug: Optional[str] = None
     actor_name: Optional[str] = None
     actor_email: Optional[str] = None
     changes: dict[str, Any] = {}
@@ -65,8 +69,10 @@ class CalibrationStatus(BaseModel):
 class SignoffItem(BaseModel):
     kind: str              # "protocol" | "run"
     entity_id: UUID
+    entity_slug: Optional[str] = None   # protocol/run slug for URL building
     name: str
     project_name: Optional[str] = None
+    project_slug: Optional[str] = None  # owning project slug — runs only
     detail: Optional[str] = None
     waiting_since: Optional[datetime] = None  # sort key — oldest-waiting first
 

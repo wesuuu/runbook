@@ -2,8 +2,10 @@
     interface SignoffItem {
         kind: string;
         entity_id: string;
+        entity_slug: string | null;
         name: string;
         project_name: string | null;
+        project_slug: string | null;
         detail: string | null;
     }
     interface Props {

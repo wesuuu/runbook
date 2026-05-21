@@ -24,6 +24,8 @@ export type ChatSession = z.infer<typeof ChatSessionSchema>;
 
 export const ChatSessionDetailSchema = ChatSessionSchema.extend({
     messages: z.array(ChatMessageSchema),
+    // BUG-005: server-computed liveness of the session's current turn.
+    turn_in_progress: z.boolean(),
 }).passthrough();
 export type ChatSessionDetail = z.infer<typeof ChatSessionDetailSchema>;
 
@@ -34,6 +36,7 @@ export const ChatSessionListResponseSchema = z.object({
 
 export const ChatSourceReferenceSchema = z.object({
     document_id: z.string(),
+    document_slug: z.string(),
     document_title: z.string(),
     chunk_id: z.string(),
     chunk_index: z.number(),

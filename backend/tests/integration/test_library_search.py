@@ -55,6 +55,7 @@ async def _upload_and_index(client, auth_headers, db_session, title, content_tex
         org_id=org_id,
         uploaded_by_id=user_id,
         title=title,
+        slug=f"{title.lower().replace(' ', '-')[:32]}-{uuid.uuid4().hex[:6]}",
         original_filename="test.txt",
         mime_type="text/plain",
         file_size_bytes=len(content_text.encode()),
@@ -106,6 +107,9 @@ class TestKeywordSearch:
         assert body["search_mode"] == "keyword"
         assert body["total"] >= 1
         assert body["items"][0]["document_title"] == "Cell Culture Protocol"
+        # F-0091: the search result group carries the document's slug so the
+        # frontend can build /<org>/library/<slug> links.
+        assert body["items"][0]["document_slug"].startswith("cell-culture-protocol")
 
     @pytest.mark.asyncio
     async def test_keyword_search_returns_highlights(
@@ -197,6 +201,7 @@ class TestResultGrouping:
             org_id=member.organization_id,
             uploaded_by_id=member.user_id,
             title="Multi-Chunk Doc",
+            slug=f"multi-chunk-doc-{uuid.uuid4().hex[:8]}",
             original_filename="multi.txt",
             mime_type="text/plain",
             file_size_bytes=100,

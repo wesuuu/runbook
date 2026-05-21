@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { loginAndNavigate } from './helpers/auth';
+import { loginViaApi } from './helpers/auth';
 import {
     uploadDocumentViaApi,
     uploadBinaryDocumentViaApi,
     deleteDocumentViaApi,
     waitForIndexed,
 } from './helpers/library';
+import { libraryUrl, libraryDocUrl } from './helpers/slug-urls';
 import path from 'path';
 
 test.describe('Document Markdown Rendering', () => {
@@ -24,7 +25,9 @@ test.describe('Document Markdown Rendering', () => {
 
     test('PDF renders with Markdown formatting', async ({ page }) => {
         test.slow(); // PDF processing may take time
-        await loginAndNavigate(page, 'admin', '/library');
+        await loginViaApi(page, 'admin');
+        await page.goto(await libraryUrl(page));
+        await page.waitForLoadState('networkidle');
 
         // Upload sample PDF
         const fixturePath = path.resolve(__dirname, 'fixtures/sample.pdf');
@@ -41,7 +44,7 @@ test.describe('Document Markdown Rendering', () => {
         await waitForIndexed(page, doc.id);
 
         // Navigate to detail page
-        await page.goto(`/library/${doc.id}`);
+        await page.goto(await libraryDocUrl(page, doc.id));
         await page.waitForLoadState('networkidle');
 
         // Verify title is visible
@@ -57,7 +60,9 @@ test.describe('Document Markdown Rendering', () => {
     });
 
     test('plain text document renders without Markdown', async ({ page }) => {
-        await loginAndNavigate(page, 'admin', '/library');
+        await loginViaApi(page, 'admin');
+        await page.goto(await libraryUrl(page));
+        await page.waitForLoadState('networkidle');
 
         // Upload a plain text document
         const doc = await uploadDocumentViaApi(
@@ -71,7 +76,7 @@ test.describe('Document Markdown Rendering', () => {
         await waitForIndexed(page, doc.id);
 
         // Navigate to detail page
-        await page.goto(`/library/${doc.id}`);
+        await page.goto(await libraryDocUrl(page, doc.id));
         await page.waitForLoadState('networkidle');
 
         // Verify title

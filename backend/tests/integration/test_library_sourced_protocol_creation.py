@@ -207,6 +207,7 @@ async def test_library_source_flow_dispatches_research_then_creator(
         org_id=test_org.id,
         uploaded_by_id=test_user.id,
         title="Lyophilization SOP v2",
+        slug="lyophilization-sop-v2",
         original_filename="lyo.pdf",
         mime_type="application/pdf",
         file_size_bytes=1024,

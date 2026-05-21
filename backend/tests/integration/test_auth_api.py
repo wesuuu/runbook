@@ -77,6 +77,8 @@ async def test_register_seeds_first_project(
     projects = proj_result.scalars().all()
     assert len(projects) == 1
     assert projects[0].name == "My First Project"
+    # F-0091: the seeded project must get a slug for GitHub-style routes.
+    assert projects[0].slug
 
 
 @pytest.mark.asyncio

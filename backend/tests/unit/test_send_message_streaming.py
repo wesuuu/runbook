@@ -79,6 +79,15 @@ def _stub_writer_session():
         yield writer
 
 
+@pytest.fixture(autouse=True)
+def _stub_turn_heartbeat(monkeypatch):
+    """Neutralize the background heartbeat writer for every test in this
+    file — the refresher must never reach a real DB session (BUG-005)."""
+    monkeypatch.setattr(
+        "app.services.ai.turn_status._write_heartbeat", AsyncMock()
+    )
+
+
 def _patch_schema_serialization():
     """Patch ChatMessageResponse and ChatSourceReference so tests don't need
     real ORM objects with DB-populated fields (id, created_at, etc.)."""
@@ -289,6 +298,8 @@ async def test_agent_error_yields_error_event():
     async def _bad_run(*a, **kw):
         raise RuntimeError("model exploded")
 
+    cmr_patch, csr_patch = _patch_schema_serialization()
+
     with (
         patch(
             "app.services.ai.send_message.build_chat_agent", new_callable=AsyncMock
@@ -298,6 +309,8 @@ async def test_agent_error_yields_error_event():
             return_value=CompactionState(),
         ),
         patch("app.services.ai.send_message.ModelMessagesTypeAdapter"),
+        cmr_patch,
+        csr_patch,
     ):
         fake_agent = MagicMock()
         fake_agent.run = _bad_run
@@ -412,3 +425,56 @@ async def test_skill_marker_precedes_page_marker():
     assert captured["prompt"] == (
         "[skill:new-protocol] [page:/protocols] draft a protocol"
     )
+
+
+@pytest.mark.asyncio
+async def test_sets_turn_heartbeat_then_clears_it(_stub_writer_session):
+    """The heartbeat is stamped before the agent runs and cleared in the
+    assistant-message writer update (BUG-005)."""
+    from datetime import datetime as _dt
+
+    from app.services.ai.send_message import send_message_streaming
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    session = _make_session()
+    session.active_turn_heartbeat_at = None
+
+    run_fn = await _fake_run_with_events([])
+    cmr_patch, csr_patch = _patch_schema_serialization()
+
+    with (
+        patch(
+            "app.services.ai.send_message.build_chat_agent", new_callable=AsyncMock
+        ) as mock_build,
+        patch(
+            "app.services.ai.send_message.CompactionState",
+            return_value=CompactionState(),
+        ),
+        patch("app.services.ai.send_message.ModelMessagesTypeAdapter"),
+        patch("app.services.ai.send_message.sanitize_output", return_value="ok"),
+        cmr_patch,
+        csr_patch,
+    ):
+        fake_agent = MagicMock()
+        fake_agent.run = run_fn
+        mock_build.return_value = fake_agent
+
+        events = [
+            ev
+            async for ev in send_message_streaming(
+                db, session, "hi", user_id=uuid.uuid4(), is_org_admin=False
+            )
+        ]
+
+    # Race-free start: heartbeat stamped on the session before the agent ran.
+    assert isinstance(session.active_turn_heartbeat_at, _dt)
+    # Completion: the assistant-message writer update clears the heartbeat.
+    update_sql = " ".join(
+        str(c.args[0]) for c in _stub_writer_session.execute.call_args_list if c.args
+    )
+    assert "active_turn_heartbeat_at" in update_sql
+    assert events[-1]["type"] == "done"

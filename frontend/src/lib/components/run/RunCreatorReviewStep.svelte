@@ -9,6 +9,7 @@
         versionNumber: number;
         isLatestVersion: boolean;
         edits: Edit[];
+        assignees: Array<{ role: string; name: string }>;
         creating: boolean;
         error: string | null;
         onCreate: () => void;
@@ -16,13 +17,13 @@
 
     let {
         runName, experimentName, protocolName, versionNumber, isLatestVersion,
-        edits, creating, error, onCreate,
+        edits, assignees, creating, error, onCreate,
     }: Props = $props();
 </script>
 
 <section class="step-body">
     <header class="step-header">
-        <h2>Step 4 · Review & create</h2>
+        <h2>Step 5 · Review &amp; create</h2>
         <p class="step-help">Looks good? Create the run and start working.</p>
     </header>
 
@@ -43,6 +44,18 @@
                 {protocolName}
                 <span class="version-pill">v{versionNumber}</span>
                 {#if isLatestVersion}<span class="latest-pill">LATEST</span>{/if}
+            </dd>
+        </div>
+        <div class="summary-row">
+            <dt>{assignees.length > 1 ? 'Assignees' : 'Assignee'}</dt>
+            <dd>
+                {#if assignees.length === 0}
+                    <span class="muted">Not assigned — assign later from the run page</span>
+                {:else}
+                    {#each assignees as a (a.role + a.name)}
+                        <span class="assignee-pill">{a.role}: {a.name}</span>
+                    {/each}
+                {/if}
             </dd>
         </div>
     </dl>
@@ -143,6 +156,16 @@
         font-size: 10px;
         font-weight: 700;
         text-transform: uppercase;
+    }
+    .assignee-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.125rem 0.5rem;
+        border-radius: 0.375rem;
+        background-color: rgb(241 245 249);
+        color: rgb(30 41 59);
+        font-size: 0.75rem;
+        font-weight: 500;
     }
     .edits-summary {
         display: flex;

@@ -23,7 +23,7 @@ from app.services.protocols.roles import add_role, list_roles, remove_role, upda
 async def draft_protocol(
     db_session: AsyncSession, test_org: Organization, test_user: User
 ) -> Protocol:
-    proj = Project(name="p", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="p", organization_id=test_org.id, owner_id=test_user.id, slug="p")
     db_session.add(proj)
     await db_session.flush()
     db_session.add(
@@ -35,7 +35,7 @@ async def draft_protocol(
             permission_level=PermissionLevel.EDIT.value,
         )
     )
-    proto = Protocol(name="P", project_id=proj.id, status="DRAFT", graph={})
+    proto = Protocol(name="P", project_id=proj.id, status="DRAFT", graph={}, slug="p", owner_org_id=test_org.id)
     db_session.add(proto)
     await db_session.flush()
     return proto
@@ -45,7 +45,7 @@ async def draft_protocol(
 async def published_protocol(
     db_session: AsyncSession, test_org: Organization, test_user: User
 ) -> Protocol:
-    proj = Project(name="p2", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="p2", organization_id=test_org.id, owner_id=test_user.id, slug="p2")
     db_session.add(proj)
     await db_session.flush()
     db_session.add(
@@ -58,7 +58,7 @@ async def published_protocol(
         )
     )
     proto = Protocol(
-        name="P2", project_id=proj.id, status="APPROVED", version_number=1, graph={}
+        name="P2", project_id=proj.id, status="APPROVED", version_number=1, graph={}, slug="p2", owner_org_id=test_org.id
     )
     db_session.add(proto)
     await db_session.flush()
@@ -266,10 +266,10 @@ async def test_role_ops_require_view_or_edit(db_session: AsyncSession, test_user
     other_org = Organization(name="o", subscription_tier="ESSENTIALS")
     db_session.add(other_org)
     await db_session.flush()
-    proj = Project(name="op", organization_id=other_org.id, owner_id=uuid.uuid4())
+    proj = Project(name="op", organization_id=other_org.id, owner_id=uuid.uuid4(), slug="op")
     db_session.add(proj)
     await db_session.flush()
-    proto = Protocol(name="X", project_id=proj.id, status="DRAFT", graph={})
+    proto = Protocol(name="X", project_id=proj.id, status="DRAFT", graph={}, slug="x", owner_org_id=other_org.id)
     db_session.add(proto)
     await db_session.flush()
     with pytest.raises(ValueError, match="permission"):

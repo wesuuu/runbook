@@ -52,15 +52,28 @@ router = APIRouter()
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
-async def _get_user_org_id(db: AsyncSession, user_id: UUID) -> UUID:
-    """Get the user's first org membership. Raises 400 if none."""
+async def _get_user_org_id(db: AsyncSession, user: User) -> UUID:
+    """Resolve the user's active org id.
+
+    Honors ``user.selected_org_id`` when the user is still a member of that
+    org; otherwise falls back to their oldest membership. Raises 400 if the
+    user belongs to no organization.
+    """
+    if user.selected_org_id is not None:
+        stmt = select(OrganizationMember.organization_id).where(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.organization_id == user.selected_org_id,
+        )
+        if (await db.execute(stmt)).scalar_one_or_none() is not None:
+            return user.selected_org_id
+
     stmt = (
         select(OrganizationMember.organization_id)
-        .where(OrganizationMember.user_id == user_id)
+        .where(OrganizationMember.user_id == user.id)
+        .order_by(OrganizationMember.created_at, OrganizationMember.id)
         .limit(1)
     )
-    result = await db.execute(stmt)
-    org_id = result.scalar_one_or_none()
+    org_id = (await db.execute(stmt)).scalar_one_or_none()
     if not org_id:
         raise HTTPException(400, "User is not a member of any organization")
     return org_id
@@ -122,7 +135,7 @@ async def create_org_channel(
 ):
     """Create an org-level notification channel (admin only)."""
     _validate_channel_type(body.channel_type)
-    org_id = await _get_user_org_id(db, current_user.id)
+    org_id = await _get_user_org_id(db, current_user)
     await _require_org_admin(db, current_user.id, org_id)
 
     channel = NotificationChannel(
@@ -144,7 +157,7 @@ async def list_org_channels(
     current_user: User = Depends(get_current_user),
 ):
     """List org-level channels."""
-    org_id = await _get_user_org_id(db, current_user.id)
+    org_id = await _get_user_org_id(db, current_user)
     stmt = (
         select(NotificationChannel)
         .where(NotificationChannel.org_id == org_id)
@@ -495,7 +508,7 @@ async def list_deliveries(
     current_user: User = Depends(get_current_user),
 ):
     """List delivery log entries (admin only)."""
-    org_id = await _get_user_org_id(db, current_user.id)
+    org_id = await _get_user_org_id(db, current_user)
     await _require_org_admin(db, current_user.id, org_id)
 
     base = (

@@ -2,10 +2,10 @@ import { z } from 'zod';
 
 export const ProjectSchema = z.object({
     id: z.string(),
+    slug: z.string(),
     name: z.string(),
     description: z.string().nullable().optional(),
     organization_id: z.string(),
-    organization: z.object({ name: z.string() }).passthrough().optional(),
     owner_type: z.string().nullable().optional(),
     owner_id: z.string().nullable().optional(),
     settings: z.record(z.string(), z.unknown()).default({}),

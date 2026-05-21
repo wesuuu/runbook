@@ -17,8 +17,10 @@
     interface SignoffItem {
         kind: string;
         entity_id: string;
+        entity_slug: string | null;
         name: string;
         project_name: string | null;
+        project_slug: string | null;
         detail: string | null;
     }
     interface ActivityItem {
@@ -27,6 +29,8 @@
         entity_type: string;
         entity_id: string;
         entity_name: string | null;
+        entity_slug: string | null;
+        project_slug: string | null;
         actor_name: string | null;
         changes: Record<string, any>;
         created_at: string;

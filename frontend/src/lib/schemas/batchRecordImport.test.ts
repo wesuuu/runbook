@@ -253,7 +253,9 @@ describe('BatchRecordFinalizeResponseSchema', () => {
     it('validates a finalize response', () => {
         const result = BatchRecordFinalizeResponseSchema.parse({
             run_id: '770e8400-e29b-41d4-a716-446655440000',
+            run_slug: 'imported-run-lot-042',
             run_name: 'Imported Run LOT-042',
+            project_slug: 'project-alpha',
             import_id: '550e8400-e29b-41d4-a716-446655440000',
             status: 'FINALIZED',
         });

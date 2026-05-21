@@ -42,7 +42,7 @@ export async function createExperimentViaApi(
   projectId: string,
   description?: string,
 ): Promise<string> {
-  const { status, data } = await apiRequest(page, 'POST', '/science/experiments', {
+  const { status, data } = await apiRequest(page, 'POST', '/experiments', {
     name,
     project_id: projectId,
     description: description ?? null,
@@ -69,7 +69,7 @@ export async function createRunViaApi(
   if (experimentId) {
     body.experiment_id = experimentId;
   }
-  const { status, data } = await apiRequest(page, 'POST', '/science/runs', body);
+  const { status, data } = await apiRequest(page, 'POST', '/runs', body);
   if (status !== 201) {
     throw new Error(`Failed to create run: ${status} ${JSON.stringify(data)}`);
   }
@@ -81,17 +81,17 @@ export async function getProjectProtocols(
   page: Page,
   projectId: string,
 ): Promise<Array<{ id: string; name: string }>> {
-  const { data } = await apiRequest(page, 'GET', `/science/projects/${projectId}/protocols`);
+  const { data } = await apiRequest(page, 'GET', `/projects/${projectId}/protocols`);
   return data as unknown as Array<{ id: string; name: string }>;
 }
 
 /** Force-cleanup: delete experiments and unlink runs via direct API calls */
 export async function forceCleanupExperiment(page: Page, experimentId: string): Promise<void> {
   // Unlink all runs first
-  const { data: exp } = await apiRequest(page, 'GET', `/science/experiments/${experimentId}`);
+  const { data: exp } = await apiRequest(page, 'GET', `/experiments/${experimentId}`);
   const runs = (exp as any)?.runs ?? [];
   for (const run of runs) {
-    await apiRequest(page, 'DELETE', `/science/experiments/${experimentId}/runs/${run.id}`);
+    await apiRequest(page, 'DELETE', `/experiments/${experimentId}/runs/${run.id}`);
   }
   // Hard-delete via API (archive) — we'll use psql in the test for full cleanup
 }
@@ -108,7 +108,7 @@ export async function cleanupE2eExperiments(
   try {
     // Get all experiments for the project
     const { data: experiments } = await apiRequest(
-      page, 'GET', `/science/projects/${projectId}/experiments`,
+      page, 'GET', `/projects/${projectId}/experiments`,
     );
     const expList = (experiments as unknown as any[]) ?? [];
 
@@ -117,29 +117,29 @@ export async function cleanupE2eExperiments(
 
       // Get full experiment with runs
       try {
-        const { data: full } = await apiRequest(page, 'GET', `/science/experiments/${exp.id}`);
+        const { data: full } = await apiRequest(page, 'GET', `/experiments/${exp.id}`);
         const runs = ((full as any)?.runs ?? []) as Array<{ id: string }>;
 
         // Unlink all runs
         for (const run of runs) {
-          await apiRequest(page, 'DELETE', `/science/experiments/${exp.id}/runs/${run.id}`);
+          await apiRequest(page, 'DELETE', `/experiments/${exp.id}/runs/${run.id}`);
         }
       } catch {
         // ignore
       }
 
       // Archive the experiment
-      await apiRequest(page, 'DELETE', `/science/experiments/${exp.id}`);
+      await apiRequest(page, 'DELETE', `/experiments/${exp.id}`);
     }
 
     // Also clean up any standalone E2E runs
     const { data: runs } = await apiRequest(
-      page, 'GET', `/science/projects/${projectId}/runs`,
+      page, 'GET', `/projects/${projectId}/runs`,
     );
     const runList = (runs as unknown as any[]) ?? [];
     for (const run of runList) {
       if (run.name?.startsWith('E2E ') && run.status !== 'ARCHIVED') {
-        await apiRequest(page, 'PUT', `/science/runs/${run.id}`, { status: 'ARCHIVED' });
+        await apiRequest(page, 'PUT', `/runs/${run.id}`, { status: 'ARCHIVED' });
       }
     }
   } catch {

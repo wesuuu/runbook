@@ -30,12 +30,15 @@ async def _make_pending_protocol(
     creator_id: uuid.UUID,
     requested_user_id: uuid.UUID | None = None,
 ) -> Protocol:
+    import uuid as _uuid
     proto = Protocol(
         name="Pending Protocol",
         project_id=project.id,
         status="PENDING_APPROVAL",
         created_by_id=creator_id,
         requires_approval=True,
+        slug=f"pending-protocol-{_uuid.uuid4().hex[:8]}",
+        owner_org_id=project.organization_id,
     )
     db.add(proto)
     await db.flush()
@@ -204,6 +207,8 @@ async def test_approve_blocked_when_glp_signoffs_missing(
                 "require_qau": True,
             }
         },
+        slug="glp-pending-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -243,6 +248,8 @@ async def test_approve_blocked_when_only_one_glp_role_signed(
                 "require_qau": True,
             }
         },
+        slug="glp-partial",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -295,6 +302,8 @@ async def test_approve_succeeds_when_all_glp_signoffs_present(
                 "require_qau": True,
             }
         },
+        slug="glp-full",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -348,6 +357,8 @@ async def test_approve_ignores_invalidated_glp_signoffs(
                 "require_qau": False,
             }
         },
+        slug="glp-invalidated",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -390,6 +401,8 @@ async def test_approve_blocked_when_not_pending(
         status="DRAFT",
         created_by_id=test_user.id,
         requires_approval=True,
+        slug="draft",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()

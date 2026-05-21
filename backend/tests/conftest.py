@@ -336,6 +336,7 @@ async def test_project(db_session, test_org, test_user) -> Project:
     project = Project(
         name="Test Project",
         organization_id=test_org.id,
+        slug="test-project",
         owner_type="USER",
         owner_id=test_user.id,
         settings={"permissions_enabled": True},
@@ -380,6 +381,7 @@ async def fresh_document(db_session: AsyncSession, test_org, test_user) -> Docum
         org_id=test_org.id,
         uploaded_by_id=test_user.id,
         title="Fresh Doc",
+        slug="fresh-doc",
         original_filename="fresh.pdf",
         mime_type="application/pdf",
         file_size_bytes=1024,
@@ -412,6 +414,7 @@ async def extracted_document(db_session: AsyncSession, test_org, test_user) -> D
         org_id=test_org.id,
         uploaded_by_id=test_user.id,
         title="Extracted Doc",
+        slug="extracted-doc",
         original_filename="extracted.pdf",
         mime_type="application/pdf",
         file_size_bytes=2048,
@@ -478,6 +481,7 @@ async def seed_document_extracting(db_session: AsyncSession) -> Document:
         org_id=org.id,
         uploaded_by_id=user.id,
         title="Heartbeat Test Doc",
+        slug=f"heartbeat-test-doc-{uuid.uuid4().hex[:8]}",
         original_filename="test.pdf",
         mime_type="application/pdf",
         file_size_bytes=1024,
@@ -957,6 +961,8 @@ async def glp_protocol(
     proto = Protocol(
         name="GLP Test Protocol",
         project_id=test_project.id,
+        slug="glp-test-protocol",
+        owner_org_id=glp_org.id,
         status="DRAFT",
         version_number=1,
         created_by_id=study_director_user.id,
@@ -992,6 +998,7 @@ async def glp_run_planned(db_session, test_project, glp_protocol) -> Run:
     run = Run(
         name="GLP Run (planned)",
         project_id=test_project.id,
+        slug="glp-run-planned",
         protocol_id=glp_protocol.id,
         status=RunStatus.PLANNED,
         graph=dict(glp_protocol.graph),
@@ -1011,6 +1018,7 @@ async def glp_run_active(db_session, test_project, glp_protocol, operator_user) 
     run = Run(
         name="GLP Run (active)",
         project_id=test_project.id,
+        slug="glp-run-active",
         protocol_id=glp_protocol.id,
         status=RunStatus.ACTIVE,
         graph=dict(glp_protocol.graph),
@@ -1041,6 +1049,7 @@ async def glp_run_completed(
     run = Run(
         name="GLP Run (completed)",
         project_id=test_project.id,
+        slug="glp-run-completed",
         protocol_id=glp_protocol.id,
         status=RunStatus.COMPLETED,
         graph=dict(glp_protocol.graph),

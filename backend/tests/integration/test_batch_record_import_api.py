@@ -94,6 +94,8 @@ async def protocol(
         name="Test Protocol",
         project_id=test_project.id,
         status="PUBLISHED",
+        slug="test-protocol-bri",
+        owner_org_id=test_org.id,
         graph={
             "nodes": [
                 {
@@ -319,6 +321,8 @@ async def test_upload_archived_protocol(
         project_id=test_project.id,
         status="ARCHIVED",
         graph={},
+        slug="archived-proto",
+        owner_org_id=test_org.id,
     )
     db_session.add(archived)
     await db_session.flush()
@@ -428,6 +432,7 @@ async def test_get_returns_run_id_when_finalized(
         project_id=test_project.id,
         protocol_id=protocol.id,
         status="COMPLETED",
+        slug="finalized-run",
         graph=protocol.graph,
         execution_data={},
     )
@@ -568,6 +573,9 @@ async def test_finalize_creates_completed_run(
     run = await db_session.get(Run, uuid.UUID(body["run_id"]))
     assert run is not None
     assert run.status == "COMPLETED"
+    # F-0091: finalize response carries run + project slugs for nav.
+    assert body["run_slug"] == run.slug
+    assert body["project_slug"] == run.project.slug
     assert run.execution_data["node-buf"]["status"] == "completed"
     assert run.execution_data["node-buf"]["results"]["ph_value"] == 7.2
     assert run.execution_data["node-cent"]["results"]["speed_g"] == 3000
@@ -853,6 +861,7 @@ async def test_finalize_rejects_already_finalized(
         project_id=test_project.id,
         protocol_id=protocol.id,
         status="COMPLETED",
+        slug="already-done",
         graph={},
         execution_data={},
     )

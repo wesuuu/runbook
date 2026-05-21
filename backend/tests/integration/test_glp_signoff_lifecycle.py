@@ -31,6 +31,7 @@ async def sample_run(db_session: AsyncSession, test_project) -> Run:
     run = Run(
         name="Signoff Lifecycle Test Run",
         project_id=test_project.id,
+        slug="signoff-lifecycle-test-run",
         status="PLANNED",
         graph={"nodes": [], "edges": []},
         execution_data={},
@@ -53,6 +54,8 @@ async def sample_protocol(
         status="DRAFT",
         version_number=1,
         created_by_id=test_user.id,
+        slug="signoff-lifecycle-test-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -61,10 +64,17 @@ async def sample_protocol(
 
 @pytest_asyncio.fixture
 async def sample_user_with_signature(test_user: User, tmp_path) -> User:
-    """Test user with a signature image file on disk."""
-    sig = tmp_path / "sig.png"
+    """Test user with a signature image file under the storage root.
+
+    ``signature_full_path`` is storage-root-relative (mirrors production:
+    ``auth.upload_signature``), and the file is written under the same
+    ``tmp_path / "uploads"`` root that ``_isolated_storage_root`` redirects to.
+    """
+    relative = f"{test_user.id}/signatures/{test_user.id}-drawn.png"
+    sig = tmp_path / "uploads" / relative
+    sig.parent.mkdir(parents=True, exist_ok=True)
     sig.write_bytes(b"\x89PNG\r\n\x1a\n")
-    test_user.signature_full_path = str(sig)
+    test_user.signature_full_path = relative
     return test_user
 
 
@@ -183,14 +193,27 @@ async def test_post_protocol_signoff_rejects_operator_role(
 async def sample_active_protocol(
     db_session: AsyncSession, test_project, test_user: User
 ) -> Protocol:
-    """A protocol with an empty graph (no glpSettings overrides)."""
+    """A GLP protocol — its ``glpSettings`` require a Study Director.
+
+    Requiring a reviewer role (``require_study_director``) is what makes
+    a protocol GLP, so the run sign-off matrix applies: OPERATOR and
+    STUDY_DIRECTOR are required to close. A basic protocol enables no
+    reviewer role and closes with no sign-off gate at all (see
+    ``test_run_complete_skips_signoff_when_glp_disabled``).
+    """
     proto = Protocol(
         name="Run Lifecycle Protocol",
         project_id=test_project.id,
         status="DRAFT",
         version_number=1,
         created_by_id=test_user.id,
-        graph={"nodes": [], "edges": [], "glpSettings": {}},
+        graph={
+            "nodes": [],
+            "edges": [],
+            "glpSettings": {"require_study_director": True},
+        },
+        slug="run-lifecycle-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -201,16 +224,17 @@ async def sample_active_protocol(
 async def sample_active_run(
     db_session: AsyncSession, test_project, sample_active_protocol
 ) -> Run:
-    """An ACTIVE run linked to a protocol with empty glpSettings.
+    """An ACTIVE run linked to a GLP protocol.
 
-    Only OPERATOR sign-off is required to close (Study Director and QAU
-    are not gated by default).
+    OPERATOR and STUDY_DIRECTOR sign-offs are required to close (QAU is
+    not gated by this protocol).
     """
     run = Run(
         name="Run Lifecycle Active",
         project_id=test_project.id,
         protocol_id=sample_active_protocol.id,
         status="ACTIVE",
+        slug="run-lifecycle-active",
         graph={"nodes": [], "edges": []},
         execution_data={},
         notes=[],
@@ -222,22 +246,31 @@ async def sample_active_run(
 
 
 @pytest_asyncio.fixture
-async def sample_active_run_with_operator_signoff(
+async def sample_active_run_fully_signed(
     db_session: AsyncSession,
     sample_active_run: Run,
     test_user: User,
 ) -> Run:
-    """ACTIVE run that already has an active OPERATOR APPROVED sign-off."""
-    so = GlpSignoff(
-        run_id=sample_active_run.id,
-        role="OPERATOR",
-        action="APPROVED",
-        signer_id=test_user.id,
-        attestation="I performed the run.",
-        signed_at=datetime.now(timezone.utc),
-        signature_image_path="fixture/operator.png",
-    )
-    db_session.add(so)
+    """ACTIVE run with the active sign-offs its GLP protocol requires.
+
+    ``sample_active_protocol`` requires a Study Director, so closing the
+    run needs both OPERATOR and STUDY_DIRECTOR APPROVED sign-offs.
+    """
+    for role, attestation, image in (
+        ("OPERATOR", "I performed the run.", "fixture/operator.png"),
+        ("STUDY_DIRECTOR", "I reviewed the study.", "fixture/sd.png"),
+    ):
+        db_session.add(
+            GlpSignoff(
+                run_id=sample_active_run.id,
+                role=role,
+                action="APPROVED",
+                signer_id=test_user.id,
+                attestation=attestation,
+                signed_at=datetime.now(timezone.utc),
+                signature_image_path=image,
+            )
+        )
     await db_session.flush()
     return sample_active_run
 
@@ -251,7 +284,7 @@ async def test_run_complete_requires_operator_signoff(
     auth_headers,
     sample_active_run,
 ):
-    """Without an OPERATOR sign-off, /complete returns 400 SIGNOFF_REQUIRED."""
+    """Without sign-offs, /complete returns 400 SIGNOFF_REQUIRED on a GLP run."""
     res = await client.post(
         f"/runs/{sample_active_run.id}/complete",
         headers=auth_headers,
@@ -267,11 +300,11 @@ async def test_run_complete_requires_operator_signoff(
 async def test_run_complete_sets_outcome_and_completed_at(
     client,
     auth_headers,
-    sample_active_run_with_operator_signoff,
+    sample_active_run_fully_signed,
 ):
     """Happy path: outcome and completed_at populated; status -> COMPLETED."""
     res = await client.post(
-        f"/runs/{sample_active_run_with_operator_signoff.id}/complete",
+        f"/runs/{sample_active_run_fully_signed.id}/complete",
         headers=auth_headers,
         json={
             "outcome": "COMPLETED_WITH_DEVIATIONS",
@@ -284,6 +317,53 @@ async def test_run_complete_sets_outcome_and_completed_at(
     assert body["outcome"] == "COMPLETED_WITH_DEVIATIONS"
     assert body["outcome_notes"] == "pH drift on step 7"
     assert body["completed_at"] is not None
+
+
+@pytest_asyncio.fixture
+async def basic_active_run(
+    db_session: AsyncSession, test_project, test_user: User
+) -> Run:
+    """An ACTIVE run on a basic (non-GLP) protocol — glpSettings enables no
+    reviewer role, so closing the run needs no sign-off at all."""
+    proto = Protocol(
+        name="Basic Protocol",
+        project_id=test_project.id,
+        status="DRAFT",
+        version_number=1,
+        created_by_id=test_user.id,
+        graph={"nodes": [], "edges": [], "glpSettings": {}},
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    run = Run(
+        name="Basic Active Run",
+        project_id=test_project.id,
+        protocol_id=proto.id,
+        status="ACTIVE",
+        graph={"nodes": [], "edges": []},
+        execution_data={},
+        notes=[],
+        attachments=[],
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest.mark.asyncio
+async def test_run_complete_skips_signoff_when_glp_disabled(
+    client,
+    auth_headers,
+    basic_active_run,
+):
+    """A non-GLP run closes with no sign-off at all (#18)."""
+    res = await client.post(
+        f"/runs/{basic_active_run.id}/complete",
+        headers=auth_headers,
+        json={"outcome": "COMPLETED_NORMAL"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "COMPLETED"
 
 
 # --- Task 15 fixtures and tests --------------------------------------------
@@ -461,6 +541,7 @@ async def sample_planned_run(
         project_id=test_project.id,
         protocol_id=sample_active_protocol.id,
         status="PLANNED",
+        slug="run-lifecycle-planned",
         graph={"nodes": [], "edges": []},
         execution_data={},
         notes=[],
@@ -534,6 +615,7 @@ async def sample_completed_step_run(
         project_id=test_project.id,
         protocol_id=sample_active_protocol.id,
         status="ACTIVE",
+        slug="run-lifecycle-step-review",
         graph={"nodes": [], "edges": []},
         execution_data={
             "step1": {

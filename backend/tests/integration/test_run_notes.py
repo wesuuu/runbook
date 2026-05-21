@@ -20,6 +20,7 @@ async def test_run(db_session, test_project, test_user):
         execution_data={},
         notes=[],
         attachments=[],
+        slug="test-run",
     )
     db_session.add(run)
     await db_session.flush()
@@ -50,6 +51,7 @@ async def active_run(db_session, test_project, test_user):
         notes=[],
         attachments=[],
         started_by_id=test_user.id,
+        slug="active-run",
     )
     db_session.add(run)
     await db_session.flush()
@@ -90,6 +92,7 @@ async def completed_run(db_session, test_project, test_user):
         notes=[],
         attachments=[],
         started_by_id=test_user.id,
+        slug="completed-run",
     )
     db_session.add(run)
     await db_session.flush()

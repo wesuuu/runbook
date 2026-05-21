@@ -54,12 +54,15 @@ async def _make_pending_protocol(
     requested_user_id: uuid.UUID | None = None,
     submitter_id: uuid.UUID | None = None,
 ) -> Protocol:
+    import uuid as _uuid
     proto = Protocol(
         name=name,
         project_id=project.id,
         status="PENDING_APPROVAL",
         created_by_id=creator_id,
         requires_approval=True,
+        slug=f"{name.lower().replace(' ', '-')[:32]}-{_uuid.uuid4().hex[:6]}",
+        owner_org_id=project.organization_id,
     )
     db.add(proto)
     await db.flush()
@@ -100,6 +103,7 @@ async def test_awaiting_open_request_user_sees_protocol(
     items = resp.json()
     assert len(items) == 1
     assert items[0]["protocol_id"] == str(proto.id)
+    assert items[0]["protocol_slug"] == proto.slug
     assert items[0]["name"] == "P-Request"
     assert items[0]["project_id"] == str(test_project.id)
     assert items[0]["organization_id"] == str(test_org.id)

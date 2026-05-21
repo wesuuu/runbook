@@ -44,7 +44,7 @@ async def _make_template(db_session, org_id) -> DocumentTemplate:
     return tpl
 
 
-async def _make_protocol(db_session, project_id, sop_tpl_id, graph) -> Protocol:
+async def _make_protocol(db_session, project_id, sop_tpl_id, graph, owner_org_id) -> Protocol:
     proto = Protocol(
         name="Test Protocol",
         description="desc",
@@ -52,6 +52,8 @@ async def _make_protocol(db_session, project_id, sop_tpl_id, graph) -> Protocol:
         version_number=1,
         graph=graph,
         sop_template_id=sop_tpl_id,
+        slug="test-protocol",
+        owner_org_id=owner_org_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -87,7 +89,7 @@ async def test_pdf_endpoint_attaches_unresolved_header(
         ],
         "edges": [],
     }
-    proto = await _make_protocol(db_session, test_project.id, tpl.id, graph)
+    proto = await _make_protocol(db_session, test_project.id, tpl.id, graph, test_project.organization_id)
 
     with patch(
         "app.api.endpoints.protocol_pdfs._resolve_template_path",
@@ -135,7 +137,7 @@ async def test_pdf_endpoint_no_header_when_all_resolved(
         ],
         "edges": [],
     }
-    proto = await _make_protocol(db_session, test_project.id, tpl.id, graph)
+    proto = await _make_protocol(db_session, test_project.id, tpl.id, graph, test_project.organization_id)
 
     with patch(
         "app.api.endpoints.protocol_pdfs._resolve_template_path",

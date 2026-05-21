@@ -133,6 +133,7 @@ async def list_runs_awaiting_signoff_for_user(
     runs: list[Run],
     graph_facts: dict[UUID, RunGraphFacts],
     assignments_by_run: dict[UUID, list[RunRoleAssignment]],
+    project_slug_map: dict[UUID, str] | None = None,
 ) -> list[SignoffItem]:
     """Runs the user is involved in that are ready to close but missing a sign-off.
 
@@ -143,8 +144,12 @@ async def list_runs_awaiting_signoff_for_user(
       - a required sign-off role is missing
       - the user is involved (a RunRoleAssignment row OR started_by_id)
 
+    ``project_slug_map`` (run project_id → slug) is used to populate each
+    item's ``project_slug`` so the dashboard can build the run's nested URL.
+
     Returned oldest-waiting first (run.updated_at ascending).
     """
+    slug_map = project_slug_map or {}
     candidates = [
         r
         for r in runs
@@ -215,10 +220,12 @@ async def list_runs_awaiting_signoff_for_user(
                 SignoffItem(
                     kind="run",
                     entity_id=run.id,
+                    entity_slug=run.slug,
                     name=run.name,
                     # Intentionally None — the rail shows run name + detail;
-                    # SignoffItem carries no project source for runs (F-0092).
+                    # SignoffItem carries no project *name* for runs (F-0092).
                     project_name=None,
+                    project_slug=slug_map.get(run.project_id),
                     detail=f"Missing {', '.join(missing)}",
                     waiting_since=run.updated_at,
                 ),

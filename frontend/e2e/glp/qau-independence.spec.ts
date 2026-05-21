@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loginAndNavigate, loginViaApi } from '../helpers/auth';
+import { runUrl } from '../helpers/slug-urls';
 
 /**
  * F-0087 Task 41b — GLP golden path: QAU independence enforcement.
@@ -42,7 +43,7 @@ test.describe('GLP — QAU independence', () => {
             await loginAndNavigate(page, 'scientist1');
 
             const runId = '00000000-0000-0000-0000-000000000000'; // placeholder
-            await page.goto(`/runs/${runId}`);
+            await page.goto(await runUrl(page, runId));
             await page.waitForLoadState('networkidle');
 
             const qauRow = page.locator('[data-role="QAU"]');
@@ -79,7 +80,7 @@ test.describe('GLP — QAU independence', () => {
             // can mount (today seed users do not).
             await loginViaApi(page, 'viewer'); // fresh, no prior involvement
             const runId = '00000000-0000-0000-0000-000000000000';
-            await page.goto(`/runs/${runId}`);
+            await page.goto(await runUrl(page, runId));
 
             await page.getByRole('button', { name: /sign as qau/i }).click();
             await page

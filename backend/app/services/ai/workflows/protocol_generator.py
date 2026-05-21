@@ -31,8 +31,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat import ChatMessage, ChatSession
+from app.models.projects import Project
 from app.models.protocols import Protocol, UnitOpDefinition
 from app.services.ai.ai_config import get_model
+from app.services.slugs import assign_slug
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,18 @@ async def generate_protocol_from_chat(
         project_id=project_id,
         status="DRAFT",
         graph=graph,
+    )
+    # F-0091: resolve owning org and assign a slug.
+    owning_project = await db.get(Project, project_id)
+    if owning_project is None:
+        raise ValueError(f"Project {project_id} not found")
+    protocol.owner_org_id = owning_project.organization_id
+    protocol.slug = await assign_slug(
+        db,
+        Protocol,
+        Protocol.owner_org_id,
+        protocol.owner_org_id,
+        protocol.name,
     )
     db.add(protocol)
     await db.flush()

@@ -66,6 +66,8 @@ async def _seed_protocol(
         status="APPROVED",
         version_number=1,
         graph=graph or _sample_protocol_graph(),
+        slug="test-protocol",
+        owner_org_id=project.organization_id,
     )
     db_session.add(p)
     await db_session.flush()

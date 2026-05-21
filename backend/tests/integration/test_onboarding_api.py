@@ -57,7 +57,9 @@ async def test_patch_state_rejects_bad_segment(client: AsyncClient, auth_headers
 async def test_tour_project_start_returns_project_id(client: AsyncClient, auth_headers):
     resp = await client.post("/onboarding/tour/project/start", headers=auth_headers)
     assert resp.status_code == 200
-    assert "project_id" in resp.json()
+    data = resp.json()
+    assert "project_id" in data
+    assert data["project_slug"]
 
 
 @pytest.mark.asyncio
@@ -67,6 +69,7 @@ async def test_tour_protocol_start_returns_ids(client: AsyncClient, auth_headers
     data = resp.json()
     assert "project_id" in data
     assert "protocol_id" in data
+    assert data["protocol_slug"]
 
 
 @pytest.mark.asyncio

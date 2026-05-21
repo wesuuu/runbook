@@ -31,12 +31,15 @@ async def _make_protocol(
     requires_approval: bool = True,
     status: str = "DRAFT",
 ) -> Protocol:
+    import uuid as _uuid
     proto = Protocol(
         name="Test Protocol",
         project_id=project.id,
         status=status,
         created_by_id=creator_id,
         requires_approval=requires_approval,
+        slug=f"test-protocol-{_uuid.uuid4().hex[:8]}",
+        owner_org_id=project.organization_id,
     )
     db.add(proto)
     await db.flush()

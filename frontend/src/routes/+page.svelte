@@ -2,6 +2,7 @@
     import { onMount, tick } from 'svelte';
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { getCurrentOrg, getUser } from '$lib/auth.svelte';
     import { getOrphanedActions } from '$lib/offline-db';
     import { syncNow } from '$lib/sync-manager';
@@ -23,8 +24,10 @@
     interface RunSummary {
         id: string;
         name: string;
+        slug: string;
         project_id: string;
         project_name: string;
+        project_slug: string;
         protocol_name: string | null;
         status: string;
         role_name: string | null;
@@ -39,6 +42,8 @@
         entity_type: string;
         entity_id: string;
         entity_name: string | null;
+        entity_slug: string | null;
+        project_slug: string | null;
         actor_name: string | null;
         changes: Record<string, any>;
         created_at: string;
@@ -59,8 +64,10 @@
     interface SignoffItem {
         kind: string;
         entity_id: string;
+        entity_slug: string | null;
         name: string;
         project_name: string | null;
+        project_slug: string | null;
         detail: string | null;
     }
     interface Dashboard {
@@ -148,10 +155,10 @@
 
     async function startProjectTourFromWelcome() {
         welcomeOpen = false;
-        const { project_id } = await api.post<{ project_id: string }>(
+        const { project_slug } = await api.post<{ project_id: string; project_slug: string }>(
             '/onboarding/tour/project/start', {},
         );
-        goto(`/projects/${project_id}?tour=project`);
+        goto(`${paths.project(project_slug)}?tour=project`);
     }
 
     async function dismissWelcome() {
@@ -175,14 +182,18 @@
 
     function onCounter(key: string) {
         if (key === 'calibrations_due') goto('/settings?tab=sites');
-        else if (key === 'active_runs') goto('/projects');
+        else if (key === 'active_runs') goto(paths.projects());
         else if (key === 'runs_blocked') scrollPulse('needs-action');
         else if (key === 'signoffs_pending') scrollPulse('awaiting-signoff');
     }
 
     function onSignoffSelect(item: SignoffItem) {
-        if (item.kind === 'protocol') goto(`/protocols/${item.entity_id}`);
-        else goto(`/runs/${item.entity_id}`);
+        if (!item.entity_slug) return;
+        if (item.kind === 'protocol') {
+            goto(paths.protocol(item.entity_slug));
+        } else if (item.project_slug) {
+            goto(paths.run(item.project_slug, item.entity_slug));
+        }
     }
 
     const userName = $derived(getUser()?.full_name?.split(' ')[0] || 'there');
@@ -199,7 +210,7 @@
         type="button"
         class="w-full card-warm rounded-xl p-4 text-left transition-all duration-150 hover:shadow-md cursor-pointer
                {accent === 'amber' ? 'border-l-3 border-l-amber-400 hover:border-l-amber-500' : 'hover:border-primary/20'}"
-        onclick={() => goto(`/runs/${run.id}`)}
+        onclick={() => goto(paths.run(run.project_slug, run.slug))}
     >
         <div class="mb-2.5 flex items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
@@ -348,7 +359,7 @@
                                     <button
                                         type="button"
                                         class="group flex w-full items-center justify-between p-3.5 text-left transition-colors duration-150 hover:bg-muted/40 cursor-pointer"
-                                        onclick={() => goto(`/runs/${run.id}`)}
+                                        onclick={() => goto(paths.run(run.project_slug, run.slug))}
                                     >
                                         <div>
                                             <span class="text-sm font-medium text-foreground">{run.name}</span>
@@ -367,7 +378,7 @@
                                 title="No runs yet"
                                 description="Get started by creating a project and running a protocol."
                                 actionLabel="View Projects"
-                                onAction={() => goto('/projects')}
+                                onAction={() => goto(paths.projects())}
                                 secondaryActionLabel="Take the tour"
                                 secondaryOnAction={() => (welcomeOpen = true)}
                                 class="py-14"

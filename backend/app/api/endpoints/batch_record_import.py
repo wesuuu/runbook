@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.models.batch_record_import import BatchRecordImport, BatchRecordImportStatus
 from app.models.execution import AuditLog
 from app.models.iam import ObjectType, PermissionLevel, User
+from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Run, RunStatus
 from app.schemas.batch_record_import import (
@@ -33,6 +34,7 @@ from app.services.core.background_jobs import BackgroundJobService
 from app.services.core.file_storage import FileStorageService
 from app.services.core.permissions import check_permission
 from app.services.core.task_runner import get_task_runner
+from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +254,9 @@ async def finalize_batch_record_import(
             }
         ],
     )
+    run.slug = await assign_slug_or_422(
+        db, Run, Run.project_id, run.project_id, run.name, "run"
+    )
     db.add(run)
     await db.flush()
 
@@ -291,8 +296,14 @@ async def finalize_batch_record_import(
 
     await db.commit()
 
+    project_slug = await db.scalar(
+        select(Project.slug).where(Project.id == run.project_id)
+    )
+
     return BatchRecordFinalizeResponse(
         run_id=run.id,
+        run_slug=run.slug,
         run_name=run.name,
+        project_slug=project_slug or "",
         import_id=import_row.id,
     )

@@ -5,10 +5,6 @@
     let { data }: { data: PageData } = $props();
 </script>
 
-<svelte:head>
-    <title>Terms of Service · Batchrite</title>
-</svelte:head>
-
 <main class="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
     <LegalDocument
         title="Terms of Service"
