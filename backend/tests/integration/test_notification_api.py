@@ -424,3 +424,248 @@ class TestChannelTest:
         data = resp.json()
         assert data["status"] == "SENT"
         assert data["detail"] == "logged"
+
+
+# ── Fix 4: _get_user_org_id honors selected_org_id ───────────────────────
+
+
+class TestOrgResolution:
+    """A multi-org user's channels/deliveries resolve to selected_org_id."""
+
+    async def _make_multi_org_user(
+        self,
+        db_session,
+        email,
+        first_org,
+        second_org,
+        selected_org_id,
+        first_org_roles=("MEMBER", "ADMIN"),
+        second_org_roles=("MEMBER", "ADMIN"),
+    ):
+        """Create a user who joins first_org then second_org, with the given
+        selected_org_id and per-org roles. Returns auth headers.
+
+        Both memberships are inserted inside one transaction, so PostgreSQL's
+        transaction-fixed now() stamps them with the *same* created_at —
+        there is no "older" membership. Every test using this helper sets a
+        valid selected_org_id, so _get_user_org_id resolves via the
+        selected-org re-check and never reaches the created_at fallback; the
+        fallback tie-break is therefore not exercised here.
+        """
+        from app.core.security import create_access_token, hash_password
+        from app.models.iam import OrganizationMember, User
+
+        user = User(
+            email=email,
+            hashed_password=hash_password("testpass"),
+            full_name="Multi Org User",
+            selected_org_id=selected_org_id,
+            email_verified=True,
+        )
+        db_session.add(user)
+        await db_session.flush()
+        db_session.add(
+            OrganizationMember(
+                user_id=user.id,
+                organization_id=first_org.id,
+                roles=list(first_org_roles),
+            )
+        )
+        await db_session.flush()
+        db_session.add(
+            OrganizationMember(
+                user_id=user.id,
+                organization_id=second_org.id,
+                roles=list(second_org_roles),
+            )
+        )
+        await db_session.flush()
+        token = create_access_token(
+            user.id,
+            org_id=selected_org_id or first_org.id,
+            subscription_tier=first_org.subscription_tier,
+            email_verified=True,
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    async def _make_single_org_user(
+        self, db_session, email, org, selected_org_id,
+        roles=("MEMBER", "ADMIN"),
+    ):
+        """Create a single-org user with the given selected_org_id — which
+        may intentionally point at an org they do NOT belong to. Returns
+        auth headers. Shared by the two fallback regression-guard tests so
+        they do not inline duplicated user-creation."""
+        from app.core.security import create_access_token, hash_password
+        from app.models.iam import OrganizationMember, User
+
+        user = User(
+            email=email,
+            hashed_password=hash_password("testpass"),
+            full_name="Single Org User",
+            selected_org_id=selected_org_id,
+            email_verified=True,
+        )
+        db_session.add(user)
+        await db_session.flush()
+        db_session.add(
+            OrganizationMember(
+                user_id=user.id,
+                organization_id=org.id,
+                roles=list(roles),
+            )
+        )
+        await db_session.flush()
+        token = create_access_token(
+            user.id,
+            org_id=org.id,
+            subscription_tier=org.subscription_tier,
+            email_verified=True,
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    @pytest.mark.asyncio
+    async def test_list_channels_honors_selected_org_id(
+        self, client, test_org, second_org, db_session
+    ):
+        """selected_org_id points at the SECOND org => list its channels,
+        not the first membership's."""
+        db_session.add(
+            NotificationChannel(
+                org_id=test_org.id, name="First Org Ch",
+                channel_type="CONSOLE", config={},
+            )
+        )
+        db_session.add(
+            NotificationChannel(
+                org_id=second_org.id, name="Second Org Ch",
+                channel_type="CONSOLE", config={},
+            )
+        )
+        await db_session.flush()
+        headers = await self._make_multi_org_user(
+            db_session, "multiorg1@example.com", test_org, second_org,
+            selected_org_id=second_org.id,
+        )
+        resp = await client.get("/notifications/channels", headers=headers)
+        assert resp.status_code == 200
+        assert {c["name"] for c in resp.json()} == {"Second Org Ch"}
+
+    @pytest.mark.asyncio
+    async def test_list_deliveries_honors_selected_org_id(
+        self, client, test_org, second_org, db_session
+    ):
+        """A multi-org admin sees the selected org's delivery log."""
+        second_channel = NotificationChannel(
+            org_id=second_org.id, name="Second Org Ch",
+            channel_type="CONSOLE", config={},
+        )
+        db_session.add(second_channel)
+        await db_session.flush()
+        db_session.add(
+            NotificationDelivery(
+                channel_id=second_channel.id,
+                event_type="RUN_STARTED",
+                recipient_info={"recipient": "x@example.com"},
+                status="SENT",
+                attempts=1,
+            )
+        )
+        await db_session.flush()
+        headers = await self._make_multi_org_user(
+            db_session, "multiorg2@example.com", test_org, second_org,
+            selected_org_id=second_org.id,
+        )
+        resp = await client.get("/notifications/deliveries", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+
+    @pytest.mark.asyncio
+    async def test_create_channel_admin_check_uses_selected_org(
+        self, client, test_org, second_org, db_session
+    ):
+        """User is only a MEMBER of their first org but an ADMIN of the
+        selected (second) org. Before the fix, _get_user_org_id resolves to
+        the first org and _require_org_admin returns 403; after the fix it
+        resolves to the selected org and the create succeeds (201)."""
+        headers = await self._make_multi_org_user(
+            db_session, "multiadmin1@example.com", test_org, second_org,
+            selected_org_id=second_org.id,
+            first_org_roles=("MEMBER",),
+            second_org_roles=("MEMBER", "ADMIN"),
+        )
+        resp = await client.post(
+            "/notifications/channels",
+            json={"name": "Sel Org Ch", "channel_type": "CONSOLE",
+                  "config": {}},
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        assert resp.json()["org_id"] == str(second_org.id)
+
+    @pytest.mark.asyncio
+    async def test_list_deliveries_admin_check_uses_selected_org(
+        self, client, test_org, second_org, db_session
+    ):
+        """Same MEMBER-of-first / ADMIN-of-selected user: the admin-gated
+        deliveries log resolves to the selected org and returns 200, not the
+        403 the first-membership resolution would produce."""
+        headers = await self._make_multi_org_user(
+            db_session, "multiadmin2@example.com", test_org, second_org,
+            selected_org_id=second_org.id,
+            first_org_roles=("MEMBER",),
+            second_org_roles=("MEMBER", "ADMIN"),
+        )
+        resp = await client.get(
+            "/notifications/deliveries", headers=headers
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_selected_org_id_unset(
+        self, client, test_org, db_session
+    ):
+        """A single-org user with selected_org_id=None resolves to their
+        one membership (regression guard)."""
+        db_session.add(
+            NotificationChannel(
+                org_id=test_org.id, name="Only Org Ch",
+                channel_type="CONSOLE", config={},
+            )
+        )
+        await db_session.flush()
+        headers = await self._make_single_org_user(
+            db_session, "noselected@example.com", test_org,
+            selected_org_id=None,
+        )
+        resp = await client.get("/notifications/channels", headers=headers)
+        assert resp.status_code == 200
+        assert {c["name"] for c in resp.json()} == {"Only Org Ch"}
+
+    @pytest.mark.asyncio
+    async def test_stale_selected_org_id_falls_back(
+        self, client, test_org, second_org, db_session
+    ):
+        """selected_org_id points at an org the user does NOT belong to =>
+        fall back to a real membership; no 403, no cross-org leak."""
+        db_session.add(
+            NotificationChannel(
+                org_id=test_org.id, name="Real Org Ch",
+                channel_type="CONSOLE", config={},
+            )
+        )
+        db_session.add(
+            NotificationChannel(
+                org_id=second_org.id, name="Other Org Ch",
+                channel_type="CONSOLE", config={},
+            )
+        )
+        await db_session.flush()
+        headers = await self._make_single_org_user(
+            db_session, "staleselected@example.com", test_org,
+            selected_org_id=second_org.id,  # not a member of second_org
+        )
+        resp = await client.get("/notifications/channels", headers=headers)
+        assert resp.status_code == 200
+        assert {c["name"] for c in resp.json()} == {"Real Org Ch"}
