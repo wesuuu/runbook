@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel as PydanticBaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -29,6 +29,10 @@ from app.schemas.runs import (
 )
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission
+from app.services.experiments.status import (
+    derive_lifecycle_status,
+    lifecycle_counts_from_runs,
+)
 from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
@@ -37,7 +41,11 @@ router = APIRouter()
 
 
 def _experiment_dict(exp: Experiment) -> dict:
-    """Convert Experiment ORM instance to a dict for ExperimentResponse."""
+    """Convert Experiment ORM instance to a dict for ExperimentResponse.
+
+    `lifecycle_status` is NOT set here — it depends on child runs and is
+    supplied by each handler from run counts.
+    """
     return {
         "id": exp.id,
         "project_id": exp.project_id,
@@ -45,12 +53,33 @@ def _experiment_dict(exp: Experiment) -> dict:
         "project_slug": exp.project_slug,
         "name": exp.name,
         "description": exp.description,
+        "objective": exp.objective,
+        "success_criteria": list(exp.success_criteria or []),
+        "created_by_id": exp.created_by_id,
         "content": exp.content or {},
         "status": exp.status if isinstance(exp.status, str) else exp.status.value,
         "notes": [ExperimentNote(**n) for n in (exp.notes or [])],
         "created_at": exp.created_at,
         "updated_at": exp.updated_at,
     }
+
+
+async def _run_lifecycle_counts(
+    db: AsyncSession, experiment_id: UUID
+) -> tuple[int, int, int]:
+    """Return (run_count, live_run_count, open_run_count) for one experiment."""
+    row = (
+        await db.execute(
+            select(
+                func.count(Run.id),
+                func.count(Run.id).filter(Run.status != "ARCHIVED"),
+                func.count(Run.id).filter(
+                    and_(Run.status != "ARCHIVED", Run.status != "COMPLETED")
+                ),
+            ).where(Run.experiment_id == experiment_id)
+        )
+    ).one()
+    return int(row[0]), int(row[1]), int(row[2])
 
 
 # --- CRUD ---
@@ -77,6 +106,9 @@ async def create_experiment(
         name=exp_in.name,
         project_id=exp_in.project_id,
         description=exp_in.description,
+        objective=exp_in.objective,
+        success_criteria=exp_in.success_criteria,
+        created_by_id=user.id,
     )
     experiment.slug = await assign_slug_or_422(
         db,
@@ -104,6 +136,7 @@ async def create_experiment(
         **_experiment_dict(experiment),
         runs=[],
         run_count=0,
+        lifecycle_status=derive_lifecycle_status(experiment.status, 0, 0),
     )
 
 
@@ -124,7 +157,14 @@ async def list_experiments(
         raise HTTPException(403, "Not allowed")
 
     result = await db.execute(
-        select(Experiment, func.count(Run.id).label("run_count"))
+        select(
+            Experiment,
+            func.count(Run.id).label("run_count"),
+            func.count(Run.id).filter(Run.status != "ARCHIVED").label("live"),
+            func.count(Run.id)
+            .filter(and_(Run.status != "ARCHIVED", Run.status != "COMPLETED"))
+            .label("open"),
+        )
         .outerjoin(Run, Run.experiment_id == Experiment.id)
         .where(Experiment.project_id == project_id)
         .group_by(Experiment.id)
@@ -137,8 +177,9 @@ async def list_experiments(
             **_experiment_dict(exp),
             runs=[],
             run_count=cnt,
+            lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
         )
-        for exp, cnt in rows
+        for exp, cnt, live, open_ in rows
     ]
 
 
@@ -179,10 +220,12 @@ async def get_experiment_by_slug(
     run_result = await db.execute(select(Run).where(Run.experiment_id == exp.id))
     runs = list(run_result.scalars().all())
 
+    live, open_ = lifecycle_counts_from_runs(runs)
     return ExperimentResponse(
         **_experiment_dict(exp),
         runs=[RunResponse.model_validate(r) for r in runs],
         run_count=len(runs),
+        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
     )
 
 
@@ -207,10 +250,12 @@ async def get_experiment(
     run_result = await db.execute(select(Run).where(Run.experiment_id == experiment_id))
     runs = list(run_result.scalars().all())
 
+    live, open_ = lifecycle_counts_from_runs(runs)
     return ExperimentResponse(
         **_experiment_dict(exp),
         runs=[RunResponse.model_validate(r) for r in runs],
         run_count=len(runs),
+        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
     )
 
 
@@ -246,7 +291,7 @@ async def update_experiment(
         )
 
     changes = {}
-    for field in ("name", "description", "content", "status"):
+    for field in ("name", "description", "content", "objective", "success_criteria"):
         value = getattr(update_data, field)
         if value is not None:
             old = getattr(exp, field)
@@ -255,6 +300,8 @@ async def update_experiment(
             changes[field] = {"old": old, "new": resolved}
     if update_data.content is not None:
         flag_modified(exp, "content")
+    if update_data.success_criteria is not None:
+        flag_modified(exp, "success_criteria")
 
     if changes:
         await log_audit(
@@ -269,16 +316,13 @@ async def update_experiment(
     await db.commit()
     await db.refresh(exp)
 
-    # Load run count
-    count_result = await db.execute(
-        select(func.count(Run.id)).where(Run.experiment_id == experiment_id)
-    )
-    run_count = count_result.scalar() or 0
+    run_count, live, open_ = await _run_lifecycle_counts(db, experiment_id)
 
     return ExperimentResponse(
         **_experiment_dict(exp),
         runs=[],
         run_count=run_count,
+        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
     )
 
 

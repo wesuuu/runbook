@@ -206,7 +206,6 @@ async def test_update_experiment(
             "name": "Updated Name",
             "description": "New description",
             "content": {"type": "doc", "content": [{"type": "paragraph"}]},
-            "status": "ACTIVE",
         },
         headers=auth_headers,
     )
@@ -215,7 +214,8 @@ async def test_update_experiment(
     assert body["name"] == "Updated Name"
     assert body["description"] == "New description"
     assert body["content"]["type"] == "doc"
-    assert body["status"] == "ACTIVE"
+    # status is read-only via PUT; remains at its default
+    assert body["status"] == "DRAFT"
 
 
 @pytest.mark.asyncio
@@ -236,16 +236,18 @@ async def test_update_experiment_partial(
     )
     exp_id = create_resp.json()["id"]
 
+    # Only update name; description should be preserved as-is
     resp = await client.put(
         f"/experiments/{exp_id}",
-        json={"status": "COMPLETED"},
+        json={"name": "Updated Name Only"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["name"] == "Keep This Name"
+    assert body["name"] == "Updated Name Only"
     assert body["description"] == "Keep this too"
-    assert body["status"] == "COMPLETED"
+    # status is read-only via PUT; remains at its default
+    assert body["status"] == "DRAFT"
 
 
 # --- Archive Experiment (DELETE) ---
