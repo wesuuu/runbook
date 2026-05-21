@@ -216,7 +216,9 @@ async def list_runs_awaiting_signoff_for_user(
                     kind="run",
                     entity_id=run.id,
                     name=run.name,
-                    project_name=None,  # Task 9 enriches this via projects join
+                    # Intentionally None — the rail shows run name + detail;
+                    # SignoffItem carries no project source for runs (F-0092).
+                    project_name=None,
                     detail=f"Missing {', '.join(missing)}",
                     waiting_since=run.updated_at,
                 ),

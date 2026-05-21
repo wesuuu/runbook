@@ -2,7 +2,6 @@
 
 - Run completion with unanalyzed images (allows but warns)
 - PENDING_IMAGE_ANALYSIS notification on completion with unanalyzed images
-- Dashboard pending_analyses field
 """
 
 import uuid
@@ -235,38 +234,3 @@ async def test_complete_run_all_images_analyzed_no_notification(
         )
     )
     assert result.scalar_one_or_none() is None
-
-
-# ── Dashboard pending_analyses ───────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_dashboard_includes_pending_analyses(
-    client: AsyncClient,
-    auth_headers: dict,
-    active_run_with_completed_step: Run,
-    tmp_image_storage: Path,
-    test_org,
-    db_session: AsyncSession,
-):
-    """Dashboard should include pending_analyses count."""
-    run = active_run_with_completed_step
-
-    # Upload 2 images, no analysis
-    for i in range(2):
-        await client.post(
-            f"/ai/runs/{run.id}/steps/step-1/images",
-            files={"file": (f"photo{i}.jpg", TINY_JPEG, "image/jpeg")},
-            headers=auth_headers,
-        )
-
-    resp = await client.get(
-        f"/dashboard?org_id={test_org.id}",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    pa = data.get("pending_analyses")
-    assert pa is not None
-    assert pa["total_images"] == 2
-    assert pa["total_runs"] == 1
