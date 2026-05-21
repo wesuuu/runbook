@@ -1,6 +1,7 @@
 import { render } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 
+import Logo from './Logo.svelte';
 import LogoMark from './LogoMark.svelte';
 
 describe('LogoMark', () => {
@@ -61,5 +62,44 @@ describe('LogoMark', () => {
 		expect(idA).toBeTruthy();
 		expect(idB).toBeTruthy();
 		expect(idA).not.toBe(idB);
+	});
+});
+
+describe('Logo', () => {
+	it('renders an inline svg mark, not an img', () => {
+		const { container } = render(Logo, { props: {} });
+		expect(container.querySelector('svg')).not.toBeNull();
+		expect(container.querySelector('img')).toBeNull();
+	});
+
+	it('renders exactly one batchrite wordmark', () => {
+		const { container } = render(Logo, { props: {} });
+		const wordmarks = container.querySelectorAll('.batchrite-wordmark');
+		expect(wordmarks).toHaveLength(1);
+		expect(wordmarks[0].textContent).toBe('batchrite');
+	});
+
+	it('defaults to the static simple mark', () => {
+		const { container } = render(Logo, { props: {} });
+		expect(
+			container.querySelector('svg')?.getAttribute('data-variant'),
+		).toBe('simple');
+		expect(container.querySelectorAll('animate')).toHaveLength(0);
+	});
+
+	it('forwards variant and animated to the mark', () => {
+		const { container } = render(Logo, {
+			props: { variant: 'full', animated: true },
+		});
+		expect(
+			container.querySelector('svg')?.getAttribute('data-variant'),
+		).toBe('full');
+		expect(container.querySelectorAll('animate').length).toBeGreaterThan(0);
+	});
+
+	it('applies a passed class to the lockup', () => {
+		const { container } = render(Logo, { props: { class: 'mb-4' } });
+		const lockup = container.querySelector('.batchrite-lockup');
+		expect(lockup?.classList.contains('mb-4')).toBe(true);
 	});
 });
