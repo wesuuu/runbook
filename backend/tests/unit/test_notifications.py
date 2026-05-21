@@ -14,6 +14,16 @@ from app.services.core.notifications.channels.console import ConsoleChannel
 from app.services.core.notifications.channels.webhook import WebhookChannel
 from app.services.core.notifications.templates import TEMPLATES
 
+from datetime import datetime, timedelta, timezone
+
+from app.models.notifications import (
+    DeliveryStatus,
+    NotificationChannel,
+    NotificationDelivery,
+)
+from app.services.core.notifications import dispatcher
+from app.services.core.notifications.dispatcher import retry_pending
+
 # ── Template Tests ───────────────────────────────────────────────────────
 
 
@@ -232,3 +242,210 @@ class FakeChannel(BaseChannel):
     async def send(self, message: FormattedMessage) -> str:
         self.sent.append(message)
         return "fake-ok"
+
+
+# ── FailingChannel for retry_pending tests ───────────────────────────────
+
+
+class FailingChannel(BaseChannel):
+    """Channel double that always raises the configured error on send."""
+
+    def __init__(self, error: Exception):
+        super().__init__({})
+        self._error = error
+
+    async def send(self, message: FormattedMessage) -> str:
+        raise self._error
+
+
+# ── retry_pending Tests (Fix 2) ──────────────────────────────────────────
+
+
+class TestRetryPending:
+    """retry_pending drains due RETRYING deliveries with batch isolation."""
+
+    async def _make_channel(self, db_session, test_user, channel_type="CONSOLE",
+                            enabled=True):
+        channel = NotificationChannel(
+            user_id=test_user.id,
+            name="Retry Test Channel",
+            channel_type=channel_type,
+            config={},
+            enabled=enabled,
+        )
+        db_session.add(channel)
+        await db_session.flush()
+        return channel
+
+    async def _make_delivery(self, db_session, channel, attempts=1,
+                             due_offset_seconds=-30):
+        delivery = NotificationDelivery(
+            channel_id=channel.id,
+            event_type="RUN_STARTED",
+            recipient_info={"recipient": "x@example.com"},
+            status=DeliveryStatus.RETRYING,
+            attempts=attempts,
+            next_retry_at=datetime.now(timezone.utc)
+            + timedelta(seconds=due_offset_seconds),
+        )
+        db_session.add(delivery)
+        await db_session.flush()
+        return delivery
+
+    @pytest.mark.asyncio
+    async def test_due_delivery_is_retried_and_sent(
+        self, db_session, test_user
+    ):
+        channel = await self._make_channel(db_session, test_user)
+        delivery = await self._make_delivery(db_session, channel)
+
+        count = await retry_pending(db_session)
+
+        assert count == 1
+        await db_session.refresh(delivery)
+        assert delivery.status == DeliveryStatus.SENT
+
+    @pytest.mark.asyncio
+    async def test_not_yet_due_delivery_is_skipped(
+        self, db_session, test_user
+    ):
+        channel = await self._make_channel(db_session, test_user)
+        delivery = await self._make_delivery(
+            db_session, channel, due_offset_seconds=3600
+        )
+
+        count = await retry_pending(db_session)
+
+        assert count == 0
+        await db_session.refresh(delivery)
+        assert delivery.status == DeliveryStatus.RETRYING
+
+    @pytest.mark.asyncio
+    async def test_transient_failure_stays_retrying(
+        self, db_session, test_user
+    ):
+        channel = await self._make_channel(db_session, test_user)
+        delivery = await self._make_delivery(db_session, channel, attempts=1)
+        original_retry_at = delivery.next_retry_at
+
+        with patch(
+            "app.services.core.notifications.dispatcher.get_channel",
+            return_value=FailingChannel(TransientError("network blip")),
+        ):
+            count = await retry_pending(db_session)
+
+        assert count == 1
+        await db_session.refresh(delivery)
+        assert delivery.status == DeliveryStatus.RETRYING
+        assert delivery.attempts == 2
+        assert delivery.next_retry_at > original_retry_at
+
+    @pytest.mark.asyncio
+    async def test_transient_failure_on_last_attempt_fails(
+        self, db_session, test_user
+    ):
+        channel = await self._make_channel(db_session, test_user)
+        # attempts=2 => _execute_send increments to 3 => not < MAX_RETRIES.
+        delivery = await self._make_delivery(db_session, channel, attempts=2)
+
+        with patch(
+            "app.services.core.notifications.dispatcher.get_channel",
+            return_value=FailingChannel(TransientError("still down")),
+        ):
+            count = await retry_pending(db_session)
+
+        assert count == 1
+        await db_session.refresh(delivery)
+        assert delivery.status == DeliveryStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_disabled_channel_marks_failed_without_send(
+        self, db_session, test_user
+    ):
+        channel = await self._make_channel(db_session, test_user, enabled=False)
+        delivery = await self._make_delivery(db_session, channel)
+
+        count = await retry_pending(db_session)
+
+        assert count == 0
+        await db_session.refresh(delivery)
+        assert delivery.status == DeliveryStatus.FAILED
+        assert delivery.status_detail == "Channel disabled or deleted"
+
+    @pytest.mark.asyncio
+    async def test_unknown_channel_type_is_isolated(
+        self, db_session, test_user
+    ):
+        """A channel_type not in the registry makes get_channel raise
+        ValueError — the row is marked FAILED, the batch is not aborted."""
+        channel = await self._make_channel(
+            db_session, test_user, channel_type="PIGEON"
+        )
+        delivery = await self._make_delivery(db_session, channel)
+
+        count = await retry_pending(db_session)
+
+        assert count == 0
+        await db_session.refresh(delivery)
+        assert delivery.status == DeliveryStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_poison_row_does_not_abort_batch(
+        self, db_session, test_user
+    ):
+        """One poison row plus good rows: good rows still SEND and are not
+        re-selected on a second sweep."""
+        good_channel = await self._make_channel(db_session, test_user)
+        poison_channel = await self._make_channel(
+            db_session, test_user, channel_type="PIGEON"
+        )
+        good1 = await self._make_delivery(db_session, good_channel)
+        good2 = await self._make_delivery(db_session, good_channel)
+        poison = await self._make_delivery(db_session, poison_channel)
+
+        count = await retry_pending(db_session)
+
+        assert count == 2  # two good rows sent; poison row not counted
+        for d in (good1, good2):
+            await db_session.refresh(d)
+            assert d.status == DeliveryStatus.SENT
+        await db_session.refresh(poison)
+        assert poison.status == DeliveryStatus.FAILED
+
+        # A second sweep finds nothing still RETRYING.
+        second_count = await retry_pending(db_session)
+        assert second_count == 0
+
+    @pytest.mark.asyncio
+    async def test_execute_send_failure_does_not_poison_batch(
+        self, db_session, test_user
+    ):
+        """If _execute_send raises on one row, the per-row SAVEPOINT isolates
+        it: that row is marked FAILED and the remaining good rows still SEND
+        in the same sweep — no session poisoning, no aborted batch."""
+        channel = await self._make_channel(db_session, test_user)
+        good1 = await self._make_delivery(db_session, channel)
+        poison = await self._make_delivery(db_session, channel)
+        good2 = await self._make_delivery(db_session, channel)
+
+        real_execute_send = dispatcher._execute_send
+
+        async def flaky_execute_send(db, delivery, ch, msg):
+            # Fail only the poison row; identified by id so the result does
+            # not depend on the order rows are processed.
+            if delivery.id == poison.id:
+                raise RuntimeError("simulated delivery-row failure")
+            return await real_execute_send(db, delivery, ch, msg)
+
+        with patch(
+            "app.services.core.notifications.dispatcher._execute_send",
+            side_effect=flaky_execute_send,
+        ):
+            count = await retry_pending(db_session)
+
+        assert count == 2  # both good rows sent; poison row not counted
+        for d in (good1, good2):
+            await db_session.refresh(d)
+            assert d.status == DeliveryStatus.SENT
+        await db_session.refresh(poison)
+        assert poison.status == DeliveryStatus.FAILED
