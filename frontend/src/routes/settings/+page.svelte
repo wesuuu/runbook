@@ -3,7 +3,7 @@
     import { api } from '$lib/api';
     import { z } from 'zod';
     import { toast } from '$lib/toast';
-    import { getUser, getCurrentOrg, getOrgs, refreshUser, getUserPreferences, getToken } from '$lib/auth.svelte';
+    import { getUser, getCurrentOrg, getOrgs, refreshUser, getUserPreferences, getToken, getCurrentOrgRoles } from '$lib/auth.svelte';
     import { API_BASE } from '$lib/config';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
@@ -25,6 +25,13 @@
     import MemberRolesPicker from '$lib/components/settings/MemberRolesPicker.svelte';
     import SitesEquipmentTab from '$lib/components/sites/SitesEquipmentTab.svelte';
     import OrgProtocolApproversCard from '$lib/components/settings/OrgProtocolApproversCard.svelte';
+    import SettingsNav from '$lib/components/settings/SettingsNav.svelte';
+    import {
+        SETTINGS_TAB_IDS,
+        ADMIN_TAB_IDS,
+        DEFAULT_TAB,
+        type SettingsTabId,
+    } from '$lib/components/settings/settingsSections';
     import ConfirmDialog from '$lib/components/ui/confirm-dialog.svelte';
     import { SiteListSchema, type Site } from '$lib/schemas/sites';
     import { fade } from 'svelte/transition';
@@ -33,17 +40,38 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
 
-    type TabName = 'organization' | 'teams' | 'sites' | 'profile' | 'appearance' | 'notifications' | 'ai' | 'templates' | 'billing' | 'legal';
-    const VALID_TABS: TabName[] = ['organization', 'teams', 'sites', 'profile', 'appearance', 'notifications', 'ai', 'templates', 'billing', 'legal'];
-
-    const activeTab = $derived.by<TabName>(() => {
+    // requestedTab is the raw, validated ?tab= value from the URL.
+    const requestedTab = $derived.by<SettingsTabId>(() => {
         const t = $page.url.searchParams.get('tab');
-        return VALID_TABS.includes(t as TabName) ? (t as TabName) : 'organization';
+        return SETTINGS_TAB_IDS.includes(t as SettingsTabId)
+            ? (t as SettingsTabId)
+            : DEFAULT_TAB;
     });
 
-    function setTab(tab: TabName) {
+    function setTab(tab: SettingsTabId) {
         goto(`?tab=${tab}`, { replaceState: false, keepFocus: true, noScroll: true });
     }
+
+    // navIsAdmin is the nav's admin gate. It is intentionally SEPARATE from
+    // the existing `isOrgAdmin` (defined later in this file): `isOrgAdmin`
+    // derives from the async-loaded `members` list and is false until that
+    // fetch lands — fine for the Organization tab's member UI, which renders
+    // only after the load. The nav must decide which sections to show on
+    // first paint, so it uses getCurrentOrgRoles(): auth resolves org roles
+    // before the root layout lets this route render (it gates on
+    // isInitialized()), so admin items never pop in or out.
+    const navIsAdmin = $derived(getCurrentOrgRoles().includes('ADMIN'));
+
+    // activeTab is the *effective* tab actually rendered. A non-admin who
+    // deep-links to an admin-only section (e.g. ?tab=billing) is shown the
+    // default tab instead, so admin panels never mount for them and the
+    // {#key} content transition never double-fires. The URL itself is
+    // corrected separately by the guard $effect added in Task 5.
+    const activeTab = $derived(
+        !navIsAdmin && ADMIN_TAB_IDS.includes(requestedTab)
+            ? DEFAULT_TAB
+            : requestedTab,
+    );
 
     const currentUser = $derived(getUser());
 
@@ -804,89 +832,10 @@
         <p class="text-muted-foreground">Manage your organization, teams, and profile.</p>
     </div>
 
-    <!-- Tabs -->
-    <div class="flex border-b border-border overflow-x-auto">
-        <Button
-            variant="tab"
-            data-active={activeTab === 'organization'}
-            onclick={() => setTab('organization')}
-            class="py-2.5 min-h-11"
-        >
-            Organization
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'teams'}
-            onclick={() => setTab('teams')}
-            class="py-2.5 min-h-11"
-        >
-            Teams
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'sites'}
-            onclick={() => setTab('sites')}
-            class="py-2.5 min-h-11"
-        >
-            Sites &amp; Equipment
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'profile'}
-            onclick={() => setTab('profile')}
-            class="py-2.5 min-h-11"
-        >
-            Profile
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'appearance'}
-            onclick={() => setTab('appearance')}
-            class="py-2.5 min-h-11"
-        >
-            Appearance
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'notifications'}
-            onclick={() => setTab('notifications')}
-            class="py-2.5 min-h-11"
-        >
-            Notifications
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'ai'}
-            onclick={() => setTab('ai')}
-            class="py-2.5 min-h-11"
-        >
-            AI Models
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'templates'}
-            onclick={() => setTab('templates')}
-            class="py-2.5 min-h-11"
-        >
-            Templates
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'billing'}
-            onclick={() => setTab('billing')}
-            class="py-2.5 min-h-11"
-        >
-            Billing
-        </Button>
-        <Button
-            variant="tab"
-            data-active={activeTab === 'legal'}
-            onclick={() => setTab('legal')}
-            class="py-2.5 min-h-11"
-        >
-            Legal
-        </Button>
-    </div>
+    <div class="flex gap-6 lg:gap-8 items-start">
+        <SettingsNav {activeTab} isAdmin={navIsAdmin} onNavigate={setTab} />
+        {#key activeTab}
+            <div class="flex-1 min-w-0" in:fade={{ duration: blockDuration() }}>
 
     <!-- Organization Tab -->
     {#if activeTab === 'organization'}
@@ -1523,6 +1472,9 @@
             </CardContent>
         </Card>
     {/if}
+            </div>
+        {/key}
+    </div>
 </div>
 
 <ConfirmDialog
