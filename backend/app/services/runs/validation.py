@@ -13,7 +13,7 @@ Error codes (stable strings used by the frontend):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -110,7 +110,6 @@ async def assert_run_can_close(
             status_code=400,
             detail={"error": "SIGNOFF_REQUIRED", "missing_roles": missing},
         )
-
 
 
 async def assert_can_reopen(
@@ -231,7 +230,7 @@ class LaneGap:
 
 
 def lane_assignment_gap(
-    graph: dict, role_assignments: Iterable[RunRoleAssignment]
+    graph: Optional[dict], role_assignments: Iterable[RunRoleAssignment]
 ) -> LaneGap:
     """Compute the lane-assignment gap for a run's PLANNED->ACTIVE start gate.
 
