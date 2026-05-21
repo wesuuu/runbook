@@ -16,7 +16,11 @@ from app.services.equipment.calibration import (
 
 
 def _eq(org_id, site_id, name, *, days_offset=None, archived=False):
-    cal = None if days_offset is None else date.today() + timedelta(days=days_offset)
+    cal = (
+        None
+        if days_offset is None
+        else date.today() + timedelta(days=days_offset)
+    )
     return Equipment(
         organization_id=org_id,
         site_id=site_id,
@@ -44,7 +48,8 @@ async def test_partitions_by_boundary_dates(
 
     status = await get_calibration_status(db_session, test_org.id)
     assert [i.name for i in status.overdue] == ["Overdue"]
-    assert {i.name for i in status.due_soon} == {"DueToday", "DueEdge"}
+    # due_soon is also sorted ascending (soonest first), per the docstring.
+    assert [i.name for i in status.due_soon] == ["DueToday", "DueEdge"]
 
 
 @pytest.mark.asyncio
