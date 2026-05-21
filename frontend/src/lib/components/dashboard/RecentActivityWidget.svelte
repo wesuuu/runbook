@@ -16,7 +16,9 @@
         activity: ActivityItem[];
         cap?: number;
     }
-    let { activity, cap = 8 }: Props = $props();
+    // Default matches the /dashboard endpoint's activity limit (10) so the
+    // rail never silently drops an item the API actually returned.
+    let { activity, cap = 10 }: Props = $props();
 
     const shown = $derived(activity.slice(0, cap));
 

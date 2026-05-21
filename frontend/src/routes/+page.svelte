@@ -97,7 +97,14 @@
 
     async function loadDashboard() {
         const org = getCurrentOrg();
-        if (!org) return;
+        if (!org) {
+            // No org resolved (failed /iam/organizations fetch on init, or an
+            // account with no membership). Settle into the error state rather
+            // than leaving the skeleton spinning forever.
+            error = 'No organization available. Try reloading the page.';
+            loading = false;
+            return;
+        }
         loading = true;
         error = null;
         try {

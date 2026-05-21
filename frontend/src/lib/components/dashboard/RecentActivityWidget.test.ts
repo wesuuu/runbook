@@ -36,4 +36,14 @@ describe('RecentActivityWidget', () => {
         });
         expect(container.querySelectorAll('a').length).toBe(6);
     });
+
+    it('shows every item the dashboard returns by default', () => {
+        // The /dashboard endpoint returns up to 10 activity items; the
+        // default cap must not silently drop any of them.
+        const items = Array.from({ length: 10 }, (_, i) => activity(String(i)));
+        const { container } = render(RecentActivityWidget, {
+            props: { activity: items },
+        });
+        expect(container.querySelectorAll('a').length).toBe(10);
+    });
 });
