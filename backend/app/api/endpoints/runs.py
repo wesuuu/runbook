@@ -100,6 +100,7 @@ from app.services.signoffs.requests import (
     on_run_reopened,
 )
 from app.services.signoffs.service import create_signoff
+from app.services.signoffs.validation import assert_reviewers_independent
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,11 @@ async def create_run(
             status_code=422,
             detail="lot_number is required when produces_lot is true",
         )
+
+    # F-0080: a run's QAU reviewer cannot also be its Study Director (§58.35).
+    assert_reviewers_independent(
+        run_in.study_director_id, run_in.qau_reviewer_id
+    )
 
     result = await db.execute(select(Project).where(Project.id == run_in.project_id))
     project = result.scalar_one_or_none()
@@ -1875,7 +1881,9 @@ async def update_run_reviewers(
     """Designate the GLP sign-off reviewers for a run.
 
     Locked once the run is COMPLETED/ARCHIVED. The QAU reviewer must hold the
-    org QAU role; an independence conflict only warns (re-checked at completion).
+    org QAU role, and may not be the same person as the Study Director
+    (§58.35 — hard-blocked here). Independence against the study's *dynamic*
+    actors only warns and is re-checked at completion.
     """
     run = await get_or_404(db, Run, run_id)
     allowed = await check_permission(
@@ -1913,6 +1921,10 @@ async def update_run_reviewers(
                     "message": "The QAU reviewer must hold the org QAU role.",
                 },
             )
+
+    assert_reviewers_independent(
+        payload.study_director_id, payload.qau_reviewer_id
+    )
 
     run.study_director_id = payload.study_director_id
     run.qau_reviewer_id = payload.qau_reviewer_id
@@ -1958,6 +1970,9 @@ async def create_run_signoff(
     """
     run = await get_or_404(db, Run, run_id)
 
+    # commit=False so the sign-off INSERT and the request-fulfillment UPDATE
+    # below land in a single commit — a failure between them must not leave a
+    # recorded sign-off with its request still OPEN.
     try:
         signoff = await create_signoff(
             db,
@@ -1968,6 +1983,7 @@ async def create_run_signoff(
             signer=user,
             attestation=payload.attestation,
             signoff_request_id=payload.signoff_request_id,
+            commit=False,
         )
     except IntegrityError as exc:
         await db.rollback()
@@ -1985,6 +2001,7 @@ async def create_run_signoff(
         db, run_id=run.id, role=payload.role, status=final_status
     )
     await db.commit()
+    await db.refresh(signoff)
 
     return GlpSignoffResponse.model_validate(signoff)
 

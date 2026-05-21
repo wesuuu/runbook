@@ -18,7 +18,11 @@ Responsibilities, in order:
 5. INSERT the ``GlpSignoff`` row, ``flush``.
 6. ``log_audit`` with ``action=f"signoff.{action.lower()}"`` and
    ``entity_type=f"{entity_type}_signoff"``.
-7. ``commit`` and ``refresh``, then return.
+7. ``commit`` and ``refresh`` (unless ``commit=False``), then return.
+
+When ``commit=False`` the row is flushed but not committed, so a caller can
+extend the transaction — e.g. ``POST /runs/{id}/signoffs`` must land the
+sign-off and the matching request-fulfillment UPDATE in a single commit.
 """
 
 from __future__ import annotations
@@ -60,8 +64,13 @@ async def create_signoff(
     attestation: Optional[str],
     signoff_request_id: Optional[UUID],
     organization_id: Optional[UUID] = None,
+    commit: bool = True,
 ) -> GlpSignoff:
-    """Run all validators, copy signature image, INSERT row, write AuditLog."""
+    """Run all validators, copy signature image, INSERT row, write AuditLog.
+
+    Set ``commit=False`` to flush without committing so the caller can keep
+    the transaction open for follow-up writes (then the caller commits).
+    """
 
     # 1. Resolve org_id (needed for the record-scoped signature path).
     if organization_id is None:
@@ -125,7 +134,8 @@ async def create_signoff(
         changes={"role": role, "entity_id": str(entity_id)},
     )
 
-    # 7. Commit and refresh.
-    await db.commit()
-    await db.refresh(signoff)
+    # 7. Commit and refresh — unless the caller owns the transaction.
+    if commit:
+        await db.commit()
+        await db.refresh(signoff)
     return signoff

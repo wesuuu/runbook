@@ -115,3 +115,80 @@ async def test_create_signoff_writes_audit_log(
     assert entry.entity_type == "run_signoff"
     assert entry.action == "signoff.approved"
     assert entry.actor_id == sample_user_with_signature.id
+
+
+async def test_create_signoff_commit_false_defers_commit(
+    db_session: AsyncSession,
+    sample_run: Run,
+    sample_user_with_signature: User,
+    tmp_path,
+    monkeypatch,
+):
+    """commit=False flushes the row but does not commit, so the caller can
+    keep the transaction open — the run sign-off and its request fulfillment
+    must land in a single commit (F-0080 atomicity)."""
+    monkeypatch.setattr(
+        FileStorageService,
+        "__init__",
+        lambda self: setattr(self, "storage_root", tmp_path / "uploads") or None,
+    )
+    commits: list[int] = []
+    original_commit = db_session.commit
+
+    async def _counting_commit() -> None:
+        commits.append(1)
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", _counting_commit)
+
+    signoff = await create_signoff(
+        db_session,
+        entity_type="run",
+        entity_id=sample_run.id,
+        role="OPERATOR",
+        action="APPROVED",
+        signer=sample_user_with_signature,
+        attestation="I performed this run...",
+        signoff_request_id=None,
+        commit=False,
+    )
+
+    assert commits == []  # create_signoff did not commit
+    assert signoff.id is not None  # but the row was flushed
+
+
+async def test_create_signoff_commit_true_commits(
+    db_session: AsyncSession,
+    sample_run: Run,
+    sample_user_with_signature: User,
+    tmp_path,
+    monkeypatch,
+):
+    """The default (commit=True) still commits exactly once — the protocol
+    sign-off path relies on create_signoff owning the commit."""
+    monkeypatch.setattr(
+        FileStorageService,
+        "__init__",
+        lambda self: setattr(self, "storage_root", tmp_path / "uploads") or None,
+    )
+    commits: list[int] = []
+    original_commit = db_session.commit
+
+    async def _counting_commit() -> None:
+        commits.append(1)
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", _counting_commit)
+
+    await create_signoff(
+        db_session,
+        entity_type="run",
+        entity_id=sample_run.id,
+        role="OPERATOR",
+        action="APPROVED",
+        signer=sample_user_with_signature,
+        attestation="I performed this run...",
+        signoff_request_id=None,
+    )
+
+    assert commits == [1]

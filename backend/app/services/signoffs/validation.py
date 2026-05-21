@@ -293,6 +293,37 @@ async def assert_qau_independent(
             )
 
 
+def assert_reviewers_independent(
+    study_director_id: Optional[UUID], qau_reviewer_id: Optional[UUID]
+) -> None:
+    """§58.35: a run's QAU reviewer cannot also be its Study Director.
+
+    Structural check on the *designated* reviewers — distinct from
+    :func:`assert_qau_independent`, which checks the QAU signer against the
+    study's dynamic actors at sign time. SD == QAU can never become valid,
+    so it hard-blocks at designation rather than warning.
+
+    Raises HTTPException(400) with error="QAU_NOT_INDEPENDENT" and
+    conflict_role="STUDY_DIRECTOR" when both ids are set and equal.
+    """
+    if (
+        study_director_id is not None
+        and qau_reviewer_id is not None
+        and study_director_id == qau_reviewer_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "QAU_NOT_INDEPENDENT",
+                "conflict_role": "STUDY_DIRECTOR",
+                "message": (
+                    "The QAU reviewer must be independent of the "
+                    "Study Director."
+                ),
+            },
+        )
+
+
 async def validate_signoff_role_assignable(
     db: AsyncSession,
     entity_type: Literal["protocol", "run"],

@@ -45,3 +45,22 @@ async def test_reviewers_locked_when_completed(
     )
     assert resp.status_code == 409
     assert resp.json()["detail"]["error"] == "RUN_REVIEWERS_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_same_person_as_sd_and_qau_rejected(
+    client: AsyncClient, auth_headers, glp_run_planned, qau_user,
+):
+    """§58.35: the QAU reviewer cannot also be the Study Director."""
+    resp = await client.put(
+        f"/runs/{glp_run_planned.id}/reviewers",
+        json={
+            "study_director_id": str(qau_user.id),
+            "qau_reviewer_id": str(qau_user.id),
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert detail["error"] == "QAU_NOT_INDEPENDENT"
+    assert detail["conflict_role"] == "STUDY_DIRECTOR"
