@@ -31,12 +31,14 @@ async def test_signoff_fulfills_open_request(
         lambda self: setattr(self, "storage_root", tmp_path / "uploads") or None,
     )
 
-    # Give qau_user a real signature file on disk.
-    sig_dir = tmp_path / "sigs"
-    sig_dir.mkdir()
-    sig_file = sig_dir / "quinn_auditor.png"
+    # Give qau_user a real signature file. signature_full_path is stored
+    # RELATIVE to the storage root (the shape /auth/me/signature writes),
+    # and the file lives under that root so create_signoff can resolve it.
+    relative_sig = "test-org/signatures/quinn_auditor-full.png"
+    sig_file = tmp_path / "uploads" / relative_sig
+    sig_file.parent.mkdir(parents=True, exist_ok=True)
     sig_file.write_bytes(b"\x89PNG\r\n\x1a\n")
-    qau_user.signature_full_path = str(sig_file)
+    qau_user.signature_full_path = relative_sig
 
     # An OPEN QAU request exists for the completed run.
     db_session.add(

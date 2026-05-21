@@ -61,10 +61,18 @@ async def sample_protocol(
 
 @pytest_asyncio.fixture
 async def sample_user_with_signature(test_user: User, tmp_path) -> User:
-    """Test user with a signature image file on disk."""
-    sig = tmp_path / "sig.png"
+    """Test user with a signature image file on disk.
+
+    ``signature_full_path`` is stored RELATIVE to the storage root (the shape
+    the ``/auth/me/signature`` upload writes) and the file is placed under
+    ``{tmp_path}/uploads`` — the root ``_isolated_storage_root`` patches in —
+    so ``create_signoff`` can resolve it the same way production does.
+    """
+    relative = "test-org/signatures/test-user-full.png"
+    sig = tmp_path / "uploads" / relative
+    sig.parent.mkdir(parents=True, exist_ok=True)
     sig.write_bytes(b"\x89PNG\r\n\x1a\n")
-    test_user.signature_full_path = str(sig)
+    test_user.signature_full_path = relative
     return test_user
 
 

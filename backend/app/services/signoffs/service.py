@@ -92,7 +92,13 @@ async def create_signoff(
         storage = FileStorageService()
         dest = storage.storage_root / relative
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(signer.signature_full_path, dest)
+        # signature_full_path is stored RELATIVE to the storage root (the
+        # shape /auth/me/signature writes). Resolve it before copying —
+        # passing the bare relative path to shutil.copyfile opens it against
+        # the process CWD and raises FileNotFoundError (an unhandled 500).
+        # resolve_path also guards against path traversal.
+        source = storage.resolve_path(signer.signature_full_path)
+        shutil.copyfile(source, dest)
         signature_image_path = relative
 
     payload = SignoffPayload(

@@ -37,10 +37,18 @@ async def sample_run(db_session: AsyncSession, test_project) -> Run:
 
 @pytest_asyncio.fixture
 async def sample_user_with_signature(test_user: User, tmp_path) -> User:
-    """A user with a signature image file at signature_full_path."""
-    sig = tmp_path / "sig.png"
+    """A user with a signature image file at signature_full_path.
+
+    ``signature_full_path`` is stored RELATIVE to the storage root (the shape
+    the ``/auth/me/signature`` upload writes), and the file is placed under
+    ``{tmp_path}/uploads`` — the storage root the sign-off service tests
+    patch in. This mirrors production so the copy path is exercised honestly.
+    """
+    relative = "test-org/signatures/test-user-full.png"
+    sig = tmp_path / "uploads" / relative
+    sig.parent.mkdir(parents=True, exist_ok=True)
     sig.write_bytes(b"\x89PNG\r\n\x1a\n")
-    test_user.signature_full_path = str(sig)
+    test_user.signature_full_path = relative
     return test_user
 
 
@@ -81,6 +89,54 @@ async def test_create_run_signoff_copies_signature_image(
     # And the file was actually written under the storage root.
     full = (tmp_path / "uploads") / signoff.signature_image_path
     assert full.exists()
+
+
+async def test_create_run_signoff_resolves_relative_signature_path(
+    db_session: AsyncSession,
+    sample_run: Run,
+    test_user: User,
+    tmp_path,
+    monkeypatch,
+):
+    """A signer's signature_full_path is stored RELATIVE to the storage root
+    (``{org_id}/signatures/{user_id}-full.png``) — the shape the
+    ``/auth/me/signature`` upload writes. ``create_signoff`` must resolve it
+    against the storage root before copying, otherwise ``shutil.copyfile``
+    opens the relative path against the process CWD and raises
+    ``FileNotFoundError``, surfacing as an unhandled 500 on every APPROVED
+    sign-off (F-0080: the async review queue can never complete a sign-off).
+    """
+    storage_root = tmp_path / "uploads"
+    monkeypatch.setattr(
+        FileStorageService,
+        "__init__",
+        lambda self: setattr(self, "storage_root", storage_root) or None,
+    )
+
+    # Write the source signature file at a RELATIVE path under the storage
+    # root, exactly as the signature-upload endpoint does in production.
+    relative_sig = "test-org/signatures/test-user-full.png"
+    src_abs = storage_root / relative_sig
+    src_abs.parent.mkdir(parents=True, exist_ok=True)
+    src_abs.write_bytes(b"\x89PNG\r\n\x1a\n")
+    test_user.signature_full_path = relative_sig
+
+    signoff = await create_signoff(
+        db_session,
+        entity_type="run",
+        entity_id=sample_run.id,
+        role="OPERATOR",
+        action="APPROVED",
+        signer=test_user,
+        attestation="I performed this run...",
+        signoff_request_id=None,
+    )
+
+    assert signoff.signature_image_path is not None
+    # The record-scoped copy was actually written under the storage root.
+    copied = storage_root / signoff.signature_image_path
+    assert copied.exists()
+    assert copied.read_bytes() == b"\x89PNG\r\n\x1a\n"
 
 
 async def test_create_signoff_writes_audit_log(
