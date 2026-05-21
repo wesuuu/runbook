@@ -160,7 +160,12 @@
             aria-label={railExpanded
                 ? 'Collapse navigation'
                 : 'Expand navigation'}
-            class="w-full justify-start gap-3 min-h-11 min-w-11 px-3 text-muted-foreground"
+            class={cn(
+                'w-full gap-3 min-h-11 min-w-11 px-3 text-muted-foreground',
+                // Match the nav-item centering logic: icon-only when collapsed,
+                // left-aligned with label when expanded.
+                !railExpanded ? 'justify-center px-0' : 'justify-start',
+            )}
         >
             {#if railExpanded}
                 <PanelLeftClose class="size-[17px] shrink-0" />

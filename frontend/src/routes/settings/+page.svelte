@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onMount, tick } from 'svelte';
     import { api } from '$lib/api';
     import { z } from 'zod';
     import { toast } from '$lib/toast';
@@ -844,7 +844,12 @@
                 keepFocus: true,
                 noScroll: true,
             });
-            toast.info('That section requires admin access');
+            // Defer the toast by one tick so the Toaster component (inside the
+            // layout's {#if isInitialized()} block) has finished mounting before
+            // svelte-sonner tries to enqueue the notification. Without the tick(),
+            // the toast is silently dropped on a fresh page load because the
+            // Toaster hasn't been added to the DOM yet.
+            tick().then(() => toast.info('That section requires admin access'));
         }
     });
 </script>
