@@ -15,7 +15,11 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.protocols import Protocol
+from app.models.runs import Run, RunRoleAssignment
 from app.models.signoffs import GlpSignoff
+from app.schemas.dashboard import SignoffItem
+from app.services.runs.graph_facts import RunGraphFacts
 
 
 def missing_signoff_roles(
@@ -121,3 +125,103 @@ async def invalidate_active_signoffs(
     )
     await db.flush()
     return result.rowcount or 0
+
+
+async def list_runs_awaiting_signoff_for_user(
+    db: AsyncSession,
+    user_id: UUID,
+    runs: list[Run],
+    graph_facts: dict[UUID, RunGraphFacts],
+    assignments_by_run: dict[UUID, list[RunRoleAssignment]],
+) -> list[SignoffItem]:
+    """Runs the user is involved in that are ready to close but missing a sign-off.
+
+    A run qualifies when ALL hold:
+      - status ACTIVE or EDITED
+      - the *protocol* graph has glpSettings.glp_enabled true
+      - every unit-op step is completed
+      - a required sign-off role is missing
+      - the user is involved (a RunRoleAssignment row OR started_by_id)
+
+    Returned oldest-waiting first (run.updated_at ascending).
+    """
+    candidates = [
+        r
+        for r in runs
+        if (r.status if isinstance(r.status, str) else r.status.value)
+        in ("ACTIVE", "EDITED")
+    ]
+
+    involved: list[Run] = []
+    for run in candidates:
+        mine = [
+            a for a in assignments_by_run.get(run.id, []) if a.user_id == user_id
+        ]
+        if mine or run.started_by_id == user_id:
+            involved.append(run)
+    if not involved:
+        return []
+
+    # Live GLP settings come from the protocol graph (what complete_run reads).
+    proto_ids = {r.protocol_id for r in involved if r.protocol_id}
+    protocols: dict[UUID, Protocol] = {}
+    if proto_ids:
+        result = await db.execute(
+            select(Protocol).where(Protocol.id.in_(proto_ids))
+        )
+        protocols = {p.id: p for p in result.scalars().all()}
+
+    # One batched query — active run sign-offs across all candidate run ids.
+    run_ids = [r.id for r in involved]
+    have_by_run: dict[UUID, set[str]] = {}
+    result = await db.execute(
+        select(GlpSignoff).where(
+            GlpSignoff.run_id.in_(run_ids),
+            GlpSignoff.action == "APPROVED",
+            GlpSignoff.invalidated_at.is_(None),
+        )
+    )
+    for s in result.scalars().all():
+        have_by_run.setdefault(s.run_id, set()).add(s.role)
+
+    qualifying: list[tuple] = []
+    for run in involved:
+        proto = protocols.get(run.protocol_id) if run.protocol_id else None
+        glp = ((proto.graph or {}).get("glpSettings") if proto else None) or {}
+        if not glp.get("glp_enabled"):
+            continue
+
+        facts = graph_facts.get(run.id)
+        unit_op_ids = facts.unit_op_node_ids if facts else []
+        if not unit_op_ids:
+            continue
+
+        exec_data = run.execution_data or {}
+        all_complete = all(
+            isinstance(exec_data.get(sid), dict)
+            and exec_data[sid].get("status") == "completed"
+            for sid in unit_op_ids
+        )
+        if not all_complete:
+            continue
+
+        missing = missing_signoff_roles(have_by_run.get(run.id, set()), glp)
+        if not missing:
+            continue
+
+        qualifying.append(
+            (
+                run.updated_at,
+                SignoffItem(
+                    kind="run",
+                    entity_id=run.id,
+                    name=run.name,
+                    project_name=None,
+                    detail=f"Missing {', '.join(missing)}",
+                    waiting_since=run.updated_at,
+                ),
+            )
+        )
+
+    qualifying.sort(key=lambda pair: pair[0])  # oldest-waiting first
+    return [item for _, item in qualifying]
