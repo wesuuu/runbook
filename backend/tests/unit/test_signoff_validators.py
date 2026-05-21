@@ -509,6 +509,10 @@ async def test_validate_signoff_role_assignable_passes_with_permission():
     protocol_id = uuid4()
 
     with patch(
+        "app.services.signoffs.validation._glp_user_designated_for_role",
+        new_callable=AsyncMock,
+        return_value=False,
+    ), patch(
         "app.services.signoffs.validation.check_permission",
         new_callable=AsyncMock,
         return_value=True,
@@ -530,6 +534,10 @@ async def test_validate_signoff_role_assignable_raises_403_without_permission():
     protocol_id = uuid4()
 
     with patch(
+        "app.services.signoffs.validation._glp_user_designated_for_role",
+        new_callable=AsyncMock,
+        return_value=False,
+    ), patch(
         "app.services.signoffs.validation.check_permission",
         new_callable=AsyncMock,
         return_value=False,
