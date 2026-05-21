@@ -1,6 +1,6 @@
 """Unit tests for the notification service layer."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -449,3 +449,34 @@ class TestRetryPending:
             assert d.status == DeliveryStatus.SENT
         await db_session.refresh(poison)
         assert poison.status == DeliveryStatus.FAILED
+
+
+# ── _retry_pending_deliveries sweep wiring (Fix 2) ───────────────────────
+
+
+class TestRetryPendingDeliveriesSweep:
+    """The recovery-loop sweep opens a session, calls retry_pending, commits."""
+
+    @pytest.mark.asyncio
+    async def test_sweep_calls_retry_pending_and_commits(self):
+        from app.main import _retry_pending_deliveries
+
+        fake_session = AsyncMock()
+        session_cm = AsyncMock()
+        session_cm.__aenter__.return_value = fake_session
+        session_cm.__aexit__.return_value = False
+        session_factory = MagicMock(return_value=session_cm)
+        retry_mock = AsyncMock(return_value=3)
+
+        with patch(
+            "app.db.session.AsyncSessionLocal", session_factory
+        ), patch(
+            "app.services.core.notifications.dispatcher.retry_pending",
+            retry_mock,
+        ):
+            await _retry_pending_deliveries()
+
+        # Sweep opened exactly one session, ran the retry, and committed.
+        session_factory.assert_called_once()
+        retry_mock.assert_awaited_once_with(fake_session)
+        fake_session.commit.assert_awaited_once()
