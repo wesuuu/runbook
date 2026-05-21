@@ -8,7 +8,7 @@ db.commit() so it integrates cleanly with SAVEPOINT-based test sessions.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal, Optional, Sequence
+from typing import Any, Literal, Optional, Sequence
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -19,7 +19,7 @@ from app.models.signoffs import GlpSignoff
 
 
 def missing_signoff_roles(
-    have_roles: set[str], glp_settings: dict
+    have_roles: set[str], glp_settings: dict[str, Any]
 ) -> list[str]:
     """Which required run sign-off roles are not yet present.
 
