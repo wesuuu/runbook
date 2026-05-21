@@ -251,6 +251,9 @@ async def create_run(
         # QA-0008: GxP execution metadata
         lot_number=run_in.lot_number,
         batch_number=run_in.batch_number,
+        # F-0080: GLP sign-off reviewers
+        study_director_id=run_in.study_director_id,
+        qau_reviewer_id=run_in.qau_reviewer_id,
     )
     db.add(run_obj)
     await db.flush()
