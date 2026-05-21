@@ -80,3 +80,66 @@ async def test_signoff_fulfills_open_request(
         )
     )
     assert row.scalar_one().status == "APPROVED"
+
+
+async def _attempt_qau_signoff(
+    client: AsyncClient, run, qau_user, glp_org, tmp_path, monkeypatch
+):
+    """Set up a QAU signer with a real signature and POST a sign-off to ``run``."""
+    monkeypatch.setattr(
+        FileStorageService,
+        "__init__",
+        lambda self: setattr(self, "storage_root", tmp_path / "uploads") or None,
+    )
+    relative_sig = "test-org/signatures/quinn_auditor-full.png"
+    sig_file = tmp_path / "uploads" / relative_sig
+    sig_file.parent.mkdir(parents=True, exist_ok=True)
+    sig_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+    qau_user.signature_full_path = relative_sig
+
+    from app.core.security import create_access_token
+
+    token = create_access_token(
+        qau_user.id,
+        org_id=glp_org.id,
+        subscription_tier=glp_org.subscription_tier,
+        email_verified=True,
+    )
+    return await client.post(
+        f"/runs/{run.id}/signoffs",
+        json={
+            "role": "QAU",
+            "action": "APPROVED",
+            "attestation": "Attempting to sign a non-completed run.",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_signoff_rejected_on_planned_run(
+    client: AsyncClient, glp_run_planned, qau_user, glp_org, tmp_path, monkeypatch
+):
+    """A run sign-off may only be created on a COMPLETED run (F-0080-D5).
+
+    GLP §58.35 QAU review is review of *completed* records — a PLANNED run
+    has no finalized execution data to attest to. The endpoint must reject
+    the sign-off with 409 RUN_NOT_COMPLETED before any row is inserted.
+    """
+    resp = await _attempt_qau_signoff(
+        client, glp_run_planned, qau_user, glp_org, tmp_path, monkeypatch
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["error"] == "RUN_NOT_COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_signoff_rejected_on_active_run(
+    client: AsyncClient, glp_run_active, qau_user, glp_org, tmp_path, monkeypatch
+):
+    """An ACTIVE (in-progress) run cannot be signed off either (F-0080-D5)."""
+    resp = await _attempt_qau_signoff(
+        client, glp_run_active, qau_user, glp_org, tmp_path, monkeypatch
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["error"] == "RUN_NOT_COMPLETED"

@@ -1970,6 +1970,21 @@ async def create_run_signoff(
     """
     run = await get_or_404(db, Run, run_id)
 
+    # F-0080: run sign-offs are async review of *completed* runs (§58.35 QAU
+    # review of finalized records). A PLANNED/ACTIVE/EDITED run has no
+    # finalized execution data to attest to — reject before any INSERT.
+    if run.status != "COMPLETED":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "RUN_NOT_COMPLETED",
+                "message": (
+                    "Sign-offs can only be recorded on a completed run."
+                ),
+                "status": run.status,
+            },
+        )
+
     # commit=False so the sign-off INSERT and the request-fulfillment UPDATE
     # below land in a single commit — a failure between them must not leave a
     # recorded sign-off with its request still OPEN.
