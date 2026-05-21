@@ -316,3 +316,8 @@ class RunCompleteRequest(BaseModel):
 
 class RunReopenRequest(BaseModel):
     reason: str = Field(min_length=1)
+
+
+class RunReviewersUpdate(BaseModel):
+    study_director_id: Optional[UUID] = None
+    qau_reviewer_id: Optional[UUID] = None

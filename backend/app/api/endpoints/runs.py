@@ -39,7 +39,7 @@ from app.core.deps import (
 from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
-from app.models.iam import ObjectType, PermissionLevel, User
+from app.models.iam import ObjectType, OrgRole, OrganizationMember, PermissionLevel, User
 from app.models.projects import Project
 from app.models.protocols import Protocol, ProtocolVersion, UnitOpDefinition
 from app.models.runs import Run, RunRoleAssignment
@@ -56,6 +56,7 @@ from app.schemas.runs import (
     RunOverrides,
     RunReopenRequest,
     RunResponse,
+    RunReviewersUpdate,
     RunRoleAssignmentCreate,
     RunRoleAssignmentListResponse,
     RunRoleAssignmentResponse,
@@ -1859,6 +1860,78 @@ async def get_run_audit_log(
         "offset": offset,
         "limit": limit,
     }
+
+
+# --- GLP reviewer designation (F-0080) ------------------------------------
+
+
+@router.put("/runs/{run_id}/reviewers", response_model=RunResponse)
+async def update_run_reviewers(
+    run_id: UUID,
+    payload: RunReviewersUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Designate the GLP sign-off reviewers for a run.
+
+    Locked once the run is COMPLETED/ARCHIVED. The QAU reviewer must hold the
+    org QAU role; an independence conflict only warns (re-checked at completion).
+    """
+    run = await get_or_404(db, Run, run_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN, run_id, PermissionLevel.EDIT
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="EDIT permission required")
+
+    status_str = _run_status_str(run)
+    if status_str in ("COMPLETED", "ARCHIVED"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "RUN_REVIEWERS_LOCKED",
+                "message": "Reviewers lock once the run is completed.",
+            },
+        )
+
+    if payload.qau_reviewer_id is not None:
+        project = await db.get(Project, run.project_id)
+        member = (
+            await db.execute(
+                select(OrganizationMember).where(
+                    OrganizationMember.user_id == payload.qau_reviewer_id,
+                    OrganizationMember.organization_id
+                    == project.organization_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if member is None or OrgRole.QAU.value not in (member.roles or []):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "REVIEWER_NOT_QUALIFIED",
+                    "message": "The QAU reviewer must hold the org QAU role.",
+                },
+            )
+
+    run.study_director_id = payload.study_director_id
+    run.qau_reviewer_id = payload.qau_reviewer_id
+    await log_audit(
+        db,
+        user.id,
+        "run.reviewers_update",
+        "run",
+        run.id,
+        {
+            "study_director_id": str(payload.study_director_id)
+            if payload.study_director_id else None,
+            "qau_reviewer_id": str(payload.qau_reviewer_id)
+            if payload.qau_reviewer_id else None,
+        },
+    )
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
 
 
 # --- GLP Sign-offs (F-0087) -----------------------------------------------
