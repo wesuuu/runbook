@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.notifications import Notification
 from app.models.runs import Run
 from app.models.signoffs import GlpSignoff, GlpSignoffRequest
 
@@ -163,3 +164,71 @@ async def test_put_run_completion_generates_requests(
     )
     assert resp.status_code == 200
     assert await _open_count(db_session, glp_run_active.id) == 2
+
+
+@pytest.mark.asyncio
+async def test_complete_and_reopen_create_notification_rows(
+    client: AsyncClient,
+    auth_headers,
+    db_session,
+    glp_run_active,
+    study_director_user,
+    qau_user,
+):
+    """Completing a GLP run fans out RUN_SIGNOFF_REQUESTED Notification rows;
+    reopening fans out RUN_SIGNOFF_CANCELLED rows for the previously-assigned
+    reviewers."""
+    glp_run_active.study_director_id = study_director_user.id
+    glp_run_active.qau_reviewer_id = qau_user.id
+    await db_session.flush()
+    await _add_operator_signoff(db_session, glp_run_active, study_director_user.id)
+
+    # ── Complete the run ────────────────────────────────────────────────
+    resp = await client.post(
+        f"/runs/{glp_run_active.id}/complete",
+        json={"outcome": "COMPLETED_NORMAL", "outcome_notes": ""},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    # Both assigned reviewers should each get a RUN_SIGNOFF_REQUESTED notification.
+    result = await db_session.execute(
+        select(Notification).where(
+            Notification.event_type == "RUN_SIGNOFF_REQUESTED",
+            Notification.entity_id == glp_run_active.id,
+        )
+    )
+    requested_notifs = list(result.scalars().all())
+    recipient_ids = {n.user_id for n in requested_notifs}
+    assert study_director_user.id in recipient_ids, (
+        "study_director_user should receive a RUN_SIGNOFF_REQUESTED notification"
+    )
+    assert qau_user.id in recipient_ids, (
+        "qau_user should receive a RUN_SIGNOFF_REQUESTED notification"
+    )
+
+    # ── Reopen the run ──────────────────────────────────────────────────
+    resp = await client.post(
+        f"/runs/{glp_run_active.id}/reopen",
+        json={"reason": "fix a value"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+    # The assigned reviewers should each get a RUN_SIGNOFF_CANCELLED notification.
+    result = await db_session.execute(
+        select(Notification).where(
+            Notification.event_type == "RUN_SIGNOFF_CANCELLED",
+            Notification.entity_id == glp_run_active.id,
+        )
+    )
+    cancelled_notifs = list(result.scalars().all())
+    cancelled_recipient_ids = {n.user_id for n in cancelled_notifs}
+    # study_director_user had an assigned request, so must be notified.
+    assert study_director_user.id in cancelled_recipient_ids, (
+        "study_director_user should receive a RUN_SIGNOFF_CANCELLED notification"
+    )
+    # qau_user also had an assigned request, so must also be notified.
+    assert qau_user.id in cancelled_recipient_ids, (
+        "qau_user should receive a RUN_SIGNOFF_CANCELLED notification"
+    )

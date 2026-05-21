@@ -33,6 +33,35 @@ async def test_request_recipients_excludes_operator_who_is_org_qau(
 
 
 @pytest.mark.asyncio
+async def test_request_recipients_returns_empty_for_unassigned_non_qau(
+    db_session,
+    test_project,
+):
+    """An unassigned (pool) request for STUDY_DIRECTOR has no one to notify —
+    _request_recipients must return [] rather than falling through to the QAU
+    pool lookup."""
+    run = Run(
+        name="R",
+        project_id=test_project.id,
+        graph={},
+        execution_data={},
+    )
+    db_session.add(run)
+    await db_session.flush()
+    req = GlpSignoffRequest(
+        run_id=run.id,
+        role="STUDY_DIRECTOR",
+        status="OPEN",
+        requested_user_id=None,
+    )
+    db_session.add(req)
+    await db_session.flush()
+
+    recipients = await _request_recipients(db_session, run, req)
+    assert recipients == []
+
+
+@pytest.mark.asyncio
 async def test_request_recipients_returns_assignee_for_assigned_request(
     db_session,
     test_project,

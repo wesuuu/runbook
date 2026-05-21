@@ -175,6 +175,10 @@ async def fulfill_signoff_request(
 
 async def _run_org_id(db: AsyncSession, run: Run) -> uuid.UUID:
     project = await db.get(Project, run.project_id)
+    if project is None:
+        raise ValueError(
+            f"Project {run.project_id} not found for run {run.id}"
+        )
     return project.organization_id
 
 
@@ -263,6 +267,7 @@ async def on_run_reopened(
         return
     org_id = await _run_org_id(db, run)
     for req in open_reqs:
+        # Skip pool (unassigned) requests — there is no specific user to un-notify.
         if req.requested_user_id is None:
             continue
         background_tasks.add_task(

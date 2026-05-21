@@ -1,6 +1,7 @@
 """Cancellation, fulfillment, and reopen-cycle tests (F-0080)."""
 
 import pytest
+from fastapi import BackgroundTasks
 from sqlalchemy import select
 
 from app.models.runs import Run
@@ -9,6 +10,7 @@ from app.services.signoffs.requests import (
     cancel_signoff_requests,
     fulfill_signoff_request,
     generate_signoff_requests,
+    on_run_reopened,
 )
 
 _GLP = {"glpSettings": {"require_study_director": True, "require_qau": True}}
@@ -64,6 +66,27 @@ async def test_fulfill_is_noop_without_open_request(
         db_session, run_id=run.id, role="QAU", status="APPROVED"
     )
     assert n == 0
+
+
+@pytest.mark.asyncio
+async def test_on_run_reopened_noop_when_no_open_requests(
+    db_session, test_project, study_director_user, qau_user,
+):
+    """on_run_reopened early-returns cleanly when there are no OPEN requests.
+
+    No exception should be raised, and no background tasks should be enqueued.
+    """
+    run = Run(
+        name="R", project_id=test_project.id, graph={}, execution_data={},
+        status="COMPLETED",
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    bt = BackgroundTasks()
+    # Should not raise, even though there are zero GlpSignoffRequest rows.
+    await on_run_reopened(db_session, run, bt)
+    assert len(bt.tasks) == 0
 
 
 @pytest.mark.asyncio
