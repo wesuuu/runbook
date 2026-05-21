@@ -184,7 +184,7 @@ async def list_runs_awaiting_signoff_for_user(
     for s in result.scalars().all():
         have_by_run.setdefault(s.run_id, set()).add(s.role)
 
-    qualifying: list[tuple] = []
+    qualifying: list[tuple[datetime, SignoffItem]] = []
     for run in involved:
         proto = protocols.get(run.protocol_id) if run.protocol_id else None
         glp = ((proto.graph or {}).get("glpSettings") if proto else None) or {}
@@ -216,7 +216,7 @@ async def list_runs_awaiting_signoff_for_user(
                     kind="run",
                     entity_id=run.id,
                     name=run.name,
-                    project_name=None,
+                    project_name=None,  # Task 9 enriches this via projects join
                     detail=f"Missing {', '.join(missing)}",
                     waiting_since=run.updated_at,
                 ),

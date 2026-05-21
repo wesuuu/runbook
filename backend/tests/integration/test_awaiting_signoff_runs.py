@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import Organization, User
+from app.models.iam import User
 from app.models.protocols import Protocol
 from app.models.runs import Run, RunRoleAssignment
 from app.models.signoffs import GlpSignoff
