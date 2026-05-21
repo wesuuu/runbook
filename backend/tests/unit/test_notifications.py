@@ -19,10 +19,15 @@ from app.services.core.notifications.templates import TEMPLATES
 
 class TestTemplates:
     def test_all_event_types_have_templates(self):
+        """Enum and TEMPLATES must stay in exact sync — drift either way fails."""
         from app.models.notifications import NotificationEventType
 
-        for evt in NotificationEventType:
-            assert evt.value in TEMPLATES, f"Missing template for {evt.value}"
+        enum_values = {e.value for e in NotificationEventType}
+        template_keys = set(TEMPLATES.keys())
+        assert enum_values == template_keys, (
+            f"enum-only: {enum_values - template_keys}; "
+            f"template-only: {template_keys - enum_values}"
+        )
 
     def test_role_assigned_personal(self):
         title, body = TEMPLATES["ROLE_ASSIGNED"](
