@@ -1904,6 +1904,12 @@ async def create_run_signoff(
             },
         ) from exc
 
+    final_status = "APPROVED" if payload.action == "APPROVED" else "REJECTED"
+    await fulfill_signoff_request(
+        db, run_id=run.id, role=payload.role, status=final_status
+    )
+    await db.commit()
+
     return GlpSignoffResponse.model_validate(signoff)
 
 
