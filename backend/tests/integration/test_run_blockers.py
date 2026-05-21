@@ -39,7 +39,7 @@ async def _assignments_for(db_session, run_id):
 
 @pytest.mark.asyncio
 async def test_lanes_only_blocker(
-    db_session: AsyncSession, test_org: Organization, test_project: Project, test_user
+    db_session: AsyncSession, test_org: Organization, test_project: Project
 ):
     run = _run(test_project.id, graph={
         "nodes": [{"id": "lane-a", "type": "swimLane"}]
@@ -58,7 +58,7 @@ async def test_lanes_only_blocker(
 
 @pytest.mark.asyncio
 async def test_no_one_assigned_label(
-    db_session: AsyncSession, test_org: Organization, test_project: Project, test_user
+    db_session: AsyncSession, test_org: Organization, test_project: Project
 ):
     run = _run(test_project.id, graph={"nodes": []})
     db_session.add(run)
@@ -71,7 +71,10 @@ async def test_no_one_assigned_label(
 
 @pytest.mark.asyncio
 async def test_stale_lane_assignment_blocker(
-    db_session: AsyncSession, test_org: Organization, test_project: Project, test_user
+    db_session: AsyncSession,
+    test_org: Organization,
+    test_project: Project,
+    test_user,
 ):
     # All swimlanes assigned, plus a stale assignment to a removed lane —
     # the start gate rejects this, so the dashboard must flag it too.
@@ -171,9 +174,26 @@ async def test_future_and_archived_equipment_not_flagged(
 
 @pytest.mark.asyncio
 async def test_active_run_never_blocked(
-    db_session: AsyncSession, test_org: Organization, test_project: Project, test_user
+    db_session: AsyncSession, test_org: Organization, test_project: Project
 ):
     run = _run(test_project.id, status="ACTIVE", graph={
+        "nodes": [{"id": "lane-a", "type": "swimLane"}]
+    })
+    db_session.add(run)
+    await db_session.flush()
+    blocked = await list_blocked_runs(
+        db_session, [run], _facts([run]), {run.id: []}, test_org.id
+    )
+    assert blocked == {}
+
+
+@pytest.mark.asyncio
+async def test_edited_run_never_blocked(
+    db_session: AsyncSession, test_org: Organization, test_project: Project
+):
+    # EDITED is a re-opened COMPLETED run — still modifiable, but it has
+    # already started, so the start-gate blockers never apply to it.
+    run = _run(test_project.id, status="EDITED", graph={
         "nodes": [{"id": "lane-a", "type": "swimLane"}]
     })
     db_session.add(run)
