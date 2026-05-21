@@ -384,6 +384,7 @@
                                 onChange={(a) => {
                                     assignments = a;
                                 }}
+                                showReviewers={false}
                             />
                         {/if}
                     </div>

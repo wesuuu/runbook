@@ -25,6 +25,7 @@
     } from "$lib/components/run/RunOutcomePicker.svelte";
     import SignoffBlock from "$lib/components/shared/SignoffBlock.svelte";
     import SignoffModal from "$lib/components/shared/SignoffModal.svelte";
+    import RunReviewersPicker from "$lib/components/run/RunReviewersPicker.svelte";
     import { ConfirmDialog } from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
     import { Switch } from "$lib/components/ui/switch";
@@ -34,6 +35,7 @@
         createRunSignoff,
         completeRun as completeRunApi,
         reopenRun,
+        updateRunReviewers,
     } from '$lib/api';
     import {
         GlpSettingsSchema,
@@ -61,6 +63,7 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
     let savingStatus = $state(false);
+    let savingReviewers = $state(false);
 
     // UI State
     let showStartConfirm = $state(false);
@@ -200,6 +203,22 @@
             }
         }
         glpSettings = GlpSettingsSchema.parse({});
+    }
+
+    async function saveReviewers(r: { studyDirectorId: string | null; qauReviewerId: string | null }) {
+        savingReviewers = true;
+        try {
+            await updateRunReviewers(run.id, {
+                study_director_id: r.studyDirectorId,
+                qau_reviewer_id: r.qauReviewerId,
+            });
+            run = await api.get(`/runs/${id}`);
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : 'Failed to save reviewers';
+            toast.error(msg);
+        } finally {
+            savingReviewers = false;
+        }
     }
 
     async function refreshSignoffs(): Promise<void> {
@@ -898,6 +917,23 @@
                     />
                 </div>
 
+                <!-- Sign-off reviewers card -->
+                <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                    <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-3">
+                        Sign-off reviewers
+                    </h3>
+                    <RunReviewersPicker
+                        studyDirectorId={run.study_director_id ?? null}
+                        qauReviewerId={run.qau_reviewer_id ?? null}
+                        members={projectMembers}
+                        disabled={run.status === 'COMPLETED' || run.status === 'ARCHIVED' || savingReviewers}
+                        onChange={saveReviewers}
+                    />
+                    <p class="text-xs text-muted-foreground mt-3">
+                        Reviewers lock once the run is completed.
+                    </p>
+                </div>
+
                 <!-- Electronic Batch Record -->
                 {#if getAllUnitOpSteps().length > 0}
                     <div class="mb-8 p-6 card-warm rounded-xl" data-tour="run-step-list">
@@ -1189,6 +1225,23 @@
                         />
                     {/if}
 
+                    <!-- Sign-off reviewers card -->
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-3">
+                            Sign-off reviewers
+                        </h3>
+                        <RunReviewersPicker
+                            studyDirectorId={run.study_director_id ?? null}
+                            qauReviewerId={run.qau_reviewer_id ?? null}
+                            members={projectMembers}
+                            disabled={run.status === 'COMPLETED' || run.status === 'ARCHIVED' || savingReviewers}
+                            onChange={saveReviewers}
+                        />
+                        <p class="text-xs text-muted-foreground mt-3">
+                            Reviewers lock once the run is completed.
+                        </p>
+                    </div>
+
                     <!-- GLP Sign-offs (visible during ACTIVE so OPERATOR / SD /
                          QAU can sign before the run is closed). -->
                     {#if resolveRequiredRoles(glpSettings).length > 0}
@@ -1292,6 +1345,23 @@
                             executionData={run.execution_data || {}}
                             {getStepsForRole}
                         />
+                    </div>
+
+                    <!-- Sign-off reviewers card (read-only when completed) -->
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-3">
+                            Sign-off reviewers
+                        </h3>
+                        <RunReviewersPicker
+                            studyDirectorId={run.study_director_id ?? null}
+                            qauReviewerId={run.qau_reviewer_id ?? null}
+                            members={projectMembers}
+                            disabled={true}
+                            onChange={saveReviewers}
+                        />
+                        <p class="text-xs text-muted-foreground mt-3">
+                            Reviewers lock once the run is completed.
+                        </p>
                     </div>
 
                     <!-- GLP Sign-offs -->
@@ -1440,6 +1510,23 @@
                             showEditAnnotations={true}
                             {getStepsForRole}
                         />
+                    </div>
+
+                    <!-- Sign-off reviewers card -->
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-3">
+                            Sign-off reviewers
+                        </h3>
+                        <RunReviewersPicker
+                            studyDirectorId={run.study_director_id ?? null}
+                            qauReviewerId={run.qau_reviewer_id ?? null}
+                            members={projectMembers}
+                            disabled={run.status === 'COMPLETED' || run.status === 'ARCHIVED' || savingReviewers}
+                            onChange={saveReviewers}
+                        />
+                        <p class="text-xs text-muted-foreground mt-3">
+                            Reviewers lock once the run is completed.
+                        </p>
                     </div>
 
                     <!-- Documents Section -->

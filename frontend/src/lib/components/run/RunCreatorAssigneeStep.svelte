@@ -1,6 +1,7 @@
 <script lang="ts">
     import { slide } from 'svelte/transition';
     import { cubicOut } from 'svelte/easing';
+    import RunReviewersPicker from './RunReviewersPicker.svelte';
 
     interface ProjectMember {
         id: string;
@@ -19,6 +20,13 @@
         loadingMembers: boolean;
         assignments: Record<string, string>;
         onChange: (assignments: Record<string, string>) => void;
+        studyDirectorId?: string | null;
+        qauReviewerId?: string | null;
+        onReviewersChange?: (reviewers: {
+            studyDirectorId: string | null;
+            qauReviewerId: string | null;
+        }) => void;
+        showReviewers?: boolean;
     }
 
     let {
@@ -27,6 +35,10 @@
         loadingMembers,
         assignments,
         onChange,
+        studyDirectorId = null,
+        qauReviewerId = null,
+        onReviewersChange = () => {},
+        showReviewers = true,
     }: Props = $props();
 
     function setAssignment(key: string, userId: string) {
@@ -104,6 +116,16 @@
                 </select>
             </div>
         </div>
+    {/if}
+
+    {#if showReviewers}
+        <RunReviewersPicker
+            {studyDirectorId}
+            {qauReviewerId}
+            members={projectMembers}
+            disabled={false}
+            onChange={onReviewersChange}
+        />
     {/if}
 </section>
 

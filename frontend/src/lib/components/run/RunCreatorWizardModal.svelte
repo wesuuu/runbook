@@ -83,6 +83,8 @@
     let loadingMembers = $state(false);
     let loadedMembersForProject = $state<string | null>(null);
     let assignments = $state<Record<string, string>>({});
+    let studyDirectorId = $state<string | null>(null);
+    let qauReviewerId = $state<string | null>(null);
 
     type StepNum = 1 | 2 | 3 | 4 | 5;
     let currentStep = $state<StepNum>(1);
@@ -138,6 +140,8 @@
         roles = [];
         activeRoleId = null;
         assignments = {};
+        studyDirectorId = null;
+        qauReviewerId = null;
         currentStep = 1;
         highestVisited = 1;
         nameValid = false;
@@ -223,6 +227,17 @@
             isLatestVersion && selectedProtocol?.graph
                 ? selectedProtocol.graph
                 : selectedVersion.graph;
+
+        // Pre-fill reviewers from glpSettings in the selected protocol graph.
+        const glp = (sourceGraph as { glpSettings?: { study_director_user_id?: string | null; qau_mode?: string | null; qau_user_id?: string | null } })?.glpSettings;
+        if (glp && typeof glp === 'object') {
+            if (glp.study_director_user_id) {
+                studyDirectorId = glp.study_director_user_id;
+            }
+            if (glp.qau_mode === 'SPECIFIC_USER' && glp.qau_user_id) {
+                qauReviewerId = glp.qau_user_id;
+            }
+        }
         const raw = JSON.parse(JSON.stringify(sourceGraph ?? { nodes: [], edges: [] }));
 
         // Stamp each unitOp node with protocol_* mirror fields so RunCreatorUnitOpCard
@@ -377,6 +392,8 @@
             if (protocolVersionNumber) payload.protocol_version_number = protocolVersionNumber;
             const overrides = buildOverridesPayload(edits, currentGraph);
             if (overrides) payload.overrides = overrides;
+            if (studyDirectorId) payload.study_director_id = studyDirectorId;
+            if (qauReviewerId) payload.qau_reviewer_id = qauReviewerId;
             const newRun = await api.post<{ id: string }>('/runs', payload);
             await persistAssignments(newRun.id);
             onCreated?.(newRun);
@@ -449,6 +466,9 @@
                             {loadingMembers}
                             {assignments}
                             onChange={(a) => { assignments = a; }}
+                            {studyDirectorId}
+                            {qauReviewerId}
+                            onReviewersChange={(r) => { studyDirectorId = r.studyDirectorId; qauReviewerId = r.qauReviewerId; }}
                         />
                     {:else if currentStep === 5}
                         <RunCreatorReviewStep
