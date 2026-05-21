@@ -170,10 +170,13 @@ async def test_post_run_signoff_rejects_non_completed_run(
     sample_user_with_signature,
     _isolated_storage_root,
 ):
-    """F-0080-D5: a PLANNED run has no finalized records to attest to.
+    """F-0080: a PLANNED run has executed no steps.
 
-    The endpoint must reject the sign-off with 409 RUN_NOT_COMPLETED before
-    any GlpSignoff row is inserted.
+    The OPERATOR sign-off attests that steps ran within specification, so on
+    a run that never started there is nothing to attest to — the endpoint
+    must reject with 409 RUN_NOT_STARTED before any GlpSignoff row is
+    inserted. (On an ACTIVE/EDITED run the OPERATOR sign-off *is* accepted —
+    it gates closure; see test_operator_signoff_accepted_on_active_run.)
     """
     res = await client.post(
         f"/runs/{sample_run.id}/signoffs",
@@ -185,7 +188,7 @@ async def test_post_run_signoff_rejects_non_completed_run(
         },
     )
     assert res.status_code == 409, res.text
-    assert res.json()["detail"]["error"] == "RUN_NOT_COMPLETED"
+    assert res.json()["detail"]["error"] == "RUN_NOT_STARTED"
 
 
 # --- Task 13: POST /protocols/{protocol_id}/signoffs ---------------

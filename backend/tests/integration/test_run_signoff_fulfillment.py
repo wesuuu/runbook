@@ -137,9 +137,76 @@ async def test_signoff_rejected_on_planned_run(
 async def test_signoff_rejected_on_active_run(
     client: AsyncClient, glp_run_active, qau_user, glp_org, tmp_path, monkeypatch
 ):
-    """An ACTIVE (in-progress) run cannot be signed off either (F-0080-D5)."""
+    """An ACTIVE (in-progress) run cannot be QAU-signed off either (F-0080-D5)."""
     resp = await _attempt_qau_signoff(
         client, glp_run_active, qau_user, glp_org, tmp_path, monkeypatch
     )
     assert resp.status_code == 409, resp.text
     assert resp.json()["detail"]["error"] == "RUN_NOT_COMPLETED"
+
+
+async def _attempt_operator_signoff(
+    client: AsyncClient, run, test_user, auth_headers, tmp_path, monkeypatch
+):
+    """Give the authenticated user a signature and POST an OPERATOR sign-off."""
+    monkeypatch.setattr(
+        FileStorageService,
+        "__init__",
+        lambda self: setattr(self, "storage_root", tmp_path / "uploads") or None,
+    )
+    relative_sig = f"test-org/signatures/{test_user.id}-full.png"
+    sig_file = tmp_path / "uploads" / relative_sig
+    sig_file.parent.mkdir(parents=True, exist_ok=True)
+    sig_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+    test_user.signature_full_path = relative_sig
+    return await client.post(
+        f"/runs/{run.id}/signoffs",
+        json={
+            "role": "OPERATOR",
+            "action": "APPROVED",
+            "attestation": "I attest all steps were executed within specification.",
+        },
+        headers=auth_headers,
+    )
+
+
+@pytest.mark.asyncio
+async def test_operator_signoff_accepted_on_active_run(
+    client: AsyncClient,
+    glp_run_active,
+    test_user,
+    auth_headers,
+    tmp_path,
+    monkeypatch,
+):
+    """The OPERATOR sign-off is a *precondition* of run closure
+    (``assert_run_can_close`` gates the COMPLETED transition on it), so it
+    must be recordable while the run is still ACTIVE — before /complete.
+
+    Rejecting it here would deadlock GLP run completion: closure needs the
+    OPERATOR sign-off, and the OPERATOR sign-off would need the run already
+    COMPLETED (F-0080).
+    """
+    resp = await _attempt_operator_signoff(
+        client, glp_run_active, test_user, auth_headers, tmp_path, monkeypatch
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["role"] == "OPERATOR"
+
+
+@pytest.mark.asyncio
+async def test_operator_signoff_rejected_on_planned_run(
+    client: AsyncClient,
+    glp_run_planned,
+    test_user,
+    auth_headers,
+    tmp_path,
+    monkeypatch,
+):
+    """A PLANNED run has executed no steps, so there is nothing for the
+    operator to attest to — reject with 409 RUN_NOT_STARTED (F-0080)."""
+    resp = await _attempt_operator_signoff(
+        client, glp_run_planned, test_user, auth_headers, tmp_path, monkeypatch
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["error"] == "RUN_NOT_STARTED"

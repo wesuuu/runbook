@@ -2012,18 +2012,41 @@ async def create_run_signoff(
     """
     run = await get_or_404(db, Run, run_id)
 
-    # F-0080: run sign-offs are async review of *completed* runs (§58.35 QAU
-    # review of finalized records). A PLANNED/ACTIVE/EDITED run has no
-    # finalized execution data to attest to — reject before any INSERT.
-    if run.status != "COMPLETED":
+    # F-0080: the run status a sign-off requires depends on the role.
+    #
+    # OPERATOR is a *precondition of closure* — assert_run_can_close gates the
+    # COMPLETED transition on the OPERATOR sign-off — so it must be recordable
+    # while the run is still ACTIVE/EDITED. Requiring COMPLETED here would
+    # deadlock: closure needs the OPERATOR sign-off, and the sign-off would
+    # need the run already COMPLETED. It only requires the run to have started
+    # (a PLANNED run has executed no steps for the operator to attest to).
+    #
+    # STUDY_DIRECTOR / QAU are async §58.35 review of *finalized* records, so
+    # they require the run to already be COMPLETED — reject before any INSERT.
+    status_str = _run_status_str(run)
+    if payload.role == "OPERATOR":
+        if status_str not in ("ACTIVE", "EDITED", "COMPLETED"):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "RUN_NOT_STARTED",
+                    "message": (
+                        "An operator sign-off can only be recorded once the "
+                        "run has started."
+                    ),
+                    "status": status_str,
+                },
+            )
+    elif status_str != "COMPLETED":
         raise HTTPException(
             status_code=409,
             detail={
                 "error": "RUN_NOT_COMPLETED",
                 "message": (
-                    "Sign-offs can only be recorded on a completed run."
+                    "Reviewer sign-offs can only be recorded on a "
+                    "completed run."
                 ),
-                "status": run.status,
+                "status": status_str,
             },
         )
 
