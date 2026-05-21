@@ -1199,7 +1199,7 @@
             const role = op.role;
             if (!role || !role.id) return;
             if (nodes.some((n) => n.id === `lane-${role.id}`)) {
-                toast.warning(`Lane for "${role.name}" is already on the canvas`);
+                toast.warning(`Role for "${role.name}" is already on the canvas`);
                 return;
             }
             pushUndoSnapshot();

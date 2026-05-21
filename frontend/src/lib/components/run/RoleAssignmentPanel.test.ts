@@ -9,9 +9,9 @@ import RoleAssignmentPanel from './RoleAssignmentPanel.svelte';
 
 const noop = (): void => {};
 
-function baseProps(swimLaneNodes: unknown[]) {
+function baseProps(roleNodes: unknown[]) {
     return {
-        swimLaneNodes,
+        roleNodes,
         roleAssignments: [],
         projectMembers: [],
         assignmentChanges: {},
@@ -22,16 +22,16 @@ function baseProps(swimLaneNodes: unknown[]) {
 }
 
 describe('RoleAssignmentPanel', () => {
-    it('renders a swimlane node missing its data object without crashing', () => {
+    it('renders a role node missing its data object without crashing', () => {
         // A malformed or legacy swimLane graph node with no `data` must not
         // white-screen the run detail page.
         const { getByText } = render(RoleAssignmentPanel, {
             props: baseProps([{ id: 'lane-1', type: 'swimLane' }]),
         });
-        expect(getByText('Unnamed lane')).toBeTruthy();
+        expect(getByText('Unnamed role')).toBeTruthy();
     });
 
-    it('renders the lane label when data is present', () => {
+    it('renders the role label when data is present', () => {
         const { getByText } = render(RoleAssignmentPanel, {
             props: baseProps([
                 { id: 'lane-1', type: 'swimLane', data: { label: 'Operator' } },

@@ -79,7 +79,7 @@ async def list_blocked_runs(
         if gap.is_blocking:
             if gap.unassigned_lane_ids:
                 n = len(gap.unassigned_lane_ids)
-                label = f"{n} lane{'' if n == 1 else 's'} unassigned"
+                label = f"{n} role{'' if n == 1 else 's'} unassigned"
             elif not gap.has_assignee:
                 label = "No one assigned"
             else:

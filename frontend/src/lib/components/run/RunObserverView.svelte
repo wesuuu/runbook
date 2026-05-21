@@ -13,16 +13,16 @@
     }
 
     interface Props {
-        swimLaneNodes: any[];
+        roleNodes: any[];
         allSteps: Step[];
         roleAssignments: any[];
         projectMembers: any[];
         executionData: Record<string, any>;
-        getStepsForRole: (laneNodeId: string) => Step[];
+        getStepsForRole: (roleNodeId: string) => Step[];
     }
 
     let {
-        swimLaneNodes,
+        roleNodes,
         allSteps,
         roleAssignments,
         projectMembers,
@@ -30,8 +30,8 @@
         getStepsForRole,
     }: Props = $props();
 
-    function getRoleAssignment(laneNodeId: string) {
-        return roleAssignments.find((a) => a.lane_node_id === laneNodeId);
+    function getRoleAssignment(roleNodeId: string) {
+        return roleAssignments.find((a) => a.lane_node_id === roleNodeId);
     }
 </script>
 
@@ -44,7 +44,7 @@
             You are not assigned to a role in this run. Below is the current status.
         </p>
 
-        {#if swimLaneNodes.length > 0}
+        {#if roleNodes.length > 0}
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead>
@@ -55,15 +55,15 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {#each swimLaneNodes as lane}
-                            {@const assignment = getRoleAssignment(lane.id)}
-                            {@const steps = getStepsForRole(lane.id)}
+                        {#each roleNodes as role}
+                            {@const assignment = getRoleAssignment(role.id)}
+                            {@const steps = getStepsForRole(role.id)}
                             {@const completedCount = steps.filter((s) => executionData?.[s.id]?.status === "completed").length}
                             {@const member = assignment ? projectMembers.find((m) => m.id === assignment.user_id) : null}
                             {@const isCurrentUser = assignment?.user_id === getUser()?.id}
                             {@const displayName = member?.full_name || (isCurrentUser ? getUser()?.full_name : null) || member?.email || 'Unknown'}
                             <tr class="border-b border-border/60 hover:bg-background">
-                                <td class="py-3 px-4 font-medium text-foreground">{lane.data.label}</td>
+                                <td class="py-3 px-4 font-medium text-foreground">{role.data.label}</td>
                                 <td class="py-3 px-4 text-muted-foreground">
                                     {#if assignment}
                                         {displayName}

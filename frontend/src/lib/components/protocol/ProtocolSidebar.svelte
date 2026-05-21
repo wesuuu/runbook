@@ -397,7 +397,7 @@
                 <div
                     class="role-item"
                     draggable="true"
-                    title="Drag onto canvas to add lane"
+                    title="Drag onto canvas to add role"
                     ondragstart={(e) => {
                         if (!e.dataTransfer) return;
                         e.dataTransfer.setData(

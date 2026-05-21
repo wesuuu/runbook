@@ -5,9 +5,9 @@ import BlockerTag from './BlockerTag.svelte';
 describe('BlockerTag', () => {
     it('renders the blocker label text', () => {
         const { getByTestId } = render(BlockerTag, {
-            props: { blocker: { code: 'LANES_UNASSIGNED', label: '2 lanes unassigned' } },
+            props: { blocker: { code: 'LANES_UNASSIGNED', label: '2 roles unassigned' } },
         });
-        expect(getByTestId('blocker-tag').textContent).toContain('2 lanes unassigned');
+        expect(getByTestId('blocker-tag').textContent).toContain('2 roles unassigned');
     });
 
     it('escapes HTML metacharacters in the label', () => {

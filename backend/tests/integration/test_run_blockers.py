@@ -53,7 +53,7 @@ async def test_lanes_only_blocker(
     assert run.id in blocked
     codes = {b.code for b in blocked[run.id]}
     assert codes == {"LANES_UNASSIGNED"}
-    assert blocked[run.id][0].label == "1 lane unassigned"
+    assert blocked[run.id][0].label == "1 role unassigned"
 
 
 @pytest.mark.asyncio

@@ -442,34 +442,34 @@
     }
 
     async function updateRoleAssignment(
-        laneNodeId: string,
+        roleNodeId: string,
         roleName: string,
         userId: string | null
     ) {
         try {
             if (!userId) {
                 const existing = roleAssignments.find(
-                    (a) => a.lane_node_id === laneNodeId
+                    (a) => a.lane_node_id === roleNodeId
                 );
                 if (existing) {
                     await api.delete(
                         `/runs/${id}/role-assignments/${existing.id}`
                     );
                     roleAssignments = roleAssignments.filter(
-                        (a) => a.lane_node_id !== laneNodeId
+                        (a) => a.lane_node_id !== roleNodeId
                     );
                 }
             } else {
                 const resp = await api.post(
                     `/runs/${id}/role-assignments`,
                     {
-                        lane_node_id: laneNodeId,
+                        lane_node_id: roleNodeId,
                         role_name: roleName,
                         user_id: userId,
                     }
                 );
                 const idx = roleAssignments.findIndex(
-                    (a) => a.lane_node_id === laneNodeId
+                    (a) => a.lane_node_id === roleNodeId
                 );
                 if (idx >= 0) {
                     roleAssignments[idx] = resp;
@@ -477,7 +477,7 @@
                     roleAssignments = [...roleAssignments, resp];
                 }
             }
-            delete assignmentChanges[laneNodeId];
+            delete assignmentChanges[roleNodeId];
         } catch (e: unknown) {
             console.error("Failed to update assignment:", e instanceof Error ? e.message : e);
             error = e instanceof Error ? e.message : 'An error occurred';
@@ -497,20 +497,20 @@
         }
     }
 
-    function getSwimLaneNodes() {
+    function getRoleNodes() {
         if (!run?.graph) return [];
         return (run.graph.nodes || []).filter((n: any) => n.type === "swimLane");
     }
 
-    function getRoleAssignment(laneNodeId: string) {
-        return roleAssignments.find((a) => a.lane_node_id === laneNodeId);
+    function getRoleAssignment(roleNodeId: string) {
+        return roleAssignments.find((a) => a.lane_node_id === roleNodeId);
     }
 
     function allRolesAssigned() {
         if (roleAssignments.length === 0) return false;
-        const swimLanes = getSwimLaneNodes();
-        if (swimLanes.length > 0) {
-            return swimLanes.every((lane: any) => getRoleAssignment(lane.id));
+        const roleNodes = getRoleNodes();
+        if (roleNodes.length > 0) {
+            return roleNodes.every((role: any) => getRoleAssignment(role.id));
         }
         return true;
     }
@@ -533,10 +533,10 @@
             }));
     }
 
-    function getStepsForRole(laneNodeId: string) {
+    function getStepsForRole(roleNodeId: string) {
         if (!run?.graph) return [];
         const all = getAllUnitOpSteps();
-        const parented = all.filter((s: any) => s.parentId === laneNodeId);
+        const parented = all.filter((s: any) => s.parentId === roleNodeId);
         if (parented.length > 0) return parented;
         const anyParented = all.some((s: any) => s.parentId != null);
         if (!anyParented) return all;
@@ -888,12 +888,12 @@
                 <!-- Role Assignments -->
                 <div class="contents" data-tour="run-role-panel">
                     <RoleAssignmentPanel
-                        swimLaneNodes={getSwimLaneNodes()}
+                        roleNodes={getRoleNodes()}
                         {roleAssignments}
                         {projectMembers}
                         {assignmentChanges}
                         onUpdateAssignment={updateRoleAssignment}
-                        onAssignmentChange={(laneId, value) => { assignmentChanges[laneId] = value; }}
+                        onAssignmentChange={(roleId, value) => { assignmentChanges[roleId] = value; }}
                         onShowGoOffline={() => (showGoOffline = true)}
                     />
                 </div>
@@ -1052,11 +1052,11 @@
                     {#if roleAssignments.length > 0}
                         <div class="mb-6 bg-white rounded-lg border border-border px-5 py-4">
                             <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Assigned Roles</h3>
-                            {#if getSwimLaneNodes().length > 0}
+                            {#if getRoleNodes().length > 0}
                                 <div class="flex flex-wrap gap-3">
-                                    {#each getSwimLaneNodes() as lane}
-                                        {@const assignment = getRoleAssignment(lane.id)}
-                                        {@const steps = getStepsForRole(lane.id)}
+                                    {#each getRoleNodes() as role}
+                                        {@const assignment = getRoleAssignment(role.id)}
+                                        {@const steps = getStepsForRole(role.id)}
                                         {@const completedCount = steps.filter((s: any) => run.execution_data?.[s.id]?.status === "completed").length}
                                         {@const isCurrentUser = assignment?.user_id === getUser()?.id}
                                         {@const member = assignment ? projectMembers.find((m: any) => m.id === assignment.user_id) : null}
@@ -1071,7 +1071,7 @@
                                                 {/if}
                                             </div>
                                             <div class="text-sm">
-                                                <span class="font-medium text-foreground">{lane.data.label}</span>
+                                                <span class="font-medium text-foreground">{role.data.label}</span>
                                                 <span class="text-muted-foreground ml-1">—
                                                     {#if assignment}
                                                         {isCurrentUser ? 'You' : displayName}
@@ -1180,7 +1180,7 @@
                         </ConfirmDialog>
                     {:else}
                         <RunObserverView
-                            swimLaneNodes={getSwimLaneNodes()}
+                            roleNodes={getRoleNodes()}
                             allSteps={getAllUnitOpSteps()}
                             {roleAssignments}
                             {projectMembers}
@@ -1285,7 +1285,7 @@
                     <!-- Results Summary -->
                     <div class="contents" data-tour="run-results">
                         <RunResultsSummary
-                            swimLaneNodes={getSwimLaneNodes()}
+                            roleNodes={getRoleNodes()}
                             allSteps={getAllUnitOpSteps()}
                             {roleAssignments}
                             {projectMembers}
@@ -1432,7 +1432,7 @@
                     <!-- Edited Results Summary -->
                     <div class="contents" data-tour="run-results">
                         <RunResultsSummary
-                            swimLaneNodes={getSwimLaneNodes()}
+                            roleNodes={getRoleNodes()}
                             allSteps={getAllUnitOpSteps()}
                             {roleAssignments}
                             {projectMembers}
