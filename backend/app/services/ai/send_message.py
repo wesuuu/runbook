@@ -31,6 +31,7 @@ from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
 )
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -344,6 +345,33 @@ async def send_message_streaming(
                 else:
                     queue_get.cancel()
             result = await run_task
+        except ModelHTTPError as exc:
+            # The model provider (e.g. Ollama Cloud) returned an HTTP error.
+            # The OpenAI client already retried transient 5xx/429 twice;
+            # reaching here means the provider is sustainedly unavailable. Tell
+            # the user it is transient and retryable so an outage is not
+            # mistaken for a bug.
+            logger.warning(
+                "Chat agent run hit upstream model error %s for session %s",
+                exc.status_code,
+                session_pk,
+            )
+            if not run_task.done():
+                run_task.cancel()
+            # BUG-005: clear the heartbeat explicitly — the error path has no
+            # writer UPDATE to fold the clear into.
+            await clear_turn_heartbeat(session_pk)
+            transient = exc.status_code in (429, 500, 502, 503, 504)
+            yield {
+                "type": "error",
+                "detail": (
+                    "The AI service is temporarily unavailable. Please send "
+                    "your message again in a moment."
+                    if transient
+                    else "Failed to generate AI response"
+                ),
+            }
+            return
         except Exception:
             logger.exception("Chat agent run failed for session %s", session_pk)
             if not run_task.done():
@@ -720,6 +748,27 @@ async def resume_message_streaming(
                 else:
                     queue_get.cancel()
             result = await run_task
+        except ModelHTTPError as exc:
+            logger.warning(
+                "Chat agent resume hit upstream model error %s for session %s",
+                exc.status_code,
+                session_pk,
+            )
+            if not run_task.done():
+                run_task.cancel()
+            # BUG-005: error path has no writer UPDATE — clear explicitly.
+            await clear_turn_heartbeat(session_pk)
+            transient = exc.status_code in (429, 500, 502, 503, 504)
+            yield {
+                "type": "error",
+                "detail": (
+                    "The AI service is temporarily unavailable. Please try the "
+                    "approval again in a moment."
+                    if transient
+                    else "Failed to resume AI response"
+                ),
+            }
+            return
         except Exception:
             logger.exception("Chat agent resume failed for session %s", session_pk)
             if not run_task.done():

@@ -3,10 +3,26 @@
 import re
 
 _THINK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+# Strip a model's reasoning-preamble section, e.g.
+#   **Thought Process:**
+#   ...reasoning...
+#   ---
+#   <the actual answer>
+# Two guards keep this from eating legitimate content:
+#  1. The header must be a whole line on its own (`^...$`, MULTILINE), so a
+#     real section header that merely *contains* one of these words —
+#     "Runs & Planning", "Risk Analysis" — is never matched.
+#  2. A real terminator must follow (a `---` rule or an "Answer:"/"Response:"
+#     header). Without one we strip nothing: a runaway match to end-of-text
+#     would silently delete the actual answer.
+# Only unambiguous reasoning-leak phrases are listed — words like "Analysis"
+# and "Planning" are ordinary section titles in scientific writing.
 _THOUGHT_HEADER_PATTERN = re.compile(
-    r"\*{0,2}(?:Thought Process|Internal Reasoning|My Reasoning|Analysis|Planning)"
-    r"[:\*]*\s*\n.*?(?=\n---|\n\*{0,2}(?:Answer|Response)[:\*]|\Z)",
-    re.DOTALL | re.IGNORECASE,
+    r"^\*{0,2}(?:Thought Process|Internal Reasoning|My Reasoning|"
+    r"Chain of Thought)[:\*]*[ \t]*$\n"
+    r".*?(?=\n---|\n\*{0,2}(?:Answer|Response)[:\*])",
+    re.DOTALL | re.IGNORECASE | re.MULTILINE,
 )
 _BARE_JSON_PATTERN = re.compile(r"(?<!\`\`\`)([\{\[]\s*\".{20,}?[\}\]])", re.DOTALL)
 

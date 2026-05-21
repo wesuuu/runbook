@@ -7,6 +7,9 @@ RunContext to these signatures and handle the audit row + payload cache.
 
 from __future__ import annotations
 
+import asyncio
+import html
+import json
 import math
 import re
 import urllib.parse
@@ -53,6 +56,10 @@ def _clean_wiki_inline(text: str) -> str:
     t = _WIKI_LINK_RE.sub(lambda m: m.group(2), t)
     t = _BOLD_ITALIC_RE.sub("", t)
     t = _HTML_TAG_RE.sub("", t)
+    # Decode HTML entities last — wiki step text routinely contains
+    # `&mu;`, `&deg;`, `&amp;` etc.; left raw they leak into protocol
+    # steps and approval cards as literal `&mu;l` instead of `µl`.
+    t = html.unescape(t)
     return t.strip()
 
 
@@ -206,6 +213,43 @@ def _title_to_url(title: str) -> str:
     return f"https://openwetware.org/wiki/{slug}"
 
 
+# Caller-facing message when OpenWetWare stays unreachable after a retry.
+# OpenWetWare's MediaWiki host drops connections and serves empty bodies
+# intermittently; callers turn this into a recoverable result instead of
+# letting the transport exception bubble through the task tool and trigger
+# a parent re-dispatch loop.
+SOURCE_UNREACHABLE_MESSAGE = (
+    "OpenWetWare is temporarily unreachable — an upstream outage, not a "
+    "problem with the request. Suggest trying again in a few minutes."
+)
+
+
+async def _api_get(
+    params: dict[str, str], *, timeout: float
+) -> tuple[dict | None, str | None]:
+    """GET the OpenWetWare MediaWiki API with one retry on transient faults.
+
+    Returns ``(data, None)`` on success, or ``(None, message)`` when the
+    source stays unreachable after a retry. Transport errors, 5xx, and
+    empty/non-JSON bodies are all treated as transient and retried once;
+    a 4xx is reported immediately since retrying will not help.
+    """
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(_OWW_API, params=params, timeout=timeout)
+            if 400 <= resp.status_code < 500:
+                return None, (
+                    f"OpenWetWare rejected the request (HTTP {resp.status_code})."
+                )
+            resp.raise_for_status()
+            return resp.json(), None
+        except (httpx.TransportError, httpx.HTTPStatusError, json.JSONDecodeError):
+            if attempt == 0:
+                await asyncio.sleep(1.0)
+    return None, SOURCE_UNREACHABLE_MESSAGE
+
+
 async def search(query: str, limit: int, *, timeout: float) -> OpenWetWareSearchResult:
     """Search OpenWetWare protocol pages via the MediaWiki full-text API."""
     limit = max(1, min(int(limit), 10))
@@ -219,10 +263,9 @@ async def search(query: str, limit: int, *, timeout: float) -> OpenWetWareSearch
         "format": "json",
         "formatversion": "1",
     }
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(_OWW_API, params=params, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
+    data, src_err = await _api_get(params, timeout=timeout)
+    if src_err is not None:
+        return OpenWetWareSearchResult(total=0, message=src_err)
 
     raw_hits = (data.get("query") or {}).get("search") or []
     hits = [
@@ -256,10 +299,14 @@ async def fetch(url: str, *, timeout: float) -> ExternalProtocolPayload:
         "format": "json",
         "formatversion": "1",
     }
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(_OWW_API, params=params, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
+    data, src_err = await _api_get(params, timeout=timeout)
+    if src_err is not None:
+        return ExternalProtocolPayload(
+            title=page_title,
+            source_url=url,
+            summary="",
+            error=src_err,
+        )
 
     error = data.get("error")
     if isinstance(error, dict):
