@@ -12,6 +12,10 @@ import {
     ShieldCheck,
 } from '@lucide/svelte';
 
+// `id` is `string` (not the narrower SettingsTabId) on purpose: SettingsTabId
+// is derived from `SECTIONS satisfies readonly SettingsSection[]` below, so a
+// narrower `id` here would make the type circular. Consumers that need the
+// narrow union read it off `SECTIONS` directly via SettingsTabId.
 export interface SettingsSection {
     id: string;
     label: string;

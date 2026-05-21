@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { SETTINGS_TAB_IDS, ADMIN_TAB_IDS } from './settingsSections';
 import SettingsNav from './SettingsNav.svelte';
 
@@ -38,6 +40,39 @@ const ALL_LABELS = [
 ];
 
 describe('SettingsNav', () => {
+    // Factory for a jsdom matchMedia stub: jsdom has neither matchMedia
+    // (SettingsNav reads it in onMount) nor ResizeObserver (bits-ui Tooltip).
+    function stubMatchMedia(matches: boolean) {
+        vi.stubGlobal(
+            'matchMedia',
+            vi.fn((query: string) => ({
+                matches,
+                media: query,
+                onchange: null,
+                addEventListener: vi.fn(),
+                removeEventListener: vi.fn(),
+                addListener: vi.fn(),
+                removeListener: vi.fn(),
+                dispatchEvent: vi.fn(),
+            })),
+        );
+    }
+
+    beforeEach(() => {
+        stubMatchMedia(false);
+        vi.stubGlobal(
+            'ResizeObserver',
+            class {
+                observe() {}
+                unobserve() {}
+                disconnect() {}
+            },
+        );
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     it('renders all 10 sections in the Workspace and Account groups for an admin', () => {
         const { getByText } = render(SettingsNav, {
             props: { activeTab: 'organization', isAdmin: true, onNavigate: vi.fn() },
@@ -95,5 +130,27 @@ describe('SettingsNav', () => {
         for (const label of ALL_LABELS) {
             expect(getByRole('button', { name: new RegExp(label) })).toBeTruthy();
         }
+    });
+
+    it('toggles the collapse state via the labelled toggle button', async () => {
+        const { getByLabelText } = render(SettingsNav, {
+            props: { activeTab: 'organization', isAdmin: true, onNavigate: vi.fn() },
+        });
+        const expand = getByLabelText('Expand navigation');
+        expect(expand).toBeTruthy();
+        await fireEvent.click(expand);
+        expect(getByLabelText('Collapse navigation')).toBeTruthy();
+    });
+
+    it('collapses group labels and renders items via the tooltip branch below the lg breakpoint', async () => {
+        stubMatchMedia(true); // viewport < 1024px
+        const { getByText, getByRole } = render(SettingsNav, {
+            props: { activeTab: 'organization', isAdmin: true, onNavigate: vi.fn() },
+        });
+        await tick(); // let onMount set belowLg and derivations settle
+        // On the collapsed icon-only rail the group label is visually hidden...
+        expect(getByText('Workspace').className).toContain('sr-only');
+        // ...but every item still renders (inside the {#if showTooltips} branch).
+        expect(getByRole('button', { name: /Teams/ })).toBeTruthy();
     });
 });
