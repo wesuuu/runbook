@@ -59,7 +59,11 @@ from app.services.protocols.lookup import get_protocol_full, list_protocols
 from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
 from app.services.signoffs.queries import list_active_signoffs
 from app.services.signoffs.service import create_signoff
-from app.services.slugs import assign_slug_or_422, slug_conflict_error
+from app.services.slugs import (
+    SlugConflictError,
+    assign_slug_or_422,
+    slug_conflict_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -847,23 +851,30 @@ async def update_protocol(
                 ),
             )
 
-        protocol.status = "DRAFT"
-        protocol.approved_by_id = None
-        protocol.approved_at = None
+        # A save-as-draft request never edits the live protocol — the WIP
+        # graph lands on a draft ProtocolVersion and the APPROVED version
+        # stays frozen until that draft is explicitly published. Reverting
+        # here would both discard the approval and (via the DRAFT branch
+        # below, which syncs the live graph for DRAFT protocols) clobber the
+        # published graph with the WIP graph. So skip the revert entirely.
+        if not save_as_draft:
+            protocol.status = "DRAFT"
+            protocol.approved_by_id = None
+            protocol.approved_at = None
 
-        await log_audit(
-            db,
-            user.id,
-            "PROTOCOL_APPROVAL_REVERTED",
-            "Protocol",
-            protocol.id,
-            {"trigger": "edit_after_approved"},
-        )
-        # Flush so the metadata-only fast path below (which re-SELECTs
-        # the protocol inside update_protocol_metadata) sees the new
-        # DRAFT status and doesn't 409 on its "published" guard.
-        await db.flush()
-        auto_revert_emitted = True
+            await log_audit(
+                db,
+                user.id,
+                "PROTOCOL_APPROVAL_REVERTED",
+                "Protocol",
+                protocol.id,
+                {"trigger": "edit_after_approved"},
+            )
+            # Flush so the metadata-only fast path below (which re-SELECTs
+            # the protocol inside update_protocol_metadata) sees the new
+            # DRAFT status and doesn't 409 on its "published" guard.
+            await db.flush()
+            auto_revert_emitted = True
 
     # Metadata-only patch fast path (no graph change, no draft request) —
     # delegate to the canonical service so chat tools and HTTP share logic.
@@ -882,10 +893,18 @@ async def update_protocol(
                 name=changes.get("name"),
                 description=changes.get("description"),
             )
+        except SlugConflictError as e:
+            raise slug_conflict_error(
+                "protocol",
+                changes.get("name"),
+                conflicting_name=e.conflicting_name,
+            )
         except ValueError as e:
             msg = str(e)
-            if msg == "SLUG_CONFLICT":
-                raise slug_conflict_error("protocol", changes.get("name"))
+            if msg == "SLUG_RESERVED":
+                raise slug_conflict_error(
+                    "protocol", changes.get("name"), reserved=True
+                )
             if "published" in msg:
                 raise HTTPException(status_code=409, detail=msg)
             raise HTTPException(status_code=403, detail=msg)

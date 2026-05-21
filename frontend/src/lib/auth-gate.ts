@@ -31,4 +31,15 @@ export function decideRedirect(state: GateState): GateRedirect {
     return { kind: 'none' };
 }
 
+/**
+ * Validate a post-login `next` redirect target. Returns the path only when
+ * it is a same-origin absolute path (`/foo`); rejects open-redirect payloads
+ * such as `//evil.com`, `/\evil.com`, or absolute URLs. Falls back to `/`.
+ */
+export function sanitizeNextPath(next: string | null | undefined): string {
+    if (!next || !next.startsWith('/')) return '/';
+    if (next.startsWith('//') || next.startsWith('/\\')) return '/';
+    return next;
+}
+
 export { PUBLIC_ROUTES };

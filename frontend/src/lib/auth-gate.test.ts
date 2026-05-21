@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decideRedirect } from './auth-gate';
+import { decideRedirect, sanitizeNextPath } from './auth-gate';
 
 const base = {
     initialized: true,
@@ -52,5 +52,27 @@ describe('decideRedirect', () => {
 
     it('returns none for fully-authenticated user on a normal page', () => {
         expect(decideRedirect({ ...base, pathname: '/projects' }).kind).toBe('none');
+    });
+});
+
+describe('sanitizeNextPath', () => {
+    it('returns a same-origin absolute path unchanged', () => {
+        expect(sanitizeNextPath('/acme/projects')).toBe('/acme/projects');
+    });
+
+    it('falls back to / for empty or missing input', () => {
+        expect(sanitizeNextPath(null)).toBe('/');
+        expect(sanitizeNextPath(undefined)).toBe('/');
+        expect(sanitizeNextPath('')).toBe('/');
+    });
+
+    it('rejects protocol-relative open-redirect payloads', () => {
+        expect(sanitizeNextPath('//evil.com')).toBe('/');
+        expect(sanitizeNextPath('/\\evil.com')).toBe('/');
+    });
+
+    it('rejects absolute URLs and non-rooted paths', () => {
+        expect(sanitizeNextPath('https://evil.com')).toBe('/');
+        expect(sanitizeNextPath('evil.com')).toBe('/');
     });
 });

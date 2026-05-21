@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
@@ -95,6 +96,22 @@
     }
 
     onMount(loadProjects);
+
+    // Open the create dialog when arrived here via "New Project" elsewhere
+    // (e.g. the ProjectsDropdown). The ?new param is stripped immediately so
+    // a refresh or back-nav doesn't re-open the dialog (F-0091 L2).
+    $effect(() => {
+        if ($page.url.searchParams.get('new') !== null) {
+            showCreateModal = true;
+            const url = new URL($page.url);
+            url.searchParams.delete('new');
+            goto(url.pathname + url.search, {
+                replaceState: true,
+                keepFocus: true,
+                noScroll: true,
+            });
+        }
+    });
 </script>
 
 <div class="max-w-5xl mx-auto space-y-6">
@@ -142,9 +159,6 @@
                                 {#if project.description}
                                     <div class="text-xs text-muted-foreground mt-1 line-clamp-2">{project.description}</div>
                                 {/if}
-                                {#if project.organization?.name}
-                                    <div class="text-xs text-muted-foreground mt-1">{project.organization.name}</div>
-                                {/if}
                             </a>
                         {/each}
                     </div>
@@ -156,7 +170,6 @@
                                 <Table.Row>
                                     <Table.Head>Name</Table.Head>
                                     <Table.Head class="hidden md:table-cell">Description</Table.Head>
-                                    <Table.Head class="hidden md:table-cell">Organization</Table.Head>
                                     <Table.Head class="text-right">Actions</Table.Head>
                                 </Table.Row>
                             </Table.Header>
@@ -172,7 +185,6 @@
                                             </a>
                                         </Table.Cell>
                                         <Table.Cell class="hidden md:table-cell">{project.description || '-'}</Table.Cell>
-                                        <Table.Cell class="hidden md:table-cell">{project.organization?.name || 'N/A'}</Table.Cell>
                                         <Table.Cell class="text-right">
                                             <a href={paths.project(project.slug)}>
                                                 <Button variant="ghost" size="sm">View</Button>

@@ -3,14 +3,17 @@
  * current organization's slug; runs and experiments nest under their project.
  * The org slug is read from the auth store, so call sites never pass it.
  */
-import { getCurrentOrg } from '$lib/auth.svelte';
+import { getCurrentOrg, getOrgs } from '$lib/auth.svelte';
+import { disambiguatedOrgSlug } from '$lib/org-routing';
 
 function orgSlug(): string {
   const org = getCurrentOrg();
   if (!org) {
     throw new Error('paths: no current organization in the auth store');
   }
-  return org.slug;
+  // Disambiguate against the user's other memberships so a slug shared by
+  // two of their orgs still produces a unique, resolvable URL (F-0091 M1).
+  return disambiguatedOrgSlug(org, getOrgs());
 }
 
 export const paths = {

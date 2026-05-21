@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { login } from '$lib/auth.svelte';
+    import { sanitizeNextPath } from '$lib/auth-gate';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
@@ -22,7 +23,10 @@
 
         try {
             await login(email, password);
-            goto('/');
+            // Return to the page that bounced us here (e.g. a deep link an
+            // unauthenticated user hit), guarding against open redirects.
+            const next = new URLSearchParams(window.location.search).get('next');
+            goto(sanitizeNextPath(next));
         } catch (err: unknown) {
             error = err instanceof Error ? err.message : 'Login failed';
         } finally {

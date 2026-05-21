@@ -183,7 +183,7 @@ async def import_from_url(
     url_filename = re.sub(r"[^\w.\-]", "_", url_filename)
 
     # Assign an org-unique slug derived from the title. On collision this
-    # raises ValueError("SLUG_CONFLICT"); the caller's error handling
+    # raises SlugConflictError (a ValueError); the caller's error handling
     # surfaces it as an HTTP 422.
     doc_slug = await assign_slug(db, Document, Document.org_id, org_id, title)
 

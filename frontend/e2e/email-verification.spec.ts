@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { API_BASE } from './helpers/apiBase';
 
-const API_BASE = process.env.E2E_API_BASE || 'http://localhost:8000';
 const MAILPIT_API = process.env.E2E_MAILPIT_API || 'http://localhost:8025';
 
 /**

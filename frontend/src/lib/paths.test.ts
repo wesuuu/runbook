@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/auth.svelte', () => ({
   getCurrentOrg: () => ({ id: 'o1', name: 'Acme', slug: 'acme' }),
+  getOrgs: () => [{ id: 'o1', name: 'Acme', slug: 'acme' }],
 }));
 
 import { paths } from './paths';

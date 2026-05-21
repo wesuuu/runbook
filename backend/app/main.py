@@ -416,6 +416,36 @@ app.add_middleware(
 )
 
 
+# Translate a raced slug-uniqueness violation into the standard HTTP 422.
+# assign_slug does a pre-check, but a concurrent insert can still slip past
+# it; the DB unique constraints are the real guard. Without this handler the
+# IntegrityError would surface as an unhandled 500. Non-slug IntegrityErrors
+# are re-raised so their existing 500 behaviour is unchanged.
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+
+from app.services.slugs import is_slug_conflict
+
+
+@app.exception_handler(IntegrityError)
+async def _integrity_error_handler(request: Request, exc: IntegrityError):
+    if is_slug_conflict(exc):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": "SLUG_CONFLICT",
+                    "message": (
+                        "An item with that name already exists. "
+                        "Please choose a different name."
+                    ),
+                }
+            },
+        )
+    raise exc
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "batchrite-backend"}

@@ -47,7 +47,7 @@ function _authHeaders(contentType?: string): HeadersInit {
     return headers;
 }
 
-async function _handleErrorResponse(response: Response, fallbackMessage: string): Promise<never> {
+export async function _handleErrorResponse(response: Response, fallbackMessage: string): Promise<never> {
     if (response.status === 401) {
         logout();
         goto('/login');
@@ -75,8 +75,21 @@ async function _handleErrorResponse(response: Response, fallbackMessage: string)
     let errorData = null;
     try {
         const errorJson = await response.json();
-        errorMessage = errorJson.detail || errorJson.message || errorMessage;
         errorData = errorJson;
+        const detail = errorJson?.detail;
+        if (typeof detail === 'string') {
+            errorMessage = detail;
+        } else if (
+            detail &&
+            typeof detail === 'object' &&
+            typeof detail.message === 'string'
+        ) {
+            // Structured errors (e.g. SLUG_CONFLICT) carry { code, message }.
+            // Surface the human message; the code stays on `data` for callers.
+            errorMessage = detail.message;
+        } else if (typeof errorJson?.message === 'string') {
+            errorMessage = errorJson.message;
+        }
     } catch {
         // Response body not JSON
     }

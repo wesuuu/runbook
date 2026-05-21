@@ -2,6 +2,7 @@ import { API_BASE } from '$lib/config';
 import { syncThemeFromServer } from '$lib/theme.svelte';
 import { canManageEquipmentLifecycle } from '$lib/permissions/equipment';
 import { acceptTos as apiAcceptTos } from './legal-api';
+import { parseJwt } from './oauth';
 
 type OrgRole = 'ADMIN' | 'BILLING' | 'MEMBER' | 'PROTOCOL_APPROVER' | 'SITE_MANAGER';
 
@@ -345,15 +346,17 @@ export function logout(): void {
 }
 
 export async function switchOrg(org: Org): Promise<void> {
-    try {
-        const res = await authFetch<{ access_token: string }>('POST', '/auth/switch-org', {
-            org_id: org.id,
-        });
-        token = res.access_token;
-        localStorage.setItem('auth_token', token);
-    } catch {
-        // Fall back to client-side switch if backend call fails
-    }
+    // A successful /auth/switch-org returns a JWT scoped to the new org.
+    // If it fails we must NOT mutate currentOrg: doing so would strand the
+    // UI on the new org while every API call still carries the old org's
+    // token (silent 403s, wrong data). Let the error propagate so the
+    // caller surfaces it and the displayed org stays consistent with the
+    // active token.
+    const res = await authFetch<{ access_token: string }>('POST', '/auth/switch-org', {
+        org_id: org.id,
+    });
+    token = res.access_token;
+    localStorage.setItem('auth_token', token);
     currentOrg = org;
     localStorage.setItem('current_org_id', org.id);
     cacheAuthData();
@@ -364,13 +367,41 @@ export async function switchOrg(org: Org): Promise<void> {
     );
 }
 
+/**
+ * Pick the org to display as "current". The JWT's `org_id` claim is
+ * authoritative: the backend scopes every API call (and F-0091's `by-slug`
+ * lookups) to it, so the UI must agree or those lookups resolve against the
+ * wrong org and 404. The last-saved org and the first membership are only
+ * fallbacks for when the token carries no usable claim (e.g. a malformed
+ * token, or a claim pointing at an org the user no longer belongs to).
+ */
+export function pickCurrentOrg(
+    orgs: Org[],
+    token: string | null,
+    savedOrgId: string | null,
+): Org | null {
+    if (token) {
+        try {
+            const claimedOrgId = parseJwt(token)['org_id'];
+            const fromToken = orgs.find((o) => o.id === claimedOrgId);
+            if (fromToken) return fromToken;
+        } catch {
+            // Malformed token — fall through to saved / first membership.
+        }
+    }
+    return orgs.find((o) => o.id === savedOrgId) ?? orgs[0] ?? null;
+}
+
 async function loadOrgs(): Promise<void> {
     try {
         orgs = await authFetch<Org[]>('GET', '/iam/organizations');
-        // Restore previously selected org or use first
-        const savedOrgId = localStorage.getItem('current_org_id');
-        const saved = orgs.find((o) => o.id === savedOrgId);
-        currentOrg = saved ?? orgs[0] ?? null;
+        // The session token decides which org the backend serves; mirror it
+        // so the UI never drifts from the org the API is actually scoped to.
+        currentOrg = pickCurrentOrg(
+            orgs,
+            token,
+            localStorage.getItem('current_org_id'),
+        );
     } catch {
         orgs = [];
         currentOrg = null;
@@ -425,4 +456,16 @@ export function ensureInitialized(): Promise<void> {
 // Test-only: allow tests to inject a user state. Not for production use.
 export function __setUserForTest(value: User | null): void {
     user = value;
+}
+
+// Test-only: inject org-selection state (token / current org / org list).
+// Not for production use.
+export function __setOrgStateForTest(value: {
+    token?: string | null;
+    currentOrg?: Org | null;
+    orgs?: Org[];
+}): void {
+    if (value.token !== undefined) token = value.token;
+    if (value.currentOrg !== undefined) currentOrg = value.currentOrg;
+    if (value.orgs !== undefined) orgs = value.orgs;
 }

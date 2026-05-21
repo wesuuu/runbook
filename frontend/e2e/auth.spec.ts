@@ -156,13 +156,25 @@ test.describe('Authentication', () => {
     await expect(menuContent).toContainText('BioProcess Inc');
     await expect(menuContent).toContainText('Acme Biologics');
 
-    // Click the other org
+    // Click the other org. switchOrg performs an async API round-trip, then
+    // persists the new org id to localStorage and triggers a full-page
+    // reload. waitForLoadState('networkidle') would resolve immediately here
+    // (the current document reached networkidle long ago — ad-hoc fetches do
+    // not reset it), so poll the stored org id instead: that is the
+    // observable effect of a successful switch.
     await menuContent.getByText('Acme Biologics').click();
 
-    // Org switching triggers a full page reload
-    await page.waitForLoadState('networkidle');
+    await expect
+      .poll(
+        () =>
+          page
+            .evaluate(() => localStorage.getItem('current_org_id'))
+            .catch(() => null),
+        { timeout: 15_000 },
+      )
+      .not.toBe(initialOrgId);
 
-    // The current_org_id in localStorage should have changed
+    // The current_org_id in localStorage should now point at the new org.
     const newOrgId = await page.evaluate(() => localStorage.getItem('current_org_id'));
     expect(newOrgId).toBeTruthy();
     expect(newOrgId).not.toEqual(initialOrgId);

@@ -251,6 +251,18 @@ async def update_protocol_metadata(
         # promotes the graph but leaves protocol name/description alone,
         # so writing to the version mirrors the editor flow.
         if name is not None:
+            if name != wg.version.name:
+                # F-0091: re-slug on rename so the URL stays in step with
+                # the version name, the same as the non-version-backed
+                # branch below.
+                proto.slug = await assign_slug(
+                    db,
+                    Protocol,
+                    Protocol.owner_org_id,
+                    proto.owner_org_id,
+                    name,
+                    exclude_id=proto.id,
+                )
             wg.version.name = name
         if description is not None:
             wg.version.description = description

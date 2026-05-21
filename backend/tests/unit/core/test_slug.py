@@ -1,6 +1,11 @@
 """Unit tests for the pure slug utilities."""
 
-from app.core.slug import SLUG_MAX_LENGTH, dedupe_slugs, slugify
+from app.core.slug import (
+    RESERVED_SLUGS,
+    SLUG_MAX_LENGTH,
+    dedupe_slugs,
+    slugify,
+)
 
 
 def test_slugify_lowercases_and_hyphenates():
@@ -48,3 +53,29 @@ def test_dedupe_supplies_fallback_for_empty_base():
     out = dedupe_slugs([("a", "")])
     assert out["a"].startswith("untitled-")
     assert len(out["a"]) == len("untitled-") + 6
+
+
+def test_reserved_slugs_covers_routed_segments():
+    # These are the static URL segments a routed-object slug could shadow.
+    for segment in (
+        "new",
+        "projects",
+        "runs",
+        "experiments",
+        "protocols",
+        "library",
+        "documents",
+    ):
+        assert segment in RESERVED_SLUGS
+
+
+def test_dedupe_disambiguates_a_reserved_base():
+    # A row whose name slugifies to a reserved word must not get the bare
+    # slug — that would shadow a route segment.
+    out = dedupe_slugs([("a", "projects")])
+    assert out == {"a": "projects-2"}
+
+
+def test_dedupe_leaves_non_reserved_base_untouched():
+    out = dedupe_slugs([("a", "buffer-prep")])
+    assert out == {"a": "buffer-prep"}

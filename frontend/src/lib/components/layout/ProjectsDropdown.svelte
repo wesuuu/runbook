@@ -5,7 +5,11 @@
     import { api } from '$lib/api';
     import { paths } from '$lib/paths';
     import { getCurrentOrg } from '$lib/auth.svelte';
-    import { getCurrentProjectSlug, setCurrentProjectSlug } from '$lib/project-context.svelte';
+    import {
+        getCurrentProjectSlug,
+        setCurrentProjectSlug,
+        clearCurrentProjectSlug,
+    } from '$lib/project-context.svelte';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
     import { Button } from '$lib/components/ui/button';
     import { ChevronDown, Plus, FolderOpen } from 'lucide-svelte';
@@ -31,8 +35,10 @@
 
     // Persist the project the user last drilled into so the dropdown stays
     // "sticky" on routes that aren't project-scoped (e.g. settings, dashboard).
+    // The inequality guard keeps this effect from re-writing localStorage on
+    // every reactive run when the slug has not actually changed.
     $effect(() => {
-        if (routeProjectSlug) {
+        if (routeProjectSlug && routeProjectSlug !== getCurrentProjectSlug()) {
             setCurrentProjectSlug(routeProjectSlug);
         }
     });
@@ -52,6 +58,19 @@
             const query = org ? `?organization_id=${org.id}` : '';
             const res = await api.get<any>(`/projects${query}`);
             projects = Array.isArray(res) ? res : res.projects || [];
+            // Self-heal a stale persisted slug: if the slug saved in
+            // localStorage resolves to no loaded project (e.g. the project
+            // was renamed and re-slugged), drop it so the dropdown stops
+            // showing a phantom selection. A slug in the URL is
+            // authoritative, so only heal when not on a project route.
+            const persisted = getCurrentProjectSlug();
+            if (
+                !routeProjectSlug &&
+                persisted &&
+                !projects.some((p) => p.slug === persisted)
+            ) {
+                clearCurrentProjectSlug();
+            }
         } catch {
             projects = [];
         } finally {
@@ -99,7 +118,7 @@
         <DropdownMenu.Item onclick={() => goto(paths.projects())}>
             <span class="text-muted-foreground">View All Projects</span>
         </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={() => goto(paths.projects())}>
+        <DropdownMenu.Item onclick={() => goto(`${paths.projects()}?new=1`)}>
             <span class="flex items-center gap-2">
                 <Plus class="h-4 w-4" />
                 New Project

@@ -107,6 +107,35 @@ async def test_duplicate_project_name_is_rejected(client, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_raced_slug_create_returns_422_not_500(
+    client, auth_headers, monkeypatch
+):
+    """A slug collision that races past the pre-check must still 422.
+
+    `assign_slug` pre-checks for collisions, but two concurrent creates can
+    both clear that SELECT and race to INSERT. Here the pre-check is neutered
+    so both requests reach the INSERT; the loser must trip the DB unique
+    constraint and be translated to a clean 422 SLUG_CONFLICT, not a 500.
+    """
+    from app.core.slug import slugify
+    from app.services import slugs
+
+    async def _no_precheck(
+        db, model, scope_attr, scope_value, name, exclude_id=None
+    ):
+        return slugify(name)
+
+    monkeypatch.setattr(slugs, "assign_slug", _no_precheck)
+
+    body = {"name": "Race Condition Project"}
+    first = await client.post("/projects/", json=body, headers=auth_headers)
+    assert first.status_code == 201
+    second = await client.post("/projects/", json=body, headers=auth_headers)
+    assert second.status_code == 422
+    assert second.json()["detail"]["code"] == "SLUG_CONFLICT"
+
+
+@pytest.mark.asyncio
 async def test_get_project_by_slug(client, auth_headers):
     created = await client.post(
         "/projects/", json={"name": "CHO Line"}, headers=auth_headers

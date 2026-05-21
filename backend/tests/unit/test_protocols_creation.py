@@ -15,7 +15,7 @@ from app.models.iam import (
     User,
 )
 from app.models.projects import Project
-from app.models.protocols import Protocol, ProtocolRole
+from app.models.protocols import Protocol, ProtocolRole, ProtocolVersion
 from app.services.protocols.creation import (
     ProtocolSpec,
     ProtocolStep,
@@ -165,11 +165,55 @@ async def test_update_protocol_metadata_patches_name_and_description(
         db_session,
         user_id=test_user.id,
         protocol_id=proto.id,
-        name="New",
+        name="New Recipe",
         description="n",
     )
-    assert updated.name == "New"
+    assert updated.name == "New Recipe"
     assert updated.description == "n"
+    # A DRAFT protocol re-slugs in place on rename.
+    assert updated.slug == "new-recipe"
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_metadata_reslugs_version_backed_protocol(
+    db_session: AsyncSession,
+    test_user: User,
+    project: Project,
+):
+    """A version-backed protocol re-slugs on rename, like a draft does (M2)."""
+    proto = Protocol(
+        name="Old Recipe",
+        description="o",
+        project_id=project.id,
+        status="APPROVED",
+        version_number=1,
+        graph={},
+        slug="old-recipe",
+        owner_org_id=project.organization_id,
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    draft_version = ProtocolVersion(
+        protocol_id=proto.id,
+        version_number=2,
+        name="Old Recipe",
+        graph={},
+        is_draft=True,
+    )
+    db_session.add(draft_version)
+    await db_session.flush()
+
+    updated = await update_protocol_metadata(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=proto.id,
+        name="New Recipe",
+    )
+
+    # The new name lands on the draft version (publish promotes it later)...
+    assert draft_version.name == "New Recipe"
+    # ...and the URL slug follows the rename, matching the draft branch.
+    assert updated.slug == "new-recipe"
 
 
 @pytest.mark.asyncio

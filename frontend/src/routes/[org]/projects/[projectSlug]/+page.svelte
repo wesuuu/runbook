@@ -58,6 +58,9 @@
     let showExperimentModal = $state(false);
     let newExperimentName = $state("");
     let newExperimentDescription = $state("");
+    // Surfaces the backend 422 (e.g. SLUG_CONFLICT detail.message) in the
+    // dialog instead of swallowing it to the console (F-0091 M3).
+    let createExperimentError = $state<string | null>(null);
 
     // -- Onboarding Tour --
     let projectTourModalOpen = $state(false);
@@ -188,6 +191,7 @@
     async function createExperiment() {
         if (!newExperimentName) return;
 
+        createExperimentError = null;
         try {
             const newExp: any = await api.post("/experiments", {
                 name: newExperimentName,
@@ -199,7 +203,8 @@
             newExperimentDescription = "";
             goto(paths.experiment(newExp.project_slug, newExp.slug));
         } catch (e: unknown) {
-            console.error(e instanceof Error ? e.message : e);
+            createExperimentError =
+                e instanceof Error ? e.message : "Failed to create experiment.";
         }
     }
 
@@ -316,7 +321,10 @@
                 {#if activeTab === "experiments"}
                     <Button
                         size="sm"
-                        onclick={() => (showExperimentModal = true)}
+                        onclick={() => {
+                            createExperimentError = null;
+                            showExperimentModal = true;
+                        }}
                     >
                         + New Experiment
                     </Button>
@@ -457,6 +465,14 @@
                     class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
                 ></textarea>
             </div>
+            {#if createExperimentError}
+                <p
+                    class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"
+                    role="alert"
+                >
+                    {createExperimentError}
+                </p>
+            {/if}
         </div>
         <Dialog.Footer>
             <Button
@@ -465,6 +481,7 @@
                     showExperimentModal = false;
                     newExperimentName = "";
                     newExperimentDescription = "";
+                    createExperimentError = null;
                 }}
             >
                 Cancel
