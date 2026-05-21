@@ -52,8 +52,9 @@ export function resolveRequiredRoles(settings: GlpSettings): GlpRole[] {
  * completion before the request reaches the server and the async review
  * queue is never populated.
  *
- * `settings` is retained in the signature for call-site stability but is
- * no longer read — SD/QAU requirements are enforced post-completion by
+ * A basic (non-GLP) run — neither reviewer flag set — has no sign-off
+ * gate at all and closes freely (#18). Only a GLP run requires the
+ * OPERATOR sign-off; SD/QAU requirements are enforced post-completion by
  * the backend signoff-request generator.
  */
 export function validateCanCloseRun(
@@ -61,14 +62,17 @@ export function validateCanCloseRun(
     settings: GlpSettings,
     activeSignoffs: GlpSignoffResponse[],
 ): CanCloseResult {
+    // run is part of the signature for call-site stability and to mirror
+    // the backend predicate's argument list exactly.
+    void run;
+    // Basic (non-GLP) run: no reviewer role enabled, no sign-off gate (#18).
+    if (!settings.require_study_director && !settings.require_qau) {
+        return { ok: true, missing: [] };
+    }
     const have = new Set<GlpRole>(activeSignoffs.map((s) => s.role));
     const missing: GlpRole[] = [];
     if (!have.has('OPERATOR')) {
         missing.push('OPERATOR');
     }
-    // run/settings are part of the signature for call-site stability and
-    // to mirror the backend predicate's argument list exactly.
-    void run;
-    void settings;
     return { ok: missing.length === 0, missing };
 }

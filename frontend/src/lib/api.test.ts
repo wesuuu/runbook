@@ -214,11 +214,13 @@ describe('_handleErrorResponse', () => {
         expect((err as { data: unknown }).data).toEqual(body);
     });
 
-    it('falls back to the default message for a Pydantic error list', async () => {
+    it('surfaces the msg from a Pydantic 422 validation list', async () => {
         const body = {
             detail: [{ loc: ['body', 'name'], msg: 'field required' }],
         };
         const err = await captureRejection(body, 422, 'Request failed');
-        expect((err as Error).message).toBe('Request failed');
+        // F-0080: extractErrorMessage now joins validation `msg` strings
+        // rather than dropping the array and showing the bare fallback.
+        expect((err as Error).message).toBe('field required');
     });
 });
