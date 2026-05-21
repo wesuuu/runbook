@@ -32,6 +32,12 @@
         if (!user) return null;
         return roleAssignments.find((a) => a.user_id === user.id);
     }
+
+    // A swimLane node should always carry data.label, but a malformed or
+    // legacy graph can omit it — tolerate that rather than crashing the page.
+    function laneLabel(lane: any): string {
+        return lane?.data?.label ?? "Unnamed lane";
+    }
 </script>
 
 {#if swimLaneNodes.length > 0}
@@ -50,7 +56,7 @@
                 <div class="flex items-end gap-4 p-4 bg-background rounded-lg">
                     <div class="flex-1">
                         <label class="block text-sm font-medium text-foreground/80 mb-2">
-                            {lane.data.label}
+                            {laneLabel(lane)}
                         </label>
                         <select
                             value={selectedUserId}
@@ -71,7 +77,7 @@
                         <Button
                             size="sm"
                             onclick={() =>
-                                onUpdateAssignment(lane.id, lane.data.label, selectedUserId)
+                                onUpdateAssignment(lane.id, laneLabel(lane), selectedUserId)
                             }
                         >
                             Save
@@ -82,7 +88,7 @@
                             variant="destructive"
                             size="sm"
                             onclick={() =>
-                                onUpdateAssignment(lane.id, lane.data.label, null)
+                                onUpdateAssignment(lane.id, laneLabel(lane), null)
                             }
                         >
                             Clear
