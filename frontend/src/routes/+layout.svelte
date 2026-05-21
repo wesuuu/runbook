@@ -58,6 +58,7 @@
     // Org-prefixed library URL; empty until an org is available so the nav
     // markup never invokes the throwing path builder pre-auth.
     const libraryHref = $derived(currentOrg ? paths.library() : '');
+    const experimentsHref = $derived(currentOrg ? paths.experiments() : '');
     const isFullBleed = $derived(
         /^\/[^/]+\/protocols\//.test($page?.url?.pathname ?? '') ||
         ($page?.url?.pathname ?? '').startsWith('/export') ||
@@ -194,6 +195,12 @@
                         class="hidden md:block relative py-1 transition-colors {$page.url.pathname === '/' ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
                     >
                         Dashboard
+                    </a>
+                    <a
+                        href={experimentsHref}
+                        class="hidden md:block relative py-1 transition-colors {/^\/[^/]+\/experiments/.test($page.url.pathname) ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
+                    >
+                        Experiments
                     </a>
                     <a
                         href={libraryHref}
