@@ -7,6 +7,10 @@ import {
     GlpSignoffCreateSchema,
     GlpSettingsSchema,
     AwaitingApprovalItemSchema,
+    DEFAULT_OPERATOR_ATTESTATION,
+    DEFAULT_STUDY_DIRECTOR_ATTESTATION,
+    DEFAULT_QAU_ATTESTATION,
+    DEFAULT_STEP_ATTESTATION,
 } from './glpSignoff';
 
 describe('GlpRoleSchema', () => {
@@ -138,11 +142,16 @@ describe('GlpSettingsSchema', () => {
     it('applies defaults when fields are omitted', () => {
         const settings = GlpSettingsSchema.parse({});
         expect(settings.require_study_director).toBe(false);
-        expect(settings.require_qau).toBe(true);
-        expect(settings.operator_attestation_text).toBe('');
-        expect(settings.study_director_attestation_text).toBe('');
-        expect(settings.qau_attestation_text).toBe('');
-        expect(settings.step_attestation_text).toBe('');
+        expect(settings.require_qau).toBe(false);
+        expect(settings.qau_mode).toBe('ANY_ORG_QAU');
+        expect(settings.operator_attestation_text).toBe(
+            DEFAULT_OPERATOR_ATTESTATION,
+        );
+        expect(settings.study_director_attestation_text).toBe(
+            DEFAULT_STUDY_DIRECTOR_ATTESTATION,
+        );
+        expect(settings.qau_attestation_text).toBe(DEFAULT_QAU_ATTESTATION);
+        expect(settings.step_attestation_text).toBe(DEFAULT_STEP_ATTESTATION);
     });
 
     it('parses a fully specified settings payload', () => {
