@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import lazyload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.deps import get_current_user, get_or_404, require_active_subscription
@@ -22,13 +23,16 @@ from app.schemas.runs import (
     ExperimentNote,
     ExperimentNoteCreate,
     ExperimentNoteListResponse,
+    ExperimentOwner,
     ExperimentResponse,
+    ExperimentRunSummary,
     ExperimentStatus,
+    ExperimentSummary,
     ExperimentUpdate,
     RunResponse,
 )
 from app.services.core.audit import log_audit
-from app.services.core.permissions import check_permission
+from app.services.core.permissions import check_permission, get_visible_project_ids
 from app.services.experiments.status import (
     derive_lifecycle_status,
     lifecycle_counts_from_runs,
@@ -38,6 +42,25 @@ from app.services.slugs import assign_slug_or_422
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _owner_initials(full_name: str | None, email: str) -> str:
+    """First letters of the first two name words; else first email char."""
+    if full_name and full_name.strip():
+        words = full_name.split()
+        return "".join(w[0] for w in words[:2]).upper()
+    return email[:1].upper()
+
+
+def _owner_summary(creator) -> "ExperimentOwner | None":
+    if creator is None:
+        return None
+    name = creator.full_name or creator.email
+    return ExperimentOwner(
+        id=creator.id,
+        name=name,
+        initials=_owner_initials(creator.full_name, creator.email),
+    )
 
 
 def _experiment_dict(exp: Experiment) -> dict:
@@ -227,6 +250,134 @@ async def get_experiment_by_slug(
         run_count=len(runs),
         lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
     )
+
+
+@router.get("/experiments", response_model=list[ExperimentSummary])
+async def list_all_experiments(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Org-wide experiments index (F-0093 §1.1).
+
+    Org isolation is enforced by scoping to `user.selected_org_id`;
+    permission filtering reuses `get_visible_project_ids`. Read endpoint —
+    no `require_active_subscription` (a lapsed subscription must not block
+    reading one's own experiments).
+    """
+    if user.selected_org_id is None:
+        raise HTTPException(400, "No organization selected")
+
+    visible_project_ids = await get_visible_project_ids(
+        db, user.id, user.selected_org_id
+    )
+    if not visible_project_ids:
+        return []
+
+    started = datetime.now(timezone.utc)
+
+    # Experiments + owner, newest-touched first.
+    #   - selectinload(created_by): one batched query for owner avatars.
+    #   - lazyload(project): `Experiment.project` is `lazy="selectin"` on the
+    #     model; this endpoint reads slug/name from the JOIN and never touches
+    #     `exp.project`, so suppress the relationship to avoid a redundant
+    #     org-wide project fetch on every call.
+    #   - limit(500): safety backstop. The org-wide index is unpaginated in
+    #     this slice (§1.1 — pagination is a deferred follow-up); 500 caps a
+    #     pathological org so an unbounded result set can't OOM the worker.
+    exp_rows = (
+        await db.execute(
+            select(Experiment, Project.slug, Project.name)
+            .join(Project, Experiment.project_id == Project.id)
+            .where(Experiment.project_id.in_(visible_project_ids))
+            .options(
+                selectinload(Experiment.created_by),
+                lazyload(Experiment.project),
+            )
+            .order_by(Experiment.updated_at.desc())
+            .limit(500)
+        )
+    ).all()
+    if not exp_rows:
+        return []
+
+    experiment_ids = [exp.id for exp, _, _ in exp_rows]
+
+    # Run aggregates per experiment — uncapped, used for run_count + lifecycle.
+    agg_rows = (
+        await db.execute(
+            select(
+                Run.experiment_id,
+                func.count(Run.id),
+                func.count(Run.id).filter(Run.status != "ARCHIVED"),
+                func.count(Run.id).filter(
+                    and_(Run.status != "ARCHIVED", Run.status != "COMPLETED")
+                ),
+            )
+            .where(Run.experiment_id.in_(experiment_ids))
+            .group_by(Run.experiment_id)
+        )
+    ).all()
+    agg = {
+        exp_id: (int(total), int(live), int(open_))
+        for exp_id, total, live, open_ in agg_rows
+    }
+
+    # Capped run summaries — 60 oldest runs per experiment, in SQL.
+    ranked = (
+        select(
+            Run.experiment_id.label("experiment_id"),
+            Run.status.label("status"),
+            Run.outcome.label("outcome"),
+            func.row_number()
+            .over(partition_by=Run.experiment_id, order_by=Run.created_at.asc())
+            .label("rn"),
+        )
+        .where(Run.experiment_id.in_(experiment_ids))
+        .subquery()
+    )
+    summary_rows = (
+        await db.execute(
+            select(ranked.c.experiment_id, ranked.c.status, ranked.c.outcome)
+            .where(ranked.c.rn <= 60)
+            .order_by(ranked.c.experiment_id, ranked.c.rn)
+        )
+    ).all()
+    summaries: dict = {}
+    for exp_id, status, outcome in summary_rows:
+        summaries.setdefault(exp_id, []).append(
+            ExperimentRunSummary(status=status, outcome=outcome)
+        )
+
+    results = []
+    for exp, project_slug, project_name in exp_rows:
+        total, live, open_ = agg.get(exp.id, (0, 0, 0))
+        results.append(
+            ExperimentSummary(
+                id=exp.id,
+                slug=exp.slug,
+                name=exp.name,
+                objective=exp.objective,
+                project_id=exp.project_id,
+                project_slug=project_slug,
+                project_name=project_name,
+                lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+                run_count=total,
+                run_summaries=summaries.get(exp.id, []),
+                owner=_owner_summary(exp.created_by),
+                created_at=exp.created_at,
+                updated_at=exp.updated_at,
+            )
+        )
+
+    elapsed_ms = (datetime.now(timezone.utc) - started).total_seconds() * 1000
+    if elapsed_ms > 500:
+        logger.warning(
+            "GET /experiments slow: %.0f ms, org=%s, experiments=%d",
+            elapsed_ms,
+            user.selected_org_id,
+            len(results),
+        )
+    return results
 
 
 @router.get("/experiments/{experiment_id}", response_model=ExperimentResponse)
