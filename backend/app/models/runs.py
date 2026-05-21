@@ -6,7 +6,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, List, Optional
 
 from sqlalchemy import (Boolean, DateTime, ForeignKey, Index, String, Text,
-                        UniqueConstraint)
+                        UniqueConstraint, text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -176,11 +176,23 @@ class Experiment(Base, UUIDMixin, TimestampMixin):
     notes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
 
+    # F-0093: investigation objective + success criteria.
+    objective: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    success_criteria: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Relationships
     project: Mapped["Project"] = relationship(
         back_populates="experiments", lazy="selectin"
     )
     runs: Mapped[List["Run"]] = relationship(back_populates="experiment")
+    created_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[created_by_id]
+    )
 
     @property
     def project_slug(self) -> str:
