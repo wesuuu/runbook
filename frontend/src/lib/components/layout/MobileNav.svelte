@@ -12,6 +12,7 @@
     const links = [
         { href: '/', label: 'Dashboard' },
         { href: '/library', label: 'Library' },
+        { href: '/reviews', label: 'Reviews' },
         { href: '/chat', label: 'AI Chat' },
         { href: '/projects', label: 'Projects' },
         { href: '/settings', label: 'Settings' },

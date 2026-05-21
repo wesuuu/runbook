@@ -23,6 +23,7 @@
     import { fade } from 'svelte/transition';
     import { pageDuration } from '$lib/transitions';
     import Logo from '$lib/components/layout/Logo.svelte';
+    import ReviewsNavLink from '$lib/components/layout/ReviewsNavLink.svelte';
     import '../app.css';
 
     let mobileNavOpen = $state(false);
@@ -187,6 +188,7 @@
                     >
                         Library
                     </a>
+                    <ReviewsNavLink />
                     <a
                         href="/chat"
                         class="hidden md:block relative py-1 transition-colors {$page.url.pathname.startsWith('/chat') ? 'nav-active' : 'text-muted-foreground hover:text-foreground'}"
