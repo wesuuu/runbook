@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <clipPath id="brm-favicon">
+      <path d="M 41 14 L 59 14 L 59 38 A 24 24 0 1 1 41 38 Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#brm-favicon)">
+    <path d="M 41 14 L 59 14 L 59 38 A 24 24 0 1 1 41 38 Z" fill="#1DA570"/>
+    <circle cx="50" cy="62" r="6" fill="#F4F7F9"/>
+  </g>
+  <path d="M 41 14 L 59 14 L 59 38 A 24 24 0 1 1 41 38 Z"
+        fill="none" stroke="#0A4C5C" stroke-width="6" stroke-linejoin="round"/>
+</svg>
