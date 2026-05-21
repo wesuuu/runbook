@@ -17,7 +17,13 @@ async def test_awaiting_ignores_run_request(db_session, test_project, test_user)
     `protocol_id IS NOT NULL` scoping (explicit after Step 3, implicit
     before) must prevent. `assert items == []` fails loudly on a leak.
     """
-    run = Run(name="R", project_id=test_project.id, graph={}, execution_data={})
+    run = Run(
+        name="R",
+        slug="awaiting-test-run",
+        project_id=test_project.id,
+        graph={},
+        execution_data={},
+    )
     db_session.add(run)
     await db_session.flush()
     db_session.add(
