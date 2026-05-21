@@ -23,6 +23,28 @@ from app.models.protocols import Protocol
 from app.models.signoffs import GlpSignoffRequest
 
 
+def _glp_ready_graph() -> dict:
+    """A minimal graph that clears ``assert_graph_ready_for_glp_approval``:
+    one Process Start connected to one unit op."""
+    return {
+        "nodes": [
+            {
+                "id": "ps1",
+                "type": "processStart",
+                "position": {"x": 0, "y": 0},
+                "data": {},
+            },
+            {
+                "id": "op1",
+                "type": "unitOp",
+                "position": {"x": 200, "y": 0},
+                "data": {"label": "Step 1"},
+            },
+        ],
+        "edges": [{"id": "e1", "source": "ps1", "target": "op1"}],
+    }
+
+
 async def _make_protocol(
     db: AsyncSession,
     project: Project,
@@ -30,6 +52,7 @@ async def _make_protocol(
     *,
     requires_approval: bool = True,
     status: str = "DRAFT",
+    graph: dict | None = None,
 ) -> Protocol:
     proto = Protocol(
         name="Test Protocol",
@@ -37,6 +60,7 @@ async def _make_protocol(
         status=status,
         created_by_id=creator_id,
         requires_approval=requires_approval,
+        graph=graph if graph is not None else _glp_ready_graph(),
     )
     db.add(proto)
     await db.flush()
@@ -174,6 +198,59 @@ async def test_submit_for_approval_happy_path(
     assert reqs[0].status == "OPEN"
     assert reqs[0].requested_user_id == approver.id
     assert reqs[0].requested_by_id == test_user.id
+
+
+@pytest.mark.asyncio
+async def test_submit_for_approval_rejects_sd_equals_qau(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict,
+    test_user: User,
+    test_org: Organization,
+    test_project: Project,
+):
+    """§58.35: a protocol naming one person as both the designated Study
+    Director and a SPECIFIC_USER QAU cannot be submitted for approval —
+    rejected before any GlpSignoffRequest is generated."""
+    approver = await _make_org_member(
+        db_session, test_org, roles=["MEMBER", "PROTOCOL_APPROVER"]
+    )
+    graph = _glp_ready_graph()
+    graph["glpSettings"] = {
+        "require_study_director": True,
+        "require_qau": True,
+        "qau_mode": "SPECIFIC_USER",
+        "study_director_user_id": str(approver.id),
+        "qau_user_id": str(approver.id),
+    }
+    proto = await _make_protocol(
+        db_session, test_project, test_user.id, graph=graph
+    )
+
+    resp = await client.post(
+        f"/protocols/{proto.id}/submit-for-approval",
+        json={"requested_user_ids": [str(approver.id)]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["error"] == "QAU_NOT_INDEPENDENT"
+
+    # No sign-off request should have been generated, and the protocol must
+    # not have advanced out of DRAFT.
+    reqs = (
+        (
+            await db_session.execute(
+                select(GlpSignoffRequest).where(
+                    GlpSignoffRequest.protocol_id == proto.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert reqs == []
+    await db_session.refresh(proto)
+    assert proto.status == "DRAFT"
 
 
 @pytest.mark.asyncio

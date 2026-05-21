@@ -40,6 +40,9 @@ from app.services.protocols.validation import (
     assert_graph_ready_for_glp_approval,
     assert_no_branch_errors,
 )
+from app.services.signoffs.validation import (
+    assert_glp_settings_reviewers_independent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -360,6 +363,10 @@ async def submit_protocol_for_approval(
         if isinstance(protocol.graph, dict)
         else None
     )
+    # §58.35: a protocol cannot name one person as both the designated
+    # Study Director and a SPECIFIC_USER QAU — block before any
+    # GlpSignoffRequest rows are generated.
+    assert_glp_settings_reviewers_independent(glp_settings)
     if isinstance(glp_settings, dict):
         if glp_settings.get("require_study_director") and glp_settings.get(
             "study_director_user_id"

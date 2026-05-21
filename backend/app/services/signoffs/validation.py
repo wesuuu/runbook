@@ -332,6 +332,45 @@ def assert_reviewers_independent(
         )
 
 
+def assert_glp_settings_reviewers_independent(
+    glp_settings: Optional[dict],
+) -> None:
+    """§58.35: a protocol's designated QAU reviewer cannot also be its
+    designated Study Director.
+
+    Reads ``study_director_user_id`` and ``qau_user_id`` from a protocol's
+    ``glpSettings`` block and delegates to :func:`assert_reviewers_independent`.
+    This is the protocol-side counterpart of the run reviewer check that
+    guards ``create_run`` / ``update_run_reviewers``; here it guards
+    ``submit-for-approval`` so a non-independent pairing can never generate
+    sign-off requests.
+
+    Only a ``SPECIFIC_USER`` QAU can statically conflict — an ``ANY_ORG_QAU``
+    pool is resolved with the Study Director excluded at sign time, so pool
+    mode is not checked here. A no-op unless both roles are required and both
+    ids are set and resolve to the same user.
+    """
+    if not isinstance(glp_settings, dict):
+        return
+    if not (
+        glp_settings.get("require_study_director")
+        and glp_settings.get("require_qau")
+    ):
+        return
+    if glp_settings.get("qau_mode") != "SPECIFIC_USER":
+        return
+    sd_raw = glp_settings.get("study_director_user_id")
+    qau_raw = glp_settings.get("qau_user_id")
+    if not sd_raw or not qau_raw:
+        return
+    try:
+        sd_id = UUID(str(sd_raw))
+        qau_id = UUID(str(qau_raw))
+    except (TypeError, ValueError):
+        return
+    assert_reviewers_independent(sd_id, qau_id)
+
+
 async def validate_signoff_role_assignable(
     db: AsyncSession,
     entity_type: Literal["protocol", "run"],
