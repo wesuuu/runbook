@@ -126,6 +126,29 @@ async def test_get_signature_404_when_not_set(
 
 
 @pytest.mark.asyncio
+async def test_default_signature_returns_generated_png(
+    client: AsyncClient, auth_headers
+):
+    """GET /auth/me/default-signature renders a cursive PNG from the user's
+    name so the sign-off modal can preview it before any upload exists."""
+    res = await client.get("/auth/me/default-signature", headers=auth_headers)
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"] == "image/png"
+    assert res.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.asyncio
+async def test_default_signature_accepts_token_query_param(
+    client: AsyncClient, auth_headers
+):
+    """The endpoint is loaded by an <img> tag, so it must accept ?token=."""
+    token = auth_headers["Authorization"].removeprefix("Bearer ")
+    res = await client.get(f"/auth/me/default-signature?token={token}")
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"] == "image/png"
+
+
+@pytest.mark.asyncio
 async def test_audit_logged_on_create_replace_delete(
     client: AsyncClient, auth_headers, db_session, test_user
 ):

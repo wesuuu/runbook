@@ -1,7 +1,10 @@
 <script lang="ts">
     import * as Dialog from '$lib/components/ui/dialog';
+    import * as Tooltip from '$lib/components/ui/tooltip';
     import { Button } from '$lib/components/ui/button';
     import { Textarea } from '$lib/components/ui/textarea';
+    import { API_BASE } from '$lib/config';
+    import { getToken } from '$lib/auth.svelte';
     import type { GlpRole } from '$lib/schemas/glpSignoff';
 
     interface Props {
@@ -30,10 +33,32 @@
         onCancel,
     }: Props = $props();
 
-    let attestation = $state(defaultAttestation);
+    let attestation = $state('');
     let submitting = $state(false);
     let errorMessage = $state<string | null>(null);
+
+    // The modal stays mounted and is reused — `open` and the role's default
+    // attestation are only set when a sign-off is requested. Sync the editable
+    // attestation from the default each time the modal opens so the chosen
+    // role's text is pre-filled (a bare `$state(defaultAttestation)` would
+    // keep the empty value captured at first mount).
+    $effect(() => {
+        if (open) {
+            attestation = defaultAttestation;
+            errorMessage = null;
+        }
+    });
     const canSubmit = $derived(attestation.trim().length > 0 && !submitting);
+
+    // When the signer has no uploaded signature, the backend generates a
+    // cursive image from their name so sign-off still works. Preview that
+    // generated image here (loaded via an <img>, so the token rides as a
+    // query param). create_signoff pins its own copy at sign time.
+    const defaultSignatureUrl = $derived.by(() => {
+        const token = getToken();
+        const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+        return `${API_BASE}/auth/me/default-signature${qs}`;
+    });
     const cfrCite = $derived(
         role === 'QAU'
             ? '§58.35'
@@ -125,15 +150,36 @@
                             class="h-10"
                         />
                     {:else}
-                        <span
-                            class="text-sm italic text-muted-foreground"
-                        >
-                            No signature on file — set one in Settings →
-                            Appearance
-                        </span>
+                        <Tooltip.Provider delayDuration={150}>
+                            <Tooltip.Root>
+                                <Tooltip.Trigger class="cursor-help">
+                                    <img
+                                        src={defaultSignatureUrl}
+                                        alt="Auto-generated signature"
+                                        class="h-10"
+                                    />
+                                </Tooltip.Trigger>
+                                <Tooltip.Content class="max-w-xs text-left">
+                                    This signature was generated from your name
+                                    so you can sign off right away. Upload your
+                                    own in Settings → Profile to replace it.
+                                </Tooltip.Content>
+                            </Tooltip.Root>
+                        </Tooltip.Provider>
                     {/if}
                     <span class="text-sm font-medium">{signerName}</span>
                 </div>
+                {#if !signatureImageUrl}
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                        Default signature generated from your name —
+                        <a
+                            href="/settings?tab=profile"
+                            class="underline transition-colors hover:text-foreground"
+                        >
+                            set your own
+                        </a>.
+                    </p>
+                {/if}
             </div>
             {#if errorMessage}
                 <div class="text-xs text-destructive">{errorMessage}</div>

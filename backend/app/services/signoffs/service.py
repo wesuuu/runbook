@@ -35,6 +35,10 @@ from app.models.iam import User
 from app.models.signoffs import GlpSignoff
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import FileStorageService
+from app.services.signoffs.signature_image import (
+    render_name_signature_png,
+    signer_display_name,
+)
 from app.services.signoffs.validation import (
     SignoffPayload,
     assert_attestation_and_image_present,
@@ -74,16 +78,29 @@ async def create_signoff(
     # 2. Pre-generate id so it can be embedded in the signature path.
     new_id = uuid4()
 
-    # 3. Copy signature image (APPROVED + signer has a source path).
+    # 3. Pin a signature image to this record (APPROVED only).
     signature_image_path: Optional[str] = None
-    if action == "APPROVED" and signer.signature_full_path:
-        relative = _record_scoped_signature_path(
-            organization_id, new_id, signer.signature_full_path
-        )
+    if action == "APPROVED":
         storage = FileStorageService()
-        dest = storage.storage_root / relative
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(signer.signature_full_path, dest)
+        if signer.signature_full_path:
+            # Copy the signer's uploaded signature so future re-uploads can't
+            # retroactively change past records (§11.70).
+            relative = _record_scoped_signature_path(
+                organization_id, new_id, signer.signature_full_path
+            )
+            dest = storage.storage_root / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(signer.signature_full_path, dest)
+        else:
+            # No uploaded signature — generate a cursive image from the
+            # signer's name so the §11.50 attestation-and-image requirement is
+            # still met. The signer can replace it via Settings → Profile.
+            relative = f"{organization_id}/signoffs/{new_id}.png"
+            dest = storage.storage_root / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(
+                render_name_signature_png(signer_display_name(signer))
+            )
         signature_image_path = relative
 
     payload = SignoffPayload(
