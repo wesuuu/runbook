@@ -87,23 +87,29 @@ async def _glp_user_designated_for_role(
     return False
 
 
-async def _authorized_via_run_qau_request(
-    db: AsyncSession, run_id: UUID, user_id: UUID
+async def _authorized_via_run_signoff_request(
+    db: AsyncSession, run_id: UUID, user_id: UUID, role: str
 ) -> bool:
-    """True if an OPEN run-scoped QAU request authorizes this signer (F-0080).
+    """True if an OPEN run-scoped request for ``role`` authorizes this signer.
 
-    F-0080 routes run QAU review through ``GlpSignoffRequest`` rows
-    (run_id/role), not the protocol's ``glpSettings``. A signer is authorized
-    when an OPEN QAU request on the run either:
+    F-0080 routes run STUDY_DIRECTOR and QAU review through
+    ``GlpSignoffRequest`` rows (run_id/role), not the protocol's
+    ``glpSettings``. A signer is authorized when an OPEN request for the
+    role on the run either:
 
     - names them directly (``requested_user_id == user_id``), or
-    - is unassigned (``requested_user_id IS NULL`` — the org pool) and the
-      signer holds ``OrgRole.QAU`` in the run's organization.
+    - is unassigned (``requested_user_id IS NULL`` — the org QAU pool) and
+      the signer holds ``OrgRole.QAU`` in the run's organization.
+
+    The unassigned-pool fallback applies to QAU only: SD requests are
+    always assigned (an unassigned SD request blocks completion via
+    ``assert_run_completable``), so an unnamed signer is never authorized
+    for STUDY_DIRECTOR.
     """
     req_rows = await db.execute(
         select(GlpSignoffRequest).where(
             GlpSignoffRequest.run_id == run_id,
-            GlpSignoffRequest.role == "QAU",
+            GlpSignoffRequest.role == role,
             GlpSignoffRequest.status == "OPEN",
         )
     )
@@ -113,7 +119,9 @@ async def _authorized_via_run_qau_request(
     # Directly assigned to this signer.
     if any(r.requested_user_id == user_id for r in requests):
         return True
-    # Unassigned pool request — the signer must hold the org QAU role.
+    # Unassigned pool request — QAU only; the signer must hold the org QAU role.
+    if role != "QAU":
+        return False
     if not any(r.requested_user_id is None for r in requests):
         return False
     org_row = await db.execute(
@@ -398,11 +406,14 @@ async def validate_signoff_role_assignable(
         designated = await _glp_user_designated_for_role(db, protocol_id, user_id, role)
         if designated:
             return
-        # F-0080: run QAU review is routed through a GlpSignoffRequest, not
-        # the protocol's glpSettings. Honour an OPEN run-scoped QAU request —
-        # the assigned signer, or any org QAU for an unassigned pool request.
-        if entity_type == "run" and role == "QAU":
-            if await _authorized_via_run_qau_request(db, entity_id, user_id):
+        # F-0080: run STUDY_DIRECTOR and QAU review are routed through a
+        # GlpSignoffRequest, not the protocol's glpSettings. Honour an OPEN
+        # run-scoped request for the role — the assigned signer, or (QAU
+        # only) any org QAU for an unassigned pool request.
+        if entity_type == "run":
+            if await _authorized_via_run_signoff_request(
+                db, entity_id, user_id, role
+            ):
                 return
         obj_type = ObjectType.PROTOCOL
         obj_id = protocol_id
