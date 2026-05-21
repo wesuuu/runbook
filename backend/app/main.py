@@ -445,6 +445,7 @@ from app.api.endpoints import (
     protocol_versions,
     protocols,
     runs,
+    signoff_requests,
     sites,
     sync,
     template_convert,
@@ -465,6 +466,7 @@ app.include_router(protocol_versions.router, tags=["protocol-versions"])
 app.include_router(protocols.router, tags=["protocols"])
 app.include_router(protocol_pdfs.router, tags=["protocol-pdfs"])
 app.include_router(runs.router, tags=["runs"])
+app.include_router(signoff_requests.router, tags=["signoff-requests"])
 app.include_router(experiments.router, tags=["experiments"])
 app.include_router(batch_record_import.router, tags=["batch-record-import"])
 app.include_router(export_data.router, tags=["export"])
