@@ -286,19 +286,44 @@ async def _recover_stalled_documents() -> None:
         await engine.dispose()
 
 
+async def _retry_pending_deliveries() -> None:
+    """Retry due notification deliveries (transient external-delivery failures).
+
+    Runs as a sweep inside the recovery loop. Uses the shared session pool;
+    the ``async with`` block rolls back automatically if a SQLAlchemy-level
+    error escapes, so no partial state is committed.
+    """
+    from app.db.session import AsyncSessionLocal
+    from app.services.core.notifications.dispatcher import retry_pending
+
+    async with AsyncSessionLocal() as session:
+        count = await retry_pending(session)
+        await session.commit()
+    if count:
+        logger.info("Delivery retry sweep: retried %d deliveries", count)
+    else:
+        logger.debug("Delivery retry sweep: no deliveries due")
+
+
 async def _recovery_loop() -> None:
-    """Periodically re-run the stalled-jobs and stalled-docs sweeps.
+    """Periodically re-run the stalled-jobs/stalled-docs sweeps and retry
+    due notification deliveries.
 
-    The startup sweep covers cold boots; this loop covers steady-state
-    autoscaled deployments where new pods don't boot for hours. Each
-    sweep is independent — exceptions inside one don't kill the other,
-    and don't kill the loop.
+    The startup sweep covers cold boots for job/document recovery; this loop
+    covers steady-state autoscaled deployments where new pods don't boot for
+    hours. The delivery-retry sweep is loop-only (no startup sweep — it does
+    outbound network I/O and must not block boot). Each sweep is independent
+    — exceptions inside one don't kill the others, and don't kill the loop.
 
-    Set BATCHRITE_RECOVERY_INTERVAL_SECONDS=0 to disable.
+    Set BATCHRITE_RECOVERY_INTERVAL_SECONDS=0 to disable — this also
+    disables notification delivery retries.
     """
     interval = settings.recovery_interval_seconds
     if not interval or interval <= 0:
-        logger.info("Recovery loop disabled (interval <= 0)")
+        logger.warning(
+            "Recovery loop disabled (interval <= 0) — notification "
+            "delivery retries are also OFF"
+        )
         return
 
     while True:
@@ -310,6 +335,10 @@ async def _recovery_loop() -> None:
             await _recover_stalled_documents()
         except Exception:
             logger.exception("Recovery loop: doc sweep failed")
+        try:
+            await _retry_pending_deliveries()
+        except Exception:
+            logger.exception("Recovery loop: delivery retry sweep failed")
         await asyncio.sleep(interval)
 
 
@@ -414,6 +443,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Translate a raced slug-uniqueness violation into the standard HTTP 422.
+# assign_slug does a pre-check, but a concurrent insert can still slip past
+# it; the DB unique constraints are the real guard. Without this handler the
+# IntegrityError would surface as an unhandled 500. Non-slug IntegrityErrors
+# are re-raised so their existing 500 behaviour is unchanged.
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+
+from app.services.slugs import is_slug_conflict
+
+
+@app.exception_handler(IntegrityError)
+async def _integrity_error_handler(request: Request, exc: IntegrityError):
+    if is_slug_conflict(exc):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": "SLUG_CONFLICT",
+                    "message": (
+                        "An item with that name already exists. "
+                        "Please choose a different name."
+                    ),
+                }
+            },
+        )
+    raise exc
 
 
 @app.get("/health")

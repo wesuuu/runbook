@@ -59,6 +59,11 @@ from app.services.protocols.lookup import get_protocol_full, list_protocols
 from app.services.protocols.roles import add_role, list_roles, remove_role, update_role
 from app.services.signoffs.queries import list_active_signoffs
 from app.services.signoffs.service import create_signoff
+from app.services.slugs import (
+    SlugConflictError,
+    assign_slug_or_422,
+    slug_conflict_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +163,20 @@ async def create_protocol(
         scope=protocol.scope,
         references=protocol.references,
         definitions=protocol.definitions,
+    )
+    # F-0091: resolve the always-populated owning org, then assign a slug.
+    if new_protocol.organization_id is not None:
+        new_protocol.owner_org_id = new_protocol.organization_id
+    else:
+        owning_project = await get_or_404(db, Project, new_protocol.project_id)
+        new_protocol.owner_org_id = owning_project.organization_id
+    new_protocol.slug = await assign_slug_or_422(
+        db,
+        Protocol,
+        Protocol.owner_org_id,
+        new_protocol.owner_org_id,
+        new_protocol.name,
+        "protocol",
     )
     db.add(new_protocol)
     await db.flush()
@@ -379,12 +398,16 @@ async def finalize_protocol_import(
     return result.scalar_one()
 
 
-@router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
-async def get_protocol(
+async def _build_protocol_response(
+    db: AsyncSession,
+    user: User,
     protocol_id: UUID,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
+) -> Protocol:
+    """Run the access check and assemble the full protocol response.
+
+    Shared by the by-id and by-slug GET handlers; the only thing that
+    differs between them is how ``protocol_id`` is resolved.
+    """
     try:
         await get_protocol_full(db, user_id=user.id, protocol_id=protocol_id)
     except ValueError as e:
@@ -435,6 +458,34 @@ async def get_protocol(
         protocol.latest_draft_version_number = draft_v  # type: ignore[attr-defined]
 
     return protocol
+
+
+@router.get("/protocols/by-slug/{slug}", response_model=ProtocolResponse)
+async def get_protocol_by_slug(
+    slug: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Look up a protocol by slug within the caller's current organization."""
+    row = await db.execute(
+        select(Protocol.id).where(
+            Protocol.owner_org_id == user.selected_org_id,
+            Protocol.slug == slug,
+        )
+    )
+    protocol_id = row.scalar_one_or_none()
+    if protocol_id is None:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+    return await _build_protocol_response(db, user, protocol_id)
+
+
+@router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
+async def get_protocol(
+    protocol_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _build_protocol_response(db, user, protocol_id)
 
 
 @router.get(
@@ -800,23 +851,30 @@ async def update_protocol(
                 ),
             )
 
-        protocol.status = "DRAFT"
-        protocol.approved_by_id = None
-        protocol.approved_at = None
+        # A save-as-draft request never edits the live protocol — the WIP
+        # graph lands on a draft ProtocolVersion and the APPROVED version
+        # stays frozen until that draft is explicitly published. Reverting
+        # here would both discard the approval and (via the DRAFT branch
+        # below, which syncs the live graph for DRAFT protocols) clobber the
+        # published graph with the WIP graph. So skip the revert entirely.
+        if not save_as_draft:
+            protocol.status = "DRAFT"
+            protocol.approved_by_id = None
+            protocol.approved_at = None
 
-        await log_audit(
-            db,
-            user.id,
-            "PROTOCOL_APPROVAL_REVERTED",
-            "Protocol",
-            protocol.id,
-            {"trigger": "edit_after_approved"},
-        )
-        # Flush so the metadata-only fast path below (which re-SELECTs
-        # the protocol inside update_protocol_metadata) sees the new
-        # DRAFT status and doesn't 409 on its "published" guard.
-        await db.flush()
-        auto_revert_emitted = True
+            await log_audit(
+                db,
+                user.id,
+                "PROTOCOL_APPROVAL_REVERTED",
+                "Protocol",
+                protocol.id,
+                {"trigger": "edit_after_approved"},
+            )
+            # Flush so the metadata-only fast path below (which re-SELECTs
+            # the protocol inside update_protocol_metadata) sees the new
+            # DRAFT status and doesn't 409 on its "published" guard.
+            await db.flush()
+            auto_revert_emitted = True
 
     # Metadata-only patch fast path (no graph change, no draft request) —
     # delegate to the canonical service so chat tools and HTTP share logic.
@@ -835,8 +893,18 @@ async def update_protocol(
                 name=changes.get("name"),
                 description=changes.get("description"),
             )
+        except SlugConflictError as e:
+            raise slug_conflict_error(
+                "protocol",
+                changes.get("name"),
+                conflicting_name=e.conflicting_name,
+            )
         except ValueError as e:
             msg = str(e)
+            if msg == "SLUG_RESERVED":
+                raise slug_conflict_error(
+                    "protocol", changes.get("name"), reserved=True
+                )
             if "published" in msg:
                 raise HTTPException(status_code=409, detail=msg)
             raise HTTPException(status_code=403, detail=msg)
@@ -950,6 +1018,16 @@ async def update_protocol(
 
         # Update protocol fields (name, description, etc.)
         for key, value in changes.items():
+            if key == "name" and value != protocol.name:
+                protocol.slug = await assign_slug_or_422(
+                    db,
+                    Protocol,
+                    Protocol.owner_org_id,
+                    protocol.owner_org_id,
+                    value,
+                    "protocol",
+                    exclude_id=protocol.id,
+                )
             setattr(protocol, key, value)
 
         # Auto-derive requires_approval from glpSettings on every graph

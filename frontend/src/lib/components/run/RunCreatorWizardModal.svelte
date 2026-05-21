@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { getCurrentOrg } from '$lib/auth.svelte';
     import { Button } from '$lib/components/ui/button';
     import FullScreenModal from '$lib/components/ui/FullScreenModal.svelte';
@@ -125,6 +126,22 @@
             .filter((n) => n.type === 'swimLane')
             .map((n) => ({ id: n.id, data: { label: ((n.data as { label?: string } | undefined)?.label) ?? 'Role' } })),
     );
+
+    // Resolve the picked assignments into displayable {role, name} pairs for
+    // the review step. Mirrors the role/lane logic in persistAssignments().
+    const assigneeSummary = $derived.by(() => {
+        const hasLanes = swimLaneNodes.length > 0;
+        return Object.entries(assignments)
+            .filter(([, userId]) => !!userId)
+            .map(([key, userId]) => {
+                const member = projectMembers.find((m) => m.id === userId);
+                const name = member?.full_name || member?.email || 'Unknown member';
+                const role = hasLanes
+                    ? (swimLaneNodes.find((l) => l.id === key)?.data.label ?? 'Role')
+                    : 'Operator';
+                return { role, name };
+            });
+    });
 
     function resetState() {
         runName = '';
@@ -376,12 +393,13 @@
     }
 
     async function createRun() {
-        if (!runName || !protocolId) return;
+        const trimmedName = runName.trim();
+        if (!trimmedName || !protocolId) return;
         creating = true;
         createError = null;
         try {
             const payload: Record<string, unknown> = {
-                name: runName,
+                name: trimmedName,
                 project_id: projectId,
                 protocol_id: protocolId,
                 produces_lot: producesLot,
@@ -394,11 +412,14 @@
             if (overrides) payload.overrides = overrides;
             if (studyDirectorId) payload.study_director_id = studyDirectorId;
             if (qauReviewerId) payload.qau_reviewer_id = qauReviewerId;
-            const newRun = await api.post<{ id: string }>('/runs', payload);
+            const newRun = await api.post<{ id: string; slug: string; project_slug: string }>(
+                '/runs',
+                payload,
+            );
             await persistAssignments(newRun.id);
             onCreated?.(newRun);
             open = false;
-            goto(`/runs/${newRun.id}`);
+            goto(paths.run(newRun.project_slug, newRun.slug));
         } catch (e) {
             createError = e instanceof Error ? e.message : 'Failed to create run';
         } finally {
@@ -478,6 +499,7 @@
                             versionNumber={selectedVersion?.version_number ?? 0}
                             {isLatestVersion}
                             {edits}
+                            assignees={assigneeSummary}
                             {creating}
                             error={createError}
                             onCreate={createRun}

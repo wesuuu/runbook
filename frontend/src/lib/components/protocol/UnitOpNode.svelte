@@ -2,6 +2,7 @@
     import { getContext } from "svelte";
     import { Handle, NodeResizer, Position } from "@xyflow/svelte";
     import { getCategoryColor, getCategoryIcon } from "$lib/categoryColors";
+    import { formatNodeParams } from "./protocolNodes";
     import * as ContextMenu from "$lib/components/ui/context-menu";
 
     let { data, selected, id, width, height } = $props();
@@ -68,27 +69,7 @@
     // Whether node has any per-handle customization
     const hasPerHandleOverride = $derived(!!data.sourcePosition || !!data.targetPosition);
 
-    // Format param values for inline display
-    function formatParams(
-        params: Record<string, any>,
-        schema: Record<string, any>,
-    ): Array<{ label: string; value: string }> {
-        if (!params || !schema?.properties) return [];
-        const entries: Array<{ label: string; value: string }> = [];
-        for (const [key, val] of Object.entries(params)) {
-            const prop = schema.properties[key];
-            if (!prop || prop["x-ref-type"]) continue; // skip refs in inline view
-            const label = prop.title || key;
-            let display = String(val);
-            if (prop.type === "number" && typeof val === "number") {
-                display = val % 1 === 0 ? val.toLocaleString() : val.toFixed(1);
-            }
-            entries.push({ label, value: display });
-        }
-        return entries.slice(0, 4); // show max 4 params inline
-    }
-
-    const displayParams = $derived(formatParams(data.params, data.paramSchema));
+    const displayParams = $derived(formatNodeParams(data.params, data.paramSchema));
     const shortId = $derived(id.slice(0, 8).toUpperCase());
     const hasOverride = $derived(!!data.handleOrientation || hasPerHandleOverride);
 

@@ -11,6 +11,7 @@ class DocumentResponse(BaseModel):
     project_id: Optional[UUID] = None
     uploaded_by_id: UUID
     title: str
+    slug: str
     original_filename: str
     mime_type: str
     file_size_bytes: int
@@ -115,6 +116,7 @@ class SearchResultItem(BaseModel):
 
 class SearchResultGroup(BaseModel):
     document_id: UUID
+    document_slug: str
     document_title: str
     match_count: int
     best_score: float

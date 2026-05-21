@@ -26,6 +26,9 @@ export function formatDate(dateStr: string): string {
 
 export function statusClasses(status: string): string {
     switch (status?.toUpperCase()) {
+        // `ACTIVE` is the backend RunStatus value; `RUNNING`/`IN_PROGRESS`
+        // are legacy aliases. All three share one style (#20).
+        case "ACTIVE":
         case "RUNNING":
         case "IN_PROGRESS":
             return "bg-emerald-50 text-emerald-600 border border-emerald-200";
@@ -35,6 +38,8 @@ export function statusClasses(status: string): string {
         case "NEEDS_REVIEW":
         case "REVIEW":
             return "bg-orange-500 text-white";
+        case "EDITED":
+            return "bg-amber-50 text-amber-600 border border-amber-200";
         case "DRAFT":
         case "PLANNED":
         default:
@@ -44,6 +49,10 @@ export function statusClasses(status: string): string {
 
 export function statusLabel(status: string): string {
     switch (status?.toUpperCase()) {
+        // The backend RunStatus enum uses `ACTIVE`; the run detail page shows
+        // it as "Running". Map it here too so the runs table and History tab
+        // stop showing the raw "ACTIVE" enum value (#20).
+        case "ACTIVE":
         case "RUNNING":
         case "IN_PROGRESS":
             return "Running";
@@ -53,6 +62,10 @@ export function statusLabel(status: string): string {
         case "NEEDS_REVIEW":
         case "REVIEW":
             return "Needs Review";
+        case "EDITED":
+            return "Edited";
+        case "ARCHIVED":
+            return "Archived";
         case "DRAFT":
             return "Draft";
         case "PLANNED":
@@ -60,6 +73,20 @@ export function statusLabel(status: string): string {
         default:
             return status || "Draft";
     }
+}
+
+/**
+ * Number of protocols that are actually published (status APPROVED).
+ *
+ * The project header labelled the *total* protocol count as "Published", so
+ * a DRAFT protocol — which the row badge correctly shows as "Draft" — was
+ * still tallied under the "N Published Protocols" header (#10).
+ */
+export function publishedProtocolCount(
+    protocols: Array<{ status?: string | null }>,
+): number {
+    return protocols.filter((p) => p.status?.toUpperCase() === "APPROVED")
+        .length;
 }
 
 export function protocolStatusClasses(status: string): string {

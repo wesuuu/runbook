@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loginAndNavigate, loginViaApi } from '../helpers/auth';
+import { runUrl } from '../helpers/slug-urls';
 
 /**
  * F-0087 Task 41b — GLP golden path: sign-off → reopen → re-sign cycle.
@@ -49,7 +50,7 @@ test.describe('GLP — sign-off → reopen → re-sign cycle', () => {
 
             // Pretend we navigated to a COMPLETED GLP run:
             const runId = '00000000-0000-0000-0000-000000000000'; // placeholder
-            await page.goto(`/runs/${runId}`);
+            await page.goto(await runUrl(page, runId));
 
             // Switch to Study Director session (via API helper).
             // Today none of the seed users carry an explicit STUDY_DIRECTOR

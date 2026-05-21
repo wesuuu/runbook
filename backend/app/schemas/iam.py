@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
+from app.core.slug import slugify
+
 # Hierarchy used to derive the legacy single `role` from the `roles` list.
 # Highest-ranked role wins. ADMIN > BILLING > PROTOCOL_APPROVER > MEMBER.
 _LEGACY_ROLE_RANK = {
@@ -33,6 +35,13 @@ class OrganizationResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def slug(self) -> str:
+        """URL slug derived from the org name. Not an identifier — two
+        orgs may share a slug; the session JWT identifies the real org."""
+        return slugify(self.name)
 
 
 class OrgMemberAdd(BaseModel):

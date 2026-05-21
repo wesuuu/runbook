@@ -8,6 +8,7 @@ import {
     buildTestGraph,
 } from '../helpers/protocol';
 import { API_BASE } from '../helpers/apiBase';
+import { runUrl } from '../helpers/slug-urls';
 
 /**
  * F-0087 — GLP run sign-off flow exercised against the live UI.
@@ -109,7 +110,7 @@ test.describe('GLP — run sign-off flow', () => {
     test.afterEach(async () => {
         await loginAndNavigate(page, 'admin');
         for (const id of createdRunIds.splice(0)) {
-            await apiDelete(page, `/science/runs/${id}`).catch(() => undefined);
+            await apiDelete(page, `/runs/${id}`).catch(() => undefined);
         }
         for (const id of createdProtocolIds.splice(0)) {
             await forceCleanupProtocol(page, id);
@@ -148,14 +149,14 @@ test.describe('GLP — run sign-off flow', () => {
         // --- Step 2: designate + submit + collect protocol sign-offs ---
         let resp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/designate-approval`,
+            `/protocols/${protocolId}/designate-approval`,
             { requires_approval: true },
         );
         expect(resp.status).toBe(200);
 
         resp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/submit-for-approval`,
+            `/protocols/${protocolId}/submit-for-approval`,
             { requested_user_ids: [UPSTREAM_LEAD_ID, SCIENTIST2_ID] },
         );
         expect(resp.status).toBe(200);
@@ -163,7 +164,7 @@ test.describe('GLP — run sign-off flow', () => {
         await loginViaApi(page, 'upstreamLead');
         resp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/signoffs`,
+            `/protocols/${protocolId}/signoffs`,
             {
                 role: 'STUDY_DIRECTOR',
                 action: 'APPROVED',
@@ -175,7 +176,7 @@ test.describe('GLP — run sign-off flow', () => {
         await loginViaApi(page, 'scientist2');
         resp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/signoffs`,
+            `/protocols/${protocolId}/signoffs`,
             {
                 role: 'QAU',
                 action: 'APPROVED',
@@ -188,15 +189,15 @@ test.describe('GLP — run sign-off flow', () => {
         await loginViaApi(page, 'admin');
         const approveResp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/approve`,
+            `/protocols/${protocolId}/approve`,
             { comment: 'All signoffs collected.' },
         );
         expect(approveResp.status).toBe(200);
-        const protoCheck = await apiGet(page, `/science/protocols/${protocolId}`);
+        const protoCheck = await apiGet(page, `/protocols/${protocolId}`);
         expect(protoCheck.data.status).toBe('APPROVED');
 
         // --- Step 3: admin creates a run from the approved protocol ---
-        const runResp = await apiPost(page, `/science/runs`, {
+        const runResp = await apiPost(page, `/runs`, {
             name: `E2E GLP run ${Date.now()}`,
             project_id: SEED.PROJECT_MAB_ID,
             protocol_id: protocolId,
@@ -206,14 +207,16 @@ test.describe('GLP — run sign-off flow', () => {
         createdRunIds.push(runId);
 
         // --- Step 4: start the run (admin becomes the operator via started_by_id) ---
-        const stateResp = await apiPatch(page, `/science/runs/${runId}/state`, {
+        const stateResp = await apiPatch(page, `/runs/${runId}/state`, {
             state: 'ACTIVE',
         });
         expect(stateResp.status).toBe(200);
         expect(stateResp.data.status).toBe('ACTIVE');
 
         // --- Step 5: operator signs via SignoffBlock UI on the run page ---
-        await loginAndNavigate(page, 'admin', `/runs/${runId}`);
+        await loginViaApi(page, 'admin');
+        await page.goto(await runUrl(page, runId));
+        await page.waitForLoadState('networkidle');
 
         // Wait for the GLP sign-offs heading to confirm the section rendered.
         await expect(
@@ -244,7 +247,7 @@ test.describe('GLP — run sign-off flow', () => {
 
         // --- Step 6: SD signs via API (UI flow already covered in protocol test) ---
         await loginViaApi(page, 'upstreamLead');
-        resp = await apiPost(page, `/science/runs/${runId}/signoffs`, {
+        resp = await apiPost(page, `/runs/${runId}/signoffs`, {
             role: 'STUDY_DIRECTOR',
             action: 'APPROVED',
             attestation: 'SD attest on run.',
@@ -253,7 +256,7 @@ test.describe('GLP — run sign-off flow', () => {
 
         // --- Step 7: QAU signs via API ---
         await loginViaApi(page, 'scientist2');
-        resp = await apiPost(page, `/science/runs/${runId}/signoffs`, {
+        resp = await apiPost(page, `/runs/${runId}/signoffs`, {
             role: 'QAU',
             action: 'APPROVED',
             attestation: 'QAU attest on run.',
@@ -263,7 +266,7 @@ test.describe('GLP — run sign-off flow', () => {
         // --- Step 8: completing the run before all sign-offs would 400; after
         // ---          OPERATOR + SD + QAU it should succeed.
         await loginViaApi(page, 'admin');
-        const completeResp = await apiPost(page, `/science/runs/${runId}/complete`, {
+        const completeResp = await apiPost(page, `/runs/${runId}/complete`, {
             outcome: 'COMPLETED_NORMAL',
             outcome_notes: 'E2E happy path.',
         });
@@ -272,7 +275,7 @@ test.describe('GLP — run sign-off flow', () => {
         expect(completeResp.data.outcome).toBe('COMPLETED_NORMAL');
 
         // --- Step 9: verify the run page now shows all three signed rows ---
-        await page.goto(`/runs/${runId}`);
+        await page.goto(await runUrl(page, runId));
         await expect(
             page.getByRole('heading', { name: /GLP Sign-offs/i }),
         ).toBeVisible({ timeout: 10_000 });
@@ -312,43 +315,43 @@ test.describe('GLP — run sign-off flow', () => {
 
         await apiPost(
             page,
-            `/science/protocols/${protocolId}/designate-approval`,
+            `/protocols/${protocolId}/designate-approval`,
             { requires_approval: true },
         );
         await apiPost(
             page,
-            `/science/protocols/${protocolId}/submit-for-approval`,
+            `/protocols/${protocolId}/submit-for-approval`,
             { requested_user_ids: [UPSTREAM_LEAD_ID, SCIENTIST2_ID] },
         );
 
         await loginViaApi(page, 'upstreamLead');
-        await apiPost(page, `/science/protocols/${protocolId}/signoffs`, {
+        await apiPost(page, `/protocols/${protocolId}/signoffs`, {
             role: 'STUDY_DIRECTOR',
             action: 'APPROVED',
             attestation: 'SD',
         });
         await loginViaApi(page, 'scientist2');
-        await apiPost(page, `/science/protocols/${protocolId}/signoffs`, {
+        await apiPost(page, `/protocols/${protocolId}/signoffs`, {
             role: 'QAU',
             action: 'APPROVED',
             attestation: 'QAU',
         });
 
         await loginViaApi(page, 'admin');
-        await apiPost(page, `/science/protocols/${protocolId}/approve`, {
+        await apiPost(page, `/protocols/${protocolId}/approve`, {
             comment: 'approve for close-gate test',
         });
-        const runResp = await apiPost(page, `/science/runs`, {
+        const runResp = await apiPost(page, `/runs`, {
             name: `E2E GLP close-gate ${Date.now()}`,
             project_id: SEED.PROJECT_MAB_ID,
             protocol_id: protocolId,
         });
         const runId = runResp.data.id as string;
         createdRunIds.push(runId);
-        await apiPatch(page, `/science/runs/${runId}/state`, { state: 'ACTIVE' });
+        await apiPatch(page, `/runs/${runId}/state`, { state: 'ACTIVE' });
 
         // --- Attempt to close with no sign-offs → 400 SIGNOFF_REQUIRED ---
-        const close0 = await apiPost(page, `/science/runs/${runId}/complete`, {
+        const close0 = await apiPost(page, `/runs/${runId}/complete`, {
             outcome: 'COMPLETED_NORMAL',
         });
         expect(close0.status).toBe(400);
@@ -360,12 +363,12 @@ test.describe('GLP — run sign-off flow', () => {
         ).toEqual(expect.arrayContaining(['OPERATOR', 'STUDY_DIRECTOR', 'QAU']));
 
         // --- Sign just the operator: still missing SD + QAU ---
-        await apiPost(page, `/science/runs/${runId}/signoffs`, {
+        await apiPost(page, `/runs/${runId}/signoffs`, {
             role: 'OPERATOR',
             action: 'APPROVED',
             attestation: 'op',
         });
-        const close1 = await apiPost(page, `/science/runs/${runId}/complete`, {
+        const close1 = await apiPost(page, `/runs/${runId}/complete`, {
             outcome: 'COMPLETED_NORMAL',
         });
         expect(close1.status).toBe(400);
@@ -375,19 +378,19 @@ test.describe('GLP — run sign-off flow', () => {
 
         // --- Sign SD + QAU then close → 200 ---
         await loginViaApi(page, 'upstreamLead');
-        await apiPost(page, `/science/runs/${runId}/signoffs`, {
+        await apiPost(page, `/runs/${runId}/signoffs`, {
             role: 'STUDY_DIRECTOR',
             action: 'APPROVED',
             attestation: 'sd',
         });
         await loginViaApi(page, 'scientist2');
-        await apiPost(page, `/science/runs/${runId}/signoffs`, {
+        await apiPost(page, `/runs/${runId}/signoffs`, {
             role: 'QAU',
             action: 'APPROVED',
             attestation: 'qau',
         });
         await loginViaApi(page, 'admin');
-        const close2 = await apiPost(page, `/science/runs/${runId}/complete`, {
+        const close2 = await apiPost(page, `/runs/${runId}/complete`, {
             outcome: 'COMPLETED_NORMAL',
         });
         expect(close2.status).toBe(200);

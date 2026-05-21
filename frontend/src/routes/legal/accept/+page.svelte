@@ -24,10 +24,6 @@
     }
 </script>
 
-<svelte:head>
-    <title>Accept Terms · Batchrite</title>
-</svelte:head>
-
 <div class="min-h-screen bg-background pb-32 md:pb-12" in:fade={{ duration: 200 }}>
     <main class="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <!-- Anchor logo (nav is hidden on this route) -->

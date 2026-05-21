@@ -26,7 +26,7 @@
         open: boolean;
         projectId: string;
         protocols: any[];
-        onSuccess?: (runId: string) => void;
+        onSuccess?: (run: { runSlug: string; projectSlug: string }) => void;
     }
 
     let { open = $bindable(false), projectId, protocols, onSuccess }: Props = $props();
@@ -453,19 +453,20 @@
                 };
             });
 
-            const result = await api.post<{ run_id: string; run_name: string }>(
+            const result = await api.post(
                 `/batch-record-imports/${importResult.import_id}/finalize`,
                 {
                     protocol_id: importResult.protocol_id,
                     run_name: runName.trim(),
                     step_mappings: stepMappings,
                 },
+                { schema: BatchRecordFinalizeResponseSchema },
             );
 
             toast.success(`Run "${result.run_name}" created from batch record import`);
             open = false;
             resetState();
-            onSuccess?.(result.run_id);
+            onSuccess?.({ runSlug: result.run_slug, projectSlug: result.project_slug });
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'Failed to create run';
         } finally {

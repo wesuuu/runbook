@@ -19,6 +19,7 @@ export const DocumentResponseSchema = z
     .object({
         id: z.string(),
         org_id: z.string(),
+        slug: z.string(),
         project_id: z.string().nullable().optional(),
         uploaded_by_id: z.string(),
         title: z.string(),

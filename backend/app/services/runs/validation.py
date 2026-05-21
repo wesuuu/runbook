@@ -102,6 +102,13 @@ async def assert_run_can_close(
         HTTPException(400): detail={error: "SIGNOFF_REQUIRED",
                                     missing_roles: ["OPERATOR"]}
     """
+    require_sd = bool(glp_settings.get("require_study_director"))
+    require_qau = bool(glp_settings.get("require_qau"))
+
+    # Basic (non-GLP) run: no reviewer role enabled, no sign-off gate (#18).
+    if not (require_sd or require_qau):
+        return
+
     active = await list_active_signoffs(db, "run", run.id)
     have_roles = {s.role for s in active}
 

@@ -76,35 +76,55 @@ async def dispatch_event(
 
 
 async def retry_pending(db: AsyncSession) -> int:
-    """Retry deliveries that are due. Returns count of retried deliveries."""
+    """Retry deliveries that are due. Returns count of retried deliveries.
+
+    Each delivery is processed inside its own SAVEPOINT (``begin_nested``),
+    so a failure on one row — including a DB-level error that would poison
+    the session — is rolled back to the savepoint and the row marked FAILED
+    on the still-healthy outer transaction. The batch is never aborted, so
+    the caller's single commit is always reached. Most-overdue deliveries
+    drain first.
+    """
     now = datetime.now(timezone.utc)
     stmt = (
         select(NotificationDelivery)
         .where(NotificationDelivery.status == DeliveryStatus.RETRYING)
         .where(NotificationDelivery.next_retry_at <= now)
+        .order_by(NotificationDelivery.next_retry_at, NotificationDelivery.id)
         .limit(50)
+        .options(selectinload(NotificationDelivery.channel))
     )
     result = await db.execute(stmt)
     pending = result.scalars().all()
 
     count = 0
     for delivery in pending:
-        channel_model = await db.get(NotificationChannel, delivery.channel_id)
-        if not channel_model or not channel_model.enabled:
+        try:
+            async with db.begin_nested():
+                channel_model = delivery.channel
+                if not channel_model or not channel_model.enabled:
+                    delivery.status = DeliveryStatus.FAILED
+                    delivery.status_detail = "Channel disabled or deleted"
+                else:
+                    channel = get_channel(
+                        channel_model.channel_type, channel_model.config
+                    )
+                    msg = FormattedMessage(
+                        event_type=delivery.event_type,
+                        title="(retry)",
+                        body="",
+                        recipient=delivery.recipient_info.get(
+                            "recipient", "unknown"
+                        ),
+                    )
+                    await _execute_send(db, delivery, channel, msg)
+                    count += 1
+        except Exception as e:  # noqa: BLE001 — per-row batch isolation
+            logger.exception(
+                "Retry sweep: unexpected error on delivery %s", delivery.id
+            )
             delivery.status = DeliveryStatus.FAILED
-            delivery.status_detail = "Channel disabled or deleted"
-            continue
-
-        channel = get_channel(channel_model.channel_type, channel_model.config)
-        msg = FormattedMessage(
-            event_type=delivery.event_type,
-            title="(retry)",
-            body="",
-            recipient=delivery.recipient_info.get("recipient", "unknown"),
-        )
-
-        await _execute_send(db, delivery, channel, msg)
-        count += 1
+            delivery.status_detail = f"Retry aborted: {e}"
 
     await db.flush()
     return count

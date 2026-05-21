@@ -3,6 +3,47 @@ import { normalizeEndpoint as _normalizeEndpoint } from './normalizeEndpoint';
 import { extractErrorMessage } from './apiError';
 import { z } from 'zod';
 
+describe('extractErrorMessage', () => {
+    it('returns a string detail directly', () => {
+        expect(extractErrorMessage({ detail: 'Not found' }, 'fallback')).toBe(
+            'Not found',
+        );
+    });
+
+    it('extracts message from a structured object detail', () => {
+        const body = {
+            detail: { error: 'SIGNATURE_REQUIRED', message: 'A saved signature is required.' },
+        };
+        expect(extractErrorMessage(body, 'fallback')).toBe(
+            'A saved signature is required.',
+        );
+    });
+
+    it('falls back to the error code when an object detail has no message', () => {
+        const body = { detail: { error: 'ATTESTATION_REQUIRED' } };
+        expect(extractErrorMessage(body, 'fallback')).toBe('ATTESTATION_REQUIRED');
+    });
+
+    it('never returns "[object Object]" for an object detail', () => {
+        const body = { detail: { error: 'ATTESTATION_REQUIRED', role: 'OPERATOR' } };
+        expect(extractErrorMessage(body, 'fallback')).not.toBe('[object Object]');
+    });
+
+    it('extracts msg from a 422 validation error list', () => {
+        const body = { detail: [{ loc: ['body', 'name'], msg: 'field required' }] };
+        expect(extractErrorMessage(body, 'fallback')).toBe('field required');
+    });
+
+    it('uses top-level message when no detail is present', () => {
+        expect(extractErrorMessage({ message: 'Boom' }, 'fallback')).toBe('Boom');
+    });
+
+    it('returns the fallback for an empty or non-object body', () => {
+        expect(extractErrorMessage(null, 'fallback')).toBe('fallback');
+        expect(extractErrorMessage({}, 'fallback')).toBe('fallback');
+    });
+});
+
 describe('_normalizeEndpoint', () => {
     it('removes trailing slash from path', () => {
         expect(_normalizeEndpoint('/projects/')).toBe('/projects');
@@ -137,5 +178,47 @@ describe('_validateResponse', () => {
             import.meta.env.DEV = originalDev;
             warnSpy.mockRestore();
         }
+    });
+});
+
+describe('_handleErrorResponse', () => {
+    async function captureRejection(body: unknown, status: number, fallback: string) {
+        const { _handleErrorResponse } = await import('./api');
+        const res = new Response(JSON.stringify(body), { status });
+        try {
+            await _handleErrorResponse(res, fallback);
+        } catch (e) {
+            return e;
+        }
+        throw new Error('_handleErrorResponse did not throw');
+    }
+
+    it('uses a string detail as the error message', async () => {
+        const err = await captureRejection({ detail: 'Not found' }, 404, 'fallback');
+        expect((err as Error).message).toBe('Not found');
+        expect((err as { status: number }).status).toBe(404);
+    });
+
+    it('extracts detail.message when detail is an object (SLUG_CONFLICT)', async () => {
+        const body = {
+            detail: {
+                code: 'SLUG_CONFLICT',
+                message:
+                    "A project named 'CHO Line' already exists in this organization.",
+            },
+        };
+        const err = await captureRejection(body, 422, 'fallback');
+        // The human message is surfaced — not "[object Object]".
+        expect((err as Error).message).toBe(body.detail.message);
+        // The structured body is preserved so callers can match on .code.
+        expect((err as { data: unknown }).data).toEqual(body);
+    });
+
+    it('falls back to the default message for a Pydantic error list', async () => {
+        const body = {
+            detail: [{ loc: ['body', 'name'], msg: 'field required' }],
+        };
+        const err = await captureRejection(body, 422, 'Request failed');
+        expect((err as Error).message).toBe('Request failed');
     });
 });

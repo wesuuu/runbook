@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.projects import Project
 from app.models.protocols import Protocol, ProtocolRole, UnitOpDefinition
 from app.services.ai.ai_config import get_model
 from app.services.ai.workflows.protocol_generator import (
@@ -25,6 +26,7 @@ from app.services.ai.workflows.protocol_generator import (
     extract_params,
     match_unit_op,
 )
+from app.services.slugs import assign_slug
 
 logger = logging.getLogger(__name__)
 
@@ -810,6 +812,21 @@ async def finalize_import(
         organization_id=organization_id,
         status="DRAFT",
         graph=graph,
+    )
+    # F-0091: resolve owning org and assign a slug.
+    if organization_id is not None:
+        protocol.owner_org_id = organization_id
+    else:
+        owning_project = await db.get(Project, project_id)
+        if owning_project is None:
+            raise ValueError(f"Project {project_id} not found")
+        protocol.owner_org_id = owning_project.organization_id
+    protocol.slug = await assign_slug(
+        db,
+        Protocol,
+        Protocol.owner_org_id,
+        protocol.owner_org_id,
+        protocol_name,
     )
     db.add(protocol)
     await db.flush()

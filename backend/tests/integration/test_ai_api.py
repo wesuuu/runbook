@@ -124,6 +124,8 @@ async def test_run(db_session: AsyncSession, test_project: Project) -> Run:
         name="Test Protocol",
         project_id=test_project.id,
         graph=SAMPLE_GRAPH,
+        slug="test-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -133,6 +135,7 @@ async def test_run(db_session: AsyncSession, test_project: Project) -> Run:
         project_id=test_project.id,
         protocol_id=protocol.id,
         status=RunStatus.ACTIVE,
+        slug="test-run",
         graph=SAMPLE_GRAPH,
         execution_data={},
     )

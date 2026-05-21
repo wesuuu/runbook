@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.core.slug import slugify
 from app.db.session import AsyncSessionLocal
 from app.models.iam import (
     ObjectPermission,
@@ -23,6 +24,7 @@ from app.models.iam import (
     OrganizationMember,
     PermissionLevel,
     PrincipalType,
+    SubscriptionTier,
     Team,
     TeamMember,
     TeamRole,
@@ -112,7 +114,16 @@ async def seed_users(db: AsyncSession):
 
 
 async def seed_org(db: AsyncSession):
-    await _upsert(db, Organization, ORG_ID, name="BioProcess Inc")
+    # BioProcess Inc is seeded on the Pro tier so AI Chat (and other Pro+
+    # capabilities) are exercisable out of the box. Acme Biologics stays on
+    # the default Essentials tier to cover the non-Pro gated UX.
+    await _upsert(
+        db,
+        Organization,
+        ORG_ID,
+        name="BioProcess Inc",
+        subscription_tier=SubscriptionTier.PRO.value,
+    )
     await _upsert(db, Organization, ORG_ID_2, name="Acme Biologics")
 
     # Org memberships — primary org
@@ -179,6 +190,7 @@ async def seed_projects(db: AsyncSession):
         Project,
         PROJECT_MAB,
         name="mAb Production v2",
+        slug=slugify("mAb Production v2"),
         description="Monoclonal antibody production optimization",
         organization_id=ORG_ID,
         owner_type="TEAM",
@@ -189,6 +201,7 @@ async def seed_projects(db: AsyncSession):
         Project,
         PROJECT_VACCINE,
         name="Vaccine Formulation Study",
+        slug=slugify("Vaccine Formulation Study"),
         description="Novel vaccine formulation research",
         organization_id=ORG_ID,
         owner_type="USER",
@@ -337,6 +350,7 @@ async def seed_newbie_user(db: AsyncSession):
         Project,
         PROJECT_NEWBIE,
         name="My First Project",
+        slug=slugify("My First Project"),
         description="Created for you — rename or delete as you like.",
         organization_id=ORG_ID_NEWBIE,
     )

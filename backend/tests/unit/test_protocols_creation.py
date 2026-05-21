@@ -15,7 +15,7 @@ from app.models.iam import (
     User,
 )
 from app.models.projects import Project
-from app.models.protocols import Protocol, ProtocolRole
+from app.models.protocols import Protocol, ProtocolRole, ProtocolVersion
 from app.services.protocols.creation import (
     ProtocolSpec,
     ProtocolStep,
@@ -31,7 +31,7 @@ async def project(
     test_org: Organization,
     test_user: User,
 ) -> Project:
-    p = Project(name="test-proj", organization_id=test_org.id, owner_id=test_user.id)
+    p = Project(name="test-proj", organization_id=test_org.id, owner_id=test_user.id, slug="test-proj")
     db_session.add(p)
     await db_session.flush()
     perm = ObjectPermission(
@@ -114,6 +114,7 @@ async def test_raises_without_edit_permission(
         name="restricted-proj",
         organization_id=other_org.id,
         owner_id=uuid.uuid4(),
+        slug="restricted-proj",
     )
     db_session.add(p)
     await db_session.flush()
@@ -156,7 +157,7 @@ async def test_update_protocol_metadata_patches_name_and_description(
     project: Project,
 ):
     proto = Protocol(
-        name="Old", description="o", project_id=project.id, status="DRAFT", graph={}
+        name="Old", description="o", project_id=project.id, status="DRAFT", graph={}, slug="old", owner_org_id=project.organization_id
     )
     db_session.add(proto)
     await db_session.flush()
@@ -164,11 +165,55 @@ async def test_update_protocol_metadata_patches_name_and_description(
         db_session,
         user_id=test_user.id,
         protocol_id=proto.id,
-        name="New",
+        name="New Recipe",
         description="n",
     )
-    assert updated.name == "New"
+    assert updated.name == "New Recipe"
     assert updated.description == "n"
+    # A DRAFT protocol re-slugs in place on rename.
+    assert updated.slug == "new-recipe"
+
+
+@pytest.mark.asyncio
+async def test_update_protocol_metadata_reslugs_version_backed_protocol(
+    db_session: AsyncSession,
+    test_user: User,
+    project: Project,
+):
+    """A version-backed protocol re-slugs on rename, like a draft does (M2)."""
+    proto = Protocol(
+        name="Old Recipe",
+        description="o",
+        project_id=project.id,
+        status="APPROVED",
+        version_number=1,
+        graph={},
+        slug="old-recipe",
+        owner_org_id=project.organization_id,
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    draft_version = ProtocolVersion(
+        protocol_id=proto.id,
+        version_number=2,
+        name="Old Recipe",
+        graph={},
+        is_draft=True,
+    )
+    db_session.add(draft_version)
+    await db_session.flush()
+
+    updated = await update_protocol_metadata(
+        db_session,
+        user_id=test_user.id,
+        protocol_id=proto.id,
+        name="New Recipe",
+    )
+
+    # The new name lands on the draft version (publish promotes it later)...
+    assert draft_version.name == "New Recipe"
+    # ...and the URL slug follows the rename, matching the draft branch.
+    assert updated.slug == "new-recipe"
 
 
 @pytest.mark.asyncio
@@ -178,7 +223,7 @@ async def test_update_protocol_metadata_refuses_on_published(
     project: Project,
 ):
     proto = Protocol(
-        name="P", project_id=project.id, status="APPROVED", version_number=1, graph={}
+        name="P", project_id=project.id, status="APPROVED", version_number=1, graph={}, slug="p-approved", owner_org_id=project.organization_id
     )
     db_session.add(proto)
     await db_session.flush()
@@ -199,10 +244,10 @@ async def test_update_protocol_metadata_refuses_without_perm(
     other_org = Organization(name="o2", subscription_tier="ESSENTIALS")
     db_session.add(other_org)
     await db_session.flush()
-    proj = Project(name="op", organization_id=other_org.id, owner_id=uuid.uuid4())
+    proj = Project(name="op", organization_id=other_org.id, owner_id=uuid.uuid4(), slug="op")
     db_session.add(proj)
     await db_session.flush()
-    proto = Protocol(name="X", project_id=proj.id, status="DRAFT", graph={})
+    proto = Protocol(name="X", project_id=proj.id, status="DRAFT", graph={}, slug="x-op", owner_org_id=other_org.id)
     db_session.add(proto)
     await db_session.flush()
     with pytest.raises(ValueError, match="permission"):
@@ -230,6 +275,8 @@ async def test_update_protocol_step_refuses_on_published(
             ],
             "edges": [{"id": "e", "source": "ps", "target": "u0"}],
         },
+        slug="pub-step",
+        owner_org_id=project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -258,6 +305,8 @@ async def test_update_protocol_step_sets_parent_for_role(
             ],
             "edges": [{"id": "e", "source": "ps", "target": "u0"}],
         },
+        slug="p-role",
+        owner_org_id=project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -310,6 +359,8 @@ async def test_update_protocol_step_repositions_into_lane(
             ],
             "edges": [{"id": "e", "source": "ps", "target": "u0"}],
         },
+        slug="p-reposition",
+        owner_org_id=project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -374,6 +425,8 @@ async def test_update_protocol_step_grows_lane_for_many_children(
         project_id=project.id,
         status="DRAFT",
         graph={"layout": "horizontal", "nodes": nodes, "edges": edges},
+        slug="p-grow",
+        owner_org_id=project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()

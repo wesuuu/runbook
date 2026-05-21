@@ -178,6 +178,7 @@ describe('AwaitingApprovalItemSchema', () => {
     it('parses a project-scoped item', () => {
         const item = AwaitingApprovalItemSchema.parse({
             protocol_id: '880e8400-e29b-41d4-a716-446655440000',
+            protocol_slug: 'buffer-prep-v2',
             name: 'Buffer Prep v2',
             project_id: '990e8400-e29b-41d4-a716-446655440000',
             project_name: 'Project Alpha',
@@ -196,6 +197,7 @@ describe('AwaitingApprovalItemSchema', () => {
     it('parses an item with null organization_id (forward-compat)', () => {
         const item = AwaitingApprovalItemSchema.parse({
             protocol_id: '880e8400-e29b-41d4-a716-446655440000',
+            protocol_slug: 'org-protocol',
             name: 'Org Protocol',
             project_id: null,
             project_name: null,

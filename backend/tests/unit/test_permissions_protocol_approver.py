@@ -54,6 +54,7 @@ async def test_org_protocol_approver_can_view_edit_approve_protocol(
         name="P",
         organization_id=org.id,
         settings={"permissions_enabled": True},
+        slug="p",
     )
     db_session.add(project)
     await db_session.flush()
@@ -63,6 +64,8 @@ async def test_org_protocol_approver_can_view_edit_approve_protocol(
         project_id=project.id,
         graph={},
         requires_approval=True,
+        slug="proto",
+        owner_org_id=org.id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -93,6 +96,7 @@ async def test_org_protocol_approver_cannot_admin_protocol(
         name="P2",
         organization_id=org.id,
         settings={"permissions_enabled": True},
+        slug="p2",
     )
     db_session.add(project)
     await db_session.flush()
@@ -101,6 +105,8 @@ async def test_org_protocol_approver_cannot_admin_protocol(
         name="proto2",
         project_id=project.id,
         graph={},
+        slug="proto2",
+        owner_org_id=org.id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -130,6 +136,7 @@ async def test_org_protocol_approver_no_project_access(
         name="P3",
         organization_id=org.id,
         settings={"permissions_enabled": True},
+        slug="p3",
     )
     db_session.add(project)
     await db_session.flush()

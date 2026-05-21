@@ -63,6 +63,7 @@ def _make_doc(
         file_path="/tmp/fake.txt",
         status=status,
         processing_started_at=processing_started_at,
+        slug=f"test-doc-{uuid.uuid4().hex[:8]}",
     )
 
 

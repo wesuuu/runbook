@@ -21,6 +21,7 @@ async def active_run(db_session, test_project, test_user):
         notes=[],
         attachments=[],
         started_by_id=test_user.id,
+        slug="attachment-test-run",
     )
     db_session.add(run)
     await db_session.flush()

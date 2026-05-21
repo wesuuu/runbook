@@ -11,6 +11,33 @@ export interface CanCloseResult {
 }
 
 /**
+ * The GLP sign-off roles a run must collect before it can be completed.
+ *
+ * A run is GLP iff its protocol enables a reviewer role —
+ * `require_study_director` or `require_qau`. That is the same signal the
+ * backend uses to gate run completion, and the one the protocol editor
+ * uses to derive `protocol.requires_approval`. A basic (non-GLP)
+ * protocol enables neither, so its runs need no sign-off at all and this
+ * returns an empty list — no sign-off section should be shown (#18).
+ *
+ * For a GLP run the OPERATOR sign-off is always required; STUDY_DIRECTOR
+ * and QAU are each added when their flag is set.
+ */
+export function resolveRequiredRoles(settings: GlpSettings): GlpRole[] {
+    if (!settings.require_study_director && !settings.require_qau) {
+        return [];
+    }
+    const roles: GlpRole[] = ['OPERATOR'];
+    if (settings.require_study_director) {
+        roles.push('STUDY_DIRECTOR');
+    }
+    if (settings.require_qau) {
+        roles.push('QAU');
+    }
+    return roles;
+}
+
+/**
  * Frontend mirror of the backend `assert_run_can_close` predicate.
  *
  * Validates that a run has the required GLP signoffs before it can be

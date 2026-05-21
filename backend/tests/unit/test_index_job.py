@@ -32,6 +32,7 @@ def _make_doc(
         heartbeat_token=heartbeat_token,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
+        slug=f"t-{uuid.uuid4().hex[:8]}",
     )
 
 

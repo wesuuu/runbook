@@ -160,10 +160,11 @@ class Settings(BaseSettings):
     # "cloud-gpu" will dispatch to a dedicated GPU service.
     background_handler: str = "local"  # "local" | "cloud-gpu"
 
-    # Phase 3: how often the recovery loop sweeps for stalled jobs/docs.
-    # The startup sweep still runs once on lifespan boot; this loop adds
-    # in-process polling for autoscaled deployments where new pods don't
-    # boot frequently. Set to 0 to disable the loop entirely.
+    # Phase 3: how often the recovery loop sweeps for stalled jobs/docs
+    # and retries due notification deliveries. The startup sweep still
+    # runs once on lifespan boot for job/doc recovery; the delivery-retry
+    # sweep is loop-only. Set to 0 to disable the loop entirely — this
+    # also disables notification delivery retries.
     recovery_interval_seconds: int = 90
 
     # Docling extractor (TD-0085) — paths to the standalone ext/ project's

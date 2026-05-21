@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +22,8 @@ async def test_publish_protocol_success(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -62,6 +66,8 @@ async def test_save_as_draft_creates_draft_version(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -104,6 +110,8 @@ async def test_publish_draft_not_found(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -133,6 +141,8 @@ async def test_save_draft_always_creates_version(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [{"id": "1"}], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -173,6 +183,8 @@ async def test_save_as_draft_syncs_live_graph_for_unpublished_protocol(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [{"id": "stale"}], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -204,6 +216,8 @@ async def test_save_as_draft_preserves_live_graph_for_published_protocol(
         status="APPROVED",
         version_number=1,
         graph=published_graph,
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -233,6 +247,8 @@ async def test_list_versions_returns_description(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -277,6 +293,8 @@ async def test_publish_draft_persists_description(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -317,6 +335,8 @@ async def test_publish_draft_persists_change_summary(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -357,6 +377,8 @@ async def test_publish_draft_without_body_still_works(
         status="DRAFT",
         version_number=0,
         graph={"nodes": [], "edges": []},
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()

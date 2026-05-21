@@ -59,6 +59,7 @@
     // Notifications
     let channels = $state<any[]>([]);
     let channelsLoading = $state(false);
+    let channelsLoaded = $state(false);
     let showAddChannel = $state(false);
     let newChannelType = $state('SLACK');
     let newChannelName = $state('');
@@ -86,6 +87,7 @@
         { value: 'INVITE_ACCEPTED', label: 'Invite Accepted' },
         { value: 'PROTOCOL_APPROVED', label: 'Protocol Approved' },
         { value: 'PROTOCOL_REVERTED', label: 'Protocol Reverted' },
+        { value: 'PROTOCOL_APPROVAL_REQUESTED', label: 'Protocol Approval Requested' },
         { value: 'STEP_DEVIATION', label: 'Step Deviation' },
     ] as const;
 
@@ -116,6 +118,7 @@
             channels = [];
         } finally {
             channelsLoading = false;
+            channelsLoaded = true;
         }
     }
 
@@ -785,9 +788,11 @@
         loadTeams();
     });
 
-    // Auto-load notifications channel list when navigating to notifications tab via URL.
+    // Auto-load notifications channel list once when the notifications tab
+    // is active. Guarded by a one-shot `channelsLoaded` latch — the effect
+    // must never read `channels`, or reassigning it to [] re-triggers the load.
     $effect(() => {
-        if (activeTab === 'notifications' && channels.length === 0 && !channelsLoading) {
+        if (activeTab === 'notifications' && !channelsLoaded && !channelsLoading) {
             loadChannels();
         }
     });
@@ -844,7 +849,7 @@
         <Button
             variant="tab"
             data-active={activeTab === 'notifications'}
-            onclick={() => { setTab('notifications'); if (channels.length === 0 && !channelsLoading) loadChannels(); }}
+            onclick={() => setTab('notifications')}
             class="py-2.5 min-h-11"
         >
             Notifications
@@ -1341,7 +1346,7 @@
                 </div>
             </CardHeader>
             <CardContent>
-                {#if channelsLoading}
+                {#if channelsLoading || !channelsLoaded}
                     <p in:fade={{ duration: blockDuration() }} class="text-sm text-muted-foreground py-4 text-center">Loading channels...</p>
                 {:else if channels.length === 0 && !showAddChannel}
                     <div in:fade={{ duration: blockDuration() }} class="text-center py-8">

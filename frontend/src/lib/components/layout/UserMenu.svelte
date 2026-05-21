@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { getUser, getCurrentOrg, getOrgs, switchOrg, logout } from '$lib/auth.svelte';
+    import { getUser, getCurrentOrg, getOrgs, switchOrg, logout, type Org } from '$lib/auth.svelte';
+    import { toast } from '$lib/toast';
     import { API_BASE } from '$lib/config';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
     import { Button } from '$lib/components/ui/button';
@@ -29,8 +30,18 @@
         goto('/login');
     }
 
-    function handleSwitchOrg(org: { id: string; name: string; created_at: string; updated_at: string; subscription_tier: string }) {
-        switchOrg(org);
+    async function handleSwitchOrg(org: Org) {
+        try {
+            await switchOrg(org);
+        } catch {
+            // switchOrg leaves the active org untouched on failure; surface
+            // the error instead of reloading into an inconsistent state.
+            toast.error(
+                'Could not switch organization',
+                'Please check your connection and try again.',
+            );
+            return;
+        }
         // Reload current page to reflect new org context
         window.location.reload();
     }

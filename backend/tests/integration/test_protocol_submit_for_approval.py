@@ -61,6 +61,8 @@ async def _make_protocol(
         created_by_id=creator_id,
         requires_approval=requires_approval,
         graph=graph if graph is not None else _glp_ready_graph(),
+        slug=f"test-protocol-{uuid.uuid4().hex[:8]}",
+        owner_org_id=project.organization_id,
     )
     db.add(proto)
     await db.flush()

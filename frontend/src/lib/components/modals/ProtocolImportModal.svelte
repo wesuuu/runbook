@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { getCurrentOrg, getUser } from '$lib/auth.svelte';
     import { toast } from 'svelte-sonner';
     import { Button } from '$lib/components/ui/button';
@@ -16,12 +17,12 @@
         formatFileSize,
     } from '$lib/utils/document-utils';
     import type { ProtocolImportProposal, StepProposal } from '$lib/schemas/protocolImport';
-    import ProtocolEditor from '../../../routes/protocols/[id]/+page.svelte';
+    import ProtocolEditor from '../../../routes/[org]/protocols/[slug]/+page.svelte';
 
     interface Props {
         open: boolean;
         preselectedProjectId?: string;
-        onSuccess?: (protocolId: string) => void;
+        onSuccess?: (protocolSlug: string) => void;
     }
 
     let { open = $bindable(false), preselectedProjectId, onSuccess }: Props = $props();
@@ -383,9 +384,9 @@
             resetState();
 
             if (onSuccess) {
-                onSuccess(result.id);
+                onSuccess(result.slug);
             } else {
-                goto(`/protocols/${result.id}`);
+                goto(paths.protocol(result.slug));
             }
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'Failed to create protocol';

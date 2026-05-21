@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loginAndNavigate } from './helpers/auth';
 import { SEED, getProjectProtocols } from './helpers/experiment';
+import { projectUrl } from './helpers/slug-urls';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 test.describe.configure({ mode: 'serial' });
@@ -27,7 +28,7 @@ test.describe('F-0081 Run Creator Wizard', () => {
         );
         expect(proto, 'expected a published protocol with at least v1').toBeTruthy();
 
-        await page.goto(`/projects/${PROJECT_ID}`);
+        await page.goto(await projectUrl(page, PROJECT_ID));
         await page.getByRole('button', { name: /\+ New Run/i }).click();
         await expect(page.getByRole('heading', { name: /New Run/i })).toBeVisible();
 
@@ -61,7 +62,7 @@ test.describe('F-0081 Run Creator Wizard', () => {
         await expect(page.getByRole('heading', { name: /Review & create/i })).toBeVisible();
         await page.getByRole('button', { name: /Create run/i }).click();
 
-        await expect(page).toHaveURL(/\/runs\/[0-9a-f-]+/);
+        await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+\/runs\/[a-z0-9-]+$/);
     });
 
     test('multi-role: role context bar + role-grouped aside (skipped if no multi-role seed)', async () => {
@@ -75,7 +76,7 @@ test.describe('F-0081 Run Creator Wizard', () => {
         ) as { id: string; roles: unknown[] } | undefined;
         test.skip(!multiRole, 'no multi-role published protocol in seed data');
 
-        await page.goto(`/projects/${PROJECT_ID}`);
+        await page.goto(await projectUrl(page, PROJECT_ID));
         await page.getByRole('button', { name: /\+ New Run/i }).click();
         await page.getByLabel(/Name/i).fill(`E2E Multi-Role ${Date.now()}`);
         await page.getByRole('button', { name: /^Continue/ }).click();
@@ -108,7 +109,7 @@ test.describe('F-0081 Run Creator Wizard', () => {
         );
         expect(proto).toBeTruthy();
 
-        await page.goto(`/projects/${PROJECT_ID}`);
+        await page.goto(await projectUrl(page, PROJECT_ID));
         await page.getByRole('button', { name: /\+ New Run/i }).click();
         await page.getByLabel(/Name/i).fill(`E2E Defaults Run ${Date.now()}`);
         await page.getByRole('button', { name: /^Continue/ }).click();
@@ -118,6 +119,6 @@ test.describe('F-0081 Run Creator Wizard', () => {
         await expect(page.getByRole('heading', { name: /Review & create/i })).toBeVisible();
         await expect(page.getByText(/uses protocol defaults/i)).toBeVisible();
         await page.getByRole('button', { name: /Create run/i }).click();
-        await expect(page).toHaveURL(/\/runs\/[0-9a-f-]+/);
+        await expect(page).toHaveURL(/\/projects\/[a-z0-9-]+\/runs\/[a-z0-9-]+$/);
     });
 });

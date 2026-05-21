@@ -206,6 +206,10 @@ export async function clearSyncedActions(runId: string): Promise<void> {
 
 /** Get all unsynced actions grouped by run (for orphan recovery on dashboard). */
 export async function getOrphanedActions(): Promise<Map<string, QueuedAction[]>> {
+    // Offline mode off → no queue exists, so nothing is orphaned. Return an
+    // empty result rather than letting openDb() reject — a disabled feature
+    // is a normal state, not an error worth a console warning (#6).
+    if (!OFFLINE_ENABLED) return new Map();
     const items = await getUnsynced();
     const grouped = new Map<string, QueuedAction[]>();
     for (const item of items) {
@@ -218,6 +222,8 @@ export async function getOrphanedActions(): Promise<Map<string, QueuedAction[]>>
 
 /** Count all unsynced items. */
 export async function getUnsyncedCount(runId?: string): Promise<number> {
+    // No queue when offline mode is disabled — count is simply zero (#6).
+    if (!OFFLINE_ENABLED) return 0;
     const items = await getUnsynced(runId);
     return items.length;
 }

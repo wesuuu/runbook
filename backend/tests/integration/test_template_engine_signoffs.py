@@ -63,6 +63,8 @@ async def protocol_fixture(db_session: AsyncSession, test_project) -> Protocol:
         status="DRAFT",
         version_number=2,
         graph={"nodes": [], "edges": []},
+        slug="glp-template-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -89,6 +91,7 @@ async def completed_run_with_signoffs(
         started_at=datetime.now(timezone.utc) - timedelta(hours=2),
         completed_at=datetime.now(timezone.utc),
         outcome="COMPLETED",
+        slug="glp-run-with-signoffs",
     )
     db_session.add(run)
     await db_session.flush()
@@ -158,6 +161,7 @@ async def run_with_calibrated_equipment(
         execution_data={},
         notes=[],
         attachments=[],
+        slug="glp-run-with-equipment",
     )
     db_session.add(run)
     await db_session.flush()
@@ -181,6 +185,7 @@ async def completed_run_with_outcome(
         completed_at=datetime.now(timezone.utc),
         outcome="COMPLETED_WITH_DEVIATIONS",
         outcome_notes="Two minor deviations logged on steps 3 and 7.",
+        slug="glp-run-with-outcome",
     )
     db_session.add(run)
     await db_session.flush()
@@ -320,6 +325,7 @@ async def test_overdue_equipment_flagged_as_overdue(
         execution_data={},
         notes=[],
         attachments=[],
+        slug="overdue-equipment-run",
     )
     db_session.add(run)
     await db_session.flush()

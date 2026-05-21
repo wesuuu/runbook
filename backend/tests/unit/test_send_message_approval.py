@@ -54,8 +54,20 @@ async def test_emits_approval_required_when_deferred(monkeypatch):
         "app.services.ai.send_message.build_chat_agent",
         AsyncMock(return_value=fake_agent),
     )
+    # The persisted user_msg is an unsaved ORM mock (no id/created_at), so
+    # the real ChatMessageResponse.model_validate would raise. Stub it — the
+    # approval path does not surface the user_message payload anyway.
+    monkeypatch.setattr(
+        "app.services.ai.send_message.ChatMessageResponse",
+        SimpleNamespace(
+            model_validate=lambda _obj: SimpleNamespace(
+                model_dump=lambda **_kw: {"id": "u", "role": "user", "content": "x"}
+            )
+        ),
+    )
 
     placeholder_holder: dict = {}
+    executed_sql: list[str] = []
 
     class _FakeWriter:
         async def __aenter__(self):
@@ -68,7 +80,8 @@ async def test_emits_approval_required_when_deferred(monkeypatch):
             placeholder_holder["msg"] = msg
             msg.id = uuid.uuid4()
 
-        async def execute(self, *a, **kw):
+        async def execute(self, stmt, *a, **kw):
+            executed_sql.append(str(stmt))
             return None
 
         async def commit(self):
@@ -80,6 +93,12 @@ async def test_emits_approval_required_when_deferred(monkeypatch):
     monkeypatch.setattr(
         "app.services.ai.send_message.AsyncSessionLocal",
         lambda: _FakeWriter(),
+    )
+    # Defensively stub the heartbeat refresher so a slow run cannot make the
+    # background task issue its own active_turn_heartbeat_at UPDATE through
+    # the monkeypatched AsyncSessionLocal (which would pollute executed_sql).
+    monkeypatch.setattr(
+        "app.services.ai.turn_status._write_heartbeat", AsyncMock()
     )
 
     db = AsyncMock()
@@ -112,3 +131,6 @@ async def test_emits_approval_required_when_deferred(monkeypatch):
     pending = persisted_meta["pending_approval"]
     assert "payload_json" in pending
     assert "https://openwetware.org/wiki/X" in pending["payload_json"]
+    # BUG-005: the HITL-pause placeholder writer clears the turn heartbeat
+    # — the turn is suspended awaiting approval, not in progress.
+    assert any("active_turn_heartbeat_at" in sql for sql in executed_sql)

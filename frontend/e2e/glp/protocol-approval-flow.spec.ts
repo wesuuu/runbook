@@ -8,6 +8,7 @@ import {
     buildTestGraph,
 } from '../helpers/protocol';
 import { API_BASE } from '../helpers/apiBase';
+import { protocolUrl } from '../helpers/slug-urls';
 
 /**
  * F-0087 Task 41b — full GLP approval flow exercised against the live UI.
@@ -99,20 +100,22 @@ test.describe('GLP — full protocol approval flow', () => {
         // perms are not required for the SD/QAU pair.
         const designateResp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/designate-approval`,
+            `/protocols/${protocolId}/designate-approval`,
             { requires_approval: true },
         );
         expect(designateResp.status).toBe(200);
 
         const submitResp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/submit-for-approval`,
+            `/protocols/${protocolId}/submit-for-approval`,
             { requested_user_ids: [UPSTREAM_LEAD_ID, SCIENTIST2_ID] },
         );
         expect(submitResp.status).toBe(200);
 
         // --- Step 3: SD signs via SignoffBlock UI ---
-        await loginAndNavigate(page, 'upstreamLead', `/protocols/${protocolId}`);
+        await loginViaApi(page, 'upstreamLead');
+        await page.goto(await protocolUrl(page, protocolId));
+        await page.waitForLoadState('networkidle');
         const signoffBlock = page.locator('[data-testid="protocol-glp-signoffs"]');
         await expect(signoffBlock).toBeVisible();
 
@@ -137,7 +140,9 @@ test.describe('GLP — full protocol approval flow', () => {
         await expect(sdSignButton).toHaveCount(0);
 
         // --- Step 4: QAU signs via SignoffBlock UI ---
-        await loginAndNavigate(page, 'scientist2', `/protocols/${protocolId}`);
+        await loginViaApi(page, 'scientist2');
+        await page.goto(await protocolUrl(page, protocolId));
+        await page.waitForLoadState('networkidle');
         const qauSignButton = signoffBlock.getByRole('button', {
             name: /sign as qau/i,
         });
@@ -160,7 +165,7 @@ test.describe('GLP — full protocol approval flow', () => {
         await loginViaApi(page, 'downstreamLead');
         const forbiddenResp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/signoffs`,
+            `/protocols/${protocolId}/signoffs`,
             { role: 'STUDY_DIRECTOR', action: 'APPROVED', attestation: 'nope' },
         );
         expect([401, 403]).toContain(forbiddenResp.status);
@@ -169,7 +174,7 @@ test.describe('GLP — full protocol approval flow', () => {
         await loginAndNavigate(page, 'admin');
         const approveResp = await apiPost(
             page,
-            `/science/protocols/${protocolId}/approve`,
+            `/protocols/${protocolId}/approve`,
             { comment: 'All signoffs collected.' },
         );
         // /approve either flips PENDING_APPROVAL → APPROVED, or returns 400
@@ -179,7 +184,7 @@ test.describe('GLP — full protocol approval flow', () => {
         expect([200, 400]).toContain(approveResp.status);
 
         const protocolResp = await page.request.get(
-            `${API_BASE}/science/protocols/${protocolId}`,
+            `${API_BASE}/protocols/${protocolId}`,
             {
                 headers: {
                     Authorization: `Bearer ${await page.evaluate(() =>

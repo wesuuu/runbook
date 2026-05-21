@@ -21,12 +21,15 @@ async def _make_pending_protocol(
     creator_id: uuid.UUID,
     requested_user_id: uuid.UUID | None = None,
 ) -> Protocol:
+    import uuid as _uuid
     proto = Protocol(
         name="Pending Protocol",
         project_id=project.id,
         status="PENDING_APPROVAL",
         created_by_id=creator_id,
         requires_approval=True,
+        slug=f"pending-protocol-{_uuid.uuid4().hex[:8]}",
+        owner_org_id=project.organization_id,
     )
     db.add(proto)
     await db.flush()

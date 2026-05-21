@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateCanCloseRun } from './runValidation';
+import { resolveRequiredRoles, validateCanCloseRun } from './runValidation';
 import { validateQauIndependent } from './signoffValidation';
 import type { GlpSettings, GlpSignoffResponse } from '$lib/schemas/glpSignoff';
 import type { Run } from '$lib/schemas/runs';
@@ -35,17 +35,36 @@ function signoff(
     } as unknown as GlpSignoffResponse;
 }
 
-describe('validateCanCloseRun', () => {
-    it('requires OPERATOR signoff', () => {
-        const result = validateCanCloseRun(minimalRun, settings(), []);
-        expect(result.ok).toBe(false);
-        expect(result.missing).toContain('OPERATOR');
+describe('resolveRequiredRoles', () => {
+    it('returns no roles for a basic run (no reviewer role enabled)', () => {
+        expect(resolveRequiredRoles(settings())).toEqual([]);
     });
 
-    it('passes when operator signed and no other roles required', () => {
-        const result = validateCanCloseRun(minimalRun, settings(), [
-            signoff('OPERATOR'),
+    it('requires OPERATOR + STUDY_DIRECTOR when SD is enabled', () => {
+        expect(
+            resolveRequiredRoles(settings({ require_study_director: true })),
+        ).toEqual(['OPERATOR', 'STUDY_DIRECTOR']);
+    });
+
+    it('requires OPERATOR + QAU when QAU is enabled', () => {
+        expect(resolveRequiredRoles(settings({ require_qau: true }))).toEqual([
+            'OPERATOR',
+            'QAU',
         ]);
+    });
+
+    it('requires all three when both reviewer roles are enabled', () => {
+        expect(
+            resolveRequiredRoles(
+                settings({ require_study_director: true, require_qau: true }),
+            ),
+        ).toEqual(['OPERATOR', 'STUDY_DIRECTOR', 'QAU']);
+    });
+});
+
+describe('validateCanCloseRun', () => {
+    it('passes a basic run with no signoffs (no reviewer role required) (#18)', () => {
+        const result = validateCanCloseRun(minimalRun, settings(), []);
         expect(result.ok).toBe(true);
         expect(result.missing).toEqual([]);
     });

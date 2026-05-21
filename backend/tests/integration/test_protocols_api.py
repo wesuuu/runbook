@@ -32,6 +32,8 @@ async def test_delete_sample_protocol_hard_deletes(
         graph={},
         status="APPROVED",
         is_tour_sample=True,
+        slug="sample-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
@@ -99,6 +101,8 @@ async def test_get_protocol_with_project_perm(
         name="Readable Protocol",
         project_id=test_project.id,
         graph={},
+        slug="readable-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -123,6 +127,8 @@ async def test_get_protocol_without_perm(
         name="Secret Protocol",
         project_id=test_project.id,
         graph={},
+        slug="secret-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -145,6 +151,8 @@ async def test_update_protocol_with_edit_perm(
         name="Editable Protocol",
         project_id=test_project.id,
         graph={},
+        slug="editable-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -190,6 +198,8 @@ async def test_update_protocol_view_only_forbidden(
         name="View Only Protocol",
         project_id=test_project.id,
         graph={},
+        slug="view-only-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -213,6 +223,8 @@ async def test_list_protocols_for_project(
         name="Listed Protocol",
         project_id=test_project.id,
         graph={},
+        slug="listed-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()
@@ -239,12 +251,16 @@ async def test_list_protocols_filters_archived_by_default(
         project_id=test_project.id,
         graph={},
         status="DRAFT",
+        slug="active-protocol",
+        owner_org_id=test_project.organization_id,
     )
     archived = Protocol(
         name="Archived Protocol",
         project_id=test_project.id,
         graph={},
         status="ARCHIVED",
+        slug="archived-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add_all([active, archived])
     await db_session.flush()
@@ -288,6 +304,8 @@ async def test_list_protocols_surfaces_latest_draft_version(
         graph={},
         status="APPROVED",
         version_number=4,
+        slug="has-draft",
+        owner_org_id=test_project.organization_id,
     )
     no_draft = Protocol(
         name="No Draft",
@@ -295,6 +313,8 @@ async def test_list_protocols_surfaces_latest_draft_version(
         graph={},
         status="APPROVED",
         version_number=2,
+        slug="no-draft",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add_all([with_draft, no_draft])
     await db_session.flush()
@@ -347,6 +367,8 @@ async def test_get_protocol_surfaces_latest_draft_version(
         graph={},
         status="APPROVED",
         version_number=4,
+        slug="toggle-draft",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(protocol)
     await db_session.flush()

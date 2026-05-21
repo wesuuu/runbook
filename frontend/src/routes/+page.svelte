@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { getCurrentOrg, getUser } from '$lib/auth.svelte';
     import { getOrphanedActions, type QueuedAction } from '$lib/offline-db';
     import { syncNow } from '$lib/sync-manager';
@@ -21,8 +22,10 @@
     type RunSummary = {
         id: string;
         name: string;
+        slug: string;
         project_id: string;
         project_name: string;
+        project_slug: string;
         protocol_name: string | null;
         status: string;
         role_name: string | null;
@@ -37,6 +40,8 @@
         entity_type: string;
         entity_id: string;
         entity_name: string | null;
+        entity_slug: string | null;
+        project_slug: string | null;
         actor_name: string | null;
         changes: Record<string, any>;
         created_at: string;
@@ -95,10 +100,10 @@
 
     async function startProjectTourFromWelcome() {
         welcomeOpen = false;
-        const { project_id } = await api.post<{ project_id: string }>(
+        const { project_slug } = await api.post<{ project_id: string; project_slug: string }>(
             '/onboarding/tour/project/start', {},
         );
-        goto(`/projects/${project_id}?tour=project`);
+        goto(`${paths.project(project_slug)}?tour=project`);
     }
 
     async function dismissWelcome() {
@@ -219,13 +224,16 @@
 
     function activityLink(item: ActivityItem): string {
         if (item.entity_type === 'Run' || item.entity_type === 'RunRoleAssignment') {
-            return `/runs/${item.entity_id}`;
+            if (!item.entity_slug || !item.project_slug) return '#';
+            return paths.run(item.project_slug, item.entity_slug);
         }
         if (item.entity_type === 'Protocol') {
-            return `/protocols/${item.entity_id}`;
+            if (!item.entity_slug) return '#';
+            return paths.protocol(item.entity_slug);
         }
         if (item.entity_type === 'Project') {
-            return `/projects/${item.entity_id}`;
+            if (!item.entity_slug) return '#';
+            return paths.project(item.entity_slug);
         }
         return '#';
     }
@@ -261,7 +269,7 @@
     const counterData = $derived.by(() => {
         if (!dashboard) return [];
         const base = [
-            { label: 'Active Runs', value: dashboard.counters.active_runs, color: 'text-primary', link: '/projects' },
+            { label: 'Active Runs', value: dashboard.counters.active_runs, color: 'text-primary', link: paths.projects() },
             { label: 'Completed', value: dashboard.counters.completed_this_week, color: 'text-emerald-600', link: null },
             { label: 'Planned', value: dashboard.counters.planned_runs, color: 'text-foreground', link: null },
         ];
@@ -388,7 +396,7 @@
                                 <button
                                     type="button"
                                     class="w-full card-warm rounded-xl p-4 text-left border-l-3 border-l-amber-400 hover:border-l-amber-500 hover:shadow-md transition-all duration-150 cursor-pointer"
-                                    onclick={() => goto(`/runs/${run.id}`)}
+                                    onclick={() => goto(paths.run(run.project_slug, run.slug))}
                                 >
                                     <div class="flex items-center justify-between mb-2.5">
                                         <div class="flex items-center gap-2.5">
@@ -432,7 +440,7 @@
                                 <button
                                     type="button"
                                     class="w-full card-warm rounded-xl p-4 text-left hover:shadow-md hover:border-primary/20 transition-all duration-150 cursor-pointer"
-                                    onclick={() => goto(`/runs/${run.id}`)}
+                                    onclick={() => goto(paths.run(run.project_slug, run.slug))}
                                 >
                                     <div class="flex items-center justify-between mb-2.5">
                                         <div class="flex items-center gap-2.5">
@@ -475,7 +483,7 @@
                                 <button
                                     type="button"
                                     class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer"
-                                    onclick={() => goto(`/runs/${run.id}`)}
+                                    onclick={() => goto(paths.run(run.project_slug, run.slug))}
                                 >
                                     <div class="flex items-center gap-2.5">
                                         <div class="w-6 h-6 rounded-md bg-emerald-100 flex items-center justify-center">
@@ -509,7 +517,7 @@
                                 <button
                                     type="button"
                                     class="w-full flex items-center justify-between p-3.5 text-left hover:bg-muted/40 transition-colors duration-150 cursor-pointer group"
-                                    onclick={() => goto(`/runs/${run.id}`)}
+                                    onclick={() => goto(paths.run(run.project_slug, run.slug))}
                                 >
                                     <div>
                                         <span class="text-sm font-medium text-foreground">{run.name}</span>
@@ -532,7 +540,7 @@
                             title="No runs yet"
                             description="Get started by creating a project and running a protocol."
                             actionLabel="View Projects"
-                            onAction={() => goto('/projects')}
+                            onAction={() => goto(paths.projects())}
                             secondaryActionLabel="Take the tour"
                             secondaryOnAction={() => (welcomeOpen = true)}
                             class="py-14"

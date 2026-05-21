@@ -5,6 +5,7 @@
     import ChatSkillButtons from "$lib/components/ai/ChatSkillButtons.svelte";
     import ApprovalCard from "$lib/components/ai/ApprovalCard.svelte";
     import { Button, buttonVariants } from "$lib/components/ui/button";
+    import { paths } from "$lib/paths";
     import { scale, fly } from "svelte/transition";
     import {
         X,
@@ -99,6 +100,7 @@
 
     type ProtocolCta = {
         protocol_id: string;
+        protocol_slug: string;
         protocol_name?: string;
     };
 
@@ -115,10 +117,12 @@
             const obj = tc as Record<string, unknown>;
             if (
                 obj.tool === "create_protocol" &&
-                typeof obj.protocol_id === "string"
+                typeof obj.protocol_id === "string" &&
+                typeof obj.protocol_slug === "string"
             ) {
                 out.push({
                     protocol_id: obj.protocol_id,
+                    protocol_slug: obj.protocol_slug,
                     protocol_name:
                         typeof obj.protocol_name === "string"
                             ? obj.protocol_name
@@ -413,7 +417,7 @@
                                     <div class="flex flex-wrap gap-1.5 mt-2">
                                         {#each getMessageSources(msg) as source}
                                             <a
-                                                href="/library/{source.document_id}?chunk={source.chunk_index}"
+                                                href="{paths.libraryDoc(source.document_slug)}?chunk={source.chunk_index}"
                                                 class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
                                                     bg-primary/10 text-primary text-[11px] font-medium
                                                     hover:bg-primary/20 transition-colors"
@@ -436,7 +440,7 @@
                                     <div class="flex flex-wrap gap-2 mt-2">
                                         {#each getProtocolCtas(msg) as tc}
                                             <a
-                                                href="/protocols/{tc.protocol_id}"
+                                                href={paths.protocol(tc.protocol_slug)}
                                                 class={buttonVariants({
                                                     variant: "default",
                                                     size: "sm",

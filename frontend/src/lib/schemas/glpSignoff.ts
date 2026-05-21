@@ -113,6 +113,7 @@ export type GlpSettings = z.infer<typeof GlpSettingsSchema>;
 export const AwaitingApprovalItemSchema = z
     .object({
         protocol_id: z.string(),
+        protocol_slug: z.string(),
         name: z.string(),
         project_id: z.string().nullable().optional(),
         project_name: z.string().nullable().optional(),

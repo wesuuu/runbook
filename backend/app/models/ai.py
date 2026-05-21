@@ -39,46 +39,51 @@ SUPPORTED_CAPABILITIES = (
 )
 # "audio" excluded — feature not yet implemented
 
+# Every capability defaults to Ollama so the platform has no hard dependency on
+# a funded third-party account. Text-generation capabilities share one model
+# (`kimi-k2.6:cloud`). `vision` and `embedding` differ only in model choice:
+# `kimi-k2.6:cloud` is not multimodal, so vision uses a vision-capable model,
+# and embedding needs a dedicated embedding model.
 DEFAULT_CONFIGS = {
     "vision": {
-        "provider": "openrouter",
-        "model_name": "anthropic/claude-sonnet-4",
+        "provider": "ollama",
+        "model_name": "llama3.2-vision",
     },
     "text": {
         "provider": "ollama",
-        "model_name": "gemma3:latest",
+        "model_name": "kimi-k2.6:cloud",
     },
     "embedding": {
         "provider": "ollama",
         "model_name": "nomic-embed-text:latest",
     },
     "chat": {
-        "provider": "openrouter",
-        "model_name": "anthropic/claude-sonnet-4",
+        "provider": "ollama",
+        "model_name": "kimi-k2.6:cloud",
     },
     "chat_subagent": {
         "provider": "ollama",
-        "model_name": "gpt-oss:120b-cloud",
+        "model_name": "kimi-k2.6:cloud",
     },
     "chat_summary": {
-        "provider": "openrouter",
-        "model_name": "anthropic/claude-sonnet-4",
+        "provider": "ollama",
+        "model_name": "kimi-k2.6:cloud",
     },
     "protocol_creation": {
         "provider": "ollama",
-        "model_name": "gpt-oss:120b-cloud",
+        "model_name": "kimi-k2.6:cloud",
     },
     "protocol_editing": {
         "provider": "ollama",
-        "model_name": "gpt-oss:120b-cloud",
+        "model_name": "kimi-k2.6:cloud",
     },
     "protocol_generation": {
-        "provider": "openrouter",
-        "model_name": "anthropic/claude-sonnet-4",
+        "provider": "ollama",
+        "model_name": "kimi-k2.6:cloud",
     },
     "template_convert": {
         "provider": "ollama",
-        "model_name": "qwen3.5:27b",
+        "model_name": "kimi-k2.6:cloud",
     },
 }
 

@@ -55,6 +55,7 @@ async def test_get_run_with_perm(
         project_id=test_project.id,
         graph={},
         execution_data={},
+        slug="readable-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -80,6 +81,7 @@ async def test_get_run_without_perm(
         project_id=test_project.id,
         graph={},
         execution_data={},
+        slug="secret-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -103,6 +105,7 @@ async def test_update_run_with_edit_perm(
         project_id=test_project.id,
         graph={},
         execution_data={},
+        slug="editable-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -128,6 +131,7 @@ async def test_list_runs_for_project(
         project_id=test_project.id,
         graph={},
         execution_data={},
+        slug="listed-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -153,6 +157,7 @@ async def test_start_run_without_assignments_fails(
         project_id=test_project.id,
         graph={"nodes": [], "edges": []},
         execution_data={},
+        slug="unassigned-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -193,6 +198,7 @@ async def test_start_run_with_swimlanes_requires_all_assigned(
             ]
         },
         execution_data={},
+        slug="partial-assignment-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -233,6 +239,7 @@ async def test_start_run_succeeds_with_one_assignment_no_swimlanes(
         project_id=test_project.id,
         graph={"nodes": [], "edges": []},
         execution_data={},
+        slug="simple-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -285,6 +292,7 @@ async def test_start_run_succeeds_with_all_swimlanes_assigned(
             ]
         },
         execution_data={},
+        slug="full-assignment-run",
     )
     db_session.add(run_obj)
     await db_session.flush()
@@ -330,6 +338,7 @@ async def test_started_by_id_set_on_active_transition(
         project_id=test_project.id,
         graph={"nodes": []},
         execution_data={},
+        slug="test-started-by-run",
     )
     db_session.add(run_obj)
     await db_session.flush()

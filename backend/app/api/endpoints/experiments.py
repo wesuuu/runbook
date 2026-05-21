@@ -14,6 +14,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.deps import get_current_user, get_or_404, require_active_subscription
 from app.db.session import get_db
 from app.models.iam import ObjectType, PermissionLevel, User
+from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Experiment, Run
 from app.schemas.runs import (
@@ -28,6 +29,7 @@ from app.schemas.runs import (
 )
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission
+from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,8 @@ def _experiment_dict(exp: Experiment) -> dict:
     return {
         "id": exp.id,
         "project_id": exp.project_id,
+        "slug": exp.slug,
+        "project_slug": exp.project_slug,
         "name": exp.name,
         "description": exp.description,
         "content": exp.content or {},
@@ -74,6 +78,14 @@ async def create_experiment(
         project_id=exp_in.project_id,
         description=exp_in.description,
     )
+    experiment.slug = await assign_slug_or_422(
+        db,
+        Experiment,
+        Experiment.project_id,
+        experiment.project_id,
+        experiment.name,
+        "experiment",
+    )
     db.add(experiment)
     await db.flush()
 
@@ -86,7 +98,7 @@ async def create_experiment(
         changes={"name": exp_in.name},
     )
     await db.commit()
-    await db.refresh(experiment)
+    await db.refresh(experiment, attribute_names=["project"])
 
     return ExperimentResponse(
         **_experiment_dict(experiment),
@@ -128,6 +140,50 @@ async def list_experiments(
         )
         for exp, cnt in rows
     ]
+
+
+@router.get(
+    "/experiments/by-slug/{project_slug}/{slug}",
+    response_model=ExperimentResponse,
+)
+async def get_experiment_by_slug(
+    project_slug: str,
+    slug: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Look up an experiment by project slug + experiment slug."""
+    result = await db.execute(
+        select(Experiment)
+        .join(Project, Experiment.project_id == Project.id)
+        .where(
+            Project.organization_id == user.selected_org_id,
+            Project.slug == project_slug,
+            Experiment.slug == slug,
+        )
+    )
+    exp = result.scalar_one_or_none()
+    if exp is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    allowed = await check_permission(
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(403, "Not allowed")
+
+    run_result = await db.execute(select(Run).where(Run.experiment_id == exp.id))
+    runs = list(run_result.scalars().all())
+
+    return ExperimentResponse(
+        **_experiment_dict(exp),
+        runs=[RunResponse.model_validate(r) for r in runs],
+        run_count=len(runs),
+    )
 
 
 @router.get("/experiments/{experiment_id}", response_model=ExperimentResponse)
@@ -177,6 +233,17 @@ async def update_experiment(
     )
     if not allowed:
         raise HTTPException(403, "Not allowed")
+
+    if update_data.name is not None and update_data.name != exp.name:
+        exp.slug = await assign_slug_or_422(
+            db,
+            Experiment,
+            Experiment.project_id,
+            exp.project_id,
+            update_data.name,
+            "experiment",
+            exclude_id=exp.id,
+        )
 
     changes = {}
     for field in ("name", "description", "content", "status"):
@@ -324,6 +391,10 @@ async def add_run_to_experiment(
             if protocol.status and protocol.status.upper() == "ARCHIVED":
                 raise HTTPException(400, "Cannot create run from archived protocol")
             run.graph = protocol.graph.copy() if protocol.graph else {}
+
+        run.slug = await assign_slug_or_422(
+            db, Run, Run.project_id, run.project_id, run.name, "run"
+        )
 
         db.add(run)
         await db.flush()

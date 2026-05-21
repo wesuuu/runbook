@@ -77,7 +77,9 @@ async def tour_project_start(
 ):
     org = await _get_current_org(db, user)
     project = await find_or_create_sample_project(db, user, org)
-    return TourProjectStartResponse(project_id=project.id)
+    return TourProjectStartResponse(
+        project_id=project.id, project_slug=project.slug
+    )
 
 
 def _clear_segment_from_tour_state(user: User, segment: str) -> None:
@@ -103,6 +105,7 @@ async def tour_protocol_start(
     return TourProtocolStartResponse(
         project_id=protocol.project_id,
         protocol_id=protocol.id,
+        protocol_slug=protocol.slug,
     )
 
 

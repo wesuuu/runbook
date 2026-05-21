@@ -13,6 +13,8 @@ async def test_protocol_has_gxp_metadata_columns(db_session: AsyncSession, test_
     p = Protocol(
         name="P",
         organization_id=test_org.id,
+        owner_org_id=test_org.id,
+        slug="p-gxp",
         graph={},
         doc_number="SOP-0001",
         effective_date=date(2026, 1, 1),
@@ -37,7 +39,7 @@ async def test_protocol_has_gxp_metadata_columns(db_session: AsyncSession, test_
 
 @pytest.mark.asyncio
 async def test_protocol_gxp_fields_all_nullable(db_session: AsyncSession, test_org):
-    p = Protocol(name="bare", organization_id=test_org.id, graph={})
+    p = Protocol(name="bare", organization_id=test_org.id, owner_org_id=test_org.id, slug="bare", graph={})
     db_session.add(p)
     await db_session.flush()
     await db_session.refresh(p)

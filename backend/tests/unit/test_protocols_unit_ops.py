@@ -223,7 +223,7 @@ async def test_elevate_promotes_project_to_org(
     test_org: Organization,
     test_user: User,
 ):
-    proj = Project(name="p", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="p", organization_id=test_org.id, owner_id=test_user.id, slug="p-elevate")
     db_session.add(proj)
     await db_session.flush()
     op = await create_unit_op_definition(
@@ -255,7 +255,7 @@ async def test_elevate_requires_admin(
     test_org: Organization,
     test_user: User,
 ):
-    proj = Project(name="p2", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="p2", organization_id=test_org.id, owner_id=test_user.id, slug="p2-elevate")
     db_session.add(proj)
     await db_session.flush()
     op = await create_unit_op_definition(
@@ -313,7 +313,7 @@ async def test_elevate_refuses_library_override(
     test_org: Organization,
     test_user: User,
 ):
-    proj = Project(name="p3", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="p3", organization_id=test_org.id, owner_id=test_user.id, slug="p3-elevate")
     db_session.add(proj)
     await db_session.flush()
     op = UnitOpDefinition(
@@ -359,7 +359,7 @@ async def test_elevate_refuses_name_collision(
     # Project-scoped op with the same name (allowed because org-vs-project
     # are different rows; create_unit_op_definition's dup check would block
     # this so we insert directly)
-    proj = Project(name="p4", organization_id=test_org.id, owner_id=test_user.id)
+    proj = Project(name="p4", organization_id=test_org.id, owner_id=test_user.id, slug="p4-elevate")
     db_session.add(proj)
     await db_session.flush()
     proj_op = UnitOpDefinition(

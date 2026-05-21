@@ -183,7 +183,8 @@ async def read_section(
                 dc.chunk_index,
                 dc.page_number,
                 dc.content,
-                d.title AS document_title
+                d.title AS document_title,
+                d.slug AS document_slug
             FROM document_chunks dc
             JOIN documents d ON d.id = dc.document_id
             WHERE dc.document_id = :document_id
@@ -218,11 +219,13 @@ async def read_section(
         )
 
     document_title = rows[0].document_title
+    document_slug = rows[0].document_slug
 
     # Build RetrievedChunk objects so they appear in citations
     retrieved: list[RetrievedChunk] = [
         RetrievedChunk(
             document_id=document_id,
+            document_slug=document_slug,
             document_title=document_title,
             chunk_id=UUID(
                 int=0

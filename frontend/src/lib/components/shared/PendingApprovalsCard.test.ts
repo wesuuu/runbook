@@ -5,6 +5,10 @@ vi.mock('$lib/api', () => ({
     getAwaitingMyApproval: vi.fn(),
 }));
 
+vi.mock('$lib/auth.svelte', () => ({
+    getCurrentOrg: () => ({ id: 'o1', name: 'Acme', slug: 'acme' }),
+}));
+
 import PendingApprovalsCard from './PendingApprovalsCard.svelte';
 import * as apiModule from '$lib/api';
 
@@ -28,6 +32,7 @@ describe('PendingApprovalsCard', () => {
         (apiModule.getAwaitingMyApproval as any).mockResolvedValue([
             {
                 protocol_id: '11111111-1111-1111-1111-111111111111',
+                protocol_slug: 'buffer-sop',
                 name: 'Buffer SOP',
                 project_id: '22222222-2222-2222-2222-222222222222',
                 project_name: 'Project Alpha',
@@ -45,9 +50,7 @@ describe('PendingApprovalsCard', () => {
         const row = await findByTestId('pending-approval-row');
         expect(row.textContent).toMatch(/Project Alpha/);
         expect(row.textContent).toMatch(/Buffer SOP/);
-        expect(row.getAttribute('href')).toBe(
-            '/protocols/11111111-1111-1111-1111-111111111111',
-        );
+        expect(row.getAttribute('href')).toBe('/acme/protocols/buffer-sop');
         expect(await findByText(/Submitted by Sarah Submitter/)).toBeTruthy();
     });
 });

@@ -26,11 +26,14 @@ async def _make_protocol(
     creator_id: uuid.UUID,
     status: str = "DRAFT",
 ) -> Protocol:
+    import uuid as _uuid
     proto = Protocol(
         name="Test Protocol",
         project_id=project.id,
         status=status,
         created_by_id=creator_id,
+        slug=f"test-protocol-{_uuid.uuid4().hex[:8]}",
+        owner_org_id=project.organization_id,
     )
     db.add(proto)
     await db.flush()

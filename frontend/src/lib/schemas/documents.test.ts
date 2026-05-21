@@ -11,6 +11,7 @@ describe('documents schemas', () => {
         const raw = {
             id: 'doc-1',
             org_id: 'org-1',
+            slug: 'sop-12',
             uploaded_by_id: 'user-1',
             title: 'SOP 12',
             original_filename: 'sop12.pdf',
@@ -32,6 +33,7 @@ describe('documents schemas', () => {
         const raw = {
             id: 'doc-2',
             org_id: 'org-1',
+            slug: 'sop-13',
             uploaded_by_id: 'user-1',
             title: 'SOP 13',
             original_filename: 'sop13.pdf',

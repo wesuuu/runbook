@@ -12,3 +12,4 @@
 - [QA-0007 Equipment ID Interpolation](project_qa0007_equipment_interpolation.md) — equipment chips, template tokens, PDF X-Unresolved-Placeholders header; canvas node overlap makes dup-ID testing tricky via Playwright
 - [F-0083 Chat Tool Indicator QA](project_f0083_chat_tool_indicator.md) — SSE stream, "Thinking…" label, subagent tools don't surface parent events; worktree needs .env+settings.yaml copy and CORS entry
 - [F-0088 Equipment Registry & Sites QA](project_f0088_equipment_registry_qa.md) — 2 bugs fixed: SiteList col-span-3 missing, ck_org_member_roles constraint blocked SITE_MANAGER role
+- [BUG-005 Chat Turn Heartbeat QA](project_bug005_chat_heartbeat.md) — all 3 scenarios pass; worktree DB needs manual Pro tier update; pre-seeded interrupted session confirmed banner + dismiss

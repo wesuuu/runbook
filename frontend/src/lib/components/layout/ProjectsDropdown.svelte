@@ -3,14 +3,20 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { api } from '$lib/api';
+    import { paths } from '$lib/paths';
     import { getCurrentOrg } from '$lib/auth.svelte';
-    import { getCurrentProjectId, setCurrentProjectId } from '$lib/project-context.svelte';
+    import {
+        getCurrentProjectSlug,
+        setCurrentProjectSlug,
+        clearCurrentProjectSlug,
+    } from '$lib/project-context.svelte';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
     import { Button } from '$lib/components/ui/button';
     import { ChevronDown, Plus, FolderOpen } from 'lucide-svelte';
 
     interface Project {
         id: string;
+        slug: string;
         name: string;
         description?: string;
     }
@@ -18,24 +24,31 @@
     let projects = $state<Project[]>([]);
     let loading = $state(true);
 
-    const isActive = $derived($page.url.pathname.startsWith('/projects'));
-    const routeProjectId = $derived.by(() => {
-        const match = $page.url.pathname.match(/^\/projects\/([^/]+)/);
-        const id = match ? match[1] : null;
-        return id && id !== 'new' ? id : null;
+    const isActive = $derived(/\/projects(\/|$)/.test($page.url.pathname));
+
+    const routeProjectSlug = $derived.by(() => {
+        // Match /[org]/projects/[slug] — slug is the segment after /projects/.
+        const match = $page.url.pathname.match(/\/projects\/([^/]+)/);
+        const slug = match ? match[1] : null;
+        return slug && slug !== 'new' ? slug : null;
     });
 
-    // Persist the project context whenever the URL exposes one. Sticky across
-    // navigation to non-project routes (protocols, runs, etc.).
+    // Persist the project the user last drilled into so the dropdown stays
+    // "sticky" on routes that aren't project-scoped (e.g. settings, dashboard).
+    // The inequality guard keeps this effect from re-writing localStorage on
+    // every reactive run when the slug has not actually changed.
     $effect(() => {
-        if (routeProjectId && routeProjectId !== getCurrentProjectId()) {
-            setCurrentProjectId(routeProjectId);
+        if (routeProjectSlug && routeProjectSlug !== getCurrentProjectSlug()) {
+            setCurrentProjectSlug(routeProjectSlug);
         }
     });
 
-    const activeProjectId = $derived(routeProjectId ?? getCurrentProjectId());
+    const activeProjectSlug = $derived(routeProjectSlug ?? getCurrentProjectSlug());
+
     const currentProject = $derived(
-        activeProjectId ? projects.find((p) => p.id === activeProjectId) ?? null : null
+        activeProjectSlug
+            ? (projects.find((p) => p.slug === activeProjectSlug) ?? null)
+            : null
     );
 
     async function loadProjects() {
@@ -45,6 +58,19 @@
             const query = org ? `?organization_id=${org.id}` : '';
             const res = await api.get<any>(`/projects${query}`);
             projects = Array.isArray(res) ? res : res.projects || [];
+            // Self-heal a stale persisted slug: if the slug saved in
+            // localStorage resolves to no loaded project (e.g. the project
+            // was renamed and re-slugged), drop it so the dropdown stops
+            // showing a phantom selection. A slug in the URL is
+            // authoritative, so only heal when not on a project route.
+            const persisted = getCurrentProjectSlug();
+            if (
+                !routeProjectSlug &&
+                persisted &&
+                !projects.some((p) => p.slug === persisted)
+            ) {
+                clearCurrentProjectSlug();
+            }
         } catch {
             projects = [];
         } finally {
@@ -80,7 +106,7 @@
             <div class="px-3 py-4 text-center text-sm text-muted-foreground">No projects yet.</div>
         {:else}
             {#each projects as project}
-                <DropdownMenu.Item onclick={() => goto(`/projects/${project.id}`)}>
+                <DropdownMenu.Item onclick={() => goto(paths.project(project.slug))}>
                     <span class="flex items-center gap-2 w-full">
                         <FolderOpen class="h-4 w-4 shrink-0 text-muted-foreground" />
                         <span class="truncate">{project.name}</span>
@@ -89,10 +115,10 @@
             {/each}
         {/if}
         <DropdownMenu.Separator />
-        <DropdownMenu.Item onclick={() => goto('/projects')}>
+        <DropdownMenu.Item onclick={() => goto(paths.projects())}>
             <span class="text-muted-foreground">View All Projects</span>
         </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={() => goto('/projects/new')}>
+        <DropdownMenu.Item onclick={() => goto(`${paths.projects()}?new=1`)}>
             <span class="flex items-center gap-2">
                 <Plus class="h-4 w-4" />
                 New Project

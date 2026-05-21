@@ -22,11 +22,13 @@ class TourStateUpdate(BaseModel):
 
 class TourProjectStartResponse(BaseModel):
     project_id: UUID
+    project_slug: str
 
 
 class TourProtocolStartResponse(BaseModel):
     project_id: UUID
     protocol_id: UUID
+    protocol_slug: str
 
 
 class TourRunStartResponse(BaseModel):

@@ -3,6 +3,7 @@ import { streamSse, type SseEvent } from '$lib/ai/sse-stream';
 import { getToken, logout } from '$lib/auth.svelte';
 import { API_BASE } from '$lib/config';
 import { _validateResponse, type RequestOptions } from '$lib/apiValidation';
+import { ApiError, extractErrorMessage } from '$lib/apiError';
 import {
     SubscriptionStateSchema,
     PortalSessionResponseSchema,
@@ -24,8 +25,6 @@ import {
 } from '$lib/schemas/glpSignoff';
 import { SignoffRequestListSchema, type SignoffRequestList } from '$lib/schemas/signoffRequests';
 
-import { ApiError, extractErrorMessage } from '$lib/apiError';
-
 export { ApiError } from '$lib/apiError';
 
 
@@ -41,7 +40,7 @@ function _authHeaders(contentType?: string): HeadersInit {
     return headers;
 }
 
-async function _handleErrorResponse(response: Response, fallbackMessage: string): Promise<never> {
+export async function _handleErrorResponse(response: Response, fallbackMessage: string): Promise<never> {
     if (response.status === 401) {
         logout();
         goto('/login');
@@ -69,11 +68,11 @@ async function _handleErrorResponse(response: Response, fallbackMessage: string)
     let errorData = null;
     try {
         const errorJson = await response.json();
+        errorData = errorJson;
         // Backend `detail` may be a string, a structured object, or a 422
         // validation array — extractErrorMessage normalises all three so the
         // ApiError.message is always real text, never "[object Object]".
         errorMessage = extractErrorMessage(errorJson, fallbackMessage);
-        errorData = errorJson;
     } catch {
         // Response body not JSON
     }

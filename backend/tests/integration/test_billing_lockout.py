@@ -84,7 +84,7 @@ async def test_write_endpoint_402s_when_past_due(client: AsyncClient, db_session
 @pytest.mark.asyncio
 async def test_read_endpoint_succeeds_when_locked_out(client: AsyncClient, db_session):
     user, org = await _setup_locked_out_org(db_session, status="canceled")
-    db_session.add(Project(name="p1", organization_id=org.id))
+    db_session.add(Project(name="p1", organization_id=org.id, slug="p1"))
     await db_session.flush()
 
     resp = await client.get(

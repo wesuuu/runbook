@@ -38,10 +38,18 @@ async def _get_org_id_for_object(
         return result.scalar_one_or_none()
 
     if object_type == ObjectType.PROTOCOL:
+        # Try project-scoped first; fall back to owner_org_id for org-scoped protocols.
         result = await db.execute(
             select(Project.organization_id)
             .join(Protocol, Protocol.project_id == Project.id)
             .where(Protocol.id == object_id)
+        )
+        org_id = result.scalar_one_or_none()
+        if org_id is not None:
+            return org_id
+        # Org-scoped protocol: owner_org_id is always populated (F-0091).
+        result = await db.execute(
+            select(Protocol.owner_org_id).where(Protocol.id == object_id)
         )
         return result.scalar_one_or_none()
 

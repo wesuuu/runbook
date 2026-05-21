@@ -57,7 +57,7 @@ async def test_find_or_create_sample_project_reuses_existing_active(
     db_session, org_and_user
 ):
     org, user = org_and_user
-    existing = Project(name="Existing", organization_id=org.id)
+    existing = Project(name="Existing", organization_id=org.id, slug="existing")
     db_session.add(existing)
     await db_session.commit()
 

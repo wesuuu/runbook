@@ -17,6 +17,7 @@ from app.models.iam import Organization, User
 from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Run, RunStatus
+from app.services.slugs import assign_slug
 
 SAMPLE_PROJECT_NAME = "My First Project"
 SAMPLE_PROTOCOL_NAME = "Sample Protocol"
@@ -138,6 +139,9 @@ async def find_or_create_sample_project(
         description="Seeded by the onboarding tour.",
         organization_id=org.id,
     )
+    project.slug = await assign_slug(
+        db, Project, Project.organization_id, org.id, project.name
+    )
     db.add(project)
     await db.commit()
     await db.refresh(project)
@@ -174,6 +178,15 @@ async def find_or_create_sample_protocol(
         graph=get_sample_protocol_graph(),
         is_tour_sample=True,
     )
+    # F-0091: resolve owning org and assign a slug.
+    protocol.owner_org_id = project.organization_id
+    protocol.slug = await assign_slug(
+        db,
+        Protocol,
+        Protocol.owner_org_id,
+        protocol.owner_org_id,
+        protocol.name,
+    )
     db.add(protocol)
     await db.commit()
     await db.refresh(protocol)
@@ -195,6 +208,7 @@ async def find_or_create_sample_run(
         started_by_id=user.id,
         is_tour_sample=True,
     )
+    run.slug = await assign_slug(db, Run, Run.project_id, run.project_id, run.name)
     db.add(run)
     await db.commit()
     await db.refresh(run)

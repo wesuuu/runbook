@@ -133,7 +133,9 @@ export const BatchRecordFinalizeRequestSchema = z.object({
 
 export const BatchRecordFinalizeResponseSchema = z.object({
     run_id: z.string().uuid(),
+    run_slug: z.string(),
     run_name: z.string(),
+    project_slug: z.string(),
     import_id: z.string().uuid(),
     status: z.string().default('FINALIZED'),
 }).passthrough();

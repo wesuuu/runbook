@@ -27,6 +27,7 @@ def _doc(test_org, test_user, stored_markdown: str | None) -> Document:
         stored_markdown=stored_markdown,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
+        slug=f"t-{uuid.uuid4().hex[:8]}",
     )
 
 

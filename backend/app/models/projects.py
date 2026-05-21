@@ -3,7 +3,7 @@
 import uuid
 from typing import TYPE_CHECKING, Any, List, Optional
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,8 +18,12 @@ if TYPE_CHECKING:
 
 class Project(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "projects"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "slug", name="uq_projects_org_slug"),
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String)
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False

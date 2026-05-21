@@ -130,6 +130,7 @@ async def _retrieve_once(
                         dc.content,
                         dc.page_number,
                         d.title AS document_title,
+                        d.slug AS document_slug,
                         CASE WHEN dc.embedding IS NOT NULL
                             THEN (1.0 - (dc.embedding <=> :query_vec))
                             ELSE 0.0
@@ -192,6 +193,7 @@ async def _retrieve_once(
         chunks.append(
             RetrievedChunk(
                 document_id=row.document_id,
+                document_slug=row.document_slug,
                 document_title=row.document_title,
                 chunk_id=row.chunk_id,
                 chunk_index=row.chunk_index,
@@ -235,6 +237,7 @@ async def _keyword_search_chunks(
                 dc.content,
                 dc.page_number,
                 d.title AS document_title,
+                d.slug AS document_slug,
                 ts_rank(dc.search_vector, plainto_tsquery('english', :query))
                     AS keyword_score
             FROM document_chunks dc
