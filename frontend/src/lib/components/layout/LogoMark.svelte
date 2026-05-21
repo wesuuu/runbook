@@ -30,6 +30,13 @@
 
 	const clipId = `brm-clip-${nextLogoMarkId()}`;
 
+	// The `full` variant is cropped to the flask art — its viewBox trims the
+	// dead padding the 100×100 frame left around the bulb and neck. That makes
+	// it non-square (56:80), so `size` is treated as the mark *height* and the
+	// width follows the ratio. `simple` stays square (the favicon needs it).
+	const FULL_VIEWBOX = '22 9 56 80';
+	const fullWidth = $derived(Math.round((size * 56) / 80));
+
 	// Brand-locked palette — the mark never adapts to a theme.
 	const TEAL = '#0A4C5C';
 	const GREEN = '#1DA570';
@@ -42,9 +49,9 @@
 {#if variant === 'full'}
 	<svg
 		class={cls}
-		width={size}
+		width={fullWidth}
 		height={size}
-		viewBox="0 0 100 100"
+		viewBox={FULL_VIEWBOX}
 		fill="none"
 		data-variant="full"
 		aria-hidden="true"

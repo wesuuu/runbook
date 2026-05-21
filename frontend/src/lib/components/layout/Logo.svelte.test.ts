@@ -28,6 +28,23 @@ describe('LogoMark', () => {
 		expect(svg?.getAttribute('height')).toBe('48');
 	});
 
+	it('crops the full variant viewBox to the flask art', () => {
+		const { container } = render(LogoMark, { props: { variant: 'full' } });
+		expect(container.querySelector('svg')?.getAttribute('viewBox')).toBe(
+			'22 9 56 80',
+		);
+	});
+
+	it('renders the full variant non-square (taller than wide)', () => {
+		// `size` is the mark height; width follows the cropped 56:80 ratio.
+		const { container } = render(LogoMark, {
+			props: { variant: 'full', size: 80 },
+		});
+		const svg = container.querySelector('svg');
+		expect(svg?.getAttribute('height')).toBe('80');
+		expect(svg?.getAttribute('width')).toBe('56');
+	});
+
 	it('omits SMIL animation nodes when not animated', () => {
 		const { container } = render(LogoMark, {
 			props: { variant: 'full', animated: false },
@@ -101,5 +118,19 @@ describe('Logo', () => {
 		const { container } = render(Logo, { props: { class: 'mb-4' } });
 		const lockup = container.querySelector('.batchrite-lockup');
 		expect(lockup?.classList.contains('mb-4')).toBe(true);
+	});
+
+	it('lays out horizontally by default', () => {
+		const { container } = render(Logo, { props: {} });
+		const lockup = container.querySelector('.batchrite-lockup');
+		expect(lockup?.classList.contains('stacked')).toBe(false);
+	});
+
+	it('stacks the mark above the wordmark when orientation is stacked', () => {
+		const { container } = render(Logo, {
+			props: { orientation: 'stacked' },
+		});
+		const lockup = container.querySelector('.batchrite-lockup');
+		expect(lockup?.classList.contains('stacked')).toBe(true);
 	});
 });

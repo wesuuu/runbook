@@ -139,7 +139,7 @@
     <div class="min-h-screen flex items-center justify-center bg-background">
         <div class="flex flex-col items-center gap-4">
             <div class="relative">
-                <Logo size="lg" variant="full" animated />
+                <Logo size="lg" variant="full" animated orientation="stacked" />
             </div>
             <p class="text-sm text-muted-foreground tracking-wide">Loading...</p>
         </div>
