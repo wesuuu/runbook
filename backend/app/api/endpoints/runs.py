@@ -88,6 +88,7 @@ from app.services.runs.validation import (
     assert_can_edit_completed_run,
     assert_no_unjustified_edit_errors,
     assert_run_can_close,
+    lane_assignment_gap,
 )
 from app.services.signoffs.queries import (
     invalidate_active_signoffs,
@@ -552,32 +553,26 @@ async def update_run(
             )
 
         if new_status == "ACTIVE":
-            # Check that at least one person is assigned to the run
             result = await db.execute(
-                select(RunRoleAssignment).where(RunRoleAssignment.run_id == run_id)
+                select(RunRoleAssignment).where(
+                    RunRoleAssignment.run_id == run_id
+                )
             )
-            assignments = result.scalars().all()
+            assignments = list(result.scalars().all())
 
-            if not assignments:
+            gap = lane_assignment_gap(run_obj.graph or {}, assignments)
+            if not gap.has_assignee:
                 raise HTTPException(
                     status_code=422,
                     detail="Cannot start run: at least one person must be assigned",
                 )
-
-            # Check that all swimlane roles in the graph have assignments
-            graph = run_obj.graph or {}
-            nodes = graph.get("nodes", [])
-            swimlane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
-
-            if swimlane_nodes:
-                assigned_lanes = {a.lane_node_id for a in assignments}
-                required_lanes = {n["id"] for n in swimlane_nodes}
-
-                if assigned_lanes != required_lanes:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="Cannot start run: not all roles have assigned users",
-                    )
+            # Unassigned swimlane OR a stale assignment to a deleted lane —
+            # the old set-equality check rejected both with this same message.
+            if gap.unassigned_lane_ids or gap.stale_lane_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Cannot start run: not all roles have assigned users",
+                )
 
             # Set started_by_id when run transitions to ACTIVE
             run_obj.started_by_id = user.id
