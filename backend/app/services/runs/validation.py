@@ -85,37 +85,30 @@ async def assert_run_can_close(
     run: Run,
     glp_settings: dict[str, Any],
 ) -> None:
-    """Verify required sign-offs exist before a run is closed.
+    """Verify the OPERATOR sign-off exists before a run is closed.
 
-    The OPERATOR sign-off is always required.  Additional roles are
-    gated by the ``glp_settings`` dict (drawn from
-    ``run.graph["glpSettings"]`` or a GLP settings record):
+    F-0080 (decision C1): Study Director and QAU review happen
+    *asynchronously after* the run reaches COMPLETED — auto-generated
+    ``GlpSignoffRequest`` rows surfaced in the ``/reviews`` queue. They no
+    longer gate closure; only the OPERATOR sign-off does.
 
-        require_study_director: bool — SD sign-off required to close
-        require_qau: bool           — QAU sign-off required to close
+    ``glp_settings`` is retained in the signature for call-site stability
+    (``complete_run`` still resolves and passes it) but is no longer read —
+    SD/QAU requirements are enforced post-completion by
+    :func:`app.services.signoffs.requests.generate_signoff_requests` and
+    :func:`~app.services.signoffs.requests.assert_run_completable`.
 
     Raises:
         HTTPException(400): detail={error: "SIGNOFF_REQUIRED",
-                                    missing_roles: [...]}
+                                    missing_roles: ["OPERATOR"]}
     """
     active = await list_active_signoffs(db, "run", run.id)
     have_roles = {s.role for s in active}
-    missing: list[str] = []
 
     if "OPERATOR" not in have_roles:
-        missing.append("OPERATOR")
-    if (
-        glp_settings.get("require_study_director")
-        and "STUDY_DIRECTOR" not in have_roles
-    ):
-        missing.append("STUDY_DIRECTOR")
-    if glp_settings.get("require_qau") and "QAU" not in have_roles:
-        missing.append("QAU")
-
-    if missing:
         raise HTTPException(
             status_code=400,
-            detail={"error": "SIGNOFF_REQUIRED", "missing_roles": missing},
+            detail={"error": "SIGNOFF_REQUIRED", "missing_roles": ["OPERATOR"]},
         )
 
 

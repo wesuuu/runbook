@@ -172,8 +172,9 @@ async def test_assert_run_can_close_fails_when_operator_missing():
     assert "OPERATOR" in exc.value.detail["missing_roles"]
 
 
-async def test_assert_run_can_close_fails_when_sd_required_but_missing():
-    """When glp_settings.require_study_director=True and no SD signoff → fail."""
+async def test_assert_run_can_close_allows_close_when_sd_unsigned():
+    """F-0080 C1: Study Director review is async after COMPLETED, so an
+    unsigned SD no longer blocks closure — only OPERATOR gates."""
     mock_run = MagicMock()
     mock_run.id = uuid4()
 
@@ -186,16 +187,15 @@ async def test_assert_run_can_close_fails_when_sd_required_but_missing():
     db = AsyncMock()
     db.execute.return_value = mock_result
 
-    glp_settings = {"require_study_director": True}
-
-    with pytest.raises(HTTPException) as exc:
-        await assert_run_can_close(db=db, run=mock_run, glp_settings=glp_settings)
-    assert exc.value.status_code == 400
-    assert "STUDY_DIRECTOR" in exc.value.detail["missing_roles"]
+    # require_study_director=True but no SD sign-off — must NOT raise.
+    await assert_run_can_close(
+        db=db, run=mock_run, glp_settings={"require_study_director": True}
+    )
 
 
-async def test_assert_run_can_close_fails_when_qau_required_but_missing():
-    """When glp_settings.require_qau=True and no QAU signoff → fail."""
+async def test_assert_run_can_close_allows_close_when_qau_unsigned():
+    """F-0080 C1: QAU review is async after COMPLETED, so an unsigned QAU no
+    longer blocks closure — only OPERATOR gates."""
     mock_run = MagicMock()
     mock_run.id = uuid4()
 
@@ -208,11 +208,10 @@ async def test_assert_run_can_close_fails_when_qau_required_but_missing():
     db = AsyncMock()
     db.execute.return_value = mock_result
 
-    glp_settings = {"require_qau": True}
-
-    with pytest.raises(HTTPException) as exc:
-        await assert_run_can_close(db=db, run=mock_run, glp_settings=glp_settings)
-    assert "QAU" in exc.value.detail["missing_roles"]
+    # require_qau=True but no QAU sign-off — must NOT raise.
+    await assert_run_can_close(
+        db=db, run=mock_run, glp_settings={"require_qau": True}
+    )
 
 
 async def test_assert_run_can_close_passes_when_all_required_present():
