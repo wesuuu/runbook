@@ -85,7 +85,7 @@
             {#each shown as item (item.id)}
                 <a
                     href={activityLink(item)}
-                    class="flex gap-3 p-3.5 transition-colors duration-150 hover:bg-muted/30"
+                    class="flex cursor-pointer gap-3 p-3.5 transition-colors duration-150 hover:bg-muted/30"
                 >
                     <div class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg {actorColor(item.actor_name)}">
                         <span class="text-[10px] font-bold">{actorInitials(item.actor_name)}</span>
