@@ -824,6 +824,26 @@
             loadChannels();
         }
     });
+
+    // Non-admin deep-link guard. activeTab already falls back to the default
+    // tab when a non-admin deep-links to an admin-only section, so the correct
+    // panel renders — but the URL still says e.g. ?tab=billing. Rewrite it.
+    // After the redirect requestedTab becomes 'organization', so this effect
+    // re-runs once, finds the condition false, and does not re-fire the toast.
+    $effect(() => {
+        if (
+            getCurrentOrgRoles().length > 0 &&
+            !navIsAdmin &&
+            ADMIN_TAB_IDS.includes(requestedTab)
+        ) {
+            goto('?tab=organization', {
+                replaceState: true,
+                keepFocus: true,
+                noScroll: true,
+            });
+            toast.info('That section requires admin access');
+        }
+    });
 </script>
 
 <div class="max-w-6xl mx-auto space-y-8">
