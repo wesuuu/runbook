@@ -8,7 +8,7 @@
     import {
         SECTIONS,
         GROUP_LABELS,
-        type SettingsSection,
+        type SettingsSectionEntry,
         type SettingsTabId,
     } from './settingsSections';
 
@@ -58,7 +58,7 @@
 </script>
 
 {#snippet navItem(
-    section: SettingsSection,
+    section: SettingsSectionEntry,
     isActive: boolean,
     triggerProps: Record<string, unknown>,
 )}
@@ -66,11 +66,13 @@
     <Button
         variant="ghost"
         {...triggerProps}
-        onclick={() => onNavigate(section.id as SettingsTabId)}
+        onclick={() => onNavigate(section.id)}
         aria-current={isActive ? 'page' : undefined}
         class={cn(
             'relative w-full justify-start gap-3 min-h-11 px-3 font-normal',
             'text-muted-foreground hover:bg-muted hover:text-foreground',
+            // Collapsed icon-only rail (below lg): center the lone icon.
+            !railExpanded && 'justify-center px-0 lg:justify-start lg:px-3',
             isActive &&
                 'bg-card text-foreground font-semibold ring-1 ring-border',
         )}
@@ -104,7 +106,9 @@
 <nav
     aria-label="Settings sections"
     class={cn(
-        'shrink-0 transition-[width] duration-200',
+        // Pin the rail below the app's sticky top bar so it stays visible
+        // while a long settings panel scrolls.
+        'sticky top-20 shrink-0 transition-[width] duration-200',
         'w-[60px]',
         railExpanded && 'w-[232px]',
         'lg:w-[232px]',

@@ -152,5 +152,9 @@ describe('SettingsNav', () => {
         expect(getByText('Workspace').className).toContain('sr-only');
         // ...but every item still renders (inside the {#if showTooltips} branch).
         expect(getByRole('button', { name: /Teams/ })).toBeTruthy();
+        // ...and the lone icon is centered, not left-aligned.
+        expect(getByRole('button', { name: /Teams/ }).className).toContain(
+            'justify-center',
+        );
     });
 });

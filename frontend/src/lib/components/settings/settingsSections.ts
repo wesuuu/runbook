@@ -9,7 +9,7 @@ import {
     User,
     Palette,
     Bell,
-    ShieldCheck,
+    Scale,
 } from '@lucide/svelte';
 
 // `id` is `string` (not the narrower SettingsTabId) on purpose: SettingsTabId
@@ -37,10 +37,16 @@ export const SECTIONS = [
     { id: 'profile',       label: 'Profile',           group: 'account',   icon: User,        admin: false },
     { id: 'appearance',    label: 'Appearance',        group: 'account',   icon: Palette,     admin: false },
     { id: 'notifications', label: 'Notifications',     group: 'account',   icon: Bell,        admin: false },
-    { id: 'legal',         label: 'Legal',             group: 'account',   icon: ShieldCheck, admin: false },
+    { id: 'legal',         label: 'Legal',             group: 'account',   icon: Scale,       admin: false },
 ] as const satisfies readonly SettingsSection[];
 
 export type SettingsTabId = (typeof SECTIONS)[number]['id'];
+
+// Narrow element type of SECTIONS: each entry's `id` is the exact string
+// literal (SettingsTabId), unlike the `SettingsSection` interface whose `id`
+// is widened to `string` to avoid a circular reference. Consumers that read
+// an entry's `id` should type the entry as `SettingsSectionEntry`.
+export type SettingsSectionEntry = (typeof SECTIONS)[number];
 
 export const SETTINGS_TAB_IDS: readonly SettingsTabId[] = SECTIONS.map(
     (s) => s.id,

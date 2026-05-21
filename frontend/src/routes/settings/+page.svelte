@@ -3,7 +3,7 @@
     import { api } from '$lib/api';
     import { z } from 'zod';
     import { toast } from '$lib/toast';
-    import { getUser, getCurrentOrg, getOrgs, refreshUser, getUserPreferences, getToken, getCurrentOrgRoles } from '$lib/auth.svelte';
+    import { getUser, getCurrentOrg, getOrgs, refreshUser, getUserPreferences, getToken, getCurrentOrgRoles, isInitialized } from '$lib/auth.svelte';
     import { API_BASE } from '$lib/config';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
@@ -828,11 +828,14 @@
     // Non-admin deep-link guard. activeTab already falls back to the default
     // tab when a non-admin deep-links to an admin-only section, so the correct
     // panel renders — but the URL still says e.g. ?tab=billing. Rewrite it.
+    // Gated on isInitialized() (true once auth resolves, success OR failure)
+    // rather than a non-empty roles list: a user with genuinely no org roles
+    // still gets the URL corrected instead of being stranded on ?tab=billing.
     // After the redirect requestedTab becomes 'organization', so this effect
     // re-runs once, finds the condition false, and does not re-fire the toast.
     $effect(() => {
         if (
-            getCurrentOrgRoles().length > 0 &&
+            isInitialized() &&
             !navIsAdmin &&
             ADMIN_TAB_IDS.includes(requestedTab)
         ) {
@@ -1448,12 +1451,12 @@
                 <CardDescription>Configure AI providers for each capability</CardDescription>
             </CardHeader>
             <CardContent>
-                <AiSettingsTab isAdmin={isOrgAdmin} />
+                <AiSettingsTab isAdmin={navIsAdmin} />
             </CardContent>
         </Card>
 
     {:else if activeTab === 'templates'}
-        <TemplatesTab isAdmin={isOrgAdmin} />
+        <TemplatesTab isAdmin={navIsAdmin} />
     {:else if activeTab === 'billing'}
         <BillingTab />
 
