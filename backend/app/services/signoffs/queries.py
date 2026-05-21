@@ -18,6 +18,29 @@ from sqlalchemy.orm import selectinload
 from app.models.signoffs import GlpSignoff
 
 
+def missing_signoff_roles(
+    have_roles: set[str], glp_settings: dict
+) -> list[str]:
+    """Which required run sign-off roles are not yet present.
+
+    OPERATOR is always required. STUDY_DIRECTOR / QAU are gated by the
+    ``glp_settings`` flags. Single source of truth shared by
+    ``assert_run_can_close`` (the closure gate) and the dashboard's
+    awaiting-sign-off query, so the two never drift.
+    """
+    missing: list[str] = []
+    if "OPERATOR" not in have_roles:
+        missing.append("OPERATOR")
+    if (
+        glp_settings.get("require_study_director")
+        and "STUDY_DIRECTOR" not in have_roles
+    ):
+        missing.append("STUDY_DIRECTOR")
+    if glp_settings.get("require_qau") and "QAU" not in have_roles:
+        missing.append("QAU")
+    return missing
+
+
 async def list_active_signoffs(
     db: AsyncSession,
     entity_type: Literal["protocol", "run"],
