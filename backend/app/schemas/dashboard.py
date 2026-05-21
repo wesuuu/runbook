@@ -89,17 +89,3 @@ class ActivityPage(BaseModel):
     offset: int
     limit: int
 
-
-# --- Temporary import shim (F-0092) ---------------------------------------
-# The legacy ``get_dashboard`` endpoint still references these names. Keeping
-# them here lets ``app.main`` import cleanly while Tasks 6-8 are built, since
-# ``tests/conftest.py`` imports the whole app at collection time. Task 9
-# rewrites the endpoint and MUST delete this shim.
-class CompletionTrendItem(BaseModel):
-    date: str
-    count: int
-
-
-class PendingAnalyses(BaseModel):
-    total_images: int = 0
-    total_runs: int = 0
