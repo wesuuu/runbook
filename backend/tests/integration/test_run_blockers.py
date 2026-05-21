@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -15,10 +16,15 @@ from app.models.runs import Run, RunRoleAssignment
 from app.services.runs.blockers import list_blocked_runs
 from app.services.runs.graph_facts import extract_graph_facts
 
+# Runs carry a per-project-unique slug (F-0091 uq_runs_project_slug); a
+# monotonic counter keeps every test-created run distinct within its project.
+_seq = itertools.count(1)
+
 
 def _run(project_id, *, status="PLANNED", graph=None):
     return Run(
         name="R",
+        slug=f"blocker-run-{next(_seq)}",
         project_id=project_id,
         status=status,
         graph=graph or {"nodes": []},

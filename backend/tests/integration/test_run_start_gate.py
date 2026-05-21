@@ -18,6 +18,7 @@ async def planned_run(
 ) -> Run:
     run = Run(
         name="Start Gate Run",
+        slug="start-gate-run",
         project_id=test_project.id,
         status="PLANNED",
         graph={"nodes": []},
@@ -50,6 +51,7 @@ async def test_start_blocked_when_swimlane_unassigned(
 ):
     run = Run(
         name="Lane Gate Run",
+        slug="lane-gate-run",
         project_id=test_project.id,
         status="PLANNED",
         graph={
@@ -94,6 +96,7 @@ async def test_start_blocked_when_assignment_is_stale(
     # must keep rejecting it.
     run = Run(
         name="Stale Lane Run",
+        slug="stale-lane-run",
         project_id=test_project.id,
         status="PLANNED",
         graph={
