@@ -43,6 +43,29 @@ async def sample_run(db_session: AsyncSession, test_project) -> Run:
 
 
 @pytest_asyncio.fixture
+async def sample_completed_run(db_session: AsyncSession, test_project) -> Run:
+    """A minimal COMPLETED run for sign-off endpoint tests.
+
+    Run sign-offs (F-0080) are async §58.35 review of *completed* records,
+    so the POST /runs/{id}/signoffs endpoint only accepts a COMPLETED run.
+    """
+    run = Run(
+        name="Signoff Lifecycle Completed Run",
+        project_id=test_project.id,
+        status="COMPLETED",
+        completed_at=datetime.now(timezone.utc),
+        outcome="COMPLETED_NORMAL",
+        graph={"nodes": [], "edges": []},
+        execution_data={},
+        notes=[],
+        attachments=[],
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest_asyncio.fixture
 async def sample_protocol(
     db_session: AsyncSession, test_project, test_user: User
 ) -> Protocol:
@@ -94,13 +117,13 @@ def _isolated_storage_root(tmp_path, monkeypatch):
 async def test_post_run_signoff_creates_active_row(
     client,
     auth_headers,
-    sample_run,
+    sample_completed_run,
     sample_user_with_signature,
     _isolated_storage_root,
 ):
     """Happy path: OPERATOR/APPROVED returns 201 with signature path set."""
     res = await client.post(
-        f"/runs/{sample_run.id}/signoffs",
+        f"/runs/{sample_completed_run.id}/signoffs",
         headers=auth_headers,
         json={
             "role": "OPERATOR",
@@ -111,7 +134,7 @@ async def test_post_run_signoff_creates_active_row(
     assert res.status_code == 201, res.text
     body = res.json()
     assert body["role"] == "OPERATOR"
-    assert body["run_id"] == str(sample_run.id)
+    assert body["run_id"] == str(sample_completed_run.id)
     assert body["signature_image_path"] is not None
 
 
@@ -119,13 +142,13 @@ async def test_post_run_signoff_creates_active_row(
 async def test_post_run_signoff_rejects_invalid_role_for_run(
     client,
     auth_headers,
-    sample_run,
+    sample_completed_run,
     sample_user_with_signature,
     _isolated_storage_root,
 ):
     """ck_run_signoff_roles refuses SPONSOR on a run."""
     res = await client.post(
-        f"/runs/{sample_run.id}/signoffs",
+        f"/runs/{sample_completed_run.id}/signoffs",
         headers=auth_headers,
         json={
             "role": "SPONSOR",
@@ -134,6 +157,32 @@ async def test_post_run_signoff_rejects_invalid_role_for_run(
         },
     )
     assert res.status_code in (400, 422), res.text
+
+
+@pytest.mark.asyncio
+async def test_post_run_signoff_rejects_non_completed_run(
+    client,
+    auth_headers,
+    sample_run,
+    sample_user_with_signature,
+    _isolated_storage_root,
+):
+    """F-0080-D5: a PLANNED run has no finalized records to attest to.
+
+    The endpoint must reject the sign-off with 409 RUN_NOT_COMPLETED before
+    any GlpSignoff row is inserted.
+    """
+    res = await client.post(
+        f"/runs/{sample_run.id}/signoffs",
+        headers=auth_headers,
+        json={
+            "role": "OPERATOR",
+            "action": "APPROVED",
+            "attestation": "I performed this run accurately.",
+        },
+    )
+    assert res.status_code == 409, res.text
+    assert res.json()["detail"]["error"] == "RUN_NOT_COMPLETED"
 
 
 # --- Task 13: POST /protocols/{protocol_id}/signoffs ---------------
