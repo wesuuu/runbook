@@ -36,6 +36,7 @@
         completeRun as completeRunApi,
         reopenRun,
         updateRunReviewers,
+        ApiError,
     } from '$lib/api';
     import {
         GlpSettingsSchema,
@@ -144,6 +145,9 @@
         ),
     );
 
+    const sdRequired = $derived(Boolean(glpSettings?.require_study_director));
+    const sdUnassigned = $derived(sdRequired && !run?.study_director_id);
+
     function resolveRequiredRoles(settings: GlpSettings): GlpRole[] {
         const roles: GlpRole[] = ['OPERATOR'];
         if (settings.require_study_director) roles.push('STUDY_DIRECTOR');
@@ -247,6 +251,10 @@
     }
 
     async function handleCompleteWithOutcome() {
+        if (sdUnassigned) {
+            toast.error('Assign a Study Director before completing this run.');
+            return;
+        }
         if (!outcome) {
             toast.error('Pick a run outcome before completing.');
             return;
@@ -269,7 +277,14 @@
             await refreshSignoffs();
             showCompleteConfirm = false;
         } catch (e: unknown) {
-            error = e instanceof Error ? e.message : 'An error occurred';
+            if (
+                e instanceof ApiError &&
+                (e.data as { detail?: { error?: string } } | null)?.detail?.error === 'RUN_SD_UNASSIGNED'
+            ) {
+                toast.error('Assign a Study Director before completing this run.');
+            } else {
+                error = e instanceof Error ? e.message : 'An error occurred';
+            }
         } finally {
             completingRun = false;
         }
@@ -1201,6 +1216,13 @@
                                             outcomeNotes = n;
                                         }}
                                     />
+                                    {#if sdUnassigned}
+                                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                            <p class="text-sm font-medium text-amber-800">
+                                                Assign a Study Director before completing this run.
+                                            </p>
+                                        </div>
+                                    {/if}
                                     {#if unanalyzedCount > 0}
                                         <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
                                             <p class="text-sm font-medium text-amber-800">
