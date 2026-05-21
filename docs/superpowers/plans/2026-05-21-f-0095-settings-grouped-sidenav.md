@@ -134,8 +134,10 @@ Expected: PASS — 2 tests.
 
 - [ ] **Step 5: Verify the icon type compiles**
 
-Run: `npx svelte-check --tsconfig ./tsconfig.json --threshold error 2>&1 | grep -E 'settingsSections|error' | head`
-Expected: no error referencing `settingsSections.ts`.
+Run: `npm run check 2>&1 | grep -E 'ERROR|ERRORS [0-9]'`
+
+The repo has a pre-existing `npm run check` baseline of **54 errors** — none in files this plan creates, and exactly **2** in `routes/settings/+page.svelte`. `svelte-check` prints each error as `ERROR "<path>" <line>:<col> "<message>"`, so filter by file path, never by line number. After this step: **no `ERROR` line may reference `settingsSections.ts`**, and the `ERRORS` total must stay at 54.
+
 If `icon: Component` produces a type error against `@lucide/svelte` icons, change the import to `import type { Icon } from '@lucide/svelte';` and the field to `icon: typeof Icon;`, then re-run. Stop and use whichever compiles.
 
 - [ ] **Step 6: Commit**
@@ -288,7 +290,7 @@ Create `frontend/src/lib/components/settings/SettingsNav.svelte`:
         {#each groups as group (group.group)}
             <div class="flex flex-col gap-1">
                 <span
-                    class="px-3 pb-1 font-mono text-xs uppercase tracking-wider text-muted-foreground"
+                    class="px-3 pb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground"
                 >
                     {group.label}
                 </span>
@@ -303,7 +305,7 @@ Create `frontend/src/lib/components/settings/SettingsNav.svelte`:
                             'relative w-full justify-start gap-3 min-h-11 px-3 font-normal',
                             'text-muted-foreground hover:bg-muted hover:text-foreground',
                             isActive &&
-                                'bg-card text-foreground font-semibold shadow-sm ring-1 ring-border',
+                                'bg-card text-foreground font-semibold ring-1 ring-border',
                         )}
                     >
                         {#if isActive}
@@ -322,9 +324,7 @@ Create `frontend/src/lib/components/settings/SettingsNav.svelte`:
                             {section.label}
                         </span>
                         {#if section.admin}
-                            <Badge variant="outline" class="text-[10px]">
-                                Admin
-                            </Badge>
+                            <Badge variant="outline">Admin</Badge>
                         {/if}
                     </Button>
                 {/each}
@@ -357,21 +357,25 @@ Adds the `<1024px` behavior: a 60px icon-only rail, a tap-to-expand toggle, and 
 - Modify: `frontend/src/lib/components/settings/SettingsNav.svelte`
 - Modify: `frontend/src/lib/components/settings/SettingsNav.test.ts`
 
-- [ ] **Step 1: Write the failing test for the collapse toggle**
+- [ ] **Step 1: Write the failing tests for the responsive layer**
 
-In `frontend/src/lib/components/settings/SettingsNav.test.ts`, add a `matchMedia` stub and the toggle test. Add `beforeEach`/`afterEach` to the vitest import, and insert the `beforeEach`/`afterEach` and the new `it` block **inside** the existing `describe('SettingsNav', ...)`:
+Two new tests: the collapse toggle, and one that exercises the collapsed (`belowLg`) branch. The existing `matchMedia` stub returns `matches: false`, so without a dedicated `matches: true` test the entire tooltip/collapse code path is never executed (a "false green" — a crash there would pass CI).
+
+In `frontend/src/lib/components/settings/SettingsNav.test.ts`: change the vitest import to add `beforeEach`/`afterEach`, add a `tick` import from `svelte`, and insert the `beforeEach`/`afterEach` and the two new `it` blocks **inside** the existing `describe('SettingsNav', ...)`:
 
 ```ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { tick } from 'svelte';
 ```
 
 ```ts
-    // jsdom has no matchMedia; SettingsNav reads it in onMount.
-    beforeEach(() => {
+    // Factory for a jsdom matchMedia stub: jsdom has neither matchMedia
+    // (SettingsNav reads it in onMount) nor ResizeObserver (bits-ui Tooltip).
+    function stubMatchMedia(matches: boolean) {
         vi.stubGlobal(
             'matchMedia',
             vi.fn((query: string) => ({
-                matches: false,
+                matches,
                 media: query,
                 onchange: null,
                 addEventListener: vi.fn(),
@@ -380,6 +384,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
                 removeListener: vi.fn(),
                 dispatchEvent: vi.fn(),
             })),
+        );
+    }
+
+    beforeEach(() => {
+        stubMatchMedia(false);
+        vi.stubGlobal(
+            'ResizeObserver',
+            class {
+                observe() {}
+                unobserve() {}
+                disconnect() {}
+            },
         );
     });
     afterEach(() => {
@@ -395,12 +411,24 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
         await fireEvent.click(expand);
         expect(getByLabelText('Collapse navigation')).toBeTruthy();
     });
+
+    it('collapses group labels and renders items via the tooltip branch below the lg breakpoint', async () => {
+        stubMatchMedia(true); // viewport < 1024px
+        const { getByText, getByRole } = render(SettingsNav, {
+            props: { activeTab: 'organization', isAdmin: true, onNavigate: vi.fn() },
+        });
+        await tick(); // let onMount set belowLg and derivations settle
+        // On the collapsed icon-only rail the group label is visually hidden...
+        expect(getByText('Workspace').className).toContain('sr-only');
+        // ...but every item still renders (inside the {#if showTooltips} branch).
+        expect(getByRole('button', { name: /Teams/ })).toBeTruthy();
+    });
 ```
 
-- [ ] **Step 2: Run tests to verify the new one fails**
+- [ ] **Step 2: Run tests to verify the new ones fail**
 
 Run: `npx vitest run src/lib/components/settings/SettingsNav.test.ts`
-Expected: FAIL — `Unable to find a label with the text of: Expand navigation`. The 8 prior tests still PASS.
+Expected: both new tests FAIL — the toggle test with `Unable to find a label with the text of: Expand navigation`, and the collapsed-branch test because the Task 2 component's `Workspace` label has no `sr-only` class. The 8 prior tests still PASS.
 
 - [ ] **Step 3: Replace the component with the responsive version**
 
@@ -481,7 +509,7 @@ Overwrite `frontend/src/lib/components/settings/SettingsNav.svelte` with:
             'relative w-full justify-start gap-3 min-h-11 px-3 font-normal',
             'text-muted-foreground hover:bg-muted hover:text-foreground',
             isActive &&
-                'bg-card text-foreground font-semibold shadow-sm ring-1 ring-border',
+                'bg-card text-foreground font-semibold ring-1 ring-border',
         )}
     >
         {#if isActive}
@@ -502,7 +530,7 @@ Overwrite `frontend/src/lib/components/settings/SettingsNav.svelte` with:
         {#if section.admin}
             <Badge
                 variant="outline"
-                class={cn('text-[10px]', !railExpanded && 'hidden lg:inline-flex')}
+                class={cn(!railExpanded && 'hidden lg:inline-flex')}
             >
                 Admin
             </Badge>
@@ -525,7 +553,7 @@ Overwrite `frontend/src/lib/components/settings/SettingsNav.svelte` with:
                 <div class="flex flex-col gap-1">
                     <span
                         class={cn(
-                            'px-3 pb-1 font-mono text-xs uppercase tracking-wider text-muted-foreground',
+                            'px-3 pb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground',
                             !railExpanded && 'sr-only lg:not-sr-only',
                         )}
                     >
@@ -583,12 +611,14 @@ Overwrite `frontend/src/lib/components/settings/SettingsNav.svelte` with:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/lib/components/settings/SettingsNav.test.ts`
-Expected: PASS — 9 tests.
+Expected: PASS — 10 tests (2 data-module + 6 from Task 2 + 2 from Task 3).
 
 - [ ] **Step 5: Type-check the component**
 
-Run: `npx svelte-check --tsconfig ./tsconfig.json --threshold error 2>&1 | grep -E 'SettingsNav|error TS' | head`
-Expected: no error referencing `SettingsNav.svelte`. If the `Tooltip.Trigger` `child` snippet errors, confirm `props` is destructured as `{#snippet child({ props })}` and that the snippet spreads `triggerProps` onto `<Button>`.
+Run: `npm run check 2>&1 | grep -E 'ERROR|ERRORS [0-9]'`
+Expected: **no `ERROR` line referencing `SettingsNav.svelte`**; the `ERRORS` total stays at the 54-error baseline (see Task 1 Step 5). If the `Tooltip.Trigger` `child` snippet errors, confirm `props` is destructured as `{#snippet child({ props })}` and that the snippet spreads `triggerProps` onto `<Button>`.
+
+The `Tooltip.Trigger` + `{#snippet child({ props })}` + `<Button>` composition is the canonical bits-ui v2 pattern (the same `child` mechanism is used by `ContextMenu.Trigger` in `UnitOpNode.svelte`), and `<Button>` forwards `...restProps` to its `<button>` so the tooltip anchor binds. Type-checking confirms the wiring; that the tooltip *visually anchors* on the collapsed rail is confirmed in browser verification (Task 6 Step 4).
 
 - [ ] **Step 6: Commit**
 
@@ -629,7 +659,7 @@ import {
 
 - [ ] **Step 2: Replace the tab-id type, validation list, and `activeTab` derivation**
 
-Replace the current block (lines 36–46):
+Step 1 added import lines, so line numbers have shifted — anchor on content. Replace the block that begins with `type TabName =` and ends with the closing brace of the `setTab` function:
 
 ```ts
     type TabName = 'organization' | 'teams' | 'sites' | 'profile' | 'appearance' | 'notifications' | 'ai' | 'templates' | 'billing' | 'legal';
@@ -648,7 +678,8 @@ Replace the current block (lines 36–46):
 with:
 
 ```ts
-    const activeTab = $derived.by<SettingsTabId>(() => {
+    // requestedTab is the raw, validated ?tab= value from the URL.
+    const requestedTab = $derived.by<SettingsTabId>(() => {
         const t = $page.url.searchParams.get('tab');
         return SETTINGS_TAB_IDS.includes(t as SettingsTabId)
             ? (t as SettingsTabId)
@@ -659,31 +690,54 @@ with:
         goto(`?tab=${tab}`, { replaceState: false, keepFocus: true, noScroll: true });
     }
 
-    // Synchronous: org roles resolve during auth init, before this route
-    // renders, so admin items never pop in or out on first paint.
+    // navIsAdmin is the nav's admin gate. It is intentionally SEPARATE from
+    // the existing `isOrgAdmin` (defined later in this file): `isOrgAdmin`
+    // derives from the async-loaded `members` list and is false until that
+    // fetch lands — fine for the Organization tab's member UI, which renders
+    // only after the load. The nav must decide which sections to show on
+    // first paint, so it uses getCurrentOrgRoles(): auth resolves org roles
+    // before the root layout lets this route render (it gates on
+    // isInitialized()), so admin items never pop in or out.
     const navIsAdmin = $derived(getCurrentOrgRoles().includes('ADMIN'));
+
+    // activeTab is the *effective* tab actually rendered. A non-admin who
+    // deep-links to an admin-only section (e.g. ?tab=billing) is shown the
+    // default tab instead, so admin panels never mount for them and the
+    // {#key} content transition never double-fires. The URL itself is
+    // corrected separately by the guard $effect added in Task 5.
+    const activeTab = $derived(
+        !navIsAdmin && ADMIN_TAB_IDS.includes(requestedTab)
+            ? DEFAULT_TAB
+            : requestedTab,
+    );
 ```
 
 - [ ] **Step 3: Replace the tab-bar markup and open the content column**
 
-Replace the `<!-- Tabs -->` block (lines 802–884 — the comment plus the entire `<div class="flex border-b border-border overflow-x-auto"> … </div>`) with:
+Line numbers in this file shift as earlier steps edit it, so **anchor this edit on unique strings, not line numbers.** The tab bar is a single block: it starts with the comment line `<!-- Tabs -->` and ends with the `</div>` that closes `<div class="flex border-b border-border overflow-x-auto">` — that closing `</div>` is immediately followed by the unique comment `<!-- Organization Tab -->`.
+
+Replace the entire region **from `<!-- Tabs -->` up to (but not including) `<!-- Organization Tab -->`** with exactly:
 
 ```svelte
     <div class="flex gap-6 lg:gap-8 items-start">
         <SettingsNav {activeTab} isAdmin={navIsAdmin} onNavigate={setTab} />
         {#key activeTab}
-            <div class="flex-1 min-w-0" in:fade={{ duration: 150 }}>
+            <div class="flex-1 min-w-0" in:fade={{ duration: blockDuration() }}>
 ```
 
-Leave the `<!-- Organization Tab -->` comment and everything from `{#if activeTab === 'organization'}` onward exactly as-is.
+`blockDuration` is already imported in this file (alongside `listDuration` from `$lib/transitions`); it returns `0` when the user has `prefers-reduced-motion`, so the content transition respects that setting. Leave the `<!-- Organization Tab -->` comment and everything from `{#if activeTab === 'organization'}` onward exactly as-is.
 
 - [ ] **Step 4: Close the content column, key block, and flex wrapper**
 
-The panels currently end with `{/if}` (line 1520) followed by `</div>` (line 1521, which closes `max-w-6xl`). Change that closing region from:
+Anchor on unique strings, not line numbers. The 10-panel `{#if}`/`{:else if}` chain ends with a single `{/if}`, immediately followed by the `</div>` that closes the page container `<div class="max-w-6xl mx-auto space-y-8">`. That `</div>` is in turn immediately followed by the `<ConfirmDialog` element. So the `{/if}` + `</div>` + `<ConfirmDialog` sequence is unique — **include the `<ConfirmDialog …>` opening line in the `old_string` for uniqueness, and leave it unchanged in `new_string`.**
+
+Change:
 
 ```svelte
     {/if}
 </div>
+
+<ConfirmDialog
 ```
 
 to:
@@ -694,14 +748,17 @@ to:
         {/key}
     </div>
 </div>
+
+<ConfirmDialog
 ```
 
-This closes, in order: the content column, the `{#key}` block, the `flex gap-6` wrapper, and the original `max-w-6xl` container.
+This closes, in order: the content column, the `{#key}` block, the `flex gap-6` wrapper, and the original `max-w-6xl` container. (Match the exact existing indentation of the `{/if}`, `</div>`, and `<ConfirmDialog` lines when forming `old_string`.)
 
 - [ ] **Step 5: Type-check and confirm the page compiles**
 
-Run: `npx svelte-check --tsconfig ./tsconfig.json --threshold error 2>&1 | grep -E 'settings/\+page|error TS' | head`
-Expected: no error referencing `routes/settings/+page.svelte`. If `TabName` is still referenced anywhere in the file, replace each remaining `TabName` with `SettingsTabId` (the type is structurally identical).
+Run: `npm run check 2>&1 | grep -E 'ERROR|ERRORS [0-9]'`
+
+`routes/settings/+page.svelte` has exactly **2** pre-existing `ERROR` lines in the 54-error baseline (a `Property 'roles' does not exist` pair, unrelated to this work). After this task it must still show **exactly 2** `ERROR` lines for that file — count them; do not match on line numbers, which shift. If a 3rd appears, this task introduced it — most likely a leftover `TabName` reference. Replace every remaining `TabName` in the file with `SettingsTabId` (structurally identical) and re-run. The `ERRORS` total must stay at 54.
 
 - [ ] **Step 6: Run the existing frontend test suite**
 
@@ -726,18 +783,21 @@ A non-admin who opens `?tab=billing` directly would see the panel with no matchi
 
 - [ ] **Step 1: Add the guard `$effect`**
 
-In `frontend/src/routes/settings/+page.svelte`, immediately after the existing notifications auto-load `$effect` (the block ending at line ~793, just before `</script>`), add:
+The `requestedTab`/`activeTab` split from Task 4 already prevents an admin panel from *rendering* for a non-admin (`activeTab` falls back to the default). This `$effect` does the remaining job — correcting the URL so it no longer reads `?tab=billing`. It must therefore test `requestedTab` (the raw URL value); testing `activeTab` would never be true, since `activeTab` is already the sanitized effective tab.
+
+In `frontend/src/routes/settings/+page.svelte`, locate the existing notifications auto-load `$effect` (anchor on its body — it calls the channel loader when `activeTab === 'notifications'`) and add this new `$effect` immediately after it, still inside `<script>`:
 
 ```ts
-    // Non-admin deep-link guard: admin-only sections are hidden from the nav,
-    // so a non-admin who deep-links to one (e.g. ?tab=billing) would see a
-    // panel with no active nav item. Redirect them to the default tab.
-    // The roles-length check prevents a false redirect before roles resolve.
+    // Non-admin deep-link guard. activeTab already falls back to the default
+    // tab when a non-admin deep-links to an admin-only section, so the correct
+    // panel renders — but the URL still says e.g. ?tab=billing. Rewrite it.
+    // After the redirect requestedTab becomes 'organization', so this effect
+    // re-runs once, finds the condition false, and does not re-fire the toast.
     $effect(() => {
         if (
             getCurrentOrgRoles().length > 0 &&
             !navIsAdmin &&
-            ADMIN_TAB_IDS.includes(activeTab)
+            ADMIN_TAB_IDS.includes(requestedTab)
         ) {
             goto('?tab=organization', {
                 replaceState: true,
@@ -749,12 +809,12 @@ In `frontend/src/routes/settings/+page.svelte`, immediately after the existing n
     });
 ```
 
-`getCurrentOrgRoles`, `navIsAdmin`, `ADMIN_TAB_IDS`, `activeTab`, `goto`, and `toast` are all already imported/declared from Task 4 and the existing file.
+`getCurrentOrgRoles`, `navIsAdmin`, `ADMIN_TAB_IDS`, `requestedTab`, `goto`, and `toast` are all already imported or declared (Task 4 and the existing file).
 
 - [ ] **Step 2: Type-check**
 
-Run: `npx svelte-check --tsconfig ./tsconfig.json --threshold error 2>&1 | grep -E 'settings/\+page|error TS' | head`
-Expected: no error referencing `routes/settings/+page.svelte`.
+Run: `npm run check 2>&1 | grep -E 'ERROR|ERRORS [0-9]'`
+`routes/settings/+page.svelte` must still show **exactly 2** `ERROR` lines (the baseline pair), and the `ERRORS` total must stay at 54. A 3rd error in that file means this step introduced it — fix before continuing.
 
 - [ ] **Step 3: Run the frontend test suite**
 
@@ -776,13 +836,13 @@ git commit -m "feat(F-0095): redirect non-admins away from admin-only settings d
 
 - [ ] **Step 1: Run the full check (svelte-check + tsc)**
 
-Run: `npm run check`
-Expected: 0 errors. Fix any error this plan introduced before continuing.
+Run: `npm run check 2>&1 | tail -3`
+The repo has a pre-existing baseline of **54 errors / 47 warnings** (`svelte-check` ends with `COMPLETED … ERRORS 54 WARNINGS 47`). Expected after this plan: still **`ERRORS 54`** — no new errors. Specifically: zero `ERROR` lines referencing `settingsSections.ts`, `SettingsNav.svelte`, or `SettingsNav.test.ts`, and still exactly 2 for `routes/settings/+page.svelte`. Fix any error this plan introduced before continuing.
 
 - [ ] **Step 2: Run the full test suite**
 
 Run: `npm run test`
-Expected: all tests PASS, including the 9 in `SettingsNav.test.ts`.
+Expected: all tests PASS, including the 10 in `SettingsNav.test.ts`.
 
 - [ ] **Step 3: Production build**
 
@@ -791,10 +851,10 @@ Expected: build succeeds with no errors.
 
 - [ ] **Step 4: Note browser-only checks**
 
-The following are CSS / navigation behaviors that jsdom cannot evaluate; they are verified in the browser-verification step of `/implement-task`, not by unit tests:
+The following are CSS / navigation / interaction behaviors that jsdom cannot evaluate; they are verified in the browser-verification step of `/implement-task`, not by unit tests:
 - The 60px ⇄ 232px rail width swap at the 1024px breakpoint, and the toggle appearing only below it.
-- Tooltips appearing on the collapsed icon-only rail.
-- The non-admin deep-link redirect (`?tab=billing` → `?tab=organization` + toast).
+- Tooltips appearing on the collapsed icon-only rail, anchored to the correct trigger button (confirms the `Tooltip.Trigger` + `child` snippet wiring).
+- The non-admin deep-link redirect (`?tab=billing` → `?tab=organization` + toast), firing exactly once.
 - No horizontal overflow scroll at any viewport width.
 
 No commit — this task only confirms green state.
@@ -810,7 +870,7 @@ No commit — this task only confirms green state.
 - Collapse toggle, 60px/232px responsive width, tooltips, `matchMedia` SSR-safe + cleanup + breakpoint reset, `Tooltip.Provider` (spec §"Responsive behavior") → Task 3.
 - `+page.svelte` import swap, derived `SettingsTabId`, `navIsAdmin` synchronous, layout swap, `{#key}` + `fade` content transition (spec §"+page.svelte — wiring") → Task 4.
 - Non-admin deep-link guard `$effect` (spec §"Non-admin deep-link guard") → Task 5.
-- All 8 spec test cases → Tasks 1–3 (tests 1–5,7 in Task 2; test 6 in Task 3; test 8 in Task 1).
+- Test coverage → **10 tests**: 2 data-module (Task 1), 6 component — sections, admin filter, `aria-current`, navigation callback, Admin marker, accessible names (Task 2), and 2 responsive — collapse toggle plus the collapsed-`belowLg` branch (Task 3). The collapsed-branch test is a review-panel addition that closes a "false green" gap (the `matchMedia` stub previously never exercised the tooltip/collapse path).
 - The notifications inline `loadChannels()` is dropped with the tab bar; the existing `$effect` covers it (spec §"+page.svelte — wiring") → Task 4 removes the markup; no extra step needed.
 
 **Placeholder scan:** No "TBD"/"TODO"/vague steps — every code step shows complete code; every command shows expected output.
@@ -821,4 +881,29 @@ No commit — this task only confirms green state.
 
 ## Changes from review panel (2026-05-21)
 
-_To be appended after the implementation-plan review panel runs._
+The implementation-plan review panel ran four agents (`adversarial-risk-auditor`, `production-ops-reviewer`, `dry-reuse-auditor`, `uiux-design-reviewer`; `db-scalability-reviewer` skipped — no DB impact). Findings were verified against the codebase before applying. Changes made to the plan:
+
+**Applied — correctness:**
+- **Effective-tab split (adversarial H2).** Task 4 now derives `requestedTab` (raw URL value) *and* `activeTab` (effective: a non-admin's admin-only deep link falls back to `DEFAULT_TAB`). Previously a single `activeTab` followed the URL, so a non-admin opening `?tab=billing` would *mount the billing panel*, then the guard `$effect` would redirect — a double `{#key}` fade and a brief admin-panel mount. Now admin panels never mount for non-admins and the transition fires once. Task 5's guard `$effect` correspondingly tests `requestedTab`, not `activeTab` (testing `activeTab` could never be true post-split, making the guard dead code).
+- **Type-check baseline (adversarial H6).** The repo is **not** check-clean: `npm run check` reports a baseline of **54 errors / 47 warnings**, including 2 pre-existing errors in `routes/settings/+page.svelte`. Every per-task type-check step replaced its fragile `grep 'error TS'` (which misses Svelte-template errors) with `npm run check` filtered on the reliable `ERROR "<path>"` output format, asserting against the 54-error baseline and a per-file `ERROR`-line count. Task 6 Step 1 corrected from "Expected: 0 errors" to "Expected: `ERRORS 54`."
+- **String-anchored edits (adversarial H5).** Task 4 Steps 3–4 edit `+page.svelte` after earlier steps have already shifted its line numbers. Both steps now anchor on unique strings (`<!-- Tabs -->`, `<!-- Organization Tab -->`, the `<ConfirmDialog>` opening) instead of absolute line numbers.
+- **Collapsed-branch test (adversarial H3 / production-ops Finding 4).** The `matchMedia` stub only ever returned `matches: false`, so the entire collapse/tooltip code path was never executed in tests (a crash there would pass CI). Task 3 adds a second test that stubs `matches: true` and asserts the collapsed rail renders (group labels `sr-only`, items still reachable). Test total: 9 → 10.
+
+**Applied — UX polish (uiux-design-reviewer):**
+- **`prefers-reduced-motion` (blocking #2).** The content-column transition changed from `in:fade={{ duration: 150 }}` (a hardcoded literal that ignores reduced-motion) to `in:fade={{ duration: blockDuration() }}`, matching the eight existing `fade` usages already in `+page.svelte`. `blockDuration()` returns `0` under `prefers-reduced-motion`.
+- **Active-state noise.** Dropped `shadow-sm` from the active nav item — the teal accent bar + `bg-card` + `ring-1` already give a clear card-chip; the shadow was a fifth redundant signal on a flat rail.
+- **Admin badge legibility.** Removed the `text-[10px]` override (below the theme's smallest type token); the `Badge` primitive's default `text-xs` is used instead.
+- **Group-label spacing.** Group-label bottom padding `pb-1` → `pb-2`.
+
+**Verified and rejected (recorded so they are not re-raised):**
+- **Roles not synchronous (adversarial B1, "blocker").** *False.* `frontend/src/routes/+layout.svelte` gates all route rendering behind `{#if !isInitialized()}`, and `initialize()` awaits `loadOrgs()` → `refreshCurrentOrgRoles()`. Org roles are fully resolved before the settings route renders, so the spec's synchronous `getCurrentOrgRoles()` admin gate has no pop-in flash. No change.
+- **Ghost-variant green hover flash (uiux blocking #1).** *Non-issue.* `cn()` (clsx + tailwind-merge) dedupes conflicting `hover:bg-*` utilities — the nav item's `hover:bg-muted` wins over the ghost variant's `hover:bg-accent`. No change.
+- **Icon package — switch to `lucide-svelte` (production-ops Finding 1).** *Rejected.* Both packages are installed, but `@lucide/svelte` is the modern Svelte 5 package, the majority in-repo usage (25 files vs 16), and what the shadcn-svelte primitives themselves import (`dropdown-menu-radio-item.svelte` → `@lucide/svelte/icons/circle`). Both `panel-left-open` and `panel-left-close` exist there. Plan keeps `@lucide/svelte`.
+- **Two admin flags (production-ops Finding 3 / dry-reuse).** Kept `navIsAdmin` separate from the existing `isOrgAdmin` rather than consolidating: `isOrgAdmin` derives from the async-loaded `members` list (false until that fetch lands — would pop-in), and re-pointing it at `getCurrentOrgRoles()` would change the Organization tab's self-role-change reactivity — out of scope. Resolved with an explicit explanatory comment at the `navIsAdmin` declaration (Task 4 Step 2).
+
+**Considered, no change:**
+- `child`-snippet Tooltip wiring (adversarial H4 / production-ops Finding 2): the `Tooltip.Trigger` + `{#snippet child({ props })}` + `<Button>` composition is the canonical bits-ui v2 pattern — the same `child` mechanism is proven in-repo (`ContextMenu.Trigger` in `UnitOpNode.svelte`), and `<Button>` forwards `...restProps` to its `<button>`. Kept; Task 6 Step 4 adds an explicit browser check that the tooltip anchors correctly.
+- `triggerProps: Record<string, unknown>` (dry-reuse, optional): left as-is — bits-ui exposes no cleaner public type for the `child` snippet's `props`.
+- Collapse toggle `mt-auto` bottom-anchoring (uiux): `mt-6` kept — bottom-anchoring needs the rail to stretch, which conflicts with the `items-start` content layout for marginal benefit. Browser verification (Task 6 Step 4) confirms placement reads acceptably.
+
+**Routed out of scope (unchanged from spec):** ⌘K command palette, shared `VerticalNav` extraction for the projects page, silent role-load failure handling, persisting `railExpanded` across reloads — all already listed under the plan's Self-Review "Out of scope" and the spec's scope boundaries.
