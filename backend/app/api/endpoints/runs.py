@@ -93,6 +93,11 @@ from app.services.signoffs.queries import (
     invalidate_active_signoffs,
     list_active_signoffs,
 )
+from app.services.signoffs.requests import (
+    fulfill_signoff_request,
+    on_run_completed,
+    on_run_reopened,
+)
 from app.services.signoffs.service import create_signoff
 
 logger = logging.getLogger(__name__)
@@ -807,6 +812,11 @@ async def update_run(
         run_obj.id,
         changes,
     )
+
+    if new_status == "COMPLETED" and current_status != "COMPLETED":
+        await on_run_completed(db, run_obj, background_tasks)
+    elif new_status == "EDITED" and current_status == "COMPLETED":
+        await on_run_reopened(db, run_obj, background_tasks)
 
     await db.commit()
     await db.refresh(run_obj)
@@ -1907,15 +1917,19 @@ async def create_run_signoff(
 async def complete_run(
     run_id: UUID,
     payload: RunCompleteRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RunResponse:
     """Transition an ACTIVE/EDITED run to COMPLETED.
 
-    Gates closure on the GLP sign-off matrix resolved from the linked
-    protocol's ``graph["glpSettings"]`` snapshot (see
-    :func:`app.services.runs.validation.assert_run_can_close`). Records the
-    outcome, optional outcome_notes, and a UTC ``completed_at`` timestamp.
+    Gates closure on the OPERATOR sign-off check
+    (:func:`app.services.runs.validation.assert_run_can_close`) and the GLP
+    completability check (:func:`app.services.signoffs.requests.assert_run_completable`).
+    Records the outcome, optional outcome_notes, and a UTC ``completed_at``
+    timestamp. Generates GLP sign-off requests (Study Director, QAU) via
+    :func:`app.services.signoffs.requests.on_run_completed` and fans out
+    RUN_SIGNOFF_REQUESTED notifications to each request's recipients.
     """
     run = await get_or_404(db, Run, run_id)
     status_str = _run_status_str(run)
@@ -1939,6 +1953,7 @@ async def complete_run(
     run.outcome_notes = payload.outcome_notes
     run.completed_at = datetime.now(timezone.utc)
 
+    await on_run_completed(db, run, background_tasks)
     await db.commit()
     await db.refresh(run)
     return RunResponse.model_validate(run)
@@ -1954,6 +1969,7 @@ async def complete_run(
 async def reopen_run(
     run_id: UUID,
     payload: RunReopenRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RunResponse:
@@ -1961,6 +1977,9 @@ async def reopen_run(
 
     Transitions the run back to EDITED, clears ``completed_at``, and writes a
     ``run.reopen`` audit entry capturing the supplied justification reason.
+    Cancels all OPEN sign-off requests via
+    :func:`app.services.signoffs.requests.on_run_reopened` and fans out
+    RUN_SIGNOFF_CANCELLED notifications to each previously-assigned reviewer.
     """
     run = await get_or_404(db, Run, run_id)
     status_str = _run_status_str(run)
@@ -1986,6 +2005,7 @@ async def reopen_run(
         run.id,
         {"reason": payload.reason},
     )
+    await on_run_reopened(db, run, background_tasks)
     await db.commit()
     await db.refresh(run)
     return RunResponse.model_validate(run)
@@ -2009,6 +2029,7 @@ _RUN_STATE_TRANSITIONS = {
 async def patch_run_state(
     run_id: UUID,
     payload: RunStateUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RunResponse:
@@ -2020,6 +2041,10 @@ async def patch_run_state(
     matching ``execution_data[step_id].edit_reason`` so downstream readers
     (PDFs, audit log views) can render them. A COMPLETED run with active
     sign-offs cannot be edited without first reopening it.
+    ACTIVE/EDITED -> COMPLETED generates GLP sign-off requests via
+    :func:`app.services.signoffs.requests.on_run_completed`.
+    COMPLETED -> EDITED cancels open sign-off requests via
+    :func:`app.services.signoffs.requests.on_run_reopened`.
     """
     run = await get_or_404(db, Run, run_id)
     current_status = _run_status_str(run)
@@ -2075,6 +2100,11 @@ async def patch_run_state(
             "edit_reasons": payload.edit_reasons or {},
         },
     )
+
+    if new_status == "COMPLETED" and current_status != "COMPLETED":
+        await on_run_completed(db, run, background_tasks)
+    elif new_status == "EDITED" and current_status == "COMPLETED":
+        await on_run_reopened(db, run, background_tasks)
 
     await db.commit()
     await db.refresh(run)
