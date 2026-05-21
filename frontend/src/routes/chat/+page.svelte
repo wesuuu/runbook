@@ -148,10 +148,6 @@
     }
 </script>
 
-<svelte:head>
-    <title>Chat - Batchrite</title>
-</svelte:head>
-
 <div class="flex h-[calc(100vh-57px)] overflow-hidden">
     <!-- Sidebar -->
     <div
@@ -410,7 +406,7 @@
                     <div in:fade={{ duration: blockDuration() }} class="flex justify-start">
                         <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 max-w-[85%] text-sm">
                             <p class="text-amber-700 dark:text-amber-300 mb-2">
-                                No reply yet — the request may have been interrupted.
+                                This request was interrupted and did not complete.
                             </p>
                             <div class="flex gap-3 text-xs">
                                 <button
@@ -423,7 +419,7 @@
                                     type="button"
                                     class="text-amber-700/70 dark:text-amber-300/70 hover:brightness-125 cursor-pointer transition-all duration-150"
                                     onclick={dismissStalePending}
-                                >Keep waiting</button>
+                                >Dismiss</button>
                             </div>
                         </div>
                     </div>

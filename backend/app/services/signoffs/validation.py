@@ -101,18 +101,46 @@ def assert_attestation_and_image_present(payload: SignoffPayload) -> None:
 
     Non-APPROVED actions (REJECTED, REQUESTED_CHANGES) are allowed without
     either field.
+
+    The raised 400 names the field(s) actually missing: ``ATTESTATION_REQUIRED``
+    when only the attestation is absent, ``SIGNATURE_REQUIRED`` when only the
+    signature is absent, ``SIGNOFF_INCOMPLETE`` when both are. ``detail`` also
+    carries a human-readable ``message`` and a ``missing`` list so clients
+    don't have to map the machine code themselves.
     """
     if payload.action != "APPROVED":
         return
-    if not payload.attestation or not payload.signature_image_path:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "ATTESTATION_REQUIRED",
-                "role": payload.role,
-                "action": payload.action,
-            },
+    missing: list[str] = []
+    if not payload.attestation:
+        missing.append("attestation")
+    if not payload.signature_image_path:
+        missing.append("signature")
+    if not missing:
+        return
+    if missing == ["attestation"]:
+        error_code = "ATTESTATION_REQUIRED"
+        message = "Attestation text is required to sign off."
+    elif missing == ["signature"]:
+        error_code = "SIGNATURE_REQUIRED"
+        message = (
+            "A saved signature is required to sign off. "
+            "Add one in Settings → Profile."
         )
+    else:
+        error_code = "SIGNOFF_INCOMPLETE"
+        message = (
+            "Attestation text and a saved signature are required to sign off."
+        )
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "error": error_code,
+            "message": message,
+            "missing": missing,
+            "role": payload.role,
+            "action": payload.action,
+        },
+    )
 
 
 async def assert_qau_independent(

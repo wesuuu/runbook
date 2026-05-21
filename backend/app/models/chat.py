@@ -50,6 +50,12 @@ class ChatSession(Base, UUIDMixin, TimestampMixin):
     external_protocol_cache: Mapped[dict[str, str]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
+    # BUG-005: heartbeat stamped while a chat turn runs; refreshed every ~15s
+    # and cleared to NULL when the assistant message lands. A stale/NULL value
+    # means no turn is live — see services/ai/turn_status.py.
+    active_turn_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     # Relationships
     messages: Mapped[list["ChatMessage"]] = relationship(

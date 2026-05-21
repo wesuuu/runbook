@@ -3,6 +3,7 @@
     import { getUser } from '$lib/auth.svelte';
     import type { RunNote } from '$lib/schemas';
     import { Button } from '$lib/components/ui/button';
+    import { statusLabel } from '$lib/components/project/projectUtils';
 
     let {
         runId,
@@ -60,9 +61,17 @@
             <div class="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                 <span>{note.author_name}</span>
                 <span>{new Date(note.created_at).toLocaleString()}</span>
-                <span class="px-1.5 py-0.5 bg-muted rounded text-[10px] font-medium">
-                    {note.run_status}
-                </span>
+                {#if note.run_status}
+                    <!-- Captures the run's stage when the note was written.
+                         Prefixed + humanised so a bare "ACTIVE" isn't read
+                         as a lifecycle status of the note itself (#36). -->
+                    <span
+                        class="px-1.5 py-0.5 bg-muted rounded text-[10px] font-medium"
+                        title="The run was in this stage when the note was added"
+                    >
+                        Run: {statusLabel(note.run_status)}
+                    </span>
+                {/if}
                 {#if note.flags?.includes('anomaly')}
                     <span class="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-semibold">
                         ANOMALY

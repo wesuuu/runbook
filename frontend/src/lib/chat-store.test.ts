@@ -528,3 +528,83 @@ describe('chat-store skill activation (F-0089)', () => {
         });
     });
 });
+
+describe('chat-store turn-liveness recovery (BUG-005)', () => {
+    beforeEach(async () => {
+        vi.restoreAllMocks();
+        const api = (await import('$lib/api')).api as unknown as {
+            get: ReturnType<typeof vi.fn>;
+        };
+        api.get.mockReset();
+    });
+
+    const userMsg = {
+        id: 'u1', session_id: 'S', role: 'user', content: 'slow question',
+        metadata_: null, created_at: '2026-05-20T10:00:00Z',
+    };
+    const baseDetail = {
+        user_id: 'U1', org_id: 'O1', title: 'New Chat', status: 'ACTIVE',
+        context_document_ids: null, created_at: '2026-01-01',
+        updated_at: '2026-01-01', messages: [userMsg],
+    };
+
+    it('keeps polling without a banner when the server reports the turn in progress', async () => {
+        // Fake timers so the 2500ms recovery poll this test arms does not
+        // leak a live timer into sibling tests.
+        vi.useFakeTimers();
+        try {
+            const api = (await import('$lib/api')).api as unknown as {
+                get: ReturnType<typeof vi.fn>;
+            };
+            api.get.mockResolvedValueOnce({
+                ...baseDetail, id: 'S-live', turn_in_progress: true,
+            });
+
+            await store.selectSession('S-live');
+
+            expect(store.getStalePendingMessage()).toBeNull();
+            expect(store.isSending()).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('shows the retry banner immediately when the server reports no live turn', async () => {
+        const api = (await import('$lib/api')).api as unknown as {
+            get: ReturnType<typeof vi.fn>;
+        };
+        api.get.mockResolvedValueOnce({
+            ...baseDetail, id: 'S-dead', turn_in_progress: false,
+        });
+
+        await store.selectSession('S-dead');
+
+        expect(store.getStalePendingMessage()?.content).toBe('slow question');
+    });
+
+    it('surfaces the banner when the turn dies mid-poll', async () => {
+        vi.useFakeTimers();
+        try {
+            const api = (await import('$lib/api')).api as unknown as {
+                get: ReturnType<typeof vi.fn>;
+            };
+            api.get
+                .mockResolvedValueOnce({
+                    ...baseDetail, id: 'S-poll', turn_in_progress: true,
+                })
+                .mockResolvedValueOnce({
+                    ...baseDetail, id: 'S-poll', turn_in_progress: false,
+                });
+
+            await store.selectSession('S-poll');
+            expect(store.getStalePendingMessage()).toBeNull();
+
+            await vi.advanceTimersByTimeAsync(2500); // fire the scheduled poll
+
+            expect(store.getStalePendingMessage()?.content).toBe('slow question');
+            expect(store.isSending()).toBe(false);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});

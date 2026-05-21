@@ -11,35 +11,54 @@ export interface CanCloseResult {
 }
 
 /**
+ * The GLP sign-off roles a run must collect before it can be completed.
+ *
+ * A run is GLP iff its protocol enables a reviewer role —
+ * `require_study_director` or `require_qau`. That is the same signal the
+ * backend uses to gate run completion, and the one the protocol editor
+ * uses to derive `protocol.requires_approval`. A basic (non-GLP)
+ * protocol enables neither, so its runs need no sign-off at all and this
+ * returns an empty list — no sign-off section should be shown (#18).
+ *
+ * For a GLP run the OPERATOR sign-off is always required; STUDY_DIRECTOR
+ * and QAU are each added when their flag is set.
+ */
+export function resolveRequiredRoles(settings: GlpSettings): GlpRole[] {
+    if (!settings.require_study_director && !settings.require_qau) {
+        return [];
+    }
+    const roles: GlpRole[] = ['OPERATOR'];
+    if (settings.require_study_director) {
+        roles.push('STUDY_DIRECTOR');
+    }
+    if (settings.require_qau) {
+        roles.push('QAU');
+    }
+    return roles;
+}
+
+/**
  * Frontend mirror of the backend `assert_run_can_close` predicate.
  *
  * Validates that a run has the required GLP signoffs before it can be
  * closed/completed. Backend remains the source of truth — this is a
  * preflight check to surface errors before the user submits.
  *
- * A run requires:
- * - An OPERATOR signoff (always)
- * - A STUDY_DIRECTOR signoff if `require_study_director` is set
- * - A QAU signoff if `require_qau` is set
+ * The required roles come from {@link resolveRequiredRoles}: a basic
+ * (non-GLP) run requires none, so it always passes; a GLP run requires
+ * OPERATOR plus whichever reviewer roles its settings enable.
  */
 export function validateCanCloseRun(
     run: Run,
     settings: GlpSettings,
     activeSignoffs: GlpSignoffResponse[],
 ): CanCloseResult {
-    const have = new Set<GlpRole>(activeSignoffs.map((s) => s.role));
-    const missing: GlpRole[] = [];
-    if (!have.has('OPERATOR')) {
-        missing.push('OPERATOR');
-    }
-    if (settings.require_study_director && !have.has('STUDY_DIRECTOR')) {
-        missing.push('STUDY_DIRECTOR');
-    }
-    if (settings.require_qau && !have.has('QAU')) {
-        missing.push('QAU');
-    }
     // run is part of the signature for future expansion (per-step checks)
     // and to mirror the backend predicate exactly.
     void run;
+    const have = new Set<GlpRole>(activeSignoffs.map((s) => s.role));
+    const missing = resolveRequiredRoles(settings).filter(
+        (role) => !have.has(role),
+    );
     return { ok: missing.length === 0, missing };
 }

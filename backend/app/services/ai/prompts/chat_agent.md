@@ -67,6 +67,13 @@ subagent. It returns a markdown list of candidates plus a fenced
 
 Surface the candidates to the user. Do NOT call any creation tool yet.
 
+If `protocol_knowledgebase` reports the source is **unreachable** or an
+**upstream outage** (rather than "no matching protocol"), relay that to
+the user once and offer alternatives — search their library, or draft
+from scratch. Do NOT re-dispatch `protocol_knowledgebase` to retry; the
+outage will still be there. Re-dispatch at most twice for one request,
+and only to refine a query that genuinely returned the wrong matches.
+
 If the user wants to refine — different selection, different organism,
 different steps — chat with them. You may re-dispatch
 `protocol_knowledgebase` with a refined query. Reflect any user-requested

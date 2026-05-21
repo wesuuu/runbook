@@ -8,11 +8,16 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 
 from app.core.config import settings
-from app.services.ai.subagents.protocol_knowledgebase import rate_limit
+from app.services.ai.subagents.protocol_knowledgebase import openwetware, rate_limit
 from app.services.ai.subagents.protocol_knowledgebase import tools as kb
+
+
+async def _noop_sleep(*_args, **_kwargs):
+    """Stand-in for asyncio.sleep so the retry backoff doesn't slow tests."""
 
 FIX_DIR = Path(__file__).parent.parent / "fixtures" / "openwetware"
 
@@ -37,6 +42,8 @@ def _fake_get(json_path: Path):
     payload = json.loads(json_path.read_text())
 
     class _Resp:
+        status_code = 200
+
         def raise_for_status(self):
             pass
 
@@ -113,6 +120,40 @@ async def test_fetch_returns_payload_and_audits(_enabled):
     assert payload.steps[2].duration_min == 2  # 90 s -> ceil(1.5)
     assert ctx.deps.tool_calls[-1]["tool"] == "fetch_openwetware_protocol"
     assert ctx.deps.tool_calls[-1]["source_url"] == url
+
+
+@pytest.mark.asyncio
+async def test_search_recovers_when_source_unreachable(_enabled, monkeypatch):
+    """A flaky OpenWetWare connection must not bubble an exception through
+    the task tool — search returns total=0 with an outage message so the
+    subagent can report it instead of the parent re-dispatching in a loop."""
+    monkeypatch.setattr(openwetware.asyncio, "sleep", _noop_sleep)
+
+    async def _raise(self, url, params=None, timeout=None):
+        raise httpx.ConnectError("connection reset")
+
+    ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
+    with patch("httpx.AsyncClient.get", new=_raise):
+        result = await kb.search_openwetware(ctx, "agarose gel electrophoresis")
+    assert result.total == 0
+    assert result.message and "unreachable" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_fetch_recovers_when_source_unreachable(_enabled, monkeypatch):
+    """A transport failure on fetch returns a recoverable payload (error set,
+    no steps) so the subagent reports the outage rather than crashing."""
+    monkeypatch.setattr(openwetware.asyncio, "sleep", _noop_sleep)
+
+    async def _raise(self, url, params=None, timeout=None):
+        raise httpx.ReadTimeout("timed out")
+
+    ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
+    url = "https://openwetware.org/wiki/Agarose_gel_electrophoresis"
+    with patch("httpx.AsyncClient.get", new=_raise):
+        payload = await kb.fetch_openwetware_protocol(ctx, url)
+    assert payload.steps == []
+    assert payload.error and "unreachable" in payload.error.lower()
 
 
 @pytest.mark.asyncio

@@ -40,9 +40,13 @@ def test_assert_attestation_and_image_present_fails_for_approved_without_attesta
         assert_attestation_and_image_present(payload)
     assert exc.value.status_code == 400
     assert exc.value.detail["error"] == "ATTESTATION_REQUIRED"
+    assert exc.value.detail["missing"] == ["attestation"]
+    assert isinstance(exc.value.detail["message"], str)
 
 
 def test_assert_attestation_and_image_present_fails_for_approved_without_image():
+    """When only the signature is missing the error code names the signature,
+    not the attestation (which was supplied)."""
     payload = SignoffPayload(
         role="QAU",
         action="APPROVED",
@@ -51,7 +55,22 @@ def test_assert_attestation_and_image_present_fails_for_approved_without_image()
     )
     with pytest.raises(HTTPException) as exc:
         assert_attestation_and_image_present(payload)
-    assert exc.value.detail["error"] == "ATTESTATION_REQUIRED"
+    assert exc.value.detail["error"] == "SIGNATURE_REQUIRED"
+    assert exc.value.detail["missing"] == ["signature"]
+    assert isinstance(exc.value.detail["message"], str)
+
+
+def test_assert_attestation_and_image_present_fails_for_approved_without_either():
+    payload = SignoffPayload(
+        role="QAU",
+        action="APPROVED",
+        attestation=None,
+        signature_image_path=None,
+    )
+    with pytest.raises(HTTPException) as exc:
+        assert_attestation_and_image_present(payload)
+    assert exc.value.detail["error"] == "SIGNOFF_INCOMPLETE"
+    assert exc.value.detail["missing"] == ["attestation", "signature"]
 
 
 def test_assert_attestation_and_image_present_passes_for_approved_with_both():
@@ -508,13 +527,23 @@ async def test_validate_signoff_role_assignable_passes_with_permission():
     user_id = uuid4()
     protocol_id = uuid4()
 
+    # Protocol carries no GLP designation, so authorization falls through
+    # from the GLP-designation shortcut to the project/org permission check.
+    mock_protocol = MagicMock()
+    mock_protocol.graph = {}
+    mock_proto_result = MagicMock()
+    mock_proto_result.scalar_one_or_none.return_value = mock_protocol
+
+    db = AsyncMock()
+    db.execute.return_value = mock_proto_result
+
     with patch(
         "app.services.signoffs.validation.check_permission",
         new_callable=AsyncMock,
         return_value=True,
     ) as mock_check:
         await validate_signoff_role_assignable(
-            db=AsyncMock(),
+            db=db,
             entity_type="protocol",
             entity_id=protocol_id,
             user_id=user_id,
@@ -529,6 +558,15 @@ async def test_validate_signoff_role_assignable_raises_403_without_permission():
     user_id = uuid4()
     protocol_id = uuid4()
 
+    # No GLP designation on the protocol → falls through to check_permission.
+    mock_protocol = MagicMock()
+    mock_protocol.graph = {}
+    mock_proto_result = MagicMock()
+    mock_proto_result.scalar_one_or_none.return_value = mock_protocol
+
+    db = AsyncMock()
+    db.execute.return_value = mock_proto_result
+
     with patch(
         "app.services.signoffs.validation.check_permission",
         new_callable=AsyncMock,
@@ -536,7 +574,7 @@ async def test_validate_signoff_role_assignable_raises_403_without_permission():
     ):
         with pytest.raises(HTTPException) as exc:
             await validate_signoff_role_assignable(
-                db=AsyncMock(),
+                db=db,
                 entity_type="protocol",
                 entity_id=protocol_id,
                 user_id=user_id,

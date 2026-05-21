@@ -165,7 +165,7 @@
                     <!-- Desktop table -->
                     <div class="hidden sm:block">
                         <Table.Root>
-                            <Table.Caption>A list of your recent projects.</Table.Caption>
+                            <Table.Caption>All projects in your organization.</Table.Caption>
                             <Table.Header>
                                 <Table.Row>
                                     <Table.Head>Name</Table.Head>

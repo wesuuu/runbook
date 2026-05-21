@@ -33,7 +33,15 @@
     let attestation = $state(defaultAttestation);
     let submitting = $state(false);
     let errorMessage = $state<string | null>(null);
-    const canSubmit = $derived(attestation.trim().length > 0 && !submitting);
+    const hasSignature = $derived(
+        signatureImageUrl !== null && signatureImageUrl.trim().length > 0,
+    );
+    // An APPROVED sign-off requires a saved signature image (backend rejects
+    // it otherwise), so block confirm until one is on file rather than letting
+    // the user submit a request that can only fail.
+    const canSubmit = $derived(
+        attestation.trim().length > 0 && hasSignature && !submitting,
+    );
     const cfrCite = $derived(
         role === 'QAU'
             ? '§58.35'
@@ -128,8 +136,8 @@
                         <span
                             class="text-sm italic text-muted-foreground"
                         >
-                            No signature on file — set one in Settings →
-                            Appearance
+                            No signature on file — add one in Settings →
+                            Profile before signing off
                         </span>
                     {/if}
                     <span class="text-sm font-medium">{signerName}</span>

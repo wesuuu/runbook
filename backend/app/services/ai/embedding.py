@@ -71,7 +71,7 @@ async def embed_texts(
 
         if provider == "ollama":
             embeddings = await _embed_ollama(
-                batch, model_name, base_url, context_window
+                batch, model_name, base_url, context_window, api_key
             )
         elif provider in ("openai", "anthropic", "google"):
             embeddings = await _embed_openai_compatible(
@@ -105,9 +105,16 @@ async def _embed_ollama(
     model: str,
     base_url: Optional[str],
     num_ctx: int = 8192,
+    api_key: Optional[str] = None,
 ) -> list[list[float]]:
-    """Call Ollama's /api/embed endpoint."""
+    """Call Ollama's /api/embed endpoint.
+
+    A local Ollama daemon needs no auth, but Ollama Cloud
+    (``https://ollama.com``) requires a Bearer token — send one whenever
+    an API key is configured so the same code path serves both.
+    """
     url = (base_url or "http://localhost:11434").rstrip("/")
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
     async with httpx.AsyncClient(timeout=120) as client:
         # Ollama /api/embed supports batch input
@@ -118,6 +125,7 @@ async def _embed_ollama(
                 "input": texts,
                 "options": {"num_ctx": num_ctx},
             },
+            headers=headers,
         )
         if resp.status_code != 200:
             raise EmbeddingError(

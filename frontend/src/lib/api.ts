@@ -3,6 +3,7 @@ import { streamSse, type SseEvent } from '$lib/ai/sse-stream';
 import { getToken, logout } from '$lib/auth.svelte';
 import { API_BASE } from '$lib/config';
 import { _validateResponse, type RequestOptions } from '$lib/apiValidation';
+import { extractErrorMessage } from '$lib/apiError';
 import {
     SubscriptionStateSchema,
     PortalSessionResponseSchema,
@@ -76,20 +77,7 @@ export async function _handleErrorResponse(response: Response, fallbackMessage: 
     try {
         const errorJson = await response.json();
         errorData = errorJson;
-        const detail = errorJson?.detail;
-        if (typeof detail === 'string') {
-            errorMessage = detail;
-        } else if (
-            detail &&
-            typeof detail === 'object' &&
-            typeof detail.message === 'string'
-        ) {
-            // Structured errors (e.g. SLUG_CONFLICT) carry { code, message }.
-            // Surface the human message; the code stays on `data` for callers.
-            errorMessage = detail.message;
-        } else if (typeof errorJson?.message === 'string') {
-            errorMessage = errorJson.message;
-        }
+        errorMessage = extractErrorMessage(errorJson, fallbackMessage);
     } catch {
         // Response body not JSON
     }

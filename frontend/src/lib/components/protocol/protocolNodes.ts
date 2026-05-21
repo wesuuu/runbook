@@ -20,6 +20,43 @@ export function extractDefaultParams(paramSchema: any): Record<string, any> {
     return defaultParams;
 }
 
+export interface NodeParamSummary {
+    label: string;
+    value: string;
+}
+
+/**
+ * Format a node's parameter values for the inline card summary.
+ *
+ * Iterates the schema's declared property order — NOT the params object's
+ * key order. `node.data.params` round-trips through PostgreSQL JSONB, which
+ * does not preserve key insertion order, so iterating params made the
+ * 4-row inline summary show a different, arbitrary subset across reloads
+ * (#12). Driving off the schema gives a stable order that matches the
+ * Inspector.
+ */
+export function formatNodeParams(
+    params: Record<string, any> | null | undefined,
+    schema: Record<string, any> | null | undefined,
+): NodeParamSummary[] {
+    if (!params || !schema?.properties) return [];
+    const entries: NodeParamSummary[] = [];
+    for (const [key, prop] of Object.entries(
+        schema.properties as Record<string, any>,
+    )) {
+        if (!prop || prop["x-ref-type"]) continue; // skip refs in inline view
+        if (!(key in params)) continue;
+        const val = params[key];
+        const label = prop.title || key;
+        let display = String(val);
+        if (prop.type === "number" && typeof val === "number") {
+            display = val % 1 === 0 ? val.toLocaleString() : val.toFixed(1);
+        }
+        entries.push({ label, value: display });
+    }
+    return entries.slice(0, 4); // show max 4 params inline
+}
+
 export function createProcessStartNode(
     position: { x: number; y: number },
     parentId: string | undefined,

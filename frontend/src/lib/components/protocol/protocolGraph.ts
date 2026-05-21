@@ -67,6 +67,12 @@ export function serializeGraphData(
  * Build a JSON snapshot string for change tracking. Includes
  * `glpSettings` when provided so changes to protocol-level GLP config
  * mark the protocol dirty alongside graph edits.
+ *
+ * Snapshots the SAME normalized shape that `serializeGraphData` persists to
+ * the API — not the raw SvelteFlow nodes. Raw nodes carry transient UI
+ * fields (`selected`, `dragging`, `measured`) that mutate on mere selection;
+ * including them here made simply clicking a node flag the protocol as
+ * having unsaved changes (#9).
  */
 export function buildStateSnapshot(
     nodes: Node[],
@@ -77,15 +83,17 @@ export function buildStateSnapshot(
     pixelsPerHour: number,
     glpSettings?: Record<string, unknown>,
 ): string {
-    return JSON.stringify({
-        nodes,
-        edges,
-        layout,
-        handleOrientation,
-        timeEnabled,
-        pixelsPerHour,
-        ...(glpSettings !== undefined ? { glpSettings } : {}),
-    });
+    return JSON.stringify(
+        serializeGraphData(
+            nodes,
+            edges,
+            layout,
+            handleOrientation,
+            timeEnabled,
+            pixelsPerHour,
+            glpSettings,
+        ),
+    );
 }
 
 /**
@@ -177,6 +185,72 @@ export function detectEquipmentConflicts(
         }
     }
     return conflicts;
+}
+
+/**
+ * Order nodes by graph execution order: a topological sort that follows
+ * edges (source → target). Nodes with no incoming edge come first; among
+ * nodes that are ready at the same time, the one further left/up wins so
+ * the result stays deterministic and matches the canvas reading order.
+ *
+ * A protocol's step sequence is defined by its edges, not by where the
+ * boxes happen to sit on the canvas — sorting purely by `position.x`
+ * reordered the run step list whenever a node was nudged (#19). When the
+ * graph has no edges this degrades gracefully to the old position order.
+ * Any nodes left over from a cycle are appended in position order.
+ */
+export function topologicalSortNodes(nodes: Node[], edges: Edge[]): Node[] {
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const inDegree = new Map<string, number>();
+    const adjacency = new Map<string, string[]>();
+    for (const n of nodes) {
+        inDegree.set(n.id, 0);
+        adjacency.set(n.id, []);
+    }
+    for (const e of edges) {
+        // Ignore edges that dangle to a node not in this set.
+        if (!nodeById.has(e.source) || !nodeById.has(e.target)) continue;
+        adjacency.get(e.source)!.push(e.target);
+        inDegree.set(e.target, (inDegree.get(e.target) ?? 0) + 1);
+    }
+
+    const byPosition = (aId: string, bId: string): number => {
+        const a = nodeById.get(aId)!;
+        const b = nodeById.get(bId)!;
+        const dx = (a.position?.x ?? 0) - (b.position?.x ?? 0);
+        if (dx !== 0) return dx;
+        const dy = (a.position?.y ?? 0) - (b.position?.y ?? 0);
+        if (dy !== 0) return dy;
+        return aId < bId ? -1 : aId > bId ? 1 : 0;
+    };
+
+    const ready = nodes
+        .filter((n) => (inDegree.get(n.id) ?? 0) === 0)
+        .map((n) => n.id)
+        .sort(byPosition);
+    const ordered: Node[] = [];
+    const visited = new Set<string>();
+    while (ready.length) {
+        const id = ready.shift()!;
+        if (visited.has(id)) continue;
+        visited.add(id);
+        ordered.push(nodeById.get(id)!);
+        for (const target of adjacency.get(id) ?? []) {
+            if (visited.has(target)) continue;
+            const remaining = (inDegree.get(target) ?? 0) - 1;
+            inDegree.set(target, remaining);
+            if (remaining <= 0) ready.push(target);
+        }
+        ready.sort(byPosition);
+    }
+
+    if (ordered.length < nodes.length) {
+        const leftover = nodes
+            .filter((n) => !visited.has(n.id))
+            .sort((a, b) => byPosition(a.id, b.id));
+        ordered.push(...leftover);
+    }
+    return ordered;
 }
 
 /**

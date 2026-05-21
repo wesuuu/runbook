@@ -135,27 +135,30 @@ async def test_assert_can_edit_completed_run_passes_for_edited_status():
 # ---------------------------------------------------------------------------
 
 
-async def test_assert_run_can_close_passes_when_operator_signed():
-    """OPERATOR signoff present and no extra requirements → passes."""
+async def test_assert_run_can_close_passes_for_basic_run():
+    """A basic (non-GLP) run enables no reviewer role, so it closes with no
+    sign-off gate at all — not even OPERATOR (#18)."""
     mock_run = MagicMock()
     mock_run.id = uuid4()
 
-    op_signoff = MagicMock()
-    op_signoff.role = "OPERATOR"
-
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [op_signoff]
-
     db = AsyncMock()
-    db.execute.return_value = mock_result
 
-    glp_settings: dict = {}
-    # Should not raise
-    await assert_run_can_close(db=db, run=mock_run, glp_settings=glp_settings)
+    # Neither require_* flag set → basic run, returns before any DB query.
+    await assert_run_can_close(db=db, run=mock_run, glp_settings={})
+    await assert_run_can_close(
+        db=db,
+        run=mock_run,
+        glp_settings={"require_study_director": False, "require_qau": False},
+    )
+    db.execute.assert_not_called()
 
 
-async def test_assert_run_can_close_fails_when_operator_missing():
-    """OPERATOR signoff always required to close a run."""
+async def test_assert_run_can_close_requires_operator_on_glp_run():
+    """A GLP run (a reviewer role is required) always needs OPERATOR (#18).
+
+    With ``require_study_director`` set and no sign-offs at all, both the
+    always-required OPERATOR and the gated STUDY_DIRECTOR are reported.
+    """
     mock_run = MagicMock()
     mock_run.id = uuid4()
 
@@ -166,14 +169,43 @@ async def test_assert_run_can_close_fails_when_operator_missing():
     db.execute.return_value = mock_result
 
     with pytest.raises(HTTPException) as exc:
-        await assert_run_can_close(db=db, run=mock_run, glp_settings={})
+        await assert_run_can_close(
+            db=db,
+            run=mock_run,
+            glp_settings={"require_study_director": True},
+        )
     assert exc.value.status_code == 400
     assert exc.value.detail["error"] == "SIGNOFF_REQUIRED"
-    assert "OPERATOR" in exc.value.detail["missing_roles"]
+    assert set(exc.value.detail["missing_roles"]) == {
+        "OPERATOR",
+        "STUDY_DIRECTOR",
+    }
+
+
+async def test_assert_run_can_close_passes_when_glp_run_fully_signed():
+    """GLP run requiring SD: OPERATOR + SD signed → passes."""
+    mock_run = MagicMock()
+    mock_run.id = uuid4()
+
+    op_signoff = MagicMock()
+    op_signoff.role = "OPERATOR"
+    sd_signoff = MagicMock()
+    sd_signoff.role = "STUDY_DIRECTOR"
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [op_signoff, sd_signoff]
+
+    db = AsyncMock()
+    db.execute.return_value = mock_result
+
+    # Should not raise
+    await assert_run_can_close(
+        db=db, run=mock_run, glp_settings={"require_study_director": True}
+    )
 
 
 async def test_assert_run_can_close_fails_when_sd_required_but_missing():
-    """When glp_settings.require_study_director=True and no SD signoff → fail."""
+    """require_study_director=True, only OPERATOR signed → SD reported missing."""
     mock_run = MagicMock()
     mock_run.id = uuid4()
 
@@ -192,10 +224,11 @@ async def test_assert_run_can_close_fails_when_sd_required_but_missing():
         await assert_run_can_close(db=db, run=mock_run, glp_settings=glp_settings)
     assert exc.value.status_code == 400
     assert "STUDY_DIRECTOR" in exc.value.detail["missing_roles"]
+    assert "OPERATOR" not in exc.value.detail["missing_roles"]
 
 
 async def test_assert_run_can_close_fails_when_qau_required_but_missing():
-    """When glp_settings.require_qau=True and no QAU signoff → fail."""
+    """require_qau=True, only OPERATOR signed → QAU reported missing."""
     mock_run = MagicMock()
     mock_run.id = uuid4()
 
@@ -237,7 +270,10 @@ async def test_assert_run_can_close_passes_when_all_required_present():
     db = AsyncMock()
     db.execute.return_value = mock_result
 
-    glp_settings = {"require_study_director": True, "require_qau": True}
+    glp_settings = {
+        "require_study_director": True,
+        "require_qau": True,
+    }
     # Should not raise
     await assert_run_can_close(db=db, run=mock_run, glp_settings=glp_settings)
 

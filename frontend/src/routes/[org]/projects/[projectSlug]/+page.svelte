@@ -17,6 +17,7 @@
     import { shouldShowDot, markDismissed, isCompleted, isDismissed, isHydrated } from "$lib/onboarding/tourStore.svelte";
     import { fade } from "svelte/transition";
     import { blockDuration } from "$lib/transitions";
+    import { publishedProtocolCount } from "$lib/components/project/projectUtils";
 
     const projectSlug = $derived($page.params.projectSlug ?? "");
 
@@ -307,8 +308,9 @@
                             /></svg
                         >
                         <span
-                            >{protocols.length} Published Protocol{protocols.length !==
-                            1
+                            >{publishedProtocolCount(protocols)} Published Protocol{publishedProtocolCount(
+                                protocols,
+                            ) !== 1
                                 ? "s"
                                 : ""}</span
                         >

@@ -38,10 +38,19 @@ async def sample_run(db_session: AsyncSession, test_project) -> Run:
 
 @pytest_asyncio.fixture
 async def sample_user_with_signature(test_user: User, tmp_path) -> User:
-    """A user with a signature image file at signature_full_path."""
-    sig = tmp_path / "sig.png"
+    """A user whose ``signature_full_path`` is a storage-root-relative path.
+
+    Mirrors production: ``auth.upload_signature`` stores the signature path
+    relative to the ``FileStorageService`` storage root (e.g.
+    ``{org_id}/signatures/{user_id}-drawn.png``), not an absolute filesystem
+    path.  Tests monkeypatch the storage root to ``tmp_path / "uploads"`` so
+    this relative path resolves there.
+    """
+    relative = f"{test_user.id}/signatures/{test_user.id}-drawn.png"
+    sig = tmp_path / "uploads" / relative
+    sig.parent.mkdir(parents=True, exist_ok=True)
     sig.write_bytes(b"\x89PNG\r\n\x1a\n")
-    test_user.signature_full_path = str(sig)
+    test_user.signature_full_path = relative
     return test_user
 
 
