@@ -12,8 +12,10 @@
     import EquipmentChipList from "$lib/components/shared/EquipmentChipList.svelte";
     import SchemaEditor from "$lib/components/shared/SchemaEditor.svelte";
     import type { SchemaRow } from "$lib/components/shared/SchemaEditor.svelte";
+    import { buildParamSchema, syncParamsToSchema } from "./protocolParamSchema";
     import ParamInput from "$lib/components/shared/ParamInput.svelte";
     import { renderTemplate } from "$lib/utils/template";
+    import { clampDuration } from "$lib/utils/duration";
 
     interface Equipment {
         id: string;
@@ -143,40 +145,28 @@
 
     // --- Schema editor helpers ---
 
-    function buildParamSchema(): Record<string, any> {
-        // Merge-and-override: preserves exotic fields (enum, x-ref-type) on existing keys
+    // buildParamSchema / syncParamsToSchema are pure functions extracted to
+    // protocolParamSchema.ts so they can be unit-tested directly.
+    function currentParamSchema(): Record<string, any> {
         const existingProps = ((node?.data?.paramSchema as Record<string, any>)?.properties || {}) as Record<string, any>;
-        const properties: Record<string, any> = {};
-        for (const row of editSchemaRows) {
-            const k = row.key.trim().replace(/\s+/g, '_').toLowerCase();
-            if (!k) continue;
-            properties[k] = { ...(existingProps[k] || {}), type: row.type, title: row.title || row.key };
-        }
-        return { type: 'object', properties };
+        return buildParamSchema(editSchemaRows, existingProps);
     }
 
-    function syncParamsToSchema(
-        current: Record<string, any>,
-        schema: Record<string, any>,
-    ): Record<string, any> {
-        const props = (schema.properties || {}) as Record<string, any>;
-        const synced: Record<string, any> = {};
-        for (const [key, prop] of Object.entries(props)) {
-            if (key in current) {
-                synced[key] = current[key];
-            } else if (prop.default !== undefined) {
-                synced[key] = prop.default;
-            } else if (prop.enum?.[0] !== undefined) {
-                synced[key] = prop.enum[0];
-            }
-        }
-        return synced;
+    // Snap the visible duration field to a valid value when the user leaves
+    // it — the input's `min` attribute is only a soft hint, so a typed or
+    // pasted negative/zero/blank value otherwise lingers (issue #8).
+    function handleDurationBlur(): void {
+        editDuration = clampDuration(editDuration, !!timelineConfig?.enabled);
+        handleApply();
     }
 
     function handleApply(): void {
         if (!node) return;
-        const newSchema = buildParamSchema();
+        const newSchema = currentParamSchema();
         const syncedParams = syncParamsToSchema({ ...editParams }, newSchema);
+        // Clamp before applying so an out-of-range duration can never be
+        // persisted to the protocol graph, even mid-edit (issue #8).
+        const duration = clampDuration(editDuration, !!timelineConfig?.enabled);
 
         // Compute position from edited start time when timeline is on
         let position: { x: number; y: number } | undefined;
@@ -190,7 +180,7 @@
             }
         }
 
-        onApply(node.id, syncedParams, editDuration, editDescription, editEquipment, newSchema, position);
+        onApply(node.id, syncedParams, duration, editDescription, editEquipment, newSchema, position);
     }
 
     function handleEquipmentApply(equipment: SelectedEquipment[]): void {
@@ -203,7 +193,7 @@
         saveAsNewSaving = true;
         saveAsNewError = null;
         try {
-            const schema = buildParamSchema();
+            const schema = currentParamSchema();
             await onSaveAsNew(saveAsNewName.trim(), schema, node.data.category as string);
             showSaveAsNew = false;
             saveAsNewName = '';
@@ -359,6 +349,7 @@
                     type="number"
                     bind:value={editDuration}
                     oninput={handleApply}
+                    onblur={handleDurationBlur}
                     min={timelineConfig?.enabled ? 5 : 1}
                     step={timelineConfig?.enabled ? 5 : 1}
                     class="input-field duration-input"

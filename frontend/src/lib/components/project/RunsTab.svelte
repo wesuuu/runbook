@@ -242,6 +242,11 @@
             </div>
             <p class="text-[15px] font-semibold text-slate-600">No runs yet</p>
             <p class="text-[13px] text-slate-400">Create your first run to get started.</p>
+        {:else if lotProducerFilter && visibleRuns.length === 0}
+            <!-- The "Lot producer only" filter — not a search term — emptied
+                 the list, so don't tell the user to change a search (#25). -->
+            <p class="text-[15px] font-semibold text-slate-600">No lot-producing runs</p>
+            <p class="text-[13px] text-slate-400">No runs in this project produce a lot. Turn off the filter to see all runs.</p>
         {:else}
             <p class="text-[15px] font-semibold text-slate-600">No matching runs</p>
             <p class="text-[13px] text-slate-400">Try a different search term.</p>

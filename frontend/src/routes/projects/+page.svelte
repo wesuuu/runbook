@@ -28,6 +28,11 @@
     let error = $state<string | null>(null);
     let welcomeOpen = $state(false);
 
+    // The list is fetched scoped to the current org, so every row belongs to
+    // it — show its name rather than the project's (unpopulated) relation,
+    // which rendered a blanket "N/A" (#3).
+    const orgName = $derived(getCurrentOrg()?.name ?? 'N/A');
+
     async function loadProjects() {
         loading = true;
         try {
@@ -103,16 +108,14 @@
                                 {#if project.description}
                                     <div class="text-xs text-muted-foreground mt-1 line-clamp-2">{project.description}</div>
                                 {/if}
-                                {#if project.organization?.name}
-                                    <div class="text-xs text-muted-foreground mt-1">{project.organization.name}</div>
-                                {/if}
+                                <div class="text-xs text-muted-foreground mt-1">{orgName}</div>
                             </a>
                         {/each}
                     </div>
                     <!-- Desktop table -->
                     <div class="hidden sm:block">
                         <Table.Root>
-                            <Table.Caption>A list of your recent projects.</Table.Caption>
+                            <Table.Caption>All projects in your organization.</Table.Caption>
                             <Table.Header>
                                 <Table.Row>
                                     <Table.Head>Name</Table.Head>
@@ -133,7 +136,7 @@
                                             </a>
                                         </Table.Cell>
                                         <Table.Cell class="hidden md:table-cell">{project.description || '-'}</Table.Cell>
-                                        <Table.Cell class="hidden md:table-cell">{project.organization?.name || 'N/A'}</Table.Cell>
+                                        <Table.Cell class="hidden md:table-cell">{orgName}</Table.Cell>
                                         <Table.Cell class="text-right">
                                             <a href="/projects/{project.id}">
                                                 <Button variant="ghost" size="sm">View</Button>

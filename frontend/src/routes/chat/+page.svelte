@@ -147,10 +147,6 @@
     }
 </script>
 
-<svelte:head>
-    <title>Chat - Batchrite</title>
-</svelte:head>
-
 <div class="flex h-[calc(100vh-57px)] overflow-hidden">
     <!-- Sidebar -->
     <div

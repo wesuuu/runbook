@@ -124,6 +124,22 @@
             .map((n) => ({ id: n.id, data: { label: ((n.data as { label?: string } | undefined)?.label) ?? 'Role' } })),
     );
 
+    // Resolve the picked assignments into displayable {role, name} pairs for
+    // the review step. Mirrors the role/lane logic in persistAssignments().
+    const assigneeSummary = $derived.by(() => {
+        const hasLanes = swimLaneNodes.length > 0;
+        return Object.entries(assignments)
+            .filter(([, userId]) => !!userId)
+            .map(([key, userId]) => {
+                const member = projectMembers.find((m) => m.id === userId);
+                const name = member?.full_name || member?.email || 'Unknown member';
+                const role = hasLanes
+                    ? (swimLaneNodes.find((l) => l.id === key)?.data.label ?? 'Role')
+                    : 'Operator';
+                return { role, name };
+            });
+    });
+
     function resetState() {
         runName = '';
         experimentId = forExperiment?.id ?? null;
@@ -361,12 +377,13 @@
     }
 
     async function createRun() {
-        if (!runName || !protocolId) return;
+        const trimmedName = runName.trim();
+        if (!trimmedName || !protocolId) return;
         creating = true;
         createError = null;
         try {
             const payload: Record<string, unknown> = {
-                name: runName,
+                name: trimmedName,
                 project_id: projectId,
                 protocol_id: protocolId,
                 produces_lot: producesLot,
@@ -458,6 +475,7 @@
                             versionNumber={selectedVersion?.version_number ?? 0}
                             {isLatestVersion}
                             {edits}
+                            assignees={assigneeSummary}
                             {creating}
                             error={createError}
                             onCreate={createRun}

@@ -81,9 +81,13 @@ async def create_signoff(
             organization_id, new_id, signer.signature_full_path
         )
         storage = FileStorageService()
+        # signature_full_path is stored relative to the storage root (see
+        # auth.upload_signature); resolve it before copying so the source
+        # isn't looked up against the process CWD.
+        src = storage.resolve_path(signer.signature_full_path)
         dest = storage.storage_root / relative
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(signer.signature_full_path, dest)
+        shutil.copyfile(src, dest)
         signature_image_path = relative
 
     payload = SignoffPayload(

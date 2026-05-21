@@ -23,6 +23,7 @@
     import { fade } from 'svelte/transition';
     import { pageDuration } from '$lib/transitions';
     import Logo from '$lib/components/layout/Logo.svelte';
+    import { routeTitle } from '$lib/utils/pageTitle';
     import '../app.css';
 
     let mobileNavOpen = $state(false);
@@ -57,6 +58,9 @@
         ($page?.url?.pathname ?? '').startsWith('/chat') ||
         isFieldMode
     );
+    // Single source of truth for the browser-tab title so it tracks the
+    // route on every navigation rather than getting stuck (#2).
+    const pageTitle = $derived(routeTitle($page?.url?.pathname ?? '/'));
 
     onMount(async () => {
         initConnectivity();
@@ -134,6 +138,10 @@
         else html.classList.add('density-comfortable');
     });
 </script>
+
+<svelte:head>
+    <title>{pageTitle}</title>
+</svelte:head>
 
 {#if !isInitialized()}
     <div class="min-h-screen flex items-center justify-center bg-background">

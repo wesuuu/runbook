@@ -41,11 +41,15 @@
         type GlpSettings,
         type GlpSignoffResponse,
     } from '$lib/schemas/glpSignoff';
-    import { validateCanCloseRun } from '$lib/runValidation';
+    import {
+        resolveRequiredRoles,
+        validateCanCloseRun,
+    } from '$lib/runValidation';
     import { API_BASE } from '$lib/config';
     import { getToken } from '$lib/auth.svelte';
     import { toast } from 'svelte-sonner';
     import { renderTemplate } from '$lib/utils/template';
+    import { topologicalSortNodes } from '$lib/components/protocol/protocolGraph';
     import { HelpMenu, TourModal, runRunTour } from '$lib/onboarding';
     import { shouldShowDot, markDismissed } from '$lib/onboarding/tourStore.svelte';
     import { z } from 'zod';
@@ -140,13 +144,6 @@
                     s.invalidated_at === undefined),
         ),
     );
-
-    function resolveRequiredRoles(settings: GlpSettings): GlpRole[] {
-        const roles: GlpRole[] = ['OPERATOR'];
-        if (settings.require_study_director) roles.push('STUDY_DIRECTOR');
-        if (settings.require_qau) roles.push('QAU');
-        return roles;
-    }
 
     function attestationDefaultFor(
         role: GlpRole,
@@ -518,9 +515,10 @@
     function getAllUnitOpSteps() {
         if (!run?.graph) return [];
         const nodes = run.graph.nodes || [];
-        return nodes
+        const edges = run.graph.edges || [];
+        // Order by graph edges (execution order), not canvas x-position (#19).
+        return topologicalSortNodes(nodes, edges)
             .filter((n: any) => n.type === "unitOp")
-            .sort((a: any, b: any) => a.position.x - b.position.x)
             .map((n: any) => ({
                 id: n.id,
                 name: n.data.label,
@@ -813,14 +811,18 @@
                     {/if}
                 {/if}
 
-                <div class="flex items-center justify-end gap-2 pt-1">
-                    <Button variant="ghost" size="sm" onclick={lotDiscard} disabled={!lotDraftDirty || lotSaving}>
-                        Discard
-                    </Button>
-                    <Button size="sm" onclick={lotSave} disabled={!lotDraftDirty || lotSaving || (lotDraftProducesLot && !lotDraftLotNumber.trim())}>
-                        {lotSaving ? 'Saving…' : 'Save'}
-                    </Button>
-                </div>
+                {#if lotDraftDirty}
+                    <!-- Only surface the action bar once there is an actual
+                         unsaved change — not on every page load (#29). -->
+                    <div class="flex items-center justify-end gap-2 pt-1">
+                        <Button variant="ghost" size="sm" onclick={lotDiscard} disabled={lotSaving}>
+                            Discard
+                        </Button>
+                        <Button size="sm" onclick={lotSave} disabled={lotSaving || (lotDraftProducesLot && !lotDraftLotNumber.trim())}>
+                            {lotSaving ? 'Saving…' : 'Save'}
+                        </Button>
+                    </div>
+                {/if}
             </div>
         </div>
 

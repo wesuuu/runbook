@@ -3,6 +3,7 @@ import { streamSse, type SseEvent } from '$lib/ai/sse-stream';
 import { getToken, logout } from '$lib/auth.svelte';
 import { API_BASE } from '$lib/config';
 import { _validateResponse, type RequestOptions } from '$lib/apiValidation';
+import { extractErrorMessage } from '$lib/apiError';
 import {
     SubscriptionStateSchema,
     PortalSessionResponseSchema,
@@ -75,8 +76,8 @@ async function _handleErrorResponse(response: Response, fallbackMessage: string)
     let errorData = null;
     try {
         const errorJson = await response.json();
-        errorMessage = errorJson.detail || errorJson.message || errorMessage;
         errorData = errorJson;
+        errorMessage = extractErrorMessage(errorJson, fallbackMessage);
     } catch {
         // Response body not JSON
     }

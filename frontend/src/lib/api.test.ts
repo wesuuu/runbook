@@ -1,6 +1,48 @@
 import { describe, it, expect, vi } from 'vitest';
 import { normalizeEndpoint as _normalizeEndpoint } from './normalizeEndpoint';
+import { extractErrorMessage } from './apiError';
 import { z } from 'zod';
+
+describe('extractErrorMessage', () => {
+    it('returns a string detail directly', () => {
+        expect(extractErrorMessage({ detail: 'Not found' }, 'fallback')).toBe(
+            'Not found',
+        );
+    });
+
+    it('extracts message from a structured object detail', () => {
+        const body = {
+            detail: { error: 'SIGNATURE_REQUIRED', message: 'A saved signature is required.' },
+        };
+        expect(extractErrorMessage(body, 'fallback')).toBe(
+            'A saved signature is required.',
+        );
+    });
+
+    it('falls back to the error code when an object detail has no message', () => {
+        const body = { detail: { error: 'ATTESTATION_REQUIRED' } };
+        expect(extractErrorMessage(body, 'fallback')).toBe('ATTESTATION_REQUIRED');
+    });
+
+    it('never returns "[object Object]" for an object detail', () => {
+        const body = { detail: { error: 'ATTESTATION_REQUIRED', role: 'OPERATOR' } };
+        expect(extractErrorMessage(body, 'fallback')).not.toBe('[object Object]');
+    });
+
+    it('extracts msg from a 422 validation error list', () => {
+        const body = { detail: [{ loc: ['body', 'name'], msg: 'field required' }] };
+        expect(extractErrorMessage(body, 'fallback')).toBe('field required');
+    });
+
+    it('uses top-level message when no detail is present', () => {
+        expect(extractErrorMessage({ message: 'Boom' }, 'fallback')).toBe('Boom');
+    });
+
+    it('returns the fallback for an empty or non-object body', () => {
+        expect(extractErrorMessage(null, 'fallback')).toBe('fallback');
+        expect(extractErrorMessage({}, 'fallback')).toBe('fallback');
+    });
+});
 
 describe('_normalizeEndpoint', () => {
     it('removes trailing slash from path', () => {
