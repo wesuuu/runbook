@@ -48,10 +48,11 @@ export function routeName(pathname: string): string {
     }
     if (p.startsWith('/library/documents/')) return 'Document Refinement';
     if (p.startsWith('/library/')) return 'Library Document';
+    if (/^\/[^/]+\/experiments\/?$/.test(p)) return 'Experiments';
     if (p.startsWith('/projects/')) return 'Project';
     if (p.startsWith('/protocols/')) return 'Protocol Editor';
     if (p.startsWith('/runs/')) return 'Run';
-    if (p.startsWith('/experiments/')) return 'Experiment';
+    if (/^\/[^/]+\/projects\/[^/]+\/experiments\/[^/]+/.test(p)) return 'Experiment';
     return '';
 }
 

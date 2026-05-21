@@ -25,6 +25,7 @@ export const paths = {
     `/${orgSlug()}/projects/${projectSlug}/runs/${slug}`,
   experiment: (projectSlug: string, slug: string): string =>
     `/${orgSlug()}/projects/${projectSlug}/experiments/${slug}`,
+  experiments: (): string => `/${orgSlug()}/experiments`,
   library: (): string => `/${orgSlug()}/library`,
   libraryDoc: (slug: string): string => `/${orgSlug()}/library/${slug}`,
   libraryDocRefine: (slug: string): string =>
