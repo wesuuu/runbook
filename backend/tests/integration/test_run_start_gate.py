@@ -13,7 +13,9 @@ from app.models.runs import Run, RunRoleAssignment
 
 
 @pytest.fixture
-async def planned_run(db_session: AsyncSession, test_project: Project, test_user: User) -> Run:
+async def planned_run(
+    db_session: AsyncSession, test_project: Project, test_user: User
+) -> Run:
     run = Run(
         name="Start Gate Run",
         project_id=test_project.id,

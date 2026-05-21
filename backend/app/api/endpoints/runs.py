@@ -560,7 +560,7 @@ async def update_run(
             )
             assignments = list(result.scalars().all())
 
-            gap = lane_assignment_gap(run_obj.graph or {}, assignments)
+            gap = lane_assignment_gap(run_obj.graph, assignments)
             if not gap.has_assignee:
                 raise HTTPException(
                     status_code=422,
