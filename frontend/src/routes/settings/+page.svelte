@@ -86,6 +86,7 @@
         { value: 'INVITE_ACCEPTED', label: 'Invite Accepted' },
         { value: 'PROTOCOL_APPROVED', label: 'Protocol Approved' },
         { value: 'PROTOCOL_REVERTED', label: 'Protocol Reverted' },
+        { value: 'PROTOCOL_APPROVAL_REQUESTED', label: 'Protocol Approval Requested' },
         { value: 'STEP_DEVIATION', label: 'Step Deviation' },
     ] as const;
 
