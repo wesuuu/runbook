@@ -1,0 +1,827 @@
+<!doctype html>
+<html lang="en" data-theme="lab-glass">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TD-0091b — Notification Inbox · Design Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* ──────────────────────────────────────────────────────────
+   Batchrite "lab-glass" theme tokens — copied verbatim from
+   frontend/src/app.css so this mockup is pixel-faithful.
+   ────────────────────────────────────────────────────────── */
+:root {
+  --bg:           hsl(200 25% 97%);
+  --fg:           hsl(215 40% 12%);
+  --card:         hsl(0 0% 100%);
+  --card-fg:      hsl(215 40% 12%);
+  --muted:        hsl(205 25% 94%);
+  --muted-fg:     hsl(215 15% 42%);
+  --primary:      hsl(195 85% 22%);
+  --primary-fg:   hsl(195 30% 98%);
+  --accent:       hsl(155 70% 38%);
+  --accent-fg:    hsl(155 30% 98%);
+  --destructive:  hsl(355 75% 50%);
+  --border:       hsl(205 22% 87%);
+  --ring:         hsl(195 85% 22%);
+  --grid-dot:     hsl(205 30% 70% / 0.25);
+  --radius:       0.625rem;
+  --radius-md:    0.375rem;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  padding: 56px 24px 120px;
+}
+
+.dot-grid {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.grain::before {
+  content: ''; position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  opacity: .025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+}
+
+.shell { position: relative; z-index: 2; max-width: 1120px; margin: 0 auto; }
+
+/* ── Preview document header ── */
+.doc-head { margin-bottom: 40px; }
+.eyebrow {
+  font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--primary); font-weight: 500;
+}
+.doc-head h1 {
+  font-size: 34px; font-weight: 700; letter-spacing: -.02em; margin-top: 8px;
+}
+.doc-head p { color: var(--muted-fg); max-width: 64ch; margin-top: 8px; font-size: 15px; }
+.theme-chip {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 16px;
+  padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--card); font-size: 12px; color: var(--muted-fg);
+}
+.swatch { width: 11px; height: 11px; border-radius: 3px; }
+
+/* ── "What's new" legend ── */
+.legend {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 28px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 22px; margin-top: 22px;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / .06), 0 4px 12px hsl(0 0% 0% / .04);
+}
+.legend li { list-style: none; display: flex; gap: 10px; font-size: 13.5px; }
+.legend .tick {
+  flex: none; width: 18px; height: 18px; border-radius: 999px;
+  background: hsl(155 70% 38% / .14); color: var(--accent);
+  display: grid; place-items: center; margin-top: 1px;
+}
+.legend b { font-weight: 600; }
+.legend span { color: var(--muted-fg); }
+
+/* ── Section scaffolding ── */
+.section { margin-top: 56px; }
+.section-tag {
+  display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px;
+}
+.section-tag .num {
+  font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500;
+  color: var(--primary-fg); background: var(--primary);
+  width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+}
+.section-tag h2 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.section-tag .cap { color: var(--muted-fg); font-size: 13.5px; }
+
+/* ── Faux browser frame ── */
+.frame {
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  background: var(--card);
+  box-shadow: 0 1px 2px hsl(0 0% 0% / .06), 0 18px 44px hsl(215 40% 12% / .10);
+}
+.frame-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 14px; background: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.dot { width: 10px; height: 10px; border-radius: 999px; }
+.url {
+  margin-left: 10px; flex: 1; max-width: 320px;
+  font-family: 'DM Mono', monospace; font-size: 11.5px; color: var(--muted-fg);
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 999px; padding: 4px 12px;
+}
+
+/* ── App nav bar (mirrors routes/+layout.svelte) ── */
+.appnav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 22px; background: hsl(0 0% 100% / .8);
+  backdrop-filter: blur(16px); border-bottom: 1px solid hsl(205 22% 87% / .6);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo {
+  width: 30px; height: 30px; border-radius: var(--radius-md);
+  background: var(--primary); color: var(--primary-fg);
+  display: grid; place-items: center;
+  box-shadow: 0 2px 8px hsl(195 85% 22% / .25);
+}
+.brand b { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.navlinks { display: flex; align-items: center; gap: 24px; font-size: 14px; font-weight: 500; }
+.navlinks a { color: var(--muted-fg); text-decoration: none; padding: 4px 0; position: relative; }
+.navlinks a:hover { color: var(--fg); }
+.navlinks a.active { color: var(--primary); font-weight: 600; }
+.navlinks a.active::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -13px;
+  height: 2px; background: var(--accent); border-radius: 1px;
+}
+.proj-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--muted-fg); padding: 5px 9px;
+  border-radius: var(--radius-md);
+}
+.proj-pill:hover { background: var(--muted); }
+.nav-sep { width: 1px; height: 20px; background: hsl(205 22% 87% / .6); }
+.avatar {
+  width: 32px; height: 32px; border-radius: 999px; background: var(--muted);
+  display: grid; place-items: center; font-size: 12px; font-weight: 600;
+  color: var(--muted-fg); cursor: pointer;
+}
+
+/* ── Bell trigger ── */
+.bell-wrap { position: relative; }
+.bell-btn {
+  width: 32px; height: 32px; border-radius: 999px; border: none;
+  background: transparent; color: var(--muted-fg); cursor: pointer;
+  display: grid; place-items: center; transition: background .15s, color .15s;
+}
+.bell-btn:hover { background: var(--accent-fg); color: var(--fg); }
+.bell-btn.open { background: hsl(195 85% 22% / .08); color: var(--primary); }
+.bell-btn .jingle { transform-origin: 50% 12%; animation: jingle 2.6s ease-in-out infinite; }
+@keyframes jingle {
+  0%,62%,100%{transform:rotate(0)} 5%{transform:rotate(-13deg)} 10%{transform:rotate(11deg)}
+  16%{transform:rotate(-8deg)} 22%{transform:rotate(5deg)} 28%{transform:rotate(-3deg)} 33%{transform:rotate(0)}
+}
+.badge {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--primary); color: var(--primary-fg);
+  font-size: 10px; font-weight: 700; line-height: 1;
+  display: grid; place-items: center;
+}
+.badge .ping {
+  position: absolute; inset: 0; border-radius: 999px; background: var(--primary);
+  opacity: .7; animation: ping 1.8s cubic-bezier(0,0,.2,1) infinite;
+}
+@keyframes ping { 75%,100% { transform: scale(1.9); opacity: 0; } }
+
+/* ── Dropdown panel (shadcn DropdownMenu.Content, w-80) ── */
+.dropdown {
+  position: absolute; top: 46px; right: 0; width: 320px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+  box-shadow: 0 10px 38px hsl(215 40% 12% / .18), 0 2px 6px hsl(215 40% 12% / .08);
+  animation: pop .16s ease both;
+}
+@keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(.98);} }
+.dd-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 13px; border-bottom: 1px solid hsl(205 22% 87% / .6);
+}
+.dd-head .t { font-size: 14px; font-weight: 600; }
+.linkbtn {
+  background: none; border: none; cursor: pointer;
+  color: var(--primary); font-size: 12px; font-weight: 500; font-family: inherit;
+  text-underline-offset: 4px;
+}
+.linkbtn:hover { text-decoration: underline; }
+.dd-scroll { max-height: 320px; overflow-y: auto; }
+
+/* ── Compact notification row (bell) ── */
+.n-row {
+  display: flex; gap: 9px; width: 100%; text-align: left;
+  padding: 10px 13px; border: none; background: none; cursor: pointer;
+  border-bottom: 1px solid hsl(205 22% 87% / .35);
+  font-family: inherit; transition: background .15s;
+  animation: rise .42s ease both;
+}
+.n-row:last-child { border-bottom: none; }
+.n-row:hover { background: hsl(155 70% 38% / .08); }
+.n-row.read { opacity: .58; }
+@keyframes rise { from { opacity: 0; transform: translateY(7px); } }
+
+.n-icon {
+  flex: none; width: 28px; height: 28px; border-radius: 8px;
+  display: grid; place-items: center;
+}
+.n-icon.tone-run    { background: hsl(195 85% 22% / .1);  color: var(--primary); }
+.n-icon.tone-done   { background: hsl(155 70% 38% / .14); color: var(--accent); }
+.n-icon.tone-role   { background: hsl(195 85% 22% / .1);  color: var(--primary); }
+.n-icon.tone-warn   { background: hsl(355 75% 50% / .12); color: var(--destructive); }
+.n-icon.tone-invite { background: hsl(205 25% 94%);       color: var(--muted-fg); }
+.n-body { min-width: 0; flex: 1; }
+.n-titlerow { display: flex; align-items: center; gap: 6px; }
+.n-dot { flex: none; width: 6px; height: 6px; border-radius: 999px; background: var(--primary); }
+.n-title {
+  font-size: 13.5px; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.n-msg {
+  font-size: 12px; color: var(--muted-fg); margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.n-time { font-size: 10.5px; color: hsl(215 15% 42% / .65); margin-top: 4px; }
+
+.dd-foot {
+  border-top: 1px solid hsl(205 22% 87% / .6);
+}
+.dd-foot a {
+  display: block; text-align: center; padding: 10px;
+  font-size: 13px; font-weight: 500; color: var(--primary);
+  text-decoration: none; transition: background .15s;
+}
+.dd-foot a:hover { background: hsl(155 70% 38% / .08); }
+
+/* ── History page ── */
+.appmain { padding: 34px 40px 48px; background: var(--bg); }
+.appmain .inner { max-width: 760px; margin: 0 auto; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.page-head h1 { font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+.page-head .sub { color: var(--muted-fg); font-size: 14px; margin-top: 3px; }
+
+.btn {
+  font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+  border-radius: var(--radius-md); padding: 8px 13px;
+  border: 1px solid var(--border); background: var(--card); color: var(--fg);
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.btn:hover { background: hsl(155 70% 38% / .1); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:disabled:hover { background: var(--card); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--muted); }
+
+.card {
+  margin-top: 22px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / .06), 0 4px 12px hsl(0 0% 0% / .04);
+}
+.card-head { padding: 18px 20px 14px; border-bottom: 1px solid hsl(205 22% 87% / .55); }
+.card-head .ct { font-size: 15px; font-weight: 600; }
+.card-head .cd { font-size: 13px; color: var(--muted-fg); margin-top: 2px; }
+
+/* ── Full-width history row ── */
+.h-row {
+  display: flex; gap: 13px; align-items: flex-start;
+  padding: 15px 20px 15px 18px; text-decoration: none; color: inherit;
+  border-bottom: 1px solid hsl(205 22% 87% / .45);
+  border-left: 2px solid transparent;
+  transition: background .15s; cursor: pointer;
+  animation: rise .42s ease both;
+}
+.h-row:last-child { border-bottom: none; }
+.h-row:hover { background: hsl(155 70% 38% / .06); }
+.h-row:hover .chev { opacity: 1; transform: translateX(0); }
+.h-row.unread { border-left-color: var(--primary); background: hsl(195 85% 22% / .025); }
+.h-row.read { opacity: .62; }
+.h-icon {
+  flex: none; width: 38px; height: 38px; border-radius: var(--radius-md);
+  display: grid; place-items: center;
+}
+.h-body { flex: 1; min-width: 0; }
+.h-titlerow { display: flex; align-items: center; gap: 8px; }
+.h-title { font-size: 14.5px; font-weight: 600; }
+.h-pill {
+  font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: .04em;
+  color: var(--muted-fg); background: var(--muted);
+  padding: 2px 7px; border-radius: 999px; text-transform: lowercase;
+}
+.h-msg { font-size: 13px; color: var(--muted-fg); margin-top: 3px; }
+.h-time { font-size: 11.5px; color: hsl(215 15% 42% / .7); margin-top: 6px; }
+.chev {
+  flex: none; align-self: center; color: var(--muted-fg);
+  opacity: 0; transform: translateX(-4px); transition: .18s;
+}
+
+.pager {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 20px; border-top: 1px solid hsl(205 22% 87% / .55);
+}
+.pager .count { font-size: 12.5px; color: var(--muted-fg); }
+.pager .count b { color: var(--fg); font-weight: 600; }
+.pager .nav { display: flex; gap: 8px; }
+
+/* ── State cards row ── */
+.states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.state-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / .06), 0 4px 12px hsl(0 0% 0% / .04);
+  overflow: hidden;
+}
+.state-card .lbl {
+  font-family: 'DM Mono', monospace; font-size: 10.5px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted-fg);
+  padding: 9px 14px; border-bottom: 1px solid hsl(205 22% 87% / .55);
+  background: var(--muted);
+}
+.state-body { padding: 30px 22px; display: grid; place-items: center; min-height: 196px; }
+
+.empty { text-align: center; }
+.empty .ebox {
+  width: 60px; height: 60px; border-radius: 16px; background: var(--muted);
+  display: grid; place-items: center; margin: 0 auto 14px;
+  color: hsl(215 15% 42% / .4);
+}
+.empty .et { font-weight: 600; font-size: 14px; }
+.empty .ed { font-size: 12.5px; color: var(--muted-fg); margin-top: 5px; max-width: 30ch; }
+
+.spinner {
+  width: 30px; height: 30px; border-radius: 999px;
+  border: 3px solid hsl(195 85% 22% / .15); border-top-color: var(--primary);
+  animation: spin .8s linear infinite; margin-bottom: 13px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading { text-align: center; color: var(--muted-fg); font-size: 13px; display: grid; place-items: center; }
+
+/* sonner-style toast */
+.toast {
+  width: 100%; display: flex; gap: 11px; align-items: flex-start;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 13px 13px 13px 14px;
+  box-shadow: 0 8px 26px hsl(215 40% 12% / .16);
+}
+.toast .ti {
+  flex: none; width: 20px; height: 20px; border-radius: 999px;
+  background: hsl(355 75% 50% / .12); color: var(--destructive);
+  display: grid; place-items: center;
+}
+.toast .tt { font-size: 13px; font-weight: 600; }
+.toast .td { font-size: 12px; color: var(--muted-fg); margin-top: 2px; }
+.toast .tx { margin-left: auto; color: var(--muted-fg); cursor: pointer; }
+
+/* annotation chip */
+.note {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 12px;
+  font-size: 12px; color: var(--muted-fg);
+}
+.tag {
+  font-family: 'DM Mono', monospace; font-size: 9.5px; font-weight: 500;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent); background: hsl(155 70% 38% / .12);
+  border: 1px solid hsl(155 70% 38% / .3);
+  padding: 2px 6px; border-radius: 999px;
+}
+.foot {
+  margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--muted-fg);
+}
+.foot code {
+  font-family: 'DM Mono', monospace; font-size: 11.5px;
+  background: var(--muted); padding: 1px 5px; border-radius: 4px;
+}
+@media (max-width: 720px) {
+  .legend, .states { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="dot-grid"></div>
+<div class="grain"></div>
+
+<div class="shell">
+
+  <!-- ───────── Preview header ───────── -->
+  <header class="doc-head">
+    <div class="eyebrow">TD-0091b · Notification system QA</div>
+    <h1>Notification Inbox — UX &amp; Observability</h1>
+    <p>
+      Visual preview of the five gaps closed by TD-0091b, rendered in Batchrite's
+      live <b>lab-glass</b> theme with shadcn-svelte primitives. Nothing here is new
+      chrome — it is the existing app surfaces, corrected.
+    </p>
+    <div class="theme-chip">
+      <span class="swatch" style="background:hsl(195 85% 22%)"></span> primary
+      <span class="swatch" style="background:hsl(155 70% 38%)"></span> accent
+      <span class="swatch" style="background:hsl(200 25% 97%);border:1px solid var(--border)"></span> background
+      &nbsp;·&nbsp; DM Sans / DM Mono
+    </div>
+
+    <ul class="legend">
+      <li><span class="tick">&check;</span><span><b>Smarter polling.</b> The dropdown refetches the list — not just the badge — on each tick while open.</span></li>
+      <li><span class="tick">&check;</span><span><b>Errors surface.</b> User-initiated failures raise a toast; background polls log silently.</span></li>
+      <li><span class="tick">&check;</span><span><b>History page.</b> A new paginated <code style="font-family:'DM Mono';font-size:11px">/notifications</code> route, 25 per page.</span></li>
+      <li><span class="tick">&check;</span><span><b>Deep-linking.</b> Rows navigate to the run / protocol they reference.</span></li>
+      <li><span class="tick">&check;</span><span><b>Retention.</b> Read notifications older than 90 days are purged — backend only, no UI.</span></li>
+      <li><span class="tick">&check;</span><span><b>Accurate badge.</b> Count comes from <code style="font-family:'DM Mono';font-size:11px">/unread-count</code>, never the 20-row slice.</span></li>
+    </ul>
+  </header>
+
+  <!-- ───────── 1 · Bell dropdown ───────── -->
+  <section class="section">
+    <div class="section-tag">
+      <span class="num">1</span>
+      <h2>Notification bell</h2>
+      <span class="cap">— global nav chrome · compact rows · “View all” footer</span>
+    </div>
+
+    <div class="frame">
+      <div class="frame-bar">
+        <span class="dot" style="background:#ef6a5e"></span>
+        <span class="dot" style="background:#f4be4f"></span>
+        <span class="dot" style="background:#5fc77f"></span>
+        <span class="url">app.batchrite.com/runs</span>
+      </div>
+
+      <!-- app nav -->
+      <div class="appnav">
+        <div class="brand">
+          <div class="logo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 2v7.31"/><path d="M14 9.3V2"/><path d="M8.5 2h7"/>
+              <path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/>
+            </svg>
+          </div>
+          <b>Batchrite</b>
+        </div>
+        <nav class="navlinks">
+          <a href="#" class="active">Dashboard</a>
+          <a href="#">Library</a>
+          <a href="#">AI Chat</a>
+          <span class="proj-pill">
+            Trellis Bio
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg>
+          </span>
+          <span class="nav-sep"></span>
+          <!-- bell -->
+          <div class="bell-wrap">
+            <button class="bell-btn open" aria-label="Notifications">
+              <svg class="jingle" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+              </svg>
+              <span class="badge"><span class="ping"></span>3</span>
+            </button>
+
+            <!-- dropdown -->
+            <div class="dropdown">
+              <div class="dd-head">
+                <span class="t">Notifications</span>
+                <button class="linkbtn">Mark all read</button>
+              </div>
+              <div class="dd-scroll">
+
+                <!-- unread · deviation · deep-links to run -->
+                <a class="n-row" href="#" style="--i:0;animation-delay:.04s">
+                  <span class="n-icon tone-warn">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+                    </svg>
+                  </span>
+                  <span class="n-body">
+                    <span class="n-titlerow"><span class="n-dot"></span><span class="n-title">Deviation flagged</span></span>
+                    <span class="n-msg">Step 7 “Inoculation” on Run R-2289 was marked as a deviation by D. Okafor.</span>
+                    <span class="n-time">4m ago</span>
+                  </span>
+                </a>
+
+                <!-- unread · run completed -->
+                <a class="n-row" href="#" style="--i:1;animation-delay:.08s">
+                  <span class="n-icon tone-done">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+                    </svg>
+                  </span>
+                  <span class="n-body">
+                    <span class="n-titlerow"><span class="n-dot"></span><span class="n-title">Run completed</span></span>
+                    <span class="n-msg">Buffer Prep — Batch 14 finished all 12 steps.</span>
+                    <span class="n-time">22m ago</span>
+                  </span>
+                </a>
+
+                <!-- unread · role assigned -->
+                <a class="n-row" href="#" style="--i:2;animation-delay:.12s">
+                  <span class="n-icon tone-role">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>
+                    </svg>
+                  </span>
+                  <span class="n-body">
+                    <span class="n-titlerow"><span class="n-dot"></span><span class="n-title">You were assigned a role</span></span>
+                    <span class="n-msg">Assigned as QA Reviewer on Run R-2291 by M. Chen.</span>
+                    <span class="n-time">1h ago</span>
+                  </span>
+                </a>
+
+                <!-- read · protocol approved -->
+                <a class="n-row read" href="#" style="--i:3;animation-delay:.16s">
+                  <span class="n-icon tone-run">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76"/><path d="m9 12 2 2 4-4"/>
+                    </svg>
+                  </span>
+                  <span class="n-body">
+                    <span class="n-titlerow"><span class="n-title">Protocol approved</span></span>
+                    <span class="n-msg">“CHO Seed Train v3” was approved and is now runnable.</span>
+                    <span class="n-time">3h ago</span>
+                  </span>
+                </a>
+
+                <!-- read · invite accepted (no deep-link target) -->
+                <button class="n-row read" type="button" style="--i:4;animation-delay:.2s">
+                  <span class="n-icon tone-invite">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m16 19 2 2 4-4"/>
+                    </svg>
+                  </span>
+                  <span class="n-body">
+                    <span class="n-titlerow"><span class="n-title">Invite accepted</span></span>
+                    <span class="n-msg">J. Park joined Trellis Bio.</span>
+                    <span class="n-time">Yesterday</span>
+                  </span>
+                </button>
+
+              </div>
+              <div class="dd-foot">
+                <a href="#">View all notifications</a>
+              </div>
+            </div>
+          </div>
+          <span class="avatar">WS</span>
+        </nav>
+      </div>
+
+      <!-- faint page body behind the dropdown -->
+      <div style="height:150px;background:var(--bg);"></div>
+    </div>
+    <p class="note">
+      <span class="tag">new</span> The footer link, the unread-dot accuracy, and the
+      “Mark all read” error reconciliation. Rows whose <code style="font-family:'DM Mono';font-size:11px">entity_type</code>
+      resolves (run, protocol) render as <code style="font-family:'DM Mono';font-size:11px">&lt;a&gt;</code>;
+      the invite row has no target, so it stays a <code style="font-family:'DM Mono';font-size:11px">&lt;button&gt;</code> — mark-read only.
+    </p>
+  </section>
+
+  <!-- ───────── 2 · History page ───────── -->
+  <section class="section">
+    <div class="section-tag">
+      <span class="num">2</span>
+      <h2>Notification history page</h2>
+      <span class="cap">— new route /notifications · non-compact rows · 25 per page</span>
+    </div>
+
+    <div class="frame">
+      <div class="frame-bar">
+        <span class="dot" style="background:#ef6a5e"></span>
+        <span class="dot" style="background:#f4be4f"></span>
+        <span class="dot" style="background:#5fc77f"></span>
+        <span class="url">app.batchrite.com/notifications?offset=0</span>
+      </div>
+
+      <div class="appnav">
+        <div class="brand">
+          <div class="logo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 2v7.31"/><path d="M14 9.3V2"/><path d="M8.5 2h7"/>
+              <path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/>
+            </svg>
+          </div>
+          <b>Batchrite</b>
+        </div>
+        <nav class="navlinks">
+          <a href="#">Dashboard</a>
+          <a href="#">Library</a>
+          <a href="#">AI Chat</a>
+          <span class="proj-pill">Trellis Bio
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg>
+          </span>
+          <span class="nav-sep"></span>
+          <div class="bell-wrap">
+            <button class="bell-btn" aria-label="Notifications">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+              </svg>
+              <span class="badge"><span class="ping"></span>3</span>
+            </button>
+          </div>
+          <span class="avatar">WS</span>
+        </nav>
+      </div>
+
+      <div class="appmain">
+        <div class="inner">
+          <div class="page-head">
+            <div>
+              <h1>Notifications</h1>
+              <div class="sub">Activity from your runs, protocols, and team.</div>
+            </div>
+            <button class="btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="m17 12 2 2 4-4"/>
+              </svg>
+              Mark all read
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="ct">All notifications</div>
+              <div class="cd">A history of activity across your runs and protocols.</div>
+            </div>
+
+            <!-- unread · deviation -->
+            <a class="h-row unread" href="#" style="animation-delay:.05s">
+              <span class="h-icon tone-warn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+                </svg>
+              </span>
+              <span class="h-body">
+                <span class="h-titlerow"><span class="h-title">Deviation flagged</span><span class="h-pill">run</span></span>
+                <span class="h-msg">Step 7 “Inoculation” on Run R-2289 was marked as a deviation by D. Okafor.</span>
+                <span class="h-time">4 minutes ago</span>
+              </span>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+
+            <!-- unread · run completed -->
+            <a class="h-row unread" href="#" style="animation-delay:.1s">
+              <span class="h-icon tone-done">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+                </svg>
+              </span>
+              <span class="h-body">
+                <span class="h-titlerow"><span class="h-title">Run completed</span><span class="h-pill">run</span></span>
+                <span class="h-msg">Buffer Prep — Batch 14 finished all 12 steps.</span>
+                <span class="h-time">22 minutes ago</span>
+              </span>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+
+            <!-- unread · role assigned -->
+            <a class="h-row unread" href="#" style="animation-delay:.15s">
+              <span class="h-icon tone-role">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>
+                </svg>
+              </span>
+              <span class="h-body">
+                <span class="h-titlerow"><span class="h-title">You were assigned a role</span><span class="h-pill">run</span></span>
+                <span class="h-msg">Assigned as QA Reviewer on Run R-2291 by M. Chen.</span>
+                <span class="h-time">1 hour ago</span>
+              </span>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+
+            <!-- read · protocol approved -->
+            <a class="h-row read" href="#" style="animation-delay:.2s">
+              <span class="h-icon tone-run">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76"/><path d="m9 12 2 2 4-4"/>
+                </svg>
+              </span>
+              <span class="h-body">
+                <span class="h-titlerow"><span class="h-title">Protocol approved</span><span class="h-pill">protocol</span></span>
+                <span class="h-msg">“CHO Seed Train v3” was approved and is now runnable.</span>
+                <span class="h-time">3 hours ago</span>
+              </span>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+
+            <!-- read · protocol reverted -->
+            <a class="h-row read" href="#" style="animation-delay:.25s">
+              <span class="h-icon tone-run">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/>
+                </svg>
+              </span>
+              <span class="h-body">
+                <span class="h-titlerow"><span class="h-title">Protocol reverted</span><span class="h-pill">protocol</span></span>
+                <span class="h-msg">“Harvest &amp; Clarification v2” was reverted to draft by A. Singh.</span>
+                <span class="h-time">Yesterday</span>
+              </span>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+
+            <!-- read · invite accepted (no deep-link, button — no chevron) -->
+            <button class="h-row read" type="button" style="animation-delay:.3s">
+              <span class="h-icon tone-invite">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m16 19 2 2 4-4"/>
+                </svg>
+              </span>
+              <span class="h-body">
+                <span class="h-titlerow"><span class="h-title">Invite accepted</span><span class="h-pill">organization</span></span>
+                <span class="h-msg">J. Park joined Trellis Bio.</span>
+                <span class="h-time">2 days ago</span>
+              </span>
+            </button>
+
+            <div class="pager">
+              <span class="count">Showing <b>1–25</b> of <b>63</b></span>
+              <span class="nav">
+                <button class="btn" disabled>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+                  Prev
+                </button>
+                <button class="btn">
+                  Next
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">
+      <span class="tag">new</span> Unread rows carry a <code style="font-family:'DM Mono';font-size:11px">border-l-2 border-primary</code>
+      accent (the dot is lost at full width). Paging writes <code style="font-family:'DM Mono';font-size:11px">?offset=N</code>
+      to the URL so browser back/forward restores position. The hover chevron only appears on rows that deep-link.
+    </p>
+  </section>
+
+  <!-- ───────── 3 · States ───────── -->
+  <section class="section">
+    <div class="section-tag">
+      <span class="num">3</span>
+      <h2>Empty, loading &amp; error states</h2>
+      <span class="cap">— shared EmptyState / LoadingSpinner / sonner toast</span>
+    </div>
+
+    <div class="states">
+      <!-- empty -->
+      <div class="state-card">
+        <div class="lbl">Empty</div>
+        <div class="state-body">
+          <div class="empty">
+            <div class="ebox">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+              </svg>
+            </div>
+            <div class="et">No notifications</div>
+            <div class="ed">Activity from your runs and protocols will appear here.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- loading -->
+      <div class="state-card">
+        <div class="lbl">Loading</div>
+        <div class="state-body">
+          <div class="loading">
+            <div class="spinner"></div>
+            Loading notifications…
+          </div>
+        </div>
+      </div>
+
+      <!-- error toast -->
+      <div class="state-card">
+        <div class="lbl">Error · user-initiated</div>
+        <div class="state-body" style="background:var(--bg);align-items:flex-start;padding:22px">
+          <div class="toast">
+            <span class="ti">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+              </svg>
+            </span>
+            <div>
+              <div class="tt">Couldn’t load notifications</div>
+              <div class="td">Something went wrong. Open the bell again to retry.</div>
+            </div>
+            <span class="tx">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">
+      <span class="tag">new</span> A toast fires only for <b>user-initiated</b> failures (opening the bell,
+      mark-read, pagination). A failed 30-second background poll logs to the console and self-heals on the next tick —
+      no toast spam on a flaky tablet connection.
+    </p>
+  </section>
+
+  <footer class="foot">
+    Static HTML mockup for <code>docs/superpowers/specs/2026-05-21-td-0091b-notification-inbox-ux-design.md</code>.
+    Theme tokens, fonts, and component styling mirror <code>frontend/src/app.css</code> and the shadcn-svelte
+    primitives — no new design language is introduced. Retention (90-day purge of read notifications) is a
+    backend-only sweep with no UI surface and is intentionally not shown.
+  </footer>
+
+</div>
+</body>
+</html>
