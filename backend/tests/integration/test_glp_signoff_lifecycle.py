@@ -327,7 +327,9 @@ async def basic_active_run(
     reviewer role, so closing the run needs no sign-off at all."""
     proto = Protocol(
         name="Basic Protocol",
+        slug="basic-protocol",
         project_id=test_project.id,
+        owner_org_id=test_project.organization_id,
         status="DRAFT",
         version_number=1,
         created_by_id=test_user.id,
@@ -337,6 +339,7 @@ async def basic_active_run(
     await db_session.flush()
     run = Run(
         name="Basic Active Run",
+        slug="basic-active-run",
         project_id=test_project.id,
         protocol_id=proto.id,
         status="ACTIVE",

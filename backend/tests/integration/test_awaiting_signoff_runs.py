@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -18,11 +19,18 @@ from app.services.signoffs.queries import list_runs_awaiting_signoff_for_user
 
 _GRAPH = {"nodes": [{"id": "op-1", "type": "unitOp"}]}
 
+# Protocols and runs carry per-scope-unique slugs (F-0091
+# uq_protocols_owner_org_slug / uq_runs_project_slug); a monotonic counter
+# keeps every test-created row distinct within its owning scope.
+_seq = itertools.count(1)
+
 
 async def _glp_protocol(db, project, *, enabled=True, qau=False):
     proto = Protocol(
         name="P",
+        slug=f"glp-proto-{next(_seq)}",
         project_id=project.id,
+        owner_org_id=project.organization_id,
         status="APPROVED",
         graph={"glpSettings": {"glp_enabled": enabled, "require_qau": qau}},
     )
@@ -34,6 +42,7 @@ async def _glp_protocol(db, project, *, enabled=True, qau=False):
 async def _run(db, project, proto, user, *, status="ACTIVE", completed=True):
     run = Run(
         name="R",
+        slug=f"signoff-run-{next(_seq)}",
         project_id=project.id,
         protocol_id=proto.id,
         status=status,
