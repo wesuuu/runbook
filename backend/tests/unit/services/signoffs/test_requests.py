@@ -25,7 +25,8 @@ def _glp(require_sd=True, require_qau=True) -> dict:
 
 async def _run(db, project_id, *, graph, sd=None, qau=None) -> Run:
     run = Run(
-        name="R", project_id=project_id, graph=graph, execution_data={},
+        name="R", slug=f"run-{uuid.uuid4().hex[:12]}",
+        project_id=project_id, graph=graph, execution_data={},
         status="COMPLETED", study_director_id=sd, qau_reviewer_id=qau,
     )
     db.add(run)

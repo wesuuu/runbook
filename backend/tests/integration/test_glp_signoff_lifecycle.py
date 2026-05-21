@@ -52,6 +52,7 @@ async def sample_completed_run(db_session: AsyncSession, test_project) -> Run:
     """
     run = Run(
         name="Signoff Lifecycle Completed Run",
+        slug="signoff-lifecycle-completed-run",
         project_id=test_project.id,
         status="COMPLETED",
         completed_at=datetime.now(timezone.utc),
@@ -381,11 +382,14 @@ async def basic_active_run(
         version_number=1,
         created_by_id=test_user.id,
         graph={"nodes": [], "edges": [], "glpSettings": {}},
+        slug="basic-protocol",
+        owner_org_id=test_project.organization_id,
     )
     db_session.add(proto)
     await db_session.flush()
     run = Run(
         name="Basic Active Run",
+        slug="basic-active-run",
         project_id=test_project.id,
         protocol_id=proto.id,
         status="ACTIVE",

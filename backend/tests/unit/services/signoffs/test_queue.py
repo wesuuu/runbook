@@ -1,5 +1,7 @@
 """Unit tests for the unified review queue (F-0080)."""
 
+import uuid
+
 import pytest
 
 from app.models.runs import Run
@@ -8,7 +10,13 @@ from app.services.signoffs.queue import list_review_queue_for_user
 
 
 async def _run(db, project_id) -> Run:
-    run = Run(name="R", project_id=project_id, graph={}, execution_data={})
+    run = Run(
+        name="R",
+        slug=f"run-{uuid.uuid4().hex[:12]}",
+        project_id=project_id,
+        graph={},
+        execution_data={},
+    )
     db.add(run)
     await db.flush()
     return run

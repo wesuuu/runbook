@@ -1,5 +1,7 @@
 """Integration: GET /signoff-requests (F-0080)."""
 
+import uuid
+
 import pytest
 from httpx import AsyncClient
 
@@ -8,7 +10,13 @@ from app.models.signoffs import GlpSignoffRequest
 
 
 async def _run(db, project_id) -> Run:
-    run = Run(name="Queued Run", project_id=project_id, graph={}, execution_data={})
+    run = Run(
+        name="Queued Run",
+        slug=f"run-{uuid.uuid4().hex[:12]}",
+        project_id=project_id,
+        graph={},
+        execution_data={},
+    )
     db.add(run)
     await db.flush()
     return run

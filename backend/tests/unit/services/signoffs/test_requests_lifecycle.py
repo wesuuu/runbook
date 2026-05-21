@@ -1,5 +1,7 @@
 """Cancellation, fulfillment, and reopen-cycle tests (F-0080)."""
 
+import uuid
+
 import pytest
 from fastapi import BackgroundTasks
 from sqlalchemy import select
@@ -18,7 +20,8 @@ _GLP = {"glpSettings": {"require_study_director": True, "require_qau": True}}
 
 async def _run(db, project_id, sd, qau) -> Run:
     run = Run(
-        name="R", project_id=project_id, graph=_GLP, execution_data={},
+        name="R", slug=f"run-{uuid.uuid4().hex[:12]}",
+        project_id=project_id, graph=_GLP, execution_data={},
         status="COMPLETED", study_director_id=sd, qau_reviewer_id=qau,
     )
     db.add(run)
@@ -77,7 +80,8 @@ async def test_on_run_reopened_noop_when_no_open_requests(
     No exception should be raised, and no background tasks should be enqueued.
     """
     run = Run(
-        name="R", project_id=test_project.id, graph={}, execution_data={},
+        name="R", slug=f"run-{uuid.uuid4().hex[:12]}",
+        project_id=test_project.id, graph={}, execution_data={},
         status="COMPLETED",
     )
     db_session.add(run)

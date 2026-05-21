@@ -156,8 +156,10 @@ async def test_assert_run_can_close_passes_for_basic_run():
 async def test_assert_run_can_close_requires_operator_on_glp_run():
     """A GLP run (a reviewer role is required) always needs OPERATOR (#18).
 
-    With ``require_study_director`` set and no sign-offs at all, both the
-    always-required OPERATOR and the gated STUDY_DIRECTOR are reported.
+    F-0080 (decision C1): Study Director and QAU review happen
+    asynchronously *after* the run reaches COMPLETED, so they do not gate
+    closure. With ``require_study_director`` set and no sign-offs at all,
+    only the always-required OPERATOR is reported as missing.
     """
     mock_run = MagicMock()
     mock_run.id = uuid4()
@@ -176,10 +178,7 @@ async def test_assert_run_can_close_requires_operator_on_glp_run():
         )
     assert exc.value.status_code == 400
     assert exc.value.detail["error"] == "SIGNOFF_REQUIRED"
-    assert set(exc.value.detail["missing_roles"]) == {
-        "OPERATOR",
-        "STUDY_DIRECTOR",
-    }
+    assert set(exc.value.detail["missing_roles"]) == {"OPERATOR"}
 
 
 async def test_assert_run_can_close_passes_when_glp_run_fully_signed():

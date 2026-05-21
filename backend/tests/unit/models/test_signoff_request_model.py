@@ -11,7 +11,13 @@ from app.models.signoffs import GlpSignoffRequest
 
 
 async def _make_run(db: AsyncSession, project_id: uuid.UUID) -> Run:
-    run = Run(name="R", project_id=project_id, graph={}, execution_data={})
+    run = Run(
+        name="R",
+        slug=f"run-{uuid.uuid4().hex[:12]}",
+        project_id=project_id,
+        graph={},
+        execution_data={},
+    )
     db.add(run)
     await db.flush()
     return run

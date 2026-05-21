@@ -1,5 +1,7 @@
 """Unit tests: _request_recipients excludes run actors from the QAU pool (F-0080)."""
 
+import uuid
+
 import pytest
 
 from app.models.runs import Run
@@ -17,6 +19,7 @@ async def test_request_recipients_excludes_operator_who_is_org_qau(
     unassigned QAU request must not fan a notification back to them."""
     run = Run(
         name="R",
+        slug=f"run-{uuid.uuid4().hex[:12]}",
         project_id=test_project.id,
         graph={},
         execution_data={},
@@ -42,6 +45,7 @@ async def test_request_recipients_returns_empty_for_unassigned_non_qau(
     pool lookup."""
     run = Run(
         name="R",
+        slug=f"run-{uuid.uuid4().hex[:12]}",
         project_id=test_project.id,
         graph={},
         execution_data={},
@@ -71,6 +75,7 @@ async def test_request_recipients_returns_assignee_for_assigned_request(
     user — no pool lookup, no actor filtering."""
     run = Run(
         name="R",
+        slug=f"run-{uuid.uuid4().hex[:12]}",
         project_id=test_project.id,
         graph={},
         execution_data={},
