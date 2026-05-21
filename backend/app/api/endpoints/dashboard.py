@@ -385,7 +385,7 @@ async def _fetch_activity(
 
         entity_name = entity_names.get(
             (log.entity_type, log.entity_id),
-            log.changes.get("name", ""),
+            (log.changes or {}).get("name", ""),
         )
 
         items.append(
