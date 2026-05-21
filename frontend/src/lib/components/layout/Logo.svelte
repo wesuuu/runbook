@@ -21,13 +21,14 @@
 		class: cls = '',
 	}: Props = $props();
 
-	// Mark px and wordmark px are decoupled — the nav wants a ~30px mark but
-	// only ~16px text. `gap` is tuned per size to keep the lockup balanced.
-	// `lg` is the stacked hero treatment (login + loading screens), so its
-	// mark is sized as a height against the cropped `full` variant.
+	// Mark px and wordmark px are decoupled. `sm` is the inline / mobile-nav
+	// size; `md` is the app header — the nav renders the `full` circuit mark
+	// at this size, so it is tuned to let that detail read; `lg` is the
+	// stacked hero treatment (login + loading screens). For the `full`
+	// variant, `mark` is a height — its width follows the crop ratio.
 	const sizeMap = {
 		sm: { mark: 24, wordmark: 14, gap: 4 },
-		md: { mark: 30, wordmark: 16, gap: 5 },
+		md: { mark: 38, wordmark: 19, gap: 8 },
 		lg: { mark: 92, wordmark: 33, gap: 14 },
 	};
 

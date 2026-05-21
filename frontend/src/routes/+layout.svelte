@@ -152,7 +152,7 @@
     <div class="min-h-screen bg-background text-foreground font-sans antialiased">
         {#if showNav}
             <nav
-                class="bg-card/80 backdrop-blur-xl border-b border-border/60 px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-50"
+                class="bg-card/80 backdrop-blur-xl border-b border-border/60 px-4 sm:px-6 py-3.5 flex items-center justify-between sticky top-0 z-50"
             >
                 <div class="flex items-center gap-2.5">
                     <!-- Hamburger button (mobile only) -->
@@ -168,7 +168,7 @@
                         </svg>
                     </Button>
                     <a href="/" class="flex items-center transition-opacity hover:opacity-80">
-                        <Logo size="md" />
+                        <Logo size="md" variant="full" />
                     </a>
                 </div>
                 <div class="flex items-center gap-6 text-sm font-medium">
