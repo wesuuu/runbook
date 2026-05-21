@@ -22,6 +22,7 @@ import {
     type ApproveProtocolRequest,
     type RejectProtocolRequest,
 } from '$lib/schemas/glpSignoff';
+import { SignoffRequestListSchema, type SignoffRequestList } from '$lib/schemas/signoffRequests';
 
 export class ApiError extends Error {
     status: number;
@@ -369,6 +370,21 @@ export function completeRun(
 
 export function reopenRun(runId: string, reason: string): Promise<unknown> {
     return api.post<unknown>(`/runs/${runId}/reopen`, { reason });
+}
+
+// --- Sign-off review queue (F-0080) ---
+
+export function listSignoffRequests(): Promise<SignoffRequestList> {
+    return api.get<SignoffRequestList>('/signoff-requests', {
+        schema: SignoffRequestListSchema,
+    });
+}
+
+export function updateRunReviewers(
+    runId: string,
+    reviewers: { study_director_id: string | null; qau_reviewer_id: string | null },
+): Promise<unknown> {
+    return api.put<unknown>(`/runs/${runId}/reviewers`, reviewers);
 }
 
 export const glpSignoffApi = {
