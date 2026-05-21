@@ -38,11 +38,8 @@
 
     <div class="w-full max-w-sm relative z-10">
         <div class="flex flex-col items-center mb-10">
-            <div class="shadow-lg shadow-primary/20 mb-4 rounded-xl">
-                <Logo size="lg" />
-            </div>
-            <h1 class="text-2xl font-bold text-foreground tracking-tight">Batchrite</h1>
-            <p class="text-sm text-muted-foreground mt-1.5">Laboratory Execution System</p>
+            <Logo size="lg" variant="full" animated class="mb-4" />
+            <p class="text-sm text-muted-foreground">Laboratory Execution System</p>
         </div>
 
         <div class="card-warm rounded-xl p-1">

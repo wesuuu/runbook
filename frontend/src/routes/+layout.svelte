@@ -139,7 +139,7 @@
     <div class="min-h-screen flex items-center justify-center bg-background">
         <div class="flex flex-col items-center gap-4">
             <div class="relative">
-                <Logo size="md" />
+                <Logo size="lg" variant="full" animated />
             </div>
             <p class="text-sm text-muted-foreground tracking-wide">Loading...</p>
         </div>
@@ -167,11 +167,8 @@
                             <path d="M4 6h16M4 12h16M4 18h16" />
                         </svg>
                     </Button>
-                    <a href="/" class="flex items-center gap-2.5 group">
-                        <div class="shadow-sm shadow-primary/20 group-hover:shadow-md group-hover:shadow-primary/30 transition-all rounded-md">
-                            <Logo size="md" />
-                        </div>
-                        <span class="text-[15px] font-semibold text-foreground tracking-tight">Batchrite</span>
+                    <a href="/" class="flex items-center transition-opacity hover:opacity-80">
+                        <Logo size="md" />
                     </a>
                 </div>
                 <div class="flex items-center gap-6 text-sm font-medium">

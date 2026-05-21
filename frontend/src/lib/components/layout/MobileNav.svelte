@@ -41,11 +41,8 @@
     >
         <!-- Header -->
         <div class="flex items-center justify-between px-5 py-4 border-b border-border">
-            <a href="/" class="flex items-center gap-2.5" onclick={close}>
-                <div class="shadow-sm shadow-primary/20 rounded-md">
-                    <Logo size="sm" />
-                </div>
-                <span class="text-[15px] font-semibold text-foreground tracking-tight">Batchrite</span>
+            <a href="/" class="flex items-center" onclick={close}>
+                <Logo size="sm" />
             </a>
             <Button
                 variant="ghost"
