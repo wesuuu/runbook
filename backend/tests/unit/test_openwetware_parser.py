@@ -173,3 +173,26 @@ def test_payload_defaults_import_allowed_true():
     p = ExternalProtocolPayload(title="t", source_url="u", summary="s")
     assert p.import_allowed is True
     assert p.license_note is None
+
+
+def test_parser_decodes_html_entities_in_steps():
+    """Wiki step text routinely carries HTML entities (`&mu;`, `&deg;`,
+    `&amp;`). Left raw they leak into protocol steps and the approval card
+    as literal `&mu;l`. The parser must decode them to real characters.
+    """
+    wikitext = (
+        "==Procedure==\n"
+        "#Add 1 &mu;l of plasmid &amp; mix gently.\n"
+        "#Heat shock at 42 &deg;C for 30 s.\n"
+    )
+    p = parse_openwetware_wikitext(
+        wikitext,
+        displaytitle="Entity test",
+        source_url="https://openwetware.org/wiki/Entity_test",
+    )
+    assert len(p.steps) == 2
+    # `&mu;` decodes to U+03BC (Greek small mu), the HTML-standard mapping.
+    assert p.steps[0].text == "Add 1 μl of plasmid & mix gently."
+    assert p.steps[1].text == "Heat shock at 42 °C for 30 s."
+    # No raw entity should survive into step text.
+    assert not any("&" in s.text and ";" in s.text for s in p.steps)

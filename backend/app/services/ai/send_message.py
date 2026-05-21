@@ -22,6 +22,7 @@ The caller (chat SSE endpoint) serializes each dict as an SSE `data:` line.
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 from uuid import UUID
 
@@ -30,6 +31,7 @@ from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
 )
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +44,7 @@ from app.services.ai.deps import ChatDeps, RetrievedChunk
 from app.services.ai.runtime.compaction import CompactionState
 from app.services.ai.runtime.sanitize import sanitize_output
 from app.services.ai.tool_labels import resolve_tool_label
+from app.services.ai.turn_status import clear_turn_heartbeat, turn_heartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +234,11 @@ async def send_message_streaming(
         session.title = user_content[:100].strip()
         await db.flush()
 
+    # BUG-005: stamp the turn heartbeat in the SAME commit as the user message
+    # so a poll landing between "user message persisted" and "agent started"
+    # sees turn_in_progress=true rather than a false "interrupted" banner.
+    session.active_turn_heartbeat_at = datetime.now(timezone.utc)
+
     await db.commit()
     await db.refresh(user_msg)
 
@@ -311,35 +319,69 @@ async def send_message_streaming(
             message_history = None
 
     # ── 5. Run the agent in a background task; drain the queue ───────────────
-    run_task: asyncio.Task = asyncio.create_task(
-        agent.run(
-            model_visible_content,
-            deps=deps,
-            message_history=message_history,
-            event_stream_handler=_parent_event_handler,
-        )
-    )
-
-    try:
-        while not run_task.done() or not event_queue.empty():
-            queue_get = asyncio.create_task(event_queue.get())
-            done_set, _pending = await asyncio.wait(
-                {queue_get, run_task},
-                return_when=asyncio.FIRST_COMPLETED,
+    # The turn heartbeat is refreshed for the whole agent run so a slow turn
+    # keeps reporting turn_in_progress=true to the poll-recovery path (BUG-005).
+    async with turn_heartbeat(session_pk):
+        run_task: asyncio.Task = asyncio.create_task(
+            agent.run(
+                model_visible_content,
+                deps=deps,
+                message_history=message_history,
+                event_stream_handler=_parent_event_handler,
             )
-            if queue_get in done_set:
-                ev = queue_get.result()
-                if ev is not None:
-                    yield ev
-            else:
-                queue_get.cancel()
-        result = await run_task
-    except Exception:
-        logger.exception("Chat agent run failed for session %s", session_pk)
-        if not run_task.done():
-            run_task.cancel()
-        yield {"type": "error", "detail": "Failed to generate AI response"}
-        return
+        )
+
+        try:
+            while not run_task.done() or not event_queue.empty():
+                queue_get = asyncio.create_task(event_queue.get())
+                done_set, _pending = await asyncio.wait(
+                    {queue_get, run_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if queue_get in done_set:
+                    ev = queue_get.result()
+                    if ev is not None:
+                        yield ev
+                else:
+                    queue_get.cancel()
+            result = await run_task
+        except ModelHTTPError as exc:
+            # The model provider (e.g. Ollama Cloud) returned an HTTP error.
+            # The OpenAI client already retried transient 5xx/429 twice;
+            # reaching here means the provider is sustainedly unavailable. Tell
+            # the user it is transient and retryable so an outage is not
+            # mistaken for a bug.
+            logger.warning(
+                "Chat agent run hit upstream model error %s for session %s",
+                exc.status_code,
+                session_pk,
+            )
+            if not run_task.done():
+                run_task.cancel()
+            # BUG-005: clear the heartbeat explicitly — the error path has no
+            # writer UPDATE to fold the clear into.
+            await clear_turn_heartbeat(session_pk)
+            transient = exc.status_code in (429, 500, 502, 503, 504)
+            yield {
+                "type": "error",
+                "detail": (
+                    "The AI service is temporarily unavailable. Please send "
+                    "your message again in a moment."
+                    if transient
+                    else "Failed to generate AI response"
+                ),
+            }
+            return
+        except Exception:
+            logger.exception("Chat agent run failed for session %s", session_pk)
+            if not run_task.done():
+                run_task.cancel()
+            # BUG-005: the error path has no writer UPDATE to fold the clear
+            # into — clear the heartbeat explicitly so the orphaned turn does
+            # not keep reporting turn_in_progress=true until the 60s expiry.
+            await clear_turn_heartbeat(session_pk)
+            yield {"type": "error", "detail": "Failed to generate AI response"}
+            return
 
     # ── 6. Finalize tool side effects on the original session ────────────────
     try:
@@ -390,6 +432,8 @@ async def send_message_streaming(
                 source_url,
                 list(deps.external_protocol_cache.keys()),
             )
+            # BUG-005: early return — no writer UPDATE downstream, so clear here.
+            await clear_turn_heartbeat(session_pk)
             yield {
                 "type": "error",
                 "detail": (
@@ -436,6 +480,9 @@ async def send_message_streaming(
                     external_protocol_cache=_trim_external_protocol_cache(
                         deps.external_protocol_cache
                     ),
+                    # BUG-005: clear the heartbeat — the turn is suspended
+                    # awaiting human approval, not in progress.
+                    active_turn_heartbeat_at=None,
                 )
             )
             await writer.commit()
@@ -511,6 +558,9 @@ async def send_message_streaming(
                 external_protocol_cache=_trim_external_protocol_cache(
                     deps.external_protocol_cache
                 ),
+                # BUG-005: clear the heartbeat atomically with the assistant
+                # message landing — the turn is complete.
+                active_turn_heartbeat_at=None,
             )
         )
         await writer.commit()
@@ -588,6 +638,9 @@ async def resume_message_streaming(
     )
     db.add(user_msg)
     await db.flush()
+    # BUG-005: stamp the turn heartbeat in the same commit as the decision
+    # message so the resume turn reports turn_in_progress=true while it runs.
+    session.active_turn_heartbeat_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(user_msg)
 
@@ -671,35 +724,59 @@ async def resume_message_streaming(
 
     deferred_results = DeferredToolResults(approvals={tool_call_id: approved})
 
-    run_task: asyncio.Task = asyncio.create_task(
-        agent.run(
-            deps=deps,
-            message_history=message_history,
-            event_stream_handler=_parent_event_handler,
-            deferred_tool_results=deferred_results,
-        )
-    )
-
-    try:
-        while not run_task.done() or not event_queue.empty():
-            queue_get = asyncio.create_task(event_queue.get())
-            done_set, _pending = await asyncio.wait(
-                {queue_get, run_task},
-                return_when=asyncio.FIRST_COMPLETED,
+    async with turn_heartbeat(session_pk):
+        run_task: asyncio.Task = asyncio.create_task(
+            agent.run(
+                deps=deps,
+                message_history=message_history,
+                event_stream_handler=_parent_event_handler,
+                deferred_tool_results=deferred_results,
             )
-            if queue_get in done_set:
-                ev = queue_get.result()
-                if ev is not None:
-                    yield ev
-            else:
-                queue_get.cancel()
-        result = await run_task
-    except Exception:
-        logger.exception("Chat agent resume failed for session %s", session_pk)
-        if not run_task.done():
-            run_task.cancel()
-        yield {"type": "error", "detail": "Failed to resume AI response"}
-        return
+        )
+
+        try:
+            while not run_task.done() or not event_queue.empty():
+                queue_get = asyncio.create_task(event_queue.get())
+                done_set, _pending = await asyncio.wait(
+                    {queue_get, run_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if queue_get in done_set:
+                    ev = queue_get.result()
+                    if ev is not None:
+                        yield ev
+                else:
+                    queue_get.cancel()
+            result = await run_task
+        except ModelHTTPError as exc:
+            logger.warning(
+                "Chat agent resume hit upstream model error %s for session %s",
+                exc.status_code,
+                session_pk,
+            )
+            if not run_task.done():
+                run_task.cancel()
+            # BUG-005: error path has no writer UPDATE — clear explicitly.
+            await clear_turn_heartbeat(session_pk)
+            transient = exc.status_code in (429, 500, 502, 503, 504)
+            yield {
+                "type": "error",
+                "detail": (
+                    "The AI service is temporarily unavailable. Please try the "
+                    "approval again in a moment."
+                    if transient
+                    else "Failed to resume AI response"
+                ),
+            }
+            return
+        except Exception:
+            logger.exception("Chat agent resume failed for session %s", session_pk)
+            if not run_task.done():
+                run_task.cancel()
+            # BUG-005: error path has no writer UPDATE — clear explicitly.
+            await clear_turn_heartbeat(session_pk)
+            yield {"type": "error", "detail": "Failed to resume AI response"}
+            return
 
     try:
         await db.commit()
@@ -756,6 +833,8 @@ async def resume_message_streaming(
                 external_protocol_cache=_trim_external_protocol_cache(
                     deps.external_protocol_cache
                 ),
+                # BUG-005: the assistant reply has landed — the turn is over.
+                active_turn_heartbeat_at=None,
             )
         )
         await writer.commit()

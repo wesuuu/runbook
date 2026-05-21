@@ -63,7 +63,14 @@ def _make_streaming_mock(content: str, sources: list):
     """
 
     async def _fake_streaming(
-        db, session, user_content, *, user_id, is_org_admin, skill_id=None
+        db,
+        session,
+        user_content,
+        *,
+        user_id,
+        is_org_admin,
+        skill_id=None,
+        current_route=None,
     ):
         from app.models.chat import ChatMessage, ChatMessageRole
         from app.schemas.chat import ChatMessageResponse, ChatSourceReference
@@ -288,6 +295,43 @@ class TestGetChatSession:
         fake_id = str(uuid.uuid4())
         resp = await client.get(f"/chat/sessions/{fake_id}", headers=auth_headers)
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_session_reports_turn_in_progress(
+        self, client, auth_headers, db_session, test_user, test_org
+    ):
+        from datetime import datetime, timedelta, timezone
+
+        from app.services.ai.turn_status import TURN_STALE_AFTER_S
+
+        live = ChatSession(
+            user_id=test_user.id,
+            org_id=test_org.id,
+            title="Live turn",
+            active_turn_heartbeat_at=datetime.now(timezone.utc),
+        )
+        orphaned = ChatSession(
+            user_id=test_user.id,
+            org_id=test_org.id,
+            title="Orphaned turn",
+            active_turn_heartbeat_at=datetime.now(timezone.utc)
+            - timedelta(seconds=TURN_STALE_AFTER_S + 30),
+        )
+        idle = ChatSession(
+            user_id=test_user.id,
+            org_id=test_org.id,
+            title="Idle session",
+            active_turn_heartbeat_at=None,
+        )
+        db_session.add_all([live, orphaned, idle])
+        await db_session.flush()
+
+        for session, expected in [(live, True), (orphaned, False), (idle, False)]:
+            resp = await client.get(
+                f"/chat/sessions/{session.id}", headers=auth_headers
+            )
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["turn_in_progress"] is expected
 
 
 class TestUpdateChatSession:

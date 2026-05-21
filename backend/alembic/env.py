@@ -23,6 +23,12 @@ import sys
 import os
 sys.path.append(os.getcwd())
 
+# Honor BATCHRITE_DATABASE_URL (set per-worktree slot, e.g. batchrite_wt1) so
+# migrations target the same database as the app. Falls back to alembic.ini.
+_db_url = os.environ.get("BATCHRITE_DATABASE_URL")
+if _db_url:
+    config.set_main_option("sqlalchemy.url", _db_url)
+
 from app.db.base import Base
 target_metadata = Base.metadata
 

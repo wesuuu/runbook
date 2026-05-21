@@ -23,6 +23,7 @@ from app.models.iam import (
     OrganizationMember,
     PermissionLevel,
     PrincipalType,
+    SubscriptionTier,
     Team,
     TeamMember,
     TeamRole,
@@ -112,7 +113,16 @@ async def seed_users(db: AsyncSession):
 
 
 async def seed_org(db: AsyncSession):
-    await _upsert(db, Organization, ORG_ID, name="BioProcess Inc")
+    # BioProcess Inc is seeded on the Pro tier so AI Chat (and other Pro+
+    # capabilities) are exercisable out of the box. Acme Biologics stays on
+    # the default Essentials tier to cover the non-Pro gated UX.
+    await _upsert(
+        db,
+        Organization,
+        ORG_ID,
+        name="BioProcess Inc",
+        subscription_tier=SubscriptionTier.PRO.value,
+    )
     await _upsert(db, Organization, ORG_ID_2, name="Acme Biologics")
 
     # Org memberships — primary org

@@ -67,11 +67,12 @@ let scrollFn: (() => void) | null = null;
 // When a session is loaded and its trailing turn is a user message with no
 // assistant reply yet (typically after a page refresh during a slow LLM call),
 // we keep `sending = true` and re-fetch the session every few seconds until
-// the assistant message lands. After STALE_POLL_MS without resolution we
-// surface a retry affordance — the original request may have been orphaned
-// (backend restart, crash, or a cancellation we can't detect from the client).
+// the assistant message lands. The server's `turn_in_progress` flag (BUG-005)
+// is authoritative: while it is true the backend turn is alive and we keep
+// polling; once it goes false with the user message still trailing, the turn
+// was orphaned (backend restart, crash, or an undetectable cancellation) and
+// we surface a retry affordance.
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
-let staleTimer: ReturnType<typeof setTimeout> | null = null;
 let pollSessionId: string | null = null;
 let stalePendingMessage = $state<ChatMessage | null>(null);
 
@@ -151,8 +152,6 @@ export function getCurrentToolLabel(): string | null {
     return currentTool?.label ?? null;
 }
 
-const STALE_POLL_MS = 90_000;
-
 function trailingUserMessage(detail: ChatSessionDetail | null): ChatMessage | null {
     if (!detail || detail.messages.length === 0) return null;
     for (let i = detail.messages.length - 1; i >= 0; i--) {
@@ -163,16 +162,18 @@ function trailingUserMessage(detail: ChatSessionDetail | null): ChatMessage | nu
     return null;
 }
 
-function clearPoll(): void {
+// Stop the recovery poll loop without touching the stale-retry banner.
+function stopPoll(): void {
     if (pollTimer) {
         clearTimeout(pollTimer);
         pollTimer = null;
     }
-    if (staleTimer) {
-        clearTimeout(staleTimer);
-        staleTimer = null;
-    }
     pollSessionId = null;
+}
+
+// Stop the poll loop AND clear the stale-retry banner.
+function clearPoll(): void {
+    stopPoll();
     stalePendingMessage = null;
 }
 
@@ -185,7 +186,20 @@ async function pollForAssistantReply(sessionId: string): Promise<void> {
         if (pollSessionId !== sessionId) return;
         const pending = trailingUserMessage(detail);
         if (pending) {
-            pollTimer = setTimeout(() => pollForAssistantReply(sessionId), 2500);
+            // The turn is still awaiting its reply. The server heartbeat
+            // (BUG-005) decides staleness: while turn_in_progress is true the
+            // backend is alive — keep polling. Once it goes false with the
+            // user message still trailing, the turn was orphaned.
+            if (detail.turn_in_progress) {
+                pollTimer = setTimeout(
+                    () => pollForAssistantReply(sessionId),
+                    2500,
+                );
+            } else {
+                stopPoll();
+                sending = false;
+                stalePendingMessage = pending;
+            }
             return;
         }
         activeSession = detail;
@@ -195,7 +209,12 @@ async function pollForAssistantReply(sessionId: string): Promise<void> {
         scrollFn?.();
         void loadSessions();
     } catch {
-        pollTimer = setTimeout(() => pollForAssistantReply(sessionId), 5000);
+        // Transient fetch failure — retry, but only if this poll loop is
+        // still the active one (the user may have switched sessions while
+        // the request was in flight).
+        if (pollSessionId === sessionId) {
+            pollTimer = setTimeout(() => pollForAssistantReply(sessionId), 5000);
+        }
     }
 }
 
@@ -230,24 +249,22 @@ function rehydratePendingApproval(detail: ChatSessionDetail): void {
 
 function maybeStartAwaitingPoll(detail: ChatSessionDetail): void {
     const pending = trailingUserMessage(detail);
+    clearPoll();
     if (!pending) {
-        clearPoll();
         return;
     }
-    clearPoll();
+    if (!detail.turn_in_progress) {
+        // The trailing user message has no live turn behind it — the request
+        // was orphaned before this page loaded. Surface retry immediately
+        // instead of waiting on a fixed client timeout (BUG-005).
+        stalePendingMessage = pending;
+        return;
+    }
+    // A turn is genuinely running — poll until its reply lands. The server
+    // heartbeat decides staleness from here on; no fixed client timeout.
     sending = true;
     pollSessionId = detail.id;
     pollTimer = setTimeout(() => pollForAssistantReply(detail.id), 2500);
-
-    // Use the orphan message's age — if it was sent before this page even
-    // opened (e.g. backend was restarted while a request was in flight) we
-    // want to surface the retry option immediately, not 90s from now.
-    const ageMs = Math.max(0, Date.now() - new Date(pending.created_at).getTime());
-    const remaining = Math.max(0, STALE_POLL_MS - ageMs);
-    staleTimer = setTimeout(() => {
-        if (pollSessionId !== detail.id) return;
-        stalePendingMessage = pending;
-    }, remaining);
 }
 
 export function getStalePendingMessage(): ChatMessage | null {
@@ -265,13 +282,8 @@ export async function retryStalePending(): Promise<void> {
 }
 
 export function dismissStalePending(): void {
-    // "Keep waiting" — hide the retry banner but leave the poll running so a
-    // late reply still resolves the dots. Won't reappear unless the session
-    // is reloaded.
-    if (staleTimer) {
-        clearTimeout(staleTimer);
-        staleTimer = null;
-    }
+    // "Dismiss" — the server has confirmed the turn is dead (no heartbeat),
+    // so there is nothing to keep waiting for. Just hide the banner.
     stalePendingMessage = null;
 }
 
