@@ -98,9 +98,9 @@
         graph: Graph | null,
     ): Record<string, string> {
         const out: Record<string, string> = {};
-        const hasLanes = (graph?.nodes ?? []).some((n) => n.type === 'swimLane');
+        const hasRoles = (graph?.nodes ?? []).some((n) => n.type === 'swimLane');
         for (const a of list) {
-            const key = hasLanes ? a.lane_node_id : '__run__';
+            const key = hasRoles ? a.lane_node_id : '__run__';
             out[key] = a.user_id;
         }
         return out;
@@ -214,7 +214,7 @@
             })),
     );
 
-    const swimLaneNodes = $derived(
+    const roleNodes = $derived(
         (currentGraph?.nodes ?? [])
             .filter((n) => n.type === 'swimLane')
             .map((n) => ({
@@ -253,7 +253,7 @@
     }
 
     async function persistAssignmentDiff() {
-        const hasLanes = swimLaneNodes.length > 0;
+        const hasRoles = roleNodes.length > 0;
         const allKeys = new Set<string>([
             ...Object.keys(originalAssignments),
             ...Object.keys(assignments),
@@ -267,7 +267,7 @@
             if (!newUserId && oldUserId) {
                 const existing = roleAssignments.find(
                     (a) =>
-                        (hasLanes ? a.lane_node_id === key : true) &&
+                        (hasRoles ? a.lane_node_id === key : true) &&
                         a.user_id === oldUserId,
                 );
                 if (existing) {
@@ -279,9 +279,9 @@
             }
 
             if (newUserId) {
-                const lane = hasLanes ? swimLaneNodes.find((l) => l.id === key) : null;
-                const lane_node_id = hasLanes ? key : '__run__';
-                const role_name = hasLanes ? lane?.data.label ?? 'Role' : 'Operator';
+                const role = hasRoles ? roleNodes.find((r) => r.id === key) : null;
+                const lane_node_id = hasRoles ? key : '__run__';
+                const role_name = hasRoles ? role?.data.label ?? 'Role' : 'Operator';
                 await api.post(`/runs/${run.id}/role-assignments`, {
                     lane_node_id,
                     role_name,
@@ -377,7 +377,7 @@
                             />
                         {:else if activeTab === 'assignees'}
                             <RunCreatorAssigneeStep
-                                {swimLaneNodes}
+                                {roleNodes}
                                 {projectMembers}
                                 loadingMembers={false}
                                 {assignments}

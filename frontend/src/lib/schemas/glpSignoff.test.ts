@@ -143,6 +143,7 @@ describe('GlpSettingsSchema', () => {
         const settings = GlpSettingsSchema.parse({});
         expect(settings.require_study_director).toBe(false);
         expect(settings.require_qau).toBe(false);
+        expect(settings.qau_mode).toBe('ANY_ORG_QAU');
         expect(settings.operator_attestation_text).toBe(
             DEFAULT_OPERATOR_ATTESTATION,
         );

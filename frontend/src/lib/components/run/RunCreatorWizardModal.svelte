@@ -121,7 +121,7 @@
             .map((n) => ({ id: n.id, label: ((n.data as { label?: string } | undefined)?.label) ?? n.id })),
     );
 
-    const swimLaneNodes = $derived(
+    const roleNodes = $derived(
         (currentGraph?.nodes ?? [])
             .filter((n) => n.type === 'swimLane')
             .map((n) => ({ id: n.id, data: { label: ((n.data as { label?: string } | undefined)?.label) ?? 'Role' } })),
@@ -372,13 +372,13 @@
     }
 
     async function persistAssignments(runId: string) {
-        const hasLanes = swimLaneNodes.length > 0;
+        const hasRoles = roleNodes.length > 0;
         const entries = Object.entries(assignments).filter(([, userId]) => !!userId);
         for (const [key, userId] of entries) {
-            const lane = hasLanes ? swimLaneNodes.find((l) => l.id === key) : null;
-            const lane_node_id = hasLanes ? key : '__run__';
-            const role_name = hasLanes
-                ? (lane?.data.label ?? 'Role')
+            const role = hasRoles ? roleNodes.find((r) => r.id === key) : null;
+            const lane_node_id = hasRoles ? key : '__run__';
+            const role_name = hasRoles
+                ? (role?.data.label ?? 'Role')
                 : 'Operator';
             try {
                 await api.post(`/runs/${runId}/role-assignments`, {
@@ -482,7 +482,7 @@
                         />
                     {:else if currentStep === 4}
                         <RunCreatorAssigneeStep
-                            {swimLaneNodes}
+                            {roleNodes}
                             {projectMembers}
                             {loadingMembers}
                             {assignments}

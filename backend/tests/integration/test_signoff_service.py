@@ -141,6 +141,44 @@ async def test_create_run_signoff_resolves_relative_signature_path(
     assert copied.read_bytes() == b"\x89PNG\r\n\x1a\n"
 
 
+async def test_create_run_signoff_generates_signature_when_none_on_file(
+    db_session: AsyncSession,
+    sample_run: Run,
+    test_user: User,
+    tmp_path,
+    monkeypatch,
+):
+    """A signer with no uploaded signature still gets a record-scoped image:
+    create_signoff generates a cursive image from their name so the §11.50
+    attestation-and-image requirement is met without a manual upload."""
+    monkeypatch.setattr(
+        FileStorageService,
+        "__init__",
+        lambda self: setattr(self, "storage_root", tmp_path / "uploads") or None,
+    )
+    # Signer has no signature on file.
+    assert test_user.signature_full_path is None
+
+    signoff = await create_signoff(
+        db_session,
+        entity_type="run",
+        entity_id=sample_run.id,
+        role="OPERATOR",
+        action="APPROVED",
+        signer=test_user,
+        attestation="I performed this run...",
+        signoff_request_id=None,
+    )
+
+    # A signature path was set even though the signer never uploaded one.
+    assert signoff.signature_image_path is not None
+    assert str(signoff.id) in signoff.signature_image_path
+    full = (tmp_path / "uploads") / signoff.signature_image_path
+    assert full.exists()
+    # The generated file is a valid PNG.
+    assert full.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 async def test_create_signoff_writes_audit_log(
     db_session: AsyncSession,
     sample_run: Run,

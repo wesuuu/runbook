@@ -22,7 +22,7 @@
             class="swimlane-node"
             class:selected
             class:vertical={isVertical}
-            style:--lane-color={data.color || "#94a3b8"}
+            style:--role-color={data.color || "#94a3b8"}
         >
             <NodeResizer
                 minWidth={isVertical ? 140 : 280}
@@ -40,7 +40,7 @@
                 {#if isEmpty}
                     <span
                         class="lane-empty-badge"
-                        title="This role has no steps. Drag steps into this lane or remove the role."
+                        title="This role has no steps. Drag steps into this role or remove the role."
                     >
                         ⚠ empty
                     </span>
@@ -59,9 +59,9 @@
 
 <style>
     .swimlane-node {
-        background: color-mix(in srgb, var(--lane-color) 4%, white);
+        background: color-mix(in srgb, var(--role-color) 4%, white);
         border: 1.5px dashed
-            color-mix(in srgb, var(--lane-color) 30%, transparent);
+            color-mix(in srgb, var(--role-color) 30%, transparent);
         border-radius: 12px;
         width: 100%;
         height: 100%;
@@ -87,7 +87,7 @@
     }
 
     .swimlane-node.selected {
-        border-color: var(--lane-color);
+        border-color: var(--role-color);
         border-style: solid;
     }
 
@@ -96,9 +96,9 @@
         align-items: center;
         gap: 8px;
         padding: 10px 14px;
-        background: color-mix(in srgb, var(--lane-color) 8%, white);
+        background: color-mix(in srgb, var(--role-color) 8%, white);
         border-bottom: 1px solid
-            color-mix(in srgb, var(--lane-color) 15%, transparent);
+            color-mix(in srgb, var(--role-color) 15%, transparent);
         border-radius: 12px 12px 0 0;
     }
 
@@ -107,7 +107,7 @@
         text-orientation: mixed;
         border-bottom: none;
         border-right: 1px solid
-            color-mix(in srgb, var(--lane-color) 15%, transparent);
+            color-mix(in srgb, var(--role-color) 15%, transparent);
         border-radius: 12px 0 0 12px;
         padding: 14px 10px;
         position: absolute;

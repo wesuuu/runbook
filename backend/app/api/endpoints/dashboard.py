@@ -1,40 +1,55 @@
-"""Dashboard endpoint — My Work, Team Activity, Operational Counters."""
+"""Dashboard endpoint — Action Rail triage surface (F-0092).
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+Thin orchestration: every counter is derived from the same in-memory lists the
+hero and rail render, so a counter cannot drift from what the user sees.
+"""
+
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
-from app.models.iam import OrganizationMember, OrgRole, User, has_org_role
+from app.models.iam import User
 from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Run, RunRoleAssignment
 from app.schemas.dashboard import (
     ActivityItem,
     ActivityPage,
-    CompletionTrendItem,
     Counters,
     DashboardResponse,
+    LabStatus,
     MyWork,
-    PendingAnalyses,
     RunSummary,
+    SignoffItem,
 )
+from app.services.approvals.awaiting import list_awaiting_for_user
 from app.services.core.permissions import get_visible_project_ids
+from app.services.equipment.calibration import get_calibration_status
+from app.services.runs.blockers import list_blocked_runs
+from app.services.runs.graph_facts import RunGraphFacts, extract_graph_facts
+from app.services.signoffs.queries import list_runs_awaiting_signoff_for_user
 
 router = APIRouter()
 
 
+def _status(run: Run) -> str:
+    return run.status if isinstance(run.status, str) else run.status.value
+
+
 def _count_steps(graph: dict) -> int:
-    """Count unitOp nodes in a graph."""
-    return sum(1 for n in graph.get("nodes", []) if n.get("type") == "unitOp")
+    """Count unitOp nodes in a graph (tolerant of non-dict node entries)."""
+    return sum(
+        1
+        for n in (graph.get("nodes") or [])
+        if isinstance(n, dict) and n.get("type") == "unitOp"
+    )
 
 
 def _count_completed_steps(execution_data: dict) -> int:
@@ -50,11 +65,12 @@ def _user_has_incomplete_steps(
     graph: dict, execution_data: dict, user_lane_ids: set[str]
 ) -> bool:
     """Check if the user's assigned lanes have any incomplete steps."""
-    for node in graph.get("nodes", []):
+    for node in graph.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
         if node.get("type") != "unitOp":
             continue
         parent_id = node.get("parentId")
-        # If no swimlanes at all, all steps belong to the user
         if not user_lane_ids and parent_id is None:
             step_data = execution_data.get(node["id"], {})
             if not isinstance(step_data, dict):
@@ -79,7 +95,6 @@ def _build_run_summary(
 ) -> RunSummary:
     graph = run.graph or {}
     exec_data = run.execution_data or {}
-    status_str = run.status if isinstance(run.status, str) else run.status.value
     return RunSummary(
         id=run.id,
         name=run.name,
@@ -88,7 +103,7 @@ def _build_run_summary(
         project_name=project_name,
         project_slug=project_slug,
         protocol_name=protocol_name,
-        status=status_str,
+        status=_status(run),
         role_name=role_name,
         completed_steps=_count_completed_steps(exec_data),
         total_steps=_count_steps(graph),
@@ -117,7 +132,9 @@ async def _resolve_names(
     proto_map: dict[UUID, str] = {}
     if protocol_ids:
         result = await db.execute(
-            select(Protocol.id, Protocol.name).where(Protocol.id.in_(protocol_ids))
+            select(Protocol.id, Protocol.name).where(
+                Protocol.id.in_(protocol_ids)
+            )
         )
         for pid, name in result.all():
             proto_map[pid] = name
@@ -125,228 +142,187 @@ async def _resolve_names(
     return project_map, proto_map, project_slug_map
 
 
-def _compute_completion_trend(runs: list, days: int = 7) -> list[CompletionTrendItem]:
-    """Build a per-day completion count for the last N days."""
-    now = datetime.now(timezone.utc)
-    # Build date buckets (oldest first)
-    buckets: dict[str, int] = {}
-    for i in range(days - 1, -1, -1):
-        d = (now - timedelta(days=i)).strftime("%Y-%m-%d")
-        buckets[d] = 0
-
-    for run in runs:
-        status = run.status if isinstance(run.status, str) else run.status.value
-        if status not in ("COMPLETED", "EDITED"):
-            continue
-        if not run.updated_at:
-            continue
-        day_key = run.updated_at.strftime("%Y-%m-%d")
-        if day_key in buckets:
-            buckets[day_key] += 1
-
-    return [CompletionTrendItem(date=d, count=c) for d, c in buckets.items()]
-
-
 @router.get("", response_model=DashboardResponse)
 async def get_dashboard(
     org_id: UUID = Query(..., description="Current organization ID"),
-    trend_days: int = Query(
-        7, ge=7, le=14, description="Days for completion trend (7 or 14)"
-    ),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Main dashboard: My Work + recent activity + counters."""
+    """Action Rail dashboard: My Work hero + Lab Status rail + action counters."""
     user_id = user.id
 
-    # Determine admin status
-    result = await db.execute(
-        select(OrganizationMember).where(
-            OrganizationMember.user_id == user_id,
-            OrganizationMember.organization_id == org_id,
-        )
-    )
-    membership = result.scalar_one_or_none()
-    is_admin = has_org_role(membership, OrgRole.ADMIN.value) if membership else False
-
-    # Get visible project IDs for this user
+    # ── Step 1: visible projects (early return on none) ──
     visible_project_ids = await get_visible_project_ids(db, user_id, org_id)
     if not visible_project_ids:
         return DashboardResponse(
             my_work=MyWork(),
+            lab_status=LabStatus(),
             activity=[],
             counters=Counters(),
-            is_admin=is_admin,
         )
 
-    # ── Load all runs in visible projects ──
-    result = await db.execute(
-        select(Run).where(Run.project_id.in_(visible_project_ids))
+    # ── Step 2: load runs in scope (decision 13 — creator / starter /
+    #    lane-assignee, plus orphan PLANNED runs via project-visibility) ──
+    assigned_run_ids = (
+        select(RunRoleAssignment.run_id)
+        .where(RunRoleAssignment.user_id == user_id)
+        .scalar_subquery()
     )
-    all_runs = list(result.scalars().all())
+    runs_with_assignments = (
+        select(RunRoleAssignment.run_id).distinct().scalar_subquery()
+    )
+    scope_filter = or_(
+        Run.created_by_id == user_id,                        # A — creator
+        Run.started_by_id == user_id,                        # B — starter
+        Run.id.in_(assigned_run_ids),                        # C — lane-assignee
+        and_(                                                # D — orphan PLANNED
+            Run.status == "PLANNED",
+            Run.created_by_id.is_(None),
+            Run.id.notin_(runs_with_assignments),
+        ),
+    )
+    result = await db.execute(
+        select(Run)
+        .where(Run.project_id.in_(visible_project_ids), scope_filter)
+        .options(defer(Run.notes), defer(Run.attachments))
+    )
+    in_scope_runs = list(result.scalars().all())
 
-    # ── Load user's role assignments ──
-    run_ids = [r.id for r in all_runs]
-    user_assignments: dict[UUID, list[RunRoleAssignment]] = {}
+    # ── Step 3: walk each run graph exactly once ──
+    graph_facts: dict[UUID, RunGraphFacts] = {
+        run.id: extract_graph_facts(run.graph or {}) for run in in_scope_runs
+    }
+
+    # ── Step 4: ONE batched load of all role assignments for these runs ──
+    run_ids = [r.id for r in in_scope_runs]
+    assignments_by_run: dict[UUID, list[RunRoleAssignment]] = {}
     if run_ids:
         result = await db.execute(
             select(RunRoleAssignment).where(
-                RunRoleAssignment.run_id.in_(run_ids),
-                RunRoleAssignment.user_id == user_id,
+                RunRoleAssignment.run_id.in_(run_ids)
             )
         )
-        for assignment in result.scalars().all():
-            user_assignments.setdefault(assignment.run_id, []).append(assignment)
+        for a in result.scalars().all():
+            assignments_by_run.setdefault(a.run_id, []).append(a)
 
-    # Batch-resolve project/protocol names
-    project_ids_set = {r.project_id for r in all_runs}
-    protocol_ids_set = {r.protocol_id for r in all_runs if r.protocol_id}
     project_map, proto_map, project_slug_map = await _resolve_names(
-        db, project_ids_set, protocol_ids_set
+        db,
+        {r.project_id for r in in_scope_runs},
+        {r.protocol_id for r in in_scope_runs if r.protocol_id},
     )
 
-    # ── Classify runs into My Work buckets ──
-    needs_action: list[RunSummary] = []
-    active_runs: list[RunSummary] = []
-    recently_completed: list[RunSummary] = []
-    planned_runs: list[RunSummary] = []
+    # ── Step 5: blockers (PLANNED runs only) ──
+    planned_runs = [r for r in in_scope_runs if _status(r) == "PLANNED"]
+    blocked = await list_blocked_runs(
+        db, planned_runs, graph_facts, assignments_by_run, org_id
+    )
 
-    two_weeks_ago = datetime.now(timezone.utc) - timedelta(days=14)
+    # ── Step 6: classify My Work ──
+    needs_action_planned: list[RunSummary] = []
+    needs_action_active: list[RunSummary] = []
+    in_progress: list[RunSummary] = []
+    planned_bucket: list[RunSummary] = []
 
-    for run in all_runs:
-        status = run.status if isinstance(run.status, str) else run.status.value
+    for run in in_scope_runs:
+        status = _status(run)
         proj_name = project_map.get(run.project_id, "")
         proj_slug = project_slug_map.get(run.project_id, "")
-        proto_name = proto_map.get(run.protocol_id, "") if run.protocol_id else None
-        assignments = user_assignments.get(run.id, [])
-        role_name = assignments[0].role_name if assignments else None
+        proto_name = (
+            proto_map.get(run.protocol_id) if run.protocol_id else None
+        )
+        my_assignments = [
+            a for a in assignments_by_run.get(run.id, []) if a.user_id == user_id
+        ]
+        role_name = my_assignments[0].role_name if my_assignments else None
+        summary = _build_run_summary(
+            run, proj_name, proto_name, role_name, proj_slug
+        )
 
-        # Is this user involved? (assigned a role OR started the run)
-        user_involved = bool(assignments) or run.started_by_id == user_id
+        if status == "PLANNED":
+            reasons = blocked.get(run.id)
+            if reasons:
+                summary.blockers = reasons
+                needs_action_planned.append(summary)
+            else:
+                planned_bucket.append(summary)
+        elif status == "ACTIVE":
+            involved = bool(my_assignments) or run.started_by_id == user_id
+            if not involved:
+                continue
+            lane_ids = {a.lane_node_id for a in my_assignments}
+            if _user_has_incomplete_steps(
+                run.graph or {}, run.execution_data or {}, lane_ids
+            ):
+                needs_action_active.append(summary)
+            else:
+                in_progress.append(summary)
+        # COMPLETED / EDITED runs are not bucketed into My Work.
 
-        if status == "ACTIVE":
-            if user_involved:
-                summary = _build_run_summary(
-                    run, proj_name, proto_name, role_name, proj_slug
-                )
-                # Check if user's lanes have incomplete steps
-                lane_ids = {a.lane_node_id for a in assignments}
-                graph = run.graph or {}
-                exec_data = run.execution_data or {}
-                if _user_has_incomplete_steps(graph, exec_data, lane_ids):
-                    needs_action.append(summary)
-                else:
-                    active_runs.append(summary)
-
-        elif status in ("COMPLETED", "EDITED"):
-            if user_involved and run.updated_at and run.updated_at >= two_weeks_ago:
-                recently_completed.append(
-                    _build_run_summary(
-                        run, proj_name, proto_name, role_name, proj_slug
-                    )
-                )
-
-        elif status == "PLANNED":
-            planned_runs.append(
-                _build_run_summary(run, proj_name, proto_name, role_name, proj_slug)
-            )
-
-    # Sort buckets
-    needs_action.sort(key=lambda r: r.updated_at)
-    active_runs.sort(key=lambda r: r.updated_at, reverse=True)
-    recently_completed.sort(key=lambda r: r.updated_at, reverse=True)
-    planned_runs.sort(key=lambda r: r.updated_at, reverse=True)
+    needs_action_planned.sort(key=lambda r: r.updated_at, reverse=True)
+    needs_action_active.sort(key=lambda r: r.updated_at, reverse=True)
+    in_progress.sort(key=lambda r: r.updated_at, reverse=True)
+    planned_bucket.sort(key=lambda r: r.updated_at, reverse=True)
 
     my_work = MyWork(
-        needs_action=needs_action,
-        active_runs=active_runs,
-        recently_completed=recently_completed[:10],
-        planned_runs=planned_runs,
+        needs_action=needs_action_planned + needs_action_active,
+        in_progress=in_progress,
+        planned=planned_bucket,
     )
 
-    # ── Activity feed (last 10) ──
+    # ── Step 7: Lab Status ──
+    calibration = await get_calibration_status(db, org_id)
+
+    proto_awaiting = await list_awaiting_for_user(db, user_id)
+    _far_future = datetime.max.replace(tzinfo=timezone.utc)
+    signoff_items: list[SignoffItem] = []
+    for item in proto_awaiting:
+        submitter = item.get("submitted_by")
+        detail = (
+            f"Submitted by {submitter['name']}" if submitter else None
+        )
+        signoff_items.append(
+            SignoffItem(
+                kind="protocol",
+                entity_id=item["protocol_id"],
+                entity_slug=item.get("protocol_slug"),
+                name=item["name"],
+                project_name=item.get("project_name"),
+                detail=detail,
+                waiting_since=item.get("submitted_at"),
+            )
+        )
+    run_signoff_items = await list_runs_awaiting_signoff_for_user(
+        db, user_id, in_scope_runs, graph_facts, assignments_by_run,
+        project_slug_map,
+    )
+    # ONE unified queue, oldest-waiting first across BOTH kinds (spec: the rail
+    # is a single triage list, not protocol-then-run groups). Items with no
+    # timestamp sort last.
+    awaiting_signoff = sorted(
+        signoff_items + run_signoff_items,
+        key=lambda s: s.waiting_since or _far_future,
+    )
+    lab_status = LabStatus(
+        calibration=calibration,
+        awaiting_signoff=awaiting_signoff,
+    )
+
+    # ── Step 8: activity ──
     activity = await _fetch_activity(db, visible_project_ids, limit=10)
 
-    # ── Counters ──
-    now = datetime.now(timezone.utc)
-    start_of_week = now - timedelta(days=now.weekday())
-    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    active_count = sum(
-        1
-        for r in all_runs
-        if (r.status if isinstance(r.status, str) else r.status.value) == "ACTIVE"
-    )
-    completed_this_week = sum(
-        1
-        for r in all_runs
-        if (r.status if isinstance(r.status, str) else r.status.value)
-        in ("COMPLETED", "EDITED")
-        and r.updated_at
-        and r.updated_at >= start_of_week
-    )
-    planned_count = sum(
-        1
-        for r in all_runs
-        if (r.status if isinstance(r.status, str) else r.status.value) == "PLANNED"
-    )
-
+    # ── Step 9: counters (set algebra — see design) ──
     counters = Counters(
-        active_runs=active_count,
-        completed_this_week=completed_this_week,
-        planned_runs=planned_count,
+        runs_blocked=len(blocked),
+        calibrations_due=len(calibration.overdue) + len(calibration.due_soon),
+        signoffs_pending=len(lab_status.awaiting_signoff),
+        active_runs=len(needs_action_active) + len(in_progress),
     )
-
-    # Admin-only counters
-    if is_admin:
-        result = await db.execute(
-            select(func.count(OrganizationMember.id)).where(
-                OrganizationMember.organization_id == org_id,
-            )
-        )
-        counters.team_members = result.scalar() or 0
-
-        counters.active_projects = len(visible_project_ids)
-
-        result = await db.execute(
-            select(func.count(Protocol.id)).where(
-                Protocol.project_id.in_(visible_project_ids)
-            )
-        )
-        counters.total_protocols = result.scalar() or 0
-
-    # ── Completion trend ──
-    completion_trend = _compute_completion_trend(all_runs, days=trend_days)
-
-    # ── Pending image analyses ──
-    pending_analyses = None
-    if run_ids:
-        analyzed_ids = select(ImageConversation.image_id).distinct().scalar_subquery()
-        pa_result = await db.execute(
-            select(
-                func.count(RunImage.id),
-                func.count(func.distinct(RunImage.run_id)),
-            ).where(
-                RunImage.run_id.in_(run_ids),
-                RunImage.id.notin_(analyzed_ids),
-            )
-        )
-        row = pa_result.one()
-        total_images = row[0] or 0
-        total_runs = row[1] or 0
-        if total_images > 0:
-            pending_analyses = PendingAnalyses(
-                total_images=total_images,
-                total_runs=total_runs,
-            )
 
     return DashboardResponse(
         my_work=my_work,
+        lab_status=lab_status,
         activity=activity,
         counters=counters,
-        completion_trend=completion_trend,
-        pending_analyses=pending_analyses,
-        is_admin=is_admin,
     )
 
 
@@ -421,7 +397,7 @@ async def _fetch_activity(
 
         entity_name = entity_names.get(
             (log.entity_type, log.entity_id),
-            log.changes.get("name", ""),
+            (log.changes or {}).get("name", ""),
         )
         entity_slug = entity_slugs.get((log.entity_type, log.entity_id))
         project_slug = project_slugs.get((log.entity_type, log.entity_id))

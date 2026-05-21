@@ -7,13 +7,13 @@ Error codes (stable strings used by the frontend):
     EDIT_REASON_REQUIRED        — modified step missing a non-blank edit_reason
     RUN_IMMUTABLE_REOPEN_REQUIRED — COMPLETED run has active sign-offs; reopen first
     SIGNOFF_REQUIRED            — required sign-off role(s) absent at close time
-    LANES_UNASSIGNED            — GLP-enabled run missing user on one or more lanes
     REOPEN_NOT_AUTHORIZED       — caller lacks authority to reopen a COMPLETED run
 """
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.iam import ObjectType, PermissionLevel
 from app.models.projects import Project
-from app.models.runs import Run
+from app.models.runs import Run, RunRoleAssignment
 from app.models.signoffs import GlpSignoff
 from app.services.core.permissions import check_permission
 from app.services.signoffs.queries import list_active_signoffs
@@ -119,43 +119,6 @@ async def assert_run_can_close(
         )
 
 
-def assert_can_start(run: Run) -> None:
-    """Block PLANNED→ACTIVE transition when required lane assignments are missing.
-
-    If the run's graph has ``glpSettings.glp_enabled=True``, every swimlane
-    node in ``run.graph["nodes"]`` must have a matching ``RunRoleAssignment``
-    (loaded from the ``run.role_assignments`` relationship) before the run
-    may start.
-
-    This function is synchronous.  The caller is responsible for ensuring
-    ``run.role_assignments`` is loaded (eager or lazy-loaded before call).
-
-    Raises:
-        HTTPException(422): detail={error: "LANES_UNASSIGNED",
-                                    missing_lanes: ["lane-uuid", ...]}
-    """
-    graph = run.graph or {}
-    glp_settings = graph.get("glpSettings") or {}
-    if not glp_settings.get("glp_enabled"):
-        return
-
-    nodes = graph.get("nodes") or []
-    swimlane_node_ids = [
-        n["id"] for n in nodes if isinstance(n, dict) and n.get("type") == "swimLane"
-    ]
-    if not swimlane_node_ids:
-        return
-
-    assigned_lanes = {a.lane_node_id for a in (run.role_assignments or [])}
-    missing_lanes = [lid for lid in swimlane_node_ids if lid not in assigned_lanes]
-
-    if missing_lanes:
-        raise HTTPException(
-            status_code=422,
-            detail={"error": "LANES_UNASSIGNED", "missing_lanes": missing_lanes},
-        )
-
-
 async def assert_can_reopen(
     db: AsyncSession,
     run: Run,
@@ -246,4 +209,68 @@ async def assert_can_reopen(
     raise HTTPException(
         status_code=403,
         detail={"error": "REOPEN_NOT_AUTHORIZED"},
+    )
+
+
+@dataclass
+class LaneGap:
+    """Why a PLANNED run can't start. ``is_blocking`` False == ready to start.
+
+    ``stale_lane_ids`` captures assignments whose ``lane_node_id`` is not a
+    swimlane in the run's current graph. The inlined ``update_run`` gate
+    rejects these via a *set-equality* check (``assigned != required``), so the
+    predicate must surface them — otherwise the dashboard would call a run
+    "ready" that the live gate still rejects.
+    """
+
+    has_assignee: bool
+    unassigned_lane_ids: list[str]
+    stale_lane_ids: list[str] = field(default_factory=list)
+
+    @property
+    def is_blocking(self) -> bool:
+        return (
+            (not self.has_assignee)
+            or bool(self.unassigned_lane_ids)
+            or bool(self.stale_lane_ids)
+        )
+
+
+def lane_assignment_gap(
+    graph: Optional[dict], role_assignments: Iterable[RunRoleAssignment]
+) -> LaneGap:
+    """Compute the lane-assignment gap for a run's PLANNED->ACTIVE start gate.
+
+    Mirrors the inlined gate in ``update_run`` exactly:
+      (a) at least one RunRoleAssignment must exist;
+      (b) if the graph has swimlane nodes, the set of assigned lane ids must
+          *equal* the set of swimlane node ids — i.e. every swimlane is
+          assigned AND no assignment points at a lane absent from the graph.
+
+    When the graph has no swimlane nodes, only (a) applies — the live gate
+    does not inspect lane ids at all in that case.
+
+    Pure and synchronous — the caller supplies the already-loaded assignments.
+    """
+    assignments = list(role_assignments)
+    has_assignee = len(assignments) > 0
+
+    nodes = (graph or {}).get("nodes") or []
+    swimlane_ids = [
+        n["id"]
+        for n in nodes
+        if isinstance(n, dict) and n.get("type") == "swimLane" and n.get("id")
+    ]
+    assigned = {a.lane_node_id for a in assignments}
+    if swimlane_ids:
+        swimlane_set = set(swimlane_ids)
+        unassigned = [lid for lid in swimlane_ids if lid not in assigned]
+        stale = sorted(lid for lid in assigned if lid not in swimlane_set)
+    else:
+        unassigned = []
+        stale = []
+    return LaneGap(
+        has_assignee=has_assignee,
+        unassigned_lane_ids=unassigned,
+        stale_lane_ids=stale,
     )
