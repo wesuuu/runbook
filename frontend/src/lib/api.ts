@@ -24,16 +24,9 @@ import {
 } from '$lib/schemas/glpSignoff';
 import { SignoffRequestListSchema, type SignoffRequestList } from '$lib/schemas/signoffRequests';
 
-export class ApiError extends Error {
-    status: number;
-    data: unknown;
+import { ApiError, extractErrorMessage } from '$lib/apiError';
 
-    constructor(status: number, message: string, data: unknown = null) {
-        super(message);
-        this.status = status;
-        this.data = data;
-    }
-}
+export { ApiError } from '$lib/apiError';
 
 
 function _authHeaders(contentType?: string): HeadersInit {
@@ -76,7 +69,10 @@ async function _handleErrorResponse(response: Response, fallbackMessage: string)
     let errorData = null;
     try {
         const errorJson = await response.json();
-        errorMessage = errorJson.detail || errorJson.message || errorMessage;
+        // Backend `detail` may be a string, a structured object, or a 422
+        // validation array — extractErrorMessage normalises all three so the
+        // ApiError.message is always real text, never "[object Object]".
+        errorMessage = extractErrorMessage(errorJson, fallbackMessage);
         errorData = errorJson;
     } catch {
         // Response body not JSON
