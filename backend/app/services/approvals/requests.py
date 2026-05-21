@@ -46,6 +46,7 @@ async def fulfill_open_requests(
         .where(
             GlpSignoffRequest.protocol_id == protocol_id,
             GlpSignoffRequest.status == "OPEN",
+            GlpSignoffRequest.protocol_id.isnot(None),
         )
         .values(status=final_status, fulfilled_at=now, fulfilled_by_id=actor_id)
     )
