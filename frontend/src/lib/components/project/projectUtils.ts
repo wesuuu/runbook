@@ -162,24 +162,24 @@ export function stepEditSummary(changes: Record<string, any>): string | null {
 
 export function experimentStatusClasses(status: string): string {
     switch (status?.toUpperCase()) {
-        case "ACTIVE":
-            return "bg-emerald-50 text-emerald-600 border border-emerald-200";
-        case "COMPLETED":
-            return "bg-emerald-600 text-white";
+        case "IN_PROGRESS":
+            return "bg-primary/10 text-primary border border-primary/20";
+        case "COMPLETE":
+            return "bg-accent/15 text-accent-foreground border border-accent/30";
         case "ARCHIVED":
-            return "bg-slate-100 text-slate-400 border border-slate-200";
+            return "bg-muted text-muted-foreground border border-border";
         case "DRAFT":
         default:
-            return "bg-slate-500 text-white";
+            return "bg-muted text-muted-foreground border border-border";
     }
 }
 
 export function experimentStatusLabel(status: string): string {
     switch (status?.toUpperCase()) {
-        case "ACTIVE":
-            return "Active";
-        case "COMPLETED":
-            return "Completed";
+        case "IN_PROGRESS":
+            return "In progress";
+        case "COMPLETE":
+            return "Complete";
         case "ARCHIVED":
             return "Archived";
         case "DRAFT":
