@@ -2591,3 +2591,893 @@ The implementation plan was hardened by the implement-task review panel — `adv
 - Shared notification store to remove the `markRead`/`markAllRead`/`handleSelect` duplication once a third consumer appears (TECH_DEBT).
 - Cursor-based pagination for the history page if `OFFSET` paging degrades on large inboxes (TECH_DEBT).
 - Compliance-register note that in-app notifications are now subject to a 90-day retention purge (the external `notification_deliveries` audit trail is unaffected).
+
+---
+
+## Plan Amendment — Backend-Resolved Deep-Link URLs
+
+**Date:** 2026-05-22 — applied during implementation (implement-task step 4).
+
+### Why this amendment exists
+
+Task 8 originally shipped a client-side `notificationHref(entityType, entityId)` that
+produced flat, UUID-based paths: `/runs/<uuid>`, `/protocols/<uuid>`, etc. The code-quality
+review of the committed Task 8 caught that **those routes do not exist**. The SvelteKit
+route tree (F-0091) is org-scoped and slug-based — `/[org]/projects/[projectSlug]/runs/[slug]`,
+`/[org]/protocols/[slug]`, and so on. Every deep link `notificationHref` produced would
+404. The spec, the plan, and all three planning-stage review panels missed this.
+
+The fix was escalated to the user, who chose **backend-resolved URLs**: the API computes a
+canonical, navigable `url` for each notification at read time and returns it as a field on
+`NotificationResponse`. The frontend consumes `notification.url` directly and no longer
+constructs paths. This amendment is the authoritative record of that decision and revises
+Tasks 8–11 accordingly. It supersedes the conflicting text in Tasks 8–11 and the Gap 4 line
+in the Self-Review Notes.
+
+**Net task changes:**
+- **Task 8** — `notificationHref` / `ENTITY_ROUTES` / `UUID_RE` and their test block are removed. The other helpers (`eventIcon`, `eventTone`, `BELL_LIMIT`, `HISTORY_PAGE_SIZE`) are unchanged.
+- **Task 8b (new)** — backend deep-link resolver, `NotificationResponse.url` field, endpoint wiring, `NotificationSchema.url`, and full test coverage. Runs after Task 8, before Task 9.
+- **Tasks 9, 10, 11** — consume `item.url` instead of calling `notificationHref(...)`; test fixtures gain a `url` field.
+
+---
+
+### Revised Task 8: Frontend helpers — `lib/notifications.ts`
+
+Task 8 keeps only the event-icon / event-tone helpers and the page-size constants. The
+deep-link resolver moves to the backend (Task 8b). Two cases:
+
+**If Task 8 has already been committed with `notificationHref` (it has — commit `42aff79`):**
+treat this as a follow-up revision. Edit the two existing files to delete the dead code,
+then commit the deletion.
+
+- [ ] **R-Step 1: Delete the deep-link exports from `frontend/src/lib/notifications.ts`**
+
+Remove these three top-level declarations entirely (the `ENTITY_ROUTES` const, the `UUID_RE`
+const, and the `notificationHref` function with its doc comment):
+
+```typescript
+const ENTITY_ROUTES: Record<string, string> = {
+    run: '/runs',
+    protocol: '/protocols',
+    experiment: '/experiments',
+    project: '/projects',
+};
+
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolve a notification's in-app deep link, or `null` when the entity
+ * type is unknown or the id is missing / not a UUID. Callers degrade a
+ * `null` result to "mark read only".
+ */
+export function notificationHref(
+    entityType: string,
+    entityId: string,
+): string | null {
+    const base = ENTITY_ROUTES[entityType];
+    if (!base) return null;
+    if (!entityId || !UUID_RE.test(entityId)) return null;
+    return `${base}/${entityId}`;
+}
+```
+
+After the edit, `notifications.ts` ends at the `eventTone` function. `eventIcon`,
+`eventTone`, `EVENT_ICONS`, `EVENT_TONES`, `BELL_LIMIT`, `HISTORY_PAGE_SIZE` all stay.
+
+- [ ] **R-Step 2: Delete the `notificationHref` test block from `frontend/src/lib/notifications.test.ts`**
+
+Remove `notificationHref` from the import and delete the whole `describe('notificationHref', …)`
+block. The import becomes:
+
+```typescript
+import { describe, expect, it } from 'vitest';
+import {
+    eventIcon,
+    eventTone,
+    BELL_LIMIT,
+    HISTORY_PAGE_SIZE,
+} from './notifications';
+```
+
+Delete this block in full:
+
+```typescript
+describe('notificationHref', () => {
+    it('maps known entity types to their routes', () => {
+        expect(notificationHref('run', UUID)).toBe(`/runs/${UUID}`);
+        expect(notificationHref('protocol', UUID)).toBe(`/protocols/${UUID}`);
+        expect(notificationHref('experiment', UUID)).toBe(`/experiments/${UUID}`);
+        expect(notificationHref('project', UUID)).toBe(`/projects/${UUID}`);
+    });
+
+    it('returns null for an unknown entity type', () => {
+        expect(notificationHref('widget', UUID)).toBeNull();
+    });
+
+    it('returns null for a falsy or malformed entity id', () => {
+        expect(notificationHref('run', '')).toBeNull();
+        expect(notificationHref('run', 'not-a-uuid')).toBeNull();
+    });
+});
+```
+
+If the `UUID` const is now unused after the deletion, remove it too (the remaining
+`eventIcon` / `eventTone` tests do not reference it).
+
+- [ ] **R-Step 3: Run the test to verify it still passes**
+
+Run: `cd frontend && npx vitest run src/lib/notifications.test.ts`
+Expected: PASS — `eventIcon` / `eventTone` / constants tests green; no `notificationHref` tests.
+
+- [ ] **R-Step 4: Commit**
+
+```bash
+git add frontend/src/lib/notifications.ts frontend/src/lib/notifications.test.ts
+git commit -m "refactor(TD-0091b): drop client-side notificationHref for backend-resolved url"
+```
+
+---
+
+### Task 8b: Backend deep-link resolver
+
+The API resolves each notification's `entity_type` + `entity_id` to a canonical, org-scoped,
+slug-based front-end path at read time, returned as `NotificationResponse.url`. Resolution is
+**batched** (one query per entity type per request) and degrades to `null` — never an error —
+for unroutable types, deleted targets, or targets in an org the recipient cannot see.
+
+**Files:**
+- Create: `backend/app/services/core/notifications/links.py`
+- Create: `backend/tests/unit/test_notification_links.py`
+- Modify: `backend/app/schemas/notifications.py:64-75` (add `url` field)
+- Modify: `backend/app/api/endpoints/notifications.py` (imports, `_notification_response` helper, `list_notifications`, `mark_read`)
+- Modify: `backend/tests/integration/test_notification_api.py` (`TestInAppNotifications` — add `url` cases)
+
+- [ ] **Step 1: Write the failing resolver unit tests**
+
+Create `backend/tests/unit/test_notification_links.py`:
+
+```python
+"""Unit tests for notification deep-link URL resolution."""
+
+from uuid import uuid4
+
+from app.models.notifications import Notification
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Experiment, Run
+from app.services.core.notifications.links import resolve_notification_urls
+
+
+async def _notif(db, user_id, entity_type, entity_id):
+    """Create + flush a Notification so it has a real id."""
+    n = Notification(
+        user_id=user_id,
+        event_type="RUN_STARTED",
+        entity_type=entity_type,
+        entity_id=entity_id,
+        title="t",
+        message="m",
+    )
+    db.add(n)
+    await db.flush()
+    return n
+
+
+async def test_empty_input_returns_empty_map(db_session, test_user):
+    assert await resolve_notification_urls(db_session, [], test_user.id) == {}
+
+
+async def test_resolves_run_url(db_session, test_user, test_org, test_project):
+    run = Run(name="CHO 42", slug="cho-42", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _notif(db_session, test_user.id, "run", run.id)
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/runs/cho-42"
+
+
+async def test_resolves_experiment_url(
+    db_session, test_user, test_org, test_project
+):
+    exp = Experiment(name="Exp 1", slug="exp-1", project_id=test_project.id)
+    db_session.add(exp)
+    await db_session.flush()
+    n = await _notif(db_session, test_user.id, "experiment", exp.id)
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/experiments/exp-1"
+
+
+async def test_resolves_protocol_url(db_session, test_user, test_org):
+    proto = Protocol(
+        name="Buffer Prep",
+        slug="buffer-prep",
+        owner_org_id=test_org.id,
+        organization_id=test_org.id,
+    )
+    db_session.add(proto)
+    await db_session.flush()
+    n = await _notif(db_session, test_user.id, "protocol", proto.id)
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/protocols/buffer-prep"
+
+
+async def test_resolves_project_url(db_session, test_user, test_project):
+    n = await _notif(db_session, test_user.id, "project", test_project.id)
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project"
+
+
+async def test_entity_type_is_case_insensitive(
+    db_session, test_user, test_project
+):
+    run = Run(name="R", slug="r-1", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _notif(db_session, test_user.id, "Run", run.id)  # capital R
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/runs/r-1"
+
+
+async def test_non_routable_entity_type_resolves_to_none(
+    db_session, test_user
+):
+    n = await _notif(
+        db_session, test_user.id, "RevokedOfflineToken", uuid4()
+    )
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] is None
+
+
+async def test_deleted_target_resolves_to_none(db_session, test_user):
+    # Routable type, but no row with this id exists.
+    n = await _notif(db_session, test_user.id, "run", uuid4())
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] is None
+
+
+async def test_target_in_non_member_org_resolves_to_none(
+    db_session, test_user, second_org
+):
+    # A run in an org test_user does not belong to: a link would 403.
+    other = Project(
+        name="Other", slug="other-proj", organization_id=second_org.id
+    )
+    db_session.add(other)
+    await db_session.flush()
+    run = Run(name="R", slug="r-9", project_id=other.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _notif(db_session, test_user.id, "run", run.id)
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] is None
+
+
+async def test_disambiguates_colliding_org_slugs(db_session):
+    """Two member orgs whose names slugify identically get id-suffixed."""
+    from app.core.security import hash_password
+    from app.models.iam import (
+        Organization,
+        OrganizationMember,
+        User,
+    )
+
+    org_a = Organization(name="Acme Bio")
+    org_b = Organization(name="ACME  bio!")  # also slugifies to "acme-bio"
+    db_session.add_all([org_a, org_b])
+    await db_session.flush()
+
+    user = User(
+        email="collide@example.com",
+        hashed_password=hash_password("x"),
+        full_name="Collide",
+        selected_org_id=org_a.id,
+        email_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add_all([
+        OrganizationMember(
+            user_id=user.id, organization_id=org_a.id, roles=["MEMBER"]
+        ),
+        OrganizationMember(
+            user_id=user.id, organization_id=org_b.id, roles=["MEMBER"]
+        ),
+    ])
+    proj = Project(name="P", slug="p-1", organization_id=org_a.id)
+    db_session.add(proj)
+    await db_session.flush()
+    run = Run(name="R", slug="r-1", project_id=proj.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _notif(db_session, user.id, "run", run.id)
+
+    urls = await resolve_notification_urls(db_session, [n], user.id)
+
+    expected_slug = f"acme-bio-{str(org_a.id)[:8]}"
+    assert urls[n.id] == f"/{expected_slug}/projects/p-1/runs/r-1"
+
+
+async def test_batches_mixed_types_in_one_call(
+    db_session, test_user, test_org, test_project
+):
+    run = Run(name="R", slug="r-2", project_id=test_project.id)
+    proto = Protocol(
+        name="Pr",
+        slug="pr-2",
+        owner_org_id=test_org.id,
+        organization_id=test_org.id,
+    )
+    db_session.add_all([run, proto])
+    await db_session.flush()
+    n_run = await _notif(db_session, test_user.id, "run", run.id)
+    n_proto = await _notif(db_session, test_user.id, "protocol", proto.id)
+    n_bad = await _notif(db_session, test_user.id, "widget", uuid4())
+
+    urls = await resolve_notification_urls(
+        db_session, [n_run, n_proto, n_bad], test_user.id
+    )
+
+    assert urls[n_run.id] == "/test-org/projects/test-project/runs/r-2"
+    assert urls[n_proto.id] == "/test-org/protocols/pr-2"
+    assert urls[n_bad.id] is None
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cd backend && source .venv/bin/activate && pytest tests/unit/test_notification_links.py -q`
+Expected: FAIL — `ModuleNotFoundError: app.services.core.notifications.links`.
+
+- [ ] **Step 3: Write the resolver**
+
+Create `backend/app/services/core/notifications/links.py`:
+
+```python
+"""Resolve notification deep-link URLs.
+
+A ``Notification`` row stores only ``entity_type`` + ``entity_id``; the
+in-app inbox needs a navigable, org-scoped, slug-based path to deep-link
+to. This module resolves a batch of notifications to their canonical
+front-end routes at read time.
+
+Routes mirror the SvelteKit URL scheme (F-0091): every routed object lives
+under ``/{org-slug}/...`` and runs/experiments nest under their project.
+The org slug is ``slugify(org.name)``, disambiguated with an id-prefix
+suffix when the recipient belongs to two orgs whose names slugify
+identically — the same rule the frontend ``disambiguatedOrgSlug`` applies.
+"""
+
+from __future__ import annotations
+
+from typing import Optional, Sequence
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.slug import slugify
+from app.models.iam import Organization, OrganizationMember
+from app.models.notifications import Notification
+from app.models.projects import Project
+from app.models.protocols import Protocol
+from app.models.runs import Experiment, Run
+
+# Lower-cased ``entity_type`` values that resolve to a routed page. Any
+# other type (e.g. "RevokedOfflineToken") has no in-app destination.
+_ROUTABLE = frozenset({"run", "experiment", "protocol", "project"})
+
+
+def _disambiguated_org_slugs(
+    orgs: Sequence[tuple[UUID, str]],
+) -> dict[UUID, str]:
+    """Map org id -> URL slug, mirroring frontend ``disambiguatedOrgSlug``.
+
+    When two orgs in ``orgs`` slugify to the same base, every colliding org
+    gets a ``-{id-prefix}`` suffix so the deep link stays unambiguous.
+    """
+    base: dict[UUID, str] = {oid: slugify(name) for oid, name in orgs}
+    counts: dict[str, int] = {}
+    for slug in base.values():
+        counts[slug] = counts.get(slug, 0) + 1
+    return {
+        oid: slug if counts[slug] == 1 else f"{slug}-{str(oid)[:8]}"
+        for oid, slug in base.items()
+    }
+
+
+async def resolve_notification_urls(
+    db: AsyncSession,
+    notifications: Sequence[Notification],
+    recipient_id: UUID,
+) -> dict[UUID, Optional[str]]:
+    """Resolve each notification to an in-app deep-link URL.
+
+    Returns a ``{notification.id: url-or-None}`` map. A notification
+    resolves to ``None`` when its entity type is not routable, the target
+    row no longer exists, or the target's org is not one the recipient
+    belongs to (a 403 dead-end is worse than no link at all).
+    """
+    if not notifications:
+        return {}
+
+    # Group entity ids by lower-cased type so each table is queried once.
+    ids_by_type: dict[str, set[UUID]] = {}
+    for n in notifications:
+        etype = (n.entity_type or "").lower()
+        if etype in _ROUTABLE and n.entity_id is not None:
+            ids_by_type.setdefault(etype, set()).add(n.entity_id)
+
+    # (entity_type, entity id) -> (org_id, path below the org segment)
+    targets: dict[tuple[str, UUID], tuple[UUID, str]] = {}
+
+    run_ids = ids_by_type.get("run")
+    if run_ids:
+        rows = await db.execute(
+            select(Run)
+            .where(Run.id.in_(run_ids))
+            .options(selectinload(Run.project))
+        )
+        for run in rows.scalars():
+            if run.project is not None:
+                targets[("run", run.id)] = (
+                    run.project.organization_id,
+                    f"/projects/{run.project.slug}/runs/{run.slug}",
+                )
+
+    exp_ids = ids_by_type.get("experiment")
+    if exp_ids:
+        rows = await db.execute(
+            select(Experiment)
+            .where(Experiment.id.in_(exp_ids))
+            .options(selectinload(Experiment.project))
+        )
+        for exp in rows.scalars():
+            if exp.project is not None:
+                targets[("experiment", exp.id)] = (
+                    exp.project.organization_id,
+                    f"/projects/{exp.project.slug}/experiments/{exp.slug}",
+                )
+
+    protocol_ids = ids_by_type.get("protocol")
+    if protocol_ids:
+        rows = await db.execute(
+            select(Protocol).where(Protocol.id.in_(protocol_ids))
+        )
+        for protocol in rows.scalars():
+            targets[("protocol", protocol.id)] = (
+                protocol.owner_org_id,
+                f"/protocols/{protocol.slug}",
+            )
+
+    project_ids = ids_by_type.get("project")
+    if project_ids:
+        rows = await db.execute(
+            select(Project).where(Project.id.in_(project_ids))
+        )
+        for project in rows.scalars():
+            targets[("project", project.id)] = (
+                project.organization_id,
+                f"/projects/{project.slug}",
+            )
+
+    if not targets:
+        return {n.id: None for n in notifications}
+
+    # Org slugs are computed only over the recipient's own memberships:
+    # disambiguation must match the membership set the frontend nav uses,
+    # which is exactly the recipient's orgs. A target in an org the
+    # recipient does not belong to therefore resolves to None.
+    member_orgs = await db.execute(
+        select(Organization.id, Organization.name)
+        .join(
+            OrganizationMember,
+            OrganizationMember.organization_id == Organization.id,
+        )
+        .where(OrganizationMember.user_id == recipient_id)
+    )
+    org_slugs = _disambiguated_org_slugs(list(member_orgs.all()))
+
+    result: dict[UUID, Optional[str]] = {}
+    for n in notifications:
+        target = targets.get(((n.entity_type or "").lower(), n.entity_id))
+        if target is None:
+            result[n.id] = None
+            continue
+        org_id, path = target
+        org_slug = org_slugs.get(org_id)
+        result[n.id] = f"/{org_slug}{path}" if org_slug else None
+    return result
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cd backend && source .venv/bin/activate && pytest tests/unit/test_notification_links.py -q`
+Expected: PASS — all resolver tests green.
+
+- [ ] **Step 5: Add the `url` field to `NotificationResponse`**
+
+In `backend/app/schemas/notifications.py`, add a `url` field to `NotificationResponse`
+(after `created_at`). `Optional` is already imported in that file.
+
+```python
+class NotificationResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    event_type: str
+    entity_type: str
+    entity_id: UUID
+    title: str
+    message: str
+    read_at: Optional[datetime] = None
+    created_at: datetime
+    # In-app deep link resolved server-side; None when the entity type is
+    # not routable, the target is gone, or it lives in an org the
+    # recipient cannot see. The endpoint sets this; it is not an ORM
+    # attribute, so it defaults to None for from_attributes validation.
+    url: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+```
+
+- [ ] **Step 6: Wire the resolver into the endpoints**
+
+In `backend/app/api/endpoints/notifications.py`:
+
+(a) Add to the imports near the top of the file:
+
+```python
+from typing import Optional
+```
+
+and, alongside the other `app.` imports:
+
+```python
+from app.services.core.notifications.links import resolve_notification_urls
+```
+
+(b) Add a module-level helper directly above `list_notifications` (after the
+`# ── User In-App Notifications ──` comment banner):
+
+```python
+def _notification_response(
+    notif: Notification, url_map: dict[UUID, Optional[str]]
+) -> NotificationResponse:
+    """Build a NotificationResponse with its resolved deep-link URL."""
+    resp = NotificationResponse.model_validate(notif)
+    resp.url = url_map.get(notif.id)
+    return resp
+```
+
+(c) Replace the final return of `list_notifications`:
+
+```python
+    stmt = base.order_by(Notification.created_at.desc()).offset(offset).limit(limit)
+    result = await db.execute(stmt)
+    items = list(result.scalars().all())
+
+    url_map = await resolve_notification_urls(db, items, current_user.id)
+    return NotificationListResponse(
+        items=[_notification_response(n, url_map) for n in items],
+        total=total,
+    )
+```
+
+(d) Replace the final return of `mark_read`:
+
+```python
+    notif.read_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(notif)
+    url_map = await resolve_notification_urls(db, [notif], current_user.id)
+    return _notification_response(notif, url_map)
+```
+
+`unread-count`, `read-all`, and the channel/delivery endpoints are unchanged.
+
+- [ ] **Step 7: Write the failing integration tests**
+
+Add these test methods to the `TestInAppNotifications` class in
+`backend/tests/integration/test_notification_api.py`. They follow the existing pattern in
+that class (create a `Notification` inline, GET/PUT through `client` with `auth_headers`).
+Use whatever flush/commit helper the surrounding tests use to persist the seed rows.
+
+```python
+    async def test_list_resolves_deep_link_url_for_run(
+        self, client, auth_headers, db_session, test_user, test_project
+    ):
+        from app.models.notifications import Notification
+        from app.models.runs import Run
+
+        run = Run(name="CHO 7", slug="cho-7", project_id=test_project.id)
+        db_session.add(run)
+        await db_session.flush()
+        db_session.add(
+            Notification(
+                user_id=test_user.id,
+                event_type="RUN_STARTED",
+                entity_type="run",
+                entity_id=run.id,
+                title="Run started",
+                message="CHO-7 started",
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/notifications/", headers=auth_headers)
+
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert items[0]["url"] == (
+            "/test-org/projects/test-project/runs/cho-7"
+        )
+
+    async def test_list_url_is_null_for_unroutable_entity(
+        self, client, auth_headers, db_session, test_user
+    ):
+        from uuid import uuid4
+
+        from app.models.notifications import Notification
+
+        db_session.add(
+            Notification(
+                user_id=test_user.id,
+                event_type="INVITE_SENT",
+                entity_type="RevokedOfflineToken",
+                entity_id=uuid4(),
+                title="x",
+                message="y",
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/notifications/", headers=auth_headers)
+
+        assert resp.status_code == 200
+        assert resp.json()["items"][0]["url"] is None
+
+    async def test_mark_read_returns_resolved_url(
+        self, client, auth_headers, db_session, test_user, test_project
+    ):
+        from app.models.notifications import Notification
+        from app.models.runs import Run
+
+        run = Run(name="CHO 8", slug="cho-8", project_id=test_project.id)
+        db_session.add(run)
+        await db_session.flush()
+        notif = Notification(
+            user_id=test_user.id,
+            event_type="RUN_STARTED",
+            entity_type="run",
+            entity_id=run.id,
+            title="Run started",
+            message="CHO-8 started",
+        )
+        db_session.add(notif)
+        await db_session.commit()
+
+        resp = await client.put(
+            f"/notifications/{notif.id}/read", headers=auth_headers
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["url"] == (
+            "/test-org/projects/test-project/runs/cho-8"
+        )
+```
+
+If `TestInAppNotifications` tests do not already take `db_session` / `test_project`,
+match the fixture-acquisition pattern the class actually uses (some integration tests
+seed via `client` POSTs instead). The intent is fixed: one routable run, one unroutable
+type, one `mark_read` round-trip.
+
+- [ ] **Step 8: Run the tests to verify they pass**
+
+Run: `cd backend && source .venv/bin/activate && pytest tests/unit/test_notification_links.py tests/integration/test_notification_api.py -q`
+Expected: PASS — resolver unit tests and notification API tests all green.
+
+- [ ] **Step 9: Add the `url` field to the frontend Zod schema**
+
+In `frontend/src/lib/schemas/notifications.ts`, add `url` to `NotificationSchema` (after
+`created_at`):
+
+```typescript
+export const NotificationSchema = z
+    .object({
+        id: z.string(),
+        user_id: z.string(),
+        event_type: z.string(),
+        entity_type: z.string(),
+        entity_id: z.string(),
+        title: z.string(),
+        message: z.string(),
+        read_at: z.string().nullable(),
+        created_at: z.string(),
+        url: z.string().nullable(),
+    })
+    .passthrough();
+```
+
+- [ ] **Step 10: Run the frontend schema tests to verify they still pass**
+
+Run: `cd frontend && npx vitest run src/lib/schemas/notifications.test.ts`
+Expected: PASS. (The schema's `.passthrough()` means existing fixtures without `url`
+would still parse, but `NotificationItem` now types `url`; if the Task 7 test fixtures
+construct a typed `NotificationItem`, add `url: null` to them.)
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add backend/app/services/core/notifications/links.py \
+  backend/tests/unit/test_notification_links.py \
+  backend/app/schemas/notifications.py \
+  backend/app/api/endpoints/notifications.py \
+  backend/tests/integration/test_notification_api.py \
+  frontend/src/lib/schemas/notifications.ts
+git commit -m "feat(TD-0091b): resolve notification deep-link URLs server-side"
+```
+
+---
+
+### Task 9 delta — `NotificationRow` consumes `item.url`
+
+`NotificationRow.svelte` no longer calls `notificationHref`. Apply these changes to the
+Task 9 code above:
+
+**Component (`frontend/src/lib/components/notifications/NotificationRow.svelte`):**
+
+- Import line — drop `notificationHref`:
+  ```typescript
+  import { eventIcon, eventTone } from '$lib/notifications';
+  ```
+- `href` derivation — read the field the backend resolved:
+  ```typescript
+  const href = $derived(item.url);
+  ```
+  Everything else (the `<a>` vs `<button>` branch, `handleClick`, the chevron affordance)
+  is unchanged — it already keys off a truthy/`null` `href`.
+
+**Test (`frontend/src/lib/components/notifications/NotificationRow.test.ts`):**
+
+- `makeItem` returns a typed `NotificationItem`, which now includes `url` — add it to the
+  fixture. The first test asserts the `<a>` href, so make the default `url` a realistic
+  resolved path:
+  ```typescript
+  function makeItem(over: Partial<NotificationItem> = {}): NotificationItem {
+      return {
+          id: '1',
+          user_id: 'u',
+          event_type: 'RUN_STARTED',
+          entity_type: 'run',
+          entity_id: UUID,
+          title: 'Run started',
+          message: 'CHO-042 started by Alice',
+          read_at: null,
+          created_at: new Date().toISOString(),
+          url: '/acme/projects/p1/runs/cho-042',
+          ...over,
+      };
+  }
+  ```
+- The "renders an `<a>`" test asserts against the resolved URL, not `/runs/<uuid>`:
+  ```typescript
+  expect(link?.getAttribute('href')).toBe('/acme/projects/p1/runs/cho-042');
+  ```
+- The two "no deep link" tests drive the null case via `url`, not `entity_type`:
+  ```typescript
+  item: makeItem({ url: null }),
+  ```
+  (replace both `makeItem({ entity_type: 'unknown' })` occurrences).
+
+The `UUID` const is still used by the fixture's `entity_id`, so keep it.
+
+- Commit (replaces the Task 9 commit message):
+  ```bash
+  git commit -m "feat(TD-0091b): add shared NotificationRow component"
+  ```
+
+---
+
+### Task 10 delta — `NotificationBell` consumes `item.url`
+
+In `frontend/src/lib/components/layout/NotificationBell.svelte`:
+
+- Import line — drop `notificationHref`:
+  ```typescript
+  import { BELL_LIMIT } from '$lib/notifications';
+  ```
+- `handleSelect` — read `item.url` instead of resolving:
+  ```typescript
+  function handleSelect(item: NotificationItem): void {
+      const href = item.url;
+      if (!item.read_at) markRead(item.id, href !== null);
+      if (href) {
+          open = false;
+          goto(href);
+      }
+  }
+  ```
+
+In the Task 10 test file, add `url` to `makeItem` so deep-link assertions hold:
+
+```typescript
+function makeItem(over: Record<string, unknown> = {}) {
+    return {
+        id: '1',
+        user_id: 'u',
+        event_type: 'RUN_STARTED',
+        entity_type: 'run',
+        entity_id: UUID,
+        title: 'Run started',
+        message: 'CHO-042 started',
+        read_at: null,
+        created_at: new Date().toISOString(),
+        url: '/acme/projects/p1/runs/cho-042',
+        ...over,
+    };
+}
+```
+
+Any Task 10 test that asserts navigation lands on a specific path must expect
+`/acme/projects/p1/runs/cho-042` (or whatever `url` the case sets), not `/runs/<uuid>`.
+Tests for the non-navigating / mark-read-only path should set `url: null` via the
+`makeItem` override.
+
+---
+
+### Task 11 delta — `/notifications` history page consumes `item.url`
+
+In `frontend/src/routes/notifications/+page.svelte`:
+
+- Import line — drop `notificationHref`:
+  ```typescript
+  import { HISTORY_PAGE_SIZE } from '$lib/notifications';
+  ```
+- `handleSelect` — read `item.url` instead of resolving:
+  ```typescript
+  function handleSelect(item: NotificationItem): void {
+      const href = item.url;
+      if (!item.read_at) markRead(item.id, href !== null);
+      if (href) goto(href);
+  }
+  ```
+
+In the Task 11 test file, add `url` to `makeItem` (same shape as Task 10's, with a
+realistic resolved path), and update any path assertion / null-case override the same way.
+
+---
+
+### Self-Review Notes — Gap 4 (superseded)
+
+The Self-Review Notes line for **Gap 4 (deep-linking)** is superseded by this amendment.
+Deep links are now resolved **server-side**: `resolve_notification_urls` (Task 8b) computes
+each notification's org-scoped, slug-based `url`; `NotificationRow` / `NotificationBell` /
+the history page consume `notification.url`. The `mark-read-before-navigate` PUT ordering
+and the toast-only-on-navigating-failure behaviour (Tasks 9–11) are unchanged.
+
+### Amendment review note
+
+This amendment was prompted by the Task 8 code-quality review and an explicit user decision
+("Backend resolves the URL"). The resolver was designed against the verified route tree and
+ORM models: `Run`/`Experiment` have `lazy="selectin"` `project` relationships;
+`Protocol.owner_org_id` and `Project.organization_id` give the owning org; org slugs use
+`slugify(org.name)` with `disambiguatedOrgSlug` collision handling over the recipient's own
+memberships. Resolution is batched (one query per entity type) and read-time, so it adds a
+bounded, indexed query set to `list_notifications` and `mark_read` and never blocks on a
+missing or cross-org target — it degrades to `url: null`.
