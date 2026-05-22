@@ -59,28 +59,3 @@ const EVENT_TONES: Record<string, string> = {
 export function eventTone(eventType: string): string {
     return EVENT_TONES[eventType] ?? 'bg-muted text-muted-foreground';
 }
-
-const ENTITY_ROUTES: Record<string, string> = {
-    run: '/runs',
-    protocol: '/protocols',
-    experiment: '/experiments',
-    project: '/projects',
-};
-
-const UUID_RE =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * Resolve a notification's in-app deep link, or `null` when the entity
- * type is unknown or the id is missing / not a UUID. Callers degrade a
- * `null` result to "mark read only".
- */
-export function notificationHref(
-    entityType: string,
-    entityId: string,
-): string | null {
-    const base = ENTITY_ROUTES[entityType];
-    if (!base) return null;
-    if (!entityId || !UUID_RE.test(entityId)) return null;
-    return `${base}/${entityId}`;
-}
