@@ -1,6 +1,6 @@
 import { render, fireEvent, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/api', () => ({ api: { get: vi.fn(), put: vi.fn() } }));
@@ -57,10 +57,6 @@ describe('/notifications page', () => {
         vi.clearAllMocks();
         vi.mocked(api.put).mockResolvedValue({});
     });
-    afterEach(() => {
-        // nothing
-    });
-
     it('loads the first page on mount', async () => {
         vi.mocked(api.get).mockResolvedValue({ items: [makeItem()], total: 1 });
         render(NotificationsPage, { props: { data: { offset: 0 } } });
@@ -142,5 +138,29 @@ describe('/notifications page', () => {
         // The single row's read was rolled back, so it is unread again and
         // the "Mark all read" affordance is still shown.
         expect(screen.getByText('Mark all read')).toBeInTheDocument();
+    });
+
+    it('Prev navigates to the preceding offset', async () => {
+        vi.mocked(api.get).mockResolvedValue({ items: [makeItem()], total: 100 });
+        render(NotificationsPage, { props: { data: { offset: 50 } } });
+        await screen.findByText('Run started');
+        await fireEvent.click(screen.getByText('Prev'));
+        expect(goto).toHaveBeenCalledWith(
+            '/notifications?offset=25',
+            expect.objectContaining({ keepFocus: true, noScroll: true }),
+        );
+    });
+
+    it('Prev button is disabled at offset 0', async () => {
+        vi.mocked(api.get).mockResolvedValue({ items: [makeItem()], total: 100 });
+        render(NotificationsPage, { props: { data: { offset: 0 } } });
+        await screen.findByText('Run started');
+        expect((screen.getByText('Prev').closest('button'))?.disabled).toBe(true);
+    });
+
+    it('toasts an error when loadPage fails', async () => {
+        vi.mocked(api.get).mockRejectedValue(new Error('network'));
+        render(NotificationsPage, { props: { data: { offset: 0 } } });
+        await vi.waitFor(() => expect(toast.error).toHaveBeenCalled());
     });
 });

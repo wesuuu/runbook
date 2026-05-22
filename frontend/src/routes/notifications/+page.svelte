@@ -87,6 +87,9 @@
         }
     }
 
+    // Unlike NotificationBell.markAllRead, this does no optimistic update:
+    // a server-wide action invalidates rows on other pages too, so a plain
+    // refetch of the current page is the correct, flicker-free convergence.
     async function markAllRead(): Promise<void> {
         try {
             await api.put('/notifications/read-all', {});
