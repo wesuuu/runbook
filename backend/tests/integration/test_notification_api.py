@@ -308,7 +308,9 @@ class TestSubscriptions:
 class TestInAppNotifications:
     @pytest.mark.asyncio
     async def test_list_empty(self, client, auth_headers):
-        resp = await client.get("/notifications/", headers=auth_headers)
+        resp = await client.get(
+            "/notifications/?include_total=true", headers=auth_headers
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
@@ -336,8 +338,10 @@ class TestInAppNotifications:
         db_session.add(notif)
         await db_session.flush()
 
-        # List
-        resp = await client.get("/notifications/", headers=auth_headers)
+        # List (include_total so the count is populated)
+        resp = await client.get(
+            "/notifications/?include_total=true", headers=auth_headers
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
@@ -401,6 +405,59 @@ class TestInAppNotifications:
             f"/notifications/{notif.id}/read", headers=second_auth_headers
         )
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_list_total_omitted_by_default(
+        self, client, auth_headers, test_user, db_session
+    ):
+        """Without include_total the count is skipped — total is 0 even
+        though items are returned."""
+        for i in range(2):
+            db_session.add(
+                Notification(
+                    user_id=test_user.id,
+                    event_type="RUN_STARTED",
+                    entity_type="run",
+                    entity_id=uuid4(),
+                    title=f"Notif {i}",
+                    message=f"Message {i}",
+                )
+            )
+        await db_session.flush()
+
+        resp = await client.get("/notifications/", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 2
+        assert data["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_list_total_included_when_requested(
+        self, client, auth_headers, test_user, db_session
+    ):
+        """include_total=true runs the COUNT and returns the real total."""
+        for i in range(3):
+            db_session.add(
+                Notification(
+                    user_id=test_user.id,
+                    event_type="RUN_STARTED",
+                    entity_type="run",
+                    entity_id=uuid4(),
+                    title=f"Notif {i}",
+                    message=f"Message {i}",
+                )
+            )
+        await db_session.flush()
+
+        resp = await client.get(
+            "/notifications/?include_total=true&limit=2", headers=auth_headers
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 2  # limited
+        assert data["total"] == 3  # full count
 
 
 # ── Channel Test Endpoint ────────────────────────────────────────────────

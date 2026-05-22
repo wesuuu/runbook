@@ -427,14 +427,29 @@ async def delete_subscription(
 async def list_notifications(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    include_total: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List the current user's in-app notifications."""
+    """List the current user's in-app notifications.
+
+    ``include_total`` runs a COUNT(*) for pagination UIs (the history
+    page). The bell omits it — its badge comes from ``unread-count`` — and
+    receives ``total=0``.
+    """
     base = select(Notification).where(Notification.user_id == current_user.id)
 
-    count_stmt = select(func.count()).select_from(base.subquery())
-    total = (await db.execute(count_stmt)).scalar() or 0
+    total = 0
+    if include_total:
+        # Direct COUNT on the table (not a subquery wrap of `base`) so
+        # PostgreSQL can serve it from ix_notif_user_created without
+        # materializing the base select.
+        count_stmt = (
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.user_id == current_user.id)
+        )
+        total = (await db.execute(count_stmt)).scalar() or 0
 
     stmt = base.order_by(Notification.created_at.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)
