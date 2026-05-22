@@ -19,7 +19,6 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.slug import slugify
 from app.models.iam import Organization, OrganizationMember
@@ -79,12 +78,10 @@ async def resolve_notification_urls(
     run_ids = ids_by_type.get("run")
     if run_ids:
         rows = await db.execute(
-            select(Run)
-            .where(Run.id.in_(run_ids))
-            .options(selectinload(Run.project))
+            select(Run).where(Run.id.in_(run_ids))
         )
         for run in rows.scalars():
-            if run.project is not None:
+            if run.project is not None:  # project_id is NOT NULL; purely defensive
                 targets[("run", run.id)] = (
                     run.project.organization_id,
                     f"/projects/{run.project.slug}/runs/{run.slug}",
@@ -93,12 +90,10 @@ async def resolve_notification_urls(
     exp_ids = ids_by_type.get("experiment")
     if exp_ids:
         rows = await db.execute(
-            select(Experiment)
-            .where(Experiment.id.in_(exp_ids))
-            .options(selectinload(Experiment.project))
+            select(Experiment).where(Experiment.id.in_(exp_ids))
         )
         for exp in rows.scalars():
-            if exp.project is not None:
+            if exp.project is not None:  # project_id is NOT NULL; purely defensive
                 targets[("experiment", exp.id)] = (
                     exp.project.organization_id,
                     f"/projects/{exp.project.slug}/experiments/{exp.slug}",
@@ -151,5 +146,10 @@ async def resolve_notification_urls(
             continue
         org_id, path = target
         org_slug = org_slugs.get(org_id)
-        result[n.id] = f"/{org_slug}{path}" if org_slug else None
+        # A blank or hyphen-leading slug means the org name had no
+        # alphanumeric content — there is no valid route, so degrade.
+        if org_slug and not org_slug.startswith("-"):
+            result[n.id] = f"/{org_slug}{path}"
+        else:
+            result[n.id] = None
     return result
