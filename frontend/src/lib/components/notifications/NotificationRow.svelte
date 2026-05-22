@@ -15,6 +15,13 @@
     const Icon = $derived(eventIcon(item.event_type));
     const tone = $derived(eventTone(item.event_type));
     const unread = $derived(!item.read_at);
+    const wrapperClass = $derived(
+        `group flex items-start transition-colors duration-150 cursor-pointer hover:bg-accent/50 border-b border-border/30 last:border-b-0` +
+        ` ${compact ? 'gap-2 px-3 py-2.5' : 'gap-3 px-4 py-3.5'}` +
+        ` ${!compact && unread ? 'border-l-2 border-l-primary' : ''}` +
+        ` ${!compact && !unread ? 'border-l-2 border-l-transparent' : ''}` +
+        ` ${!unread ? 'opacity-70 hover:opacity-100' : ''}`
+    );
 
     function handleClick(e: MouseEvent) {
         // For an <a>, let modified / non-left clicks open a new tab natively.
@@ -64,11 +71,7 @@
         {href}
         onclick={handleClick}
         data-testid="notification-row"
-        class="group flex items-start transition-colors duration-150 cursor-pointer hover:bg-accent/50 border-b border-border/30 last:border-b-0
-            {compact ? 'gap-2 px-3 py-2.5' : 'gap-3 px-4 py-3.5'}
-            {!compact && unread ? 'border-l-2 border-l-primary' : ''}
-            {!compact && !unread ? 'border-l-2 border-l-transparent' : ''}
-            {!unread ? 'opacity-70 hover:opacity-100' : ''}"
+        class={wrapperClass}
     >
         {@render body()}
     </a>
@@ -77,11 +80,7 @@
         type="button"
         onclick={handleClick}
         data-testid="notification-row"
-        class="group w-full text-left flex items-start transition-colors duration-150 cursor-pointer hover:bg-accent/50 border-b border-border/30 last:border-b-0
-            {compact ? 'gap-2 px-3 py-2.5' : 'gap-3 px-4 py-3.5'}
-            {!compact && unread ? 'border-l-2 border-l-primary' : ''}
-            {!compact && !unread ? 'border-l-2 border-l-transparent' : ''}
-            {!unread ? 'opacity-70 hover:opacity-100' : ''}"
+        class="w-full text-left {wrapperClass}"
     >
         {@render body()}
     </button>

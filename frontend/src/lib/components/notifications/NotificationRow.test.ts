@@ -74,4 +74,24 @@ describe('NotificationRow', () => {
         expect(getByText('Run started')).toBeInTheDocument();
         expect(getByText('CHO-042 started by Alice')).toBeInTheDocument();
     });
+
+    it('does not fire onSelect on modified-click (deep-linkable row)', async () => {
+        const onSelect = vi.fn();
+        const { getByTestId } = render(NotificationRow, {
+            props: { item: makeItem(), compact: false, onSelect },
+        });
+        await fireEvent.click(getByTestId('notification-row'), { metaKey: true });
+        expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('shows chevron for linkable row and hides it for null-url row', () => {
+        const { container: withUrl } = render(NotificationRow, {
+            props: { item: makeItem(), compact: false, onSelect: vi.fn() },
+        });
+        const { container: withoutUrl } = render(NotificationRow, {
+            props: { item: makeItem({ url: null }), compact: false, onSelect: vi.fn() },
+        });
+        expect(withUrl.querySelectorAll('svg').length).toBe(2);
+        expect(withoutUrl.querySelectorAll('svg').length).toBe(1);
+    });
 });
