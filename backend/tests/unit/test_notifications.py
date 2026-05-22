@@ -750,7 +750,7 @@ class TestPurgeOldNotificationsSweep:
         assert main_module._last_notification_purge_at is not None
 
 
-# ── dispatch_event Tests (TD-0091b) ──────────────────────────────────────
+# ── dispatch_event Tests ─────────────────────────────────────────────────
 
 
 class TestDispatchEvent:
@@ -812,6 +812,9 @@ class TestDispatchEvent:
 
         assert len(deliveries) == 1
         assert deliveries[0].status == DeliveryStatus.SENT
+        # Verify the broadcast variant (recipient="org") reached the org channel,
+        # not the personal variant (recipient="you@example.com").
+        assert deliveries[0].recipient_info["recipient"] == "org"
 
     @pytest.mark.asyncio
     async def test_user_channel_receives_personal(
@@ -833,6 +836,9 @@ class TestDispatchEvent:
 
         assert len(deliveries) == 1
         assert deliveries[0].status == DeliveryStatus.SENT
+        # Verify the personal variant (recipient="you@example.com") was routed
+        # to the user channel, not the broadcast variant (recipient="org").
+        assert deliveries[0].recipient_info["recipient"] == "you@example.com"
 
     @pytest.mark.asyncio
     async def test_disabled_subscription_yields_no_delivery(
