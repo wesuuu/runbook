@@ -499,6 +499,9 @@ app.add_middleware(
         "http://localhost:5183",  # Parallel worktree dev
         "http://localhost:5193",  # Worktree 2 dev
         "http://localhost:5203",  # Worktree 3 dev (F-0083)
+        "http://localhost:5213",  # Worktree 4 dev
+        "http://localhost:5223",  # Worktree 5 dev
+        "http://localhost:5233",  # Worktree 6 dev (TD-0091b)
         "http://100.120.2.59:5174",
         "http://localhost:5176",  # Playwright E2E tests
     ],
