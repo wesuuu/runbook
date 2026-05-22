@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -121,6 +122,12 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     __table_args__ = (
         Index("ix_notif_user_created", "user_id", "created_at"),
         Index("ix_notif_user_unread", "user_id", "read_at"),
+        # TD-0091b: serves the read_at-only predicate of the retention sweep.
+        Index(
+            "ix_notif_read_at",
+            "read_at",
+            postgresql_where=text("read_at IS NOT NULL"),
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
