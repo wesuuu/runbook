@@ -13,6 +13,7 @@ export const NotificationSchema = z
         created_at: z.string(),
     })
     .passthrough();
+
 export type NotificationItem = z.infer<typeof NotificationSchema>;
 
 export const NotificationListResponseSchema = z
@@ -21,6 +22,7 @@ export const NotificationListResponseSchema = z
         total: z.number(),
     })
     .passthrough();
+
 export type NotificationListResponse = z.infer<
     typeof NotificationListResponseSchema
 >;
@@ -30,4 +32,5 @@ export const UnreadCountResponseSchema = z
         count: z.number(),
     })
     .passthrough();
+
 export type UnreadCountResponse = z.infer<typeof UnreadCountResponseSchema>;

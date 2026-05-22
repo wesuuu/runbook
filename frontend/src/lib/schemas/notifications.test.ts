@@ -39,4 +39,9 @@ describe('notification schemas', () => {
     it('parses an unread-count response', () => {
         expect(UnreadCountResponseSchema.parse({ count: 5 }).count).toBe(5);
     });
+
+    it('rejects a notification missing required id', () => {
+        const { id: _id, ...withoutId } = VALID;
+        expect(() => NotificationSchema.parse(withoutId)).toThrow();
+    });
 });
