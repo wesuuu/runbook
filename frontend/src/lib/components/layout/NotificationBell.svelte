@@ -196,9 +196,9 @@
             <span class="text-sm font-semibold">Notifications</span>
             {#if hasUnread}
                 <Button
-                    variant="link"
+                    variant="ghost"
                     size="sm"
-                    class="h-auto p-0 text-xs"
+                    class="h-7 px-2 text-xs"
                     onclick={markAllRead}
                 >
                     Mark all read

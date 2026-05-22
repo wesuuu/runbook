@@ -22,6 +22,7 @@
     let items = $state<NotificationItem[]>([]);
     let total = $state(0);
     let loading = $state(true);
+    let markingAll = $state(false);
 
     // Sequence guard — see NotificationBell. Page fetches can overlap when
     // the user pages quickly.
@@ -91,6 +92,8 @@
     // a server-wide action invalidates rows on other pages too, so a plain
     // refetch of the current page is the correct, flicker-free convergence.
     async function markAllRead(): Promise<void> {
+        if (markingAll) return; // guard against a double-tap
+        markingAll = true;
         try {
             await api.put('/notifications/read-all', {});
         } catch (e) {
@@ -99,6 +102,7 @@
         }
         // Server-wide action: rows on other pages are now stale too.
         await loadPage(data.offset);
+        markingAll = false;
     }
 
     function handleSelect(item: NotificationItem): void {
@@ -117,13 +121,18 @@
 <div class="max-w-3xl mx-auto px-4 py-8" in:fade={{ duration: 150 }}>
     <div class="flex items-start justify-between mb-6">
         <div>
-            <h1 class="text-xl font-semibold">Notifications</h1>
+            <h1 class="text-2xl font-bold tracking-tight">Notifications</h1>
             <p class="text-sm text-muted-foreground mt-0.5">
                 Activity from your runs, protocols, and team.
             </p>
         </div>
         {#if hasUnread}
-            <Button variant="outline" size="sm" onclick={markAllRead}>
+            <Button
+                variant="outline"
+                size="sm"
+                disabled={markingAll}
+                onclick={markAllRead}
+            >
                 Mark all read
             </Button>
         {/if}
@@ -159,7 +168,7 @@
                 <Button
                     variant="outline"
                     size="sm"
-                    disabled={!hasPrev}
+                    disabled={!hasPrev || loading}
                     onclick={() =>
                         gotoOffset(Math.max(0, data.offset - HISTORY_PAGE_SIZE))}
                 >
@@ -169,7 +178,7 @@
                 <Button
                     variant="outline"
                     size="sm"
-                    disabled={!hasNext}
+                    disabled={!hasNext || loading}
                     onclick={() => gotoOffset(data.offset + HISTORY_PAGE_SIZE)}
                 >
                     Next

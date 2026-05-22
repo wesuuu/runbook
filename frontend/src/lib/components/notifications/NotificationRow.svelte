@@ -6,10 +6,10 @@
 
     interface Props {
         item: NotificationItem;
-        compact: boolean;
+        compact?: boolean;
         onSelect: (item: NotificationItem) => void;
     }
-    let { item, compact, onSelect }: Props = $props();
+    let { item, compact = false, onSelect }: Props = $props();
 
     const href = $derived(item.url);
     const Icon = $derived(eventIcon(item.event_type));
@@ -37,7 +37,6 @@
     <span
         class="shrink-0 rounded-lg flex items-center justify-center {tone}
             {compact ? 'size-7' : 'size-9'}"
-        title={item.event_type}
     >
         <Icon class={compact ? 'size-4' : 'size-[18px]'} />
     </span>

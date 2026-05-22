@@ -163,4 +163,34 @@ describe('/notifications page', () => {
         render(NotificationsPage, { props: { data: { offset: 0 } } });
         await vi.waitFor(() => expect(toast.error).toHaveBeenCalled());
     });
+
+    it('disables Prev/Next while a page fetch is in flight', async () => {
+        // First load resolves so the pager renders; the offset-change fetch
+        // stays pending so `loading` is true with rows still on screen.
+        vi.mocked(api.get)
+            .mockResolvedValueOnce({ items: [makeItem()], total: 100 })
+            .mockReturnValueOnce(new Promise(() => {}));
+        const { rerender } = render(NotificationsPage, {
+            props: { data: { offset: 25 } },
+        });
+        await screen.findByText('Run started');
+        await rerender({ data: { offset: 50 } });
+        await tick();
+        // hasPrev/hasNext are both true at offset 50 of 100 — only the
+        // in-flight guard should disable the buttons.
+        expect(screen.getByText('Next').closest('button')?.disabled).toBe(true);
+        expect(screen.getByText('Prev').closest('button')?.disabled).toBe(true);
+    });
+
+    it('disables "Mark all read" while the request is in flight', async () => {
+        vi.mocked(api.get).mockResolvedValue({ items: [makeItem()], total: 1 });
+        vi.mocked(api.put).mockReturnValueOnce(new Promise(() => {}));
+        render(NotificationsPage, { props: { data: { offset: 0 } } });
+        await screen.findByText('Run started');
+        await fireEvent.click(screen.getByText('Mark all read'));
+        await tick();
+        expect(
+            screen.getByText('Mark all read').closest('button')?.disabled,
+        ).toBe(true);
+    });
 });

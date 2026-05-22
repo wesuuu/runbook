@@ -60,7 +60,15 @@ async def resolve_notification_urls(
     Returns a ``{notification.id: url-or-None}`` map. A notification
     resolves to ``None`` when its entity type is not routable, the target
     row no longer exists, or the target's org is not one the recipient
-    belongs to (a 403 dead-end is worse than no link at all).
+    belongs to.
+
+    Org membership is the only gate applied here — it is what the URL
+    scheme needs (the org slug is computed over the recipient's own
+    memberships). It is *not* a full authorization check: a recipient may
+    lack object-level permission on the target run/protocol. The deep link
+    grants no access; the destination page runs its own permission check
+    and shows a 403 if the recipient is not entitled. Resolving the URL
+    here only spares the common case a needless dead click.
     """
     if not notifications:
         return {}
@@ -75,6 +83,9 @@ async def resolve_notification_urls(
     # (entity_type, entity id) -> (org_id, path below the org segment)
     targets: dict[tuple[str, UUID], tuple[UUID, str]] = {}
 
+    # `run.project` / `exp.project` below trigger the relationship's
+    # `lazy="selectin"` load, which batches every parent project into one
+    # extra SELECT per entity type — not an N+1.
     run_ids = ids_by_type.get("run")
     if run_ids:
         rows = await db.execute(
