@@ -11,6 +11,7 @@ export const NotificationSchema = z
         message: z.string(),
         read_at: z.string().nullable(),
         created_at: z.string(),
+        url: z.string().nullable(),
     })
     .passthrough();
 

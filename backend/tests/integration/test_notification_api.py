@@ -459,6 +459,91 @@ class TestInAppNotifications:
         assert len(data["items"]) == 2  # limited
         assert data["total"] == 3  # full count
 
+    @pytest.mark.asyncio
+    async def test_list_resolves_deep_link_url_for_run(
+        self, client, auth_headers, db_session, test_user, test_project
+    ):
+        from app.models.notifications import Notification
+        from app.models.runs import Run
+
+        run = Run(name="CHO 7", slug="cho-7", project_id=test_project.id)
+        db_session.add(run)
+        await db_session.flush()
+        db_session.add(
+            Notification(
+                user_id=test_user.id,
+                event_type="RUN_STARTED",
+                entity_type="run",
+                entity_id=run.id,
+                title="Run started",
+                message="CHO-7 started",
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/notifications/", headers=auth_headers)
+
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert items[0]["url"] == (
+            "/test-org/projects/test-project/runs/cho-7"
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_url_is_null_for_unroutable_entity(
+        self, client, auth_headers, db_session, test_user
+    ):
+        from uuid import uuid4
+
+        from app.models.notifications import Notification
+
+        db_session.add(
+            Notification(
+                user_id=test_user.id,
+                event_type="INVITE_SENT",
+                entity_type="RevokedOfflineToken",
+                entity_id=uuid4(),
+                title="x",
+                message="y",
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/notifications/", headers=auth_headers)
+
+        assert resp.status_code == 200
+        assert resp.json()["items"][0]["url"] is None
+
+    @pytest.mark.asyncio
+    async def test_mark_read_returns_resolved_url(
+        self, client, auth_headers, db_session, test_user, test_project
+    ):
+        from app.models.notifications import Notification
+        from app.models.runs import Run
+
+        run = Run(name="CHO 8", slug="cho-8", project_id=test_project.id)
+        db_session.add(run)
+        await db_session.flush()
+        notif = Notification(
+            user_id=test_user.id,
+            event_type="RUN_STARTED",
+            entity_type="run",
+            entity_id=run.id,
+            title="Run started",
+            message="CHO-8 started",
+        )
+        db_session.add(notif)
+        await db_session.commit()
+
+        resp = await client.put(
+            f"/notifications/{notif.id}/read", headers=auth_headers
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["url"] == (
+            "/test-org/projects/test-project/runs/cho-8"
+        )
+
 
 # ── Channel Test Endpoint ────────────────────────────────────────────────
 

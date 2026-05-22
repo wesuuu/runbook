@@ -15,6 +15,7 @@ const VALID = {
     message: 'CHO-042 started',
     read_at: null,
     created_at: '2026-05-21T10:00:00Z',
+    url: null,
 };
 
 describe('notification schemas', () => {

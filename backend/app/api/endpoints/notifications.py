@@ -9,6 +9,7 @@ Delivery log:        GET                 /notifications/deliveries
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -43,6 +44,7 @@ from app.schemas.notifications import (
 )
 from app.services.core.notifications.channels import get_channel
 from app.services.core.notifications.channels.base import PermanentError, TransientError
+from app.services.core.notifications.links import resolve_notification_urls
 
 logger = logging.getLogger("notifications.api")
 
@@ -423,6 +425,15 @@ async def delete_subscription(
 # ── User In-App Notifications ───────────────────────────────────────────
 
 
+def _notification_response(
+    notif: Notification, url_map: dict[UUID, Optional[str]]
+) -> NotificationResponse:
+    """Build a NotificationResponse with its resolved deep-link URL."""
+    resp = NotificationResponse.model_validate(notif)
+    resp.url = url_map.get(notif.id)
+    return resp
+
+
 @router.get("/", response_model=NotificationListResponse)
 async def list_notifications(
     limit: int = Query(20, ge=1, le=100),
@@ -455,7 +466,11 @@ async def list_notifications(
     result = await db.execute(stmt)
     items = list(result.scalars().all())
 
-    return NotificationListResponse(items=items, total=total)
+    url_map = await resolve_notification_urls(db, items, current_user.id)
+    return NotificationListResponse(
+        items=[_notification_response(n, url_map) for n in items],
+        total=total,
+    )
 
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
@@ -487,7 +502,8 @@ async def mark_read(
     notif.read_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(notif)
-    return notif
+    url_map = await resolve_notification_urls(db, [notif], current_user.id)
+    return _notification_response(notif, url_map)
 
 
 @router.put("/read-all", status_code=204)
