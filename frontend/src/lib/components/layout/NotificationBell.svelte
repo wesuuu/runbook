@@ -65,12 +65,14 @@
     // NOTE: markRead / markAllRead / handleSelect are intentionally
     // duplicated in routes/notifications/+page.svelte (count-2, no shared
     // store yet). Keep the mark-read error semantics in sync across both.
-    async function markRead(id: string, navigating: boolean): Promise<void> {
+    async function markRead(id: string): Promise<void> {
         const idx = notifications.findIndex((n) => n.id === id);
         if (idx === -1 || notifications[idx].read_at) return;
+        const prev = notifications[idx];
+        const prevCount = unreadCount;
         // Optimistic update first (snappy).
         notifications[idx] = {
-            ...notifications[idx],
+            ...prev,
             read_at: new Date().toISOString(),
         };
         unreadCount = Math.max(0, unreadCount - 1);
@@ -79,12 +81,10 @@
         } catch (e) {
             console.error('Mark-read failed', e);
             toast.error('Could not mark notification as read');
-            // Navigating clicks unmount this component — refetch only for
-            // plain (non-navigating) clicks so the UI converges.
-            if (!navigating) {
-                await fetchNotifications();
-                await fetchUnreadCount();
-            }
+            // Roll back the optimistic update so the UI matches the server.
+            const cur = notifications.findIndex((n) => n.id === id);
+            if (cur !== -1) notifications[cur] = prev;
+            unreadCount = prevCount;
         }
     }
 
@@ -110,7 +110,7 @@
 
     function handleSelect(item: NotificationItem): void {
         const href = item.url;
-        if (!item.read_at) markRead(item.id, href !== null);
+        if (!item.read_at) markRead(item.id);
         if (href) {
             open = false;
             goto(href);
@@ -232,7 +232,7 @@
                 <a
                     href="/notifications"
                     {...props}
-                    class="block w-full text-center px-3 py-2 text-xs font-medium text-primary cursor-pointer"
+                    class="block w-full text-center px-3 py-2 text-xs font-medium text-primary cursor-pointer hover:bg-accent transition-colors duration-150"
                 >
                     View all notifications
                 </a>

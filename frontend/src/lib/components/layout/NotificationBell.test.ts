@@ -144,4 +144,45 @@ describe('NotificationBell', () => {
         await tick();
         expect(api.put).toHaveBeenCalledWith('/notifications/read-all', {});
     });
+
+    it('marks a row read on select and PUTs to the server', async () => {
+        const item = makeItem();
+        mockApi({ count: 1, items: [item] });
+        render(NotificationBell);
+        await fireEvent.click(screen.getByLabelText('Notifications'));
+        await tick();
+        await fireEvent.click(screen.getByTestId('notification-row'));
+        await tick();
+        expect(api.put).toHaveBeenCalledWith(`/notifications/${item.id}/read`, {});
+    });
+
+    it('rolls back the optimistic read on a failed mark-read', async () => {
+        const item = makeItem();
+        mockApi({ count: 1, items: [item] });
+        vi.mocked(api.put).mockRejectedValueOnce(new Error('network'));
+        render(NotificationBell);
+        await vi.waitFor(() => {
+            expect(screen.getByText('1')).toBeInTheDocument();
+        });
+        await fireEvent.click(screen.getByLabelText('Notifications'));
+        await tick();
+        await fireEvent.click(screen.getByTestId('notification-row'));
+        await vi.waitFor(() => {
+            expect(toast.error).toHaveBeenCalled();
+        });
+        expect(screen.getByText('1')).toBeInTheDocument();
+    });
+
+    it('rolls back mark-all-read when the server rejects', async () => {
+        mockApi({ count: 2, items: [makeItem(), makeItem({ id: '2' })] });
+        vi.mocked(api.put).mockRejectedValueOnce(new Error('network'));
+        render(NotificationBell);
+        await fireEvent.click(screen.getByLabelText('Notifications'));
+        await tick();
+        await fireEvent.click(screen.getByText('Mark all read'));
+        await vi.waitFor(() => {
+            expect(toast.error).toHaveBeenCalled();
+        });
+        expect(screen.getByText('2')).toBeInTheDocument();
+    });
 });
