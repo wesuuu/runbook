@@ -28,6 +28,10 @@ MAX_RECOVERY_ATTEMPTS = 3
 # heartbeat_at for all RUNNING jobs owned by this worker.
 _HEARTBEAT_INTERVAL_SECONDS = 15
 
+# Purge interval for the notification retention sweep — throttles it to at most
+# once per 24 hours per worker.
+_PURGE_INTERVAL: timedelta = timedelta(hours=24)
+
 
 # ── Heartbeat loop ──────────────────────────────────────────────────
 
@@ -305,7 +309,7 @@ async def _retry_pending_deliveries() -> None:
         logger.debug("Delivery retry sweep: no deliveries due")
 
 
-# TD-0091b: last time the notification retention sweep ran, per process.
+# Last time the notification retention sweep ran, per process.
 # Throttles the sweep to at most once per 24h *within a single worker* —
 # the recovery loop ticks far more often than a 90-day-window purge needs.
 # NOTE: this is process-local — a multi-worker / multi-pod deployment runs
@@ -344,13 +348,14 @@ async def _purge_old_notifications() -> None:
     now = datetime.now(timezone.utc)
     if _last_notification_purge_at is not None and (
         now - _last_notification_purge_at
-    ) < timedelta(hours=24):
+    ) < _PURGE_INTERVAL:
         return
 
     async with AsyncSessionLocal() as session:
         deleted = await purge_read_notifications(
             session, older_than_days=retention_days
         )
+    # Only advance the timestamp after a clean sweep so a failed sweep retries next tick.
     _last_notification_purge_at = now
     logger.info(
         "Retention sweep: deleted %d read notifications older than %d days",

@@ -672,7 +672,7 @@ class TestPurgeReadNotifications:
         assert delivery.status == DeliveryStatus.RETRYING
 
 
-# ── _purge_old_notifications sweep wiring (TD-0091b) ─────────────────────
+# ── _purge_old_notifications sweep wiring ─────────────────────────────────
 
 
 class TestPurgeOldNotificationsSweep:
@@ -704,6 +704,7 @@ class TestPurgeOldNotificationsSweep:
 
         session_factory.assert_called_once()
         purge_mock.assert_awaited_once_with(fake_session, older_than_days=90)
+        assert main_module._last_notification_purge_at is not None
 
     @pytest.mark.asyncio
     async def test_sweep_throttled_within_24h(self, monkeypatch):
@@ -746,3 +747,4 @@ class TestPurgeOldNotificationsSweep:
             await main_module._purge_old_notifications()
 
         purge_mock.assert_not_awaited()
+        assert main_module._last_notification_purge_at is not None
