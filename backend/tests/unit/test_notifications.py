@@ -15,11 +15,14 @@ from app.services.core.notifications.channels.webhook import WebhookChannel
 from app.services.core.notifications.templates import TEMPLATES
 
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from app.models.notifications import (
     DeliveryStatus,
+    Notification,
     NotificationChannel,
     NotificationDelivery,
+    NotificationSubscription,
 )
 from app.services.core.notifications import dispatcher
 from app.services.core.notifications.dispatcher import retry_pending
@@ -480,3 +483,190 @@ class TestRetryPendingDeliveriesSweep:
         session_factory.assert_called_once()
         retry_mock.assert_awaited_once_with(fake_session)
         fake_session.commit.assert_awaited_once()
+
+
+# ── purge_read_notifications Tests (TD-0091b) ────────────────────────────
+
+
+class TestPurgeReadNotifications:
+    """The retention sweep hard-deletes old read notifications only."""
+
+    async def _notif(self, db, user, *, read_at, title="n"):
+        notif = Notification(
+            user_id=user.id,
+            event_type="RUN_STARTED",
+            entity_type="run",
+            entity_id=uuid4(),
+            title=title,
+            message="m",
+            read_at=read_at,
+        )
+        db.add(notif)
+        await db.flush()
+        return notif
+
+    @pytest.mark.asyncio
+    async def test_deletes_old_read_notifications(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        notif = await self._notif(db_session, test_user, read_at=old)
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 1
+        assert await db_session.get(Notification, notif.id) is None
+
+    @pytest.mark.asyncio
+    async def test_keeps_recent_read_notifications(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        recent = datetime.now(timezone.utc) - timedelta(days=10)
+        notif = await self._notif(db_session, test_user, read_at=recent)
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 0
+        assert await db_session.get(Notification, notif.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_keeps_unread_notifications(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        notif = await self._notif(db_session, test_user, read_at=None)
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 0
+        assert await db_session.get(Notification, notif.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_returns_exact_count(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        recent = datetime.now(timezone.utc) - timedelta(days=5)
+        await self._notif(db_session, test_user, read_at=old, title="a")
+        await self._notif(db_session, test_user, read_at=old, title="b")
+        await self._notif(db_session, test_user, read_at=recent, title="c")
+        await self._notif(db_session, test_user, read_at=None, title="d")
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 2
+
+    @pytest.mark.asyncio
+    async def test_chunking_across_more_than_chunk_size(
+        self, db_session, test_user
+    ):
+        """Exercises the multi-chunk control flow (the while loop runs
+        twice: 500 then 5). The per-chunk ``db.commit()`` resolves to a
+        SAVEPOINT release under the test fixture, so this asserts the
+        chunk arithmetic, not real per-chunk commit durability.
+        """
+        from app.services.core.notifications.retention import (
+            PURGE_CHUNK_SIZE,
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        rows = [
+            Notification(
+                user_id=test_user.id,
+                event_type="RUN_STARTED",
+                entity_type="run",
+                entity_id=uuid4(),
+                title=f"n{i}",
+                message="m",
+                read_at=old,
+            )
+            for i in range(PURGE_CHUNK_SIZE + 5)
+        ]
+        db_session.add_all(rows)
+        await db_session.flush()
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == PURGE_CHUNK_SIZE + 5
+
+    @pytest.mark.asyncio
+    async def test_non_positive_window_is_noop(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        notif = await self._notif(db_session, test_user, read_at=old)
+
+        assert await purge_read_notifications(db_session, older_than_days=0) == 0
+        assert (
+            await purge_read_notifications(db_session, older_than_days=-1) == 0
+        )
+        assert await db_session.get(Notification, notif.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_delivery_survives_purge_with_null_fk(
+        self, db_session, test_user
+    ):
+        """Schema-contract test for the ON DELETE SET NULL FK.
+
+        The production dispatcher (``_dispatch_to_channel``) never sets
+        ``NotificationDelivery.notification_id`` — in-app ``Notification``
+        rows and external-channel ``NotificationDelivery`` rows are
+        decoupled today, so a purge cannot orphan a real delivery. This
+        test constructs the linkage artificially to prove the FK's
+        ``ON DELETE SET NULL`` holds *if* the two are ever linked, so a
+        future change can rely on the contract.
+        """
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        notif = await self._notif(db_session, test_user, read_at=old)
+        channel = NotificationChannel(
+            user_id=test_user.id,
+            name="C",
+            channel_type="CONSOLE",
+            config={},
+            enabled=True,
+        )
+        db_session.add(channel)
+        await db_session.flush()
+        delivery = NotificationDelivery(
+            notification_id=notif.id,
+            channel_id=channel.id,
+            event_type="RUN_STARTED",
+            recipient_info={"recipient": "x"},
+            status=DeliveryStatus.RETRYING,
+            attempts=1,
+        )
+        db_session.add(delivery)
+        await db_session.flush()
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 1
+        await db_session.refresh(delivery)
+        assert delivery.notification_id is None
+        assert delivery.status == DeliveryStatus.RETRYING
