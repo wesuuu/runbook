@@ -670,3 +670,79 @@ class TestPurgeReadNotifications:
         await db_session.refresh(delivery)
         assert delivery.notification_id is None
         assert delivery.status == DeliveryStatus.RETRYING
+
+
+# ── _purge_old_notifications sweep wiring (TD-0091b) ─────────────────────
+
+
+class TestPurgeOldNotificationsSweep:
+    """The recovery-loop purge step is throttled and respects the flag."""
+
+    @pytest.mark.asyncio
+    async def test_sweep_calls_purge_when_due(self, monkeypatch):
+        import app.main as main_module
+
+        monkeypatch.setattr(main_module, "_last_notification_purge_at", None)
+        monkeypatch.setattr(
+            main_module.settings, "notification_retention_days", 90
+        )
+
+        fake_session = AsyncMock()
+        session_cm = AsyncMock()
+        session_cm.__aenter__.return_value = fake_session
+        session_cm.__aexit__.return_value = False
+        session_factory = MagicMock(return_value=session_cm)
+        purge_mock = AsyncMock(return_value=7)
+
+        with patch(
+            "app.db.session.AsyncSessionLocal", session_factory
+        ), patch(
+            "app.services.core.notifications.retention.purge_read_notifications",
+            purge_mock,
+        ):
+            await main_module._purge_old_notifications()
+
+        session_factory.assert_called_once()
+        purge_mock.assert_awaited_once_with(fake_session, older_than_days=90)
+
+    @pytest.mark.asyncio
+    async def test_sweep_throttled_within_24h(self, monkeypatch):
+        import app.main as main_module
+
+        monkeypatch.setattr(
+            main_module,
+            "_last_notification_purge_at",
+            datetime.now(timezone.utc),
+        )
+        monkeypatch.setattr(
+            main_module.settings, "notification_retention_days", 90
+        )
+        purge_mock = AsyncMock(return_value=0)
+
+        with patch(
+            "app.services.core.notifications.retention.purge_read_notifications",
+            purge_mock,
+        ):
+            await main_module._purge_old_notifications()
+
+        purge_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sweep_disabled_when_retention_non_positive(
+        self, monkeypatch
+    ):
+        import app.main as main_module
+
+        monkeypatch.setattr(main_module, "_last_notification_purge_at", None)
+        monkeypatch.setattr(
+            main_module.settings, "notification_retention_days", 0
+        )
+        purge_mock = AsyncMock(return_value=0)
+
+        with patch(
+            "app.services.core.notifications.retention.purge_read_notifications",
+            purge_mock,
+        ):
+            await main_module._purge_old_notifications()
+
+        purge_mock.assert_not_awaited()
