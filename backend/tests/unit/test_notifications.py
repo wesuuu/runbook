@@ -748,3 +748,123 @@ class TestPurgeOldNotificationsSweep:
 
         purge_mock.assert_not_awaited()
         assert main_module._last_notification_purge_at is not None
+
+
+# ── dispatch_event Tests (TD-0091b) ──────────────────────────────────────
+
+
+class TestDispatchEvent:
+    """dispatch_event fans an event out to subscribed org + user channels."""
+
+    async def _channel_with_sub(
+        self,
+        db,
+        *,
+        event_type,
+        org_id=None,
+        user_id=None,
+        sub_enabled=True,
+    ):
+        channel = NotificationChannel(
+            org_id=org_id,
+            user_id=user_id,
+            name="Dispatch Test Channel",
+            channel_type="CONSOLE",
+            config={},
+            enabled=True,
+        )
+        db.add(channel)
+        await db.flush()
+        sub = NotificationSubscription(
+            channel_id=channel.id,
+            event_type=event_type,
+            enabled=sub_enabled,
+        )
+        db.add(sub)
+        await db.flush()
+        return channel
+
+    def _messages(self, event_type="RUN_STARTED"):
+        personal = FormattedMessage(
+            event_type=event_type,
+            title="Personal",
+            body="personal body",
+            recipient="you@example.com",
+        )
+        broadcast = FormattedMessage(
+            event_type=event_type,
+            title="Broadcast",
+            body="broadcast body",
+            recipient="org",
+        )
+        return personal, broadcast
+
+    @pytest.mark.asyncio
+    async def test_org_channel_receives_broadcast(self, db_session, test_org):
+        await self._channel_with_sub(
+            db_session, event_type="RUN_STARTED", org_id=test_org.id
+        )
+        personal, broadcast = self._messages()
+
+        deliveries = await dispatcher.dispatch_event(
+            db_session, "RUN_STARTED", test_org.id, [], personal, broadcast
+        )
+
+        assert len(deliveries) == 1
+        assert deliveries[0].status == DeliveryStatus.SENT
+
+    @pytest.mark.asyncio
+    async def test_user_channel_receives_personal(
+        self, db_session, test_org, test_user
+    ):
+        await self._channel_with_sub(
+            db_session, event_type="RUN_COMPLETED", user_id=test_user.id
+        )
+        personal, broadcast = self._messages("RUN_COMPLETED")
+
+        deliveries = await dispatcher.dispatch_event(
+            db_session,
+            "RUN_COMPLETED",
+            test_org.id,
+            [test_user.id],
+            personal,
+            broadcast,
+        )
+
+        assert len(deliveries) == 1
+        assert deliveries[0].status == DeliveryStatus.SENT
+
+    @pytest.mark.asyncio
+    async def test_disabled_subscription_yields_no_delivery(
+        self, db_session, test_org
+    ):
+        await self._channel_with_sub(
+            db_session,
+            event_type="RUN_STARTED",
+            org_id=test_org.id,
+            sub_enabled=False,
+        )
+        personal, broadcast = self._messages()
+
+        deliveries = await dispatcher.dispatch_event(
+            db_session, "RUN_STARTED", test_org.id, [], personal, broadcast
+        )
+
+        assert deliveries == []
+
+    @pytest.mark.asyncio
+    async def test_event_with_no_channels_is_noop(
+        self, db_session, test_org
+    ):
+        personal, broadcast = self._messages("STEP_DEVIATION")
+
+        deliveries = await dispatcher.dispatch_event(
+            db_session,
+            "STEP_DEVIATION",
+            test_org.id,
+            [],
+            personal,
+            broadcast,
+        )
+
+        assert deliveries == []
