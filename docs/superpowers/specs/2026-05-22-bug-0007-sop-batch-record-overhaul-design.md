@@ -595,6 +595,61 @@ Width difference is intentional: top-level `Mm(150)` matches the existing report
 
 ---
 
+## Visual verification — the "preview matches what we want" gate
+
+Pure structural assertions (XML attribute checks, no-`<w:tbl>` regression guard, marker presence) catch silent template regressions but cannot answer the question *"does the output look right?"* on a glance. The plan is a layered approach:
+
+### Layer 1 — checked-in baseline previews
+
+A reproducible renderer at `scripts/render_sample_sop.py` produces a **deterministic maximal sample** exercising every layout feature: two roles, six steps, two inline figures (one mid-procedure, one in the assay role), time markers enabled, critical-requirement banner, three sign-offs with placeholder signature images. Two variants are emitted in one run: `with_time` and `without_time`.
+
+The script writes its outputs to `docs/previews/sop_default/`:
+
+```
+docs/previews/sop_default/
+  README.md                       — explains why these files are checked in
+  sop_maximal_with_time.pdf
+  sop_maximal_without_time.pdf
+  sop_maximal_with_time-1.png      — page-by-page PNGs (pdftoppm -r 110)
+  sop_maximal_with_time-2.png
+  …
+```
+
+The PDFs **and** the per-page PNGs are checked in (git LFS via the same `*.pdf`, `*.png` filter as `.docx`). They serve as the **visual specification of what we expect the SOP to look like**. Any future change touching template assets, `template_engine.py`, `compute_time_offsets()`, or the figure-swap helper must re-run `scripts/render_sample_sop.py` and commit the regenerated previews alongside the code change.
+
+Why this works as a verification gate:
+
+1. Code review naturally surfaces a `git diff` against the PNGs — a reviewer sees the before/after side-by-side in the PR UI without running any tooling.
+2. An unexpected diff in the PNGs that the author did not intend (e.g., spacing regression, color regression, accidental table re-introduction) is visible at review time and blocks merge.
+3. Intentional layout changes carry the new PNGs as their first-class artifact, so the spec for "what it should look like" lives in the repo and stays in sync with the renderer.
+
+### Layer 2 — structural pytest assertions
+
+The deterministic sample is also driven through a pytest suite (`tests/integration/test_sop_render_visual.py`) that asserts the things a reviewer cannot easily eyeball:
+
+- No `<w:tbl>` elements between the procedure heading and the approvals block (the sub-issue 2 regression guard).
+- ≥1 paragraph run in the rendered output has `w:color=000000`, `w:sz=32`, `w:b` — the role-heading restyle did not silently no-op.
+- ≥1 paragraph run in the rendered output has `w:sz=24`, `w:b` — step headings are present and styled.
+- No step-heading paragraph text contains `"  "` (two consecutive spaces) — the spacing-typo regression guard.
+- Inline figures resolved successfully: ≥1 `<w:drawing>` element per figure in the sample.
+- Figure caption font: caption paragraphs containing `"Figure N."` have a run with `w:sz=20` (10pt).
+- `Heading 3` style is still applied at the paragraph level for role headings (preserves outline / TOC); but its run-level color is overridden to black.
+- Document-global figure counter is monotonic: extracting "Figure 1.", "Figure 2." etc. from the rendered text gives a strictly-increasing sequence.
+
+These run in CI on every PR. They catch the small regressions that wouldn't survive a PNG diff (font size, style attributes), without being so brittle that they break on rendering-engine version bumps.
+
+### Layer 3 — TECH_DEBT: perceptual hash CI gate
+
+A perceptual-hash comparison (pHash) of each rendered PNG against the checked-in baseline, with a small tolerance window, would catch subtle visual drifts that a tired reviewer might miss in the diff UI. This is a stretch goal — pHash thresholds are environment-sensitive (font version, LibreOffice version), so it's logged as a follow-up rather than a launch requirement.
+
+### Touchlist additions
+
+- `scripts/render_sample_sop.py` (new) — committed renderer that emits the maximal sample to `docs/previews/sop_default/`. Imports the same `build_context()` and `render_to_docx()` paths used by `protocol_pdfs.py`, so it exercises real code rather than a mock pipeline.
+- `docs/previews/sop_default/` (new) — checked-in PDFs and per-page PNGs. README in the directory explains the regenerate-on-change discipline.
+- `tests/integration/test_sop_render_visual.py` (new) — Layer 2 structural assertions.
+
+---
+
 ## Out of scope (logged as TECH_DEBT follow-ups)
 
 - Reordering figures within a step.
