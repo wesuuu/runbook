@@ -54,3 +54,65 @@ def test_two_blank_orgs_collide_to_blank_not_suffixed():
     out = disambiguate_org_slugs([(a, "---"), (b, "---")])
     assert out[a] == ""
     assert out[b] == ""
+
+
+# ---------------------------------------------------------------------------
+# DB-backed async tests for disambiguated_org_slug_for_user
+# ---------------------------------------------------------------------------
+
+import pytest
+
+from app.models.iam import Organization, OrganizationMember
+from app.services.core.org_slugs import disambiguated_org_slug_for_user
+
+
+async def _add_org(db, name: str) -> Organization:
+    org = Organization(name=name)
+    db.add(org)
+    await db.flush()
+    return org
+
+
+async def _add_member(db, user_id, org_id):
+    db.add(OrganizationMember(user_id=user_id, organization_id=org_id))
+    await db.flush()
+
+
+async def test_user_in_one_org_returns_slug(db_session, test_user):
+    org = await _add_org(db_session, "Plain Lab")
+    await _add_member(db_session, test_user.id, org.id)
+    assert (
+        await disambiguated_org_slug_for_user(db_session, test_user.id, org.id)
+        == "plain-lab"
+    )
+
+
+async def test_user_in_colliding_orgs_returns_suffixed_slug(db_session, test_user):
+    org_a = await _add_org(db_session, "Acme")
+    org_b = await _add_org(db_session, "Acme")
+    await _add_member(db_session, test_user.id, org_a.id)
+    await _add_member(db_session, test_user.id, org_b.id)
+
+    slug_a = await disambiguated_org_slug_for_user(db_session, test_user.id, org_a.id)
+    slug_b = await disambiguated_org_slug_for_user(db_session, test_user.id, org_b.id)
+
+    assert slug_a == f"acme-{str(org_a.id)[:8]}"
+    assert slug_b == f"acme-{str(org_b.id)[:8]}"
+
+
+async def test_user_not_a_member_returns_none(db_session, test_user):
+    org = await _add_org(db_session, "Outside Lab")
+    # No membership row inserted.
+    assert (
+        await disambiguated_org_slug_for_user(db_session, test_user.id, org.id)
+        is None
+    )
+
+
+async def test_blank_slug_returns_none(db_session, test_user):
+    org = await _add_org(db_session, "---")
+    await _add_member(db_session, test_user.id, org.id)
+    assert (
+        await disambiguated_org_slug_for_user(db_session, test_user.id, org.id)
+        is None
+    )
