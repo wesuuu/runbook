@@ -67,6 +67,18 @@ class NotificationChannel(Base, UUIDMixin, TimestampMixin):
         ),
         Index("ix_notif_channels_org", "org_id"),
         Index("ix_notif_channels_user", "user_id"),
+        # TD-0091c: at most one default (auto-provisioned) EMAIL channel per
+        # user. Partial index narrowed to is_default=TRUE so users can still
+        # keep additional non-default EMAIL channels (e.g. personal aliases).
+        Index(
+            "ix_notif_channel_user_email_unique",
+            "user_id",
+            unique=True,
+            postgresql_where=text(
+                "channel_type = 'EMAIL' AND is_default = TRUE "
+                "AND user_id IS NOT NULL"
+            ),
+        ),
     )
 
     org_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -82,6 +94,10 @@ class NotificationChannel(Base, UUIDMixin, TimestampMixin):
     )
     enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False
+    )
+    # TD-0091c: marks rows created by the backfill / after_insert provisioner.
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
     )
 
     # Relationships
