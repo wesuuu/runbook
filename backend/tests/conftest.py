@@ -1189,3 +1189,33 @@ async def locked_experiment(db_session, test_project) -> Experiment:
     db_session.add(exp)
     await db_session.flush()
     return exp
+
+
+@pytest_asyncio.fixture
+async def locked_experiment_with_note(db_session, test_project) -> Experiment:
+    """A locked experiment that already has a note."""
+    from datetime import datetime, timezone
+    import uuid as uuid_mod
+
+    exp = Experiment(
+        name="Locked Experiment",
+        description="A locked experiment for F-0043",
+        project_id=test_project.id,
+        slug="locked-exp-note",
+        status="DRAFT",
+        conclusion="Result X is best.",
+        conclusion_locked_at=datetime.now(timezone.utc),
+        notes=[
+            {
+                "id": str(uuid_mod.uuid4()),
+                "content": "pre-lock note",
+                "author_id": "test-author-id",
+                "author_name": "Test Author",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "flags": [],
+            }
+        ],
+    )
+    db_session.add(exp)
+    await db_session.flush()
+    return exp

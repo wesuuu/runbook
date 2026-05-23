@@ -226,6 +226,15 @@ async def create_run(
                 },
             )
 
+        if experiment.conclusion_locked_at is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "EXPERIMENT_LOCKED",
+                    "message": "Cannot add a run to a locked experiment.",
+                },
+            )
+
     initial_graph: dict = {}
     is_strict = False
     if run_in.protocol_id:

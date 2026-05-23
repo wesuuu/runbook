@@ -33,3 +33,59 @@ async def test_put_experiment_409_when_locked(
         )
         assert res.status_code == 409, body
         assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_post_run_to_locked_experiment_409(
+    client, locked_experiment, test_project, auth_headers
+):
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/runs",
+        json={"name": "post-lock run", "protocol_id": None},
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_create_run_via_runs_endpoint_to_locked_experiment_409(
+    client, locked_experiment, test_project, auth_headers
+):
+    res = await client.post(
+        "/runs",
+        json={
+            "name": "x",
+            "project_id": str(test_project.id),
+            "experiment_id": str(locked_experiment.id),
+        },
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_add_note_to_locked_experiment_409(
+    client, locked_experiment, auth_headers
+):
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/notes",
+        json={"content": "post-lock observation", "flags": []},
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_delete_note_from_locked_experiment_409(
+    client, locked_experiment_with_note, auth_headers
+):
+    note_id = locked_experiment_with_note.notes[0]["id"]
+    res = await client.delete(
+        f"/experiments/{locked_experiment_with_note.id}/notes/{note_id}",
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"

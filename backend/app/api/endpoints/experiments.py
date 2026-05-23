@@ -580,6 +580,15 @@ async def add_run_to_experiment(
             },
         )
 
+    if exp.conclusion_locked_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXPERIMENT_LOCKED",
+                "message": "Cannot add a run to a locked experiment.",
+            },
+        )
+
     if body.run_id:
         # Link existing run
         run = await get_or_404(db, Run, body.run_id)
@@ -696,6 +705,15 @@ async def add_experiment_note(
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
 
+    if exp.conclusion_locked_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXPERIMENT_LOCKED",
+                "message": "Notes are frozen after the conclusion is locked.",
+            },
+        )
+
     allowed = await check_permission(
         db,
         user.id,
@@ -771,6 +789,15 @@ async def delete_experiment_note(
 ):
     """Delete a note. Only the original author may delete (audit-friendly)."""
     exp = await get_or_404(db, Experiment, experiment_id)
+
+    if exp.conclusion_locked_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXPERIMENT_LOCKED",
+                "message": "Notes are frozen after the conclusion is locked.",
+            },
+        )
 
     allowed = await check_permission(
         db,
