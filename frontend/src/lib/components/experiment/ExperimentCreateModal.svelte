@@ -7,36 +7,62 @@
     import * as Dialog from '$lib/components/ui/dialog';
     import { ExperimentSchema, type Experiment } from '$lib/schemas/experiments';
 
+    interface ProjectOption {
+        id: string;
+        name: string;
+    }
+
     interface Props {
         open: boolean;
-        projectId: string;
+        /**
+         * Pre-selected project. Required when `projects` is not provided
+         * (per-project entry point). Ignored when `projects` is set — the
+         * picker is the source of truth in that mode.
+         */
+        projectId?: string;
+        /**
+         * When provided, render a project picker as the first field. Used by
+         * the org-wide experiments index where the user hasn't picked a
+         * project yet.
+         */
+        projects?: ProjectOption[];
         /** Called with the created experiment on success. */
         onCreated: (experiment: Experiment) => void;
     }
 
-    let { open = $bindable(), projectId, onCreated }: Props = $props();
+    let {
+        open = $bindable(),
+        projectId,
+        projects,
+        onCreated,
+    }: Props = $props();
 
     let name = $state('');
     let objective = $state('');
     let description = $state('');
+    let selectedProjectId = $state<string>('');
     let error = $state<string | null>(null);
     let saving = $state(false);
+
+    const showPicker = $derived(!!projects);
+    const effectiveProjectId = $derived(showPicker ? selectedProjectId : (projectId ?? ''));
 
     function reset() {
         name = '';
         objective = '';
         description = '';
+        selectedProjectId = projectId ?? '';
         error = null;
     }
 
     async function submit() {
-        if (!name.trim() || saving) return;
+        if (!name.trim() || !effectiveProjectId || saving) return;
         saving = true;
         error = null;
         try {
             const created = await api.post<Experiment>('/experiments', {
                 name: name.trim(),
-                project_id: projectId,
+                project_id: effectiveProjectId,
                 objective: objective.trim() || null,
                 description: description.trim() || null,
             }, { schema: ExperimentSchema });
@@ -61,6 +87,22 @@
         </Dialog.Header>
 
         <div class="space-y-4 py-2">
+            {#if showPicker}
+                <div class="space-y-1.5">
+                    <Label for="exp-project">Project</Label>
+                    <select
+                        id="exp-project"
+                        bind:value={selectedProjectId}
+                        class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                        <option value="" disabled>Select a project…</option>
+                        {#each projects ?? [] as p}
+                            <option value={p.id}>{p.name}</option>
+                        {/each}
+                    </select>
+                </div>
+            {/if}
+
             <div class="space-y-1.5">
                 <Label for="exp-name">Name</Label>
                 <Input id="exp-name" bind:value={name} placeholder="Experiment name" />
@@ -103,7 +145,10 @@
             >
                 Cancel
             </Button>
-            <Button onclick={submit} disabled={!name.trim() || saving}>
+            <Button
+                onclick={submit}
+                disabled={!name.trim() || !effectiveProjectId || saving}
+            >
                 {saving ? 'Creating…' : 'Create experiment'}
             </Button>
         </Dialog.Footer>

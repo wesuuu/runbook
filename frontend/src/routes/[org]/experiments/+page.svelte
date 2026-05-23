@@ -1,12 +1,16 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { goto } from '$app/navigation';
     import { api } from '$lib/api';
     import { paths } from '$lib/paths';
+    import { getCurrentOrg } from '$lib/auth.svelte';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import RunProgressBar from '$lib/components/experiment/RunProgressBar.svelte';
+    import ExperimentCreateModal from '$lib/components/experiment/ExperimentCreateModal.svelte';
+    import type { Experiment } from '$lib/schemas/experiments';
     import {
         shortId,
         formatDate,
@@ -31,8 +35,10 @@
     }
 
     let experiments = $state<ExperimentRow[]>([]);
+    let projects = $state<{ id: string; slug: string; name: string }[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
+    let createOpen = $state(false);
 
     // Filter state.
     const FILTERS = ['All', 'In progress', 'Complete', 'Draft'] as const;
@@ -44,7 +50,14 @@
         error = null;
         try {
             // TODO(F-0093 follow-up): add ExperimentSummarySchema and pass { schema } when defined.
-            experiments = (await api.get('/experiments')) as ExperimentRow[];
+            const org = getCurrentOrg();
+            const projectsQuery = org ? `?organization_id=${org.id}` : '';
+            const [exps, projs] = await Promise.all([
+                api.get('/experiments') as Promise<ExperimentRow[]>,
+                api.get(`/projects${projectsQuery}`) as Promise<{ id: string; slug: string; name: string }[]>,
+            ]);
+            experiments = exps;
+            projects = projs;
         } catch (e) {
             error = e instanceof Error ? e.message : 'Failed to load experiments.';
         } finally {
@@ -53,6 +66,10 @@
     }
 
     onMount(load);
+
+    function onCreated(exp: Experiment) {
+        goto(paths.experiment(exp.project_slug, exp.slug));
+    }
 
     // NOTE: `filtered` and `stats` below run over the full client-side list.
     // That is correct only while GET /experiments is unpaginated (§1.1). When
@@ -83,17 +100,19 @@
 </script>
 
 <div class="space-y-6">
-    <!-- Header — single column; the spec's "New experiment" button is omitted
-         on the index (see the note at the end of this task), so there is no
-         second flex child to justify-between against. -->
-    <div>
-        <p class="font-mono text-xs uppercase tracking-widest text-accent">
-            Investigations
-        </p>
-        <h1 class="mt-1 text-2xl font-semibold text-foreground">Experiments</h1>
-        <p class="mt-1 text-sm text-muted-foreground">
-            Every investigation across your projects — objective, runs, and status.
-        </p>
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <p class="font-mono text-xs uppercase tracking-widest text-accent">
+                Investigations
+            </p>
+            <h1 class="mt-1 text-2xl font-semibold text-foreground">Experiments</h1>
+            <p class="mt-1 text-sm text-muted-foreground">
+                Every investigation across your projects — objective, runs, and status.
+            </p>
+        </div>
+        {#if !loading && !error && projects.length > 0}
+            <Button onclick={() => (createOpen = true)}>+ New experiment</Button>
+        {/if}
     </div>
 
     {#if loading}
@@ -149,9 +168,16 @@
                 </p>
                 <p class="mt-1 text-sm text-muted-foreground">
                     {experiments.length === 0
-                        ? 'Open a project to start your first investigation.'
+                        ? projects.length === 0
+                            ? 'Create a project first, then start your first investigation.'
+                            : 'Start your first investigation to ask a question of the data.'
                         : 'Try a different filter or search term.'}
                 </p>
+                {#if experiments.length === 0 && projects.length > 0}
+                    <div class="mt-4">
+                        <Button onclick={() => (createOpen = true)}>+ New experiment</Button>
+                    </div>
+                {/if}
             </div>
         {:else}
             <div class="space-y-2">
@@ -213,3 +239,8 @@
     {/if}
 </div>
 
+<ExperimentCreateModal
+    bind:open={createOpen}
+    projects={projects}
+    onCreated={onCreated}
+/>
