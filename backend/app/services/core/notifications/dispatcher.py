@@ -140,8 +140,14 @@ async def _get_subscribed_channels(
     event_type: str,
     org_id: UUID | None = None,
     user_id: UUID | None = None,
+    user_ids: list[UUID] | None = None,
 ) -> list[NotificationChannel]:
-    """Find enabled channels with an active subscription for this event."""
+    """Find enabled channels with an active subscription for this event.
+
+    `user_id` and `user_ids` are mutually exclusive overloads — pass either.
+    `user_ids` issues a single IN query, used by the dispatcher's per-event
+    user-channel fan-out so STEP_DEVIATION on a 10-assignee run isn't N+1.
+    """
     stmt = (
         select(NotificationChannel)
         .join(NotificationSubscription)
@@ -153,6 +159,10 @@ async def _get_subscribed_channels(
         stmt = stmt.where(NotificationChannel.org_id == org_id)
     if user_id is not None:
         stmt = stmt.where(NotificationChannel.user_id == user_id)
+    elif user_ids is not None:
+        if not user_ids:
+            return []
+        stmt = stmt.where(NotificationChannel.user_id.in_(user_ids))
 
     result = await db.execute(stmt)
     return list(result.scalars().all())
