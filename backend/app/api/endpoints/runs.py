@@ -970,6 +970,17 @@ async def update_run(
         changes,
     )
 
+    # Audit key_result triple separately (F-0043)
+    if any(k in changes for k in ("key_result_label", "key_result_value", "key_result_unit")):
+        await log_audit(
+            db,
+            actor_id=user.id,
+            action="key_result.set",
+            entity_type="Run",
+            entity_id=run_obj.id,
+            changes={k: changes[k] for k in ("key_result_label", "key_result_value", "key_result_unit") if k in changes},
+        )
+
     if new_status == "COMPLETED" and current_status != "COMPLETED":
         await on_run_completed(db, run_obj, background_tasks)
     elif new_status == "EDITED" and current_status == "COMPLETED":

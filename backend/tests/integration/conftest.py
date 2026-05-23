@@ -183,3 +183,17 @@ async def viewer_headers(db_session, test_project, test_org):
         email_verified=True,
     )
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def seeded_run(db_session, test_project):
+    """A single run in test_project with a unique slug for testing."""
+    run = Run(
+        name="Seeded Test Run",
+        slug="seeded-test-run",
+        project_id=test_project.id,
+        status=RunStatus.PLANNED,
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
