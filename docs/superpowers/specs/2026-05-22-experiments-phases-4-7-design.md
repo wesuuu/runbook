@@ -143,7 +143,7 @@ Experiments router mounts at root (`/experiments/...`); runs router at `/runs/..
 
 - `POST /experiments/{id}/conclusion/unlock` —
 
-  Permission: `require_permission(ObjectType.EXPERIMENT, "experiment_id", PermissionLevel.ADMIN)` — matches the existing project-level admin pattern. Frontend `canAdmin` derives from the same check (via the user's organization permissions table); the unlock UI element is only rendered when `canAdmin === true`.
+  Permission: `require_permission(ObjectType.PROJECT, "experiment_id", PermissionLevel.ADMIN)` — `ObjectType.EXPERIMENT` does not exist; the codebase consistently uses `ObjectType.PROJECT` for the project that owns the experiment (matched the unit_ops, templates, and protocol_versions admin pattern). Frontend `canAdmin` derives from the user's org-role membership (`getCurrentOrgRoles().includes('ADMIN')`); the unlock UI element is only rendered when `canAdmin === true`.
 
   Body: `{ "reason": str }` (min 8 chars, max 1000).
 

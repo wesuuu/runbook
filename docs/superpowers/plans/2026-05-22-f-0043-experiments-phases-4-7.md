@@ -150,27 +150,60 @@ def upgrade() -> None:
     with op.get_context().autocommit_block():
         op.execute("ALTER TABLE runs VALIDATE CONSTRAINT ck_runs_key_result_paired")
 
+    # NaN/Inf defense at the database layer: even though Pydantic rejects
+    # NaN/Inf at the API, a raw-SQL admin tool or future bulk-import path
+    # could write 'NaN' into Numeric. Reject it here.
+    op.execute(
+        "ALTER TABLE runs ADD CONSTRAINT ck_runs_key_result_value_finite "
+        "CHECK (key_result_value IS NULL OR key_result_value::text NOT IN ('NaN', 'Infinity', '-Infinity')) NOT VALID"
+    )
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TABLE runs VALIDATE CONSTRAINT ck_runs_key_result_value_finite")
+
     # Backfill: lock any experiment that today reads as "complete" (has runs,
     # no open runs) so the AWAITING_CONCLUSION migration is invisible to users
     # who already perceive these as done.
-    op.execute(
-        """
-        UPDATE experiments e
-        SET conclusion = '[Auto-locked at migration]',
-            conclusion_locked_at = NOW(),
-            conclusion_locked_by_id = NULL,
-            conclusion_locked_by_name = 'system'
-        WHERE EXISTS (SELECT 1 FROM runs r WHERE r.experiment_id = e.id)
-          AND NOT EXISTS (
-            SELECT 1 FROM runs r
-            WHERE r.experiment_id = e.id
-              AND r.status IN ('PLANNED', 'ACTIVE', 'EDITED')
-          )
-        """
-    )
+    #
+    # Policy decisions resulting from review panel:
+    #   - Leave `conclusion` NULL (do NOT write a sentinel string). The
+    #     experiment PDF will render "—" for the conclusion section. We do
+    #     not want '[Auto-locked at migration]' surfacing in GxP exports.
+    #   - `conclusion_locked_by_name = 'system'` is audit-defensible *only*
+    #     in concert with the runbook comment below.
+    #   - WHERE clause includes `conclusion_locked_at IS NULL` so this is
+    #     idempotent across a downgrade→re-upgrade cycle; if a customer
+    #     locked between cycles, their real signature is preserved.
+    #   - Run in autocommit_block so the backfill does not extend the
+    #     Alembic migration transaction's lock window on large tables.
+    #
+    # RUNBOOK ENTRY (for FDA-inspection narratives):
+    #   "Experiments locked by this migration carry
+    #    conclusion_locked_by_name = 'system' and conclusion = NULL.
+    #    No human decision was made about these conclusions. Lock was
+    #    applied to preserve the previously-displayed COMPLETE lifecycle
+    #    state during the F-0043 phases 4-7 deploy. Locked experiments
+    #    can be unlocked by an org admin via the standard unlock flow."
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            UPDATE experiments e
+            SET conclusion_locked_at = NOW(),
+                conclusion_locked_by_id = NULL,
+                conclusion_locked_by_name = 'system'
+            WHERE conclusion_locked_at IS NULL
+              AND conclusion IS NULL
+              AND EXISTS (SELECT 1 FROM runs r WHERE r.experiment_id = e.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM runs r
+                WHERE r.experiment_id = e.id
+                  AND r.status IN ('PLANNED', 'ACTIVE', 'EDITED')
+              )
+            """
+        )
 
 
 def downgrade() -> None:
+    op.execute("ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_key_result_value_finite")
     op.execute("ALTER TABLE runs DROP CONSTRAINT IF EXISTS ck_runs_key_result_paired")
     op.drop_column("runs", "key_result_unit")
     op.drop_column("runs", "key_result_value")
@@ -193,10 +226,10 @@ cd backend && source .venv/bin/activate
 alembic upgrade head
 psql -U postgres -h localhost batchrite_wt<N> -c "\d experiments" | grep conclusion
 psql -U postgres -h localhost batchrite_wt<N> -c "\d runs" | grep key_result
-psql -U postgres -h localhost batchrite_wt<N> -c "SELECT conname, convalidated FROM pg_constraint WHERE conname='ck_runs_key_result_paired'"
+psql -U postgres -h localhost batchrite_wt<N> -c "SELECT conname, convalidated FROM pg_constraint WHERE conname IN ('ck_runs_key_result_paired','ck_runs_key_result_value_finite')"
 ```
 
-Expected: four new columns on `experiments`, three on `runs`, constraint shows `convalidated = t`.
+Expected: four new columns on `experiments`, three on `runs`, both constraints show `convalidated = t`.
 
 - [ ] **Step 4: Verify roundtrip**
 
@@ -441,13 +474,37 @@ pytest tests/unit/services/experiments/test_status_phase_4_7.py -v
 
 Expected: 7 passing.
 
-- [ ] **Step 5: Re-run existing status tests**
+- [ ] **Step 5: Re-run existing status tests AND update the three failing assertions**
 
 ```bash
 pytest tests/unit/services/test_experiment_status.py -v
 ```
 
-Expected: all still pass (default `conclusion_locked=False` means existing call sites yielding "COMPLETE" before will now yield "AWAITING_CONCLUSION"). If any test asserts `"COMPLETE"`, update that single assertion to `"AWAITING_CONCLUSION"` (do NOT add the new arg — let the default keep these tests testing the no-lock case).
+Expected: three failures at lines 22, 46, and 81 of `backend/tests/unit/services/test_experiment_status.py`. Each asserts `"COMPLETE"` for an all-terminal experiment without a `conclusion_locked` arg; the new default returns `"AWAITING_CONCLUSION"`.
+
+For each of the three failing assertions:
+1. Change the existing assertion's expected value from `"COMPLETE"` to `"AWAITING_CONCLUSION"` (do NOT add the new arg — keep these tests testing the no-lock case).
+2. Add a companion assertion immediately below that calls the same function with `conclusion_locked=True` and asserts `"COMPLETE"` — this preserves coverage of the COMPLETE path that the original test was asserting.
+
+Example for line 22 (`test_all_live_runs_completed_is_complete`):
+
+```python
+def test_all_live_runs_completed_is_complete():
+    # No lock → AWAITING_CONCLUSION (was COMPLETE before F-0043 widening).
+    assert derive_lifecycle_status("DRAFT", 3, 0) == "AWAITING_CONCLUSION"
+    # With lock → COMPLETE (the previous semantic, now gated on the lock).
+    assert derive_lifecycle_status("DRAFT", 3, 0, conclusion_locked=True) == "COMPLETE"
+```
+
+Apply the same pattern to lines 46 (`test_counts_exclude_archived_runs`) and 81 (`test_accepts_enum_experiment_status`).
+
+Re-run:
+
+```bash
+pytest tests/unit/services/test_experiment_status.py -v
+```
+
+Expected: all passing.
 
 - [ ] **Step 6: Commit**
 
@@ -465,6 +522,16 @@ git commit -m "feat(F-0043): widen lifecycle to 5 states with AWAITING_CONCLUSIO
 
 **Files:**
 - Modify: `backend/app/api/endpoints/experiments.py` (lines 162, 203, 251, 363, 409, 468)
+
+> **IMPORTANT (review-panel finding):** Task 3 and Task 4 must land in the same commit. Between Task 3 (default arg `conclusion_locked=False`) and Task 4 (threading the column through), every existing call site silently returns `AWAITING_CONCLUSION` for backfilled-locked experiments. Treat these as one logical change.
+
+- [ ] **Step 0: Confirm no out-of-scope call sites exist**
+
+```bash
+grep -rn "derive_lifecycle_status" backend/ frontend/
+```
+
+Expected output: 6 production call sites in `backend/app/api/endpoints/experiments.py` (lines 162, 203, 251, 363, 409, 468) plus test files. If you find a call site outside `experiments.py` — chat tools, AI summarizer, notifications, recovery loops, seed scripts — STOP and thread `conclusion_locked` through it in this task; do not rely on the default.
 
 - [ ] **Step 1: Update call sites that already have the Experiment row in scope**
 
@@ -721,6 +788,128 @@ git commit -m "feat(F-0043): conclusion field + lock guard on PUT /experiments"
 
 ---
 
+## Task 6b: Lock guards on adjacent mutation endpoints
+
+**Why this task exists (review-panel finding):** `PUT /experiments/{id}` is not the only way to mutate a locked experiment. `POST /runs`, `POST /experiments/{id}/runs`, and the notes endpoints all bypass the Task 6 guard. Without this task, a locked experiment can be silently demoted to `AWAITING_CONCLUSION` by adding a new run, or have its notes (which feed the observations timeline) edited after the lock signature was applied.
+
+**Decision on notes:** post-lock notes are *blocked*, not allowed as addenda. Rationale: notes feed `ObservationsTimeline`, which is also embedded in the PDF export — a "locked PDF" must reflect the locked dataset, not include later additions.
+
+**Files:**
+- Modify: `backend/app/api/endpoints/runs.py` — `create_run` (~line 154)
+- Modify: `backend/app/api/endpoints/experiments.py` — `add_run_to_experiment` (~line 525), notes endpoints starting at ~line 658
+- Modify: `backend/tests/integration/api/test_experiments_phase_4_7.py`
+- Modify: `backend/tests/integration/api/test_runs_phase_4_7.py` (create in Task 9 — for now leave a TODO marker)
+
+- [ ] **Step 1: Write failing tests**
+
+Append to `test_experiments_phase_4_7.py`:
+
+```python
+@pytest.mark.asyncio
+async def test_post_run_to_locked_experiment_409(
+    client, locked_experiment, auth_headers
+):
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/runs",
+        json={"name": "post-lock run"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_create_run_via_runs_endpoint_to_locked_experiment_409(
+    client, locked_experiment, auth_headers
+):
+    res = await client.post(
+        "/runs",
+        json={"name": "x", "experiment_id": str(locked_experiment.id)},
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_add_note_to_locked_experiment_409(
+    client, locked_experiment, auth_headers
+):
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/notes",
+        json={"content": "post-lock observation", "flag": "observation"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+```
+
+- [ ] **Step 2: Run to verify failures**
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/integration/api/test_experiments_phase_4_7.py -k "to_locked_experiment or add_note_to_locked" -v
+```
+
+Expected: 3 FAILS (current behavior is 201/200).
+
+- [ ] **Step 3: Add the guard to `add_run_to_experiment`**
+
+In `backend/app/api/endpoints/experiments.py`, in `add_run_to_experiment` (~line 525), after the existing ARCHIVED check (~line 554), insert:
+
+```python
+    if experiment.conclusion_locked_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXPERIMENT_LOCKED",
+                "message": "Cannot add a run to a locked experiment.",
+            },
+        )
+```
+
+- [ ] **Step 4: Add the guard to `create_run`**
+
+In `backend/app/api/endpoints/runs.py`, in `create_run` (~line 154), find the block where `experiment_id` is resolved (around line 191-216 — look for the existing `LIFECYCLE_ARCHIVED` check). After that ARCHIVED check, insert the same lock guard. The `experiment` variable must already be in scope from the ARCHIVED check — reuse it. If it isn't loaded, load it: `experiment = await get_or_404(db, Experiment, run_in.experiment_id)`.
+
+- [ ] **Step 5: Add the guard to the experiment notes endpoints**
+
+In `backend/app/api/endpoints/experiments.py`, in each of:
+- `add_experiment_note` (~line 658)
+- The PUT and DELETE note endpoints below it (search for `/experiments/{experiment_id}/notes`)
+
+After the `get_or_404(db, Experiment, ...)` call, before any mutation, insert:
+
+```python
+    if exp.conclusion_locked_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXPERIMENT_LOCKED",
+                "message": "Notes are frozen after the conclusion is locked.",
+            },
+        )
+```
+
+- [ ] **Step 6: Re-run tests**
+
+```bash
+pytest tests/integration/api/test_experiments_phase_4_7.py -v
+```
+
+Expected: all post-lock guard tests passing.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add backend/app/api/endpoints/runs.py \
+        backend/app/api/endpoints/experiments.py \
+        backend/tests/integration/api/test_experiments_phase_4_7.py
+git commit -m "feat(F-0043): lock guards on run-create and notes endpoints"
+```
+
+---
+
 ## Task 7: `POST /experiments/{id}/conclusion/lock`
 
 **Files:**
@@ -781,9 +970,77 @@ async def test_lock_409_when_already_locked(
     )
     assert res.status_code == 409
     assert res.json()["detail"]["code"] == "ALREADY_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_lock_409_when_no_completed_runs(
+    client, experiment_only_archived_runs, auth_headers
+):
+    # All-archived experiments read as DRAFT in lifecycle derivation; locking
+    # would silently flip them to COMPLETE without any completed run. Refuse.
+    res = await client.post(
+        f"/experiments/{experiment_only_archived_runs.id}/conclusion/lock",
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "NO_COMPLETED_RUNS"
+
+
+@pytest.mark.asyncio
+async def test_lock_audit_row_atomic_with_state(
+    client, experiment_ready_to_lock, auth_headers, db
+):
+    """Lock UPDATE + audit insert must commit in the same transaction.
+
+    Asserts that on a successful lock there is exactly one audit row whose
+    `entity_id` matches the experiment AND that the experiment is actually
+    locked — proving they were committed together.
+    """
+    res = await client.post(
+        f"/experiments/{experiment_ready_to_lock.id}/conclusion/lock",
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    rows = await db.execute(
+        text(
+            "SELECT count(*) FROM audit_log "
+            "WHERE entity_type='Experiment' AND entity_id=:eid AND action='conclusion.lock'"
+        ),
+        {"eid": experiment_ready_to_lock.id},
+    )
+    assert rows.scalar() == 1
+
+
+@pytest.mark.asyncio
+async def test_lock_vs_run_create_toctou(
+    client, experiment_ready_to_lock, auth_headers, db
+):
+    """TOCTOU: lock + simultaneous run creation. Exactly one must succeed."""
+    import asyncio
+
+    async def lock():
+        return await client.post(
+            f"/experiments/{experiment_ready_to_lock.id}/conclusion/lock",
+            headers=auth_headers,
+        )
+
+    async def add_run():
+        return await client.post(
+            f"/experiments/{experiment_ready_to_lock.id}/runs",
+            json={"name": "race run"},
+            headers=auth_headers,
+        )
+
+    a, b = await asyncio.gather(lock(), add_run())
+    # The lock either wins (200 + 409 on add_run) or loses (409 on lock + 201
+    # on add_run). The forbidden state is both succeeding.
+    successes = sum(1 for r in (a, b) if r.status_code < 400)
+    assert successes == 1, f"both succeeded: lock={a.status_code} add_run={b.status_code}"
 ```
 
-Add fixtures `experiment_with_open_run` (one PLANNED run), `experiment_terminal_no_conclusion` (one COMPLETED run, no conclusion text), `experiment_ready_to_lock` (one COMPLETED run, conclusion populated) to `conftest.py`.
+Add fixtures `experiment_with_open_run` (one PLANNED run), `experiment_terminal_no_conclusion` (one COMPLETED run, no conclusion text), `experiment_ready_to_lock` (one COMPLETED run, conclusion populated), and `experiment_only_archived_runs` (all runs ARCHIVED, conclusion populated) to `conftest.py`.
+
+> **Conftest location (review-panel finding):** `backend/tests/integration/conftest.py` does not currently exist. Create it (pytest will auto-discover it). It inherits `auth_headers` from `backend/tests/conftest.py`. Only experiment-specific fixtures (`seeded_experiment`, `locked_experiment`, `experiment_with_open_run`, `experiment_terminal_no_conclusion`, `experiment_ready_to_lock`, `experiment_only_archived_runs`, `admin_headers`, `viewer_headers`) go in the new file — do NOT add them to the root conftest.
 
 - [ ] **Step 2: Run to verify failures**
 
@@ -815,8 +1072,20 @@ async def lock_experiment_conclusion(
     if not allowed:
         raise HTTPException(403, "Not allowed")
 
-    # Atomic UPDATE: race-free against concurrent run transitions.
-    user_name = f"{user.first_name} {user.last_name}".strip() or user.email
+    # GxP signature durability: require profile name. Fall back to "User
+    # {id}" instead of leaking email into the permanent record.
+    profile_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    user_name = profile_name if profile_name else f"User {user.id}"
+
+    # Atomic UPDATE: race-free against concurrent run transitions AND against
+    # concurrent lock attempts (asyncpg returns a row when the WHERE matches;
+    # asyncpg's `result.rowcount` is unreliable for `UPDATE ... RETURNING`,
+    # so we branch on the returned row count via `result.all()`).
+    #
+    # Additional guard: require at least one COMPLETED run. Without this an
+    # experiment whose only runs are ARCHIVED — which reads as DRAFT via
+    # lifecycle_counts_from_runs — could be locked into COMPLETE state, a
+    # contradiction.
     result = await db.execute(
         text(
             """
@@ -828,39 +1097,57 @@ async def lock_experiment_conclusion(
               AND conclusion_locked_at IS NULL
               AND conclusion IS NOT NULL
               AND length(trim(conclusion)) > 0
+              AND EXISTS (
+                SELECT 1 FROM runs
+                WHERE experiment_id = :exp_id
+                  AND status = 'COMPLETED'
+              )
               AND NOT EXISTS (
                 SELECT 1 FROM runs
                 WHERE experiment_id = :exp_id
                   AND status IN ('PLANNED', 'ACTIVE', 'EDITED')
               )
-            RETURNING id
+            RETURNING id, conclusion
             """
         ),
         {"exp_id": exp.id, "user_id": user.id, "user_name": user_name},
     )
-    if result.rowcount == 0:
-        # Disambiguate the failure for the client.
+    rows = result.all()
+    if not rows:
+        # Disambiguate the failure for the client. Re-read the row in the
+        # same transaction; `db.refresh()` reads from snapshot which is
+        # acceptable here because we're branching on already-committed state.
         await db.refresh(exp)
+        has_completed = await db.scalar(
+            select(func.count(Run.id)).where(
+                Run.experiment_id == exp.id, Run.status == "COMPLETED"
+            )
+        )
         if exp.conclusion_locked_at is not None:
-            code = "ALREADY_LOCKED"
+            code, message = "ALREADY_LOCKED", "This experiment is already locked. Refresh and try again."
         elif not (exp.conclusion or "").strip():
-            code = "EMPTY_CONCLUSION"
+            code, message = "EMPTY_CONCLUSION", "Write a conclusion before locking."
+        elif not has_completed:
+            code, message = "NO_COMPLETED_RUNS", "At least one run must be COMPLETED before locking."
         else:
-            code = "OPEN_RUNS"
-        raise HTTPException(409, {"code": code, "message": code})
+            code, message = "OPEN_RUNS", "This experiment has open runs. Refresh and try again."
+        raise HTTPException(409, {"code": code, "message": message})
 
-    await db.commit()
-    await db.refresh(exp)
-
+    # Atomic audit: log_audit only db.add()s the row. Insert it BEFORE the
+    # single commit so business state and audit row land together. If
+    # log_audit raises, the UPDATE rolls back too. See projects.py for the
+    # established pattern.
+    locked_row = rows[0]
     await log_audit(
         db,
         actor_id=user.id,
         action="conclusion.lock",
         entity_type="Experiment",
         entity_id=exp.id,
-        changes={"conclusion_snapshot": exp.conclusion},
+        changes={"conclusion_snapshot": locked_row.conclusion},
     )
     await db.commit()
+    await db.refresh(exp)
 
     run_count, live, open_ = await _run_lifecycle_counts(db, experiment_id)
     return ExperimentResponse(
@@ -873,7 +1160,7 @@ async def lock_experiment_conclusion(
     )
 ```
 
-Confirm `from sqlalchemy import text` is imported at top of file.
+Confirm imports at top of file: `from sqlalchemy import text, select, func` and `from app.models.runs import Run`.
 
 - [ ] **Step 4: Re-run tests**
 
@@ -999,6 +1286,8 @@ async def unlock_experiment_conclusion(
         raise HTTPException(403, "Admin only")
 
     conclusion_before = exp.conclusion
+    locked_by_before = exp.conclusion_locked_by_name
+    locked_at_before = exp.conclusion_locked_at
     result = await db.execute(
         text(
             """
@@ -1013,23 +1302,28 @@ async def unlock_experiment_conclusion(
         ),
         {"exp_id": exp.id},
     )
-    if result.rowcount == 0:
+    rows = result.all()
+    if not rows:
         raise HTTPException(
             409, {"code": "ALREADY_UNLOCKED", "message": "Not locked"},
         )
 
-    await db.commit()
-    await db.refresh(exp)
-
+    # Atomic audit: insert before single commit. See lock endpoint above.
     await log_audit(
         db,
         actor_id=user.id,
         action="conclusion.unlock",
         entity_type="Experiment",
         entity_id=exp.id,
-        changes={"reason": body.reason, "conclusion_before": conclusion_before},
+        changes={
+            "reason": body.reason,
+            "conclusion_before": conclusion_before,
+            "locked_by_before": locked_by_before,
+            "locked_at_before": locked_at_before.isoformat() if locked_at_before else None,
+        },
     )
     await db.commit()
+    await db.refresh(exp)
 
     run_count, live, open_ = await _run_lifecycle_counts(db, experiment_id)
     return ExperimentResponse(
@@ -1134,7 +1428,7 @@ Locate the run update handler in `backend/app/api/endpoints/runs.py` (search for
 
 If the handler uses an explicit field list (`for field in (...)`), add `"key_result_label"`, `"key_result_value"`, `"key_result_unit"`. If it does `getattr(update_data, field)` over `update_data.model_dump(exclude_unset=True)`, no list update needed — the fields flow through automatically.
 
-Either way, append a `log_audit` call when any of the three changed:
+Either way, append a `log_audit` call **before the final `db.commit()`** when any of the three changed. The audit row MUST land in the same transaction as the state mutation — never split commits. Locate the existing single commit at the end of the handler; the `log_audit` insertion must precede it:
 
 ```python
         if any(k in changes for k in ("key_result_label", "key_result_value", "key_result_unit")):
@@ -1146,7 +1440,11 @@ Either way, append a `log_audit` call when any of the three changed:
                 entity_id=run.id,
                 changes={k: changes[k] for k in ("key_result_label", "key_result_value", "key_result_unit") if k in changes},
             )
+        # ... other field updates ...
+        await db.commit()  # single commit covers state + audit atomically
 ```
+
+If the existing handler already does `db.commit()` somewhere mid-flow then mutates again, fix the split first — never add the audit after a separate commit.
 
 - [ ] **Step 4: Re-run tests**
 
@@ -1288,47 +1586,77 @@ async def aggregate_observations(
     db: AsyncSession, experiment_id: UUID, limit: int = 500
 ) -> ObservationsResponse:
     """UNION ALL over experiment.notes + run.notes, filtered + sorted desc."""
+    # Per-branch LIMIT pushed inside each subquery so Postgres can short-circuit
+    # before merging. The malformed-timestamp regex guard prevents
+    # `(note->>'created_at')::timestamptz` from raising on garbage data — bad
+    # rows are silently dropped (covered by `test_malformed_notes_filtered`).
+    # Archived runs are filtered out at the SQL level so a stale archived run's
+    # anomalies don't pollute the active timeline.
+    ts_regex = r"^\d{4}-\d{2}-\d{2}T"
     sql = text(
         """
         SELECT * FROM (
-            SELECT
-                'experiment' AS source,
-                e.id AS source_id,
-                NULL::text AS run_label,
-                (note->>'id') AS note_id,
-                (note->>'flag') AS flag,
-                (note->>'content') AS body,
-                COALESCE(note->>'author_name', 'Unknown') AS author_name,
-                (note->>'created_at')::timestamptz AS created_at
-            FROM experiments e
-            CROSS JOIN LATERAL jsonb_array_elements(e.notes) AS note
-            WHERE e.id = :exp_id
-              AND note->>'flag' IN ('observation', 'anomaly')
-              AND note->>'created_at' IS NOT NULL
-
+            (
+                SELECT
+                    'experiment' AS source,
+                    e.id AS source_id,
+                    NULL::text AS run_label,
+                    (note->>'id') AS note_id,
+                    (note->>'flag') AS flag,
+                    (note->>'content') AS body,
+                    COALESCE(note->>'author_name', 'Unknown') AS author_name,
+                    (note->>'created_at')::timestamptz AS created_at
+                FROM experiments e
+                CROSS JOIN LATERAL jsonb_array_elements(e.notes) AS note
+                WHERE e.id = :exp_id
+                  AND note->>'flag' IN ('observation', 'anomaly')
+                  AND note->>'created_at' ~ :ts_regex
+                ORDER BY created_at DESC
+                LIMIT :limit_plus_one
+            )
             UNION ALL
-
-            SELECT
-                'run' AS source,
-                r.id AS source_id,
-                r.name AS run_label,
-                (note->>'id') AS note_id,
-                (note->>'flag') AS flag,
-                (note->>'content') AS body,
-                COALESCE(note->>'author_name', 'Unknown') AS author_name,
-                (note->>'created_at')::timestamptz AS created_at
-            FROM runs r
-            CROSS JOIN LATERAL jsonb_array_elements(r.notes) AS note
-            WHERE r.experiment_id = :exp_id
-              AND note->>'flag' = 'anomaly'
-              AND note->>'created_at' IS NOT NULL
+            (
+                SELECT
+                    'run' AS source,
+                    r.id AS source_id,
+                    r.name AS run_label,
+                    (note->>'id') AS note_id,
+                    (note->>'flag') AS flag,
+                    (note->>'content') AS body,
+                    COALESCE(note->>'author_name', 'Unknown') AS author_name,
+                    (note->>'created_at')::timestamptz AS created_at
+                FROM runs r
+                CROSS JOIN LATERAL jsonb_array_elements(r.notes) AS note
+                WHERE r.experiment_id = :exp_id
+                  AND r.status != 'ARCHIVED'
+                  AND note->>'flag' = 'anomaly'
+                  AND note->>'created_at' ~ :ts_regex
+                ORDER BY created_at DESC
+                LIMIT :limit_plus_one
+            )
         ) merged
         ORDER BY created_at DESC
         LIMIT :limit_plus_one
         """
     )
-    rows = (await db.execute(sql, {"exp_id": experiment_id, "limit_plus_one": limit + 1})).mappings().all()
+    rows = (
+        await db.execute(
+            sql,
+            {
+                "exp_id": experiment_id,
+                "limit_plus_one": limit + 1,
+                "ts_regex": ts_regex,
+            },
+        )
+    ).mappings().all()
     truncated = len(rows) > limit
+    if truncated:
+        import logging
+        logging.getLogger(__name__).warning(
+            "observations_truncated experiment_id=%s limit=%d",
+            experiment_id,
+            limit,
+        )
     items = [
         ObservationItem(
             id=f"{r['source']}:{r['source_id']}:{r['note_id'] or 'noid'}",
@@ -1391,7 +1719,9 @@ async def get_experiment_observations(
             "truncated": result.truncated,
         },
     )
-    response.headers["Cache-Control"] = "no-store"
+    # Observations don't fan out to other users in real time; a 30s private
+    # cache keeps the page snappy on revisits without losing freshness.
+    response.headers["Cache-Control"] = "private, max-age=30"
     return response
 ```
 
@@ -1409,7 +1739,7 @@ async def test_observations_endpoint(client, experiment_with_notes, auth_headers
         headers=auth_headers,
     )
     assert res.status_code == 200
-    assert res.headers["cache-control"] == "no-store"
+    assert res.headers["cache-control"] == "private, max-age=30"
     body = res.json()
     assert "items" in body and "truncated" in body
 ```
@@ -1489,10 +1819,92 @@ git commit -m "feat(F-0043): observations aggregation service + endpoint"
         {"nodeLabel": "Harvest", "paramKey": "day", "varied": true,
          "perRun": {"r1": {"value": 12}, "r2": {"value": null}}}
       ]
+    },
+    {
+      "name": "float_with_trailing_zero_matches_int",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "pH", "params": {"target": 7}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "pH", "params": {"target": 7.0}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "pH", "paramKey": "target", "varied": false,
+         "perRun": {"r1": {"value": 7}, "r2": {"value": 7.0}}}
+      ]
+    },
+    {
+      "name": "string_params_compare_canonically",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Buffer", "params": {"name": "Tris"}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Buffer", "params": {"name": "Tris"}}}]}},
+        {"id": "r3", "graph": {"nodes": [{"id": "n3", "type": "unitOp",
+          "data": {"label": "Buffer", "params": {"name": "PBS"}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Buffer", "paramKey": "name", "varied": true,
+         "perRun": {"r1": {"value": "Tris"}, "r2": {"value": "Tris"},
+                    "r3": {"value": "PBS"}}}
+      ]
+    },
+    {
+      "name": "boolean_and_null_distinct",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Sparge", "params": {"enabled": true}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Sparge", "params": {"enabled": false}}}]}},
+        {"id": "r3", "graph": {"nodes": [{"id": "n3", "type": "unitOp",
+          "data": {"label": "Sparge", "params": {"enabled": null}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Sparge", "paramKey": "enabled", "varied": true,
+         "perRun": {"r1": {"value": true}, "r2": {"value": false},
+                    "r3": {"value": null}}}
+      ]
+    },
+    {
+      "name": "nested_object_param",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Sparge",
+            "params": {"gas": {"o2": 21, "co2": 5}}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Sparge",
+            "params": {"gas": {"o2": 30, "co2": 5}}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Sparge", "paramKey": "gas", "varied": true,
+         "perRun": {"r1": {"value": {"o2": 21, "co2": 5}},
+                    "r2": {"value": {"o2": 30, "co2": 5}}}}
+      ]
+    },
+    {
+      "name": "unit_conflict_flagged",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Feed",
+            "params": {"glucose": 6},
+            "paramSchema": {"properties": {"glucose": {"unit": "g/L"}}}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Feed",
+            "params": {"glucose": 6},
+            "paramSchema": {"properties": {"glucose": {"unit": "mg/mL"}}}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Feed", "paramKey": "glucose", "varied": true,
+         "unitConflict": true,
+         "perRun": {"r1": {"value": 6, "unit": "g/L"},
+                    "r2": {"value": 6, "unit": "mg/mL"}}}
+      ]
     }
   ]
 }
 ```
+
+Both Python `compute_conditions` and frontend `computeConditions` MUST consume this fixture. The `unit_conflict_flagged` scenario forces both implementations to surface heterogeneous units instead of silently coalescing — when a key appears with conflicting units across runs, set `varied=true` AND `unitConflict=true` on the row.
 
 - [ ] **Step 2: Write the failing parity test**
 
@@ -1549,8 +1961,14 @@ Expected: ImportError.
 Keep in lockstep with frontend/src/lib/experiments/conditions.ts. Parity is
 locked by backend/tests/fixtures/conditions_parity.json — both this module
 and the Vitest test consume it.
+
+Equality MUST use `json.dumps(value, sort_keys=True, default=str)`, NOT
+`repr()`. Python's `repr(7) == '7'` and `repr(7.0) == '7.0'` would split
+trailing-zero floats from integers and fail the parity fixture. `json.dumps`
+emits `7` and `7.0` consistently and serializes nested dicts deterministically.
 """
 
+import json
 from typing import Any
 
 
@@ -1563,12 +1981,17 @@ def _canonicalize(value: Any) -> Any:
     return value
 
 
+def _eq_key(value: Any) -> str:
+    """Canonical equality key matching frontend `JSON.stringify(value)`."""
+    return json.dumps(value, sort_keys=True, default=str)
+
+
 def compute_conditions(runs: list[dict]) -> list[dict]:
     """Build the varied-param table from a list of runs (dicts)."""
     # Map of (nodeLabel, paramKey) -> {run_id: cell}
     per_key: dict[tuple[str, str], dict[str, dict]] = {}
-    # Track unit per key (first seen wins).
-    unit_per_key: dict[tuple[str, str], str | None] = {}
+    # Track every unit seen per key so we can flag conflicts.
+    units_seen_per_key: dict[tuple[str, str], set[str]] = {}
     run_ids: list[str] = []
 
     for run in runs:
@@ -1586,30 +2009,34 @@ def compute_conditions(runs: list[dict]) -> list[dict]:
                 continue
             for k, v in params.items():
                 key = (label, k)
-                cell = {"value": _canonicalize(v)}
+                cell: dict[str, Any] = {"value": _canonicalize(v)}
                 unit = schema.get(k, {}).get("unit") if isinstance(schema.get(k), dict) else None
                 if unit:
                     cell["unit"] = unit
-                    unit_per_key.setdefault(key, unit)
+                    units_seen_per_key.setdefault(key, set()).add(unit)
                 per_key.setdefault(key, {})[run_id] = cell
 
     rows: list[dict] = []
     for (label, k), per_run in per_key.items():
-        # Fill missing runs with null cell.
         filled = {rid: per_run.get(rid, {"value": None}) for rid in run_ids}
-        # Re-apply unit if known.
-        unit = unit_per_key.get((label, k))
-        if unit:
+        units = units_seen_per_key.get((label, k), set())
+        unit_conflict = len(units) > 1
+        # If exactly one unit was observed, re-apply to cells missing it.
+        if len(units) == 1:
+            (only_unit,) = units
             for rid, cell in filled.items():
                 if cell.get("value") is not None and "unit" not in cell:
-                    cell["unit"] = unit
-        values = {repr(c["value"]) for c in filled.values()}
-        rows.append({
+                    cell["unit"] = only_unit
+        values = {_eq_key(c["value"]) for c in filled.values()}
+        row: dict[str, Any] = {
             "nodeLabel": label,
             "paramKey": k,
-            "varied": len(values) > 1,
+            "varied": len(values) > 1 or unit_conflict,
             "perRun": filled,
-        })
+        }
+        if unit_conflict:
+            row["unitConflict"] = True
+        rows.append(row)
     return rows
 ```
 
@@ -1709,21 +2136,36 @@ Expected: FAILs (route + module missing).
 
 CPU-bound fpdf2 work. Endpoint wraps the call in asyncio.to_thread +
 asyncio.wait_for so the event loop and HTTP worker stay responsive.
+
+Unicode-safe: biotech content uses µ, °, ±, Δ, β routinely. We register
+DejaVuSans (shipped under `backend/app/static/fonts/DejaVuSans*.ttf` — copy
+from a system install if absent) and use it for every cell. Helvetica is
+Latin-1 only and would mojibake or raise on the first µ.
 """
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Iterable
 
 from fpdf import FPDF
 
-from app.services.documents import pdf_base
 from app.services.experiments.conditions import compute_conditions
+
+_FONT_DIR = Path(__file__).resolve().parents[2] / "static" / "fonts"
+
+
+def _make_pdf() -> FPDF:
+    pdf = FPDF()
+    pdf.add_font("DejaVu", "", str(_FONT_DIR / "DejaVuSans.ttf"))
+    pdf.add_font("DejaVu", "B", str(_FONT_DIR / "DejaVuSans-Bold.ttf"))
+    pdf.add_font("DejaVu", "I", str(_FONT_DIR / "DejaVuSans-Oblique.ttf"))
+    return pdf
 
 
 def _header(pdf: FPDF, experiment) -> None:
-    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_font("DejaVu", "B", 16)
     pdf.cell(0, 10, f"Experiment: {experiment.name}", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     pdf.cell(
         0, 6,
         f"Slug: {experiment.slug}  •  Exported: {datetime.utcnow().isoformat()}Z",
@@ -1735,14 +2177,14 @@ def _header(pdf: FPDF, experiment) -> None:
 def _objective(pdf: FPDF, experiment) -> None:
     if not experiment.objective:
         return
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("DejaVu", "B", 12)
     pdf.cell(0, 8, "Objective", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     pdf.multi_cell(0, 5, experiment.objective)
     if experiment.success_criteria:
-        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_font("DejaVu", "B", 10)
         pdf.cell(0, 6, "Success criteria:", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Helvetica", "", 10)
+        pdf.set_font("DejaVu", "", 10)
         for c in experiment.success_criteria:
             pdf.cell(0, 5, f"  • {c}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
@@ -1755,9 +2197,9 @@ def _conditions(pdf: FPDF, runs: Iterable[Any]) -> None:
     varied = [row for row in rows if row["varied"]]
     if not varied:
         return
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("DejaVu", "B", 12)
     pdf.cell(0, 8, "Conditions (varied parameters)", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 9)
+    pdf.set_font("DejaVu", "", 9)
     for row in varied:
         line = f"{row['nodeLabel']} / {row['paramKey']}: " + ", ".join(
             f"{rid}={c['value']}{(' ' + c['unit']) if c.get('unit') else ''}"
@@ -1771,9 +2213,9 @@ def _key_results(pdf: FPDF, runs: Iterable[Any]) -> None:
     with_kr = [r for r in runs if r.key_result_value is not None]
     if not with_kr:
         return
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("DejaVu", "B", 12)
     pdf.cell(0, 8, "Key results", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     best = max(with_kr, key=lambda r: r.key_result_value)
     for r in sorted(with_kr, key=lambda r: r.key_result_value, reverse=True):
         suffix = " (best)" if r.id == best.id else ""
@@ -1787,13 +2229,13 @@ def _key_results(pdf: FPDF, runs: Iterable[Any]) -> None:
 
 
 def _conclusion(pdf: FPDF, experiment) -> None:
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("DejaVu", "B", 12)
     pdf.cell(0, 8, "Conclusion", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     if experiment.conclusion_locked_at:
         pdf.multi_cell(0, 5, experiment.conclusion or "")
         pdf.ln(2)
-        pdf.set_font("Helvetica", "I", 9)
+        pdf.set_font("DejaVu", "I", 9)
         signer = experiment.conclusion_locked_by_name or "system"
         pdf.cell(
             0, 5,
@@ -1812,9 +2254,9 @@ def _conclusion(pdf: FPDF, experiment) -> None:
 def _observations(pdf: FPDF, observations: list[dict]) -> None:
     if not observations:
         return
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("DejaVu", "B", 12)
     pdf.cell(0, 8, "Observations", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 9)
+    pdf.set_font("DejaVu", "", 9)
     for o in observations:
         flag = (o["flag"] or "").upper()
         ts = o["created_at"]
@@ -1829,7 +2271,7 @@ def generate_experiment_pdf(experiment, runs: list[Any], observations: list[dict
 
     Synchronous and CPU-bound — caller is responsible for asyncio.to_thread.
     """
-    pdf = FPDF()
+    pdf = _make_pdf()
     pdf.add_page()
     _header(pdf, experiment)
     _objective(pdf, experiment)
@@ -1841,7 +2283,7 @@ def generate_experiment_pdf(experiment, runs: list[Any], observations: list[dict
     return bytes(out) if not isinstance(out, bytes) else out
 ```
 
-Note: `pdf_base` is imported only for future reuse; the helpers above are inline because the spec called for direct fpdf2 use. If the existing `pdf_base` module exposes a `make_pdf()` helper, swap to it; otherwise the inline calls above are the minimal viable path.
+Note on font assets: copy `DejaVuSans.ttf`, `DejaVuSans-Bold.ttf`, `DejaVuSans-Oblique.ttf` from a system install (`/usr/share/fonts/truetype/dejavu/` on Debian) into `backend/app/static/fonts/`. Add the directory to `git add` so production deploys carry the font. The repo deliberately avoids `pdf_base` here — that module is document-conversion focused and doesn't expose a reusable Latin-9-safe writer.
 
 - [ ] **Step 4: Add the endpoint**
 
@@ -1849,11 +2291,14 @@ In `backend/app/api/endpoints/experiments.py`:
 
 ```python
 import asyncio
+import logging
+import time
 from fastapi.responses import Response
 from app.services.experiments.pdf_export import generate_experiment_pdf
 from app.services.experiments.observations import aggregate_observations
 
 EXPORT_TIMEOUT_SECONDS = 30.0
+_log = logging.getLogger(__name__)
 
 
 @router.get("/experiments/{experiment_id}/export.pdf")
@@ -1870,10 +2315,26 @@ async def export_experiment_pdf(
     if not allowed:
         raise HTTPException(403, "Not allowed")
 
+    # Project only the columns the PDF actually consumes. Run.notes and
+    # Run.execution_data can be megabytes of JSONB per row — never load them
+    # for an export that doesn't read them. ORDER BY locks byte-stable output
+    # so two consecutive exports of a locked experiment produce identical PDFs
+    # (regulators and tests both rely on this).
     runs_result = await db.execute(
-        select(Run).where(Run.experiment_id == experiment_id)
+        select(
+            Run.id,
+            Run.name,
+            Run.graph,
+            Run.status,
+            Run.key_result_label,
+            Run.key_result_value,
+            Run.key_result_unit,
+            Run.created_at,
+        )
+        .where(Run.experiment_id == experiment_id)
+        .order_by(Run.created_at, Run.id)
     )
-    runs = list(runs_result.scalars().all())
+    runs = list(runs_result.all())
 
     obs = await aggregate_observations(db, experiment_id)
     obs_items = [
@@ -1886,16 +2347,40 @@ async def export_experiment_pdf(
         for o in obs.items
     ]
 
+    started = time.monotonic()
     try:
         content = await asyncio.wait_for(
             asyncio.to_thread(generate_experiment_pdf, exp, runs, obs_items),
             timeout=EXPORT_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        _log.warning(
+            "pdf_export_timeout experiment_id=%s timeout_s=%s elapsed_ms=%d",
+            experiment_id, EXPORT_TIMEOUT_SECONDS, elapsed_ms,
+        )
+        # Audit timeouts too — they are user-visible export failures and
+        # appear in inspection histories.
+        await log_audit(
+            db,
+            actor_id=user.id,
+            action="export.pdf.timeout",
+            entity_type="Experiment",
+            entity_id=exp.id,
+            changes={"timeout_s": EXPORT_TIMEOUT_SECONDS,
+                     "elapsed_ms": elapsed_ms},
+        )
+        await db.commit()
         raise HTTPException(
             status_code=503,
             detail={"code": "EXPORT_TIMEOUT", "message": "PDF generation timed out"},
         )
+
+    duration_ms = int((time.monotonic() - started) * 1000)
+    _log.info(
+        "pdf_export_ok experiment_id=%s bytes=%d duration_ms=%d",
+        experiment_id, len(content), duration_ms,
+    )
 
     await log_audit(
         db,
@@ -1903,7 +2388,7 @@ async def export_experiment_pdf(
         action="export.pdf",
         entity_type="Experiment",
         entity_id=exp.id,
-        changes={},
+        changes={"bytes": len(content), "duration_ms": duration_ms},
     )
     await db.commit()
 
@@ -1915,6 +2400,8 @@ async def export_experiment_pdf(
         },
     )
 ```
+
+Note: because `select(...columns...)` returns row tuples rather than `Run` instances, the PDF service must accept the tuple shape. Update `_conditions`, `_key_results`, etc. to read `r.graph`, `r.key_result_value`, etc. (the projected attributes still work via row attribute access).
 
 - [ ] **Step 5: Run tests**
 
@@ -1948,11 +2435,22 @@ git commit -m "feat(F-0043): synchronous PDF export with 30s timeout guard"
 In `frontend/src/lib/schemas/experiments.ts`, replace the `LifecycleStatusEnum` (line 10) with:
 
 ```typescript
-export const LifecycleStatusEnum = z.enum([
+// Rolling-deploy safety: an old tab loaded before the deploy still holds the
+// previous bundle (with the 4-state enum) while the backend has already shipped
+// the 5-state contract. A strict z.enum() would throw on the first observed
+// AWAITING_CONCLUSION. Use z.string() in dev/prod and let unknown values pass
+// through; runtime code branches with switch statements that already have a
+// default case. Vitest tests still get the strict enum via the exported type.
+export const LifecycleStatusValues = [
     'DRAFT', 'IN_PROGRESS', 'AWAITING_CONCLUSION', 'COMPLETE', 'ARCHIVED',
-]);
-export type LifecycleStatus = z.infer<typeof LifecycleStatusEnum>;
+] as const;
+export type LifecycleStatus = (typeof LifecycleStatusValues)[number];
+export const LifecycleStatusEnum = z.string().transform(
+    (s) => s.toUpperCase() as LifecycleStatus,
+);
 ```
+
+This widening is the ONLY place where forward-compat needs special handling — every consumer goes through `experimentStatusLabel/Classes/Tooltip` which already has a `default:` arm, so an unrecognized server-side status will degrade to "Draft" styling rather than crash the page.
 
 In `ExperimentSchema` (line 30), add after `created_by_id`:
 
@@ -2124,6 +2622,7 @@ export type CondRow = {
     nodeLabel: string;
     paramKey: string;
     varied: boolean;
+    unitConflict?: boolean;
     perRun: Map<RunId, CondCell>;
 };
 
@@ -2136,9 +2635,24 @@ function canonicalize(value: unknown): unknown {
     return value;
 }
 
+// Equality key must match the Python port's json.dumps(sort_keys=True). For
+// JSON-serializable values JSON.stringify is sufficient, but objects must be
+// sorted to match Python's sort_keys=True.
+function eqKey(value: unknown): string {
+    return JSON.stringify(value, (_k, v) => {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+            return Object.keys(v as object).sort().reduce<Record<string, unknown>>(
+                (acc, k) => { acc[k] = (v as Record<string, unknown>)[k]; return acc; },
+                {},
+            );
+        }
+        return v;
+    });
+}
+
 export function computeConditions(runs: any[]): CondRow[] {
     const perKey = new Map<string, Map<RunId, CondCell>>();
-    const unitPerKey = new Map<string, string | undefined>();
+    const unitsSeen = new Map<string, Set<string>>();
     const runIds: RunId[] = [];
 
     for (const run of runs) {
@@ -2157,7 +2671,9 @@ export function computeConditions(runs: any[]): CondRow[] {
                 const unit = schemaProps[k]?.unit;
                 if (unit) {
                     cell.unit = unit;
-                    if (!unitPerKey.has(key)) unitPerKey.set(key, unit);
+                    let seen = unitsSeen.get(key);
+                    if (!seen) { seen = new Set(); unitsSeen.set(key, seen); }
+                    seen.add(unit);
                 }
                 let perRun = perKey.get(key);
                 if (!perRun) {
@@ -2176,17 +2692,20 @@ export function computeConditions(runs: any[]): CondRow[] {
         for (const rid of runIds) {
             filled.set(rid, perRun.get(rid) ?? { value: null });
         }
-        const unit = unitPerKey.get(key);
-        if (unit) {
+        const units = unitsSeen.get(key) ?? new Set<string>();
+        const unitConflict = units.size > 1;
+        if (units.size === 1) {
+            const [onlyUnit] = units;
             for (const cell of filled.values()) {
-                if (cell.value !== null && cell.unit === undefined) cell.unit = unit;
+                if (cell.value !== null && cell.unit === undefined) cell.unit = onlyUnit;
             }
         }
-        const values = new Set(Array.from(filled.values(), c => JSON.stringify(c.value)));
+        const values = new Set(Array.from(filled.values(), c => eqKey(c.value)));
         rows.push({
             nodeLabel,
             paramKey,
-            varied: values.size > 1,
+            varied: values.size > 1 || unitConflict,
+            ...(unitConflict ? { unitConflict: true } : {}),
             perRun: filled,
         });
     }
@@ -2261,6 +2780,8 @@ Expected: component not found.
 
 ```svelte
 <script lang="ts">
+import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
+import EmptyState from '$lib/components/ui/empty-state/empty-state.svelte';
 import { computeConditions, type CondRow } from '$lib/experiments/conditions';
 import type { Run } from '$lib/schemas/runs';
 
@@ -2287,63 +2808,67 @@ const groupedByStep = $derived(() => {
 });
 </script>
 
-<div class="card">
-    <div class="card-header flex items-center justify-between">
-        <h3 class="font-semibold">Conditions</h3>
+<Card>
+    <CardHeader class="flex flex-row items-center justify-between">
+        <CardTitle>Conditions</CardTitle>
         <label class="text-sm flex items-center gap-2 cursor-pointer">
             <input type="checkbox" bind:checked={showConstants} />
             Show constants
         </label>
-    </div>
-
-    {#if runs.length === 0}
-        <div class="empty-hint">
-            No runs yet — add a run to populate the design matrix.
-        </div>
-    {:else if visibleRows.length === 0}
-        <div class="empty-hint">No varied parameters across runs.</div>
-    {:else}
-        <div class="overflow-x-auto">
-            <table class="conditions-table">
-                <thead>
-                    <tr>
-                        <th class="sticky-left">Step / Parameter</th>
-                        {#each runColumns as col}
-                            <th>{col.name}</th>
-                        {/each}
-                    </tr>
-                </thead>
-                <tbody>
-                    {#each groupedByStep() as group}
-                        <tr class="group-row">
-                            <td class="sticky-left font-medium" colspan={1 + runColumns.length}>
-                                {group.label}
-                            </td>
+    </CardHeader>
+    <CardContent>
+        {#if runs.length === 0}
+            <EmptyState title="No runs yet"
+                description="Add a run to populate the design matrix." />
+        {:else if visibleRows.length === 0}
+            <EmptyState title="All parameters match"
+                description="No varied parameters across runs." />
+        {:else}
+            <div class="overflow-x-auto">
+                <table class="conditions-table">
+                    <thead>
+                        <tr>
+                            <th class="sticky-left">Step / Parameter</th>
+                            {#each runColumns as col}
+                                <th>{col.name}</th>
+                            {/each}
                         </tr>
-                        {#each group.rows as row}
-                            <tr>
-                                <td class="sticky-left">
-                                    {row.paramKey}
-                                    {#if row.varied}<span class="varied-dot"></span>{/if}
+                    </thead>
+                    <tbody>
+                        {#each groupedByStep() as group}
+                            <tr class="group-row">
+                                <td class="sticky-left font-medium" colspan={1 + runColumns.length}>
+                                    {group.label}
                                 </td>
-                                {#each runColumns as col}
-                                    {@const cell = row.perRun.get(col.id)}
-                                    <td class="font-mono text-sm">
-                                        {#if cell?.value == null}
-                                            —
-                                        {:else}
-                                            {cell.value}{cell.unit ? ` ${cell.unit}` : ''}
+                            </tr>
+                            {#each group.rows as row}
+                                <tr>
+                                    <td class="sticky-left">
+                                        {row.paramKey}
+                                        {#if row.varied}<span class="varied-dot"></span>{/if}
+                                        {#if row.unitConflict}
+                                            <span class="unit-conflict" title="Unit mismatch across runs">⚠ unit mismatch</span>
                                         {/if}
                                     </td>
-                                {/each}
-                            </tr>
+                                    {#each runColumns as col}
+                                        {@const cell = row.perRun.get(col.id)}
+                                        <td class="font-mono text-sm">
+                                            {#if cell?.value == null}
+                                                —
+                                            {:else}
+                                                {cell.value}{cell.unit ? ` ${cell.unit}` : ''}
+                                            {/if}
+                                        </td>
+                                    {/each}
+                                </tr>
+                            {/each}
                         {/each}
-                    {/each}
-                </tbody>
-            </table>
-        </div>
-    {/if}
-</div>
+                    </tbody>
+                </table>
+            </div>
+        {/if}
+    </CardContent>
+</Card>
 
 <style>
 .conditions-table {
@@ -2369,14 +2894,13 @@ const groupedByStep = $derived(() => {
     background: var(--accent);
     margin-left: 4px;
 }
-.empty-hint {
-    border: 1px dashed var(--border);
-    color: var(--muted-foreground);
-    padding: 1rem;
-    border-radius: 0.5rem;
-    text-align: center;
+.unit-conflict {
+    margin-left: 6px;
+    font-size: 0.7rem;
+    color: var(--destructive);
 }
 </style>
+```
 ```
 
 - [ ] **Step 4: Re-run test**
@@ -2405,8 +2929,13 @@ git commit -m "feat(F-0043): ConditionsTable with sticky first column"
 
 - [ ] **Step 1: Implement `KeyResultsTable.svelte`**
 
+Uses shadcn `<Card>` (not the non-existent `.card` class), `--muted-fg` (not `--muted-foreground` — neither exists in `app.css`), `--accent-fg` (not `--accent-foreground`), and `<EmptyState>`. Adds a Condition column showing each run's varied parameters so the table tells the experimentalist story without forcing a jump up to ConditionsTable. Delta % is computed against the **lowest** value (baseline) rather than the median — for a 2-run experiment median and min coincide; for 3+ runs experimentalists read deltas relative to a control, not to a middle value.
+
 ```svelte
 <script lang="ts">
+import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
+import EmptyState from '$lib/components/ui/empty-state/empty-state.svelte';
+import { computeConditions } from '$lib/experiments/conditions';
 import type { Run } from '$lib/schemas/runs';
 
 interface Props { runs: Run[]; }
@@ -2417,67 +2946,90 @@ const withResult = $derived(
         .sort((a, b) => (b.key_result_value ?? 0) - (a.key_result_value ?? 0))
 );
 
-const median = $derived(() => {
-    if (withResult.length === 0) return null;
-    const vals = withResult.map(r => r.key_result_value!).sort((a, b) => a - b);
-    const m = Math.floor(vals.length / 2);
-    return vals.length % 2 ? vals[m] : (vals[m - 1] + vals[m]) / 2;
-});
+// Baseline = the smallest reported value. Each row's delta% is reported
+// relative to this baseline (NOT a median): more intuitive when comparing
+// against a control, and stable as runs are added.
+const baseline = $derived(
+    withResult.length === 0
+        ? null
+        : Math.min(...withResult.map(r => r.key_result_value!))
+);
 
 const best = $derived(withResult[0]);
 
+const condByRun = $derived(() => {
+    const rows = computeConditions(runs as any).filter(r => r.varied);
+    const m = new Map<string, string>();
+    for (const r of runs) {
+        const parts: string[] = [];
+        for (const row of rows) {
+            const cell = row.perRun.get(r.id);
+            if (cell?.value != null) {
+                parts.push(`${row.paramKey}=${cell.value}${cell.unit ? ' ' + cell.unit : ''}`);
+            }
+        }
+        m.set(r.id, parts.join(', '));
+    }
+    return m;
+});
+
 function deltaPct(value: number): string {
-    const m = median();
-    if (!m || m === 0) return '';
-    const pct = ((value - m) / m) * 100;
+    if (baseline === null || baseline === 0) return '';
+    const pct = ((value - baseline) / baseline) * 100;
     return `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`;
 }
 </script>
 
-<div class="card">
-    <h3 class="card-header font-semibold">Key results</h3>
-    {#if withResult.length === 0}
-        <div class="empty-hint">Enter a key result on each run's detail page.</div>
-    {:else}
-        <table class="w-full">
-            <thead>
-                <tr><th>Run</th><th>Label</th><th>Value</th><th></th></tr>
-            </thead>
-            <tbody>
-                {#each withResult as r}
-                    <tr class:best={r.id === best.id}>
-                        <td>{r.name}</td>
-                        <td>{r.key_result_label}</td>
-                        <td class="font-mono">
-                            {r.key_result_value}{r.key_result_unit ? ` ${r.key_result_unit}` : ''}
-                        </td>
-                        <td>
-                            {#if r.id === best.id}
-                                <span class="tag-best">best ({deltaPct(r.key_result_value!)} vs median)</span>
-                            {/if}
-                        </td>
-                    </tr>
-                {/each}
-            </tbody>
-        </table>
-    {/if}
-</div>
+<Card>
+    <CardHeader>
+        <CardTitle>Key results</CardTitle>
+    </CardHeader>
+    <CardContent>
+        {#if withResult.length === 0}
+            <EmptyState title="No key results yet"
+                description="Enter a key result on each run's detail page." />
+        {:else}
+            <table class="w-full">
+                <thead>
+                    <tr><th>Run</th><th>Condition</th><th>Label</th><th>Value</th><th>vs. baseline</th></tr>
+                </thead>
+                <tbody>
+                    {#each withResult as r}
+                        <tr class:best={r.id === best.id}>
+                            <td>{r.name}</td>
+                            <td class="text-sm text-muted-fg">{condByRun().get(r.id) ?? ''}</td>
+                            <td>{r.key_result_label}</td>
+                            <td class="font-mono">
+                                {r.key_result_value}{r.key_result_unit ? ` ${r.key_result_unit}` : ''}
+                            </td>
+                            <td>
+                                <span class="text-xs text-muted-fg">{deltaPct(r.key_result_value!)}</span>
+                                {#if r.id === best.id}
+                                    <span class="tag-best ml-2">best</span>
+                                {/if}
+                            </td>
+                        </tr>
+                    {/each}
+                </tbody>
+            </table>
+        {/if}
+    </CardContent>
+</Card>
 
 <style>
 .best { background: color-mix(in oklch, var(--accent) 8%, transparent); }
-.tag-best { font-size: 0.75rem; color: var(--accent-foreground); }
-.empty-hint {
-    border: 1px dashed var(--border);
-    padding: 1rem; border-radius: 0.5rem;
-    text-align: center; color: var(--muted-foreground);
-}
+.tag-best { font-size: 0.75rem; color: var(--accent-fg); }
 </style>
 ```
 
 - [ ] **Step 2: Implement `RunKeyResultFields.svelte`**
 
+Uses shadcn `<Input>` (no `.input` class exists). Layout uses Tailwind `grid-cols-1 sm:grid-cols-3 gap-3` so the three fields stack on tablet portrait (`<sm`) and side-by-side on desktop — the fixed `[1fr_1fr_120px]` columns from the original draft squeeze the Value cell on iPad.
+
 ```svelte
 <script lang="ts">
+import { Input } from '$lib/components/ui/input';
+
 interface Props {
     label: string | null | undefined;
     value: number | null | undefined;
@@ -2500,18 +3052,18 @@ function emit() {
 }
 </script>
 
-<div class="grid grid-cols-[1fr_1fr_120px] gap-3">
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
     <label class="text-sm">
         Label
-        <input class="input" bind:value={localLabel} onblur={emit} placeholder="e.g. Titer" />
+        <Input bind:value={localLabel} onblur={emit} placeholder="e.g. Titer" />
     </label>
     <label class="text-sm">
         Value
-        <input class="input" type="number" step="any" bind:value={localValue} onblur={emit} />
+        <Input type="number" step="any" bind:value={localValue} onblur={emit} />
     </label>
     <label class="text-sm">
         Unit
-        <input class="input" bind:value={localUnit} onblur={emit} placeholder="g/L" />
+        <Input bind:value={localUnit} onblur={emit} placeholder="g/L" />
     </label>
 </div>
 ```
@@ -2581,6 +3133,8 @@ npm run test -- KeyResultsChart.test.ts
 
 ```svelte
 <script lang="ts">
+import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
+import EmptyState from '$lib/components/ui/empty-state/empty-state.svelte';
 import { computeConditions } from '$lib/experiments/conditions';
 import type { Run } from '$lib/schemas/runs';
 
@@ -2644,9 +3198,41 @@ function scaleY(v: number): number {
 }
 </script>
 
-<div class="card">
-    <div class="card-header flex items-center justify-between">
-        <h3 class="font-semibold">Results — chart</h3>
+{#snippet axisLabels()}
+    <!-- numeric tick labels along the bottom (x) and left (y) axes -->
+    {@const pts = points()}
+    {@const xs = pts.map(p => p.x)}
+    {@const ys = pts.map(p => p.y)}
+    {@const xMin = Math.min(...xs)}
+    {@const xMax = Math.max(...xs)}
+    {@const yMin = Math.min(...ys)}
+    {@const yMax = Math.max(...ys)}
+    <text x={PAD} y={H - PAD + 12} class="tick" font-size="9">{xMin}</text>
+    <text x={W - PAD} y={H - PAD + 12} class="tick" font-size="9" text-anchor="end">{xMax}</text>
+    <text x={PAD - 6} y={H - PAD} class="tick" font-size="9" text-anchor="end">{yMin}</text>
+    <text x={PAD - 6} y={PAD + 4} class="tick" font-size="9" text-anchor="end">{yMax}</text>
+{/snippet}
+
+{#snippet trendPath()}
+    <!-- Dashed straight line from leftmost to rightmost point — explicitly
+         labelled "smoothing hint, not a fit" in the legend below. -->
+    {@const sorted = points().slice().sort((a, b) => a.x - b.x)}
+    {#if sorted.length >= 2}
+        <path d={`M ${scaleX(sorted[0].x)},${scaleY(sorted[0].y)} L ${scaleX(sorted[sorted.length - 1].x)},${scaleY(sorted[sorted.length - 1].y)}`}
+              stroke="currentColor" stroke-dasharray="4 4" opacity="0.4" fill="none" />
+    {/if}
+{/snippet}
+
+<script lang="ts">
+let selectedPoint = $state<{ name: string; x: number; y: number } | null>(null);
+function tapPoint(p: { id: string; name: string; x: number; y: number }) {
+    selectedPoint = (selectedPoint?.name === p.name) ? null : { name: p.name, x: p.x, y: p.y };
+}
+</script>
+
+<Card>
+    <CardHeader class="flex flex-row items-center justify-between">
+        <CardTitle>Results — chart</CardTitle>
         {#if variedNumeric.length > 1}
             <select class="text-sm border rounded px-2 py-1"
                     onchange={e => setAxis((e.currentTarget as HTMLSelectElement).value)}>
@@ -2658,32 +3244,44 @@ function scaleY(v: number): number {
                 {/each}
             </select>
         {/if}
-    </div>
+    </CardHeader>
 
-    {#if points().length === 0}
-        <div class="empty-hint">Need at least two runs with a varied numeric param and a key result.</div>
-    {:else}
-        <svg viewBox="0 0 {W} {H}" class="w-full" aria-label="Key results scatter chart">
-            <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="currentColor" opacity="0.4" />
-            <line x1={PAD} y1={PAD} x2={PAD} y2={H - PAD} stroke="currentColor" opacity="0.4" />
-            {#each points() as p}
-                <circle cx={scaleX(p.x)} cy={scaleY(p.y)} r="6"
-                        class:best={best && p.id === best.id}
-                        fill={best && p.id === best.id ? 'var(--accent)' : 'var(--primary)'}>
-                    <title>{p.name}: ({p.x}, {p.y})</title>
-                </circle>
-            {/each}
-        </svg>
-        <p class="text-xs text-muted-foreground">Trend line is a smoothing hint, not a fit.</p>
-    {/if}
-</div>
+    <CardContent>
+        {#if points().length === 0}
+            <EmptyState title="Not enough data"
+                description="Need at least two runs with a varied numeric param and a key result." />
+        {:else}
+            <div class="relative">
+                <svg viewBox="0 0 {W} {H}" class="w-full" aria-label="Key results scatter chart">
+                    <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="currentColor" opacity="0.4" />
+                    <line x1={PAD} y1={PAD} x2={PAD} y2={H - PAD} stroke="currentColor" opacity="0.4" />
+                    {@render axisLabels()}
+                    {@render trendPath()}
+                    {#each points() as p}
+                        <!-- SVG <title> doesn't fire on tablet tap — we use an
+                             explicit onclick + a positioned label overlay so
+                             field-mode users on iPad can identify points. -->
+                        <circle cx={scaleX(p.x)} cy={scaleY(p.y)} r="6"
+                                class:best={best && p.id === best.id}
+                                onclick={() => tapPoint(p)}
+                                fill={best && p.id === best.id ? 'var(--accent)' : 'var(--primary)'}>
+                            <title>{p.name}: ({p.x}, {p.y})</title>
+                        </circle>
+                    {/each}
+                </svg>
+                {#if selectedPoint}
+                    <div class="absolute top-2 right-2 bg-card border rounded px-2 py-1 text-xs shadow">
+                        <strong>{selectedPoint.name}</strong>: ({selectedPoint.x}, {selectedPoint.y})
+                    </div>
+                {/if}
+            </div>
+            <p class="text-xs text-muted-fg mt-2">Dashed trend is a smoothing hint, not a fit.</p>
+        {/if}
+    </CardContent>
+</Card>
 
 <style>
-.empty-hint {
-    border: 1px dashed var(--border);
-    padding: 1rem; border-radius: 0.5rem;
-    text-align: center; color: var(--muted-foreground);
-}
+.tick { fill: var(--muted-fg); }
 </style>
 ```
 
@@ -2775,8 +3373,14 @@ describe('ConclusionCard', () => {
 
 - [ ] **Step 2: Implement**
 
+Uses shadcn `<Card>`, `<Button variant="default|outline">`, `<Dialog>` (no hand-rolled `.modal`/`.btn-primary`/`.btn-outline` — those classes don't exist). Single Lock CTA in the card footer; remove the pre-textarea button + inline-reason `<span>` so the lock affordance is a single bottom-right action with the rationale surfaced as a tooltip on hover and an accessible note below. `ExportSummaryButton` is rendered in this card's footer per spec (Task 19 just defines the component; Task 18 places it).
+
 ```svelte
 <script lang="ts">
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '$lib/components/ui/card';
+import { Button } from '$lib/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '$lib/components/ui/dialog';
+import ExportSummaryButton from './ExportSummaryButton.svelte';
 import type { Experiment } from '$lib/schemas/experiments';
 
 interface Props {
@@ -2814,92 +3418,86 @@ function submitUnlock() {
 }
 </script>
 
-<div class="card">
-    <h3 class="card-header font-semibold">Conclusion</h3>
-
-    {#if !isLocked}
-        {#if hasOpenRuns}
-            <div class="warning">
-                <strong>Completion gate.</strong> Finish all runs before locking the conclusion.
-            </div>
-        {/if}
-
-        <div class="flex items-start gap-3">
-            <button type="button"
-                    class="btn-primary"
-                    disabled={lockDisabled}
-                    title={lockReason}
-                    onclick={onLock}>
-                Lock conclusion
-            </button>
-            <span class="text-sm text-muted-foreground">{lockReason}</span>
-        </div>
-
-        <textarea class="mt-3 w-full min-h-[160px]"
-                  bind:value={draft}
-                  onblur={saveDraft}
-                  placeholder="Write the conclusion of this investigation…" />
-
-        <div class="mt-3 flex justify-end">
-            <button type="button" class="btn-primary"
-                    disabled={lockDisabled} title={lockReason} onclick={onLock}>
-                Lock conclusion
-            </button>
-        </div>
-    {:else}
-        <div class="prose whitespace-pre-wrap">{experiment.conclusion}</div>
-        <div class="signature mt-3 text-sm text-muted-foreground">
-            Locked by {experiment.conclusion_locked_by_name ?? 'system'}
-            on {new Date(experiment.conclusion_locked_at!).toLocaleString()}
-        </div>
-        {#if canAdmin}
-            <div class="mt-3">
-                <button type="button" class="btn-outline"
-                        onclick={() => unlockOpen = true}>
-                    Unlock and edit (admin only)
-                </button>
-            </div>
-
-            {#if unlockOpen}
-                <div class="modal">
-                    <h4 class="font-semibold">Unlock conclusion</h4>
-                    <label for="unlock-reason" class="text-sm">
-                        Reason (required, ≥ 8 characters)
-                    </label>
-                    <textarea id="unlock-reason"
-                              aria-label="Reason"
-                              bind:value={unlockReason}
-                              placeholder="e.g. Updated titer data from re-analysis" />
-                    <div class="flex justify-end gap-2 mt-2">
-                        <button type="button" class="btn-outline"
-                                onclick={() => { unlockOpen = false; unlockReason = ''; }}>
-                            Cancel
-                        </button>
-                        <button type="button" class="btn-primary"
-                                name="submit unlock"
-                                aria-label="Submit unlock"
-                                disabled={unlockSubmitDisabled}
-                                onclick={submitUnlock}>
-                            Submit unlock
-                        </button>
-                    </div>
+<Card>
+    <CardHeader>
+        <CardTitle>Conclusion</CardTitle>
+    </CardHeader>
+    <CardContent>
+        {#if !isLocked}
+            {#if hasOpenRuns}
+                <div class="warning mb-3">
+                    <strong>Completion gate.</strong> Finish all runs before locking the conclusion.
                 </div>
             {/if}
+
+            <textarea class="w-full min-h-[160px] border rounded p-2"
+                      bind:value={draft}
+                      onblur={saveDraft}
+                      placeholder="Write the conclusion of this investigation…" />
+            {#if lockReason}
+                <p class="mt-2 text-sm text-muted-fg" id="lock-reason">{lockReason}</p>
+            {/if}
+        {:else}
+            <div class="prose whitespace-pre-wrap">{experiment.conclusion}</div>
+            <div class="mt-3 text-sm text-muted-fg italic">
+                Locked by {experiment.conclusion_locked_by_name ?? 'system'}
+                on {new Date(experiment.conclusion_locked_at!).toLocaleString()}
+            </div>
         {/if}
-    {/if}
-</div>
+    </CardContent>
+
+    <CardFooter class="flex items-center justify-between">
+        <ExportSummaryButton experimentId={experiment.id} slug={experiment.slug ?? experiment.id} />
+
+        {#if !isLocked}
+            <Button variant="default"
+                    disabled={lockDisabled}
+                    title={lockReason}
+                    aria-describedby={lockReason ? 'lock-reason' : undefined}
+                    onclick={onLock}>
+                Lock conclusion
+            </Button>
+        {:else if canAdmin}
+            <Button variant="outline" onclick={() => unlockOpen = true}>
+                Unlock and edit (admin only)
+            </Button>
+        {/if}
+    </CardFooter>
+</Card>
+
+<Dialog bind:open={unlockOpen}>
+    <DialogContent>
+        <DialogHeader>
+            <DialogTitle>Unlock conclusion</DialogTitle>
+        </DialogHeader>
+        <label for="unlock-reason" class="text-sm">
+            Reason (required, ≥ 8 characters)
+        </label>
+        <textarea id="unlock-reason"
+                  aria-label="Reason"
+                  bind:value={unlockReason}
+                  class="w-full border rounded p-2 min-h-[100px]"
+                  placeholder="e.g. Updated titer data from re-analysis" />
+        <DialogFooter>
+            <Button variant="outline"
+                    onclick={() => { unlockOpen = false; unlockReason = ''; }}>
+                Cancel
+            </Button>
+            <Button variant="default"
+                    aria-label="Submit unlock"
+                    disabled={unlockSubmitDisabled}
+                    onclick={submitUnlock}>
+                Submit unlock
+            </Button>
+        </DialogFooter>
+    </DialogContent>
+</Dialog>
 
 <style>
 .warning {
     background: color-mix(in oklch, oklch(0.85 0.18 80) 30%, transparent);
     border: 1px solid oklch(0.7 0.18 80);
-    padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 0.75rem;
-}
-.signature { font-style: italic; }
-.modal {
-    border: 1px solid var(--border);
-    background: var(--card);
-    padding: 1rem; border-radius: 0.5rem; margin-top: 0.75rem;
+    padding: 0.75rem; border-radius: 0.5rem;
 }
 </style>
 ```
@@ -2935,36 +3533,60 @@ interface Props {
 let { items, truncated, loading }: Props = $props();
 </script>
 
-<aside class="card sticky top-4">
-    <h3 class="card-header font-semibold">Observations</h3>
+Wraps shadcn `<Card>`. Each run_label becomes a link to `/runs/<source_id>` so the reader can jump from "anomaly on RUN-3" straight to that run. Uses `--muted-fg` (not the non-existent `--muted-foreground`).
 
-    {#if loading}
-        <div class="text-sm text-muted-foreground">Loading…</div>
-    {:else if items.length === 0}
-        <div class="empty-hint">No observations or anomalies flagged yet.</div>
-    {:else}
-        <ol class="timeline">
-            {#each items as item (item.id)}
-                <li class="timeline-item">
-                    <span class="flag" class:anomaly={item.flag === 'anomaly'}>
-                        {item.flag}
-                    </span>
-                    <div>
-                        <div class="text-sm">{item.body}</div>
-                        <div class="text-xs text-muted-foreground">
-                            {item.author_name} • {new Date(item.created_at).toLocaleString()}
-                            {#if item.run_label}• {item.run_label}{/if}
-                        </div>
+```svelte
+<script lang="ts">
+import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
+import EmptyState from '$lib/components/ui/empty-state/empty-state.svelte';
+import type { ObservationItem } from '$lib/schemas/observation';
+
+interface Props {
+    items: ObservationItem[];
+    truncated: boolean;
+    loading: boolean;
+}
+let { items, truncated, loading }: Props = $props();
+</script>
+
+<aside class="sticky top-4">
+    <Card>
+        <CardHeader>
+            <CardTitle>Observations</CardTitle>
+        </CardHeader>
+        <CardContent>
+            {#if loading}
+                <div class="text-sm text-muted-fg">Loading…</div>
+            {:else if items.length === 0}
+                <EmptyState title="Nothing flagged yet"
+                    description="No observations or anomalies flagged yet." />
+            {:else}
+                <ol class="timeline">
+                    {#each items as item (item.id)}
+                        <li class="timeline-item">
+                            <span class="flag" class:anomaly={item.flag === 'anomaly'}>
+                                {item.flag}
+                            </span>
+                            <div>
+                                <div class="text-sm">{item.body}</div>
+                                <div class="text-xs text-muted-fg">
+                                    {item.author_name} • {new Date(item.created_at).toLocaleString()}
+                                    {#if item.source === 'run' && item.run_label}
+                                        • <a class="underline" href={`/runs/${item.source_id}`}>{item.run_label}</a>
+                                    {/if}
+                                </div>
+                            </div>
+                        </li>
+                    {/each}
+                </ol>
+                {#if truncated}
+                    <div class="text-xs text-muted-fg mt-2">
+                        Showing 500 most recent observations.
                     </div>
-                </li>
-            {/each}
-        </ol>
-        {#if truncated}
-            <div class="text-xs text-muted-foreground mt-2">
-                Showing 500 most recent observations.
-            </div>
-        {/if}
-    {/if}
+                {/if}
+            {/if}
+        </CardContent>
+    </Card>
 </aside>
 
 <style>
@@ -2982,7 +3604,7 @@ let { items, truncated, loading }: Props = $props();
     font-size: 0.65rem;
     text-transform: uppercase;
     background: var(--muted);
-    color: var(--muted-foreground);
+    color: var(--muted-fg);
     padding: 0.1rem 0.35rem;
     border-radius: 0.25rem;
     height: fit-content;
@@ -2991,25 +3613,24 @@ let { items, truncated, loading }: Props = $props();
     background: color-mix(in oklch, oklch(0.85 0.18 80) 30%, transparent);
     color: oklch(0.4 0.2 60);
 }
-.empty-hint {
-    border: 1px dashed var(--border);
-    padding: 1rem; border-radius: 0.5rem;
-    text-align: center; color: var(--muted-foreground);
-}
 </style>
 ```
 
 - [ ] **Step 2: Implement `ExportSummaryButton.svelte`**
 
+Uses shadcn `<Button variant="outline">` (no `.btn-outline` class). On failure the catch arm surfaces a toast via `$lib/components/ui/sonner` (the project's existing toast surface used in 12+ places). The component is rendered inside `ConclusionCard`'s footer (Task 18) — not as a standalone page surface.
+
 ```svelte
 <script lang="ts">
+import { Button } from '$lib/components/ui/button';
+import { toast } from 'svelte-sonner';
 import { api } from '$lib/api';
 
 interface Props {
     experimentId: string;
-    experimentSlug: string;
+    slug: string;
 }
-let { experimentId, experimentSlug }: Props = $props();
+let { experimentId, slug }: Props = $props();
 
 let busy = $state(false);
 
@@ -3018,17 +3639,20 @@ async function download() {
     try {
         await api.downloadBlob(
             `/experiments/${experimentId}/export.pdf`,
-            `experiment-${experimentSlug}.pdf`,
+            `experiment-${slug}.pdf`,
         );
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : 'PDF export failed';
+        toast.error(msg);
     } finally {
         busy = false;
     }
 }
 </script>
 
-<button type="button" class="btn-outline" disabled={busy} onclick={download}>
+<Button variant="outline" disabled={busy} onclick={download}>
     {busy ? 'Generating…' : 'Export summary'}
-</button>
+</Button>
 ```
 
 - [ ] **Step 3: Type-check + commit**
@@ -3072,12 +3696,17 @@ import { ObservationsResponseSchema, type ObservationItem } from '$lib/schemas/o
 import { api } from '$lib/api';
 import { onMount, onDestroy } from 'svelte';
 
+import { toast } from 'svelte-sonner';
+import { getCurrentOrgRoles } from '$lib/stores/org';  // existing helper
+
 let observations = $state<ObservationItem[]>([]);
 let observationsTruncated = $state(false);
 let observationsLoading = $state(true);
+let observationsError = $state<string | null>(null);
 
 async function loadObservations() {
     observationsLoading = true;
+    observationsError = null;
     try {
         const res = await api.get(
             `/experiments/${experiment.id}/observations`,
@@ -3085,14 +3714,25 @@ async function loadObservations() {
         );
         observations = res.items;
         observationsTruncated = res.truncated;
+    } catch (err) {
+        observationsError = err instanceof Error ? err.message : 'Failed to load observations';
     } finally {
         observationsLoading = false;
     }
 }
 
-// Refresh on visibility change to catch cross-tab note edits.
+async function loadRuns() {
+    // Existing handler that re-fetches the experiment's runs. Define here if
+    // the page doesn't already expose one; otherwise import.
+    experiment = await api.get(`/experiments/${experiment.id}`, { schema: ExperimentSchema });
+}
+
+// Refresh on visibility change to catch cross-tab note + run edits.
 function onVisible() {
-    if (document.visibilityState === 'visible') loadObservations();
+    if (document.visibilityState === 'visible') {
+        loadObservations();
+        loadRuns();
+    }
 }
 onMount(() => {
     loadObservations();
@@ -3100,32 +3740,52 @@ onMount(() => {
 });
 onDestroy(() => document.removeEventListener('visibilitychange', onVisible));
 
+// Server is source of truth — derive runs from the loaded experiment so the
+// page never reads `runs` before the fetch resolves.
+const runs = $derived(experiment?.runs ?? []);
 const hasOpenRuns = $derived(
     runs.some(r => ['PLANNED', 'ACTIVE', 'EDITED'].includes(r.status)),
 );
-const canAdmin = $derived(/* existing admin derivation */);
+// Admin role gating — `ADMIN` is the canonical org-role string; check
+// `frontend/src/lib/stores/org.ts` for the exact label if changed.
+const canAdmin = $derived(getCurrentOrgRoles().includes('ADMIN'));
 
 async function saveConclusion(next: string) {
-    const updated = await api.put(
-        `/experiments/${experiment.id}`,
-        { conclusion: next },
-        { schema: ExperimentSchema },
-    );
-    experiment = updated;
+    try {
+        const updated = await api.put(
+            `/experiments/${experiment.id}`,
+            { conclusion: next },
+            { schema: ExperimentSchema },
+        );
+        experiment = updated;
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to save conclusion';
+        toast.error(msg);
+    }
 }
 async function lockConclusion() {
-    experiment = await api.post(
-        `/experiments/${experiment.id}/conclusion/lock`, {},
-        { schema: ExperimentSchema },
-    );
-    loadObservations();
+    try {
+        experiment = await api.post(
+            `/experiments/${experiment.id}/conclusion/lock`, {},
+            { schema: ExperimentSchema },
+        );
+        loadObservations();
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to lock conclusion';
+        toast.error(msg);
+    }
 }
 async function unlockConclusion(reason: string) {
-    experiment = await api.post(
-        `/experiments/${experiment.id}/conclusion/unlock`, { reason },
-        { schema: ExperimentSchema },
-    );
-    loadObservations();
+    try {
+        experiment = await api.post(
+            `/experiments/${experiment.id}/conclusion/unlock`, { reason },
+            { schema: ExperimentSchema },
+        );
+        loadObservations();
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to unlock conclusion';
+        toast.error(msg);
+    }
 }
 </script>
 
@@ -3140,6 +3800,8 @@ async function unlockConclusion(reason: string) {
             <KeyResultsChart {runs} experimentId={experiment.id} />
         </div>
 
+        <!-- ConclusionCard owns the ExportSummaryButton in its footer; do NOT
+             render a separate ExportSummaryButton row above or below the card. -->
         <ConclusionCard
             {experiment}
             {hasOpenRuns}
@@ -3149,21 +3811,22 @@ async function unlockConclusion(reason: string) {
             onUnlock={unlockConclusion}
         />
 
-        <div class="flex justify-end">
-            <ExportSummaryButton
-                experimentId={experiment.id}
-                experimentSlug={experiment.slug}
-            />
-        </div>
-
         <!-- existing Runs and Notes sections stay below -->
     </div>
 
-    <ObservationsTimeline
-        items={observations}
-        truncated={observationsTruncated}
-        loading={observationsLoading}
-    />
+    <div>
+        {#if observationsError}
+            <div class="p-3 mb-2 border rounded bg-destructive/10 text-destructive text-sm">
+                {observationsError}
+                <button class="underline ml-2" onclick={loadObservations}>Retry</button>
+            </div>
+        {/if}
+        <ObservationsTimeline
+            items={observations}
+            truncated={observationsTruncated}
+            loading={observationsLoading}
+        />
+    </div>
 </div>
 
 <style>
@@ -3284,7 +3947,26 @@ const stats = $derived({
 
 Render a fourth stat card in the existing stats row (search for the existing `inProgress` card and clone the structure for `awaitingConclusion` with the amber pill class).
 
-- [ ] **Step 3: Type-check + commit**
+- [ ] **Step 3: Replace the hardcoded status tooltip**
+
+There is a hardcoded experiment-status tooltip at `frontend/src/routes/[org]/experiments/+page.svelte:200` that still hardcodes the 4-state list. Replace it with a call to `experimentStatusTooltip(e.lifecycle_status)` so the new AWAITING_CONCLUSION case actually surfaces. Grep first:
+
+```bash
+grep -n "tooltip\|title=" frontend/src/routes/\[org\]/experiments/+page.svelte | head -5
+```
+
+Then update the row to:
+
+```svelte
+<span title={experimentStatusTooltip(e.lifecycle_status) ?? experimentStatusLabel(e.lifecycle_status)}
+      class={experimentStatusClasses(e.lifecycle_status) + ' px-2 py-0.5 rounded text-xs'}>
+    {experimentStatusLabel(e.lifecycle_status)}
+</span>
+```
+
+Ensure all three helpers are imported from `$lib/components/project/projectUtils`.
+
+- [ ] **Step 4: Type-check + commit**
 
 ```bash
 cd frontend && npm run check
@@ -3383,7 +4065,8 @@ npm run check && npm run build
 
 Update `.claude/rules/*.md` and root `CLAUDE.md` only where the changes from this task introduce new conventions:
 - New lifecycle state: ensure no `.claude/rules/*.md` file documents the lifecycle as 4-state. Grep with `grep -rn "DRAFT.*IN_PROGRESS.*COMPLETE" .claude/`.
-- New audit-log actions (`conclusion.lock`, `conclusion.unlock`, `key_result.set`, `export.pdf`): if an audit-log conventions doc exists, append.
+- New audit-log actions (`conclusion.lock`, `conclusion.unlock`, `key_result.set`, `export.pdf`, `export.pdf.timeout`): if an audit-log conventions doc exists, append.
+- Lock-guard mutation surfaces: any rules doc that lists "experiment mutation endpoints" must enumerate the full guarded set — PUT /experiments/{id}, POST /runs (with experiment_id), POST /experiments/{id}/runs, POST/PUT/DELETE /experiments/{id}/notes. Prune any references to a smaller subset.
 
 Commit any doc updates as `docs(F-0043): refresh project rules for phases 4-7`.
 
@@ -3400,15 +4083,30 @@ If clean, the task is ready for the verification panel.
 
 ## Self-Review Notes
 
-**Spec coverage:** Task numbers map to spec sections — 1-4 cover Section 1 (schema + lifecycle), 5-9 cover Section 2 (API), 10-12 cover Section 3 services, 13-22 cover Section 4 frontend, 23-24 cover Section 5 testing/rollout. Migration backfill (spec §1) is Task 1 step 2. Audit-log snapshots (spec §3) are in Tasks 7, 8, 9. Lock-guard freezing all fields (spec §2) is Task 6 step 3.
+**Spec coverage:** Task numbers map to spec sections — 1-4 cover Section 1 (schema + lifecycle), 5-9 cover Section 2 (API), 10-12 cover Section 3 services, 13-22 cover Section 4 frontend, 23-24 cover Section 5 testing/rollout. Migration backfill (spec §1) is Task 1 step 2. Audit-log snapshots (spec §3) are in Tasks 7, 8, 9. Lock-guard freezing all fields (spec §2) is Task 6 + Task 6b (adjacent mutation endpoints).
 
-**Conditions parity** — fixture is the single source of truth; both implementations (Python in Task 11, TypeScript in Task 14) consume it.
+**Conditions parity** — fixture is the single source of truth; both implementations (Python in Task 11, TypeScript in Task 14) consume it. Equality key uses `json.dumps(..., sort_keys=True)` / `JSON.stringify(... sorted)` — never `repr()`.
 
-**TOCTOU defense** — Task 7's single-statement UPDATE is the atomic guard the adversarial review demanded. The disambiguation refresh runs only on rowcount=0, where the race already lost.
+**TOCTOU defense** — Task 7's single-statement UPDATE with the `EXISTS (... status='COMPLETED')` predicate is the atomic guard the adversarial review demanded. The disambiguation refresh runs only when `result.all()` is empty (asyncpg's `rowcount` is unreliable on `UPDATE ... RETURNING`).
 
-**Rolling deploy tolerance** — Task 13 sets all new Zod fields `.nullable().optional()` so old replicas don't break the parser.
+**Audit/state atomicity** — every conclusion lock/unlock, key-result mutation, and PDF export logs audit **before** the single `db.commit()` so a partial failure can't leave the audit log out of sync with the state row. Tasks 7, 8, 9, 12.
 
-**Backfill safety** — Task 1's UPDATE only touches experiments with runs AND zero open runs, so DRAFT experiments stay DRAFT and IN_PROGRESS experiments stay IN_PROGRESS. Customer-visible-as-complete experiments lock under a `system` signature.
+**Audit action naming** — use dotted lowercase consistently: `conclusion.lock`, `conclusion.unlock`, `key_result.set`, `export.pdf`, `export.pdf.timeout`. No mixed-style action strings (no `conclusion_lock`, no `lockConclusion`).
+
+**Rolling deploy tolerance** — Task 13 widens `LifecycleStatusEnum` to `z.string().transform(...)` so an old tab loaded before the deploy doesn't crash on the new `AWAITING_CONCLUSION` value. All consuming switch statements already have `default:` arms.
+
+**Backfill safety** — Task 1's UPDATE only touches experiments with runs AND zero open runs AND `conclusion = NULL AND conclusion_locked_at IS NULL`, so it's idempotent on downgrade→re-upgrade and never overwrites human-authored conclusions. No sentinel string is written; the PDF renders `—` for missing conclusions.
+
+**Pre-deploy CS/QA communication** — the new `AWAITING_CONCLUSION` lifecycle state is visible to every existing experiment that has all-completed runs but no locked conclusion. Before merging, send a one-pager to CS + QA explaining:
+- "Complete" in the UI now requires the experimentalist to explicitly lock the conclusion (previously it derived from runs alone)
+- The migration backfills existing "Complete"-displayed experiments to a locked state under a `system` signature so no production data flips back to "Awaiting conclusion" on deploy
+- The amber pill = "all runs done, conclusion not signed off"; this is not an error state
+
+**Coupling fix — AssignToExperimentModal** — When listing target experiments for a "move run to experiment" action, the modal must filter out locked experiments (`conclusion_locked_at !== null`). Add the predicate in `frontend/src/lib/components/run/AssignToExperimentModal.svelte` (or wherever the modal lives — grep first) and add a test that a locked experiment is absent from the list.
+
+**Coupling fix — projectUtils test coverage** — `experimentStatusLabel` / `experimentStatusClasses` / `experimentStatusTooltip` (Task 13 step 4) need test coverage in `frontend/tests/lib/components/project/projectUtils.test.ts` for all 5 states including the new `AWAITING_CONCLUSION`. If that file doesn't exist yet, create it as part of Task 13.
+
+**`key_result_unit` standalone** — Deferred. The current schema allows `key_result_unit` without `key_result_label`/`value` because the migration adds the columns as nullable independents. If labs start writing unit-only rows by accident, file a follow-up TECH_DEBT to add `CHECK (key_result_unit IS NULL OR key_result_label IS NOT NULL)`. Out of scope for this plan.
 
 ---
 
