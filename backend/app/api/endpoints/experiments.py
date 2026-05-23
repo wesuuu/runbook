@@ -200,7 +200,9 @@ async def list_experiments(
             **_experiment_dict(exp),
             runs=[],
             run_count=cnt,
-            lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+            lifecycle_status=derive_lifecycle_status(
+                exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+            ),
         )
         for exp, cnt, live, open_ in rows
     ]
@@ -248,7 +250,9 @@ async def get_experiment_by_slug(
         **_experiment_dict(exp),
         runs=[RunResponse.model_validate(r) for r in runs],
         run_count=len(runs),
-        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+        ),
     )
 
 
@@ -360,7 +364,9 @@ async def list_all_experiments(
                 project_id=exp.project_id,
                 project_slug=project_slug,
                 project_name=project_name,
-                lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+                lifecycle_status=derive_lifecycle_status(
+                    exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+                ),
                 run_count=total,
                 run_summaries=summaries.get(exp.id, []),
                 owner=_owner_summary(exp.created_by),
@@ -406,7 +412,9 @@ async def get_experiment(
         **_experiment_dict(exp),
         runs=[RunResponse.model_validate(r) for r in runs],
         run_count=len(runs),
-        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+        ),
     )
 
 
@@ -465,7 +473,9 @@ async def update_experiment(
         **_experiment_dict(exp),
         runs=[],
         run_count=run_count,
-        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+        ),
     )
 
 
