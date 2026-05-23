@@ -13,7 +13,10 @@ describe('routeName', () => {
         expect(routeName('/projects/abc123')).toBe('Project');
         expect(routeName('/runs/abc123')).toBe('Run');
         expect(routeName('/protocols/abc123')).toBe('Protocol Editor');
-        expect(routeName('/experiments/abc123')).toBe('Experiment');
+        expect(routeName('/acme/experiments')).toBe('Experiments');
+        expect(routeName('/acme/projects/proj-1/experiments/exp-1')).toBe(
+            'Experiment',
+        );
     });
 
     it('distinguishes the document-refinement route from a library doc', () => {
