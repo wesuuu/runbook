@@ -85,12 +85,31 @@ class ExperimentSummary(BaseModel):
     updated_at: datetime
 
 
+EXPERIMENT_NAME_MAX = 200
+EXPERIMENT_DESCRIPTION_MAX = 5000
+
+
+def _validated_name(value: str) -> str:
+    """Reject blank/whitespace-only names; both schemas enforce this."""
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("Name must not be blank")
+    return stripped
+
+
 class ExperimentCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=EXPERIMENT_NAME_MAX)
     project_id: UUID
-    description: Optional[str] = None
+    description: Optional[str] = Field(
+        default=None, max_length=EXPERIMENT_DESCRIPTION_MAX
+    )
     objective: Optional[str] = None
     success_criteria: List[str] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        return _validated_name(v)
 
 
 class ExperimentUpdate(BaseModel):
@@ -99,11 +118,22 @@ class ExperimentUpdate(BaseModel):
     # into an explicit 422 instead of silently dropping it.
     model_config = ConfigDict(extra="forbid")
 
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(
+        default=None, min_length=1, max_length=EXPERIMENT_NAME_MAX
+    )
+    description: Optional[str] = Field(
+        default=None, max_length=EXPERIMENT_DESCRIPTION_MAX
+    )
     content: Optional[Dict[str, Any]] = None
     objective: Optional[str] = None
     success_criteria: Optional[List[str]] = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return _validated_name(v)
 
 
 # Run Schemas

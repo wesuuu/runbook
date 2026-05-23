@@ -2,10 +2,14 @@
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
+    import { getUser } from "$lib/auth.svelte";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import { Textarea } from "$lib/components/ui/textarea";
-    import { X } from "lucide-svelte";
+    import { Trash2, X } from "lucide-svelte";
+
+    const EXPERIMENT_NAME_MAX = 200;
+    const EXPERIMENT_DESCRIPTION_MAX = 5000;
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import RunCreatorWizardModal from "$lib/components/run/RunCreatorWizardModal.svelte";
@@ -94,20 +98,50 @@
         }
     }
 
+    const trimmedName = $derived(name.trim());
+    const nameInvalid = $derived(
+        trimmedName.length === 0 || name.length > EXPERIMENT_NAME_MAX,
+    );
+    const descriptionInvalid = $derived(
+        description.length > EXPERIMENT_DESCRIPTION_MAX,
+    );
+    const currentUserId = $derived(getUser()?.id ?? null);
+
     async function save() {
+        if (nameInvalid) {
+            saveError =
+                trimmedName.length === 0
+                    ? 'Name is required.'
+                    : `Name must be ${EXPERIMENT_NAME_MAX} characters or fewer.`;
+            return;
+        }
+        if (descriptionInvalid) {
+            saveError = `Description must be ${EXPERIMENT_DESCRIPTION_MAX} characters or fewer.`;
+            return;
+        }
         saving = true;
         saveError = null;
         try {
             await api.put(`/experiments/${id}`, {
-                name,
+                name: trimmedName,
                 description: description || null,
             });
-            experiment.name = name;
+            experiment.name = trimmedName;
             experiment.description = description;
+            name = trimmedName;
         } catch (e: unknown) {
             saveError = e instanceof Error ? e.message : 'Failed to save changes.';
         } finally {
             saving = false;
+        }
+    }
+
+    async function deleteNote(noteId: string) {
+        try {
+            await api.delete(`/experiments/${id}/notes/${noteId}`);
+            notes = notes.filter((n) => n.id !== noteId);
+        } catch (e: unknown) {
+            noteError = e instanceof Error ? e.message : 'Failed to delete note.';
         }
     }
 
@@ -207,7 +241,11 @@
                 <input
                     type="text"
                     bind:value={name}
-                    class="text-[26px] font-bold text-foreground leading-tight bg-transparent border-none outline-none focus:ring-0 p-0 flex-1 min-w-0"
+                    maxlength={EXPERIMENT_NAME_MAX}
+                    aria-invalid={nameInvalid}
+                    class="text-[26px] font-bold text-foreground leading-tight bg-transparent border-b outline-none focus:ring-0 p-0 flex-1 min-w-0 {nameInvalid
+                        ? 'border-destructive'
+                        : 'border-transparent'}"
                     placeholder="Experiment name"
                 />
                 <span
@@ -221,7 +259,7 @@
                 </span>
                 <Button
                     onclick={save}
-                    disabled={saving}
+                    disabled={saving || nameInvalid || descriptionInvalid}
                     class="px-4 py-2 text-[13px] font-semibold"
                 >
                     {saving ? "Saving..." : "Save name & description"}
@@ -238,8 +276,19 @@
                     bind:value={description}
                     placeholder="Add a brief description..."
                     rows={2}
-                    class="resize-none"
+                    maxlength={EXPERIMENT_DESCRIPTION_MAX}
+                    aria-invalid={descriptionInvalid}
+                    class="resize-none {descriptionInvalid ? 'border-destructive' : ''}"
                 />
+                {#if description.length > EXPERIMENT_DESCRIPTION_MAX * 0.9}
+                    <p
+                        class="mt-1 text-xs {descriptionInvalid
+                            ? 'text-destructive'
+                            : 'text-muted-foreground'}"
+                    >
+                        {description.length} / {EXPERIMENT_DESCRIPTION_MAX}
+                    </p>
+                {/if}
             </div>
         </div>
 
@@ -376,11 +425,27 @@
                 <div class="space-y-3 mb-4">
                     {#each notes as note (note.id)}
                         <div
-                            class="bg-muted border border-border rounded-lg p-3"
+                            class="bg-muted border border-border rounded-lg p-3 group"
                             animate:flip={{ duration: listDuration() }}
                             in:fade={{ duration: listDuration() }}
                         >
-                            <p class="text-sm text-foreground">{note.content}</p>
+                            <div class="flex items-start justify-between gap-2">
+                                <p class="text-sm text-foreground flex-1 min-w-0 break-words">
+                                    {note.content}
+                                </p>
+                                {#if currentUserId && note.author_id === currentUserId}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        class="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                        aria-label="Delete note"
+                                        title="Delete note"
+                                        onclick={() => deleteNote(note.id)}
+                                    >
+                                        <Trash2 class="h-3.5 w-3.5" />
+                                    </Button>
+                                {/if}
+                            </div>
                             <div
                                 class="flex items-center gap-2 mt-2 text-xs text-muted-foreground"
                             >

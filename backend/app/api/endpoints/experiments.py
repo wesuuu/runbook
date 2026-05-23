@@ -430,16 +430,8 @@ async def update_experiment(
     if not allowed:
         raise HTTPException(403, "Not allowed")
 
-    if update_data.name is not None and update_data.name != exp.name:
-        exp.slug = await assign_slug_or_422(
-            db,
-            Experiment,
-            Experiment.project_id,
-            exp.project_id,
-            update_data.name,
-            "experiment",
-            exclude_id=exp.id,
-        )
+    # Slug is intentionally NOT regenerated on rename — keeps URLs and
+    # bookmarks stable after the experiment is created (C2).
 
     changes = {}
     for field in ("name", "description", "content", "objective", "success_criteria"):
@@ -737,3 +729,50 @@ async def list_experiment_notes(
     return ExperimentNoteListResponse(
         items=[ExperimentNote(**n) for n in (exp.notes or [])]
     )
+
+
+@router.delete(
+    "/experiments/{experiment_id}/notes/{note_id}",
+    status_code=204,
+)
+async def delete_experiment_note(
+    experiment_id: UUID,
+    note_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    """Delete a note. Only the original author may delete (audit-friendly)."""
+    exp = await get_or_404(db, Experiment, experiment_id)
+
+    allowed = await check_permission(
+        db,
+        user.id,
+        ObjectType.PROJECT,
+        exp.project_id,
+        PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(403, "Not allowed")
+
+    notes_list = list(exp.notes or [])
+    note_id_str = str(note_id)
+    target = next((n for n in notes_list if n.get("id") == note_id_str), None)
+    if target is None:
+        raise HTTPException(404, "Note not found")
+
+    if target.get("author_id") != str(user.id):
+        raise HTTPException(403, "Only the note's author can delete it")
+
+    exp.notes = [n for n in notes_list if n.get("id") != note_id_str]
+    flag_modified(exp, "notes")
+
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="NOTE_DELETED",
+        entity_type="Experiment",
+        entity_id=exp.id,
+        changes={"note_id": note_id_str},
+    )
+    await db.commit()

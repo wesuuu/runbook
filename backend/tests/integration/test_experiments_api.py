@@ -527,6 +527,256 @@ async def test_experiment_note_with_flags(
     assert "observation" in resp.json()["flags"]
 
 
+# --- Name & description validation ---
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_empty_name(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    resp = await client.post(
+        "/experiments",
+        json={"name": "", "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_whitespace_only_name(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    resp = await client.post(
+        "/experiments",
+        json={"name": "   \t\n   ", "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_overlong_name(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    resp = await client.post(
+        "/experiments",
+        json={"name": "X" * 201, "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_overlong_description(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    resp = await client.post(
+        "/experiments",
+        json={
+            "name": "Valid",
+            "project_id": str(test_project.id),
+            "description": "Y" * 5001,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_whitespace_only_name(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    create_resp = await client.post(
+        "/experiments",
+        json={"name": "Original", "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    exp_id = create_resp.json()["id"]
+
+    resp = await client.put(
+        f"/experiments/{exp_id}",
+        json={"name": "   "},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_overlong_name(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    create_resp = await client.post(
+        "/experiments",
+        json={"name": "Original", "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    exp_id = create_resp.json()["id"]
+
+    resp = await client.put(
+        f"/experiments/{exp_id}",
+        json={"name": "X" * 201},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+# --- Slug stability (C2) ---
+
+
+@pytest.mark.asyncio
+async def test_slug_stable_across_name_changes(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    """Renaming an experiment must not regenerate its slug — URLs/bookmarks
+    stay valid (C2)."""
+    create_resp = await client.post(
+        "/experiments",
+        json={"name": "First Name", "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    exp_id = create_resp.json()["id"]
+    original_slug = create_resp.json()["slug"]
+    assert original_slug == "first-name"
+
+    put_resp = await client.put(
+        f"/experiments/{exp_id}",
+        json={"name": "Completely Different Name"},
+        headers=auth_headers,
+    )
+    assert put_resp.status_code == 200
+    assert put_resp.json()["slug"] == original_slug
+
+    # Verify slug-based lookup still resolves
+    lookup = await client.get(
+        f"/experiments/by-slug/{test_project.slug}/{original_slug}",
+        headers=auth_headers,
+    )
+    assert lookup.status_code == 200
+    assert lookup.json()["name"] == "Completely Different Name"
+
+
+# --- DELETE note (C3) ---
+
+
+@pytest.mark.asyncio
+async def test_delete_note_by_author(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    create_resp = await client.post(
+        "/experiments",
+        json={"name": "Notes Delete", "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    exp_id = create_resp.json()["id"]
+
+    add = await client.post(
+        f"/experiments/{exp_id}/notes",
+        json={"content": "to be deleted"},
+        headers=auth_headers,
+    )
+    note_id = add.json()["id"]
+
+    delete = await client.delete(
+        f"/experiments/{exp_id}/notes/{note_id}",
+        headers=auth_headers,
+    )
+    assert delete.status_code == 204
+
+    after = await client.get(
+        f"/experiments/{exp_id}/notes", headers=auth_headers
+    )
+    assert after.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_delete_note_404_when_not_found(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+):
+    import uuid
+
+    create_resp = await client.post(
+        "/experiments",
+        json={"name": "Empty notes", "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    exp_id = create_resp.json()["id"]
+
+    resp = await client.delete(
+        f"/experiments/{exp_id}/notes/{uuid.uuid4()}",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_note_non_author_forbidden(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_project: Project,
+    db_session: AsyncSession,
+    test_user: User,
+):
+    """Non-author with EDIT permission cannot delete someone else's note."""
+    import uuid as _uuid
+
+    create_resp = await client.post(
+        "/experiments",
+        json={"name": "Author guard", "project_id": str(test_project.id)},
+        headers=auth_headers,
+    )
+    exp_id = create_resp.json()["id"]
+
+    # Add a note authored by test_user
+    add = await client.post(
+        f"/experiments/{exp_id}/notes",
+        json={"content": "owner's note"},
+        headers=auth_headers,
+    )
+    note_id = add.json()["id"]
+
+    # Rewrite the note's author_id in JSONB to simulate a different author
+    from sqlalchemy import select
+
+    from app.models.runs import Experiment
+
+    exp = (
+        await db_session.execute(
+            select(Experiment).where(Experiment.id == _uuid.UUID(exp_id))
+        )
+    ).scalar_one()
+    notes = list(exp.notes or [])
+    notes[0] = {**notes[0], "author_id": str(_uuid.uuid4())}
+    exp.notes = notes
+    from sqlalchemy.orm.attributes import flag_modified
+
+    flag_modified(exp, "notes")
+    await db_session.commit()
+
+    resp = await client.delete(
+        f"/experiments/{exp_id}/notes/{note_id}",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403
+
+
 # --- Permission Check ---
 
 
