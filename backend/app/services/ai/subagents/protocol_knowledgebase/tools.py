@@ -122,6 +122,7 @@ async def fetch_openwetware_protocol(
         ctx.deps.org_id, "openwetware", cfg.rate_limit_per_minute
     )
     payload = await openwetware.fetch(url, timeout=cfg.request_timeout_seconds)
+    payload.source_label = "OpenWetWare"
 
     # Cache iff this is not a genuine failure — the approval tool reads it
     # back. (For OpenWetWare, error is None iff steps were parsed.)
@@ -197,6 +198,7 @@ async def fetch_protocols_io(
     payload = await protocols_io.fetch_protocols_io(
         url, access_token=token, timeout=cfg.request_timeout_seconds
     )
+    payload.source_label = "protocols.io"
 
     # Cache iff not a genuine failure — a license-restricted but valid
     # payload IS cached so the approval tool can re-check import_allowed.

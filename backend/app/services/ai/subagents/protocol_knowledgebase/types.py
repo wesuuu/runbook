@@ -9,6 +9,7 @@ These are @dataclass, not pydantic models — serialize with
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass
@@ -33,6 +34,10 @@ class ExternalProtocolPayload:
     # This is NOT an error — error means a genuine fetch/parse failure.
     import_allowed: bool = True
     license_note: str | None = None
+    # F-0090: the human-readable source name. Typed Literal (not bare str)
+    # so a future connector cannot smuggle markdown via a closing `)` —
+    # the parent agent emits this value inside `[<source_label> source](<url>)`.
+    source_label: Literal["", "OpenWetWare", "protocols.io"] = ""
 
 
 @dataclass
