@@ -1,8 +1,17 @@
 """Message templates for each notification event type.
 
-Each function returns (title, body) given a context dict.
-Context keys are documented per function.
+Each function returns a TemplateResult (title, body, optional html_body)
+given a context dict. Context keys are documented per function.
 """
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class TemplateResult:
+    title: str
+    body: str
+    html_body: str | None = None
 
 
 def role_assigned(ctx: dict, personal: bool = True) -> tuple[str, str]:

@@ -17,7 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notifications import Notification
 from app.services.core.notifications.channels.base import FormattedMessage
 from app.services.core.notifications.dispatcher import dispatch_event
-from app.services.core.notifications.templates import TEMPLATES
+from app.services.core.notifications.templates import TEMPLATES, TemplateResult
+
+
+def _unpack_template(result) -> tuple[str, str, str | None]:
+    """Accept either a TemplateResult or a legacy (title, body) tuple."""
+    if isinstance(result, TemplateResult):
+        return result.title, result.body, result.html_body
+    title, body = result
+    return title, body, None
 
 logger = logging.getLogger("notifications")
 
@@ -47,9 +55,15 @@ async def send_notification(
         logger.warning("No template for event type: %s", event_type)
         return
 
-    # Generate both message perspectives
-    title_personal, body_personal = template_fn(context, personal=True)
-    title_broadcast, body_broadcast = template_fn(context, personal=False)
+    # Generate both message perspectives. Templates may return either a
+    # 2-tuple (legacy) or a TemplateResult (new) — accept both during the
+    # migration; templates not yet ported get html_body=None.
+    title_personal, body_personal, html_body_personal = _unpack_template(
+        template_fn(context, personal=True)
+    )
+    title_broadcast, body_broadcast, html_body_broadcast = _unpack_template(
+        template_fn(context, personal=False)
+    )
 
     # 1. Create in-app notification records
     for user_id in recipients:
@@ -71,12 +85,14 @@ async def send_notification(
         title=title_personal,
         body=body_personal,
         recipient="",  # filled per-channel
+        html_body=html_body_personal,
     )
     msg_broadcast = FormattedMessage(
         event_type=event_type,
         title=title_broadcast,
         body=body_broadcast,
         recipient="broadcast",
+        html_body=html_body_broadcast,
     )
 
     try:
