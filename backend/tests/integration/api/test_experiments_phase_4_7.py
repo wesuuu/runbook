@@ -270,3 +270,42 @@ async def test_observations_endpoint(client, experiment_with_notes, auth_headers
     assert res.headers["cache-control"] == "private, max-age=30"
     body = res.json()
     assert "items" in body and "truncated" in body
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_returns_pdf_with_lock_signature(
+    client, locked_experiment, auth_headers
+):
+    res = await client.get(
+        f"/experiments/{locked_experiment.id}/export.pdf",
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "application/pdf"
+    assert len(res.content) > 1000  # non-trivial PDF
+    assert res.content.startswith(b"%PDF-")
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_503_on_timeout(
+    client, locked_experiment, auth_headers, monkeypatch
+):
+    import asyncio
+    from app.services.experiments import pdf_export
+
+    def slow(*args, **kwargs):
+        import time
+        time.sleep(31)
+        return b""
+
+    monkeypatch.setattr(pdf_export, "generate_experiment_pdf", slow)
+    monkeypatch.setattr(
+        "app.api.endpoints.experiments.EXPORT_TIMEOUT_SECONDS", 0.5
+    )
+
+    res = await client.get(
+        f"/experiments/{locked_experiment.id}/export.pdf",
+        headers=auth_headers,
+    )
+    assert res.status_code == 503
+    assert res.json()["detail"]["code"] == "EXPORT_TIMEOUT"

@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 import uuid as uuid_mod
 from datetime import datetime, timezone
 from enum import Enum
@@ -6,7 +8,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +37,7 @@ from app.schemas.runs import (
 )
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission, get_visible_project_ids
+from app.services.experiments import pdf_export
 from app.services.experiments.observations import aggregate_observations
 from app.services.experiments.status import (
     derive_lifecycle_status,
@@ -43,6 +46,9 @@ from app.services.experiments.status import (
 from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
+_log = logger
+
+EXPORT_TIMEOUT_SECONDS = 30.0
 
 router = APIRouter()
 
@@ -1055,3 +1061,103 @@ async def get_experiment_observations(
     )
     response.headers["Cache-Control"] = "private, max-age=30"
     return response
+
+
+@router.get("/experiments/{experiment_id}/export.pdf")
+async def export_experiment_pdf(
+    experiment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    exp = await get_or_404(db, Experiment, experiment_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, exp.project_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(403, "Not allowed")
+
+    # Project only the columns the PDF actually consumes. Run.notes and
+    # Run.execution_data can be megabytes of JSONB per row — never load them
+    # for an export that doesn't read them. ORDER BY locks byte-stable output
+    # so two consecutive exports of a locked experiment produce identical PDFs
+    # (regulators and tests both rely on this).
+    runs_result = await db.execute(
+        select(
+            Run.id,
+            Run.name,
+            Run.graph,
+            Run.status,
+            Run.key_result_label,
+            Run.key_result_value,
+            Run.key_result_unit,
+            Run.created_at,
+        )
+        .where(Run.experiment_id == experiment_id)
+        .order_by(Run.created_at, Run.id)
+    )
+    runs = list(runs_result.all())
+
+    obs = await aggregate_observations(db, experiment_id)
+    obs_items = [
+        {
+            "flag": o.flag,
+            "created_at": o.created_at.isoformat(),
+            "body": o.body,
+            "run_label": o.run_label,
+        }
+        for o in obs.items
+    ]
+
+    started = time.monotonic()
+    try:
+        content = await asyncio.wait_for(
+            asyncio.to_thread(pdf_export.generate_experiment_pdf, exp, runs, obs_items),
+            timeout=EXPORT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        _log.warning(
+            "pdf_export_timeout experiment_id=%s timeout_s=%s elapsed_ms=%d",
+            experiment_id, EXPORT_TIMEOUT_SECONDS, elapsed_ms,
+        )
+        # Audit timeouts too — they are user-visible export failures and
+        # appear in inspection histories.
+        await log_audit(
+            db,
+            actor_id=user.id,
+            action="export.pdf.timeout",
+            entity_type="Experiment",
+            entity_id=exp.id,
+            changes={"timeout_s": EXPORT_TIMEOUT_SECONDS,
+                     "elapsed_ms": elapsed_ms},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "EXPORT_TIMEOUT", "message": "PDF generation timed out"},
+        )
+
+    duration_ms = int((time.monotonic() - started) * 1000)
+    _log.info(
+        "pdf_export_ok experiment_id=%s bytes=%d duration_ms=%d",
+        experiment_id, len(content), duration_ms,
+    )
+
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="export.pdf",
+        entity_type="Experiment",
+        entity_id=exp.id,
+        changes={"bytes": len(content), "duration_ms": duration_ms},
+    )
+    await db.commit()
+
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="experiment-{exp.slug}.pdf"',
+        },
+    )
