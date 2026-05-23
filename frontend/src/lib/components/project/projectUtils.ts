@@ -164,6 +164,8 @@ export function experimentStatusClasses(status: string): string {
     switch (status?.toUpperCase()) {
         case "IN_PROGRESS":
             return "bg-primary/10 text-primary border border-primary/20";
+        case "AWAITING_CONCLUSION":
+            return "bg-amber-100 text-amber-900 border border-amber-300";
         case "COMPLETE":
             return "bg-accent/15 text-accent-foreground border border-accent/30";
         case "ARCHIVED":
@@ -178,6 +180,8 @@ export function experimentStatusLabel(status: string): string {
     switch (status?.toUpperCase()) {
         case "IN_PROGRESS":
             return "In progress";
+        case "AWAITING_CONCLUSION":
+            return "Awaiting conclusion";
         case "COMPLETE":
             return "Complete";
         case "ARCHIVED":
@@ -186,6 +190,13 @@ export function experimentStatusLabel(status: string): string {
         default:
             return "Draft";
     }
+}
+
+export function experimentStatusTooltip(status: string): string | undefined {
+    if (status?.toUpperCase() === "AWAITING_CONCLUSION") {
+        return "Status is derived from runs and the conclusion lock — all runs complete, conclusion not locked yet.";
+    }
+    return undefined;
 }
 
 export function entityBadgeClasses(entityType: string): string {

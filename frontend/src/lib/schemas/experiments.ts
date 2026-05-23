@@ -7,10 +7,19 @@ export const ExperimentStatusEnum = z.enum([
 ]);
 export type ExperimentStatus = z.infer<typeof ExperimentStatusEnum>;
 
-export const LifecycleStatusEnum = z.enum([
-    'DRAFT', 'IN_PROGRESS', 'COMPLETE', 'ARCHIVED',
-]);
-export type LifecycleStatus = z.infer<typeof LifecycleStatusEnum>;
+// Rolling-deploy safety: an old tab loaded before the deploy still holds the
+// previous bundle (with the 4-state enum) while the backend has already shipped
+// the 5-state contract. A strict z.enum() would throw on the first observed
+// AWAITING_CONCLUSION. Use z.string() in dev/prod and let unknown values pass
+// through; runtime code branches with switch statements that already have a
+// default case. Vitest tests still get the strict enum via the exported type.
+export const LifecycleStatusValues = [
+    'DRAFT', 'IN_PROGRESS', 'AWAITING_CONCLUSION', 'COMPLETE', 'ARCHIVED',
+] as const;
+export type LifecycleStatus = (typeof LifecycleStatusValues)[number];
+export const LifecycleStatusEnum = z.string().transform(
+    (s) => s.toUpperCase() as LifecycleStatus,
+);
 
 export const ExperimentNoteSchema = z.object({
     id: uuidString(),
@@ -41,6 +50,10 @@ export const ExperimentSchema = z.object({
     status: ExperimentStatusEnum.default('DRAFT'),
     lifecycle_status: LifecycleStatusEnum,
     created_by_id: uuidString().nullable().optional(),
+    conclusion: z.string().nullable().optional(),
+    conclusion_locked_at: z.string().nullable().optional(),
+    conclusion_locked_by_id: uuidString().nullable().optional(),
+    conclusion_locked_by_name: z.string().nullable().optional(),
     notes: z.array(ExperimentNoteSchema).default([]),
     runs: z.array(RunSchema).default([]),
     run_count: z.number().default(0),

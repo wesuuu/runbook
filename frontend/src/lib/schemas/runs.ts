@@ -57,6 +57,9 @@ export const RunSchema = z.object({
     created_by_id: z.string().nullable().optional(),
     notes: z.array(RunNoteSchema).default([]),
     attachments: z.array(RunAttachmentSchema).default([]),
+    key_result_label: z.string().nullable().optional(),
+    key_result_value: z.number().nullable().optional(),
+    key_result_unit: z.string().nullable().optional(),
     created_at: z.string(),
     updated_at: z.string(),
 }).passthrough();
