@@ -108,7 +108,15 @@
     function handleSelect(item: NotificationItem): void {
         const href = item.url;
         if (!item.read_at) markRead(item.id);
-        if (href) goto(href);
+        if (!href) return;
+        // TD-0091d: hash-bearing URLs from the resolver (#step-<id>)
+        // navigate via window.location so the fragment is honored
+        // even when already on the destination page.
+        if (href.includes('#')) {
+            window.location.href = href;
+        } else {
+            goto(href);
+        }
     }
 
     const hasUnread = $derived(items.some((n) => !n.read_at));
