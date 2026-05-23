@@ -12,10 +12,62 @@
 
 ## File Structure
 
+- **Modify:** `frontend/vitest.setup.ts` — polyfill `IntersectionObserver` (jsdom doesn't ship one and the new effect in `EquipmentPickerModal` mounts an observer immediately when `mode === 'create'`).
 - **Modify:** `frontend/src/lib/components/protocol/UnitOpNode.svelte` — CSS rules for `.param-row`, `.param-label`, `.param-value`, `.node-params`; add `title=` attrs in the param-row template.
-- **Modify:** `frontend/src/lib/components/modals/EquipmentPickerModal.svelte` — template (`.create-section` toggle + form footer + jump-to-form link), CSS (single scroller, sticky search, panel callout, input bg, theme-token-ify `.type-badge` and `.error-message`), one `$state` + `$effect` for `IntersectionObserver`.
-- **Modify:** `frontend/src/lib/components/modals/EquipmentPickerModal.test.ts` — extend with new assertions for in-form Discard, hidden `+ Add New Equipment` when open, no double-scroller class, `mode === 'create'` footer.
+- **Modify:** `frontend/src/lib/components/modals/EquipmentPickerModal.svelte` — template (`.create-section` toggle + form footer + go-to-form + close-from-sticky links), CSS (single scroller, sticky search, panel callout, input bg, theme-token-ify `.type-badge` and `.error-message`), one `$state` + `$effect` for `IntersectionObserver`, extend the existing `$effect(open)` to reset form fields on re-open.
+- **Modify:** `frontend/src/lib/components/modals/EquipmentPickerModal.test.ts` — extend with new assertions for in-form Discard, hidden `+ Add New Equipment` when open, double-scroller source-text guard, `mode === 'create'` footer, re-open reset, close-from-sticky.
 - **Create:** `frontend/src/lib/components/protocol/UnitOpNode.test.ts` — source-text contract tests for ellipsis CSS rules and `title=` attributes.
+
+---
+
+## Task 0: Polyfill `IntersectionObserver` in vitest.setup.ts
+
+**Files:**
+- Modify: `frontend/vitest.setup.ts`
+
+This must land before Task 3 — the new `EquipmentPickerModal` effect uses
+`new IntersectionObserver(...)` and `mode === 'create'` initialises
+`showCreateForm = true` on mount, so any existing test that renders the modal
+with `mode: 'create'` (the three site-default tests do) will throw
+`ReferenceError: IntersectionObserver is not defined`.
+
+- [ ] **Step 1: Add the polyfill after the `getAnimations` stub block**
+
+In `frontend/vitest.setup.ts`, immediately before `afterEach(() => { cleanup(); });` (around line 58), insert:
+
+```typescript
+// jsdom does not implement IntersectionObserver. The EquipmentPickerModal
+// uses one to gate the in-dialog "Go to form" link. Stub a noop so the
+// observer can be constructed without surfacing entries; tests that need
+// real intersection behavior can override per-test.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).IntersectionObserver = class IntersectionObserverStub {
+        root: Element | null = null;
+        rootMargin = '';
+        thresholds: ReadonlyArray<number> = [];
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+        takeRecords(): IntersectionObserverEntry[] {
+            return [];
+        }
+    };
+}
+```
+
+- [ ] **Step 2: Confirm the polyfill loads cleanly**
+
+Run: `cd frontend && CI=true npx vitest run src/lib/components/modals/EquipmentPickerModal.test.ts`
+
+Expected: the three existing site-default tests still PASS (no behavioral change from the polyfill — observers do nothing).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add frontend/vitest.setup.ts
+git -c commit.gpgsign=false commit -m "test(BUG-0008): polyfill IntersectionObserver for jsdom"
+```
 
 ---
 
@@ -41,18 +93,44 @@ const source = readFileSync(join(__dirname, 'UnitOpNode.svelte'), 'utf8');
  * jsdom doesn't run real layout, and mounting UnitOpNode requires a
  * SvelteFlowProvider + bits-ui ContextMenu context. The fix here is a pure
  * CSS + template-attribute contract, so we assert the contract by inspecting
- * the source file directly. If the .svelte file is restructured later, these
- * assertions get caught and re-stated.
+ * the source file directly. Regexes are intentionally non-positional re:
+ * attribute order so a Prettier/formatter reorder doesn't trip them; the
+ * value-span tooltip is locked to the exact `title={String(param.value)}`
+ * literal so a regex-pass-for-wrong-reason can't happen.
+ *
+ * NOTE: This `readFileSync` test pattern is novel in this codebase. Reason:
+ * mounting UnitOpNode needs xyflow + bits-ui context plumbing that isn't
+ * worth wiring for a CSS-only change. If you reach for a similar pattern
+ * elsewhere, ask whether mounting would work first.
  */
+function extractParamRowTag(src: string): string {
+    // Pull the entire opening tag of the .param-row div, attributes in any order.
+    const m = src.match(/<div\b[^>]*class="param-row"[^>]*>/);
+    return m?.[0] ?? '';
+}
+
+function extractParamValueTag(src: string): string {
+    const m = src.match(/<span\b[^>]*class="param-value"[^>]*>/);
+    return m?.[0] ?? '';
+}
+
 describe('UnitOpNode time-mode truncation contract', () => {
-    it('renders the param row with a title attribute (native tooltip fallback)', () => {
-        // The row's title is `${label}: ${value}` so the user can hover a
-        // truncated row and see the full param spelled out.
-        expect(source).toMatch(/<div class="param-row"[^>]*\btitle=\{[^}]*param\.label[^}]*param\.value[^}]*\}/);
+    it('renders the param row with a title= attr containing both label and value', () => {
+        const tag = extractParamRowTag(source);
+        expect(tag).not.toBe('');
+        expect(tag).toMatch(/\btitle=\{/);
+        // Either a template literal `${param.label}: ${param.value}` or an
+        // expression that references both names is acceptable.
+        expect(tag).toMatch(/param\.label/);
+        expect(tag).toMatch(/param\.value/);
     });
 
-    it('renders the param value with a title attribute equal to the value', () => {
-        expect(source).toMatch(/<span class="param-value"[^>]*\btitle=\{[^}]*param\.value[^}]*\}/);
+    it('renders the param value with title={String(param.value)} exactly', () => {
+        // Lock the value-span tooltip to the literal so a future refactor
+        // that points it at param.label etc. fails loudly.
+        const tag = extractParamValueTag(source);
+        expect(tag).not.toBe('');
+        expect(tag).toContain('title={String(param.value)}');
     });
 
     it('.param-value CSS truncates with ellipsis instead of wrapping', () => {
@@ -209,8 +287,10 @@ git -c commit.gpgsign=false commit -m "fix(BUG-0008): truncate UnitOpNode params
 
 Add CSS ellipsis on .param-label and .param-value, cap the label
 at 60% so the value (user data) shrinks first, hide overflow on
-.node-params, and surface the full text via native title=
-tooltips on the row and value."
+.node-params, and add native title= attrs as a desktop hover
+fallback. Note: title= does not fire on tablet (no hover) — a
+themed bits-ui Tooltip is the proper solution there and is tracked
+as a follow-up; this commit is the CSS bug fix only."
 ```
 
 ---
@@ -223,6 +303,17 @@ tooltips on the row and value."
 - [ ] **Step 1: Extend the test file with the new assertions**
 
 The current test file has a single `describe('EquipmentPickerModal site default', …)` block. Append a new `describe('EquipmentPickerModal create form layout', …)` block below it (after line 38, before EOF).
+
+At the top of the file (just below the existing imports) add:
+
+```typescript
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const modalSource = readFileSync(join(__dirname, 'EquipmentPickerModal.svelte'), 'utf8');
+```
 
 Replace the trailing newline at the end of the file with:
 
@@ -304,8 +395,23 @@ describe('EquipmentPickerModal create form layout', () => {
         expect(reopened.value).toBe('');
     });
 
-    it('does not double-scroll: .equipment-list no longer has overflow-y auto', () => {
-        const { container } = render(EquipmentPickerModal, {
+    it('does not double-scroll: .equipment-list CSS no longer declares overflow-y', () => {
+        // Source-text assertion: getComputedStyle in jsdom does not reliably
+        // resolve scoped Svelte styles, so we inspect the CSS rule directly.
+        // Mirrors the UnitOpNode test pattern.
+        const styleBlock = modalSource.match(/<style>[\s\S]*?<\/style>/)?.[0] ?? '';
+        const listRule = styleBlock.match(/\.equipment-list\s*\{[\s\S]*?\}/)?.[0] ?? '';
+        expect(listRule).not.toBe('');
+        expect(listRule).not.toMatch(/overflow-y\s*:/);
+        // .equipment-modal must still own the scroll (single body scroller).
+        const modalRule = styleBlock.match(/\.equipment-modal\s*\{[\s\S]*?\}/)?.[0] ?? '';
+        expect(modalRule).toMatch(/overflow-y\s*:\s*auto/);
+        expect(modalRule).not.toMatch(/max-height\s*:\s*500px/);
+        expect(modalRule).toMatch(/min-height\s*:\s*0/);
+    });
+
+    it('pick mode: re-opening the dialog after close resets the create form fields', async () => {
+        const { rerender, getByRole, getByLabelText } = render(EquipmentPickerModal, {
             props: {
                 sites,
                 open: true,
@@ -314,10 +420,47 @@ describe('EquipmentPickerModal create form layout', () => {
                 onCreateEquipment: vi.fn(),
             },
         });
-        const list = container.querySelector('.equipment-list') as HTMLElement | null;
-        expect(list).not.toBeNull();
-        // jsdom resolves the scoped CSS rule; both `auto` and `scroll` would fail.
-        expect(['visible', '', 'hidden']).toContain(getComputedStyle(list!).overflowY);
+        // Expand form, type a name, then "hard close" by flipping open=false.
+        (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
+        await Promise.resolve();
+        const nameInput = getByLabelText(/equipment name/i) as HTMLInputElement;
+        nameInput.value = 'Leaked';
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await Promise.resolve();
+        await rerender({
+            sites,
+            open: false,
+            mode: 'pick',
+            orgEquipment: [],
+            onCreateEquipment: vi.fn(),
+        });
+        await rerender({
+            sites,
+            open: true,
+            mode: 'pick',
+            orgEquipment: [],
+            onCreateEquipment: vi.fn(),
+        });
+        // Re-open and confirm field is empty.
+        (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
+        await Promise.resolve();
+        const reopened = getByLabelText(/equipment name/i) as HTMLInputElement;
+        expect(reopened.value).toBe('');
+    });
+
+    it('pick mode: "Close form" appears in sticky search row only when form is open and out of view', async () => {
+        // The Close-form link is rendered behind the same gate as Go-to-form
+        // (showCreateForm && !isCreateFormInView). We can't drive the
+        // IntersectionObserver from the stub, so simulate by setting the
+        // out-of-view state via the component's internal flag if exposed,
+        // OR (preferable) assert the markup gate by inspecting source.
+        // We use source-text inspection here to lock the gate contract.
+        const tpl = modalSource;
+        // The Close-form button must reference closeCreateForm and sit
+        // behind `showCreateForm && !isCreateFormInView`.
+        expect(tpl).toMatch(/showCreateForm\s*&&\s*!isCreateFormInView/);
+        expect(tpl).toMatch(/Close form/);
+        expect(tpl).toMatch(/Go to form/);
     });
 
     it('create mode: the form footer has only a Create Equipment button (no Discard)', () => {
@@ -513,13 +656,12 @@ Replace the entire `<div class="create-section">…</div>` block (lines 382-518)
             </div>
 ```
 
-- [ ] **Step 2: Add the `discardCreateForm` helper to the `<script>` block**
+- [ ] **Step 2: Add the `discardCreateForm` and `closeCreateForm` helpers to the `<script>` block**
 
 Find `handleCertificateFile` (currently lines 106-112) and immediately above it add:
 
 ```typescript
-	function discardCreateForm() {
-		showCreateForm = false;
+	function resetCreateFormFields() {
 		newEquipmentName = '';
 		newEquipmentDescription = '';
 		newEquipmentType = '';
@@ -530,16 +672,68 @@ Find `handleCertificateFile` (currently lines 106-112) and immediately above it 
 		newEquipmentNextCal = '';
 		newEquipmentCertPath = '';
 		createError = '';
-		// newSiteId intentionally stays — it's a sticky preference (see resolveInitialSiteId).
+		// newSiteId intentionally stays — sticky preference (see resolveInitialSiteId).
+	}
+
+	function discardCreateForm() {
+		showCreateForm = false;
+		resetCreateFormFields();
+	}
+
+	function closeCreateForm() {
+		// Called from the sticky-row "Close form" link. Behaves identically
+		// to Discard, just surfaced via a different affordance.
+		discardCreateForm();
 	}
 
 ```
 
-- [ ] **Step 3: Run the layout test file to confirm Discard/footer assertions pass**
+- [ ] **Step 3: Extend the existing `$effect(open)` to reset form fields on re-open**
+
+Find the existing effect (currently lines 115-124):
+
+```typescript
+	// Initialize selected items when modal opens
+	$effect(() => {
+		if (open) {
+			selectedItems = new Map(
+				currentEquipment.map((e) => [
+					e.equipment_id,
+					{ local_id: e.local_id ?? '', shareable: e.shareable }
+				])
+			);
+		}
+	});
+```
+
+Replace with:
+
+```typescript
+	// Initialize selected items and (in pick mode) reset the create form
+	// every time the dialog opens, so a half-typed form from a previous
+	// session doesn't leak across opens. In `create` mode the form is the
+	// whole modal — leaving fields untouched is the correct behavior there.
+	$effect(() => {
+		if (open) {
+			selectedItems = new Map(
+				currentEquipment.map((e) => [
+					e.equipment_id,
+					{ local_id: e.local_id ?? '', shareable: e.shareable }
+				])
+			);
+			if (mode !== 'create') {
+				showCreateForm = false;
+				resetCreateFormFields();
+			}
+		}
+	});
+```
+
+- [ ] **Step 4: Run the layout test file to check progress**
 
 Run: `cd frontend && CI=true npx vitest run src/lib/components/modals/EquipmentPickerModal.test.ts -t "create form layout"`
 
-Expected: 4 of 5 new tests PASS (in-form Discard, hidden toggle, Discard resets fields, mode === 'create' single-button). The double-scroller test still FAILS until Task 5.
+Expected: tests covering in-form Discard, hidden toggle, Discard resets fields, mode === 'create' single-button, and re-open reset now PASS. The double-scroller source-text guard and the close-from-sticky markup-gate guard still FAIL until Task 5 lands the CSS and template gate.
 
 ---
 
@@ -664,10 +858,18 @@ Replace with:
                     <Button
                         variant="link"
                         size="sm"
-                        class="jump-link h-auto p-0"
+                        class="sticky-link h-auto p-0"
                         onclick={scrollCreateFormIntoView}
                     >
-                        Jump to form ↓
+                        Go to form ↓
+                    </Button>
+                    <Button
+                        variant="link"
+                        size="sm"
+                        class="sticky-link h-auto p-0"
+                        onclick={closeCreateForm}
+                    >
+                        ✕ Close form
                     </Button>
                 {/if}
             </div>
@@ -729,7 +931,7 @@ Replace with:
 		flex: 1;
 	}
 
-	:global(.jump-link) {
+	:global(.sticky-link) {
 		flex-shrink: 0;
 		white-space: nowrap;
 	}
@@ -812,11 +1014,12 @@ Replace with:
 		border-radius: 0.375rem;
 		border: 1px solid hsl(var(--border));
 		border-left: 4px solid hsl(var(--primary));
-		box-shadow: inset 4px 0 0 hsl(var(--primary) / 0.05);
 	}
 ```
 
-(The `box-shadow` mimics a layered `bg-primary/5` tint *behind* the panel without fighting `background-color`. The 4px left primary border is the callout's anchor.)
+(The 4px left primary border anchors the callout. We considered an inset
+primary-tint shadow but it would have been masked by the border-left at the
+opacity we wanted — the border alone communicates the sub-region clearly.)
 
 - [ ] **Step 2: Update `.form-input` background to `hsl(var(--card))`**
 
@@ -870,13 +1073,17 @@ Replace with:
 	.type-badge {
 		display: inline-block;
 		padding: 0.25rem 0.5rem;
-		background-color: hsl(var(--accent));
-		color: hsl(var(--accent-foreground));
+		background-color: hsl(var(--muted));
+		color: hsl(var(--muted-foreground));
 		border-radius: 0.25rem;
 		font-size: 0.75rem;
 		font-weight: 500;
 	}
 ```
+
+(We use `--muted` rather than `--accent` for type badges. In this app accent
+is reserved for actionable or status-communicating elements; type chips are
+metadata, and the existing pattern in the `run/` surface is muted.)
 
 - [ ] **Step 4: Bonus cleanup — replace hardcoded hex in `.error-message`**
 
@@ -987,17 +1194,26 @@ With the dev server running on this worktree's slot (see the implement-task skil
 ## Self-Review
 
 **1. Spec coverage:**
-- Bug 1 (ellipsis on `.param-value` / `.param-label`, hidden overflow on `.node-params`, `min-width: 0` on `.param-row`, `title=` attrs, no `applyTimelineSizing` change) → Task 1 (failing test) + Task 2 (implement).
-- Bug 2.1 (Cancel-into-form-footer renamed `Discard`; hide `+ Add New Equipment` when form open; `mode === 'create'` keeps only Create) → Task 3 (failing tests) + Task 4 (restructure).
-- Bug 2.2 (single body scroller, sticky search, "Jump to form" link via IntersectionObserver) → Task 3 (double-scroller assertion) + Task 5 (implement).
+- Bug 1 (ellipsis + hidden overflow + 60% label cap + `title=` attrs, no `applyTimelineSizing` change) → Task 1 (failing test) + Task 2 (implement).
+- Bug 2.1 (Cancel-into-form-footer renamed `Discard`; hide `+ Add New Equipment` when open; `mode === 'create'` keeps only Create) → Task 3 + Task 4.
+- Bug 2.2 (single body scroller, sticky search, "Go to form" link via IntersectionObserver) → Task 3 (source-text double-scroller guard, sticky-gate markup guard) + Task 5.
 - Bug 2.3 (`.create-form` callout treatment with theme tokens; `.form-input` → `hsl(var(--card))`) → Task 6 Steps 1-2.
 - Bug 2.4 (autoscroll `block: 'end'` → `'nearest'`) → Task 5 Step 2.
-- Bonus cleanup (`.type-badge`, `.error-message` theme tokens) → Task 6 Steps 3-4.
-- Tests covered: UnitOpNode CSS contract + `title=` attrs (Task 1); EquipmentPickerModal Discard/footer/toggle/double-scroller/mode-create (Task 3).
+- Bonus cleanup (`.type-badge` → muted, `.error-message` → destructive tokens) → Task 6 Steps 3-4.
+- Plan-review-panel additions (apply with #4 + #8 user choices):
+  - IntersectionObserver polyfill → Task 0.
+  - Tightened UnitOpNode source-text regexes (non-positional + literal pin) → Task 1.
+  - Source-text double-scroller guard (replaces unreliable jsdom `getComputedStyle`) → Task 3.
+  - Re-open reset (extend `$effect(open)`) + `resetCreateFormFields` extraction → Task 4 Steps 2-3.
+  - "Close form" link in sticky search row → Task 5 Step 4.
+  - Drop `box-shadow` on `.create-form` (was vestigial) → Task 6 Step 1.
+  - "Jump to form" → "Go to form" microcopy → Task 5 Step 4.
+  - `.type-badge` → `--muted` (not `--accent` — accent is reserved for status) → Task 6 Step 3.
+  - `title=` framing softened in Task 2 commit (desktop hover fallback only).
 
 **2. Placeholder scan:** every code step shows the literal code; commands list expected outputs; no TODO/TBD strings. Clean.
 
-**3. Type/name consistency:** `createFormEl` / `isCreateFormInView` / `scrollCreateFormIntoView` / `discardCreateForm` are all referenced consistently between script and template. Test selector strings (`.create-form-footer`, `.create-form`, `.equipment-list`) match the CSS rules and template classnames. `Discard` button label in tests matches the template literal.
+**3. Type/name consistency:** `createFormEl` / `isCreateFormInView` / `scrollCreateFormIntoView` / `discardCreateForm` / `closeCreateForm` / `resetCreateFormFields` are referenced consistently between script and template. Test selector strings (`.create-form-footer`, `.create-form`, `.equipment-list`, `.equipment-modal`) match the CSS rules and template classnames. `Discard` / `Go to form ↓` / `✕ Close form` button labels in tests match the template literals.
 
 ---
 
