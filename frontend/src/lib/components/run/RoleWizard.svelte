@@ -655,14 +655,14 @@
                     <!-- Legacy fallback for steps without paramSchema -->
                     <div>
                         <label
-                            for="step-value"
+                            for="step-value-input"
                             class="block text-base font-medium text-slate-700 mb-2"
                         >
                             Value / Measurement
                             <span class="text-red-400">*</span>
                         </label>
                         <input
-                            id="step-value"
+                            id="step-value-input"
                             type="text"
                             value={currentData.value || ""}
                             onchange={(e) =>
@@ -683,13 +683,13 @@
                 <!-- Notes -->
                 <div>
                     <label
-                        for="step-notes"
+                        for="step-notes-input"
                         class="block text-base font-medium text-slate-700 mb-2"
                     >
                         Notes & Observations
                     </label>
                     <textarea
-                        id="step-notes"
+                        id="step-notes-input"
                         value={currentData.notes || ""}
                         onchange={(e) => updateNotes(e.currentTarget.value)}
                         onblur={saveStepData}
