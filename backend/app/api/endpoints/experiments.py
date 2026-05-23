@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel as PydanticBaseModel
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -492,6 +492,111 @@ async def update_experiment(
         run_count=run_count,
         lifecycle_status=derive_lifecycle_status(
             exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+        ),
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/conclusion/lock",
+    response_model=ExperimentResponse,
+)
+async def lock_experiment_conclusion(
+    experiment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    exp = await get_or_404(db, Experiment, experiment_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, exp.project_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(403, "Not allowed")
+
+    # GxP signature durability: require profile name. Fall back to "User
+    # {id}" instead of leaking email into the permanent record.
+    profile_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    user_name = profile_name if profile_name else f"User {user.id}"
+
+    # Atomic UPDATE: race-free against concurrent run transitions AND against
+    # concurrent lock attempts (asyncpg returns a row when the WHERE matches;
+    # asyncpg's `result.rowcount` is unreliable for `UPDATE ... RETURNING`,
+    # so we branch on the returned row count via `result.all()`).
+    #
+    # Additional guard: require at least one COMPLETED run. Without this an
+    # experiment whose only runs are ARCHIVED — which reads as DRAFT via
+    # lifecycle_counts_from_runs — could be locked into COMPLETE state, a
+    # contradiction.
+    result = await db.execute(
+        text(
+            """
+            UPDATE experiments
+            SET conclusion_locked_at = NOW(),
+                conclusion_locked_by_id = :user_id,
+                conclusion_locked_by_name = :user_name
+            WHERE id = :exp_id
+              AND conclusion_locked_at IS NULL
+              AND conclusion IS NOT NULL
+              AND length(trim(conclusion)) > 0
+              AND EXISTS (
+                SELECT 1 FROM runs
+                WHERE experiment_id = :exp_id
+                  AND status = 'COMPLETED'
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM runs
+                WHERE experiment_id = :exp_id
+                  AND status IN ('PLANNED', 'ACTIVE', 'EDITED')
+              )
+            RETURNING id, conclusion
+            """
+        ),
+        {"exp_id": exp.id, "user_id": user.id, "user_name": user_name},
+    )
+    rows = result.all()
+    if not rows:
+        # Disambiguate the failure for the client. Re-read the row in the
+        # same transaction; `db.refresh()` reads from snapshot which is
+        # acceptable here because we're branching on already-committed state.
+        await db.refresh(exp)
+        has_completed = await db.scalar(
+            select(func.count(Run.id)).where(
+                Run.experiment_id == exp.id, Run.status == "COMPLETED"
+            )
+        )
+        if exp.conclusion_locked_at is not None:
+            code, message = "ALREADY_LOCKED", "This experiment is already locked. Refresh and try again."
+        elif not (exp.conclusion or "").strip():
+            code, message = "EMPTY_CONCLUSION", "Write a conclusion before locking."
+        elif not has_completed:
+            code, message = "NO_COMPLETED_RUNS", "At least one run must be COMPLETED before locking."
+        else:
+            code, message = "OPEN_RUNS", "This experiment has open runs. Refresh and try again."
+        raise HTTPException(409, {"code": code, "message": message})
+
+    # Atomic audit: log_audit only db.add()s the row. Insert it BEFORE the
+    # single commit so business state and audit row land together. If
+    # log_audit raises, the UPDATE rolls back too. See projects.py for the
+    # established pattern.
+    locked_row = rows[0]
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="conclusion.lock",
+        entity_type="Experiment",
+        entity_id=exp.id,
+        changes={"conclusion_snapshot": locked_row.conclusion},
+    )
+    await db.commit()
+    await db.refresh(exp)
+
+    run_count, live, open_ = await _run_lifecycle_counts(db, experiment_id)
+    return ExperimentResponse(
+        **_experiment_dict(exp),
+        runs=[],
+        run_count=run_count,
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=True,
         ),
     )
 
