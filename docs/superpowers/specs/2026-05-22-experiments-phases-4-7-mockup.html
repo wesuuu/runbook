@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Experiments — Phases 4–7 mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ────────────────────────────────────────────────────────
+       Theme tokens copied verbatim from frontend/src/app.css
+       (lab-glass / default). Keep in sync if app.css changes.
+       ──────────────────────────────────────────────────────── */
+    :root {
+      --bg:           hsl(200 25% 97%);
+      --fg:           hsl(215 40% 12%);
+      --card:         hsl(0 0% 100%);
+      --card-fg:      hsl(215 40% 12%);
+      --muted:        hsl(205 25% 94%);
+      --muted-fg:     hsl(215 15% 42%);
+      --primary:      hsl(195 85% 22%);
+      --primary-fg:   hsl(195 30% 98%);
+      --accent:       hsl(155 70% 38%);
+      --accent-fg:    hsl(155 30% 98%);
+      --destructive:  hsl(355 75% 50%);
+      --border:       hsl(205 22% 87%);
+      --ring:         hsl(195 85% 22%);
+      --grid-dot:     hsl(205 30% 70% / 0.25);
+
+      /* derived */
+      --amber:        hsl(38 92% 50%);
+      --amber-fg:     hsl(38 60% 12%);
+      --amber-bg:     hsl(38 92% 50% / 0.15);
+      --amber-border: hsl(38 92% 50% / 0.35);
+
+      --radius:       0.625rem;
+      --radius-md:    0.375rem;
+      --radius-sm:    0.125rem;
+    }
+
+    * { box-sizing: border-box; border-color: var(--border); }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-feature-settings: "cv11", "ss01";
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      min-height: 100vh;
+      padding: 24px 16px 80px;
+    }
+    .mono { font-family: 'DM Mono', ui-monospace, monospace; }
+
+    /* App shell */
+    .shell {
+      max-width: 1280px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      box-shadow:
+        0 1px 2px hsl(0 0% 0% / 0.06),
+        0 4px 12px hsl(0 0% 0% / 0.04);
+      overflow: hidden;
+    }
+
+    /* Top app nav stub (just for context) */
+    .topnav {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      padding: 12px 28px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .topnav .brand {
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .topnav .navlink {
+      color: var(--muted-fg);
+      text-decoration: none;
+    }
+    .topnav .navlink:hover { color: var(--fg); }
+    .topnav .navlink.active {
+      color: var(--primary);
+      font-weight: 600;
+      position: relative;
+    }
+    .topnav .navlink.active::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: -14px;
+      height: 2px; background: var(--accent); border-radius: 1px;
+    }
+    .topnav .spacer { flex: 1; }
+    .topnav .avatar {
+      width: 30px; height: 30px; border-radius: 9999px;
+      background: var(--primary); color: var(--primary-fg);
+      font-size: 12px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* Detail page header */
+    .page {
+      padding: 24px 32px 0;
+    }
+    .breadcrumb {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; margin-bottom: 10px;
+    }
+    .breadcrumb a { color: var(--primary); text-decoration: none; font-weight: 500; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb .sep { color: var(--muted-fg); }
+    .breadcrumb .exp-id { color: var(--muted-fg); font-weight: 500; }
+
+    .title-row {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 14px;
+    }
+    .title-row h1 {
+      margin: 0;
+      font-size: 26px; font-weight: 700; letter-spacing: -0.015em;
+      line-height: 1.15;
+      flex: 1; min-width: 0;
+      border-bottom: 1px solid transparent;
+      padding-bottom: 2px;
+    }
+
+    /* Pill (status) — re-uses experimentStatusClasses palette logic */
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 9999px;
+      font-size: 12px; font-weight: 600;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      cursor: help;
+    }
+    .pill .aux { opacity: 0.7; font-weight: 400; }
+    .pill-awaiting {
+      background: var(--amber-bg);
+      color: var(--amber-fg);
+      border-color: var(--amber-border);
+    }
+    .pill-in-progress {
+      background: hsl(195 85% 22% / 0.10);
+      color: var(--primary);
+      border-color: hsl(195 85% 22% / 0.25);
+    }
+    .pill-complete {
+      background: hsl(155 70% 38% / 0.12);
+      color: hsl(155 70% 22%);
+      border-color: hsl(155 70% 38% / 0.30);
+    }
+    .pill-draft {
+      background: var(--muted);
+      color: var(--muted-fg);
+      border-color: var(--border);
+    }
+
+    /* Buttons (shadcn-svelte Button) */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      font-size: 13px; font-weight: 600;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+      font-family: inherit;
+    }
+    .btn-primary {
+      background: var(--primary); color: var(--primary-fg);
+    }
+    .btn-primary:hover { filter: brightness(0.92); }
+    .btn-outline {
+      background: transparent; color: var(--fg);
+      border-color: var(--border);
+    }
+    .btn-outline:hover { background: var(--muted); }
+    .btn-ghost {
+      background: transparent; color: var(--fg);
+    }
+    .btn-ghost:hover { background: var(--muted); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    .description {
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--muted-fg);
+      font-size: 13px;
+      padding: 8px 12px;
+      margin-bottom: 22px;
+    }
+
+    /* Two-column body grid */
+    .body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 28px;
+      padding: 8px 32px 36px;
+    }
+    @media (max-width: 1024px) {
+      .body { grid-template-columns: 1fr; }
+    }
+
+    /* Card */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .card-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .card-head h3 {
+      margin: 0;
+      font-size: 14px; font-weight: 600; letter-spacing: -0.005em;
+    }
+    .eyebrow {
+      font-family: 'DM Mono', ui-monospace, monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 10px;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    .muted { color: var(--muted-fg); }
+    .small { font-size: 12px; }
+
+    /* ── Objective block (Phase 1-3, here for context) ── */
+    .obj-q-label { font-size: 11px; font-weight: 500; color: var(--muted-fg); }
+    .obj-q       { font-size: 14px; margin-top: 2px; }
+    .obj-criteria {
+      margin-top: 12px; padding-left: 18px;
+      font-size: 13px;
+    }
+    .obj-criteria li { margin: 2px 0; }
+
+    /* ── Phase 4 — Conditions ── */
+    .cond-toolbar {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .cond-toolbar .toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--muted-fg);
+      cursor: pointer; user-select: none;
+    }
+    .cond-toolbar .toggle input { accent-color: var(--primary); }
+
+    table.cond {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px;
+    }
+    table.cond thead th {
+      text-align: left;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted-fg);
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--muted);
+    }
+    table.cond thead th.run {
+      font-family: 'DM Mono', ui-monospace, monospace;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--fg);
+    }
+    table.cond thead th.run .run-name {
+      display: block;
+      font-size: 12px;
+      color: var(--muted-fg);
+      font-weight: 500;
+      margin-top: 2px;
+      text-transform: none;
+    }
+    table.cond tbody td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    table.cond .step-row td {
+      background: var(--muted);
+      font-weight: 600;
+      color: var(--fg);
+      font-size: 12px;
+    }
+    table.cond .param-name {
+      padding-left: 22px;
+      color: var(--muted-fg);
+    }
+    table.cond .varied-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 9999px;
+      background: var(--accent);
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    table.cond td.val { font-family: 'DM Mono', ui-monospace, monospace; }
+    table.cond td.na  { color: var(--muted-fg); font-family: 'DM Mono', ui-monospace, monospace; }
+    table.cond td.diff { background: hsl(155 70% 38% / 0.05); }
+
+    /* ── Phase 5 — Key results + chart ── */
+    .results-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 18px;
+    }
+    @media (max-width: 900px) {
+      .results-grid { grid-template-columns: 1fr; }
+    }
+    table.kr {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.kr th, table.kr td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    table.kr th {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted-fg); font-weight: 600;
+    }
+    table.kr td.value { font-family: 'DM Mono', ui-monospace, monospace; font-weight: 600; }
+    table.kr tr.best td.value { color: var(--accent); }
+    table.kr tr.best td.run { font-weight: 600; }
+    table.kr td.run a { color: var(--primary); text-decoration: none; }
+    table.kr td.run a:hover { text-decoration: underline; }
+    table.kr .best-tag {
+      margin-left: 6px;
+      font-size: 10px; font-weight: 700;
+      color: var(--accent);
+      background: hsl(155 70% 38% / 0.12);
+      padding: 1px 6px; border-radius: 9999px;
+      vertical-align: middle;
+    }
+
+    .chart-wrap {
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+    }
+    .chart-wrap .chart-title {
+      font-size: 12px; color: var(--muted-fg);
+      margin-bottom: 8px;
+      display: flex; justify-content: space-between; align-items: baseline;
+    }
+    .chart-wrap .chart-title strong { color: var(--fg); }
+    .chart svg { display: block; width: 100%; height: auto; }
+    .chart .axis-text { fill: var(--muted-fg); font-size: 10px; font-family: 'DM Mono', ui-monospace, monospace; }
+    .chart .grid { stroke: var(--border); stroke-width: 1; }
+    .chart .point { fill: var(--primary); stroke: var(--card); stroke-width: 1.5; }
+    .chart .point-best { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+    .chart .trend { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; fill: none; opacity: 0.7; }
+
+    .empty-hint {
+      background: var(--muted);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      color: var(--muted-fg);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    /* ── Phase 5 — Conclusion ── */
+    .conclusion-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .conclusion-locked {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px;
+      background: hsl(155 70% 38% / 0.08);
+      border: 1px solid hsl(155 70% 38% / 0.25);
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      color: hsl(155 70% 22%);
+      margin-top: 10px;
+    }
+    .lock-icon {
+      width: 14px; height: 14px;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .danger-zone-row {
+      margin-top: 10px;
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted-fg);
+    }
+    .gate-warning {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-border);
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      color: var(--amber-fg);
+    }
+
+    /* ── Phase 7 — Observations rail ── */
+    .obs-card {
+      position: sticky;
+      top: 24px;
+    }
+    .obs-flag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 9999px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .obs-flag.observation { background: hsl(195 85% 22% / 0.10); color: var(--primary); }
+    .obs-flag.anomaly { background: var(--amber-bg); color: var(--amber-fg); }
+    .obs-item {
+      position: relative;
+      padding-left: 22px;
+      padding-bottom: 16px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .obs-item:last-child { padding-bottom: 0; }
+    .obs-item::before {
+      content: '';
+      position: absolute;
+      left: 6px; top: 6px;
+      width: 8px; height: 8px;
+      border-radius: 9999px;
+      background: var(--primary);
+      box-shadow: 0 0 0 3px var(--card);
+    }
+    .obs-item.anomaly::before { background: var(--amber); }
+    .obs-item::after {
+      content: '';
+      position: absolute;
+      left: 9px; top: 14px;
+      width: 1px;
+      bottom: -6px;
+      background: var(--border);
+    }
+    .obs-item:last-child::after { display: none; }
+    .obs-meta {
+      font-size: 11px; color: var(--muted-fg);
+      margin-top: 2px;
+    }
+    .obs-meta a { color: var(--primary); text-decoration: none; }
+    .obs-meta a:hover { text-decoration: underline; }
+
+    /* Card-stat-strip on top (compact) */
+    .progress-strip {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .seg {
+      height: 8px; flex: 1; min-width: 8px;
+      border-radius: 2px;
+      background: var(--muted);
+    }
+    .seg.normal { background: var(--accent); }
+    .seg.dev    { background: var(--amber); }
+    .seg.abort  { background: var(--destructive); }
+    .seg.planned{ background: var(--muted); border: 1px solid var(--border); }
+
+    /* Annotation labels for the mock so the reader can map UI → spec section */
+    .anno {
+      position: relative;
+    }
+    .anno::before {
+      content: attr(data-anno);
+      position: absolute;
+      top: -10px; right: 12px;
+      font-family: 'DM Mono', ui-monospace, monospace;
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: var(--accent); color: var(--accent-fg);
+      padding: 2px 8px;
+      border-radius: 9999px;
+      z-index: 1;
+    }
+
+    /* Footnote legend */
+    .legend {
+      max-width: 1280px;
+      margin: 28px auto 0;
+      padding: 16px 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 12px;
+      color: var(--muted-fg);
+    }
+    .legend strong { color: var(--fg); }
+    .legend ul { margin: 6px 0 0; padding-left: 18px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <!-- Top app nav stub -->
+    <div class="topnav">
+      <div class="brand">Batchrite</div>
+      <a class="navlink" href="#">Dashboard</a>
+      <a class="navlink active" href="#">Experiments</a>
+      <a class="navlink" href="#">Library</a>
+      <a class="navlink" href="#">AI Chat</a>
+      <div class="spacer"></div>
+      <div class="avatar">AL</div>
+    </div>
+
+    <!-- Page header -->
+    <div class="page">
+      <nav class="breadcrumb">
+        <a href="#">Projects</a>
+        <span class="sep">›</span>
+        <a href="#">CHO-K1 Titer Optimization</a>
+        <span class="sep">›</span>
+        <span class="exp-id mono">EXP-3b1a92c4</span>
+      </nav>
+
+      <div class="title-row">
+        <h1>Glucose setpoint sweep — day 12 titer</h1>
+        <span class="pill pill-awaiting" title="Status is derived from runs and the conclusion lock — all runs complete, conclusion not locked yet.">
+          Awaiting conclusion <span class="aux">(auto)</span>
+        </span>
+        <button class="btn btn-outline btn-sm" title="Generates a PDF bundle of objective, conditions, results, conclusion, and observations.">
+          ⤓ Export summary
+        </button>
+        <button class="btn btn-primary btn-sm">+ Add run</button>
+      </div>
+
+      <div class="description">
+        Short description (preserved from Phases 1–3): five-arm setpoint sweep to identify the day-12 titer optimum on the CHO-K1 baseline media.
+      </div>
+    </div>
+
+    <!-- Body two-column -->
+    <div class="body">
+      <!-- ────────── Main column ────────── -->
+      <div>
+        <!-- Objective (Phase 1–3, here for visual context) -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="eyebrow">Phase 1–3 · existing</div>
+              <h3>Objective</h3>
+            </div>
+            <button class="btn btn-ghost btn-sm">Edit</button>
+          </div>
+          <div>
+            <div class="obj-q-label">The question</div>
+            <div class="obj-q">Does raising the glucose setpoint from 4 g/L to 8 g/L increase day-12 titer on CHO-K1?</div>
+          </div>
+          <div style="margin-top: 14px;">
+            <div class="obj-q-label">Success criteria</div>
+            <ul class="obj-criteria">
+              <li>≥ 15% titer uplift at the best setpoint vs. baseline.</li>
+              <li>No more than 1 run completed with deviations.</li>
+            </ul>
+          </div>
+
+          <!-- Progress strip preview (Phase 1–3 RunProgressBar) -->
+          <div style="margin-top: 18px;">
+            <div class="obj-q-label" style="margin-bottom: 6px;">Runs · 5 / 5</div>
+            <div class="progress-strip">
+              <div class="seg normal" title="run-1 · completed normal"></div>
+              <div class="seg normal" title="run-2 · completed normal"></div>
+              <div class="seg dev"    title="run-3 · completed w/ deviations"></div>
+              <div class="seg normal" title="run-4 · completed normal"></div>
+              <div class="seg normal" title="run-5 · completed normal"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Phase 4 — Conditions ── -->
+        <div class="card anno" data-anno="Phase 4 · Conditions">
+          <div class="card-head">
+            <div>
+              <div class="eyebrow">Design matrix</div>
+              <h3>Conditions <span class="muted small" style="font-weight: 400;"> · varied parameters across the 5 runs</span></h3>
+            </div>
+            <div class="cond-toolbar">
+              <label class="toggle"><input type="checkbox" /> Show constants</label>
+            </div>
+          </div>
+
+          <table class="cond">
+            <thead>
+              <tr>
+                <th>Step / Parameter</th>
+                <th class="run">RUN-1<span class="run-name">baseline</span></th>
+                <th class="run">RUN-2<span class="run-name">5 g/L</span></th>
+                <th class="run">RUN-3<span class="run-name">6 g/L</span></th>
+                <th class="run">RUN-4<span class="run-name">7 g/L</span></th>
+                <th class="run">RUN-5<span class="run-name">8 g/L</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="step-row">
+                <td colspan="6">Seeding</td>
+              </tr>
+              <tr>
+                <td class="param-name"><span class="varied-dot"></span>seed density</td>
+                <td class="val diff">1.0×10⁵ cells/mL</td>
+                <td class="val diff">1.0×10⁵ cells/mL</td>
+                <td class="val diff">1.2×10⁵ cells/mL</td>
+                <td class="val diff">1.0×10⁵ cells/mL</td>
+                <td class="val diff">1.0×10⁵ cells/mL</td>
+              </tr>
+
+              <tr class="step-row">
+                <td colspan="6">Feed</td>
+              </tr>
+              <tr>
+                <td class="param-name"><span class="varied-dot"></span>glucose setpoint</td>
+                <td class="val diff">4 g/L</td>
+                <td class="val diff">5 g/L</td>
+                <td class="val diff">6 g/L</td>
+                <td class="val diff">7 g/L</td>
+                <td class="val diff">8 g/L</td>
+              </tr>
+              <tr>
+                <td class="param-name"><span class="varied-dot"></span>feed schedule</td>
+                <td class="val diff">bolus</td>
+                <td class="val diff">bolus</td>
+                <td class="val diff">bolus</td>
+                <td class="val diff">continuous</td>
+                <td class="val diff">continuous</td>
+              </tr>
+
+              <tr class="step-row">
+                <td colspan="6">Harvest</td>
+              </tr>
+              <tr>
+                <td class="param-name"><span class="varied-dot"></span>harvest day</td>
+                <td class="val diff">12 d</td>
+                <td class="val diff">12 d</td>
+                <td class="val diff">12 d</td>
+                <td class="val diff">14 d</td>
+                <td class="na">—</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="small muted" style="margin-top: 10px;">
+            <span class="varied-dot"></span> Varied across runs &nbsp;·&nbsp; <span class="mono">—</span> param not present in that run's protocol &nbsp;·&nbsp; 14 constants hidden
+          </div>
+        </div>
+
+        <!-- ── Phase 5 — Results ── -->
+        <div class="card anno" data-anno="Phase 5 · Results">
+          <div class="card-head">
+            <div>
+              <div class="eyebrow">Best uplift</div>
+              <h3>Results <span class="muted small" style="font-weight: 400;"> · key result vs. condition</span></h3>
+            </div>
+            <button class="btn btn-ghost btn-sm">Edit key results</button>
+          </div>
+
+          <div class="results-grid">
+            <!-- Key results table -->
+            <div>
+              <table class="kr">
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Condition</th>
+                    <th style="text-align: right;">day-12 titer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="run"><a href="#">RUN-1 · baseline</a></td>
+                    <td class="mono small muted">glucose = 4 g/L</td>
+                    <td class="value" style="text-align: right;">2.10 g/L</td>
+                  </tr>
+                  <tr>
+                    <td class="run"><a href="#">RUN-2</a></td>
+                    <td class="mono small muted">glucose = 5 g/L</td>
+                    <td class="value" style="text-align: right;">2.34 g/L</td>
+                  </tr>
+                  <tr>
+                    <td class="run"><a href="#">RUN-3</a></td>
+                    <td class="mono small muted">glucose = 6 g/L</td>
+                    <td class="value" style="text-align: right;">2.51 g/L</td>
+                  </tr>
+                  <tr class="best">
+                    <td class="run"><a href="#">RUN-4</a><span class="best-tag">+24%</span></td>
+                    <td class="mono small muted">glucose = 7 g/L</td>
+                    <td class="value" style="text-align: right;">2.61 g/L</td>
+                  </tr>
+                  <tr>
+                    <td class="run"><a href="#">RUN-5</a></td>
+                    <td class="mono small muted">glucose = 8 g/L</td>
+                    <td class="value" style="text-align: right;">2.42 g/L</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="small muted" style="margin-top: 8px;">
+                Per-run key result is set on the run detail page. Empty when not entered.
+              </div>
+            </div>
+
+            <!-- Chart -->
+            <div class="chart-wrap">
+              <div class="chart-title">
+                <strong>day-12 titer</strong>
+                <span>X · glucose setpoint &nbsp;·&nbsp; Y · g/L</span>
+              </div>
+              <div class="chart">
+                <svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Scatter chart: glucose setpoint vs day-12 titer">
+                  <!-- grid -->
+                  <line class="grid" x1="40" y1="20" x2="40" y2="170" />
+                  <line class="grid" x1="40" y1="170" x2="310" y2="170" />
+                  <line class="grid" x1="40" y1="60" x2="310" y2="60" stroke-dasharray="2 4" />
+                  <line class="grid" x1="40" y1="100" x2="310" y2="100" stroke-dasharray="2 4" />
+                  <line class="grid" x1="40" y1="140" x2="310" y2="140" stroke-dasharray="2 4" />
+                  <!-- Y labels -->
+                  <text class="axis-text" x="34" y="172" text-anchor="end">1.8</text>
+                  <text class="axis-text" x="34" y="142" text-anchor="end">2.0</text>
+                  <text class="axis-text" x="34" y="102" text-anchor="end">2.3</text>
+                  <text class="axis-text" x="34" y="62"  text-anchor="end">2.6</text>
+                  <text class="axis-text" x="34" y="22"  text-anchor="end">2.9</text>
+                  <!-- X labels -->
+                  <text class="axis-text" x="60"  y="185" text-anchor="middle">4</text>
+                  <text class="axis-text" x="125" y="185" text-anchor="middle">5</text>
+                  <text class="axis-text" x="190" y="185" text-anchor="middle">6</text>
+                  <text class="axis-text" x="255" y="185" text-anchor="middle">7</text>
+                  <text class="axis-text" x="305" y="185" text-anchor="middle">8</text>
+                  <!-- trend (visual aid) -->
+                  <path class="trend" d="M 60,135 Q 175,55 305,90" />
+                  <!-- points -->
+                  <circle class="point"      cx="60"  cy="125" r="5" />
+                  <circle class="point"      cx="125" cy="100" r="5" />
+                  <circle class="point"      cx="190" cy="75"  r="5" />
+                  <circle class="point-best" cx="255" cy="60"  r="6.5" />
+                  <circle class="point"      cx="305" cy="84"  r="5" />
+                </svg>
+              </div>
+              <div class="small muted" style="margin-top: 6px;">
+                Dashed line is an LOESS hint, not a fit. Best run highlighted in accent.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Phase 5 — Conclusion ── -->
+        <div class="card anno" data-anno="Phase 5 · Conclusion + lock">
+          <div class="card-head">
+            <div>
+              <div class="eyebrow">Recorded outcome</div>
+              <h3>Conclusion</h3>
+            </div>
+            <button class="btn btn-ghost btn-sm">Edit</button>
+          </div>
+
+          <div class="conclusion-box">
+            <p style="margin: 0 0 8px;">
+              The 7 g/L glucose setpoint produced the highest day-12 titer at <strong>2.61 g/L</strong>
+              (+24% vs. baseline), exceeding the 15% success criterion. At 8 g/L the titer regressed
+              to 2.42 g/L, consistent with substrate-inhibition.
+            </p>
+            <p style="margin: 0;">
+              <strong>Recommendation:</strong> adopt 7 g/L as the new default setpoint pending one
+              confirmation run on a fresh seed train.
+            </p>
+          </div>
+
+          <!-- Two states shown stacked so reviewers can see both. In product they alternate. -->
+
+          <!-- State A: not yet locked (this is the current state for this mock) -->
+          <div class="gate-warning">
+            <strong>Completion gate.</strong> This experiment will move to <strong>Complete</strong>
+            once you lock the conclusion. Edits after lock will require a reason (audit-trailed).
+          </div>
+          <div class="danger-zone-row">
+            <span>Last edited 2 min ago by Ada Lovelace</span>
+            <button class="btn btn-primary btn-sm">🔒 Lock conclusion</button>
+          </div>
+
+          <!-- State B (preview of locked state) -->
+          <div style="margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--border);">
+            <div class="small muted" style="margin-bottom: 6px;">↓ <em>Preview of locked state (for mock review only)</em></div>
+            <div class="conclusion-locked">
+              <span class="lock-icon">🔒</span>
+              Locked 2026-05-22 14:38 UTC by <strong>Ada Lovelace</strong>. Edits require a reason.
+            </div>
+            <div class="danger-zone-row">
+              <span class="muted small">An admin can unlock with a reason.</span>
+              <button class="btn btn-outline btn-sm">Edit conclusion (with reason)</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ────────── Right rail ────────── -->
+      <div>
+        <!-- ── Phase 7 — Observations timeline ── -->
+        <div class="card obs-card anno" data-anno="Phase 7 · Observations">
+          <div class="card-head">
+            <div>
+              <div class="eyebrow">Across all runs</div>
+              <h3>Observations</h3>
+            </div>
+            <span class="muted small">7</span>
+          </div>
+
+          <div class="obs-item">
+            <span class="obs-flag observation">obs</span>
+            <span>“Cell density at day 6 visibly higher in RUN-4 than RUN-1 under the scope.”</span>
+            <div class="obs-meta">
+              Ada Lovelace · today 14:02 · <a href="#">RUN-4</a>
+            </div>
+          </div>
+
+          <div class="obs-item anomaly">
+            <span class="obs-flag anomaly">anomaly</span>
+            <span>“Glucose probe drift — recalibrated mid-day, value re-entered as 5.1 g/L.”</span>
+            <div class="obs-meta">
+              Grace Hopper · today 11:18 · <a href="#">RUN-3</a>
+            </div>
+          </div>
+
+          <div class="obs-item">
+            <span class="obs-flag observation">obs</span>
+            <span>“Best-looking morphology so far on the 7 g/L arm.”</span>
+            <div class="obs-meta">
+              Ada Lovelace · yesterday 17:44 · <a href="#">RUN-4</a>
+            </div>
+          </div>
+
+          <div class="obs-item anomaly">
+            <span class="obs-flag anomaly">anomaly</span>
+            <span>“Brief stir-rate dip (~20 s) during feed switch.”</span>
+            <div class="obs-meta">
+              Linus Pauling · 2026-05-19 09:11 · <a href="#">RUN-4</a>
+            </div>
+          </div>
+
+          <div class="obs-item">
+            <span class="obs-flag observation">obs</span>
+            <span>“No visible osmotic stress at the higher setpoints (informal scope check).”</span>
+            <div class="obs-meta">
+              Ada Lovelace · 2026-05-18 16:02 · <a href="#">RUN-5</a>
+            </div>
+          </div>
+
+          <div class="obs-item">
+            <span class="obs-flag observation">obs</span>
+            <span>“Hypothesis recorded — expecting plateau near 7 g/L based on prior CHO-K1 lit.”</span>
+            <div class="obs-meta">
+              Ada Lovelace · 2026-05-15 09:30 · <em>experiment</em>
+            </div>
+          </div>
+
+          <div class="obs-item" style="opacity: 0.7;">
+            <span class="muted small">+ 1 older observation</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <strong>What's where</strong>
+    <ul>
+      <li><strong>Header</strong> — new <em>Awaiting conclusion</em> amber pill (Phase 5 lifecycle state) and the new <em>Export summary</em> button (Phase 6, sync PDF).</li>
+      <li><strong>Conditions</strong> — Phase 4, auto-detected varied params from each run's snapshotted graph. Value + unit from the unit-op paramSchema; <span class="mono">—</span> when the step doesn't exist in that run's protocol.</li>
+      <li><strong>Results</strong> — Phase 5, key-result table + scatter chart. Hand-rolled SVG (no chart-lib dep). Empty state shown when no run has a key result entered.</li>
+      <li><strong>Conclusion</strong> — Phase 5, editable until locked. Lock action gates the COMPLETE transition. Locked state shows lock signature + admin-unlock path. Edit-after-lock requires a reason.</li>
+      <li><strong>Observations</strong> — Phase 7, right-rail timeline. Aggregates experiment notes with <span class="mono">observation</span>/<span class="mono">anomaly</span> flags and all linked runs' notes flagged <span class="mono">anomaly</span>. Reverse-chronological with source link back to the run.</li>
+    </ul>
+  </div>
+</body>
+</html>
