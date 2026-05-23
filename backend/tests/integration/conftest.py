@@ -1,5 +1,6 @@
 """Integration test fixtures for F-0043 experiments."""
 
+import uuid
 from datetime import datetime, timezone
 
 import pytest_asyncio
@@ -14,6 +15,66 @@ from app.models.iam import (
     User,
 )
 from app.models.runs import Experiment, Run, RunStatus
+
+
+def _ts(offset_seconds: int = 0) -> str:
+    """ISO timestamp offset by `offset_seconds` from now."""
+    from datetime import timedelta
+    dt = datetime.now(timezone.utc) - timedelta(seconds=offset_seconds)
+    return dt.isoformat()
+
+
+@pytest_asyncio.fixture
+async def experiment_with_notes(db_session, test_project):
+    """Experiment with one observation note + one run with an anomaly note."""
+    exp = Experiment(
+        name="Experiment With Notes",
+        project_id=test_project.id,
+        slug="integ-exp-with-notes",
+        status="ACTIVE",
+        notes=[
+            {
+                "id": str(uuid.uuid4()),
+                "content": "Observed pH drift",
+                "author_id": str(uuid.uuid4()),
+                "author_name": "Alice",
+                "created_at": _ts(200),
+                "flags": ["observation"],
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "content": "Anomalous temperature spike",
+                "author_id": str(uuid.uuid4()),
+                "author_name": "Bob",
+                "created_at": _ts(100),
+                "flags": ["anomaly"],
+            },
+        ],
+    )
+    db_session.add(exp)
+    await db_session.flush()
+
+    run = Run(
+        name="Run A",
+        slug="integ-run-a-notes",
+        project_id=test_project.id,
+        experiment_id=exp.id,
+        status=RunStatus.COMPLETED,
+        notes=[
+            {
+                "id": str(uuid.uuid4()),
+                "content": "Run anomaly observed",
+                "author_id": str(uuid.uuid4()),
+                "author_name": "Carol",
+                "created_at": _ts(50),
+                "flags": ["anomaly"],
+                "run_status": RunStatus.COMPLETED.value,
+            },
+        ],
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return exp
 
 
 @pytest_asyncio.fixture

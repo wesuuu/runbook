@@ -258,3 +258,15 @@ async def test_unlock_409_when_already_unlocked(
         headers=admin_headers,
     )
     assert res.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_observations_endpoint(client, experiment_with_notes, auth_headers):
+    res = await client.get(
+        f"/experiments/{experiment_with_notes.id}/observations",
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert res.headers["cache-control"] == "private, max-age=30"
+    body = res.json()
+    assert "items" in body and "truncated" in body

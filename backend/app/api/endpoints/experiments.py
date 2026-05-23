@@ -6,6 +6,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,7 @@ from app.schemas.runs import (
 )
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission, get_visible_project_ids
+from app.services.experiments.observations import aggregate_observations
 from app.services.experiments.status import (
     derive_lifecycle_status,
     lifecycle_counts_from_runs,
@@ -1013,3 +1015,43 @@ async def delete_experiment_note(
         changes={"note_id": note_id_str},
     )
     await db.commit()
+
+
+# --- Observations ---
+
+
+@router.get("/experiments/{experiment_id}/observations")
+async def get_experiment_observations(
+    experiment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    exp = await get_or_404(db, Experiment, experiment_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, exp.project_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(403, "Not allowed")
+
+    result = await aggregate_observations(db, experiment_id)
+    response = JSONResponse(
+        content={
+            "items": [
+                {
+                    "id": i.id,
+                    "source": i.source,
+                    "source_id": str(i.source_id),
+                    "run_label": i.run_label,
+                    "flag": i.flag,
+                    "body": i.body,
+                    "author_name": i.author_name,
+                    "created_at": i.created_at.isoformat(),
+                }
+                for i in result.items
+            ],
+            "truncated": result.truncated,
+        },
+    )
+    response.headers["Cache-Control"] = "private, max-age=30"
+    return response
