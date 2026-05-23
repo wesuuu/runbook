@@ -16,6 +16,7 @@
         formatDate,
         experimentStatusClasses,
         experimentStatusLabel,
+        experimentStatusTooltip,
     } from '$lib/components/project/projectUtils';
 
     interface ExperimentRow {
@@ -41,7 +42,7 @@
     let createOpen = $state(false);
 
     // Filter state.
-    const FILTERS = ['All', 'In progress', 'Complete', 'Draft'] as const;
+    const FILTERS = ['All', 'In progress', 'Awaiting conclusion', 'Complete', 'Draft'] as const;
     let activeFilter = $state<(typeof FILTERS)[number]>('All');
     let query = $state('');
 
@@ -80,6 +81,8 @@
             const matchesFilter =
                 activeFilter === 'All' ||
                 (activeFilter === 'In progress' && e.lifecycle_status === 'IN_PROGRESS') ||
+                (activeFilter === 'Awaiting conclusion' &&
+                    e.lifecycle_status === 'AWAITING_CONCLUSION') ||
                 (activeFilter === 'Complete' && e.lifecycle_status === 'COMPLETE') ||
                 (activeFilter === 'Draft' && e.lifecycle_status === 'DRAFT');
             const q = query.trim().toLowerCase();
@@ -95,6 +98,10 @@
     const stats = $derived({
         total: experiments.length,
         inProgress: experiments.filter((e) => e.lifecycle_status === 'IN_PROGRESS').length,
+        awaitingConclusion: experiments.filter(
+            (e) => e.lifecycle_status === 'AWAITING_CONCLUSION',
+        ).length,
+        complete: experiments.filter((e) => e.lifecycle_status === 'COMPLETE').length,
         runs: experiments.reduce((sum, e) => sum + e.run_count, 0),
     });
 </script>
@@ -124,7 +131,7 @@
         </div>
     {:else}
         <!-- Stat strip -->
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div class="rounded-lg border border-border bg-card p-4">
                 <p class="text-xs text-muted-foreground">Experiments</p>
                 <p class="mt-1 font-mono text-2xl font-semibold text-foreground">{stats.total}</p>
@@ -132,6 +139,12 @@
             <div class="rounded-lg border border-border bg-card p-4">
                 <p class="text-xs text-muted-foreground">In progress</p>
                 <p class="mt-1 font-mono text-2xl font-semibold text-foreground">{stats.inProgress}</p>
+            </div>
+            <div class="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                <p class="text-xs text-amber-900">Awaiting conclusion</p>
+                <p class="mt-1 font-mono text-2xl font-semibold text-amber-900">
+                    {stats.awaitingConclusion}
+                </p>
             </div>
             <div class="rounded-lg border border-border bg-card p-4">
                 <p class="text-xs text-muted-foreground">Runs across all</p>
@@ -197,7 +210,8 @@
                                         class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold cursor-help {experimentStatusClasses(
                                             e.lifecycle_status,
                                         )}"
-                                        title="Status is derived from this experiment's runs — add or complete runs to advance it."
+                                        title={experimentStatusTooltip(e.lifecycle_status) ??
+                                            "Status is derived from this experiment's runs — add or complete runs to advance it."}
                                     >
                                         {#if e.lifecycle_status === 'IN_PROGRESS'}
                                             <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
