@@ -61,3 +61,5 @@ Some features are gated by env vars so we can ship with them disabled and flip t
 For flags with a frontend half, they must be set on **both** sides to take effect end-to-end. Server-gated flags (no `VITE_*`) only need the backend toggle; the chat UI surfaces or hides the capability based on what the agent emits.
 
 `BATCHRITE_NOTIFICATION_RETENTION_DAYS` (default `90`) bounds the in-app notification table: the recovery loop hard-deletes read notifications older than this window. Set to `0` to disable. (TD-0091b)
+
+`BATCHRITE_NOTIFICATION_EMAIL_ENABLED` (default `true`) gates outbound notification email. Flip to `false` to kill all EMAIL-channel dispatch without touching individual subscriptions — in-app notifications still record. (TD-0091c)
