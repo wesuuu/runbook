@@ -12,6 +12,471 @@
 
 ---
 
+## Review-Panel Addendum (read first — supersedes original task text where it conflicts)
+
+The 5-agent panel (adversarial-risk, db-scalability, dry-reuse, production-ops, ui-ux) reviewed this plan after drafting. The corrections below are **mandatory** and override the original task text where they conflict. Each entry cites the task number, severity, and the exact code/text to use.
+
+### Verified facts (confirmed by reading the codebase)
+
+- `build_context()` is **keyword-only** (`*,` separator, `backend/app/services/protocols/template_engine.py:182-213`); returns `tuple[dict, list[str]]`. **Every parameter added by this plan MUST have a default value.** Tests must call it with kwargs: `build_context(protocol_name="X", roles_with_steps=[...], ...)`, not positionally.
+- `FileStorageService.store_file()` exists (`backend/app/services/core/file_storage.py:37`) and already validates MIME type, size, and uses `resolve_path()` (which has a path-traversal guard at lines 89-92). **There is no `store_bytes` method.**
+- `IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/tiff", "image/webp"}` (file_storage.py:8) — SVG is already excluded; the new explicit SVG reject is belt-and-suspenders.
+- `delete_file()` is **synchronous** (uses `path.unlink()`). Streaming reads must wrap `path.open("rb")` with `asyncio.to_thread`.
+- `Protocol.doc_number` exists on the model. The Jinja `{{ doc_number }}` placeholder does **not** yet exist in the docx templates — Task 13 adds it. Between Task 6 and Task 13, the rendered SOP still has an empty doc-number area; this is acceptable (no regression).
+
+### Per-task corrections
+
+#### Task 2 — `compute_time_offsets` [HIGH]
+
+Cycle handling must emit offsets for the acyclic portion and only flag cycle-participating nodes. Original "return ({}, 'cycle_detected') on any cycle" is wrong — it loses correct data for unrelated branches.
+
+```python
+# Replace cycle handling: after Kahn's algorithm, if remaining = unvisited nodes
+# is non-empty, that set IS the cycle. Return offsets for the topologically
+# processed nodes and a warning identifying the cycle nodes.
+if remaining:
+    logger.warning("compute_time_offsets cycle_detected nodes=%s", sorted(remaining))
+    return offsets, "cycle_detected"  # offsets contains the acyclic portion only
+return offsets, None
+```
+
+Update `test_cycle_logs_warning_and_returns_partial`: graph `a→b→a` + disconnected `c` should yield `offsets["c"] == 0` AND warning emitted.
+
+#### Task 3 — `generate_default_doc_number` [MEDIUM, ops]
+
+Add a structured success log line before return:
+
+```python
+logger.info(
+    "doc_number_generated",
+    extra={"org_id": str(owner_org_id), "doc_number": result},
+)
+```
+
+Also rewrite the MAX query to use indexable ordering (`ORDER BY length(doc_number) DESC, doc_number DESC LIMIT 1` and parse the int in Python) for forward-scalability. The advisory-lock + partial-unique-index guarantee correctness; the query is a perf nit.
+
+#### Task 4 — `validate_image_file` [HIGH]
+
+PIL's `Image.verify()` invalidates the instance and must be called on a freshly-opened image; the original "open → check size → verify" order is broken. Also reject animated/multi-frame formats.
+
+```python
+def validate_image_file(path: Path, content_type: str) -> None:
+    """Magic-byte + pixel-cap + multi-frame guard for image uploads.
+
+    Raises HTTPException(422, "ATTACHMENT_INVALID_IMAGE") on any failure.
+    """
+    if content_type == "image/svg+xml":
+        raise HTTPException(415, "ATTACHMENT_UNSUPPORTED_TYPE")
+    expected = _MIME_TO_PIL_FORMAT.get(content_type)
+    if expected is None:
+        raise HTTPException(415, "ATTACHMENT_UNSUPPORTED_TYPE")
+    # First pass: verify on a fresh open. verify() invalidates the instance.
+    try:
+        with Image.open(path) as img:
+            img.verify()
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as e:
+        raise HTTPException(422, "ATTACHMENT_INVALID_IMAGE") from e
+    # Second pass: reopen for header inspection (verify did not give us size).
+    try:
+        with Image.open(path) as img:
+            if img.format != expected:
+                raise HTTPException(422, "ATTACHMENT_INVALID_IMAGE")
+            w, h = img.size
+            if w * h > _MAX_PIXELS:
+                raise HTTPException(422, "ATTACHMENT_INVALID_IMAGE")
+            # Reject animated WebP / multi-frame TIFF (each frame bypasses pixel cap).
+            if getattr(img, "n_frames", 1) > 1:
+                raise HTTPException(422, "ATTACHMENT_INVALID_IMAGE")
+    except (UnidentifiedImageError, OSError) as e:
+        raise HTTPException(422, "ATTACHMENT_INVALID_IMAGE") from e
+```
+
+Add a test fixture `truncated.png` (PNG header + 100 bytes garbage body) to verify the `Image.verify()` guard actually catches partial corruption.
+
+#### Task 6 — Migration [BLOCKER + HIGH]
+
+**BLOCKER — Add a runbook comment at the top of the migration file:**
+
+```python
+"""Add protocol_attachments + doc_number partial unique index + backfill.
+
+OPERATOR RUNBOOK — read before running in production:
+
+1. Preflight aborts if duplicate (owner_org_id, doc_number) pairs exist.
+   To find them:
+       SELECT owner_org_id, doc_number, count(*)
+       FROM protocols
+       WHERE doc_number IS NOT NULL
+       GROUP BY owner_org_id, doc_number HAVING count(*) > 1;
+2. Resolving a duplicate is a regulated-data mutation. Per 21 CFR §58.130(e),
+   it requires Study Director or QAU sign-off on which protocol keeps the
+   original number. Log the resolution decision in the audit_log BEFORE
+   re-running the migration.
+3. Large-table backfill: if SELECT count(*) FROM protocols WHERE doc_number
+   IS NULL exceeds 5000, batch the UPDATE in 500-row chunks to avoid a
+   minutes-long table-wide lock. The single-statement form below is safe
+   for &le; 5000 rows.
+4. CONCURRENTLY index creation can leave an INVALID index on partial failure.
+   Detect with: SELECT indexname FROM pg_index JOIN pg_class ON
+   pg_class.oid = pg_index.indexrelid WHERE NOT indisvalid;
+   If found, DROP the invalid index manually before re-running.
+"""
+```
+
+**HIGH — Lock the table before preflight, and detect invalid indexes:**
+
+```python
+# In upgrade(), BEFORE the duplicate-check query:
+op.execute(sa.text("LOCK TABLE protocols IN SHARE MODE"))
+
+# AFTER backfill, before CONCURRENTLY block:
+op.execute(sa.text("""
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            WHERE c.relname = 'ix_protocols_owner_org_doc_number' AND NOT i.indisvalid
+        ) THEN
+            DROP INDEX ix_protocols_owner_org_doc_number;
+        END IF;
+    END $$;
+"""))
+
+# Then the CONCURRENTLY create in autocommit_block as before.
+```
+
+#### Task 7 — Attachment upload endpoint [BLOCKER × 4 + HIGH × 2]
+
+**BLOCKER B2 — Reuse `FileStorageService.store_file` instead of inventing `store_bytes`:**
+
+```python
+# Wrap incoming raw bytes in an UploadFile-compatible object or read directly.
+# Simplest: validate Content-Length first, then delegate to store_file().
+content_length = request.headers.get("Content-Length")
+if content_length and int(content_length) > MAX_FIGURE_SIZE_BYTES:
+    raise HTTPException(413, "ATTACHMENT_TOO_LARGE")
+
+storage = FileStorageService()
+try:
+    stored = await storage.store_file(
+        file,
+        base_dir="protocol_attachments",
+        org_id=protocol.owner_org_id,
+        path_segments=[str(protocol_id)],
+        allowed_types=IMAGE_MIME_TYPES,
+        max_size_bytes=MAX_FIGURE_SIZE_BYTES,
+    )
+except HTTPException:
+    raise  # store_file already raises 413/422 with correct details
+```
+
+Convert `store_file`'s generic 422 unsupported-type into the stable `ATTACHMENT_UNSUPPORTED_TYPE` 415 / `ATTACHMENT_TOO_LARGE` 413 codes by re-mapping. Easier: don't use store_file's allowlist and do MIME check before calling.
+
+**BLOCKER B3 — Sanitize filename before persist:**
+
+```python
+from pathlib import PurePosixPath
+safe_filename = PurePosixPath(file.filename or "upload").name  # strips ../, /etc/, etc.
+# persist safe_filename into ProtocolAttachment.filename, NOT file.filename
+```
+
+**BLOCKER B4 — Atomic 50-cap via per-protocol advisory lock:**
+
+```python
+# After permission check, before count:
+await db.execute(
+    sa.text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+    {"k": f"proto_attach:{protocol_id}"},
+)
+count = await db.scalar(
+    sa.select(sa.func.count()).select_from(ProtocolAttachment).where(
+        ProtocolAttachment.protocol_id == protocol_id,
+        ProtocolAttachment.deleted == False,  # noqa: E712
+    )
+)
+if count >= MAX_FIGURES_PER_PROTOCOL:
+    raise HTTPException(422, "ATTACHMENT_LIMIT_REACHED")
+# Insert happens within the same transaction → cap is enforced atomically.
+```
+
+**BLOCKER B5 — Already addressed by the Content-Length pre-check above (B2).**
+
+**HIGH H5 — Explicit SVG reject (defense in depth):** the MIME allowlist already excludes SVG, but add an explicit `if content_type == "image/svg+xml": raise 415` line BEFORE delegating, so the test for SVG is unambiguous.
+
+**HIGH — Cleanup on validation failure:**
+
+```python
+# Validate AFTER store (we need the path), but wrap in try/except to delete on fail:
+try:
+    validate_image_file(storage.resolve_path(stored.relative_path), content_type)
+except HTTPException:
+    storage.delete_file(stored.relative_path)
+    raise
+```
+
+**LOW — Use `detail="ATTACHMENT_NOT_FOUND"` (uppercase, matches namespace) in `_get_attachment_or_404`.**
+
+#### Task 8 — PATCH/DELETE/GET endpoints [HIGH × 3]
+
+**HIGH H7 — Commit before file delete:**
+
+```python
+# Change order in DELETE:
+row.deleted = True
+await db.flush()
+await log_audit(...)
+await db.commit()         # 1. Commit first; if this fails, file is intact
+storage.delete_file(row.file_path)  # 2. Then delete; if this fails, file orphaned (recoverable)
+```
+
+**HIGH H8 — Async file open in StreamingResponse:**
+
+```python
+import asyncio
+
+async def _iter():
+    path = storage.resolve_path(row.file_path)
+    # storage.resolve_path already includes path-traversal guard (lines 89-92);
+    # additional belt-and-suspenders check:
+    if not path.resolve().is_relative_to(storage.storage_root.resolve()):
+        raise HTTPException(403, "ATTACHMENT_FORBIDDEN")
+    # Wrap sync file IO so it doesn't block the event loop:
+    def _read_all() -> bytes:
+        return path.read_bytes()
+    data = await asyncio.to_thread(_read_all)
+    yield data
+```
+
+(Plain `read_bytes` is acceptable given the 10MB cap; if larger files become possible, switch to `aiofiles` with chunked yield.)
+
+#### Task 9 — Create wiring + 409 surfacing [BLOCKER + HIGH × 2]
+
+**BLOCKER B6 — Apply the same 409 handler to UPDATE endpoint:** the protocol PATCH/PUT endpoint must catch `IntegrityError` for `doc_number` conflicts identically.
+
+**HIGH H9 — Use pgcode instead of error-message string match:**
+
+```python
+from asyncpg.exceptions import UniqueViolationError
+
+try:
+    await db.commit()
+except IntegrityError as exc:
+    await db.rollback()
+    orig = getattr(exc, "orig", None)
+    if isinstance(orig, UniqueViolationError) and orig.constraint_name == "ix_protocols_owner_org_doc_number":
+        # 409 path
+        ...
+    raise
+```
+
+**HIGH H10 — Don't leak `existing.name` across permission boundary:**
+
+```python
+# Before returning the conflicting protocol's name, check viewer's permission:
+has_view = await check_permission(db, current_user.id, ObjectType.PROTOCOL, existing.id, PermissionLevel.VIEW)
+existing_name = existing.name if has_view else None
+raise HTTPException(409, {"error": "DOC_NUMBER_TAKEN", "by_protocol_name": existing_name})
+```
+
+#### Task 10 — Template rewriter [HIGH × 3]
+
+**HIGH H11 — `or` → `and` in idempotency test:**
+
+```python
+# Replace:
+assert "Instruction" not in body or "{%tr for step" not in body  # WRONG
+# With:
+assert "Instruction" not in body and "{%tr for step" not in body  # both must be absent
+```
+
+**HIGH H12 — LFS pointer-as-docx sentinel test:**
+
+```python
+def test_templates_are_real_binaries_not_lfs_pointers():
+    for tpl in ("sop_default.docx", "batch_record_default.docx"):
+        p = TEMPLATES_DIR / tpl
+        assert p.stat().st_size > 10_000, (
+            f"{tpl} is {p.stat().st_size} bytes — likely an LFS pointer file. "
+            f"Run `git lfs install && git lfs pull` and re-check."
+        )
+```
+
+**MEDIUM — Rollback path:** in the Task 10 commit message, document the recovery command:
+
+```
+git show <commit-parent>:backend/app/templates/protocols/sop_default.docx > /tmp/rollback.docx
+```
+
+#### Task 12 — Unified figure swap [WARNING from dry-reuse]
+
+Add an explicit step to the task: **"Delete lines 733-741 of template_engine.py (the old top-level figure-swap loop)."** Without this, both old and new helpers run, double-processing context.
+
+#### Task 13 — `build_context` enhancements [BLOCKER + HIGH × 3]
+
+**BLOCKER B7 — Test signature MUST use kwargs:** `build_context()` is keyword-only. Every test in this task must call it as:
+
+```python
+def test_doc_number_threaded_into_context():
+    ctx, _ = build_context(
+        protocol_name="X",
+        roles_with_steps=[...],  # or flat_steps=
+        # ... all kwargs only, never positional
+    )
+    assert ctx["doc_number"] == "SOP-0042"
+```
+
+**HIGH — Every new parameter to `build_context` MUST have a default** (`doc_number: str | None = None`, `time_enabled: bool = False`, `attachments_by_node: dict | None = None`, etc.). Required by 7 existing callers (`protocol_pdfs.py` ×4, `runs.py` ×2, internal ×1).
+
+**HIGH H13 — Deepcopy step data + deterministic figure ordering:**
+
+```python
+import copy
+
+def _step_ctx(step_node, *, time_offset, figures):
+    step = copy.deepcopy(step_node)
+    step["time_offset"] = time_offset
+    step["figures"] = figures
+    return step
+```
+
+For the attachment pre-fetch query, use `ORDER BY created_at, id` (id as tiebreaker for same-millisecond uploads).
+
+#### Task 14 — N+1 fix + Batch Record parity [HIGH × 3]
+
+**HIGH H14 — N+1 guard test must work with asyncpg.** The `sync_engine` event listener is a no-op on async engines. Replace with:
+
+```python
+# Capture queries by overriding the engine's _connection_cls.execute, or use
+# the more reliable pattern: count entries in asyncpg's query log via the
+# 'do_execute' event on the sync_engine of the AsyncEngine pool adapter.
+# Simplest reliable approach: use a sqlalchemy LoggingConnection / engine.echo
+# and grep, OR assert via the application-level query-counter middleware
+# (see backend/app/core/instrumentation.py — verify it exists; if not, use
+# session_factory's `before_cursor_execute` on the test-only sync engine).
+
+# Acceptable alternative: assert renderer behavior end-to-end via psql
+# log_statement = 'all' + reading the postgres log in a docker-compose CI rig.
+```
+
+If a reliable async query-counter doesn't exist in the codebase, the test must instead use an `AsyncMock` on `db.execute` and count call sites. **Do not commit a `sync_engine` listener test — it will silently pass.**
+
+**HIGH H16 — Apply the bulk pre-fetch to ALL render paths.** Verify `protocol_pdfs.py` ×4 + `runs.py` ×2 + any batch-record handler — every site that calls `build_context()` must use the same pre-fetched `attachments_by_node` dict.
+
+**HIGH H15 — Structured render-duration log:**
+
+```python
+import time
+start = time.monotonic()
+try:
+    pdf_bytes = await run_in_threadpool(render_to_docx, ...)
+    logger.info(
+        "sop_render_complete",
+        extra={"protocol_id": str(protocol_id), "duration_ms": int((time.monotonic() - start) * 1000)},
+    )
+except Exception:
+    logger.error("sop_render_failed", extra={"protocol_id": str(protocol_id)}, exc_info=True)
+    raise
+```
+
+#### Task 15 — Sample renderer + baselines [MEDIUM × 2]
+
+- Pin LibreOffice version in CI (or document in test docstring), since `pdftoppm` output varies across versions.
+- Add `@pytest.mark.skipif(shutil.which("soffice") is None, reason="LibreOffice not installed")` on tests that invoke PDF conversion. Structural docx XML asserts do not need this skip.
+- Strengthen the visual gate with coarse automated checks: `assert pdf_pages >= 2` and `assert pdf.stat().st_size > 50_000` — catches catastrophic template regressions without env sensitivity.
+
+#### Task 17 — `ProtocolSidebar` doc_number editor [BLOCKER + HIGH × 2]
+
+**BLOCKER B8 — Explicit field label:**
+
+```svelte
+<div class="flex flex-col gap-1">
+  <label class="text-xs text-muted-foreground">Doc #</label>
+  <!-- existing ghost-button → input swap pattern below -->
+</div>
+```
+
+**HIGH H17 — Remove the word "debounced":** blur fires once, debounce on blur is a no-op. Use plain blur/Enter, matching `saveName` / `saveDescription` verbatim.
+
+**HIGH — Empty-state placeholder:** when `doc_number` is null on existing protocols, render `SOP-NNNN (auto on save)` as muted placeholder text (`text-muted-foreground`). Avoid showing a blank ghost-button.
+
+#### Task 18 — `InspectorFigures` panel [BLOCKER + HIGH × 2 + MEDIUM × 3]
+
+**BLOCKER B9 — Wrap delete in `ConfirmDialog`:**
+
+```svelte
+<script lang="ts">
+  import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
+  let confirmDeleteId = $state<string | null>(null);
+</script>
+
+<button onclick={() => (confirmDeleteId = att.id)}>×</button>
+
+{#if confirmDeleteId}
+  <ConfirmDialog
+    title="Delete this figure?"
+    description="This permanently removes the image and its caption. Cannot be undone."
+    confirmLabel="Delete"
+    destructive
+    onconfirm={() => { deleteFigure(confirmDeleteId!); confirmDeleteId = null; }}
+    oncancel={() => (confirmDeleteId = null)}
+  />
+{/if}
+```
+
+**HIGH — Empty-state copy:**
+
+```svelte
+{#if attachments.length === 0}
+  <div class="rounded border-2 border-dashed border-muted p-6 text-center text-sm text-muted-foreground">
+    Drop an image here or click to attach<br />
+    <span class="text-xs">PNG / JPEG / WebP up to 10MB</span>
+  </div>
+{/if}
+```
+
+**HIGH — Surface `ATTACHMENT_LIMIT_REACHED`:** count badge in the panel header (`FIGURES ({count} / 50)`) and toast on 422 with copy "Figure limit reached (50). Remove an existing figure to add more."
+
+**MEDIUM — Caption placement:** move caption input below the grid, not per-thumbnail (80px width truncates copy). One caption row for the selected thumbnail.
+
+**MEDIUM — Touch target size:** delete overlay button must be ≥ 44×44px (gloved-hand minimum), not 24×24.
+
+**MEDIUM — Revoke blob URLs in `$effect` cleanup** to prevent memory leak across long editor sessions:
+
+```svelte
+$effect(() => {
+  return () => {
+    for (const url of Object.values(thumbUrls)) URL.revokeObjectURL(url);
+  };
+});
+```
+
+#### Task 19 — End-to-end smoke test [MEDIUM]
+
+The Jinja-in-caption test must actually assert the literal text:
+
+```python
+def test_caption_with_jinja_braces_is_literal():
+    # Upload an attachment with caption "{{ pwn }}".
+    # Render the SOP, extract text from the docx.
+    # Assert: the literal string "{{ pwn }}" appears verbatim in the rendered output.
+    rendered_text = extract_docx_text(pdf_or_docx_path)
+    assert "{{ pwn }}" in rendered_text
+```
+
+### TECH_DEBT follow-up ClickUp tickets to create before merge
+
+The implementer must `clickup_create_task` for each of these (list `TECH_DEBT`) and reference the IDs in comments next to the relevant code:
+
+1. **Streaming upload** — replace in-memory `await file.read()` in `FileStorageService.store_file`; bounded by current 10MB cap but multiplies under concurrency.
+2. **Soft-delete purge job for `protocol_attachments`** — evaluate retention window per 21 CFR §58.195.
+3. **Per-org / per-protocol storage quota** — total-bytes ceiling beyond the per-file cap.
+4. **Orphaned attachment cleanup on graph-node delete** — attachments referencing a node_id no longer in the graph.
+5. **Rate-limit middleware on `POST /protocols/{id}/attachments`** — prevent rapid-fire upload abuse.
+6. **Perceptual-hash CI gate for preview PNGs** — Layer 3 of the visual verification scheme; pinned LibreOffice version + pHash threshold.
+
+---
+
 ## Pre-flight (one-time, in the worktree)
 
 Before Task 1, in the worktree shell:
