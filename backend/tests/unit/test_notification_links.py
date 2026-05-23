@@ -193,3 +193,154 @@ async def test_batches_mixed_types_in_one_call(
     assert urls[n_run.id] == "/test-org/projects/test-project/runs/r-2"
     assert urls[n_proto.id] == "/test-org/protocols/pr-2"
     assert urls[n_bad.id] is None
+
+
+# -- TD-0091d: payload.step_id deep-link anchoring ----------------------
+
+
+async def _run_notif_with_payload(
+    db_session, test_user, run, payload
+):
+    """Create + flush a run-typed Notification with a specific payload."""
+    n = Notification(
+        user_id=test_user.id,
+        event_type="STEP_DEVIATION",
+        entity_type="run",
+        entity_id=run.id,
+        title="t",
+        message="m",
+        payload=payload,
+    )
+    db_session.add(n)
+    await db_session.flush()
+    return n
+
+
+async def test_run_notification_with_step_id_appends_fragment(
+    db_session, test_user, test_project
+):
+    run = Run(name="R", slug="r-step", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _run_notif_with_payload(
+        db_session, test_user, run, {"step_id": "abc-123"}
+    )
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == (
+        "/test-org/projects/test-project/runs/r-step#step-abc-123"
+    )
+
+
+async def test_run_notification_with_empty_payload_has_no_fragment(
+    db_session, test_user, test_project
+):
+    run = Run(name="R", slug="r-empty", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _run_notif_with_payload(db_session, test_user, run, {})
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/runs/r-empty"
+
+
+async def test_run_notification_with_empty_step_id_has_no_fragment(
+    db_session, test_user, test_project
+):
+    run = Run(name="R", slug="r-emp-id", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _run_notif_with_payload(
+        db_session, test_user, run, {"step_id": ""}
+    )
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/runs/r-emp-id"
+
+
+async def test_run_notification_with_non_string_step_id_is_ignored(
+    db_session, test_user, test_project
+):
+    run = Run(name="R", slug="r-int", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _run_notif_with_payload(
+        db_session, test_user, run, {"step_id": 42}
+    )
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/runs/r-int"
+
+
+async def test_run_notification_with_overlong_step_id_is_ignored(
+    db_session, test_user, test_project
+):
+    run = Run(name="R", slug="r-long", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _run_notif_with_payload(
+        db_session, test_user, run, {"step_id": "x" * 65}
+    )
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/runs/r-long"
+
+
+async def test_run_notification_with_invalid_chars_in_step_id_is_ignored(
+    db_session, test_user, test_project
+):
+    run = Run(name="R", slug="r-bad", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _run_notif_with_payload(
+        db_session, test_user, run, {"step_id": "bad id"}
+    )
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/runs/r-bad"
+
+
+async def test_run_notification_with_xss_step_id_is_ignored(
+    db_session, test_user, test_project
+):
+    run = Run(name="R", slug="r-xss", project_id=test_project.id)
+    db_session.add(run)
+    await db_session.flush()
+    n = await _run_notif_with_payload(
+        db_session, test_user, run, {"step_id": "<script>"}
+    )
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == "/test-org/projects/test-project/runs/r-xss"
+
+
+async def test_experiment_notification_with_step_id_has_no_fragment(
+    db_session, test_user, test_project
+):
+    exp = Experiment(name="E", slug="e-step", project_id=test_project.id)
+    db_session.add(exp)
+    await db_session.flush()
+    n = Notification(
+        user_id=test_user.id,
+        event_type="STEP_DEVIATION",
+        entity_type="experiment",
+        entity_id=exp.id,
+        title="t",
+        message="m",
+        payload={"step_id": "abc"},
+    )
+    db_session.add(n)
+    await db_session.flush()
+
+    urls = await resolve_notification_urls(db_session, [n], test_user.id)
+
+    assert urls[n.id] == (
+        "/test-org/projects/test-project/experiments/e-step"
+    )
