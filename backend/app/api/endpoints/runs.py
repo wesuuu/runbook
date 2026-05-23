@@ -79,7 +79,7 @@ from app.services.protocols.template_engine import (
     render_to_pdf,
 )
 from app.services.protocols.validation import assert_no_branch_errors
-from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
+from app.services.runs.graph import derive_field_label, index_steps, iter_unit_op_nodes
 from app.services.runs.overrides import (
     apply_node_overrides,
     diff_unit_op_node,
@@ -113,6 +113,33 @@ def _run_status_str(run_obj: Run) -> str:
     """Extract run status as a plain string."""
     s = run_obj.status
     return s if isinstance(s, str) else s.value
+
+
+async def _collect_step_deviation_recipients(
+    db: AsyncSession,
+    run_obj: Run,
+    actor_user_id: UUID,
+) -> list[UUID]:
+    """TD-0091c: return run assignees (excluding actor) who currently have VIEW
+    permission on the run. Filters out users whose VIEW was revoked but whose
+    RunRoleAssignment row was not cleaned up."""
+    rows = (
+        await db.execute(
+            select(RunRoleAssignment.user_id)
+            .where(RunRoleAssignment.run_id == run_obj.id)
+            .distinct()
+        )
+    ).scalars().all()
+    recipients: list[UUID] = []
+    for uid in rows:
+        if uid == actor_user_id:
+            continue
+        ok = await check_permission(
+            db, uid, ObjectType.RUN, run_obj.id, PermissionLevel.VIEW,
+        )
+        if ok:
+            recipients.append(uid)
+    return recipients
 
 
 # --- Runs ---
@@ -648,10 +675,8 @@ async def update_run(
             old_exec = run_obj.execution_data or {}
             new_exec = update_data.execution_data
 
-            # Build step name + param schema lookup from graph
-            _node_map: dict[str, dict] = {
-                n["id"]: n.get("data", {}) for n in iter_unit_op_nodes(run_obj.graph)
-            }
+            step_index = index_steps(run_obj.graph)
+            deviated_step_ids: list[str] = []  # TD-0091c
 
             for step_id, new_step in new_exec.items():
                 if not isinstance(new_step, dict):
@@ -660,7 +685,7 @@ async def update_run(
                 if not isinstance(old_step, dict):
                     continue
 
-                node_data = _node_map.get(step_id, {})
+                node_data = step_index.nodes.get(step_id, {})
                 step_name = node_data.get("label", step_id)
                 param_schema_props = (node_data.get("paramSchema") or {}).get(
                     "properties", {}
@@ -668,6 +693,18 @@ async def update_run(
 
                 old_results = old_step.get("results", {})
                 new_results = new_step.get("results", {})
+
+                # TD-0091c: track any results/value/notes deviation for the
+                # post-loop STEP_DEVIATION notification.
+                if (
+                    (old_results and new_results != old_results)
+                    or (
+                        old_step.get("value")
+                        and new_step.get("value") != old_step.get("value")
+                    )
+                    or (old_step.get("notes", "") != new_step.get("notes", ""))
+                ):
+                    deviated_step_ids.append(step_id)
                 # Only set original_results if not already set (preserve
                 # the very first completion data) and results differ
                 if (
@@ -752,6 +789,34 @@ async def update_run(
                         },
                     )
 
+            # TD-0091c: emit one STEP_DEVIATION notification per request,
+            # naming the first deviated step + count of additional changes.
+            if deviated_step_ids:
+                first_step_id = deviated_step_ids[0]
+                additional = len(deviated_step_ids) - 1
+                recipients = await _collect_step_deviation_recipients(
+                    db, run_obj, actor_user_id=user.id,
+                )
+                if recipients:
+                    project = (await db.execute(
+                        select(Project).where(Project.id == run_obj.project_id)
+                    )).scalar_one_or_none()
+                    if project is not None:
+                        background_tasks.add_task(
+                            send_notification,
+                            "STEP_DEVIATION",
+                            project.organization_id,
+                            "run",
+                            run_obj.id,
+                            recipients,
+                            {
+                                "run_name": run_obj.name,
+                                "step_name": step_index.name_for(first_step_id),
+                                "edited_by": user.full_name or user.email,
+                                "additional_count": additional,
+                            },
+                        )
+
     # Audit log step completions and note changes by diffing execution_data
     # (note changes for EDITED status are handled in the block above)
     if update_data.execution_data is not None:
@@ -759,11 +824,7 @@ async def update_run(
         new_exec = update_data.execution_data
         target_status = new_status or current_status
 
-        # Build step name lookup from graph
-        _name_map: dict[str, str] = {
-            n["id"]: n.get("data", {}).get("label", n["id"])
-            for n in iter_unit_op_nodes(run_obj.graph)
-        }
+        step_index = index_steps(run_obj.graph)
 
         for step_id, step_data in new_exec.items():
             old_step = old_exec.get(step_id, {})
@@ -780,7 +841,7 @@ async def update_run(
                     run_obj.id,
                     {
                         "step_id": step_id,
-                        "step_name": _name_map.get(step_id, step_id),
+                        "step_name": step_index.name_for(step_id),
                         "results": step_data.get("results", {}),
                     },
                 )
@@ -791,7 +852,7 @@ async def update_run(
                     "STEP_UNCOMPLETE",
                     "Run",
                     run_obj.id,
-                    {"step_id": step_id, "step_name": _name_map.get(step_id, step_id)},
+                    {"step_id": step_id, "step_name": step_index.name_for(step_id)},
                 )
 
             # Track step-level note changes (skip EDITED — handled above)
@@ -809,7 +870,7 @@ async def update_run(
                         run_obj.id,
                         {
                             "step_id": step_id,
-                            "step_name": _name_map.get(step_id, step_id),
+                            "step_name": step_index.name_for(step_id),
                             "field": "notes",
                             "field_label": "Notes",
                             "old_value": old_notes,
@@ -885,7 +946,6 @@ async def update_run(
         if new_status == "ACTIVE" and assigned_user_ids:
             background_tasks.add_task(
                 send_notification,
-                db=db,
                 event_type="RUN_STARTED",
                 org_id=project.organization_id,
                 entity_type="run",
@@ -900,7 +960,6 @@ async def update_run(
             if assigned_user_ids:
                 background_tasks.add_task(
                     send_notification,
-                    db=db,
                     event_type="RUN_COMPLETED",
                     org_id=project.organization_id,
                     entity_type="run",
@@ -926,8 +985,8 @@ async def update_run(
             if unanalyzed_count > 0:
                 # Notify assigned users + the completing user
                 recipients = list(set(assigned_user_ids) | {user.id})
-                await send_notification(
-                    db=db,
+                background_tasks.add_task(
+                    send_notification,
                     event_type="PENDING_IMAGE_ANALYSIS",
                     org_id=project.organization_id,
                     entity_type="run",
@@ -1346,7 +1405,6 @@ async def create_run_role_assignment(
 
             background_tasks.add_task(
                 send_notification,
-                db=db,
                 event_type="ROLE_REASSIGNED",
                 org_id=project.organization_id,
                 entity_type="run",
@@ -1392,7 +1450,6 @@ async def create_run_role_assignment(
     project = proj.scalar_one()
     background_tasks.add_task(
         send_notification,
-        db=db,
         event_type="ROLE_ASSIGNED",
         org_id=project.organization_id,
         entity_type="run",
@@ -1412,6 +1469,7 @@ async def create_run_role_assignment(
 async def delete_run_role_assignment(
     run_id: UUID,
     assignment_id: UUID,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
@@ -1445,6 +1503,18 @@ async def delete_run_role_assignment(
         "lane_node_id": assignment.lane_node_id,
         "role_name": assignment.role_name,
     }
+    removed_user_id = assignment.user_id
+    role_name = assignment.role_name
+
+    # Fetch the run (with its project, for org_id) before we delete.
+    run_obj = (
+        await db.execute(
+            select(Run).where(Run.id == run_id)
+        )
+    ).scalar_one_or_none()
+    project = (
+        await db.execute(select(Project).where(Project.id == run_obj.project_id))
+    ).scalar_one() if run_obj is not None else None
 
     await db.delete(assignment)
     await db.commit()
@@ -1456,6 +1526,25 @@ async def delete_run_role_assignment(
         assignment_id,
         assignment_data,
     )
+
+    # TD-0091c: notify the removed user.
+    if run_obj is not None and project is not None:
+        from app.services.core.notifications import send_notification
+
+        background_tasks.add_task(
+            send_notification,
+            "ROLE_UNASSIGNED",
+            project.organization_id,
+            "run",
+            run_obj.id,
+            [removed_user_id],
+            {
+                "run_name": run_obj.name,
+                "role_name": role_name,
+                "removed_by": user.full_name or user.email,
+            },
+        )
+
     return {"ok": True}
 
 

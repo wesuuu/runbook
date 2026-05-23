@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 logger = logging.getLogger(__name__)
 from sqlalchemy import and_, func, select
@@ -522,6 +522,7 @@ async def search_users(
 async def create_invitation(
     org_id: UUID,
     body: InvitationCreate,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
@@ -579,15 +580,37 @@ async def create_invitation(
     await db.commit()
     await db.refresh(invitation)
 
-    # Send invitation email (fire-and-forget)
-    from app.services.core.email_service import send_invitation_email
+    # TD-0091c: existing-user invites go through the notification channel
+    # pipeline (in-app + EMAIL via user channel). New-email invites still
+    # use direct send because the recipient has no user / no channel.
+    if invitation.invited_user_id is not None:
+        from app.services.core.notifications import send_notification
 
-    await send_invitation_email(
-        to_email=body.email,
-        org_name=org.name,
-        inviter_name=user.full_name or user.email,
-        token=token_str,
-    )
+        background_tasks.add_task(
+            send_notification,
+            "INVITE_SENT",
+            org_id,
+            "organization",
+            org.id,
+            [invitation.invited_user_id],
+            {
+                "org_name": org.name,
+                "invited_by": user.full_name or user.email,
+                "accept_url": (
+                    f"{settings.backend_url}/auth/accept-invite?token={token_str}"
+                ),
+                "expires_at": invitation.expires_at.date().isoformat(),
+            },
+        )
+    else:
+        from app.services.core.email_service import send_invitation_email
+
+        await send_invitation_email(
+            to_email=body.email,
+            org_name=org.name,
+            inviter_name=user.full_name or user.email,
+            token=token_str,
+        )
 
     return invitation
 
@@ -682,6 +705,7 @@ async def decline_invitation(
 )
 async def resend_invitation(
     invitation_id: UUID,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
@@ -706,15 +730,35 @@ async def resend_invitation(
     await db.commit()
     await db.refresh(invitation)
 
-    # Resend email
-    from app.services.core.email_service import send_invitation_email
+    # TD-0091c: route resends the same way as creates.
+    if invitation.invited_user_id is not None:
+        from app.services.core.notifications import send_notification
 
-    await send_invitation_email(
-        to_email=invitation.invited_email,
-        org_name=org.name,
-        inviter_name=user.full_name or user.email,
-        token=invitation.token,
-    )
+        background_tasks.add_task(
+            send_notification,
+            "INVITE_SENT",
+            invitation.organization_id,
+            "organization",
+            invitation.organization_id,
+            [invitation.invited_user_id],
+            {
+                "org_name": org.name,
+                "invited_by": user.full_name or user.email,
+                "accept_url": (
+                    f"{settings.backend_url}/auth/accept-invite?token={invitation.token}"
+                ),
+                "expires_at": invitation.expires_at.date().isoformat(),
+            },
+        )
+    else:
+        from app.services.core.email_service import send_invitation_email
+
+        await send_invitation_email(
+            to_email=invitation.invited_email,
+            org_name=org.name,
+            inviter_name=user.full_name or user.email,
+            token=invitation.token,
+        )
 
     return invitation
 

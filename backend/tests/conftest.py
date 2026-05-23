@@ -89,6 +89,27 @@ def _reset_chat_agent_cache():
 
 
 @pytest.fixture(autouse=True)
+def _suppress_default_channel_provisioning(monkeypatch, request):
+    """TD-0091c: silence the after_insert default-channel drain in tests.
+
+    The drain submits a coroutine to the task_runner which opens its own
+    AsyncSessionLocal — pointed at the production DB, not the test DB —
+    and runs after the test's event loop has often already closed,
+    leaking unawaited coroutine warnings. Tests that need to exercise
+    the drain itself opt out with @pytest.mark.real_default_channel_drain.
+    """
+    if request.node.get_closest_marker("real_default_channel_drain"):
+        return
+    import app.db.session as db_session_module
+
+    monkeypatch.setattr(
+        db_session_module,
+        "_drain_pending_default_channels",
+        lambda session: session.info.update({"pending_default_channels": []}),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _disable_stripe_globally(monkeypatch):
     """Ensure Stripe is unconfigured for all tests by default.
 
@@ -193,6 +214,9 @@ async def db_session(test_engine):
     import importlib
 
     _send_message_module = importlib.import_module("app.services.ai.send_message")
+    _notifications_module = importlib.import_module(
+        "app.services.core.notifications"
+    )
 
     test_writer_factory = async_sessionmaker(
         bind=conn,
@@ -201,11 +225,14 @@ async def db_session(test_engine):
     )
     real_factory = _send_message_module.AsyncSessionLocal
     _send_message_module.AsyncSessionLocal = test_writer_factory
+    real_notif_factory = _notifications_module.AsyncSessionLocal
+    _notifications_module.AsyncSessionLocal = test_writer_factory
 
     try:
         yield session
     finally:
         _send_message_module.AsyncSessionLocal = real_factory
+        _notifications_module.AsyncSessionLocal = real_notif_factory
         await session.close()
         await txn.rollback()
         await conn.close()

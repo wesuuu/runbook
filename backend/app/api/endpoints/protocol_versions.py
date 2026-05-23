@@ -455,7 +455,6 @@ async def submit_protocol_for_approval(
             role = "QAU"  # ANY_ORG_QAU fan-out
         background_tasks.add_task(
             send_notification,
-            db=db,
             event_type="PROTOCOL_APPROVAL_REQUESTED",
             org_id=org_id,
             entity_type="protocol",
@@ -592,7 +591,6 @@ async def approve_protocol(
             if author_id and author_id != user.id:
                 background_tasks.add_task(
                     send_notification,
-                    db=db,
                     event_type="PROTOCOL_APPROVED",
                     org_id=project.organization_id,
                     entity_type="protocol",

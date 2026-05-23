@@ -21,6 +21,7 @@ class FormattedMessage:
     body: str
     recipient: str  # email, channel name, webhook URL, etc.
     url: str = ""  # deep link back into the app
+    html_body: str | None = None  # rich-HTML body for EmailChannel
 
 
 class BaseChannel(ABC):

@@ -237,7 +237,6 @@ async def on_run_completed(
             continue
         background_tasks.add_task(
             send_notification,
-            db=db,
             event_type="RUN_SIGNOFF_REQUESTED",
             org_id=org_id,
             entity_type="run",
@@ -272,7 +271,6 @@ async def on_run_reopened(
             continue
         background_tasks.add_task(
             send_notification,
-            db=db,
             event_type="RUN_SIGNOFF_CANCELLED",
             org_id=org_id,
             entity_type="run",

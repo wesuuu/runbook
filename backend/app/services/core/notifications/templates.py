@@ -1,8 +1,65 @@
 """Message templates for each notification event type.
 
-Each function returns (title, body) given a context dict.
-Context keys are documented per function.
+Each function returns a TemplateResult (title, body, optional html_body)
+given a context dict. Context keys are documented per function.
 """
+
+import html as _html
+from dataclasses import dataclass
+from urllib.parse import urlparse
+
+from app.core.config import settings
+
+
+@dataclass(frozen=True)
+class TemplateResult:
+    title: str
+    body: str
+    html_body: str | None = None
+
+
+def invite_html(
+    org_name: str,
+    invited_by: str,
+    accept_url: str,
+    expires_at: str | None = None,
+) -> str:
+    """Shared HTML body for INVITE_SENT. Used by both the channel pipeline
+    and the direct send_invitation_email path so the recipient sees byte-
+    identical markup. All dynamic values are HTML-escaped; accept_url must
+    point at the configured backend host (no open-redirect / phishing)."""
+    parsed = urlparse(accept_url)
+    base = urlparse(settings.backend_url)
+    if (parsed.scheme, parsed.netloc) != (base.scheme, base.netloc):
+        raise ValueError(f"Invalid accept_url host: {parsed.netloc}")
+
+    safe_org = _html.escape(org_name)
+    safe_inviter = _html.escape(invited_by)
+    safe_url = _html.escape(accept_url)
+    expiry_line = (
+        f'<p style="color: #999; font-size: 12px;">'
+        f"This invitation expires on {_html.escape(expires_at)}."
+        f"</p>"
+        if expires_at
+        else ""
+    )
+    return f"""<div style="font-family: sans-serif; max-width: 600px;">
+  <h2 style="color: #1a1a1a;">You've been invited to join {safe_org}</h2>
+  <p style="color: #333; line-height: 1.6;">
+    {safe_inviter} has invited you to join <strong>{safe_org}</strong> on Batchrite.
+  </p>
+  <p style="margin: 24px 0;">
+    <a href="{safe_url}"
+       style="background: #2563eb; color: white; padding: 12px 24px;
+              border-radius: 6px; text-decoration: none; font-weight: 500;">
+      Accept Invitation
+    </a>
+  </p>
+  <p style="color: #666; font-size: 13px;">
+    Or copy this link: {safe_url}
+  </p>
+  {expiry_line}
+</div>"""
 
 
 def role_assigned(ctx: dict, personal: bool = True) -> tuple[str, str]:
@@ -78,10 +135,21 @@ def run_completed(ctx: dict, personal: bool = True) -> tuple[str, str]:
     return title, body
 
 
-def invite_sent(ctx: dict, personal: bool = True) -> tuple[str, str]:
-    """ctx: org_name, invited_by"""
-    title = f"Invitation to {ctx['org_name']}"
-    body = f"You've been invited to join {ctx['org_name']} " f"by {ctx['invited_by']}."
+def invite_sent(ctx: dict, personal: bool = True):
+    """ctx: org_name, invited_by, accept_url (optional), expires_at (optional).
+
+    Returns a TemplateResult with html_body when accept_url is supplied;
+    otherwise a 2-tuple (legacy in-app-only callers)."""
+    org_name = ctx["org_name"]
+    invited_by = ctx["invited_by"]
+    title = f"Invitation to {org_name}"
+    body = f"You've been invited to join {org_name} by {invited_by}."
+    accept_url = ctx.get("accept_url")
+    if accept_url:
+        html_body = invite_html(
+            org_name, invited_by, accept_url, ctx.get("expires_at"),
+        )
+        return TemplateResult(title=title, body=body, html_body=html_body)
     return title, body
 
 
@@ -128,12 +196,17 @@ def protocol_approval_requested(ctx: dict, personal: bool = True) -> tuple[str, 
 
 
 def step_deviation(ctx: dict, personal: bool = True) -> tuple[str, str]:
-    """ctx: run_name, step_name, edited_by"""
+    """ctx: run_name, step_name, edited_by, additional_count (optional)"""
     title = f"Step deviation on {ctx['run_name']}"
     body = (
         f"Step \"{ctx['step_name']}\" on run {ctx['run_name']} was edited "
         f"post-completion by {ctx['edited_by']}."
     )
+    extra = ctx.get("additional_count", 0)
+    if extra:
+        body += (
+            f" ({extra} other step{'s' if extra != 1 else ''} also changed.)"
+        )
     return title, body
 
 
@@ -162,17 +235,6 @@ def offline_sync_pending(ctx: dict, personal: bool = True) -> tuple[str, str]:
             f"{ctx.get('user_name', 'A user')} has an active field session "
             f"for run {ctx['run_name']}."
         )
-    return title, body
-
-
-def offline_value_discrepancy(ctx: dict, personal: bool = True) -> tuple[str, str]:
-    """ctx: run_name, step_name, field_name, manual_value, ai_value"""
-    title = f"Value discrepancy on {ctx['run_name']}"
-    body = (
-        f"Step \"{ctx['step_name']}\" field \"{ctx['field_name']}\" "
-        f"has a discrepancy: manual value {ctx['manual_value']} "
-        f"vs AI value {ctx['ai_value']}. Please review."
-    )
     return title, body
 
 
@@ -214,7 +276,6 @@ TEMPLATES = {
     "STEP_DEVIATION": step_deviation,
     "PENDING_IMAGE_ANALYSIS": pending_image_analysis,
     "OFFLINE_SYNC_PENDING": offline_sync_pending,
-    "OFFLINE_VALUE_DISCREPANCY": offline_value_discrepancy,
     "RUN_SIGNOFF_REQUESTED": run_signoff_requested,
     "RUN_SIGNOFF_CANCELLED": run_signoff_cancelled,
 }

@@ -173,6 +173,15 @@ class Settings(BaseSettings):
     # disable the sweep entirely. Env: BATCHRITE_NOTIFICATION_RETENTION_DAYS.
     notification_retention_days: int = 90
 
+    # TD-0091c: ops kill-switch — flip to False to silence all outbound
+    # email deliveries without DB access. EmailChannel.send raises
+    # PermanentError when this is False, which records FAILED deliveries
+    # with a "kill-switch" detail string but never attempts SMTP.
+    notification_email_enabled: bool = True
+    # TD-0091c: List-Unsubscribe mailto target. We ship mailto-only (no
+    # one-click POST until a signed-token endpoint exists).
+    notification_unsubscribe_mailto: str = "unsubscribe@batchrite.com"
+
     # Docling extractor (TD-0085) — paths to the standalone ext/ project's
     # interpreter and CLI entrypoint. Defaults assume the repo layout
     # (backend/ and ext/ are siblings); override via env vars in deploy.

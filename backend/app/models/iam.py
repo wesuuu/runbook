@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    event as _sa_event,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -342,3 +343,24 @@ class VerificationToken(Base, UUIDMixin, TimestampMixin):
         DateTime(timezone=True), nullable=False
     )
     used: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+
+@_sa_event.listens_for(User, "after_insert")
+def _queue_default_channel_provisioning(mapper, connection, target):
+    """TD-0091c: queue per-user default-channel provisioning.
+
+    Pushes the new user's id onto a per-session list. The request-end
+    hook in `app.db.session.get_db` drains the list after the request's
+    transaction commits and fires off the provisioning task.
+
+    Uses session.info (per-Session) rather than connection.info
+    (per-Connection) so the queue doesn't leak across pooled requests
+    and survives rollback only via the explicit drain-skip below.
+    """
+    from sqlalchemy.orm import Session as _OrmSession
+
+    session = _OrmSession.object_session(target)
+    if session is None:
+        return
+    pending = session.info.setdefault("pending_default_channels", [])
+    pending.append(target.id)

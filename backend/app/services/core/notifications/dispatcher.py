@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.iam import User
 from app.models.notifications import (
     DeliveryStatus,
     NotificationChannel,
@@ -63,21 +64,95 @@ async def dispatch_event(
         )
         deliveries.append(delivery)
 
-    # 2. User-level channels for each recipient
+    # 2. User-level channels — single IN query for all recipients, grouped.
+    all_user_channels = await _get_subscribed_channels(
+        db, event_type, user_ids=recipients
+    )
+    channels_by_user: dict[UUID, list[NotificationChannel]] = {}
+    for ch in all_user_channels:
+        if ch.user_id is not None:
+            channels_by_user.setdefault(ch.user_id, []).append(ch)
+
+    user_cache: dict[UUID, User | None] = {}
     for user_id in recipients:
-        user_channels = await _get_subscribed_channels(db, event_type, user_id=user_id)
-        for channel_model in user_channels:
+        for channel_model in channels_by_user.get(user_id, []):
+            recipient = message_personal.recipient
+            if channel_model.channel_type == "EMAIL":
+                resolved_recipient, user = await _resolve_personal_recipient(
+                    db, channel_model, user_cache
+                )
+                # Verified-email gate (TD-0091c): only auto-provisioned
+                # is_default channels are gated. User-managed channels are
+                # best-effort and skip the gate so deliberate aliases work.
+                if channel_model.is_default and (
+                    user is None
+                    or not (
+                        user.email_verified
+                        or getattr(user, "oauth_email_verified", False)
+                    )
+                ):
+                    logger.info(
+                        "Skipping email for unverified user %s on event %s",
+                        channel_model.user_id,
+                        event_type,
+                    )
+                    continue
+                recipient = resolved_recipient
+
             msg = FormattedMessage(
                 event_type=message_personal.event_type,
                 title=message_personal.title,
                 body=message_personal.body,
-                recipient=message_personal.recipient,
+                recipient=recipient,
                 url=message_personal.url,
+                html_body=message_personal.html_body,
             )
             delivery = await _dispatch_to_channel(db, channel_model, msg, event_type)
             deliveries.append(delivery)
 
     return deliveries
+
+
+async def _get_user_cached(
+    db: AsyncSession,
+    user_id: UUID,
+    cache: dict[UUID, User | None],
+) -> User | None:
+    if user_id in cache:
+        return cache[user_id]
+    user = await db.get(User, user_id)
+    cache[user_id] = user
+    return user
+
+
+async def _resolve_personal_recipient(
+    db: AsyncSession,
+    channel: NotificationChannel,
+    user_cache: dict[UUID, User | None],
+) -> tuple[str, User | None]:
+    """Per-channel recipient + resolved user for a user-level dispatch.
+
+    For is_default=True EMAIL channels we ignore config['to'] (tamper-proof)
+    and resolve from User.email. For user-managed EMAIL channels we honor
+    config['to']. Non-EMAIL channels (Slack/Teams/etc.) route via their own
+    config (webhook URL etc.) and return an empty recipient.
+    """
+    if channel.channel_type != "EMAIL":
+        # Still resolve the user (for context like the verified-email gate),
+        # but the recipient field is unused by these channels.
+        user = None
+        if channel.user_id is not None:
+            user = await _get_user_cached(db, channel.user_id, user_cache)
+        return "", user
+
+    user: User | None = None
+    if channel.user_id is not None:
+        user = await _get_user_cached(db, channel.user_id, user_cache)
+
+    if channel.is_default and user is not None:
+        return user.email or "", user
+    config_to = (channel.config or {}).get("to", "")
+    return config_to, user
 
 
 async def retry_pending(db: AsyncSession) -> int:
@@ -140,8 +215,14 @@ async def _get_subscribed_channels(
     event_type: str,
     org_id: UUID | None = None,
     user_id: UUID | None = None,
+    user_ids: list[UUID] | None = None,
 ) -> list[NotificationChannel]:
-    """Find enabled channels with an active subscription for this event."""
+    """Find enabled channels with an active subscription for this event.
+
+    `user_id` and `user_ids` are mutually exclusive overloads — pass either.
+    `user_ids` issues a single IN query, used by the dispatcher's per-event
+    user-channel fan-out so STEP_DEVIATION on a 10-assignee run isn't N+1.
+    """
     stmt = (
         select(NotificationChannel)
         .join(NotificationSubscription)
@@ -153,6 +234,10 @@ async def _get_subscribed_channels(
         stmt = stmt.where(NotificationChannel.org_id == org_id)
     if user_id is not None:
         stmt = stmt.where(NotificationChannel.user_id == user_id)
+    elif user_ids is not None:
+        if not user_ids:
+            return []
+        stmt = stmt.where(NotificationChannel.user_id.in_(user_ids))
 
     result = await db.execute(stmt)
     return list(result.scalars().all())

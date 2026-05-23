@@ -4,26 +4,36 @@ Usage in endpoints:
     from app.services.core.notifications import send_notification
 
     background_tasks.add_task(
-        send_notification, db, event_type, org_id, entity_type,
+        send_notification, event_type, org_id, entity_type,
         entity_id, recipients, context,
     )
+
+TD-0091c amendment A: send_notification opens its own AsyncSessionLocal
+session so it stays valid after the request session is closed by FastAPI's
+BackgroundTasks teardown.
 """
 
 import logging
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.db.session import AsyncSessionLocal
 from app.models.notifications import Notification
 from app.services.core.notifications.channels.base import FormattedMessage
 from app.services.core.notifications.dispatcher import dispatch_event
-from app.services.core.notifications.templates import TEMPLATES
+from app.services.core.notifications.templates import TEMPLATES, TemplateResult
+
+
+def _unpack_template(result) -> tuple[str, str, str | None]:
+    """Accept either a TemplateResult or a legacy (title, body) tuple."""
+    if isinstance(result, TemplateResult):
+        return result.title, result.body, result.html_body
+    title, body = result
+    return title, body, None
 
 logger = logging.getLogger("notifications")
 
 
 async def send_notification(
-    db: AsyncSession,
     event_type: str,
     org_id: UUID,
     entity_type: str,
@@ -33,8 +43,10 @@ async def send_notification(
 ) -> None:
     """Main entry point: create in-app notifications and dispatch to channels.
 
+    Opens its own AsyncSessionLocal session — safe to call from
+    BackgroundTasks after the request session is closed.
+
     Args:
-        db: Async database session.
         event_type: NotificationEventType value (e.g. "ROLE_ASSIGNED").
         org_id: Organization ID for org-level channel lookup.
         entity_type: Entity type for deep linking (e.g. "run", "protocol").
@@ -47,48 +59,58 @@ async def send_notification(
         logger.warning("No template for event type: %s", event_type)
         return
 
-    # Generate both message perspectives
-    title_personal, body_personal = template_fn(context, personal=True)
-    title_broadcast, body_broadcast = template_fn(context, personal=False)
-
-    # 1. Create in-app notification records
-    for user_id in recipients:
-        notif = Notification(
-            user_id=user_id,
-            event_type=event_type,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            title=title_personal,
-            message=body_personal,
-        )
-        db.add(notif)
-
-    await db.flush()
-
-    # 2. Dispatch to external channels (org-level + user-level)
-    msg_personal = FormattedMessage(
-        event_type=event_type,
-        title=title_personal,
-        body=body_personal,
-        recipient="",  # filled per-channel
+    title_personal, body_personal, html_body_personal = _unpack_template(
+        template_fn(context, personal=True)
     )
-    msg_broadcast = FormattedMessage(
-        event_type=event_type,
-        title=title_broadcast,
-        body=body_broadcast,
-        recipient="broadcast",
+    title_broadcast, body_broadcast, html_body_broadcast = _unpack_template(
+        template_fn(context, personal=False)
     )
 
-    try:
-        await dispatch_event(
-            db=db,
-            event_type=event_type,
-            org_id=org_id,
-            recipients=recipients,
-            message_personal=msg_personal,
-            message_broadcast=msg_broadcast,
-        )
-    except Exception:
-        logger.exception("Failed to dispatch notifications for %s", event_type)
+    async with AsyncSessionLocal() as db:
+        try:
+            for user_id in recipients:
+                db.add(
+                    Notification(
+                        user_id=user_id,
+                        event_type=event_type,
+                        entity_type=entity_type,
+                        entity_id=entity_id,
+                        title=title_personal,
+                        message=body_personal,
+                    )
+                )
+            await db.flush()
 
-    await db.commit()
+            msg_personal = FormattedMessage(
+                event_type=event_type,
+                title=title_personal,
+                body=body_personal,
+                recipient="",
+                html_body=html_body_personal,
+            )
+            msg_broadcast = FormattedMessage(
+                event_type=event_type,
+                title=title_broadcast,
+                body=body_broadcast,
+                recipient="broadcast",
+                html_body=html_body_broadcast,
+            )
+
+            try:
+                await dispatch_event(
+                    db=db,
+                    event_type=event_type,
+                    org_id=org_id,
+                    recipients=recipients,
+                    message_personal=msg_personal,
+                    message_broadcast=msg_broadcast,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to dispatch notifications for %s", event_type
+                )
+
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise

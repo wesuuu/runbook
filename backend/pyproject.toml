@@ -58,4 +58,5 @@ testpaths = ["tests"]
 markers = [
     "benchmark: LLM accuracy and E2E protocol import benchmarks (requires AI provider)",
     "live: hits a real external API (requires network + credentials); run with -m live",
+    "real_default_channel_drain: opt out of the autouse suppressor that no-ops the default-channel drain (TD-0091c)",
 ]

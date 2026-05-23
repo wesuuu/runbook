@@ -5,6 +5,7 @@ from typing import Optional
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     Query,
@@ -502,6 +503,7 @@ INVITE_ERROR_HTML = """<!DOCTYPE html>
 
 @router.get("/accept-invite", response_class=HTMLResponse)
 async def accept_invite(
+    background_tasks: BackgroundTasks,
     token: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -578,6 +580,23 @@ async def accept_invite(
 
     invitation.status = InvitationStatus.ACCEPTED
     await db.commit()
+
+    # TD-0091c: notify the inviter that the invitee accepted.
+    from app.services.core.notifications import send_notification
+
+    org = await db.get(Organization, invitation.organization_id)
+    background_tasks.add_task(
+        send_notification,
+        "INVITE_ACCEPTED",
+        invitation.organization_id,
+        "organization",
+        invitation.organization_id,
+        [invitation.invited_by],
+        {
+            "org_name": org.name if org else "your organization",
+            "accepted_by": invited_user.full_name or invited_user.email,
+        },
+    )
 
     # Redirect to frontend
     redirect_url = f"{settings.frontend_url}/"
