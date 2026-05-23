@@ -238,17 +238,6 @@ def offline_sync_pending(ctx: dict, personal: bool = True) -> tuple[str, str]:
     return title, body
 
 
-def offline_value_discrepancy(ctx: dict, personal: bool = True) -> tuple[str, str]:
-    """ctx: run_name, step_name, field_name, manual_value, ai_value"""
-    title = f"Value discrepancy on {ctx['run_name']}"
-    body = (
-        f"Step \"{ctx['step_name']}\" field \"{ctx['field_name']}\" "
-        f"has a discrepancy: manual value {ctx['manual_value']} "
-        f"vs AI value {ctx['ai_value']}. Please review."
-    )
-    return title, body
-
-
 def run_signoff_requested(ctx: dict, personal: bool = True) -> tuple[str, str]:
     """ctx: run_name, role ('STUDY_DIRECTOR' | 'QAU')"""
     role_label = {
@@ -287,7 +276,6 @@ TEMPLATES = {
     "STEP_DEVIATION": step_deviation,
     "PENDING_IMAGE_ANALYSIS": pending_image_analysis,
     "OFFLINE_SYNC_PENDING": offline_sync_pending,
-    "OFFLINE_VALUE_DISCREPANCY": offline_value_discrepancy,
     "RUN_SIGNOFF_REQUESTED": run_signoff_requested,
     "RUN_SIGNOFF_CANCELLED": run_signoff_cancelled,
 }

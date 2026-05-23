@@ -10,13 +10,8 @@ from app.services.core.notifications.policy import (
 )
 
 
-@pytest.mark.skip(
-    reason="Enabled after Phase 10 removes OFFLINE_VALUE_DISCREPANCY"
-)
 def test_default_policy_is_exhaustive_over_event_types():
-    expected = {e.value for e in NotificationEventType} - {
-        "OFFLINE_VALUE_DISCREPANCY"
-    }
+    expected = {e.value for e in NotificationEventType}
     assert set(DEFAULT_POLICY.keys()) == expected
 
 
