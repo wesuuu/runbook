@@ -3,7 +3,7 @@
 import pytest
 
 from app.models.projects import Project
-from app.models.runs import Experiment
+from app.models.runs import Experiment, Run
 
 
 async def _experiment(db, project_id, name, slug, status="DRAFT"):
@@ -98,3 +98,55 @@ async def test_rejects_nonexistent_experiment(
         },
     )
     assert resp.status_code == 404
+
+
+# --- POST /experiments/{id}/runs ARCHIVED guard (H2) ---
+
+
+@pytest.mark.asyncio
+async def test_add_run_to_archived_experiment_link_branch_rejected(
+    client, auth_headers, db_session, test_project,
+):
+    """Linking an existing run to an archived experiment is 409."""
+    exp = await _experiment(
+        db_session, test_project.id, "Closed", "closed-link", status="ARCHIVED"
+    )
+    run = Run(
+        name="Loose run",
+        project_id=test_project.id,
+        status="PLANNED",
+        graph={"nodes": [], "edges": []},
+        execution_data={},
+        notes=[],
+        attachments=[],
+        slug="loose-run",
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/experiments/{exp.id}/runs",
+        headers=auth_headers,
+        json={"run_id": str(run.id)},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "EXPERIMENT_ARCHIVED"
+
+
+@pytest.mark.asyncio
+async def test_add_run_to_archived_experiment_create_branch_rejected(
+    client, auth_headers, db_session, test_project,
+):
+    """Creating a new run inside an archived experiment is 409."""
+    exp = await _experiment(
+        db_session, test_project.id, "Closed", "closed-create", status="ARCHIVED"
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/experiments/{exp.id}/runs",
+        headers=auth_headers,
+        json={"name": "Should not exist"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "EXPERIMENT_ARCHIVED"

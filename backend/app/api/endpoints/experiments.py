@@ -549,6 +549,18 @@ async def add_run_to_experiment(
     if not allowed:
         raise HTTPException(403, "Not allowed")
 
+    exp_status = (
+        exp.status if isinstance(exp.status, str) else exp.status.value
+    )
+    if exp_status == "ARCHIVED":
+        raise HTTPException(
+            409,
+            {
+                "code": "EXPERIMENT_ARCHIVED",
+                "message": "Cannot add or link runs to an archived experiment.",
+            },
+        )
+
     if body.run_id:
         # Link existing run
         run = await get_or_404(db, Run, body.run_id)

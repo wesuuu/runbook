@@ -36,6 +36,8 @@
     let loading = $state(true);
     let saving = $state(false);
     let error = $state<string | null>(null);
+    let saveError = $state<string | null>(null);
+    let noteError = $state<string | null>(null);
 
     // Editable fields
     let name = $state("");
@@ -94,19 +96,16 @@
 
     async function save() {
         saving = true;
+        saveError = null;
         try {
             await api.put(`/experiments/${id}`, {
                 name,
                 description: description || null,
-                objective: objective.trim() || null,
-                success_criteria: successCriteria.map((c) => c.trim()).filter(Boolean),
             });
             experiment.name = name;
             experiment.description = description;
-            experiment.objective = objective.trim() || null;
-            experiment.success_criteria = successCriteria.map((c) => c.trim()).filter(Boolean);
         } catch (e: unknown) {
-            console.error(e instanceof Error ? e.message : e);
+            saveError = e instanceof Error ? e.message : 'Failed to save changes.';
         } finally {
             saving = false;
         }
@@ -143,6 +142,7 @@
         const content = newNote.trim();
         if (!content) return;
         submittingNote = true;
+        noteError = null;
         try {
             const note = await api.post(
                 `/experiments/${id}/notes`,
@@ -151,7 +151,7 @@
             notes = [...notes, note as any];
             newNote = "";
         } catch (e: unknown) {
-            console.error(e instanceof Error ? e.message : e);
+            noteError = e instanceof Error ? e.message : 'Failed to add note.';
         } finally {
             submittingNote = false;
         }
@@ -175,7 +175,7 @@
 {:else if experiment}
     <div
         in:fade={{ duration: blockDuration() }}
-        class="min-h-[calc(100vh-57px)] w-full mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
+        class="min-h-[calc(100vh-57px)] w-full mx-auto bg-background rounded-xl border border-border shadow-sm overflow-hidden"
     >
         <!-- Header -->
         <div class="pt-5 sm:pt-7 px-4 sm:px-8">
@@ -183,21 +183,21 @@
             <nav class="flex items-center gap-2 mb-2.5 text-[13px]">
                 <a
                     href={paths.projects()}
-                    class="text-teal-600 font-medium hover:underline"
+                    class="text-primary font-medium hover:underline"
                     >Projects</a
                 >
-                <span class="text-slate-400">&rsaquo;</span>
+                <span class="text-muted-foreground">&rsaquo;</span>
                 {#if project}
                     <a
                         href={paths.project(projectSlug)}
-                        class="text-teal-600 font-medium hover:underline"
+                        class="text-primary font-medium hover:underline"
                         >{project.name}</a
                     >
                 {:else}
-                    <span class="text-slate-400">...</span>
+                    <span class="text-muted-foreground">...</span>
                 {/if}
-                <span class="text-slate-400">&rsaquo;</span>
-                <span class="text-slate-600 font-mono font-medium"
+                <span class="text-muted-foreground">&rsaquo;</span>
+                <span class="text-muted-foreground font-mono font-medium"
                     >EXP-{shortId(experiment.id)}</span
                 >
             </nav>
@@ -207,7 +207,7 @@
                 <input
                     type="text"
                     bind:value={name}
-                    class="text-[26px] font-bold text-slate-900 leading-tight bg-transparent border-none outline-none focus:ring-0 p-0 flex-1 min-w-0"
+                    class="text-[26px] font-bold text-foreground leading-tight bg-transparent border-none outline-none focus:ring-0 p-0 flex-1 min-w-0"
                     placeholder="Experiment name"
                 />
                 <span
@@ -224,18 +224,22 @@
                     disabled={saving}
                     class="px-4 py-2 text-[13px] font-semibold"
                 >
-                    {saving ? "Saving..." : "Save"}
+                    {saving ? "Saving..." : "Save name & description"}
                 </Button>
             </div>
 
+            {#if saveError}
+                <p class="mb-3 text-sm text-destructive">{saveError}</p>
+            {/if}
+
             <!-- Description -->
             <div class="mb-5">
-                <textarea
+                <Textarea
                     bind:value={description}
                     placeholder="Add a brief description..."
                     rows={2}
-                    class="w-full text-sm text-slate-600 bg-transparent border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
-                ></textarea>
+                    class="resize-none"
+                />
             </div>
         </div>
 
@@ -299,7 +303,7 @@
                         <div class="flex justify-end gap-2">
                             <Button variant="ghost" onclick={cancelObjectiveEdit}>Cancel</Button>
                             <Button onclick={saveObjective} disabled={saving}>
-                                {saving ? 'Saving…' : 'Save'}
+                                {saving ? 'Saving…' : 'Save objective'}
                             </Button>
                         </div>
                     </div>
@@ -333,7 +337,7 @@
         <!-- Runs Section -->
         <div class="px-4 sm:px-8 mb-6">
             <div class="flex items-center justify-between mb-3">
-                <h3 class="text-sm font-semibold text-slate-700">
+                <h3 class="text-sm font-semibold text-foreground">
                     Runs ({experiment.runs?.length ?? 0})
                 </h3>
                 <div class="flex gap-2">
@@ -364,7 +368,7 @@
 
         <!-- Notes Section -->
         <div class="px-4 sm:px-8 pb-8">
-            <h3 class="text-sm font-semibold text-slate-700 mb-3">
+            <h3 class="text-sm font-semibold text-foreground mb-3">
                 Notes ({notes.length})
             </h3>
 
@@ -372,13 +376,13 @@
                 <div class="space-y-3 mb-4">
                     {#each notes as note (note.id)}
                         <div
-                            class="bg-slate-50 border border-slate-200 rounded-lg p-3"
+                            class="bg-muted border border-border rounded-lg p-3"
                             animate:flip={{ duration: listDuration() }}
                             in:fade={{ duration: listDuration() }}
                         >
-                            <p class="text-sm text-slate-800">{note.content}</p>
+                            <p class="text-sm text-foreground">{note.content}</p>
                             <div
-                                class="flex items-center gap-2 mt-2 text-xs text-slate-400"
+                                class="flex items-center gap-2 mt-2 text-xs text-muted-foreground"
                             >
                                 <span class="font-medium"
                                     >{note.author_name}</span
@@ -388,7 +392,7 @@
                                 {#if note.flags?.length > 0}
                                     {#each note.flags as flag}
                                         <span
-                                            class="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium"
+                                            class="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium dark:bg-amber-500/20 dark:text-amber-300"
                                             >{flag}</span
                                         >
                                     {/each}
@@ -399,15 +403,19 @@
                 </div>
             {/if}
 
+            {#if noteError}
+                <p class="mb-2 text-sm text-destructive">{noteError}</p>
+            {/if}
+
             <!-- Add note -->
             <div class="flex gap-2">
-                <textarea
+                <Textarea
                     bind:value={newNote}
                     onkeydown={handleNoteKeydown}
                     placeholder="Add a note... (Cmd+Enter to submit)"
                     rows={2}
-                    class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
-                ></textarea>
+                    class="flex-1 resize-none"
+                />
                 <Button
                     onclick={addNote}
                     disabled={!newNote.trim() || submittingNote}

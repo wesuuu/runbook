@@ -70,6 +70,7 @@ from app.services.core.audit import log_audit
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
+from app.services.experiments.status import LIFECYCLE_ARCHIVED
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import (
@@ -172,7 +173,7 @@ async def create_run(
             if isinstance(experiment.status, str)
             else experiment.status.value
         )
-        if exp_status == "ARCHIVED":
+        if exp_status == LIFECYCLE_ARCHIVED:
             logger.warning(
                 "POST /runs on archived experiment: org=%s user=%s experiment=%s",
                 user.selected_org_id, user.id, run_in.experiment_id,

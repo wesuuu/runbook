@@ -7,14 +7,12 @@
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import RunProgressBar from '$lib/components/experiment/RunProgressBar.svelte';
-    import ExperimentCreateModal from '$lib/components/experiment/ExperimentCreateModal.svelte';
     import {
         shortId,
         formatDate,
         experimentStatusClasses,
         experimentStatusLabel,
     } from '$lib/components/project/projectUtils';
-    import { goto } from '$app/navigation';
 
     interface ExperimentRow {
         id: string;
@@ -35,16 +33,11 @@
     let experiments = $state<ExperimentRow[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
-    let showCreate = $state(false);
 
     // Filter state.
     const FILTERS = ['All', 'In progress', 'Complete', 'Draft'] as const;
     let activeFilter = $state<(typeof FILTERS)[number]>('All');
     let query = $state('');
-
-    // The create modal needs a project; index-level creation is deferred to a
-    // follow-up — for now the button routes the user to pick a project.
-    let createProjectId = $state<string>('');
 
     async function load() {
         loading = true;
@@ -175,14 +168,16 @@
                                         EXP-{shortId(e.id)}
                                     </span>
                                     <span
-                                        class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold {experimentStatusClasses(
+                                        class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold cursor-help {experimentStatusClasses(
                                             e.lifecycle_status,
                                         )}"
+                                        title="Status is derived from this experiment's runs — add or complete runs to advance it."
                                     >
                                         {#if e.lifecycle_status === 'IN_PROGRESS'}
                                             <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
                                         {/if}
                                         {experimentStatusLabel(e.lifecycle_status)}
+                                        <span class="opacity-70 font-normal">(auto)</span>
                                     </span>
                                 </div>
                                 {#if e.objective}
@@ -218,10 +213,3 @@
     {/if}
 </div>
 
-{#if createProjectId}
-    <ExperimentCreateModal
-        bind:open={showCreate}
-        projectId={createProjectId}
-        onCreated={(exp) => goto(paths.experiment(exp.project_slug, exp.slug))}
-    />
-{/if}

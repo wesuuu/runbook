@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { runSegmentClass, runSegmentLabel, isPulsing } from './runProgress';
+  import { runSegmentClass, runSegmentLabel, isPulsing } from '../shared/runProgress';
 
   interface RunSummary {
     status: string;
@@ -37,8 +37,12 @@
     </div>
   {/if}
   <span class="whitespace-nowrap text-xs text-muted-foreground">
-    {hiddenCount > 0 ? `${runs.length} of ${total}` : total} run{total === 1
-      ? ''
-      : 's'}
+    {#if total === 0}
+      No runs yet
+    {:else if hiddenCount > 0}
+      {runs.length} of {total} runs
+    {:else}
+      {total} run{total === 1 ? '' : 's'}
+    {/if}
   </span>
 </div>

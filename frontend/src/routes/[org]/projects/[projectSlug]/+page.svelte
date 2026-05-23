@@ -352,7 +352,7 @@
         <!-- Tab Content -->
         <div class="min-h-[300px]">
             {#if activeTab === "experiments"}
-                <ExperimentsTab {experiments} {runs} {protocols} projectId={id} />
+                <ExperimentsTab {experiments} {runs} {protocols} projectId={id} onRunCreated={loadData} />
             {:else if activeTab === "runs"}
                 <RunsTab {runs} {protocols} {experiments} onDataChanged={loadData} />
             {:else if activeTab === "protocols"}

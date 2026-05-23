@@ -17,9 +17,10 @@
         runs: any[];
         protocols: any[];
         projectId: string;
+        onRunCreated?: () => void;
     }
 
-    let { experiments, runs, protocols, projectId }: Props = $props();
+    let { experiments, runs, protocols, projectId, onRunCreated }: Props = $props();
 
     let showRunModal = $state(false);
     let runModalExperiment = $state<{ id: string; name: string } | null>(null);
@@ -113,7 +114,7 @@
         <td class="py-3 pl-6 pr-2 sm:pl-8">
             <button
                 type="button"
-                class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                class="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 aria-label={expandedIds.has(e.id) ? "Hide runs" : "Show runs"}
                 aria-expanded={expandedIds.has(e.id)}
                 onclick={(ev) => {
@@ -222,5 +223,6 @@
     forExperiment={runModalExperiment}
     onCreated={() => {
         runModalExperiment = null;
+        onRunCreated?.();
     }}
 />
