@@ -587,7 +587,6 @@ async def accept_invite(
     org = await db.get(Organization, invitation.organization_id)
     background_tasks.add_task(
         send_notification,
-        db,
         "INVITE_ACCEPTED",
         invitation.organization_id,
         "organization",

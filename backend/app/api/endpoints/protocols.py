@@ -1004,7 +1004,6 @@ async def update_protocol(
                 if admin_ids:
                     background_tasks.add_task(
                         send_notification,
-                        db=db,
                         event_type="PROTOCOL_REVERTED",
                         org_id=proj.organization_id,
                         entity_type="protocol",

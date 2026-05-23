@@ -588,7 +588,6 @@ async def create_invitation(
 
         background_tasks.add_task(
             send_notification,
-            db,
             "INVITE_SENT",
             org_id,
             "organization",
@@ -737,7 +736,6 @@ async def resend_invitation(
 
         background_tasks.add_task(
             send_notification,
-            db,
             "INVITE_SENT",
             invitation.organization_id,
             "organization",

@@ -214,6 +214,9 @@ async def db_session(test_engine):
     import importlib
 
     _send_message_module = importlib.import_module("app.services.ai.send_message")
+    _notifications_module = importlib.import_module(
+        "app.services.core.notifications"
+    )
 
     test_writer_factory = async_sessionmaker(
         bind=conn,
@@ -222,11 +225,14 @@ async def db_session(test_engine):
     )
     real_factory = _send_message_module.AsyncSessionLocal
     _send_message_module.AsyncSessionLocal = test_writer_factory
+    real_notif_factory = _notifications_module.AsyncSessionLocal
+    _notifications_module.AsyncSessionLocal = test_writer_factory
 
     try:
         yield session
     finally:
         _send_message_module.AsyncSessionLocal = real_factory
+        _notifications_module.AsyncSessionLocal = real_notif_factory
         await session.close()
         await txn.rollback()
         await conn.close()

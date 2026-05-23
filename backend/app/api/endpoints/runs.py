@@ -804,7 +804,6 @@ async def update_run(
                     if project is not None:
                         background_tasks.add_task(
                             send_notification,
-                            db,
                             "STEP_DEVIATION",
                             project.organization_id,
                             "run",
@@ -947,7 +946,6 @@ async def update_run(
         if new_status == "ACTIVE" and assigned_user_ids:
             background_tasks.add_task(
                 send_notification,
-                db=db,
                 event_type="RUN_STARTED",
                 org_id=project.organization_id,
                 entity_type="run",
@@ -962,7 +960,6 @@ async def update_run(
             if assigned_user_ids:
                 background_tasks.add_task(
                     send_notification,
-                    db=db,
                     event_type="RUN_COMPLETED",
                     org_id=project.organization_id,
                     entity_type="run",
@@ -988,8 +985,8 @@ async def update_run(
             if unanalyzed_count > 0:
                 # Notify assigned users + the completing user
                 recipients = list(set(assigned_user_ids) | {user.id})
-                await send_notification(
-                    db=db,
+                background_tasks.add_task(
+                    send_notification,
                     event_type="PENDING_IMAGE_ANALYSIS",
                     org_id=project.organization_id,
                     entity_type="run",
@@ -1408,7 +1405,6 @@ async def create_run_role_assignment(
 
             background_tasks.add_task(
                 send_notification,
-                db=db,
                 event_type="ROLE_REASSIGNED",
                 org_id=project.organization_id,
                 entity_type="run",
@@ -1454,7 +1450,6 @@ async def create_run_role_assignment(
     project = proj.scalar_one()
     background_tasks.add_task(
         send_notification,
-        db=db,
         event_type="ROLE_ASSIGNED",
         org_id=project.organization_id,
         entity_type="run",
@@ -1538,7 +1533,6 @@ async def delete_run_role_assignment(
 
         background_tasks.add_task(
             send_notification,
-            db,
             "ROLE_UNASSIGNED",
             project.organization_id,
             "run",

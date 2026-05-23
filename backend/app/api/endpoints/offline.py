@@ -96,8 +96,8 @@ async def create_offline_session(
     )
     org_id = proj_result.scalar_one()
 
+    await db.commit()
     await send_notification(
-        db=db,
         event_type="OFFLINE_SYNC_PENDING",
         org_id=org_id,
         entity_type="run",
@@ -108,8 +108,6 @@ async def create_offline_session(
             "user_name": user.full_name or user.email,
         },
     )
-
-    await db.commit()
 
     return OfflineSessionResponse(
         offline_token=token,
