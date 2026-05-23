@@ -59,6 +59,17 @@
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';
     import { paths } from '$lib/paths';
+    import { tick } from 'svelte';
+    import { focusStep } from '$lib/utils/stepDeepLink';
+
+    // TD-0091d: parse #step-<id> from the URL hash. $page is reactive,
+    // so this re-derives when a second notification is clicked while the
+    // run page is already open.
+    const STEP_HASH_RE = /^#step-([A-Za-z0-9_-]{1,64})$/;
+    const stepIdFromHash = $derived.by(() => {
+        const m = STEP_HASH_RE.exec($page.url.hash);
+        return m ? m[1] : null;
+    });
 
     // Route params: runs nest under their project (F-0091). The run is
     // fetched by project slug + run slug; once loaded, `id` resolves to the
@@ -398,6 +409,20 @@
             error = null;
             loadData();
         }
+    });
+
+    // TD-0091d: focus the step row when arriving from a notification.
+    // ACTIVE is handled inside RoleWizard via initialStepId; observer
+    // view is a deliberate no-op.
+    $effect(() => {
+        if (!stepIdFromHash) return;
+        if (!run) return;
+        const status = run.status;
+        const isPageRendered =
+            status === 'PLANNED' || status === 'COMPLETED' || status === 'EDITED';
+        if (!isPageRendered) return;
+        const id = stepIdFromHash;
+        tick().then(() => focusStep(id));
     });
 
     async function loadData() {
@@ -980,7 +1005,7 @@
                                 </Table.Header>
                                 <Table.Body>
                                     {#each getAllUnitOpSteps() as step, i}
-                                        <Table.Row>
+                                        <Table.Row data-step-id={step.id}>
                                             <Table.Cell class="text-muted-foreground font-mono align-top">{i + 1}</Table.Cell>
                                             <Table.Cell class="max-w-md whitespace-normal align-top">
                                                 <p class="font-medium text-foreground">{step.name}</p>
@@ -1174,6 +1199,7 @@
                                 steps={getWizardSteps()}
                                 runId={run.id}
                                 executionData={run.execution_data || {}}
+                                initialStepId={stepIdFromHash}
                                 onDataUpdate={handleExecutionDataUpdate}
                                 onAllStepsComplete={() => {
                                     if (allStepsComplete()) {
