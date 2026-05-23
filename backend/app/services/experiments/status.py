@@ -1,11 +1,4 @@
-"""F-0093 — read-time lifecycle-status derivation for experiments.
-
-Lifecycle status is never stored; it is derived from child-run counts on
-every read. `derive_lifecycle_status` is count-based (not run-list-based) so
-the org-wide index can feed it uncapped SQL aggregates while the detail page
-feeds it counts from the full run set — the 60-row run-summary cap (§1.1)
-can never corrupt the status.
-"""
+"""F-0093 + F-0043 — read-time lifecycle derivation for experiments."""
 
 import logging
 
@@ -15,10 +8,10 @@ logger = logging.getLogger(__name__)
 
 LIFECYCLE_DRAFT = "DRAFT"
 LIFECYCLE_IN_PROGRESS = "IN_PROGRESS"
+LIFECYCLE_AWAITING_CONCLUSION = "AWAITING_CONCLUSION"
 LIFECYCLE_COMPLETE = "COMPLETE"
 LIFECYCLE_ARCHIVED = "ARCHIVED"
 
-# Derived from the canonical RunStatus enum so it can never drift out of sync.
 _KNOWN_RUN_STATUSES = {s.value for s in RunStatus}
 
 
@@ -26,19 +19,17 @@ def derive_lifecycle_status(
     experiment_status: str,
     live_run_count: int,
     open_run_count: int,
+    conclusion_locked: bool = False,
 ) -> str:
-    """Derive an experiment's lifecycle status from child-run counts.
+    """Derive an experiment's lifecycle status.
 
-    Args:
-        experiment_status: the experiment's stored ``status`` column.
-        live_run_count: count of runs whose status != ``ARCHIVED``.
-        open_run_count: count of live runs whose status != ``COMPLETED``.
+    Five-state machine: DRAFT -> IN_PROGRESS -> AWAITING_CONCLUSION -> COMPLETE
+    with ARCHIVED as an orthogonal terminal. `conclusion_locked` defaults to
+    False so legacy callers default to the conservative AWAITING_CONCLUSION
+    rather than silently claiming COMPLETE.
 
-    Never raises — it runs on every experiment read, including the org-wide
-    list, and one bad row must not 500 the page.
+    Never raises — runs on every experiment read, including the org-wide list.
     """
-    # `experiment_status` may arrive as a str or an (str, Enum) member —
-    # normalize so the equality check is enum-agnostic regardless of caller.
     status = (
         experiment_status
         if isinstance(experiment_status, str)
@@ -48,18 +39,15 @@ def derive_lifecycle_status(
         return LIFECYCLE_ARCHIVED
     if live_run_count <= 0:
         return LIFECYCLE_DRAFT
-    if open_run_count <= 0:
-        return LIFECYCLE_COMPLETE
-    return LIFECYCLE_IN_PROGRESS
+    if open_run_count > 0:
+        return LIFECYCLE_IN_PROGRESS
+    if not conclusion_locked:
+        return LIFECYCLE_AWAITING_CONCLUSION
+    return LIFECYCLE_COMPLETE
 
 
 def lifecycle_counts_from_runs(runs) -> tuple[int, int]:
-    """Return ``(live_run_count, open_run_count)`` from run-like objects.
-
-    Each item must expose a ``.status`` (str or enum). Used by the detail
-    path, which already has the full run set loaded. An unrecognized status
-    is counted as open (never closed) and logged once.
-    """
+    """Return ``(live_run_count, open_run_count)`` from run-like objects."""
     live = 0
     open_ = 0
     for run in runs:

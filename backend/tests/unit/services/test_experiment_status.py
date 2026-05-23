@@ -17,8 +17,14 @@ def test_no_runs_is_draft():
 
 
 def test_all_live_runs_completed_is_complete():
+    # No lock → AWAITING_CONCLUSION (was COMPLETE before F-0043 widening).
     assert (
         derive_lifecycle_status("DRAFT", live_run_count=3, open_run_count=0)
+        == "AWAITING_CONCLUSION"
+    )
+    # With lock → COMPLETE (the previous semantic, now gated on the lock).
+    assert (
+        derive_lifecycle_status("DRAFT", live_run_count=3, open_run_count=0, conclusion_locked=True)
         == "COMPLETE"
     )
 
@@ -38,12 +44,15 @@ def test_archived_experiment_short_circuits():
 
 
 def test_counts_exclude_archived_runs():
-    # 1 COMPLETED + 2 ARCHIVED -> 1 live, 0 open -> COMPLETE.
+    # 1 COMPLETED + 2 ARCHIVED -> 1 live, 0 open -> AWAITING_CONCLUSION (no lock).
     live, open_ = lifecycle_counts_from_runs(
         [_run("COMPLETED"), _run("ARCHIVED"), _run("ARCHIVED")]
     )
     assert (live, open_) == (1, 0)
-    assert derive_lifecycle_status("DRAFT", live, open_) == "COMPLETE"
+    # No lock → AWAITING_CONCLUSION (was COMPLETE before F-0043 widening).
+    assert derive_lifecycle_status("DRAFT", live, open_) == "AWAITING_CONCLUSION"
+    # With lock → COMPLETE (the previous semantic, now gated on the lock).
+    assert derive_lifecycle_status("DRAFT", live, open_, conclusion_locked=True) == "COMPLETE"
 
 
 def test_only_archived_runs_is_draft_never_complete():
@@ -74,9 +83,17 @@ def test_accepts_enum_experiment_status():
         )
         == "ARCHIVED"
     )
+    # No lock → AWAITING_CONCLUSION (was COMPLETE before F-0043 widening).
     assert (
         derive_lifecycle_status(
             ExperimentStatus.DRAFT, live_run_count=2, open_run_count=0
+        )
+        == "AWAITING_CONCLUSION"
+    )
+    # With lock → COMPLETE (the previous semantic, now gated on the lock).
+    assert (
+        derive_lifecycle_status(
+            ExperimentStatus.DRAFT, live_run_count=2, open_run_count=0, conclusion_locked=True
         )
         == "COMPLETE"
     )
