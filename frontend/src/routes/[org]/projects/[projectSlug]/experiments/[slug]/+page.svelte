@@ -3,6 +3,9 @@
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
     import { Button } from "$lib/components/ui/button";
+    import { Input } from "$lib/components/ui/input";
+    import { Textarea } from "$lib/components/ui/textarea";
+    import { X } from "lucide-svelte";
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import RunCreatorWizardModal from "$lib/components/run/RunCreatorWizardModal.svelte";
@@ -18,21 +21,6 @@
     import { flip } from "svelte/animate";
     import { blockDuration, listDuration } from "$lib/transitions";
     import { paths } from "$lib/paths";
-    // Edra rich text editor — lazy loaded to avoid SSR issues
-    let EdraEditor: any = $state(null);
-    let EdraToolBar: any = $state(null);
-    import { onMount } from "svelte";
-    import type { Editor } from "@tiptap/core";
-
-    onMount(async () => {
-        try {
-            const edra = await import("$lib/components/edra/shadcn");
-            EdraEditor = edra.EdraEditor;
-            EdraToolBar = edra.EdraToolBar;
-        } catch (e) {
-            console.warn("Edra editor failed to load:", e);
-        }
-    });
 
     // Route params: experiments nest under their project (F-0091). The
     // experiment is fetched by project slug + experiment slug; once loaded,
@@ -52,10 +40,12 @@
     // Editable fields
     let name = $state("");
     let description = $state("");
-    let status = $state("DRAFT");
 
-    // Edra editor
-    let editor = $state<Editor>();
+    // Objective block
+    let objective = $state("");
+    let successCriteria = $state<string[]>([]);
+    let editingObjective = $state(false);
+    let objectiveError = $state<string | null>(null);
 
     // Notes
     let notes = $state<any[]>([]);
@@ -66,8 +56,6 @@
     let showRunModal = $state(false);
     let showAddExistingModal = $state(false);
     let allProjectRuns = $state<any[]>([]);
-
-    const statusOptions = ["DRAFT", "ACTIVE", "COMPLETED", "ARCHIVED"];
 
     $effect(() => {
         const ps = projectSlug;
@@ -84,7 +72,8 @@
             );
             name = experiment.name;
             description = experiment.description ?? "";
-            status = experiment.status;
+            objective = experiment.objective ?? "";
+            successCriteria = [...(experiment.success_criteria ?? [])];
             notes = experiment.notes ?? [];
 
             // Load project, protocols, and all runs for breadcrumb and modals
@@ -106,19 +95,45 @@
     async function save() {
         saving = true;
         try {
-            const content = editor?.getJSON() ?? experiment.content ?? {};
             await api.put(`/experiments/${id}`, {
                 name,
                 description: description || null,
-                content,
-                status,
+                objective: objective.trim() || null,
+                success_criteria: successCriteria.map((c) => c.trim()).filter(Boolean),
             });
             experiment.name = name;
             experiment.description = description;
-            experiment.content = content;
-            experiment.status = status;
+            experiment.objective = objective.trim() || null;
+            experiment.success_criteria = successCriteria.map((c) => c.trim()).filter(Boolean);
         } catch (e: unknown) {
             console.error(e instanceof Error ? e.message : e);
+        } finally {
+            saving = false;
+        }
+    }
+
+    function cancelObjectiveEdit() {
+        objective = experiment?.objective ?? "";
+        successCriteria = [...(experiment?.success_criteria ?? [])];
+        objectiveError = null;
+        editingObjective = false;
+    }
+
+    async function saveObjective() {
+        saving = true;
+        objectiveError = null;
+        try {
+            // TODO(F-0093 follow-up): type api.put return when ExperimentSchema covers lifecycle/objective fields.
+            const updated: any = await api.put(`/experiments/${id}`, {
+                objective: objective.trim() || null,
+                success_criteria: successCriteria.map((c) => c.trim()).filter(Boolean),
+            });
+            experiment = updated;
+            objective = updated.objective ?? "";
+            successCriteria = [...(updated.success_criteria ?? [])];
+            editingObjective = false;
+        } catch (e: unknown) {
+            objectiveError = e instanceof Error ? e.message : "Failed to save objective.";
         } finally {
             saving = false;
         }
@@ -195,14 +210,14 @@
                     class="text-[26px] font-bold text-slate-900 leading-tight bg-transparent border-none outline-none focus:ring-0 p-0 flex-1 min-w-0"
                     placeholder="Experiment name"
                 />
-                <select
-                    bind:value={status}
-                    class="text-xs font-semibold px-3 py-1 rounded-full border cursor-pointer {experimentStatusClasses(status)}"
+                <span
+                    class="inline-block cursor-help rounded-full px-3 py-1 text-xs font-semibold {experimentStatusClasses(
+                        experiment?.lifecycle_status ?? 'DRAFT',
+                    )}"
+                    title="Status is derived from this experiment's runs — add or complete runs to advance it."
                 >
-                    {#each statusOptions as opt}
-                        <option value={opt}>{experimentStatusLabel(opt)}</option>
-                    {/each}
-                </select>
+                    {experimentStatusLabel(experiment?.lifecycle_status ?? 'DRAFT')}
+                </span>
                 <Button
                     onclick={save}
                     disabled={saving}
@@ -223,25 +238,93 @@
             </div>
         </div>
 
-        <!-- Content Editor -->
+        <!-- Objective -->
         <div class="px-4 sm:px-8 mb-6">
-            <h3 class="text-sm font-semibold text-slate-700 mb-2">Content</h3>
-            <div class="border border-slate-200 rounded-lg overflow-hidden">
-                {#if EdraEditor}
-                    {#if editor}
-                        <svelte:component this={EdraToolBar} {editor} class="border-b border-slate-200" />
+            <div class="rounded-lg border border-border bg-card p-5">
+                <div class="mb-3 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-foreground">Objective</h3>
+                    {#if !editingObjective}
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            class="min-h-11"
+                            onclick={() => (editingObjective = true)}
+                        >
+                            Edit
+                        </Button>
                     {/if}
-                    <svelte:component
-                        this={EdraEditor}
-                        bind:editor
-                        content={experiment.content && Object.keys(experiment.content).length > 0 ? experiment.content : undefined}
-                        editable={true}
-                        class="min-h-[200px] p-4"
-                    />
-                {:else}
-                    <div class="p-4 text-sm text-slate-400 min-h-[200px] flex items-center justify-center">
-                        Loading editor...
+                </div>
+
+                {#if editingObjective}
+                    <div class="space-y-4">
+                        <div class="space-y-1.5">
+                            <label class="text-xs font-medium text-muted-foreground" for="obj">
+                                The question
+                            </label>
+                            <Textarea id="obj" bind:value={objective} rows={3} />
+                        </div>
+                        <div class="space-y-1.5">
+                            <span class="text-xs font-medium text-muted-foreground">
+                                Success criteria
+                            </span>
+                            {#each successCriteria as _, i}
+                                <div class="flex items-center gap-2">
+                                    <Input bind:value={successCriteria[i]} placeholder="Criterion" />
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        class="shrink-0"
+                                        aria-label="Remove criterion"
+                                        onclick={() =>
+                                            (successCriteria = successCriteria.filter(
+                                                (_, j) => j !== i,
+                                            ))}
+                                    >
+                                        <X class="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            {/each}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onclick={() => (successCriteria = [...successCriteria, ''])}
+                            >
+                                + Add criterion
+                            </Button>
+                        </div>
+                        {#if objectiveError}
+                            <p class="text-sm text-destructive">{objectiveError}</p>
+                        {/if}
+                        <div class="flex justify-end gap-2">
+                            <Button variant="ghost" onclick={cancelObjectiveEdit}>Cancel</Button>
+                            <Button onclick={saveObjective} disabled={saving}>
+                                {saving ? 'Saving…' : 'Save'}
+                            </Button>
+                        </div>
                     </div>
+                {:else if objective}
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-xs font-medium text-muted-foreground">The question</p>
+                            <p class="mt-0.5 text-sm text-foreground">{objective}</p>
+                        </div>
+                        {#if successCriteria.length > 0}
+                            <div>
+                                <p class="text-xs font-medium text-muted-foreground">
+                                    Success criteria
+                                </p>
+                                <ul class="mt-1 list-inside list-disc space-y-0.5 text-sm text-foreground">
+                                    {#each successCriteria as c}
+                                        <li>{c}</li>
+                                    {/each}
+                                </ul>
+                            </div>
+                        {/if}
+                    </div>
+                {:else}
+                    <p class="text-sm italic text-muted-foreground">
+                        Objective not set yet — add an objective and the first run to begin.
+                    </p>
                 {/if}
             </div>
         </div>
