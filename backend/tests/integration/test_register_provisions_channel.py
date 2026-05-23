@@ -14,6 +14,7 @@ import pytest
 from app.models.iam import User
 
 
+@pytest.mark.real_default_channel_drain
 @pytest.mark.asyncio
 async def test_user_insert_queues_pending_default_channel(db_session):
     user = User(email=f"queue-{uuid4().hex[:8]}@example.com", email_verified=False)
@@ -24,6 +25,7 @@ async def test_user_insert_queues_pending_default_channel(db_session):
     assert user.id in pending
 
 
+@pytest.mark.real_default_channel_drain
 @pytest.mark.asyncio
 async def test_after_commit_drains_queue_and_submits(db_session):
     user = User(email=f"drain-{uuid4().hex[:8]}@example.com", email_verified=False)
