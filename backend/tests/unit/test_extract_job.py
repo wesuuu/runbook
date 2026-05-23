@@ -213,3 +213,41 @@ async def test_run_extraction_honours_heartbeat_base_url_override(tmp_path):
     argv = captured["argv"]
     url = argv[argv.index("--heartbeat-url") + 1]
     assert url == f"http://127.0.0.1:8030/internal/extraction/{fake_doc.id}/heartbeat"
+
+
+@pytest.mark.asyncio
+async def test_extract_persists_full_stderr_not_truncated():
+    """_persist_failure must write the full error message to doc.error_message.
+
+    The former [:500] cap hid the actual cause of image extraction failures
+    (BUG-0009 #4). A 1013-char message must survive intact on the Document row.
+    """
+    long_message = "X" * 1000 + "MARKER_AT_END"
+
+    fake_doc = MagicMock()
+    fake_job = MagicMock()
+    document_id = uuid4()
+
+    fake_session = AsyncMock()
+    fake_session.rollback = AsyncMock()
+    fake_session.commit = AsyncMock()
+    # scalar_one_or_none() returns doc on first call (Document query),
+    # job on second call (BackgroundJob re-query).
+    fake_session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(**{"scalar_one_or_none.return_value": fake_doc}),
+            MagicMock(**{"scalar_one_or_none.return_value": fake_job}),
+        ]
+    )
+
+    with patch.object(
+        extract_job.BackgroundJobService, "fail", AsyncMock()
+    ):
+        await extract_job._persist_failure(
+            fake_session, document_id, fake_job, long_message
+        )
+
+    assert fake_doc.error_message.endswith("MARKER_AT_END"), (
+        "doc.error_message must preserve the full stderr beyond 500 chars; "
+        f"got tail: {fake_doc.error_message[-60:]!r}"
+    )

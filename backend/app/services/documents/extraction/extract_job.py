@@ -39,6 +39,12 @@ from app.services.documents.extraction.heartbeat_watchdog import HeartbeatWatchd
 logger = logging.getLogger(__name__)
 
 
+# Hard cap on stderr persisted to Document.error_message. The column is
+# unbounded String, but a runaway docling crash can dump megabytes of
+# traceback and we don't want to bloat the documents table or hit row
+# limits. 64 KB is plenty to diagnose any real failure.
+_MAX_STDERR_BYTES = 64 * 1024
+
 _MIME_TO_FORMAT = {
     "application/pdf": DocumentSourceFormat.PDF,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocumentSourceFormat.DOCX,
@@ -170,7 +176,7 @@ async def _persist_failure(
     doc = result.scalar_one_or_none()
     if doc is not None:
         doc.status = DocumentStatus.FAILED.value
-        doc.error_message = f"Extraction error: {message[:500]}"
+        doc.error_message = f"Extraction error: {message[:_MAX_STDERR_BYTES]}"
         doc.processing_started_at = None
         doc.heartbeat_token = None
     if job is not None:
@@ -179,7 +185,9 @@ async def _persist_failure(
         )
         job = job_result.scalar_one_or_none()
         if job is not None:
-            await BackgroundJobService.fail(session, job, message[:500])
+            # BackgroundJobService.fail() applies its own [:500] cap; the Document
+            # row keeps the full stderr (up to _MAX_STDERR_BYTES) for diagnostics.
+            await BackgroundJobService.fail(session, job, message)
     await session.commit()
 
 
