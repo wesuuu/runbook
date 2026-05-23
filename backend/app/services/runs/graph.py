@@ -6,6 +6,7 @@ validation code in `app.api.endpoints.runs`. Single source of truth for:
   - deriving a human-readable field label from a paramSchema property
 """
 
+from dataclasses import dataclass, field
 from typing import Iterator, Optional
 
 
@@ -36,3 +37,26 @@ def derive_field_label(schema_props: Optional[dict], key: str) -> str:
         if title:
             return title
     return key.replace("_", " ").title()
+
+
+@dataclass(frozen=True)
+class StepIndex:
+    """One-pass lookup over a run/protocol graph's unitOp nodes."""
+
+    nodes: dict[str, dict] = field(default_factory=dict)
+    names: dict[str, str] = field(default_factory=dict)
+
+    def name_for(self, step_id: str) -> str:
+        return self.names.get(step_id, step_id)
+
+
+def index_steps(graph: Optional[dict]) -> StepIndex:
+    """Build node-data and step-name lookups from a graph in a single pass."""
+    nodes: dict[str, dict] = {}
+    names: dict[str, str] = {}
+    for node in iter_unit_op_nodes(graph):
+        node_id = node["id"]
+        data = node.get("data", {}) or {}
+        nodes[node_id] = data
+        names[node_id] = data.get("label", node_id)
+    return StepIndex(nodes=nodes, names=names)
