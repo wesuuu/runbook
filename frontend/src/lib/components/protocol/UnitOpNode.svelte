@@ -108,9 +108,9 @@
                 {#if displayParams.length > 0}
                     <div class="node-params">
                         {#each displayParams as param}
-                            <div class="param-row">
+                            <div class="param-row" title={`${param.label}: ${param.value}`}>
                                 <span class="param-label">{param.label}</span>
-                                <span class="param-value">{param.value}</span>
+                                <span class="param-value" title={String(param.value)}>{param.value}</span>
                             </div>
                         {/each}
                     </div>
@@ -308,6 +308,7 @@
         padding: 4px 12px 8px;
         border-top: 1px solid #f1f5f9;
         margin-top: 2px;
+        overflow: hidden;
     }
 
     .param-row {
@@ -315,12 +316,17 @@
         align-items: flex-start;
         gap: 16px;
         padding: 2px 0;
+        min-width: 0;
     }
 
     .param-label {
         font-size: 11px;
         color: #64748b;
         flex-shrink: 0;
+        max-width: 60%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .param-value {
@@ -330,7 +336,9 @@
         font-family: "JetBrains Mono", monospace;
         margin-left: auto;
         text-align: right;
-        word-break: break-word;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         min-width: 0;
     }
 
