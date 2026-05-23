@@ -43,6 +43,7 @@ Detailed patterns are in `.claude/rules/` and load automatically when you touch 
 - **ClickUp is source of truth**: Tasks in FEATURES, BUGS, QA, TECH_DEBT lists.
 - **Commit format**: `<type>(<scope>): <description>` — types: feat, fix, docs, style, refactor, test, chore
 - **CI-aware**: Use `CI=true` prefix for watch-mode tools.
+- **Never branch-switch the main checkout**: `git checkout <branch>`, `git switch <branch>`, and `git reset --hard <ref>` are blocked in the main workspace by `.claude/hooks/block-branch-switch.py`. To work on a different branch, use `EnterWorktree` if available or `git worktree add .worktrees/<name> -b <branch>`. File-restore forms (`git checkout -- <file>`, `git checkout .`, `git restore`) are still allowed.
 
 ## Code Style
 

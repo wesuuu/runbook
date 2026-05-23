@@ -43,7 +43,7 @@ class ExternalProtocolsFeatureConfig(BaseModel):
     is live iff the master flag AND that source's flag are both on.
     """
 
-    enabled: bool = False
+    enabled: bool = True
     openwetware: OpenWetWareSourceConfig = OpenWetWareSourceConfig()
     protocols_io: ProtocolsIoSourceConfig = ProtocolsIoSourceConfig()
 
