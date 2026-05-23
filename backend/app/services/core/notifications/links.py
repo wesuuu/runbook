@@ -32,9 +32,9 @@ from app.models.runs import Experiment, Run
 # other type (e.g. "RevokedOfflineToken") has no in-app destination.
 _ROUTABLE = frozenset({"run", "experiment", "protocol", "project"})
 
-# TD-0091d: a Notification.payload.step_id is honored only when it
-# matches this shape. Mirrored at the frontend parser. The bound caps
-# injection surface area and matches the CHECK octet_length cap.
+# A Notification.payload.step_id is honored only when it matches this
+# shape. Mirrored at the frontend parser. The bound caps injection
+# surface area and matches the CHECK octet_length cap on the column.
 _STEP_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -169,7 +169,8 @@ async def resolve_notification_urls(
             result[n.id] = None
             continue
         url = f"/{org_slug}{path}"
-        # TD-0091d: step deep link, run-only, validated step_id.
+        # Step deep link: run-only, validated step_id. Other entity types
+        # ignore payload here; future resolvers may opt in similarly.
         if (n.entity_type or "").lower() == "run" and isinstance(
             n.payload, dict
         ):

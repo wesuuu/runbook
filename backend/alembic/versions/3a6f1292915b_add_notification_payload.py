@@ -28,11 +28,19 @@ def upgrade() -> None:
             server_default=sa.text("'{}'::jsonb"),
         ),
     )
-    op.create_check_constraint(
-        "ck_notifications_payload_size",
-        "notifications",
-        "octet_length(payload::text) <= 512",
+    # NOT VALID skips the full-table scan under ShareRowExclusiveLock that a
+    # plain ADD CONSTRAINT would take. Newly-written rows are still gated by
+    # the check; VALIDATE then scans existing rows without blocking writes.
+    op.execute(
+        "ALTER TABLE notifications ADD CONSTRAINT "
+        "ck_notifications_payload_size "
+        "CHECK (octet_length(payload::text) <= 512) NOT VALID"
     )
+    with op.get_context().autocommit_block():
+        op.execute(
+            "ALTER TABLE notifications VALIDATE CONSTRAINT "
+            "ck_notifications_payload_size"
+        )
 
 
 def downgrade() -> None:

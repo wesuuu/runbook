@@ -22,7 +22,7 @@ describe('focusStep', () => {
         expect(scrollSpy).toHaveBeenCalledWith(
             expect.objectContaining({
                 behavior: 'smooth',
-                block: 'nearest',
+                block: 'center',
             }),
         );
         expect(el.classList.contains('step-deeplink-target')).toBe(true);

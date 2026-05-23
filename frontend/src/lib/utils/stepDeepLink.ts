@@ -55,7 +55,7 @@ export async function focusStep(stepId: string): Promise<void> {
     const reduceMotion = prefersReducedMotion();
     el.scrollIntoView({
         behavior: reduceMotion ? 'auto' : 'smooth',
-        block: 'nearest',
+        block: 'center',
     });
     if (reduceMotion) return;
 

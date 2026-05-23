@@ -158,10 +158,11 @@ class Notification(Base, UUIDMixin, TimestampMixin):
     read_at: Mapped[Optional[Any]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # TD-0091d: schemaless payload for deep-link metadata. Today only
-    # `step_id` (string matching ^[A-Za-z0-9_-]{1,64}$) is honored, and
-    # only when entity_type == "run". Future keys land here as siblings
-    # (signoff_id, attachment_id, ...) without further migrations.
+    # Schemaless deep-link metadata. Today only `step_id` (string matching
+    # ^[A-Za-z0-9_-]{1,64}$) is honored, and only when entity_type == "run".
+    # Future keys land here as siblings (signoff_id, attachment_id, ...)
+    # without further migrations. Capped at 512 bytes by a CHECK constraint
+    # on the column. See .claude/rules/backend-services.md for the contract.
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default="{}", nullable=False
     )

@@ -68,9 +68,8 @@
         goto(`/notifications${query}`, { keepFocus: true, noScroll: true });
     }
 
-    // NOTE: markRead / markAllRead / handleSelect mirror the same logic in
-    // components/layout/NotificationBell.svelte (count-2, no shared store
-    // yet). Keep the mark-read error semantics in sync across both.
+    // markRead / markAllRead / handleSelect mirror the same logic in
+    // components/layout/NotificationBell.svelte. Keep error semantics in sync.
     async function markRead(id: string): Promise<void> {
         const idx = items.findIndex((n) => n.id === id);
         if (idx === -1 || items[idx].read_at) return;
@@ -109,14 +108,9 @@
         const href = item.url;
         if (!item.read_at) markRead(item.id);
         if (!href) return;
-        // TD-0091d: hash-bearing URLs from the resolver (#step-<id>)
-        // navigate via window.location so the fragment is honored
-        // even when already on the destination page.
-        if (href.includes('#')) {
-            window.location.href = href;
-        } else {
-            goto(href);
-        }
+        // SvelteKit's goto preserves URL fragments; the run page's
+        // $effect on $page.url.hash picks up #step-<id> and focuses.
+        goto(href, { noScroll: true });
     }
 
     const hasUnread = $derived(items.some((n) => !n.read_at));

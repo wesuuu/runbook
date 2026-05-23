@@ -62,9 +62,8 @@
         }
     }
 
-    // NOTE: markRead / markAllRead / handleSelect are intentionally
-    // duplicated in routes/notifications/+page.svelte (count-2, no shared
-    // store yet). Keep the mark-read error semantics in sync across both.
+    // markRead / markAllRead / handleSelect mirror the same logic in
+    // routes/notifications/+page.svelte. Keep error semantics in sync.
     async function markRead(id: string): Promise<void> {
         const idx = notifications.findIndex((n) => n.id === id);
         if (idx === -1 || notifications[idx].read_at) return;
@@ -113,14 +112,9 @@
         if (!item.read_at) markRead(item.id);
         if (href) {
             open = false;
-            // TD-0091d: hash-bearing URLs from the resolver (#step-<id>)
-            // navigate via window.location so the fragment is honored
-            // even when already on the destination page.
-            if (href.includes('#')) {
-                window.location.href = href;
-            } else {
-                goto(href);
-            }
+            // SvelteKit's goto preserves URL fragments; the run page's
+            // $effect on $page.url.hash picks up #step-<id> and focuses.
+            goto(href, { noScroll: true });
         }
     }
 

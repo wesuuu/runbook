@@ -125,9 +125,10 @@
         stepData = newStepData;
     });
 
-    // TD-0091d: track which initialStepId we've already processed so the
-    // seeding effect is strictly one-shot per value of the prop.
-    let lastSeededStepId = $state<string | null>(null);
+    // Track which initialStepId we've already processed so the seeding
+    // effect is one-shot per value of the prop. Keyed by `${runId}:${stepId}`
+    // so a wizard remount for a different run resets the guard.
+    let lastSeededKey = $state<string | null>(null);
 
     function hasUnsavedExecutionData(): boolean {
         const sid = steps[currentStepIdx]?.id;
@@ -148,35 +149,36 @@
         return JSON.stringify(liveFields) !== JSON.stringify(snapFields);
     }
 
-    // TD-0091d: seed currentStepIdx from a deep link, but only when safe.
-    // Tracks ONLY initialStepId (and steps.length transitions 0→N for
-    // async loads) by reading mutable state through untrack.
+    // Seed currentStepIdx from a deep link, but only when safe. Tracks
+    // ONLY initialStepId + runId + steps.length 0→N (async load) by
+    // reading mutable state through untrack.
     $effect(() => {
         if (!initialStepId) return;
-        if (lastSeededStepId === initialStepId) return;
+        const key = `${runId}:${initialStepId}`;
+        if (lastSeededKey === key) return;
         if (steps.length === 0) return;
 
         untrack(() => {
             const idx = steps.findIndex((s) => s.id === initialStepId);
             if (idx < 0) {
-                lastSeededStepId = initialStepId;
+                lastSeededKey = key;
                 return;
             }
             if (currentStepIdx !== 0) {
-                lastSeededStepId = initialStepId;
+                lastSeededKey = key;
                 return;
             }
             if (hasUnsavedExecutionData()) {
-                lastSeededStepId = initialStepId;
+                lastSeededKey = key;
                 return;
             }
             currentStepIdx = idx;
-            lastSeededStepId = initialStepId;
+            lastSeededKey = key;
         });
     });
 
-    // TD-0091d: after currentStepIdx settles, scroll + highlight the
-    // wizard's step container. tick() waits for Svelte's DOM flush.
+    // After currentStepIdx settles, scroll + highlight the wizard's step
+    // container. tick() waits for Svelte's DOM flush.
     $effect(() => {
         if (!initialStepId) return;
         if (steps[currentStepIdx]?.id !== initialStepId) return;

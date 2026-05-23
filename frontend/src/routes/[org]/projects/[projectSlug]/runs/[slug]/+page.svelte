@@ -62,9 +62,9 @@
     import { tick } from 'svelte';
     import { focusStep } from '$lib/utils/stepDeepLink';
 
-    // TD-0091d: parse #step-<id> from the URL hash. $page is reactive,
-    // so this re-derives when a second notification is clicked while the
-    // run page is already open.
+    // Parse #step-<id> from the URL hash. $page is reactive, so this
+    // re-derives when a second notification is clicked while the run
+    // page is already open.
     const STEP_HASH_RE = /^#step-([A-Za-z0-9_-]{1,64})$/;
     const stepIdFromHash = $derived.by(() => {
         const m = STEP_HASH_RE.exec($page.url.hash);
@@ -411,9 +411,10 @@
         }
     });
 
-    // TD-0091d: focus the step row when arriving from a notification.
-    // ACTIVE is handled inside RoleWizard via initialStepId; observer
-    // view is a deliberate no-op.
+    // Focus the step row when arriving from a notification. ACTIVE is
+    // handled inside RoleWizard via initialStepId; observer view is a
+    // deliberate no-op. Any future run status that renders step rows
+    // must be added to isPageRendered.
     $effect(() => {
         if (!stepIdFromHash) return;
         if (!run) return;
