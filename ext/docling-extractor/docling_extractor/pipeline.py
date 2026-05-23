@@ -51,9 +51,23 @@ def build_converter(num_threads: int) -> DocumentConverter:
         device=AcceleratorDevice.AUTO,
     )
 
+    # IMAGE pipeline: OCR off. The EasyOCR model cache is not guaranteed
+    # to be present on the docling subprocess host, and a missing cache
+    # surfaces as the bare "[Errno 2] No such file or directory" the
+    # user sees on image uploads. Layout-only extraction always works;
+    # gate OCR-on-images on a flag if a customer ever needs it.
+    image_options = PdfPipelineOptions()
+    image_options.do_ocr = False
+    image_options.generate_picture_images = True
+    image_options.accelerator_options = AcceleratorOptions(
+        num_threads=num_threads,
+        device=AcceleratorDevice.AUTO,
+    )
+
     return DocumentConverter(
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options),
+            InputFormat.IMAGE: PdfFormatOption(pipeline_options=image_options),
         }
     )
 
@@ -128,7 +142,15 @@ def _collect_flags(_doc: Any) -> List[dict[str, Any]]:
 def run_pipeline(file_path: Path, num_threads: int) -> ExtractionResult:
     converter = build_converter(num_threads)
     logger.info("Running docling on %s", file_path)
-    convert_result = converter.convert(str(file_path))
+    try:
+        convert_result = converter.convert(str(file_path))
+    except FileNotFoundError as e:
+        # Surface the missing path in the message so future failures
+        # self-diagnose instead of returning a bare "[Errno 2]".
+        missing = getattr(e, "filename", None) or "unknown path"
+        raise FileNotFoundError(
+            f"docling could not open required file: {missing}"
+        ) from e
     doc = convert_result.document
 
     markdown = doc.export_to_markdown()

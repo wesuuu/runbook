@@ -251,3 +251,46 @@ async def test_extract_persists_full_stderr_not_truncated():
         "doc.error_message must preserve the full stderr beyond 500 chars; "
         f"got tail: {fake_doc.error_message[-60:]!r}"
     )
+
+
+@pytest.mark.asyncio
+async def test_extract_marks_image_with_empty_markdown_as_success(tmp_path):
+    """A solid-color image produces empty refined.md. The pipeline must
+    still complete the success path (not FAILED) — empty extraction is
+    a degraded-but-valid outcome (BUG-0009 #4 regression guard)."""
+    async def _fake_exec(*argv, **kwargs):
+        out_dir = Path(argv[argv.index("--output-dir") + 1])
+        _write_artifacts(out_dir, markdown="", image_count=0, page_count=1)
+        proc = MagicMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(return_value=(b"", b""))
+        return proc
+
+    fake_doc = MagicMock(
+        id=uuid4(),
+        mime_type="image/png",
+        file_path="uploads/img.png",
+        page_count=None,
+        status="UPLOADED",
+        heartbeat_token="tok",
+    )
+
+    with patch.object(
+        extract_job, "asyncio", _make_fake_asyncio(_fake_exec)
+    ), patch.object(
+        extract_job,
+        "_load_and_claim_document",
+        AsyncMock(return_value=(fake_doc, MagicMock())),
+    ), patch.object(
+        extract_job, "_persist_success", AsyncMock()
+    ) as persist_success, patch.object(
+        extract_job, "_persist_failure", AsyncMock()
+    ) as persist_failure, patch.object(
+        extract_job,
+        "_resolve_paths",
+        return_value=(Path("/tmp/in.png"), tmp_path / "out"),
+    ):
+        await extract_job.run_extraction(fake_doc.id)
+
+    persist_success.assert_awaited_once()
+    persist_failure.assert_not_called()
