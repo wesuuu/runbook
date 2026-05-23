@@ -20,34 +20,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.slug import slugify
 from app.models.iam import Organization, OrganizationMember
 from app.models.notifications import Notification
 from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Experiment, Run
+from app.services.core.org_slugs import disambiguate_org_slugs
 
 # Lower-cased ``entity_type`` values that resolve to a routed page. Any
 # other type (e.g. "RevokedOfflineToken") has no in-app destination.
 _ROUTABLE = frozenset({"run", "experiment", "protocol", "project"})
-
-
-def _disambiguated_org_slugs(
-    orgs: Sequence[tuple[UUID, str]],
-) -> dict[UUID, str]:
-    """Map org id -> URL slug, mirroring frontend ``disambiguatedOrgSlug``.
-
-    When two orgs in ``orgs`` slugify to the same base, every colliding org
-    gets a ``-{id-prefix}`` suffix so the deep link stays unambiguous.
-    """
-    base: dict[UUID, str] = {oid: slugify(name) for oid, name in orgs}
-    counts: dict[str, int] = {}
-    for slug in base.values():
-        counts[slug] = counts.get(slug, 0) + 1
-    return {
-        oid: slug if counts[slug] == 1 else f"{slug}-{str(oid)[:8]}"
-        for oid, slug in base.items()
-    }
 
 
 async def resolve_notification_urls(
@@ -147,7 +129,7 @@ async def resolve_notification_urls(
         )
         .where(OrganizationMember.user_id == recipient_id)
     )
-    org_slugs = _disambiguated_org_slugs(list(member_orgs.all()))
+    org_slugs = disambiguate_org_slugs(list(member_orgs.all()))
 
     result: dict[UUID, Optional[str]] = {}
     for n in notifications:
