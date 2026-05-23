@@ -1,7 +1,7 @@
 # TD-0091d — Notification step-level deep links
 
 **Date:** 2026-05-22
-**Status:** Spec
+**Status:** Spec — hardened after review panel
 **Parent:** [TD-0091] In-app notification system — QA audit remediation
 **Sibling:** [TD-0091b] Notification inbox — UX, observability & test coverage
 
@@ -36,16 +36,18 @@ A vertical slice across all four layers, establishing the contract before
 producers come online:
 
 1. **Schema** — add a `payload JSONB NOT NULL DEFAULT '{}'` column to
-   `notifications`.
-2. **Resolver** — when `entity_type == "run"` and `payload.step_id` is set,
-   append `#step-<id>` to the resolved URL.
+   `notifications` with a size cap.
+2. **Resolver** — when `entity_type == "run"` and `payload.step_id` is a
+   string matching `^[A-Za-z0-9_-]{1,64}$`, append `#step-<id>` to the
+   resolved URL.
 3. **Producer API** — extend the `send_notification` wrapper to accept an
    optional `payload: dict | None = None`. Existing 5 call sites unchanged.
-4. **Run page** — on mount, read the URL fragment, scroll the matching step
-   into view, apply a 1.5s outline-fade highlight. In PLANNED and
-   COMPLETED/EDITED states the step row is in the DOM; in ACTIVE state the
-   `RoleWizard` advances its page index to the matching step for the
-   assignee. Observer view is a no-op.
+4. **Run page** — react to the URL fragment (`$page.url.hash`), scroll the
+   matching step into view, apply a 1.5s outline-fade highlight (skipped
+   under `prefers-reduced-motion`). In PLANNED and COMPLETED/EDITED states
+   the step row is in the DOM; in ACTIVE state the `RoleWizard` advances
+   its page index to the matching step *only when safe* (see below).
+   Observer view is a no-op.
 
 ## Non-goals
 
@@ -57,32 +59,50 @@ producers come online:
 - **Step-level permissions.** The run page's existing object-level check
   already gates everything below it.
 - **Observer view step granularity.** Observers see role-level progress
-  only; the fragment is honored where step rows actually render.
+  only; the fragment is honored where step rows actually render. The
+  observer view stays silent — no banner, no toast, no fallback UI.
+- **`FieldModeRoleWizard.svelte`.** The field-mode wizard has its own
+  `currentStepIdx` and is structurally similar to `RoleWizard`, but it is
+  out of scope for this task. Field-mode deep linking is a follow-up; we
+  document the gap rather than half-implementing it.
 - **Backfill.** The default `'{}'` covers existing rows. No data migration
   required.
+- **API schema surfacing.** `NotificationResponse` (Pydantic) intentionally
+  does not include `payload`; the field is internal-only and consumed by
+  the resolver, not by the frontend. The frontend reads the resolved URL
+  (with fragment already appended) via `resolve_notification_urls`.
 
 ## Acceptance criteria
 
 - Alembic migration applied; `alembic heads` returns a single head.
-- `Notification.payload` is `JSONB NOT NULL DEFAULT '{}'`.
+- `Notification.payload` is `JSONB NOT NULL DEFAULT '{}'` with a CHECK
+  constraint `octet_length(payload::text) <= 512`.
 - `send_notification(..., payload={"step_id": ...})` persists the payload
   on each created `Notification`; omitting `payload` keeps the default.
 - `resolve_notification_urls` appends `#step-<step_id>` when
-  `entity_type == "run"` and `payload.step_id` is a non-empty string;
-  no anchor otherwise.
+  `entity_type == "run"` and `payload.step_id` is a string matching
+  `^[A-Za-z0-9_-]{1,64}$`; no anchor otherwise.
 - Run page in PLANNED state: a deep link to a present step scrolls the
   EBR row into view and applies the highlight; an unknown step id no-ops.
 - Run page in COMPLETED/EDITED state: same behavior on the
   `RunResultsSummary` rows.
 - Run page in ACTIVE state for the role assignee: the `RoleWizard`
-  initializes on the matching step's page index and the wizard step
-  receives the highlight. ACTIVE observer view ignores the fragment.
+  seeds `currentStepIdx` to the matching step's page index **only when
+  the wizard is on step 0 and `executionData` has no unsaved edits**;
+  otherwise the wizard is left alone (silent no-op). The targeted step
+  receives the highlight when the wizard does land on it.
+- ACTIVE observer view ignores the fragment entirely (silent no-op).
+- Hash changes after mount (e.g. clicking a second notification while
+  the run page is already open) are handled — the page reacts to a
+  changed `$page.url.hash` and re-focuses.
+- `prefers-reduced-motion: reduce` users get an instant scroll (`behavior:
+  'auto'`) and no highlight animation.
 - Unit tests in `backend/tests/unit/test_notification_links.py` cover
-  payload-present and payload-absent paths.
+  payload-present, payload-absent, and validation-rejection paths.
 - Frontend test covers mount-with-fragment scroll + highlight for the
-  EBR table (PLANNED state).
+  EBR table (PLANNED state) **and** a second hash change after mount.
 - `.claude/rules/backend-services.md` documents the `payload.step_id`
-  contract for future producers.
+  contract and the `^[A-Za-z0-9_-]{1,64}$` shape for future producers.
 
 ---
 
@@ -103,12 +123,13 @@ The column is intentionally schemaless. Documented well-known keys:
 
 | Key       | Type   | Meaning                                                          |
 |-----------|--------|------------------------------------------------------------------|
-| `step_id` | string | Stable id of a step within `entity_type == "run"`'s graph snapshot. |
+| `step_id` | string | Stable id of a step within `entity_type == "run"`'s graph snapshot. Must match `^[A-Za-z0-9_-]{1,64}$`. |
 
 Future keys land here as siblings (signoff_id, attachment_id, comment_id)
 without further migrations.
 
-**Migration.** Alembic autogenerate, then review:
+**Migration.** Alembic autogenerate, then review. Add column **and**
+CHECK constraint:
 
 ```python
 op.add_column(
@@ -120,7 +141,16 @@ op.add_column(
         server_default=sa.text("'{}'::jsonb"),
     ),
 )
+op.create_check_constraint(
+    "ck_notifications_payload_size",
+    "notifications",
+    "octet_length(payload::text) <= 512",
+)
 ```
+
+512 bytes is generous for the documented keys (a UUID step_id is ~36
+bytes; even five sibling keys fit) and cheap insurance against a
+producer accidentally stuffing the whole event payload in here.
 
 No data migration needed (the server default covers existing rows). No
 new index — the column is consumed at read time by the resolver, never
@@ -141,6 +171,7 @@ async def send_notification(
     payload: dict | None = None,        # NEW — defaults preserve all callers
 ) -> None:
     ...
+    notif_payload = payload if payload is not None else {}
     for user_id in recipients:
         notif = Notification(
             user_id=user_id,
@@ -149,34 +180,46 @@ async def send_notification(
             entity_id=entity_id,
             title=title_personal,
             message=body_personal,
-            payload=payload or {},      # NEW
+            payload=notif_payload,      # NEW
         )
         db.add(notif)
 ```
 
+`payload if payload is not None else {}` (not `payload or {}`) so a
+caller explicitly passing `{}` is preserved verbatim and a falsy-but-
+present dict can't be coerced away by a future change.
+
 The wrapper docstring will document the `payload.step_id` contract for
-step-scoped events on a run.
+step-scoped events on a run, and the `^[A-Za-z0-9_-]{1,64}$` shape.
 
 **Resolver.** In `links.py::resolve_notification_urls`, after the
 existing `result[n.id] = f"/{org_slug}{path}"` line, append a fragment
-for run notifications carrying a `step_id`:
+for run notifications carrying a *validated* `step_id`:
 
 ```python
+import re
+
+_STEP_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
 url = f"/{org_slug}{path}"
 if (
     (n.entity_type or "").lower() == "run"
     and isinstance(n.payload, dict)
 ):
     step_id = n.payload.get("step_id")
-    if isinstance(step_id, str) and step_id:
+    if isinstance(step_id, str) and _STEP_ID_RE.match(step_id):
         url = f"{url}#step-{step_id}"
 result[n.id] = url
 ```
 
+The regex is the contract: producers send ids matching it, the resolver
+refuses to emit anchors for anything else, and the frontend uses the
+same regex to validate what it reads back from the hash. This closes
+off XSS via crafted fragments and keeps the contract enforceable in
+one place.
+
 Fragment over query string: not sent to the server, survives reloads,
-and we already serve a SPA. The id is stringified directly — step ids
-are stable strings inside the run graph snapshot, not opaque enough to
-need a separate encoder.
+and we already serve a SPA.
 
 ### Frontend
 
@@ -189,50 +232,100 @@ The run page has three rendering branches keyed off `run.status`:
 | ACTIVE        | `RunObserverView.svelte` (non-assignee)   | None              |
 | COMPLETED / EDITED | `RunResultsSummary.svelte`           | Yes — all steps   |
 
-**Shared helper.** New module
-`frontend/src/lib/utils/stepDeepLink.ts`:
+**Shared helper.** New module `frontend/src/lib/utils/stepDeepLink.ts`
+exports a single function:
 
 ```typescript
-/** Read #step-<id> from the URL hash. Returns null when absent or malformed. */
-export function readStepFragment(hash: string): string | null {
-  const m = /^#step-(.+)$/.exec(hash);
-  return m ? m[1] : null;
-}
-
 /**
  * Scroll the element with data-step-id={stepId} into view and apply a
  * 1.5s highlight. No-op if the element isn't in the DOM. Idempotent —
- * cancels any prior highlight on the same element.
+ * cancels any prior highlight on the same element. Honors
+ * `prefers-reduced-motion: reduce` (instant scroll, no animation).
  */
 export async function focusStep(stepId: string): Promise<void> { ... }
 ```
 
-`focusStep` waits one microtask, finds
-`[data-step-id="<stepId>"]`, calls `scrollIntoView({behavior: 'smooth',
-block: 'center'})`, toggles a `.step-deeplink-target` class for
-1.5 seconds, then removes it. The class is defined in the page's
-scoped style so consumers don't have to know the rule.
+That's the only export. Fragment parsing is intentionally **inlined at
+the call site** with `/^#step-([A-Za-z0-9_-]{1,64})$/` — three lines,
+shared regex with the backend, no reason to wrap it in a helper.
+
+`focusStep`:
+- Finds the element via `document.querySelector(\`[data-step-id="${CSS.escape(stepId)}"]\`)`.
+  `CSS.escape` is belt-and-suspenders given the regex already restricts
+  input, but cheap and correct.
+- Reads `window.matchMedia('(prefers-reduced-motion: reduce)').matches`.
+  If true: `scrollIntoView({behavior: 'auto', block: 'center'})` and
+  return without toggling the highlight class.
+- Otherwise: `scrollIntoView({behavior: 'smooth', block: 'center'})`,
+  toggles `.step-deeplink-target` on the element for 1.5 seconds, then
+  removes it.
+
+**Style injection.** `stepDeepLink.ts` injects its CSS rule
+(`.step-deeplink-target { ... }`) into `document.head` once, on first
+import, guarded by a module-level boolean. This keeps the visual
+contract co-located with the JS that toggles the class — consumers
+don't have to remember to ship the rule, and three call sites can't
+drift apart.
 
 **Three integration points** (one per state with rows):
 
 1. **EBR table** (`+page.svelte`, PLANNED state). Each `<Table.Row>`
-   gets `data-step-id={step.id}`. An `onMount` effect reads the
-   fragment and calls `focusStep`.
+   gets `data-step-id={step.id}`. An `$effect` subscribed to
+   `$page.url.hash` parses the fragment with the inline regex and
+   calls `focusStep` whenever the hash changes (covers both mount and
+   subsequent navigation to a second notification while the page is
+   already open).
+
 2. **`RunResultsSummary.svelte`** (COMPLETED/EDITED). Same
-   `data-step-id` attribute on each step card. Same `onMount` effect.
+   `data-step-id` attribute on each step card. Same `$effect`-on-hash
+   pattern.
+
 3. **`RoleWizard.svelte`** (ACTIVE, assignee). Wizard already tracks a
    `currentStepIdx` rune (`let currentStepIdx = $state(0)` at
-   `RoleWizard.svelte:72`). New `initialStepId?: string` prop. On
-   mount, if the prop is set and matches a step in the assignee's
-   page list, set `currentStepIdx` to that index and call
-   `focusStep` after the page renders. The wizard step container
-   gets `data-step-id` so the highlight finds it. If the step id
-   isn't in this assignee's page list (it belongs to another role),
-   no-op.
+   `RoleWizard.svelte:72`). New `initialStepId?: string` prop. An
+   `$effect` keyed on `[steps, initialStepId]` (not `onMount`) seeds
+   the wizard:
 
-The mount-time read of `window.location.hash` is centralized in
-`+page.svelte` once per state branch — each branch passes
-`stepIdFromHash` down as needed.
+   ```typescript
+   $effect(() => {
+     if (!initialStepId) return;
+     const idx = steps.findIndex(s => s.id === initialStepId);
+     if (idx < 0) return;                          // not in this role's pages
+     if (currentStepIdx !== 0) return;             // user already navigated; don't yank
+     if (hasUnsavedExecutionData()) return;        // protect in-flight edits
+     currentStepIdx = idx;
+     // focusStep runs after the wizard re-renders the new page; see below
+   });
+   ```
+
+   The effect is keyed on `steps` (not bare mount) so an unknown id
+   doesn't strand the user if `steps` arrive later. The wizard step
+   container gets `data-step-id={currentStep.id}` so the highlight
+   finds it. `focusStep(initialStepId)` is called from a second
+   `$effect` that fires after `currentStepIdx` changes — this is how
+   we avoid the old "wait a microtask" wording; we let Svelte's
+   reactivity drive ordering.
+
+   **Silent no-op rules** (per user decision, no banner):
+   - If `initialStepId` is unknown to this role: silent no-op.
+   - If the user has already advanced past step 0: silent no-op.
+   - If `executionData` has unsaved edits on the current step: silent
+     no-op. (We don't want the wizard to jump the user away from an
+     in-progress entry.)
+   - Observer view does not receive `initialStepId` at all.
+
+The mount-time read of `window.location.hash` is replaced by a
+`$page`-store subscription in `+page.svelte`; each state branch
+derives `stepIdFromHash` from `$page.url.hash` and passes it down as
+needed (PLANNED/COMPLETED use it directly; ACTIVE assignee passes it
+into `RoleWizard` as `initialStepId`; observer ignores it).
+
+**Pre-existing input id collisions.** `RoleWizard.svelte` currently
+uses `id="step-value"` (line 665) and `id="step-notes"` (line 692).
+Those collide with the `#step-<id>` fragment shape if a producer ever
+ships `step_id="value"` or `step_id="notes"`. Rename them to
+`step-value-input` and `step-notes-input` in this task (and update
+their `<label for=...>` siblings).
 
 ### Why a fragment, not a query
 
@@ -252,9 +345,13 @@ The mount-time read of `window.location.hash` is centralized in
 `backend/tests/unit/test_notification_links.py`:
 
 - Run + `payload={"step_id": "abc-123"}` → URL ends with `#step-abc-123`.
+- Run + `payload={"step_id": "valid_id-1"}` → anchor appended.
 - Run + `payload={}` → URL is the bare run path (no anchor).
-- Run + `payload={"step_id": ""}` → no anchor (empty string ignored).
+- Run + `payload={"step_id": ""}` → no anchor (empty rejected by regex).
 - Run + `payload={"step_id": 42}` → no anchor (non-string ignored).
+- Run + `payload={"step_id": "x" * 65}` → no anchor (length cap).
+- Run + `payload={"step_id": "bad id with spaces"}` → no anchor.
+- Run + `payload={"step_id": "<script>"}` → no anchor (charset rejects).
 - Run + `payload=None` → no anchor (defensive; the column is NOT NULL
   but defend against in-memory `None` from tests).
 - Experiment + `payload={"step_id": "abc"}` → no anchor (only run
@@ -268,46 +365,84 @@ file if present; otherwise add):
 
 - `send_notification(..., payload={"step_id": "abc"})` persists the
   payload on every created `Notification`.
-- `send_notification(...)` without `payload` defaults to `{}` (matches
-  the column default).
+- `send_notification(...)` without `payload` defaults to `{}`.
+- `send_notification(..., payload={})` persists `{}` verbatim (not
+  coerced to `None` or replaced).
 
 ### Frontend
 
 `frontend/src/lib/utils/stepDeepLink.test.ts`:
 
-- `readStepFragment("#step-abc")` → `"abc"`.
-- `readStepFragment("#step-")` → `null`.
-- `readStepFragment("#other")` → `null`.
-- `readStepFragment("")` → `null`.
 - `focusStep("abc")` calls `scrollIntoView` on the matching element
-  and toggles the highlight class.
+  and toggles the `.step-deeplink-target` class.
 - `focusStep("missing")` is a silent no-op.
+- With `prefers-reduced-motion: reduce` mocked to `true`,
+  `focusStep("abc")` uses `behavior: 'auto'` and does *not* toggle
+  the highlight class.
+- Style rule is injected exactly once even across multiple imports.
 
 `frontend/src/routes/[org]/projects/[projectSlug]/runs/[slug]/+page.svelte`:
-extend an existing test (or add `+page.test.ts`) to mount in PLANNED
-state with `window.location.hash = "#step-<id>"` and assert the
-matching row gets the highlight class.
+extend an existing test (or add `+page.test.ts`) to:
 
-`RoleWizard` test: mount with `initialStepId` for a step in the
-assignee's page list and assert `currentStepIdx` lands on the right
-page; mount with an unknown id and assert it stays at `0`.
+1. Mount in PLANNED state with `window.location.hash = "#step-<id>"`
+   and assert the matching row gets the highlight class.
+2. Then mutate `$page.url.hash` to `#step-<other-id>` and assert the
+   second row gets the highlight (proves the effect handles re-firing,
+   not just mount).
+
+`RoleWizard` test:
+- Mount with `initialStepId` for a step in the assignee's page list and
+  assert `currentStepIdx` lands on the right page.
+- Mount with an unknown id and assert it stays at `0`.
+- Mount with `currentStepIdx = 2` already (simulate prior navigation)
+  and assert `initialStepId` does *not* override it.
+- Mount with `hasUnsavedExecutionData() === true` and assert
+  `initialStepId` does *not* override the current page.
+
+### Browser verification (qa-verify)
+
+Add an explicit check that **`NotificationBell.svelte`'s
+`goto(href)`** preserves the `#step-<id>` fragment when the user
+clicks an inbox row. SvelteKit's `goto` historically strips fragments
+in some versions; we want to confirm the live behavior, not assume.
+Verify by clicking a seeded notification with a known step id and
+watching the URL bar settle on `…#step-<id>`.
 
 ---
 
 ## Risks & mitigations
 
-- **Race between mount and step rendering.** EBR rows are rendered
-  immediately on mount, but the wizard renders the current step lazily
-  on page-index change. `focusStep` waits one microtask; if the wizard
-  step is deeper than that, the wizard mount effect drives the call
-  itself after `currentStepIndex` settles.
+- **Race between hash change and step rendering.** Driven by
+  `$effect`s keyed on the relevant reactive inputs (`$page.url.hash`
+  for the simple cases; `[steps, initialStepId, currentStepIdx]` for
+  the wizard), so Svelte's scheduler handles ordering rather than us
+  guessing at microtask boundaries.
 - **Unknown step id in the URL.** Silent no-op. Producers should be
   trusted to send valid ids; an arbitrary user pasting `#step-foo`
   loads the page as if the fragment were absent. No error toast.
+- **XSS via crafted fragment.** Closed off by the
+  `^[A-Za-z0-9_-]{1,64}$` regex at both producer (resolver-side
+  validation) and consumer (frontend parse). `CSS.escape` is the
+  final belt-and-suspenders against any injection into the
+  attribute-selector path.
+- **Wizard yanking the user away from in-flight work.** The seeding
+  effect refuses to move `currentStepIdx` when the user has already
+  navigated past step 0 or has unsaved `executionData`. Silent, per
+  the chosen UX direction.
 - **Future payload schema drift.** The column is schemaless on purpose
   — siblings (signoff_id, attachment_id) can land without migrations.
   Validation happens at the producer (and at the resolver, which only
-  reads `step_id` as a string).
+  honors known keys).
+- **Payload bloat.** The 512-byte CHECK constraint stops a producer
+  from accidentally stuffing the full event into `payload`. If a
+  legitimate use case ever needs more, raise the cap deliberately.
+- **`NotificationResponse` doesn't expose `payload`.** Intentional;
+  the resolved URL (with fragment) is the only thing the frontend
+  needs. If a future feature needs structured payload on the client,
+  add it to the schema then.
+- **`NotificationBell.svelte` `goto(href)` may strip fragments.**
+  Mitigated by the qa-verify browser check above; if it does strip,
+  fall back to `window.location.href = href` for hash-bearing URLs.
 - **Forward-compat with secondary entity routing.** If a future
   notification points to an experiment+run pair (rare today), it can
   store `payload.run_id` and the experiment resolver can opt in
@@ -320,26 +455,37 @@ page; mount with an unknown id and assert it stays at `0`.
 
 Backend:
 - `backend/app/models/notifications.py` (+1 column)
-- `backend/alembic/versions/<new>_add_notification_payload.py` (new)
+- `backend/alembic/versions/<new>_add_notification_payload.py` (new —
+  column + CHECK constraint)
 - `backend/app/services/core/notifications/__init__.py` (signature + persist)
-- `backend/app/services/core/notifications/links.py` (resolver append)
+- `backend/app/services/core/notifications/links.py` (resolver append +
+  shared `_STEP_ID_RE` regex)
 - `backend/tests/unit/test_notification_links.py` (extend)
 - `backend/tests/unit/test_notification_service.py` (extend or create)
 
 Frontend:
-- `frontend/src/lib/utils/stepDeepLink.ts` (new)
+- `frontend/src/lib/utils/stepDeepLink.ts` (new — exports only
+  `focusStep`; injects its own `<style>` once)
 - `frontend/src/lib/utils/stepDeepLink.test.ts` (new)
 - `frontend/src/routes/[org]/projects/[projectSlug]/runs/[slug]/+page.svelte`
-  (EBR rows get `data-step-id`; mount effect; pass `initialStepId` to
-  `RoleWizard`)
+  (EBR rows get `data-step-id`; `$effect` on `$page.url.hash`; pass
+  `initialStepId` to `RoleWizard`)
 - `frontend/src/lib/components/run/RunResultsSummary.svelte`
-  (step cards get `data-step-id`; mount effect)
+  (step cards get `data-step-id`; `$effect` on `$page.url.hash`)
 - `frontend/src/lib/components/run/RoleWizard.svelte` (`initialStepId`
-  prop; effect on mount)
-- Frontend test for run page PLANNED-state scroll
-- Frontend test for `RoleWizard` `initialStepId` page-index seed
+  prop; seeding `$effect` with safety guards; rename `id="step-value"`
+  → `step-value-input` and `id="step-notes"` → `step-notes-input` plus
+  their `<label for=...>` siblings)
+- Frontend test for run page PLANNED-state scroll + second hash change
+- Frontend test for `RoleWizard` `initialStepId` page-index seed +
+  no-op guards
 
 Docs:
-- `.claude/rules/backend-services.md` (notification payload contract)
-- `CLAUDE.md` (mention `payload` column if it warrants a one-liner; skip
-  if it doesn't)
+- `.claude/rules/backend-services.md` (notification payload contract,
+  `payload.step_id` shape `^[A-Za-z0-9_-]{1,64}$`)
+- `CLAUDE.md` (mention `payload` column if it warrants a one-liner;
+  skip if it doesn't)
+
+Out of scope (documented gap):
+- `frontend/src/lib/components/field-mode/FieldModeRoleWizard.svelte`
+  — field-mode deep linking is a follow-up task.
