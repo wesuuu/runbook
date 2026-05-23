@@ -51,6 +51,7 @@ Do **not** create a worktree yet — brainstorming and planning happen in the ma
 2c. **Spec review panel.** Dispatch the relevant reviewers in **parallel** (single message, multiple `Agent` calls) against the spec:
 - `adversarial-risk-auditor` — always
 - `dry-reuse-auditor` — always
+- `coupling-impact-analyzer` — always
 - `db-scalability-reviewer` — if schema, migration, or query changes
 - `production-ops-reviewer` — if new endpoint, background job, or external dep
 - `uiux-design-reviewer` — if user-facing UI
