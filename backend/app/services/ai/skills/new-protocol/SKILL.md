@@ -21,7 +21,7 @@ Before asking the picker question, scan the user's most recent message for an un
 1. **Library** — ground the protocol on the org's indexed research library.
 2. **External repositories** — search OpenWetWare and protocols.io (requires approval before any external content is used).
 3. **From scratch** — draft without any source.
-4. **Search all** — try the library first, fall back to OpenWetWare if nothing relevant is found.
+4. **Search all** — try the library first, fall back to external repositories (OpenWetWare and protocols.io) if nothing relevant is found.
 
 ## Step 2 — Route based on the user's reply
 
