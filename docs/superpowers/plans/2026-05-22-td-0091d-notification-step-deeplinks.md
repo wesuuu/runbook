@@ -388,7 +388,12 @@
                           entity_id=entity_id,
                           title=title_personal,
                           message=body_personal,
-                          payload=notif_payload,
+                          # Per-row dict copy so SQLAlchemy doesn't hand the
+                          # same mutable dict to N ORM instances. JSONB
+                          # serialization is independent, but defensive
+                          # copying rules out a later mutation surprising
+                          # the other rows.
+                          payload=dict(notif_payload),
                       )
                   )
               await db.flush()
@@ -410,7 +415,7 @@
   pytest tests/unit/test_notifications.py tests/unit/test_notification_links.py tests/unit/test_notification_policy.py tests/unit/test_notification_provisioning.py tests/unit/test_notification_service.py -v
   ```
 
-  Expected: all pass. The existing 5 call sites pass positional args and stop at `context`, so the new keyword-only `payload=None` default keeps them unchanged.
+  Expected: all pass. The existing 13 call sites across the service layer (verified via `grep -rn 'send_notification(' backend/app`) pass positional args and stop at `context`, so the new keyword `payload=None` default keeps them unchanged.
 
 - [ ] **Step 6: Commit.**
 
@@ -704,7 +709,7 @@
           expect(scrollSpy).toHaveBeenCalledWith(
               expect.objectContaining({
                   behavior: 'smooth',
-                  block: 'center',
+                  block: 'nearest',
               }),
           );
           expect(el.classList.contains('step-deeplink-target')).toBe(true);
@@ -820,20 +825,21 @@
       const style = document.createElement('style');
       style.id = STYLE_ID;
       style.setAttribute('data-step-deeplink', '');
+      // Use box-shadow (not outline) so the highlight survives parents
+      // with overflow:hidden; use var(--ring) so it tracks each theme
+      // (lab-glass / blueprint / apothecary) rather than baking in teal.
       style.textContent = `
 .${HIGHLIGHT_CLASS} {
     animation: stepDeepLinkPulse ${HIGHLIGHT_MS}ms ease-out;
-    outline: 2px solid rgb(20 184 166);
-    outline-offset: 4px;
     border-radius: 6px;
 }
 @keyframes stepDeepLinkPulse {
-    0%   { outline-color: rgba(20, 184, 166, 0.0); background-color: rgba(20, 184, 166, 0.0); }
-    20%  { outline-color: rgba(20, 184, 166, 0.9); background-color: rgba(20, 184, 166, 0.18); }
-    100% { outline-color: rgba(20, 184, 166, 0.0); background-color: rgba(20, 184, 166, 0.0); }
+    0%   { box-shadow: 0 0 0 0 hsl(var(--ring) / 0); background-color: hsl(var(--ring) / 0); }
+    20%  { box-shadow: 0 0 0 4px hsl(var(--ring) / 0.55); background-color: hsl(var(--ring) / 0.10); }
+    100% { box-shadow: 0 0 0 0 hsl(var(--ring) / 0); background-color: hsl(var(--ring) / 0); }
 }
 @media (prefers-reduced-motion: reduce) {
-    .${HIGHLIGHT_CLASS} { animation: none; outline: none; }
+    .${HIGHLIGHT_CLASS} { animation: none; box-shadow: none; background: none; }
 }
 `.trim();
       document.head.appendChild(style);
@@ -860,7 +866,9 @@
       const reduceMotion = prefersReducedMotion();
       el.scrollIntoView({
           behavior: reduceMotion ? 'auto' : 'smooth',
-          block: 'center',
+          // 'nearest' avoids dramatic re-scrolls when the element is
+          // already on-screen; only scrolls if it isn't fully visible.
+          block: 'nearest',
       });
       if (reduceMotion) return;
 
@@ -904,6 +912,7 @@
   At the top of the `<script>` block in `+page.svelte`, ensure these imports exist (some may already be present). Add what's missing:
 
   ```typescript
+  import { tick } from 'svelte';
   import { page } from '$app/stores';
   import { focusStep } from '$lib/utils/stepDeepLink';
   ```
@@ -953,10 +962,11 @@
       if (run.status !== 'PLANNED' && !['COMPLETED', 'EDITED'].includes(run.status)) {
           return;
       }
-      // Wait one tick for the DOM to settle after the state-branch render.
-      queueMicrotask(() => {
-          focusStep(stepIdFromHash);
-      });
+      const id = stepIdFromHash;
+      // Wait for Svelte's flush + DOM patch (tick) instead of microtask:
+      // queueMicrotask fires before the DOM update, so the [data-step-id]
+      // node may not exist yet on the first paint.
+      tick().then(() => focusStep(id));
   });
   ```
 
@@ -973,7 +983,7 @@
   2. Navigate to a PLANNED run with at least 3 steps.
   3. Pick a step's id from the EBR table (open dev tools, inspect a row, copy the `data-step-id`).
   4. Append `#step-<that-id>` to the URL and press Enter.
-  5. The matching row should scroll into view and pulse a teal outline for ~1.5s.
+  5. The matching row should scroll into view and pulse a themed highlight (ring color of the active theme) for ~1.5s.
   6. Append `#step-<a-different-id>` and observe the second row gets the same treatment without a full reload.
 
   Report any unexpected behavior in the task log; do not skip this step.
@@ -1040,12 +1050,13 @@ The same `$effect` from Task 6 already covers COMPLETED/EDITED state (it checks 
 
 ---
 
-## Task 8: Rename `RoleWizard` input ids that collide with `#step-<id>`
+## Task 8: Rename `RoleWizard` + `FieldModeRoleWizard` input ids that collide with `#step-<id>`
 
 **Files:**
 - Modify: `frontend/src/lib/components/run/RoleWizard.svelte` (lines 658, 665, 686, 692)
+- Modify: `frontend/src/lib/components/field-mode/FieldModeRoleWizard.svelte` (lines 473, 477, 493, 497)
 
-The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea uses `id="step-notes"`. Both collide with the `#step-<id>` URL-fragment shape (a producer that sent `step_id="value"` or `step_id="notes"` would highlight the *input*, not the step). Rename now, while we're touching the file.
+Both wizards use `id="step-value"` and `id="step-notes"`. Browsers resolve URL fragments against the global `id` index, so a producer emitting `step_id="value"` would yield `#step-value` and the browser would jump to the *input*, not the step. Field mode is out-of-scope for the deep-link *feature*, but the id rename is a self-contained, defensive fix and we touch the file once now rather than racing a future producer.
 
 - [ ] **Step 1: Rename `step-value` → `step-value-input`.**
 
@@ -1061,7 +1072,11 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
   - `for="step-notes"` → `for="step-notes-input"`
   - `id="step-notes"` → `id="step-notes-input"`
 
-- [ ] **Step 3: Confirm no other references to these ids.**
+- [ ] **Step 3: Apply the same renames in `FieldModeRoleWizard.svelte`.**
+
+  Same file structure, same collision. In `frontend/src/lib/components/field-mode/FieldModeRoleWizard.svelte` find the `for="step-value"` (line 473), `id="step-value"` (line 477), `for="step-notes"` (line 493), and `id="step-notes"` (line 497) — rename all four to `step-value-input` / `step-notes-input` to match Steps 1–2.
+
+- [ ] **Step 4: Confirm no other references to these ids.**
 
   ```bash
   grep -rn 'step-value\|step-notes' frontend/src/ | grep -v step-value-input | grep -v step-notes-input | grep -v 'step-id'
@@ -1069,15 +1084,15 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
 
   Expected: empty (no stragglers). If anything prints, update those call sites too.
 
-- [ ] **Step 4: Manual smoke check (optional but cheap).**
+- [ ] **Step 5: Manual smoke check (optional but cheap).**
 
   Click into the legacy-fallback step in the wizard, type in the value and notes fields, confirm they still work and the `<label>` clicks correctly focus the matching input.
 
-- [ ] **Step 5: Commit.**
+- [ ] **Step 6: Commit.**
 
   ```bash
-  git add frontend/src/lib/components/run/RoleWizard.svelte
-  git commit -m "refactor(TD-0091d): rename RoleWizard step-value/notes input ids"
+  git add frontend/src/lib/components/run/RoleWizard.svelte frontend/src/lib/components/field-mode/FieldModeRoleWizard.svelte
+  git commit -m "refactor(TD-0091d): rename step-value/notes input ids in both wizards"
   ```
 
 ---
@@ -1090,11 +1105,12 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
 
 - [ ] **Step 1: Add `initialStepId` prop + seeding effect to `RoleWizard`.**
 
-  In `RoleWizard.svelte`, modify the `Props` destructuring (currently line 54-70) to add `initialStepId` and add an import for `focusStep` at the top of the script block.
+  In `RoleWizard.svelte`, modify the `Props` destructuring (currently line 54-70) to add `initialStepId` and add imports at the top of the script block.
 
   Add to the imports:
 
   ```typescript
+  import { tick, untrack } from 'svelte';
   import { focusStep } from '$lib/utils/stepDeepLink';
   ```
 
@@ -1149,19 +1165,21 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
   After the existing `$effect` that populates `stepData` from `executionData` (currently line 114-122), add:
 
   ```typescript
-  // TD-0091d: detect unsaved edits on the current step. We treat "any
-  // non-pending status with results/value/notes touched since the
-  // matching executionData snapshot" as in-flight work — seeding away
-  // from it would lose the user's place. Conservative: if uncertain,
-  // don't seed.
+  // TD-0091d: track which initialStepId we've already processed so the
+  // seeding effect is strictly one-shot per value of the prop. Prevents
+  // the wizard from yanking the user back to the deep-link target if
+  // they've manually navigated and then `executionData` (an effect
+  // dependency we deliberately untrack below) updates.
+  let lastSeededStepId = $state<string | null>(null);
+
+  // TD-0091d: detect unsaved edits on the current step. Conservative —
+  // if uncertain, treat as unsaved so we don't clobber in-flight work.
   function hasUnsavedExecutionData(): boolean {
       const sid = steps[currentStepIdx]?.id;
       if (!sid) return false;
       const live = stepData[sid];
       const snapshot = executionData?.[sid];
       if (!live) return false;
-      // Compare the recordable fields, not the status (status changes
-      // through normal flow are not "unsaved" per se).
       const liveFields = {
           results: live.results ?? null,
           value: live.value ?? null,
@@ -1176,42 +1194,67 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
   }
 
   // TD-0091d: seed currentStepIdx from a deep link, but only when safe.
-  // - Keyed on [steps, initialStepId] so the wizard reacts when steps
-  //   load asynchronously OR when a second notification is clicked.
-  // - Silent no-op if: id unknown to this role, user already navigated
-  //   past step 0, or any field on the current step has unsaved edits.
+  // Tracks ONLY `initialStepId` (and `steps.length` transitions 0→N for
+  // async loads) by reading mutable state through `untrack`. Reasons for
+  // a silent no-op: id unknown to this role, user already navigated past
+  // step 0, or the current step has unsaved edits.
   $effect(() => {
       if (!initialStepId) return;
+      if (lastSeededStepId === initialStepId) return;
+      // Reading `steps.length` is reactive on purpose — handles the
+      // async-load case where steps arrive after mount.
       if (steps.length === 0) return;
-      const idx = steps.findIndex((s) => s.id === initialStepId);
-      if (idx < 0) return; // not in this role's pages — observer-style no-op
-      if (currentStepIdx !== 0) return; // user already navigated
-      if (hasUnsavedExecutionData()) return; // protect in-flight edits
-      currentStepIdx = idx;
+
+      untrack(() => {
+          const idx = steps.findIndex((s) => s.id === initialStepId);
+          if (idx < 0) {
+              lastSeededStepId = initialStepId; // mark handled; observer-style no-op
+              return;
+          }
+          if (currentStepIdx !== 0) {
+              lastSeededStepId = initialStepId; // user already moved; respect that
+              return;
+          }
+          if (hasUnsavedExecutionData()) {
+              lastSeededStepId = initialStepId; // don't clobber in-flight edits
+              return;
+          }
+          currentStepIdx = idx;
+          lastSeededStepId = initialStepId;
+      });
   });
 
   // TD-0091d: after currentStepIdx settles, scroll + highlight the
-  // wizard's step container. Runs whenever the wizard lands on the
-  // deep-link target.
+  // wizard's step container. Runs whenever the wizard lands on (or is
+  // already on) the deep-link target. `tick()` waits for Svelte's DOM
+  // flush so [data-step-id] is queryable.
   $effect(() => {
       if (!initialStepId) return;
       if (steps[currentStepIdx]?.id !== initialStepId) return;
-      // Wait for the step DOM to mount.
-      queueMicrotask(() => {
-          focusStep(initialStepId);
-      });
+      const id = initialStepId;
+      tick().then(() => focusStep(id));
   });
   ```
 
-- [ ] **Step 3: Stamp `data-step-id` on the wizard's current-step container.**
+- [ ] **Step 3: Stamp `data-step-id` on the wizard's form-fields container.**
 
-  In `RoleWizard.svelte`, find the outer container that wraps the rendered current step (the element that surrounds the `editableFields` / legacy fallback / notes blocks). This is the parent element of the `{#if hasSchema}` / `{:else}` legacy fallback.
+  In `RoleWizard.svelte`, find the form-fields wrapper at line 564:
 
-  Looking at the file structure: the wizard renders `currentStep` inside a panel. Find the outermost step-rendering `<div>` that contains both the `{#each editableFields ...}` block and the notes textarea. Add `data-step-id={currentStep?.id}` to it.
+  ```svelte
+              <!-- Form Fields -->
+              <div class="flex-1 space-y-6 mb-8">
+                  {#if hasSchema}
+  ```
 
-  If a single clean outer wrapper isn't obvious in the current markup (the template is wide), wrap the relevant region in a new `<div data-step-id={currentStep?.id}>...</div>` immediately *inside* the panel that holds the form. The wrapper must enclose the visible step content (form fields + notes) so the highlight visibly surrounds the step the user is meant to act on.
+  Change the opening `<div>` to:
 
-  Document the exact insertion point you chose in the commit message so reviewers can find it.
+  ```svelte
+              <!-- Form Fields -->
+              <div data-step-id={currentStep?.id} class="flex-1 space-y-6 mb-8">
+                  {#if hasSchema}
+  ```
+
+  This wrapper encloses both branches of the `{#if hasSchema}` (schema-driven fields and the legacy fallback) plus the notes textarea, so the highlight visibly surrounds the entire interactive region of the current step.
 
 - [ ] **Step 4: Wire `initialStepId` from the run page into `<RoleWizard>`.**
 
@@ -1248,7 +1291,7 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
                               />
   ```
 
-  Also update the PLANNED/COMPLETED `$effect` (added in Task 6, Step 3) so the ACTIVE branch is excluded from the page-level `focusStep` call — the wizard owns its own focus there:
+  Also update the page-level `$effect` (added in Task 6, Step 3) so the ACTIVE branch is excluded from the page-level `focusStep` call — the wizard owns its own focus there:
 
   ```typescript
   $effect(() => {
@@ -1260,9 +1303,8 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
       const isPageRendered =
           status === 'PLANNED' || status === 'COMPLETED' || status === 'EDITED';
       if (!isPageRendered) return;
-      queueMicrotask(() => {
-          focusStep(stepIdFromHash);
-      });
+      const id = stepIdFromHash;
+      tick().then(() => focusStep(id));
   });
   ```
 
@@ -1286,12 +1328,40 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
 
 ---
 
-## Task 10: Verify `NotificationBell` `goto(href)` preserves the fragment
+## Task 10: Preserve URL fragment when routing from notification surfaces
 
 **Files:**
-- Test only — no source changes expected. If a regression is found, fall back to `window.location.href = href` for hash-bearing URLs.
+- Modify: `frontend/src/lib/components/layout/NotificationBell.svelte` (`handleSelect` around line 111)
+- Modify: `frontend/src/routes/notifications/+page.svelte` (the same `goto(href)` call, around line 111)
 
-- [ ] **Step 1: Seed a test notification with `payload.step_id`.**
+SvelteKit's `goto(href)` is inconsistent with hash-bearing URLs: when the destination is the current page, the fragment may or may not trigger a hashchange-style update depending on history state. Rather than test-and-react, apply the fallback unconditionally at both notification entry points — the behavior of `window.location.href` for hash-bearing URLs is well-defined and cheap. Both files duplicate the same `goto(href)` line, so both need the same patch.
+
+- [ ] **Step 1: Patch `NotificationBell.svelte` `handleSelect`.**
+
+  Find the line that calls `goto(href)` inside `handleSelect` (around line 111). Replace:
+
+  ```typescript
+  goto(href);
+  ```
+
+  with:
+
+  ```typescript
+  // TD-0091d: hash-bearing URLs from the resolver (#step-<id>) must
+  // navigate via window.location so the fragment is honored even when
+  // already on the destination page. `goto` is fine for plain hrefs.
+  if (href.includes('#')) {
+      window.location.href = href;
+  } else {
+      goto(href);
+  }
+  ```
+
+- [ ] **Step 2: Apply the same patch in `routes/notifications/+page.svelte`.**
+
+  The standalone notifications page duplicates the bell's click logic. Find the matching `goto(href)` call (around line 111) and apply the identical replacement from Step 1.
+
+- [ ] **Step 3: Seed a test notification with `payload.step_id`.**
 
   In the worktree's backend Python shell:
 
@@ -1321,30 +1391,20 @@ The wizard's legacy-fallback input uses `id="step-value"` and the notes textarea
   "
   ```
 
-  Easier alternative: in `psql`, `INSERT` directly into `notifications` with the desired payload — `send_notification` is more realistic but `INSERT` is faster for a one-shot manual test.
+- [ ] **Step 4: Manual browser smoke test for both entry points.**
 
-- [ ] **Step 2: Click the notification in the bell.**
+  1. Open the run page.
+  2. Open the bell, click the seeded notification → URL settles on `…#step-<id>`, matching row pulses.
+  3. Navigate to `/notifications`, click the seeded notification → same outcome.
 
-  Open the run page in your browser. Open the notification bell. Click the seeded notification. Watch the URL bar:
+  If either path drops the fragment, the conditional in Steps 1–2 isn't catching that case — investigate before continuing.
 
-  - **Expected**: URL settles on `…#step-<id>` and the matching row pulses.
-  - **Regression**: if the URL drops the fragment, SvelteKit's `goto(href)` is stripping it. Fall back: in `NotificationBell.svelte` `handleSelect`, replace `goto(href)` with:
+- [ ] **Step 5: Commit.**
 
-    ```typescript
-    if (href.includes('#')) {
-        window.location.href = href;
-    } else {
-        goto(href);
-    }
-    ```
-
-    Commit the fallback as `fix(TD-0091d): preserve URL fragment when routing from notification bell`.
-
-  If no regression: log the verification in the task notes and continue.
-
-- [ ] **Step 3: Commit (only if Step 2 required the fallback).**
-
-  See above commit message in Step 2.
+  ```bash
+  git add frontend/src/lib/components/layout/NotificationBell.svelte frontend/src/routes/notifications/+page.svelte
+  git commit -m "fix(TD-0091d): preserve URL fragment when routing from notification surfaces"
+  ```
 
 ---
 
@@ -1430,7 +1490,23 @@ All commits are on the worktree branch. The implement-task skill's verification 
 
 ## Self-review notes
 
-- **Spec coverage:** every acceptance criterion in the spec has a corresponding task — schema (Tasks 1–2), service wrapper (Task 3), resolver (Task 4), helper (Task 5), three integration points (Tasks 6, 7, 9), wizard input rename (Task 8), NotificationBell verify (Task 10), rule doc (Task 11), green-check (Task 12).
+- **Spec coverage:** every acceptance criterion in the spec has a corresponding task — schema (Tasks 1–2), service wrapper (Task 3), resolver (Task 4), helper (Task 5), three integration points (Tasks 6, 7, 9), wizard input rename (Task 8), URL-fragment fallback (Task 10), rule doc (Task 11), green-check (Task 12).
 - **Spec drift:** the spec showed `send_notification(db: AsyncSession, ...)` as the existing signature; the real signature opens its own `AsyncSessionLocal` and takes no `db`. The plan uses the real signature and adds `payload` as the 7th keyword arg after `context` — semantically equivalent to what the spec intended.
-- **Observer view & FieldModeRoleWizard:** explicitly out of scope; no task touches either.
+- **Observer view & FieldModeRoleWizard deep-link feature:** explicitly out of scope. The FieldModeRoleWizard id rename in Task 8 Step 3 is the *only* touch — a defensive collision fix, not a feature backport.
 - **No placeholders:** every code block is complete; every command shows expected output.
+
+### Plan-review-panel triage (applied)
+
+- **DB scalability:** per-row `dict(notif_payload)` copy in Task 3 Step 3 — avoids sharing one mutable dict across N ORM instances.
+- **DRY / coupling:** call-site count corrected from 5 to 13 in Task 3 Step 5; `routes/notifications/+page.svelte` added to Task 10 alongside `NotificationBell.svelte`.
+- **Adversarial / wizard race:** Task 9 Step 2 rewritten with `lastSeededStepId` sentinel + `untrack` so the seeding effect is strictly one-shot per `initialStepId`. `tick()` replaces `queueMicrotask` in Tasks 6 and 9 so the DOM is patched before `focusStep` queries it.
+- **UI/UX:** `stepDeepLink` CSS in Task 5 swapped from hardcoded teal `outline` to `box-shadow` + `background-color` driven by `hsl(var(--ring) / ...)` — survives ancestor `overflow:hidden` and tracks each theme. `scrollIntoView` uses `block: 'nearest'`.
+- **Fragment routing:** Task 10 restructured from "test, fall back if broken" to "apply the well-defined `window.location.href` path unconditionally for hash-bearing URLs at both notification surfaces."
+- **Task 9 Step 3:** prescriptive — wrap the existing `<div class="flex-1 space-y-6 mb-8">` at line 564 in `RoleWizard.svelte`. No more "find the right wrapper."
+
+### Plan-review-panel triage (rejected, with reason)
+
+- **`id="result-{key}"` collision (adversarial MUST FIX):** browser fragment navigation matches `id`, so `#step-<id>` only resolves to `id="step-<id>"`. A `result-x` input id would only be hit by `#result-x`, which the resolver never produces. The original `step-value` / `step-notes` rename in Task 8 covers the real cases.
+- **Migration NOT VALID + VALIDATE (adversarial SHOULD CONSIDER):** the `notifications` table is small at current scale; a one-pass CHECK validation is fine. Worth revisiting if production volume grows.
+- **"Jump to step X" banner affordance (UI/UX recommendation):** user explicitly vetoed banners during spec brainstorming; deep-link is a silent, immediate scroll/highlight by design.
+- **`aria-live` announcement (UI/UX recommendation):** the user initiated the navigation themselves (clicked a notification); a screen-reader announcement on top of the URL change would be redundant noise.
