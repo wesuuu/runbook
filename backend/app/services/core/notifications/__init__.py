@@ -40,6 +40,7 @@ async def send_notification(
     entity_id: UUID,
     recipients: list[UUID],
     context: dict,
+    payload: dict | None = None,
 ) -> None:
     """Main entry point: create in-app notifications and dispatch to channels.
 
@@ -53,6 +54,10 @@ async def send_notification(
         entity_id: Entity UUID for deep linking.
         recipients: List of user IDs to notify.
         context: Template variables (run_name, role_name, etc.).
+        payload: Optional schemaless dict persisted on each Notification.
+            TD-0091d: pass {"step_id": "<id>"} (matching
+            ^[A-Za-z0-9_-]{1,64}$) for step-scoped events on a run; the
+            resolver will append #step-<id> to the deep link.
     """
     template_fn = TEMPLATES.get(event_type)
     if not template_fn:
@@ -66,6 +71,7 @@ async def send_notification(
         template_fn(context, personal=False)
     )
 
+    notif_payload = payload if payload is not None else {}
     async with AsyncSessionLocal() as db:
         try:
             for user_id in recipients:
@@ -77,6 +83,9 @@ async def send_notification(
                         entity_id=entity_id,
                         title=title_personal,
                         message=body_personal,
+                        # Per-row dict copy so SQLAlchemy doesn't hand the
+                        # same mutable dict to N ORM instances.
+                        payload=dict(notif_payload),
                     )
                 )
             await db.flush()
