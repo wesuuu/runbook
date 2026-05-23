@@ -1,6 +1,12 @@
 import { render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import EquipmentPickerModal from './EquipmentPickerModal.svelte';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const modalSource = readFileSync(join(__dirname, 'EquipmentPickerModal.svelte'), 'utf8');
 
 const sites = [
     { id: 'default', organization_id: 'o', name: 'Default Site', is_default: true, archived_at: null, created_at: '', updated_at: '' },
@@ -34,5 +40,147 @@ describe('EquipmentPickerModal site default', () => {
             props: { sites, open: true, mode: 'create', onCreateEquipment: vi.fn() },
         });
         expect((getByRole('combobox') as HTMLSelectElement).value).toBe('default');
+    });
+});
+
+describe('EquipmentPickerModal create form layout', () => {
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
+    it('pick mode: in-form Discard button renders inside .create-form when expanded', async () => {
+        const { container, getByRole } = render(EquipmentPickerModal, {
+            props: {
+                sites,
+                open: true,
+                mode: 'pick',
+                orgEquipment: [],
+                onCreateEquipment: vi.fn(),
+            },
+        });
+        (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
+        await Promise.resolve();
+        const createForm = container.querySelector('.create-form');
+        expect(createForm).not.toBeNull();
+        const footer = createForm!.querySelector('.create-form-footer');
+        expect(footer).not.toBeNull();
+        const buttons = Array.from(footer!.querySelectorAll('button'));
+        const labels = buttons.map((b) => (b.textContent ?? '').trim().toLowerCase());
+        expect(labels).toContain('discard');
+        expect(labels.some((l) => l.includes('create equipment'))).toBe(true);
+    });
+
+    it('pick mode: "+ Add New Equipment" toggle is hidden while the form is open', async () => {
+        const { container, getByRole, queryByRole } = render(EquipmentPickerModal, {
+            props: {
+                sites,
+                open: true,
+                mode: 'pick',
+                orgEquipment: [],
+                onCreateEquipment: vi.fn(),
+            },
+        });
+        const opener = getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement;
+        opener.click();
+        await Promise.resolve();
+        expect(queryByRole('button', { name: /add new equipment/i })).toBeNull();
+        expect(container.querySelector('.create-form')).not.toBeNull();
+    });
+
+    it('pick mode: clicking the in-form Discard closes the form and resets fields', async () => {
+        const { container, getByRole, getByLabelText } = render(EquipmentPickerModal, {
+            props: {
+                sites,
+                open: true,
+                mode: 'pick',
+                orgEquipment: [],
+                onCreateEquipment: vi.fn(),
+            },
+        });
+        (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
+        await Promise.resolve();
+        const nameInput = getByLabelText(/equipment name/i) as HTMLInputElement;
+        nameInput.value = 'Scratch';
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await Promise.resolve();
+        const discardBtn = Array.from(container.querySelectorAll('.create-form-footer button'))
+            .find((b) => (b.textContent ?? '').trim().toLowerCase() === 'discard') as HTMLButtonElement;
+        expect(discardBtn).toBeTruthy();
+        discardBtn.click();
+        await Promise.resolve();
+        expect(container.querySelector('.create-form')).toBeNull();
+        (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
+        await Promise.resolve();
+        const reopened = getByLabelText(/equipment name/i) as HTMLInputElement;
+        expect(reopened.value).toBe('');
+    });
+
+    it('does not double-scroll: .equipment-list CSS no longer declares overflow-y', () => {
+        const styleBlock = modalSource.match(/<style>[\s\S]*?<\/style>/)?.[0] ?? '';
+        const listRule = styleBlock.match(/\.equipment-list\s*\{[\s\S]*?\}/)?.[0] ?? '';
+        expect(listRule).not.toBe('');
+        expect(listRule).not.toMatch(/overflow-y\s*:/);
+        const modalRule = styleBlock.match(/\.equipment-modal\s*\{[\s\S]*?\}/)?.[0] ?? '';
+        expect(modalRule).toMatch(/overflow-y\s*:\s*auto/);
+        expect(modalRule).not.toMatch(/max-height\s*:\s*500px/);
+        expect(modalRule).toMatch(/min-height\s*:\s*0/);
+    });
+
+    it('pick mode: re-opening the dialog after close resets the create form fields', async () => {
+        const { rerender, getByRole, getByLabelText } = render(EquipmentPickerModal, {
+            props: {
+                sites,
+                open: true,
+                mode: 'pick',
+                orgEquipment: [],
+                onCreateEquipment: vi.fn(),
+            },
+        });
+        (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
+        await Promise.resolve();
+        const nameInput = getByLabelText(/equipment name/i) as HTMLInputElement;
+        nameInput.value = 'Leaked';
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await Promise.resolve();
+        await rerender({
+            sites,
+            open: false,
+            mode: 'pick',
+            orgEquipment: [],
+            onCreateEquipment: vi.fn(),
+        });
+        await rerender({
+            sites,
+            open: true,
+            mode: 'pick',
+            orgEquipment: [],
+            onCreateEquipment: vi.fn(),
+        });
+        (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
+        await Promise.resolve();
+        const reopened = getByLabelText(/equipment name/i) as HTMLInputElement;
+        expect(reopened.value).toBe('');
+    });
+
+    it('pick mode: "Close form" appears in sticky search row only when form is open and out of view', () => {
+        const tpl = modalSource;
+        expect(tpl).toMatch(/showCreateForm\s*&&\s*!isCreateFormInView/);
+        expect(tpl).toMatch(/Close form/);
+        expect(tpl).toMatch(/Go to form/);
+    });
+
+    it('create mode: the form footer has only a Create Equipment button (no Discard)', () => {
+        const { container } = render(EquipmentPickerModal, {
+            props: {
+                sites,
+                open: true,
+                mode: 'create',
+                onCreateEquipment: vi.fn(),
+            },
+        });
+        const footer = container.querySelector('.create-form-footer');
+        expect(footer).not.toBeNull();
+        const buttons = Array.from(footer!.querySelectorAll('button'));
+        expect(buttons).toHaveLength(1);
+        expect((buttons[0].textContent ?? '').trim().toLowerCase()).toMatch(/create equipment/);
     });
 });
