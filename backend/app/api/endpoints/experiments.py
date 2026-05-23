@@ -19,6 +19,7 @@ from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Experiment, Run
 from app.schemas.runs import (
+    ConclusionUnlockRequest,
     ExperimentCreate,
     ExperimentNote,
     ExperimentNoteCreate,
@@ -596,6 +597,75 @@ async def lock_experiment_conclusion(
         run_count=run_count,
         lifecycle_status=derive_lifecycle_status(
             exp.status, live, open_, conclusion_locked=True,
+        ),
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/conclusion/unlock",
+    response_model=ExperimentResponse,
+)
+async def unlock_experiment_conclusion(
+    experiment_id: UUID,
+    body: ConclusionUnlockRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    exp = await get_or_404(db, Experiment, experiment_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, exp.project_id, PermissionLevel.ADMIN,
+    )
+    if not allowed:
+        raise HTTPException(403, "Admin only")
+
+    conclusion_before = exp.conclusion
+    locked_by_before = exp.conclusion_locked_by_name
+    locked_at_before = exp.conclusion_locked_at
+    result = await db.execute(
+        text(
+            """
+            UPDATE experiments
+            SET conclusion_locked_at = NULL,
+                conclusion_locked_by_id = NULL,
+                conclusion_locked_by_name = NULL
+            WHERE id = :exp_id
+              AND conclusion_locked_at IS NOT NULL
+            RETURNING id
+            """
+        ),
+        {"exp_id": exp.id},
+    )
+    rows = result.all()
+    if not rows:
+        raise HTTPException(
+            409, {"code": "ALREADY_UNLOCKED", "message": "Not locked"},
+        )
+
+    # Atomic audit: insert before single commit. See lock endpoint above.
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="conclusion.unlock",
+        entity_type="Experiment",
+        entity_id=exp.id,
+        changes={
+            "reason": body.reason,
+            "conclusion_before": conclusion_before,
+            "locked_by_before": locked_by_before,
+            "locked_at_before": locked_at_before.isoformat() if locked_at_before else None,
+        },
+    )
+    await db.commit()
+    await db.refresh(exp)
+
+    run_count, live, open_ = await _run_lifecycle_counts(db, experiment_id)
+    return ExperimentResponse(
+        **_experiment_dict(exp),
+        runs=[],
+        run_count=run_count,
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=False,
         ),
     )
 

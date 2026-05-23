@@ -207,3 +207,54 @@ async def test_lock_vs_run_create_toctou(
     # on add_run). The forbidden state is both succeeding.
     successes = sum(1 for r in (a, b) if r.status_code < 400)
     assert successes == 1, f"both succeeded: lock={a.status_code} add_run={b.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_unlock_403_for_non_admin(
+    client, locked_experiment, viewer_headers
+):
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/conclusion/unlock",
+        json={"reason": "data correction"},
+        headers=viewer_headers,
+    )
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_unlock_422_short_reason(
+    client, locked_experiment, admin_headers
+):
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/conclusion/unlock",
+        json={"reason": "short"},
+        headers=admin_headers,
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_unlock_happy_path(
+    client, locked_experiment, admin_headers
+):
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/conclusion/unlock",
+        json={"reason": "Re-analysis with corrected titer values."},
+        headers=admin_headers,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["conclusion_locked_at"] is None
+    assert body["lifecycle_status"] == "DRAFT"
+
+
+@pytest.mark.asyncio
+async def test_unlock_409_when_already_unlocked(
+    client, experiment_ready_to_lock, admin_headers
+):
+    res = await client.post(
+        f"/experiments/{experiment_ready_to_lock.id}/conclusion/unlock",
+        json={"reason": "data correction"},
+        headers=admin_headers,
+    )
+    assert res.status_code == 409

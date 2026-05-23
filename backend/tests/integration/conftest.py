@@ -4,6 +4,15 @@ from datetime import datetime, timezone
 
 import pytest_asyncio
 
+from app.core.security import create_access_token, hash_password
+from app.models.iam import (
+    ObjectPermission,
+    ObjectType,
+    OrganizationMember,
+    PermissionLevel,
+    PrincipalType,
+    User,
+)
 from app.models.runs import Experiment, Run, RunStatus
 
 
@@ -118,3 +127,59 @@ async def experiment_only_archived_runs(db_session, test_project):
     db_session.add(run)
     await db_session.flush()
     return exp
+
+
+@pytest_asyncio.fixture
+async def admin_headers(db_session, test_user, test_org):
+    """Headers for a user with ADMIN permission on test_project."""
+    # test_user already has ADMIN permission via the test_project fixture
+    token = create_access_token(
+        test_user.id,
+        org_id=test_org.id,
+        subscription_tier=test_org.subscription_tier,
+        email_verified=True,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def viewer_headers(db_session, test_project, test_org):
+    """Headers for a user with VIEW (limited) permission on test_project."""
+    # Create a separate user with VIEW permission
+    viewer = User(
+        email="viewer@example.com",
+        hashed_password=hash_password("viewerpass"),
+        full_name="Viewer User",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(viewer)
+    await db_session.flush()
+
+    db_session.add(
+        OrganizationMember(
+            user_id=viewer.id,
+            organization_id=test_org.id,
+            roles=["MEMBER"],
+        )
+    )
+    await db_session.flush()
+
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=viewer.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=test_project.id,
+            permission_level=PermissionLevel.VIEW.value,
+        )
+    )
+    await db_session.flush()
+
+    token = create_access_token(
+        viewer.id,
+        org_id=test_org.id,
+        subscription_tier=test_org.subscription_tier,
+        email_verified=True,
+    )
+    return {"Authorization": f"Bearer {token}"}

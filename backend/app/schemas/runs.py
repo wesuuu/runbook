@@ -137,6 +137,10 @@ class ExperimentUpdate(BaseModel):
         return _validated_name(v)
 
 
+class ConclusionUnlockRequest(BaseModel):
+    reason: str = Field(min_length=8, max_length=1000)
+
+
 # Run Schemas
 class RunStatus(str, Enum):
     PLANNED = "PLANNED"
