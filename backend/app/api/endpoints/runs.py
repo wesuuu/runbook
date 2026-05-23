@@ -79,7 +79,7 @@ from app.services.protocols.template_engine import (
     render_to_pdf,
 )
 from app.services.protocols.validation import assert_no_branch_errors
-from app.services.runs.graph import derive_field_label, iter_unit_op_nodes
+from app.services.runs.graph import derive_field_label, index_steps, iter_unit_op_nodes
 from app.services.runs.overrides import (
     apply_node_overrides,
     diff_unit_op_node,
@@ -648,10 +648,7 @@ async def update_run(
             old_exec = run_obj.execution_data or {}
             new_exec = update_data.execution_data
 
-            # Build step name + param schema lookup from graph
-            _node_map: dict[str, dict] = {
-                n["id"]: n.get("data", {}) for n in iter_unit_op_nodes(run_obj.graph)
-            }
+            step_index = index_steps(run_obj.graph)
 
             for step_id, new_step in new_exec.items():
                 if not isinstance(new_step, dict):
@@ -660,7 +657,7 @@ async def update_run(
                 if not isinstance(old_step, dict):
                     continue
 
-                node_data = _node_map.get(step_id, {})
+                node_data = step_index.nodes.get(step_id, {})
                 step_name = node_data.get("label", step_id)
                 param_schema_props = (node_data.get("paramSchema") or {}).get(
                     "properties", {}
@@ -759,11 +756,7 @@ async def update_run(
         new_exec = update_data.execution_data
         target_status = new_status or current_status
 
-        # Build step name lookup from graph
-        _name_map: dict[str, str] = {
-            n["id"]: n.get("data", {}).get("label", n["id"])
-            for n in iter_unit_op_nodes(run_obj.graph)
-        }
+        step_index = index_steps(run_obj.graph)
 
         for step_id, step_data in new_exec.items():
             old_step = old_exec.get(step_id, {})
@@ -780,7 +773,7 @@ async def update_run(
                     run_obj.id,
                     {
                         "step_id": step_id,
-                        "step_name": _name_map.get(step_id, step_id),
+                        "step_name": step_index.name_for(step_id),
                         "results": step_data.get("results", {}),
                     },
                 )
@@ -791,7 +784,7 @@ async def update_run(
                     "STEP_UNCOMPLETE",
                     "Run",
                     run_obj.id,
-                    {"step_id": step_id, "step_name": _name_map.get(step_id, step_id)},
+                    {"step_id": step_id, "step_name": step_index.name_for(step_id)},
                 )
 
             # Track step-level note changes (skip EDITED — handled above)
@@ -809,7 +802,7 @@ async def update_run(
                         run_obj.id,
                         {
                             "step_id": step_id,
-                            "step_name": _name_map.get(step_id, step_id),
+                            "step_name": step_index.name_for(step_id),
                             "field": "notes",
                             "field_label": "Notes",
                             "old_value": old_notes,
