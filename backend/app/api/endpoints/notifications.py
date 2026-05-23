@@ -492,7 +492,6 @@ async def mark_read(
     notification_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _: User = Depends(require_active_subscription()),
 ):
     """Mark a notification as read."""
     notif = await db.get(Notification, notification_id)
@@ -510,7 +509,6 @@ async def mark_read(
 async def mark_all_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _: User = Depends(require_active_subscription()),
 ):
     """Mark all notifications as read."""
     from sqlalchemy import update
