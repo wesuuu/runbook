@@ -11,17 +11,17 @@
     }
 
     interface Props {
-        swimLaneNodes: any[];
+        roleNodes: any[];
         allSteps: Step[];
         roleAssignments: any[];
         projectMembers: any[];
         executionData: Record<string, any>;
         showEditAnnotations?: boolean;
-        getStepsForRole: (laneNodeId: string) => Step[];
+        getStepsForRole: (roleNodeId: string) => Step[];
     }
 
     let {
-        swimLaneNodes,
+        roleNodes,
         allSteps,
         roleAssignments,
         projectMembers,
@@ -30,8 +30,8 @@
         getStepsForRole,
     }: Props = $props();
 
-    function getRoleAssignment(laneNodeId: string) {
-        return roleAssignments.find((a) => a.lane_node_id === laneNodeId);
+    function getRoleAssignment(roleNodeId: string) {
+        return roleAssignments.find((a) => a.lane_node_id === roleNodeId);
     }
 
     function getParamLabel(key: string, step: Step): string {
@@ -40,15 +40,16 @@
         return prop?.title || key.replace(/_/g, ' ');
     }
 
-    // For EDITED view, use all swimlanes or a synthetic "__all__" lane
-    const lanes = $derived(
-        swimLaneNodes.length > 0
-            ? swimLaneNodes
+    // For the EDITED view, group by role, or a synthetic "__all__" group
+    // when the run has no roles.
+    const roleGroups = $derived(
+        roleNodes.length > 0
+            ? roleNodes
             : [{ id: '__all__', data: { label: 'All Steps' } }]
     );
 
-    function stepsForLane(laneId: string): Step[] {
-        return laneId === '__all__' ? allSteps : getStepsForRole(laneId);
+    function stepsForGroup(groupId: string): Step[] {
+        return groupId === '__all__' ? allSteps : getStepsForRole(groupId);
     }
 </script>
 
@@ -58,14 +59,14 @@
     </h2>
 
     <div class="space-y-6">
-        {#each lanes as lane}
-            {@const steps = stepsForLane(lane.id)}
-            {@const assignment = lane.id === '__all__' ? null : getRoleAssignment(lane.id)}
+        {#each roleGroups as group}
+            {@const steps = stepsForGroup(group.id)}
+            {@const assignment = group.id === '__all__' ? null : getRoleAssignment(group.id)}
             <div class="pb-6 border-b border-border/60 last:pb-0 last:border-0">
-                {#if lane.id !== '__all__'}
+                {#if group.id !== '__all__'}
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="font-semibold text-foreground">
-                            {lane.data.label}
+                            {group.data.label}
                         </h3>
                         {#if assignment}
                             <span class="text-sm text-muted-foreground">

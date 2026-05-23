@@ -4,17 +4,17 @@
     import { OFFLINE_ENABLED } from "$lib/feature-flags";
 
     interface Props {
-        swimLaneNodes: any[];
+        roleNodes: any[];
         roleAssignments: any[];
         projectMembers: any[];
         assignmentChanges: Record<string, string>;
-        onUpdateAssignment: (laneNodeId: string, roleName: string, userId: string | null) => void;
-        onAssignmentChange: (laneNodeId: string, value: string) => void;
+        onUpdateAssignment: (roleNodeId: string, roleName: string, userId: string | null) => void;
+        onAssignmentChange: (roleNodeId: string, value: string) => void;
         onShowGoOffline: () => void;
     }
 
     let {
-        swimLaneNodes,
+        roleNodes,
         roleAssignments,
         projectMembers,
         assignmentChanges,
@@ -23,8 +23,8 @@
         onShowGoOffline,
     }: Props = $props();
 
-    function getRoleAssignment(laneNodeId: string) {
-        return roleAssignments.find((a) => a.lane_node_id === laneNodeId);
+    function getRoleAssignment(roleNodeId: string) {
+        return roleAssignments.find((a) => a.lane_node_id === roleNodeId);
     }
 
     function getCurrentUserAssignment() {
@@ -32,9 +32,15 @@
         if (!user) return null;
         return roleAssignments.find((a) => a.user_id === user.id);
     }
+
+    // A role's swimLane node should always carry data.label, but a malformed
+    // or legacy graph can omit it — tolerate that rather than crashing.
+    function roleLabel(role: any): string {
+        return role?.data?.label ?? "Unnamed role";
+    }
 </script>
 
-{#if swimLaneNodes.length > 0}
+{#if roleNodes.length > 0}
     <div class="mb-8 p-6 card-warm rounded-xl">
         <h2 class="text-lg font-semibold text-foreground mb-6">
             Role Assignments
@@ -44,18 +50,18 @@
         </p>
 
         <div class="space-y-4">
-            {#each swimLaneNodes as lane}
-                {@const assignment = getRoleAssignment(lane.id)}
-                {@const selectedUserId = assignmentChanges[lane.id] ?? assignment?.user_id ?? ""}
+            {#each roleNodes as role}
+                {@const assignment = getRoleAssignment(role.id)}
+                {@const selectedUserId = assignmentChanges[role.id] ?? assignment?.user_id ?? ""}
                 <div class="flex items-end gap-4 p-4 bg-background rounded-lg">
                     <div class="flex-1">
                         <label class="block text-sm font-medium text-foreground/80 mb-2">
-                            {lane.data.label}
+                            {roleLabel(role)}
                         </label>
                         <select
                             value={selectedUserId}
                             onchange={(e) => {
-                                onAssignmentChange(lane.id, e.currentTarget.value);
+                                onAssignmentChange(role.id, e.currentTarget.value);
                             }}
                             class="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
                         >
@@ -71,7 +77,7 @@
                         <Button
                             size="sm"
                             onclick={() =>
-                                onUpdateAssignment(lane.id, lane.data.label, selectedUserId)
+                                onUpdateAssignment(role.id, roleLabel(role), selectedUserId)
                             }
                         >
                             Save
@@ -82,7 +88,7 @@
                             variant="destructive"
                             size="sm"
                             onclick={() =>
-                                onUpdateAssignment(lane.id, lane.data.label, null)
+                                onUpdateAssignment(role.id, roleLabel(role), null)
                             }
                         >
                             Clear

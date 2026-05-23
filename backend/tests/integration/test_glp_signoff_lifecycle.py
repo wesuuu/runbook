@@ -44,6 +44,30 @@ async def sample_run(db_session: AsyncSession, test_project) -> Run:
 
 
 @pytest_asyncio.fixture
+async def sample_completed_run(db_session: AsyncSession, test_project) -> Run:
+    """A minimal COMPLETED run for sign-off endpoint tests.
+
+    Run sign-offs (F-0080) are async §58.35 review of *completed* records,
+    so the POST /runs/{id}/signoffs endpoint only accepts a COMPLETED run.
+    """
+    run = Run(
+        name="Signoff Lifecycle Completed Run",
+        slug="signoff-lifecycle-completed-run",
+        project_id=test_project.id,
+        status="COMPLETED",
+        completed_at=datetime.now(timezone.utc),
+        outcome="COMPLETED_NORMAL",
+        graph={"nodes": [], "edges": []},
+        execution_data={},
+        notes=[],
+        attachments=[],
+    )
+    db_session.add(run)
+    await db_session.flush()
+    return run
+
+
+@pytest_asyncio.fixture
 async def sample_protocol(
     db_session: AsyncSession, test_project, test_user: User
 ) -> Protocol:
@@ -96,13 +120,13 @@ def _isolated_storage_root(tmp_path, monkeypatch):
 async def test_post_run_signoff_creates_active_row(
     client,
     auth_headers,
-    sample_run,
+    sample_completed_run,
     sample_user_with_signature,
     _isolated_storage_root,
 ):
     """Happy path: OPERATOR/APPROVED returns 201 with signature path set."""
     res = await client.post(
-        f"/runs/{sample_run.id}/signoffs",
+        f"/runs/{sample_completed_run.id}/signoffs",
         headers=auth_headers,
         json={
             "role": "OPERATOR",
@@ -113,7 +137,7 @@ async def test_post_run_signoff_creates_active_row(
     assert res.status_code == 201, res.text
     body = res.json()
     assert body["role"] == "OPERATOR"
-    assert body["run_id"] == str(sample_run.id)
+    assert body["run_id"] == str(sample_completed_run.id)
     assert body["signature_image_path"] is not None
 
 
@@ -121,13 +145,13 @@ async def test_post_run_signoff_creates_active_row(
 async def test_post_run_signoff_rejects_invalid_role_for_run(
     client,
     auth_headers,
-    sample_run,
+    sample_completed_run,
     sample_user_with_signature,
     _isolated_storage_root,
 ):
     """ck_run_signoff_roles refuses SPONSOR on a run."""
     res = await client.post(
-        f"/runs/{sample_run.id}/signoffs",
+        f"/runs/{sample_completed_run.id}/signoffs",
         headers=auth_headers,
         json={
             "role": "SPONSOR",
@@ -136,6 +160,35 @@ async def test_post_run_signoff_rejects_invalid_role_for_run(
         },
     )
     assert res.status_code in (400, 422), res.text
+
+
+@pytest.mark.asyncio
+async def test_post_run_signoff_rejects_non_completed_run(
+    client,
+    auth_headers,
+    sample_run,
+    sample_user_with_signature,
+    _isolated_storage_root,
+):
+    """F-0080: a PLANNED run has executed no steps.
+
+    The OPERATOR sign-off attests that steps ran within specification, so on
+    a run that never started there is nothing to attest to — the endpoint
+    must reject with 409 RUN_NOT_STARTED before any GlpSignoff row is
+    inserted. (On an ACTIVE/EDITED run the OPERATOR sign-off *is* accepted —
+    it gates closure; see test_operator_signoff_accepted_on_active_run.)
+    """
+    res = await client.post(
+        f"/runs/{sample_run.id}/signoffs",
+        headers=auth_headers,
+        json={
+            "role": "OPERATOR",
+            "action": "APPROVED",
+            "attestation": "I performed this run accurately.",
+        },
+    )
+    assert res.status_code == 409, res.text
+    assert res.json()["detail"]["error"] == "RUN_NOT_STARTED"
 
 
 # --- Task 13: POST /protocols/{protocol_id}/signoffs ---------------
@@ -327,7 +380,9 @@ async def basic_active_run(
     reviewer role, so closing the run needs no sign-off at all."""
     proto = Protocol(
         name="Basic Protocol",
+        slug="basic-protocol",
         project_id=test_project.id,
+        owner_org_id=test_project.organization_id,
         status="DRAFT",
         version_number=1,
         created_by_id=test_user.id,
@@ -337,6 +392,7 @@ async def basic_active_run(
     await db_session.flush()
     run = Run(
         name="Basic Active Run",
+        slug="basic-active-run",
         project_id=test_project.id,
         protocol_id=proto.id,
         status="ACTIVE",

@@ -84,6 +84,8 @@
     let loadingMembers = $state(false);
     let loadedMembersForProject = $state<string | null>(null);
     let assignments = $state<Record<string, string>>({});
+    let studyDirectorId = $state<string | null>(null);
+    let qauReviewerId = $state<string | null>(null);
 
     type StepNum = 1 | 2 | 3 | 4 | 5;
     let currentStep = $state<StepNum>(1);
@@ -119,7 +121,7 @@
             .map((n) => ({ id: n.id, label: ((n.data as { label?: string } | undefined)?.label) ?? n.id })),
     );
 
-    const swimLaneNodes = $derived(
+    const roleNodes = $derived(
         (currentGraph?.nodes ?? [])
             .filter((n) => n.type === 'swimLane')
             .map((n) => ({ id: n.id, data: { label: ((n.data as { label?: string } | undefined)?.label) ?? 'Role' } })),
@@ -155,6 +157,8 @@
         roles = [];
         activeRoleId = null;
         assignments = {};
+        studyDirectorId = null;
+        qauReviewerId = null;
         currentStep = 1;
         highestVisited = 1;
         nameValid = false;
@@ -240,6 +244,17 @@
             isLatestVersion && selectedProtocol?.graph
                 ? selectedProtocol.graph
                 : selectedVersion.graph;
+
+        // Pre-fill reviewers from glpSettings in the selected protocol graph.
+        const glp = (sourceGraph as { glpSettings?: { study_director_user_id?: string | null; qau_mode?: string | null; qau_user_id?: string | null } })?.glpSettings;
+        if (glp && typeof glp === 'object') {
+            if (glp.study_director_user_id) {
+                studyDirectorId = glp.study_director_user_id;
+            }
+            if (glp.qau_mode === 'SPECIFIC_USER' && glp.qau_user_id) {
+                qauReviewerId = glp.qau_user_id;
+            }
+        }
         const raw = JSON.parse(JSON.stringify(sourceGraph ?? { nodes: [], edges: [] }));
 
         // Stamp each unitOp node with protocol_* mirror fields so RunCreatorUnitOpCard
@@ -357,13 +372,13 @@
     }
 
     async function persistAssignments(runId: string) {
-        const hasLanes = swimLaneNodes.length > 0;
+        const hasRoles = roleNodes.length > 0;
         const entries = Object.entries(assignments).filter(([, userId]) => !!userId);
         for (const [key, userId] of entries) {
-            const lane = hasLanes ? swimLaneNodes.find((l) => l.id === key) : null;
-            const lane_node_id = hasLanes ? key : '__run__';
-            const role_name = hasLanes
-                ? (lane?.data.label ?? 'Role')
+            const role = hasRoles ? roleNodes.find((r) => r.id === key) : null;
+            const lane_node_id = hasRoles ? key : '__run__';
+            const role_name = hasRoles
+                ? (role?.data.label ?? 'Role')
                 : 'Operator';
             try {
                 await api.post(`/runs/${runId}/role-assignments`, {
@@ -395,6 +410,8 @@
             if (protocolVersionNumber) payload.protocol_version_number = protocolVersionNumber;
             const overrides = buildOverridesPayload(edits, currentGraph);
             if (overrides) payload.overrides = overrides;
+            if (studyDirectorId) payload.study_director_id = studyDirectorId;
+            if (qauReviewerId) payload.qau_reviewer_id = qauReviewerId;
             const newRun = await api.post<{ id: string; slug: string; project_slug: string }>(
                 '/runs',
                 payload,
@@ -465,11 +482,14 @@
                         />
                     {:else if currentStep === 4}
                         <RunCreatorAssigneeStep
-                            {swimLaneNodes}
+                            {roleNodes}
                             {projectMembers}
                             {loadingMembers}
                             {assignments}
                             onChange={(a) => { assignments = a; }}
+                            {studyDirectorId}
+                            {qauReviewerId}
+                            onReviewersChange={(r) => { studyDirectorId = r.studyDirectorId; qauReviewerId = r.qauReviewerId; }}
                         />
                     {:else if currentStep === 5}
                         <RunCreatorReviewStep

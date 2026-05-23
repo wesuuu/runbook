@@ -1,5 +1,18 @@
 # Architectural Conventions
 
+## Terminology
+
+A **role** is the domain concept for a responsible party in a protocol or run
+(operator, study director, QAU, etc.). Use "role" in all user-facing copy and
+in general code identifiers (props, variables, functions, CSS).
+
+"Lane" / "swimlane" is protocol-graph-editor jargon — the *visual container*
+that represents a role on the canvas. Keep "lane"/"swimLane" naming only for
+things genuinely scoped to the graph data: the `swimLane` node type, the
+`lane-<id>` node-id prefix, the `lane_node_id` column/API field, and the
+swimlane node renderer (`SwimLaneNode`, `createSwimLaneNode`). Everywhere else
+— and anything a user reads — say "role".
+
 ## Service Abstraction
 
 - **Class** when: multiple methods share state (e.g., `FileStorageService` holds `storage_root`).
@@ -40,6 +53,7 @@ New Svelte components under `frontend/src/lib/components/` MUST go in a domain s
 - `field-mode/` — tablet/field-mode flows
 - `modals/` — heavy dialogs wrapping a form, import, or picker flow (contrast with lightweight confirmation dialogs, which go in `shared/`)
 - `media/` — camera, image, PDF, barcode scanning
+- `notifications/` — notification inbox surfaces (shared notification row)
 - `document-refinement/` — library refinement editor surfaces (sidebar, queue, AI panel, Tiptap-backed editor)
 - `analytics/` — charts, audit trails, version history
 - `ai/` — chat and agent UX

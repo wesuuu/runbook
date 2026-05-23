@@ -78,6 +78,57 @@ describe('_normalizeEndpoint', () => {
     });
 });
 
+describe('extractErrorMessage', () => {
+    const fallback = 'Request failed';
+
+    it('returns a plain string detail unchanged', () => {
+        expect(extractErrorMessage({ detail: 'lot_number is required' }, fallback)).toBe(
+            'lot_number is required',
+        );
+    });
+
+    it('returns top-level message when no detail', () => {
+        expect(extractErrorMessage({ message: 'boom' }, fallback)).toBe('boom');
+    });
+
+    it('extracts .message from a structured detail object (F-0080 QAU_NOT_INDEPENDENT)', () => {
+        const body = {
+            detail: {
+                error: 'QAU_NOT_INDEPENDENT',
+                conflict_role: 'STUDY_DIRECTOR',
+                message: 'The QAU reviewer must be independent of the Study Director.',
+            },
+        };
+        expect(extractErrorMessage(body, fallback)).toBe(
+            'The QAU reviewer must be independent of the Study Director.',
+        );
+    });
+
+    it('falls back to the .error code when a structured detail has no message', () => {
+        const body = { detail: { error: 'RUN_REVIEWERS_LOCKED' } };
+        expect(extractErrorMessage(body, fallback)).toBe('RUN_REVIEWERS_LOCKED');
+    });
+
+    it('never returns the literal "[object Object]"', () => {
+        const body = { detail: { error: 'QAU_NOT_INDEPENDENT', conflict_role: 'STUDY_DIRECTOR' } };
+        expect(extractErrorMessage(body, fallback)).not.toBe('[object Object]');
+    });
+
+    it('handles FastAPI 422 validation arrays without stringifying an object', () => {
+        const body = {
+            detail: [{ loc: ['body', 'name'], msg: 'field required', type: 'value_error.missing' }],
+        };
+        const msg = extractErrorMessage(body, fallback);
+        expect(msg).not.toBe('[object Object]');
+        expect(msg).toContain('field required');
+    });
+
+    it('returns the fallback for an unrecognised body shape', () => {
+        expect(extractErrorMessage({}, fallback)).toBe(fallback);
+        expect(extractErrorMessage(null, fallback)).toBe(fallback);
+    });
+});
+
 describe('_validateResponse', () => {
     const TestSchema = z.object({
         id: z.string(),
@@ -163,11 +214,13 @@ describe('_handleErrorResponse', () => {
         expect((err as { data: unknown }).data).toEqual(body);
     });
 
-    it('falls back to the default message for a Pydantic error list', async () => {
+    it('surfaces the msg from a Pydantic 422 validation list', async () => {
         const body = {
             detail: [{ loc: ['body', 'name'], msg: 'field required' }],
         };
         const err = await captureRejection(body, 422, 'Request failed');
-        expect((err as Error).message).toBe('Request failed');
+        // F-0080: extractErrorMessage now joins validation `msg` strings
+        // rather than dropping the array and showing the bare fallback.
+        expect((err as Error).message).toBe('field required');
     });
 });

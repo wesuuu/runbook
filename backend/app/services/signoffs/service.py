@@ -18,7 +18,11 @@ Responsibilities, in order:
 5. INSERT the ``GlpSignoff`` row, ``flush``.
 6. ``log_audit`` with ``action=f"signoff.{action.lower()}"`` and
    ``entity_type=f"{entity_type}_signoff"``.
-7. ``commit`` and ``refresh``, then return.
+7. ``commit`` and ``refresh`` (unless ``commit=False``), then return.
+
+When ``commit=False`` the row is flushed but not committed, so a caller can
+extend the transaction — e.g. ``POST /runs/{id}/signoffs`` must land the
+sign-off and the matching request-fulfillment UPDATE in a single commit.
 """
 
 from __future__ import annotations
@@ -35,6 +39,10 @@ from app.models.iam import User
 from app.models.signoffs import GlpSignoff
 from app.services.core.audit import log_audit
 from app.services.core.file_storage import FileStorageService
+from app.services.signoffs.signature_image import (
+    render_name_signature_png,
+    signer_display_name,
+)
 from app.services.signoffs.validation import (
     SignoffPayload,
     assert_attestation_and_image_present,
@@ -60,8 +68,13 @@ async def create_signoff(
     attestation: Optional[str],
     signoff_request_id: Optional[UUID],
     organization_id: Optional[UUID] = None,
+    commit: bool = True,
 ) -> GlpSignoff:
-    """Run all validators, copy signature image, INSERT row, write AuditLog."""
+    """Run all validators, copy signature image, INSERT row, write AuditLog.
+
+    Set ``commit=False`` to flush without committing so the caller can keep
+    the transaction open for follow-up writes (then the caller commits).
+    """
 
     # 1. Resolve org_id (needed for the record-scoped signature path).
     if organization_id is None:
@@ -74,20 +87,33 @@ async def create_signoff(
     # 2. Pre-generate id so it can be embedded in the signature path.
     new_id = uuid4()
 
-    # 3. Copy signature image (APPROVED + signer has a source path).
+    # 3. Pin a signature image to this record (APPROVED only).
     signature_image_path: Optional[str] = None
-    if action == "APPROVED" and signer.signature_full_path:
-        relative = _record_scoped_signature_path(
-            organization_id, new_id, signer.signature_full_path
-        )
+    if action == "APPROVED":
         storage = FileStorageService()
-        # signature_full_path is stored relative to the storage root (see
-        # auth.upload_signature); resolve it before copying so the source
-        # isn't looked up against the process CWD.
-        src = storage.resolve_path(signer.signature_full_path)
-        dest = storage.storage_root / relative
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, dest)
+        if signer.signature_full_path:
+            # Copy the signer's uploaded signature so future re-uploads can't
+            # retroactively change past records (§11.70).
+            relative = _record_scoped_signature_path(
+                organization_id, new_id, signer.signature_full_path
+            )
+            dest = storage.storage_root / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            # signature_full_path is stored relative to the storage root (see
+            # auth.upload_signature); resolve it before copying so the source
+            # isn't looked up against the process CWD.
+            src = storage.resolve_path(signer.signature_full_path)
+            shutil.copyfile(src, dest)
+        else:
+            # No uploaded signature — generate a cursive image from the
+            # signer's name so the §11.50 attestation-and-image requirement is
+            # still met. The signer can replace it via Settings → Profile.
+            relative = f"{organization_id}/signoffs/{new_id}.png"
+            dest = storage.storage_root / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(
+                render_name_signature_png(signer_display_name(signer))
+            )
         signature_image_path = relative
 
     payload = SignoffPayload(
@@ -129,7 +155,8 @@ async def create_signoff(
         changes={"role": role, "entity_id": str(entity_id)},
     )
 
-    # 7. Commit and refresh.
-    await db.commit()
-    await db.refresh(signoff)
+    # 7. Commit and refresh — unless the caller owns the transaction.
+    if commit:
+        await db.commit()
+        await db.refresh(signoff)
     return signoff

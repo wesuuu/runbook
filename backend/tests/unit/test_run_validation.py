@@ -11,9 +11,9 @@ from fastapi import HTTPException
 from app.services.runs.validation import (
     assert_can_edit_completed_run,
     assert_can_reopen,
-    assert_can_start,
     assert_no_unjustified_edit_errors,
     assert_run_can_close,
+    lane_assignment_gap,
 )
 
 # ---------------------------------------------------------------------------
@@ -156,8 +156,10 @@ async def test_assert_run_can_close_passes_for_basic_run():
 async def test_assert_run_can_close_requires_operator_on_glp_run():
     """A GLP run (a reviewer role is required) always needs OPERATOR (#18).
 
-    With ``require_study_director`` set and no sign-offs at all, both the
-    always-required OPERATOR and the gated STUDY_DIRECTOR are reported.
+    F-0080 (decision C1): Study Director and QAU review happen
+    asynchronously *after* the run reaches COMPLETED, so they do not gate
+    closure. With ``require_study_director`` set and no sign-offs at all,
+    only the always-required OPERATOR is reported as missing.
     """
     mock_run = MagicMock()
     mock_run.id = uuid4()
@@ -176,10 +178,7 @@ async def test_assert_run_can_close_requires_operator_on_glp_run():
         )
     assert exc.value.status_code == 400
     assert exc.value.detail["error"] == "SIGNOFF_REQUIRED"
-    assert set(exc.value.detail["missing_roles"]) == {
-        "OPERATOR",
-        "STUDY_DIRECTOR",
-    }
+    assert set(exc.value.detail["missing_roles"]) == {"OPERATOR"}
 
 
 async def test_assert_run_can_close_passes_when_glp_run_fully_signed():
@@ -204,8 +203,9 @@ async def test_assert_run_can_close_passes_when_glp_run_fully_signed():
     )
 
 
-async def test_assert_run_can_close_fails_when_sd_required_but_missing():
-    """require_study_director=True, only OPERATOR signed → SD reported missing."""
+async def test_assert_run_can_close_allows_close_when_sd_unsigned():
+    """F-0080 C1: Study Director review is async after COMPLETED, so an
+    unsigned SD no longer blocks closure — only OPERATOR gates."""
     mock_run = MagicMock()
     mock_run.id = uuid4()
 
@@ -218,17 +218,15 @@ async def test_assert_run_can_close_fails_when_sd_required_but_missing():
     db = AsyncMock()
     db.execute.return_value = mock_result
 
-    glp_settings = {"require_study_director": True}
-
-    with pytest.raises(HTTPException) as exc:
-        await assert_run_can_close(db=db, run=mock_run, glp_settings=glp_settings)
-    assert exc.value.status_code == 400
-    assert "STUDY_DIRECTOR" in exc.value.detail["missing_roles"]
-    assert "OPERATOR" not in exc.value.detail["missing_roles"]
+    # require_study_director=True but no SD sign-off — must NOT raise.
+    await assert_run_can_close(
+        db=db, run=mock_run, glp_settings={"require_study_director": True}
+    )
 
 
-async def test_assert_run_can_close_fails_when_qau_required_but_missing():
-    """require_qau=True, only OPERATOR signed → QAU reported missing."""
+async def test_assert_run_can_close_allows_close_when_qau_unsigned():
+    """F-0080 C1: QAU review is async after COMPLETED, so an unsigned QAU no
+    longer blocks closure — only OPERATOR gates."""
     mock_run = MagicMock()
     mock_run.id = uuid4()
 
@@ -241,11 +239,10 @@ async def test_assert_run_can_close_fails_when_qau_required_but_missing():
     db = AsyncMock()
     db.execute.return_value = mock_result
 
-    glp_settings = {"require_qau": True}
-
-    with pytest.raises(HTTPException) as exc:
-        await assert_run_can_close(db=db, run=mock_run, glp_settings=glp_settings)
-    assert "QAU" in exc.value.detail["missing_roles"]
+    # require_qau=True but no QAU sign-off — must NOT raise.
+    await assert_run_can_close(
+        db=db, run=mock_run, glp_settings={"require_qau": True}
+    )
 
 
 async def test_assert_run_can_close_passes_when_all_required_present():
@@ -279,109 +276,83 @@ async def test_assert_run_can_close_passes_when_all_required_present():
 
 
 # ---------------------------------------------------------------------------
-# assert_can_start
+# lane_assignment_gap
 # ---------------------------------------------------------------------------
 
 
-def test_assert_can_start_passes_when_glp_disabled():
-    """glp_enabled=False in graph → no lane check needed, always passes."""
-    mock_run = MagicMock()
-    mock_run.graph = {"glpSettings": {"glp_enabled": False}}
-    mock_run.role_assignments = []
-
-    # Should not raise
-    assert_can_start(mock_run)
+def _assignment(lane_id: str):
+    a = MagicMock()
+    a.lane_node_id = lane_id
+    a.user_id = uuid4()
+    return a
 
 
-def test_assert_can_start_passes_when_no_glp_settings():
-    """Missing glpSettings in graph → treat as glp_enabled=False, passes."""
-    mock_run = MagicMock()
-    mock_run.graph = {}
-    mock_run.role_assignments = []
-
-    assert_can_start(mock_run)
+def test_lane_gap_no_assignees_no_swimlanes_blocks():
+    gap = lane_assignment_gap({"nodes": []}, [])
+    assert gap.has_assignee is False
+    assert gap.unassigned_lane_ids == []
+    assert gap.is_blocking is True
 
 
-def test_assert_can_start_passes_when_no_swimlanes():
-    """GLP enabled but no swimlane nodes in graph → no lanes to assign."""
-    mock_run = MagicMock()
-    mock_run.graph = {
-        "glpSettings": {"glp_enabled": True},
+def test_lane_gap_assignee_no_swimlanes_is_ready():
+    gap = lane_assignment_gap({"nodes": []}, [_assignment("lane-x")])
+    assert gap.has_assignee is True
+    assert gap.unassigned_lane_ids == []
+    assert gap.is_blocking is False
+
+
+def test_lane_gap_partial_swimlane_assignment_blocks():
+    graph = {
         "nodes": [
-            {"id": "ps-1", "type": "processStart"},
-            {"id": "step-1", "type": "unitOp"},
-        ],
+            {"id": "lane-a", "type": "swimLane"},
+            {"id": "lane-b", "type": "swimLane"},
+        ]
     }
-    mock_run.role_assignments = []
+    gap = lane_assignment_gap(graph, [_assignment("lane-a")])
+    assert gap.has_assignee is True
+    assert gap.unassigned_lane_ids == ["lane-b"]
+    assert gap.is_blocking is True
 
-    assert_can_start(mock_run)
 
-
-def test_assert_can_start_passes_when_all_lanes_assigned():
-    """GLP enabled, all swimlane nodes have assignments → passes."""
-    lane_id = "lane-abc"
-
-    mock_assignment = MagicMock()
-    mock_assignment.lane_node_id = lane_id
-    mock_assignment.user_id = uuid4()
-
-    mock_run = MagicMock()
-    mock_run.graph = {
-        "glpSettings": {"glp_enabled": True},
+def test_lane_gap_all_swimlanes_assigned_is_ready():
+    graph = {
         "nodes": [
-            {"id": "ps-1", "type": "processStart"},
-            {"id": lane_id, "type": "swimLane", "data": {"label": "Operator"}},
-        ],
+            {"id": "lane-a", "type": "swimLane"},
+            {"id": "lane-b", "type": "swimLane"},
+        ]
     }
-    mock_run.role_assignments = [mock_assignment]
+    gap = lane_assignment_gap(
+        graph, [_assignment("lane-a"), _assignment("lane-b")]
+    )
+    assert gap.unassigned_lane_ids == []
+    assert gap.is_blocking is False
 
-    assert_can_start(mock_run)
 
-
-def test_assert_can_start_raises_when_lane_unassigned():
-    """GLP enabled, swimlane node has no matching assignment → LANES_UNASSIGNED."""
-    lane_id = "lane-missing"
-
-    mock_run = MagicMock()
-    mock_run.graph = {
-        "glpSettings": {"glp_enabled": True},
+def test_lane_gap_stale_assignment_to_deleted_lane_blocks():
+    # Mirrors the live gate's set-equality check: an assignment pointing at a
+    # lane_node_id that is not a swimlane in the current graph still blocks.
+    graph = {
         "nodes": [
-            {"id": lane_id, "type": "swimLane", "data": {"label": "QA Review"}},
-        ],
+            {"id": "lane-a", "type": "swimLane"},
+            {"id": "lane-b", "type": "swimLane"},
+        ]
     }
-    mock_run.role_assignments = []  # no assignments at all
-
-    with pytest.raises(HTTPException) as exc:
-        assert_can_start(mock_run)
-    assert exc.value.status_code == 422
-    assert exc.value.detail["error"] == "LANES_UNASSIGNED"
-    assert lane_id in exc.value.detail["missing_lanes"]
-
-
-def test_assert_can_start_raises_when_only_some_lanes_unassigned():
-    """GLP enabled, one lane assigned and one not → only missing lane reported."""
-    lane_a = "lane-assigned"
-    lane_b = "lane-missing"
-
-    mock_assignment = MagicMock()
-    mock_assignment.lane_node_id = lane_a
-    mock_assignment.user_id = uuid4()
-
-    mock_run = MagicMock()
-    mock_run.graph = {
-        "glpSettings": {"glp_enabled": True},
-        "nodes": [
-            {"id": lane_a, "type": "swimLane", "data": {"label": "Operator"}},
-            {"id": lane_b, "type": "swimLane", "data": {"label": "QAU"}},
+    gap = lane_assignment_gap(
+        graph,
+        [
+            _assignment("lane-a"),
+            _assignment("lane-b"),
+            _assignment("lane-gone"),
         ],
-    }
-    mock_run.role_assignments = [mock_assignment]
+    )
+    assert gap.unassigned_lane_ids == []
+    assert gap.stale_lane_ids == ["lane-gone"]
+    assert gap.is_blocking is True
 
-    with pytest.raises(HTTPException) as exc:
-        assert_can_start(mock_run)
-    assert exc.value.detail["error"] == "LANES_UNASSIGNED"
-    assert lane_b in exc.value.detail["missing_lanes"]
-    assert lane_a not in exc.value.detail["missing_lanes"]
+
+def test_lane_gap_tolerates_empty_graph():
+    gap = lane_assignment_gap({}, [])
+    assert gap.is_blocking is True
 
 
 # ---------------------------------------------------------------------------

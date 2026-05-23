@@ -132,10 +132,12 @@ async def run_with_calibrated_equipment(
     db_session: AsyncSession,
     test_org,
     test_project,
+    default_site_id: str,
 ) -> Run:
     """Run whose graph references one Equipment row with a future cal date."""
     eq = Equipment(
         organization_id=test_org.id,
+        site_id=default_site_id,
         name="HPLC #1",
         serial_number="HPLC-001",
         next_calibration_date=date.today() + timedelta(days=30),
@@ -295,11 +297,12 @@ async def test_context_has_back_compat_approval_alias(
 
 @pytest.mark.asyncio
 async def test_overdue_equipment_flagged_as_overdue(
-    db_session: AsyncSession, test_org, test_project
+    db_session: AsyncSession, test_org, test_project, default_site_id: str
 ):
     """Calibration date in the past flips status to OVERDUE."""
     eq = Equipment(
         organization_id=test_org.id,
+        site_id=default_site_id,
         name="Balance #7",
         serial_number="BAL-007",
         next_calibration_date=date.today() - timedelta(days=5),

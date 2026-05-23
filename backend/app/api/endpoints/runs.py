@@ -39,7 +39,7 @@ from app.core.deps import (
 from app.db.session import get_db
 from app.models.ai import ImageConversation, RunImage
 from app.models.execution import AuditLog
-from app.models.iam import ObjectType, PermissionLevel, User
+from app.models.iam import ObjectType, OrgRole, OrganizationMember, PermissionLevel, User
 from app.models.projects import Project
 from app.models.protocols import Protocol, ProtocolVersion, UnitOpDefinition
 from app.models.runs import Run, RunRoleAssignment
@@ -56,6 +56,7 @@ from app.schemas.runs import (
     RunOverrides,
     RunReopenRequest,
     RunResponse,
+    RunReviewersUpdate,
     RunRoleAssignmentCreate,
     RunRoleAssignmentListResponse,
     RunRoleAssignmentResponse,
@@ -88,12 +89,19 @@ from app.services.runs.validation import (
     assert_can_edit_completed_run,
     assert_no_unjustified_edit_errors,
     assert_run_can_close,
+    lane_assignment_gap,
 )
 from app.services.signoffs.queries import (
     invalidate_active_signoffs,
     list_active_signoffs,
 )
+from app.services.signoffs.requests import (
+    fulfill_signoff_request,
+    on_run_completed,
+    on_run_reopened,
+)
 from app.services.signoffs.service import create_signoff
+from app.services.signoffs.validation import assert_reviewers_independent
 from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
@@ -140,6 +148,11 @@ async def create_run(
             status_code=422,
             detail="lot_number is required when produces_lot is true",
         )
+
+    # F-0080: a run's QAU reviewer cannot also be its Study Director (§58.35).
+    assert_reviewers_independent(
+        run_in.study_director_id, run_in.qau_reviewer_id
+    )
 
     result = await db.execute(select(Project).where(Project.id == run_in.project_id))
     project = result.scalar_one_or_none()
@@ -247,6 +260,9 @@ async def create_run(
         # QA-0008: GxP execution metadata
         lot_number=run_in.lot_number,
         batch_number=run_in.batch_number,
+        # F-0080: GLP sign-off reviewers
+        study_director_id=run_in.study_director_id,
+        qau_reviewer_id=run_in.qau_reviewer_id,
     )
     run_obj.slug = await assign_slug_or_422(
         db, Run, Run.project_id, run_obj.project_id, run_obj.name, "run"
@@ -584,32 +600,26 @@ async def update_run(
             )
 
         if new_status == "ACTIVE":
-            # Check that at least one person is assigned to the run
             result = await db.execute(
-                select(RunRoleAssignment).where(RunRoleAssignment.run_id == run_id)
+                select(RunRoleAssignment).where(
+                    RunRoleAssignment.run_id == run_id
+                )
             )
-            assignments = result.scalars().all()
+            assignments = list(result.scalars().all())
 
-            if not assignments:
+            gap = lane_assignment_gap(run_obj.graph, assignments)
+            if not gap.has_assignee:
                 raise HTTPException(
                     status_code=422,
                     detail="Cannot start run: at least one person must be assigned",
                 )
-
-            # Check that all swimlane roles in the graph have assignments
-            graph = run_obj.graph or {}
-            nodes = graph.get("nodes", [])
-            swimlane_nodes = [n for n in nodes if n.get("type") == "swimLane"]
-
-            if swimlane_nodes:
-                assigned_lanes = {a.lane_node_id for a in assignments}
-                required_lanes = {n["id"] for n in swimlane_nodes}
-
-                if assigned_lanes != required_lanes:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="Cannot start run: not all roles have assigned users",
-                    )
+            # Unassigned swimlane OR a stale assignment to a deleted lane —
+            # the old set-equality check rejected both with this same message.
+            if gap.unassigned_lane_ids or gap.stale_lane_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Cannot start run: not all roles have assigned users",
+                )
 
             # Set started_by_id when run transitions to ACTIVE
             run_obj.started_by_id = user.id
@@ -849,6 +859,11 @@ async def update_run(
         run_obj.id,
         changes,
     )
+
+    if new_status == "COMPLETED" and current_status != "COMPLETED":
+        await on_run_completed(db, run_obj, background_tasks)
+    elif new_status == "EDITED" and current_status == "COMPLETED":
+        await on_run_reopened(db, run_obj, background_tasks)
 
     await db.commit()
     await db.refresh(run_obj)
@@ -1890,6 +1905,84 @@ async def get_run_audit_log(
     }
 
 
+# --- GLP reviewer designation (F-0080) ------------------------------------
+
+
+@router.put("/runs/{run_id}/reviewers", response_model=RunResponse)
+async def update_run_reviewers(
+    run_id: UUID,
+    payload: RunReviewersUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RunResponse:
+    """Designate the GLP sign-off reviewers for a run.
+
+    Locked once the run is COMPLETED/ARCHIVED. The QAU reviewer must hold the
+    org QAU role, and may not be the same person as the Study Director
+    (§58.35 — hard-blocked here). Independence against the study's *dynamic*
+    actors only warns and is re-checked at completion.
+    """
+    run = await get_or_404(db, Run, run_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.RUN, run_id, PermissionLevel.EDIT
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="EDIT permission required")
+
+    status_str = _run_status_str(run)
+    if status_str in ("COMPLETED", "ARCHIVED"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "RUN_REVIEWERS_LOCKED",
+                "message": "Reviewers lock once the run is completed.",
+            },
+        )
+
+    if payload.qau_reviewer_id is not None:
+        project = await db.get(Project, run.project_id)
+        member = (
+            await db.execute(
+                select(OrganizationMember).where(
+                    OrganizationMember.user_id == payload.qau_reviewer_id,
+                    OrganizationMember.organization_id
+                    == project.organization_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if member is None or OrgRole.QAU.value not in (member.roles or []):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "REVIEWER_NOT_QUALIFIED",
+                    "message": "The QAU reviewer must hold the org QAU role.",
+                },
+            )
+
+    assert_reviewers_independent(
+        payload.study_director_id, payload.qau_reviewer_id
+    )
+
+    run.study_director_id = payload.study_director_id
+    run.qau_reviewer_id = payload.qau_reviewer_id
+    await log_audit(
+        db,
+        user.id,
+        "run.reviewers_update",
+        "run",
+        run.id,
+        {
+            "study_director_id": str(payload.study_director_id)
+            if payload.study_director_id else None,
+            "qau_reviewer_id": str(payload.qau_reviewer_id)
+            if payload.qau_reviewer_id else None,
+        },
+    )
+    await db.commit()
+    await db.refresh(run)
+    return RunResponse.model_validate(run)
+
+
 # --- GLP Sign-offs (F-0087) -----------------------------------------------
 
 
@@ -1914,6 +2007,47 @@ async def create_run_signoff(
     """
     run = await get_or_404(db, Run, run_id)
 
+    # F-0080: the run status a sign-off requires depends on the role.
+    #
+    # OPERATOR is a *precondition of closure* — assert_run_can_close gates the
+    # COMPLETED transition on the OPERATOR sign-off — so it must be recordable
+    # while the run is still ACTIVE/EDITED. Requiring COMPLETED here would
+    # deadlock: closure needs the OPERATOR sign-off, and the sign-off would
+    # need the run already COMPLETED. It only requires the run to have started
+    # (a PLANNED run has executed no steps for the operator to attest to).
+    #
+    # STUDY_DIRECTOR / QAU are async §58.35 review of *finalized* records, so
+    # they require the run to already be COMPLETED — reject before any INSERT.
+    status_str = _run_status_str(run)
+    if payload.role == "OPERATOR":
+        if status_str not in ("ACTIVE", "EDITED", "COMPLETED"):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "RUN_NOT_STARTED",
+                    "message": (
+                        "An operator sign-off can only be recorded once the "
+                        "run has started."
+                    ),
+                    "status": status_str,
+                },
+            )
+    elif status_str != "COMPLETED":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "RUN_NOT_COMPLETED",
+                "message": (
+                    "Reviewer sign-offs can only be recorded on a "
+                    "completed run."
+                ),
+                "status": status_str,
+            },
+        )
+
+    # commit=False so the sign-off INSERT and the request-fulfillment UPDATE
+    # below land in a single commit — a failure between them must not leave a
+    # recorded sign-off with its request still OPEN.
     try:
         signoff = await create_signoff(
             db,
@@ -1924,6 +2058,7 @@ async def create_run_signoff(
             signer=user,
             attestation=payload.attestation,
             signoff_request_id=payload.signoff_request_id,
+            commit=False,
         )
     except IntegrityError as exc:
         await db.rollback()
@@ -1935,6 +2070,13 @@ async def create_run_signoff(
                 "entity_type": "run",
             },
         ) from exc
+
+    final_status = "APPROVED" if payload.action == "APPROVED" else "REJECTED"
+    await fulfill_signoff_request(
+        db, run_id=run.id, role=payload.role, status=final_status
+    )
+    await db.commit()
+    await db.refresh(signoff)
 
     return GlpSignoffResponse.model_validate(signoff)
 
@@ -1949,15 +2091,19 @@ async def create_run_signoff(
 async def complete_run(
     run_id: UUID,
     payload: RunCompleteRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RunResponse:
     """Transition an ACTIVE/EDITED run to COMPLETED.
 
-    Gates closure on the GLP sign-off matrix resolved from the linked
-    protocol's ``graph["glpSettings"]`` snapshot (see
-    :func:`app.services.runs.validation.assert_run_can_close`). Records the
-    outcome, optional outcome_notes, and a UTC ``completed_at`` timestamp.
+    Gates closure on the OPERATOR sign-off check
+    (:func:`app.services.runs.validation.assert_run_can_close`) and the GLP
+    completability check (:func:`app.services.signoffs.requests.assert_run_completable`).
+    Records the outcome, optional outcome_notes, and a UTC ``completed_at``
+    timestamp. Generates GLP sign-off requests (Study Director, QAU) via
+    :func:`app.services.signoffs.requests.on_run_completed` and fans out
+    RUN_SIGNOFF_REQUESTED notifications to each request's recipients.
     """
     run = await get_or_404(db, Run, run_id)
     status_str = _run_status_str(run)
@@ -1981,6 +2127,7 @@ async def complete_run(
     run.outcome_notes = payload.outcome_notes
     run.completed_at = datetime.now(timezone.utc)
 
+    await on_run_completed(db, run, background_tasks)
     await db.commit()
     await db.refresh(run)
     return RunResponse.model_validate(run)
@@ -1996,6 +2143,7 @@ async def complete_run(
 async def reopen_run(
     run_id: UUID,
     payload: RunReopenRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RunResponse:
@@ -2003,6 +2151,9 @@ async def reopen_run(
 
     Transitions the run back to EDITED, clears ``completed_at``, and writes a
     ``run.reopen`` audit entry capturing the supplied justification reason.
+    Cancels all OPEN sign-off requests via
+    :func:`app.services.signoffs.requests.on_run_reopened` and fans out
+    RUN_SIGNOFF_CANCELLED notifications to each previously-assigned reviewer.
     """
     run = await get_or_404(db, Run, run_id)
     status_str = _run_status_str(run)
@@ -2028,6 +2179,7 @@ async def reopen_run(
         run.id,
         {"reason": payload.reason},
     )
+    await on_run_reopened(db, run, background_tasks)
     await db.commit()
     await db.refresh(run)
     return RunResponse.model_validate(run)
@@ -2051,6 +2203,7 @@ _RUN_STATE_TRANSITIONS = {
 async def patch_run_state(
     run_id: UUID,
     payload: RunStateUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RunResponse:
@@ -2062,6 +2215,10 @@ async def patch_run_state(
     matching ``execution_data[step_id].edit_reason`` so downstream readers
     (PDFs, audit log views) can render them. A COMPLETED run with active
     sign-offs cannot be edited without first reopening it.
+    ACTIVE/EDITED -> COMPLETED generates GLP sign-off requests via
+    :func:`app.services.signoffs.requests.on_run_completed`.
+    COMPLETED -> EDITED cancels open sign-off requests via
+    :func:`app.services.signoffs.requests.on_run_reopened`.
     """
     run = await get_or_404(db, Run, run_id)
     current_status = _run_status_str(run)
@@ -2117,6 +2274,11 @@ async def patch_run_state(
             "edit_reasons": payload.edit_reasons or {},
         },
     )
+
+    if new_status == "COMPLETED" and current_status != "COMPLETED":
+        await on_run_completed(db, run, background_tasks)
+    elif new_status == "EDITED" and current_status == "COMPLETED":
+        await on_run_reopened(db, run, background_tasks)
 
     await db.commit()
     await db.refresh(run)

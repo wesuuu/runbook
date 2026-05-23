@@ -9,6 +9,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -916,6 +917,31 @@ async def get_signature(
         raise HTTPException(status_code=404, detail="Signature not found")
 
     return FileResponse(full_path, media_type="image/png")
+
+
+@router.get("/me/default-signature")
+async def get_default_signature(
+    request: Request,
+    current_user: User = Depends(_get_user_for_file),
+):
+    """Preview the auto-generated cursive signature for the current user.
+
+    The sign-off modal renders this via an ``<img>`` tag when the signer has
+    not uploaded a signature, so the route accepts a ``?token=`` query param
+    (handled by ``_get_user_for_file``). The image is generated on the fly and
+    is not persisted here — ``create_signoff`` pins its own copy at sign time.
+    """
+    from app.services.signoffs.signature_image import (
+        render_name_signature_png,
+        signer_display_name,
+    )
+
+    png = render_name_signature_png(signer_display_name(current_user))
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @router.put("/me/preferences", response_model=UserResponse)

@@ -89,13 +89,13 @@
                 }));
         }
 
-        const laneNodeId = assignment.lane_node_id;
+        const roleNodeId = assignment.lane_node_id;
         const allSteps = nodes
             .filter((n: any) => n.type === 'unitOp')
             .sort((a: any, b: any) => a.position.x - b.position.x);
 
-        // Steps parented to this lane
-        const parented = allSteps.filter((n: any) => n.parentId === laneNodeId);
+        // Steps parented to this role
+        const parented = allSteps.filter((n: any) => n.parentId === roleNodeId);
         const steps = parented.length > 0 ? parented : allSteps;
 
         return steps.map((n: any) => ({

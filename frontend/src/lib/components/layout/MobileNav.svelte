@@ -18,6 +18,7 @@
             ? [
                   { href: '/', label: 'Dashboard' },
                   { href: paths.library(), label: 'Library' },
+                  { href: '/reviews', label: 'Reviews' },
                   { href: '/chat', label: 'AI Chat' },
                   { href: paths.projects(), label: 'Projects' },
                   { href: '/settings', label: 'Settings' },

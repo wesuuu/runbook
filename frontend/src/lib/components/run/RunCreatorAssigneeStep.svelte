@@ -1,6 +1,7 @@
 <script lang="ts">
     import { slide } from 'svelte/transition';
     import { cubicOut } from 'svelte/easing';
+    import RunReviewersPicker from './RunReviewersPicker.svelte';
 
     interface ProjectMember {
         id: string;
@@ -8,25 +9,36 @@
         email?: string | null;
     }
 
-    interface SwimLane {
+    interface RoleNode {
         id: string;
         data?: { label?: string };
     }
 
     interface Props {
-        swimLaneNodes: SwimLane[];
+        roleNodes: RoleNode[];
         projectMembers: ProjectMember[];
         loadingMembers: boolean;
         assignments: Record<string, string>;
         onChange: (assignments: Record<string, string>) => void;
+        studyDirectorId?: string | null;
+        qauReviewerId?: string | null;
+        onReviewersChange?: (reviewers: {
+            studyDirectorId: string | null;
+            qauReviewerId: string | null;
+        }) => void;
+        showReviewers?: boolean;
     }
 
     let {
-        swimLaneNodes,
+        roleNodes,
         projectMembers,
         loadingMembers,
         assignments,
         onChange,
+        studyDirectorId = null,
+        qauReviewerId = null,
+        onReviewersChange = () => {},
+        showReviewers = true,
     }: Props = $props();
 
     function setAssignment(key: string, userId: string) {
@@ -48,7 +60,7 @@
     <header class="step-header">
         <h2>Step 4 · Assign team members</h2>
         <p class="step-help">
-            {#if swimLaneNodes.length > 0}
+            {#if roleNodes.length > 0}
                 Pick the operator for each role. You can change or assign these later from the run page.
             {:else}
                 Pick the operator for this run. You can change or assign later from the run page.
@@ -66,18 +78,18 @@
                 assign later.
             </p>
         </div>
-    {:else if swimLaneNodes.length > 0}
+    {:else if roleNodes.length > 0}
         <div class="assignee-list">
-            {#each swimLaneNodes as lane (lane.id)}
+            {#each roleNodes as role (role.id)}
                 <div class="assignee-row" transition:slide={{ duration: 180, easing: cubicOut }}>
-                    <label class="row-label" for="assignee-{lane.id}">
-                        {lane.data?.label ?? 'Role'}
+                    <label class="row-label" for="assignee-{role.id}">
+                        {role.data?.label ?? 'Role'}
                     </label>
                     <select
-                        id="assignee-{lane.id}"
+                        id="assignee-{role.id}"
                         class="input-field"
-                        value={assignments[lane.id] ?? ''}
-                        onchange={(e) => setAssignment(lane.id, (e.target as HTMLSelectElement).value)}
+                        value={assignments[role.id] ?? ''}
+                        onchange={(e) => setAssignment(role.id, (e.target as HTMLSelectElement).value)}
                     >
                         <option value="">Unassigned</option>
                         {#each projectMembers as m (m.id)}
@@ -104,6 +116,16 @@
                 </select>
             </div>
         </div>
+    {/if}
+
+    {#if showReviewers}
+        <RunReviewersPicker
+            {studyDirectorId}
+            {qauReviewerId}
+            members={projectMembers}
+            disabled={false}
+            onChange={onReviewersChange}
+        />
     {/if}
 </section>
 

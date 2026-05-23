@@ -16,6 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.core.slug import slugify
+
+# Import every model for side effects so SQLAlchemy can resolve string-based
+# relationships (e.g. Project.runs -> "Run") before the first query.
+from app.db import base  # noqa: F401
 from app.db.session import AsyncSessionLocal
 from app.models.iam import (
     ObjectPermission,
@@ -103,12 +107,10 @@ async def seed_users(db: AsyncSession):
             email=email,
             hashed_password=DEFAULT_PASSWORD,
             full_name=name,
-            selected_org_id=ORG_ID,
             email_verified=True,
         )
-        # Backfill existing seed users that lack selected_org_id / verification
-        if user.selected_org_id is None:
-            user.selected_org_id = ORG_ID
+        # selected_org_id is assigned in seed_org: users are created before
+        # the org row exists, so the FK can't be satisfied here.
         if not user.email_verified:
             user.email_verified = True
 
@@ -152,6 +154,21 @@ async def seed_org(db: AsyncSession):
                     roles=sorted({"MEMBER", role}),
                 )
             )
+
+    # Point the primary seed users at BioProcess Inc. Deferred from
+    # seed_users because users are created before the org row exists.
+    for uid in (
+        USER_ADMIN,
+        USER_UPSTREAM_LEAD,
+        USER_DOWNSTREAM_LEAD,
+        USER_SCIENTIST1,
+        USER_SCIENTIST2,
+        USER_VIEWER,
+    ):
+        user = await db.get(User, uid)
+        if user is not None and user.selected_org_id is None:
+            user.selected_org_id = ORG_ID
+
     await db.flush()
 
 

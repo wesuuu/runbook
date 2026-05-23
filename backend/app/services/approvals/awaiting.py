@@ -41,6 +41,7 @@ async def list_awaiting_for_user(
         select(GlpSignoffRequest.protocol_id).where(
             GlpSignoffRequest.requested_user_id == user_id,
             GlpSignoffRequest.status == "OPEN",
+            GlpSignoffRequest.protocol_id.isnot(None),
         )
     )
     request_proto_ids: set[uuid.UUID] = set(open_request_rows.scalars().all())
@@ -92,6 +93,7 @@ async def list_awaiting_for_user(
         .where(
             GlpSignoffRequest.protocol_id.in_(proto_ids),
             GlpSignoffRequest.status == "OPEN",
+            GlpSignoffRequest.protocol_id.isnot(None),
         )
         .order_by(
             GlpSignoffRequest.protocol_id,

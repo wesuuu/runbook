@@ -25,6 +25,7 @@
     } from "$lib/components/run/RunOutcomePicker.svelte";
     import SignoffBlock from "$lib/components/shared/SignoffBlock.svelte";
     import SignoffModal from "$lib/components/shared/SignoffModal.svelte";
+    import RunReviewersPicker from "$lib/components/run/RunReviewersPicker.svelte";
     import { ConfirmDialog } from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
     import { Switch } from "$lib/components/ui/switch";
@@ -34,6 +35,8 @@
         createRunSignoff,
         completeRun as completeRunApi,
         reopenRun,
+        updateRunReviewers,
+        ApiError,
     } from '$lib/api';
     import {
         GlpSettingsSchema,
@@ -71,6 +74,7 @@
     let loading = $state(true);
     let error = $state<string | null>(null);
     let savingStatus = $state(false);
+    let savingReviewers = $state(false);
 
     // UI State
     let showStartConfirm = $state(false);
@@ -151,6 +155,9 @@
         ),
     );
 
+    const sdRequired = $derived(Boolean(glpSettings?.require_study_director));
+    const sdUnassigned = $derived(sdRequired && !run?.study_director_id);
+
     function attestationDefaultFor(
         role: GlpRole,
         settings: GlpSettings,
@@ -205,6 +212,22 @@
         glpSettings = GlpSettingsSchema.parse({});
     }
 
+    async function saveReviewers(r: { studyDirectorId: string | null; qauReviewerId: string | null }) {
+        savingReviewers = true;
+        try {
+            await updateRunReviewers(run.id, {
+                study_director_id: r.studyDirectorId,
+                qau_reviewer_id: r.qauReviewerId,
+            });
+            run = await api.get(`/runs/${id}`);
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : 'Failed to save reviewers';
+            toast.error(msg);
+        } finally {
+            savingReviewers = false;
+        }
+    }
+
     async function refreshSignoffs(): Promise<void> {
         if (!run?.id) return;
         try {
@@ -231,6 +254,10 @@
     }
 
     async function handleCompleteWithOutcome() {
+        if (sdUnassigned) {
+            toast.error('Assign a Study Director before completing this run.');
+            return;
+        }
         if (!outcome) {
             toast.error('Pick a run outcome before completing.');
             return;
@@ -253,7 +280,14 @@
             await refreshSignoffs();
             showCompleteConfirm = false;
         } catch (e: unknown) {
-            error = e instanceof Error ? e.message : 'An error occurred';
+            if (
+                e instanceof ApiError &&
+                (e.data as { detail?: { error?: string } } | null)?.detail?.error === 'RUN_SD_UNASSIGNED'
+            ) {
+                toast.error('Assign a Study Director before completing this run.');
+            } else {
+                error = e instanceof Error ? e.message : 'An error occurred';
+            }
         } finally {
             completingRun = false;
         }
@@ -445,34 +479,34 @@
     }
 
     async function updateRoleAssignment(
-        laneNodeId: string,
+        roleNodeId: string,
         roleName: string,
         userId: string | null
     ) {
         try {
             if (!userId) {
                 const existing = roleAssignments.find(
-                    (a) => a.lane_node_id === laneNodeId
+                    (a) => a.lane_node_id === roleNodeId
                 );
                 if (existing) {
                     await api.delete(
                         `/runs/${id}/role-assignments/${existing.id}`
                     );
                     roleAssignments = roleAssignments.filter(
-                        (a) => a.lane_node_id !== laneNodeId
+                        (a) => a.lane_node_id !== roleNodeId
                     );
                 }
             } else {
                 const resp = await api.post(
                     `/runs/${id}/role-assignments`,
                     {
-                        lane_node_id: laneNodeId,
+                        lane_node_id: roleNodeId,
                         role_name: roleName,
                         user_id: userId,
                     }
                 );
                 const idx = roleAssignments.findIndex(
-                    (a) => a.lane_node_id === laneNodeId
+                    (a) => a.lane_node_id === roleNodeId
                 );
                 if (idx >= 0) {
                     roleAssignments[idx] = resp;
@@ -480,7 +514,7 @@
                     roleAssignments = [...roleAssignments, resp];
                 }
             }
-            delete assignmentChanges[laneNodeId];
+            delete assignmentChanges[roleNodeId];
         } catch (e: unknown) {
             console.error("Failed to update assignment:", e instanceof Error ? e.message : e);
             error = e instanceof Error ? e.message : 'An error occurred';
@@ -500,20 +534,20 @@
         }
     }
 
-    function getSwimLaneNodes() {
+    function getRoleNodes() {
         if (!run?.graph) return [];
         return (run.graph.nodes || []).filter((n: any) => n.type === "swimLane");
     }
 
-    function getRoleAssignment(laneNodeId: string) {
-        return roleAssignments.find((a) => a.lane_node_id === laneNodeId);
+    function getRoleAssignment(roleNodeId: string) {
+        return roleAssignments.find((a) => a.lane_node_id === roleNodeId);
     }
 
     function allRolesAssigned() {
         if (roleAssignments.length === 0) return false;
-        const swimLanes = getSwimLaneNodes();
-        if (swimLanes.length > 0) {
-            return swimLanes.every((lane: any) => getRoleAssignment(lane.id));
+        const roleNodes = getRoleNodes();
+        if (roleNodes.length > 0) {
+            return roleNodes.every((role: any) => getRoleAssignment(role.id));
         }
         return true;
     }
@@ -537,10 +571,10 @@
             }));
     }
 
-    function getStepsForRole(laneNodeId: string) {
+    function getStepsForRole(roleNodeId: string) {
         if (!run?.graph) return [];
         const all = getAllUnitOpSteps();
-        const parented = all.filter((s: any) => s.parentId === laneNodeId);
+        const parented = all.filter((s: any) => s.parentId === roleNodeId);
         if (parented.length > 0) return parented;
         const anyParented = all.some((s: any) => s.parentId != null);
         if (!anyParented) return all;
@@ -896,14 +930,31 @@
                 <!-- Role Assignments -->
                 <div class="contents" data-tour="run-role-panel">
                     <RoleAssignmentPanel
-                        swimLaneNodes={getSwimLaneNodes()}
+                        roleNodes={getRoleNodes()}
                         {roleAssignments}
                         {projectMembers}
                         {assignmentChanges}
                         onUpdateAssignment={updateRoleAssignment}
-                        onAssignmentChange={(laneId, value) => { assignmentChanges[laneId] = value; }}
+                        onAssignmentChange={(roleId, value) => { assignmentChanges[roleId] = value; }}
                         onShowGoOffline={() => (showGoOffline = true)}
                     />
+                </div>
+
+                <!-- Sign-off reviewers card -->
+                <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                    <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-3">
+                        Sign-off reviewers
+                    </h3>
+                    <RunReviewersPicker
+                        studyDirectorId={run.study_director_id ?? null}
+                        qauReviewerId={run.qau_reviewer_id ?? null}
+                        members={projectMembers}
+                        disabled={run.status === 'COMPLETED' || run.status === 'ARCHIVED' || savingReviewers}
+                        onChange={saveReviewers}
+                    />
+                    <p class="text-xs text-muted-foreground mt-3">
+                        Reviewers lock once the run is completed.
+                    </p>
                 </div>
 
                 <!-- Electronic Batch Record -->
@@ -1060,11 +1111,11 @@
                     {#if roleAssignments.length > 0}
                         <div class="mb-6 bg-white rounded-lg border border-border px-5 py-4">
                             <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Assigned Roles</h3>
-                            {#if getSwimLaneNodes().length > 0}
+                            {#if getRoleNodes().length > 0}
                                 <div class="flex flex-wrap gap-3">
-                                    {#each getSwimLaneNodes() as lane}
-                                        {@const assignment = getRoleAssignment(lane.id)}
-                                        {@const steps = getStepsForRole(lane.id)}
+                                    {#each getRoleNodes() as role}
+                                        {@const assignment = getRoleAssignment(role.id)}
+                                        {@const steps = getStepsForRole(role.id)}
                                         {@const completedCount = steps.filter((s: any) => run.execution_data?.[s.id]?.status === "completed").length}
                                         {@const isCurrentUser = assignment?.user_id === getUser()?.id}
                                         {@const member = assignment ? projectMembers.find((m: any) => m.id === assignment.user_id) : null}
@@ -1079,7 +1130,7 @@
                                                 {/if}
                                             </div>
                                             <div class="text-sm">
-                                                <span class="font-medium text-foreground">{lane.data.label}</span>
+                                                <span class="font-medium text-foreground">{role.data.label}</span>
                                                 <span class="text-muted-foreground ml-1">—
                                                     {#if assignment}
                                                         {isCurrentUser ? 'You' : displayName}
@@ -1173,6 +1224,13 @@
                                             outcomeNotes = n;
                                         }}
                                     />
+                                    {#if sdUnassigned}
+                                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                            <p class="text-sm font-medium text-amber-800">
+                                                Assign a Study Director before completing this run.
+                                            </p>
+                                        </div>
+                                    {/if}
                                     {#if unanalyzedCount > 0}
                                         <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
                                             <p class="text-sm font-medium text-amber-800">
@@ -1188,7 +1246,7 @@
                         </ConfirmDialog>
                     {:else}
                         <RunObserverView
-                            swimLaneNodes={getSwimLaneNodes()}
+                            roleNodes={getRoleNodes()}
                             allSteps={getAllUnitOpSteps()}
                             {roleAssignments}
                             {projectMembers}
@@ -1196,6 +1254,23 @@
                             {getStepsForRole}
                         />
                     {/if}
+
+                    <!-- Sign-off reviewers card -->
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-3">
+                            Sign-off reviewers
+                        </h3>
+                        <RunReviewersPicker
+                            studyDirectorId={run.study_director_id ?? null}
+                            qauReviewerId={run.qau_reviewer_id ?? null}
+                            members={projectMembers}
+                            disabled={run.status === 'COMPLETED' || run.status === 'ARCHIVED' || savingReviewers}
+                            onChange={saveReviewers}
+                        />
+                        <p class="text-xs text-muted-foreground mt-3">
+                            Reviewers lock once the run is completed.
+                        </p>
+                    </div>
 
                     <!-- GLP Sign-offs (visible during ACTIVE so OPERATOR / SD /
                          QAU can sign before the run is closed). -->
@@ -1293,13 +1368,30 @@
                     <!-- Results Summary -->
                     <div class="contents" data-tour="run-results">
                         <RunResultsSummary
-                            swimLaneNodes={getSwimLaneNodes()}
+                            roleNodes={getRoleNodes()}
                             allSteps={getAllUnitOpSteps()}
                             {roleAssignments}
                             {projectMembers}
                             executionData={run.execution_data || {}}
                             {getStepsForRole}
                         />
+                    </div>
+
+                    <!-- Sign-off reviewers card (read-only when completed) -->
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-3">
+                            Sign-off reviewers
+                        </h3>
+                        <RunReviewersPicker
+                            studyDirectorId={run.study_director_id ?? null}
+                            qauReviewerId={run.qau_reviewer_id ?? null}
+                            members={projectMembers}
+                            disabled={true}
+                            onChange={saveReviewers}
+                        />
+                        <p class="text-xs text-muted-foreground mt-3">
+                            Reviewers lock once the run is completed.
+                        </p>
                     </div>
 
                     <!-- GLP Sign-offs -->
@@ -1440,7 +1532,7 @@
                     <!-- Edited Results Summary -->
                     <div class="contents" data-tour="run-results">
                         <RunResultsSummary
-                            swimLaneNodes={getSwimLaneNodes()}
+                            roleNodes={getRoleNodes()}
                             allSteps={getAllUnitOpSteps()}
                             {roleAssignments}
                             {projectMembers}
@@ -1448,6 +1540,23 @@
                             showEditAnnotations={true}
                             {getStepsForRole}
                         />
+                    </div>
+
+                    <!-- Sign-off reviewers card -->
+                    <div class="bg-white rounded-lg border border-border p-6 mb-8">
+                        <h3 class="text-sm font-semibold text-muted-foreground uppercase mb-3">
+                            Sign-off reviewers
+                        </h3>
+                        <RunReviewersPicker
+                            studyDirectorId={run.study_director_id ?? null}
+                            qauReviewerId={run.qau_reviewer_id ?? null}
+                            members={projectMembers}
+                            disabled={run.status === 'COMPLETED' || run.status === 'ARCHIVED' || savingReviewers}
+                            onChange={saveReviewers}
+                        />
+                        <p class="text-xs text-muted-foreground mt-3">
+                            Reviewers lock once the run is completed.
+                        </p>
                     </div>
 
                     <!-- Documents Section -->

@@ -83,6 +83,15 @@ class Run(Base, UUIDMixin, TimestampMixin):
         ForeignKey("users.id"), nullable=True
     )
 
+    # F-0080: GLP sign-off reviewers, designated up front (nullable = no
+    # specific reviewer; a null QAU resolves to the org QAU pool).
+    study_director_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    qau_reviewer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
     # Optional experiment grouping
     experiment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("experiments.id"), nullable=True
@@ -124,6 +133,12 @@ class Run(Base, UUIDMixin, TimestampMixin):
     )
     created_by: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[created_by_id]
+    )
+    study_director: Mapped[Optional["User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[study_director_id]
+    )
+    qau_reviewer: Mapped[Optional["User"]] = relationship(
+        "app.models.iam.User", foreign_keys=[qau_reviewer_id]
     )
     role_assignments: Mapped[List["RunRoleAssignment"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"

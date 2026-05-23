@@ -151,6 +151,9 @@ class RunCreate(BaseModel):
     # QA-0008: GxP execution metadata
     lot_number: Optional[str] = None
     batch_number: Optional[str] = None
+    # F-0080: GLP sign-off reviewers
+    study_director_id: Optional[UUID] = None
+    qau_reviewer_id: Optional[UUID] = None
 
 
 class RunUpdate(BaseModel):
@@ -194,6 +197,9 @@ class RunResponse(RunBase):
     experiment_id: Optional[UUID] = None
     started_by_id: Optional[UUID] = None
     created_by_id: Optional[UUID] = None
+    # F-0080: GLP sign-off reviewers
+    study_director_id: Optional[UUID] = None
+    qau_reviewer_id: Optional[UUID] = None
     is_strict: bool = False
     notes: list[RunNote] = Field(default_factory=list)
     attachments: list[RunAttachment] = Field(default_factory=list)
@@ -314,3 +320,8 @@ class RunCompleteRequest(BaseModel):
 
 class RunReopenRequest(BaseModel):
     reason: str = Field(min_length=1)
+
+
+class RunReviewersUpdate(BaseModel):
+    study_director_id: Optional[UUID] = None
+    qau_reviewer_id: Optional[UUID] = None

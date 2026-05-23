@@ -15,11 +15,14 @@ from app.services.core.notifications.channels.webhook import WebhookChannel
 from app.services.core.notifications.templates import TEMPLATES
 
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from app.models.notifications import (
     DeliveryStatus,
+    Notification,
     NotificationChannel,
     NotificationDelivery,
+    NotificationSubscription,
 )
 from app.services.core.notifications import dispatcher
 from app.services.core.notifications.dispatcher import retry_pending
@@ -480,3 +483,394 @@ class TestRetryPendingDeliveriesSweep:
         session_factory.assert_called_once()
         retry_mock.assert_awaited_once_with(fake_session)
         fake_session.commit.assert_awaited_once()
+
+
+# ── purge_read_notifications Tests (TD-0091b) ────────────────────────────
+
+
+class TestPurgeReadNotifications:
+    """The retention sweep hard-deletes old read notifications only."""
+
+    async def _notif(self, db, user, *, read_at, title="n"):
+        notif = Notification(
+            user_id=user.id,
+            event_type="RUN_STARTED",
+            entity_type="run",
+            entity_id=uuid4(),
+            title=title,
+            message="m",
+            read_at=read_at,
+        )
+        db.add(notif)
+        await db.flush()
+        return notif
+
+    @pytest.mark.asyncio
+    async def test_deletes_old_read_notifications(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        notif = await self._notif(db_session, test_user, read_at=old)
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 1
+        assert await db_session.get(Notification, notif.id) is None
+
+    @pytest.mark.asyncio
+    async def test_keeps_recent_read_notifications(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        recent = datetime.now(timezone.utc) - timedelta(days=10)
+        notif = await self._notif(db_session, test_user, read_at=recent)
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 0
+        assert await db_session.get(Notification, notif.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_keeps_unread_notifications(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        notif = await self._notif(db_session, test_user, read_at=None)
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 0
+        assert await db_session.get(Notification, notif.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_returns_exact_count(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        recent = datetime.now(timezone.utc) - timedelta(days=5)
+        await self._notif(db_session, test_user, read_at=old, title="a")
+        await self._notif(db_session, test_user, read_at=old, title="b")
+        await self._notif(db_session, test_user, read_at=recent, title="c")
+        await self._notif(db_session, test_user, read_at=None, title="d")
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 2
+
+    @pytest.mark.asyncio
+    async def test_chunking_across_more_than_chunk_size(
+        self, db_session, test_user
+    ):
+        """Exercises the multi-chunk control flow (the while loop runs
+        twice: 500 then 5). The per-chunk ``db.commit()`` resolves to a
+        SAVEPOINT release under the test fixture, so this asserts the
+        chunk arithmetic, not real per-chunk commit durability.
+        """
+        from app.services.core.notifications.retention import (
+            PURGE_CHUNK_SIZE,
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        rows = [
+            Notification(
+                user_id=test_user.id,
+                event_type="RUN_STARTED",
+                entity_type="run",
+                entity_id=uuid4(),
+                title=f"n{i}",
+                message="m",
+                read_at=old,
+            )
+            for i in range(PURGE_CHUNK_SIZE + 5)
+        ]
+        db_session.add_all(rows)
+        await db_session.flush()
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == PURGE_CHUNK_SIZE + 5
+
+    @pytest.mark.asyncio
+    async def test_non_positive_window_is_noop(self, db_session, test_user):
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        notif = await self._notif(db_session, test_user, read_at=old)
+
+        assert await purge_read_notifications(db_session, older_than_days=0) == 0
+        assert (
+            await purge_read_notifications(db_session, older_than_days=-1) == 0
+        )
+        assert await db_session.get(Notification, notif.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_delivery_survives_purge_with_null_fk(
+        self, db_session, test_user
+    ):
+        """Schema-contract test for the ON DELETE SET NULL FK.
+
+        The production dispatcher (``_dispatch_to_channel``) never sets
+        ``NotificationDelivery.notification_id`` — in-app ``Notification``
+        rows and external-channel ``NotificationDelivery`` rows are
+        decoupled today, so a purge cannot orphan a real delivery. This
+        test constructs the linkage artificially to prove the FK's
+        ``ON DELETE SET NULL`` holds *if* the two are ever linked, so a
+        future change can rely on the contract.
+        """
+        from app.services.core.notifications.retention import (
+            purge_read_notifications,
+        )
+
+        old = datetime.now(timezone.utc) - timedelta(days=100)
+        notif = await self._notif(db_session, test_user, read_at=old)
+        channel = NotificationChannel(
+            user_id=test_user.id,
+            name="C",
+            channel_type="CONSOLE",
+            config={},
+            enabled=True,
+        )
+        db_session.add(channel)
+        await db_session.flush()
+        delivery = NotificationDelivery(
+            notification_id=notif.id,
+            channel_id=channel.id,
+            event_type="RUN_STARTED",
+            recipient_info={"recipient": "x"},
+            status=DeliveryStatus.RETRYING,
+            attempts=1,
+        )
+        db_session.add(delivery)
+        await db_session.flush()
+
+        deleted = await purge_read_notifications(
+            db_session, older_than_days=90
+        )
+
+        assert deleted == 1
+        await db_session.refresh(delivery)
+        assert delivery.notification_id is None
+        assert delivery.status == DeliveryStatus.RETRYING
+
+
+# ── _purge_old_notifications sweep wiring ─────────────────────────────────
+
+
+class TestPurgeOldNotificationsSweep:
+    """The recovery-loop purge step is throttled and respects the flag."""
+
+    @pytest.mark.asyncio
+    async def test_sweep_calls_purge_when_due(self, monkeypatch):
+        import app.main as main_module
+
+        monkeypatch.setattr(main_module, "_last_notification_purge_at", None)
+        monkeypatch.setattr(
+            main_module.settings, "notification_retention_days", 90
+        )
+
+        fake_session = AsyncMock()
+        session_cm = AsyncMock()
+        session_cm.__aenter__.return_value = fake_session
+        session_cm.__aexit__.return_value = False
+        session_factory = MagicMock(return_value=session_cm)
+        purge_mock = AsyncMock(return_value=7)
+
+        with patch(
+            "app.db.session.AsyncSessionLocal", session_factory
+        ), patch(
+            "app.services.core.notifications.retention.purge_read_notifications",
+            purge_mock,
+        ):
+            await main_module._purge_old_notifications()
+
+        session_factory.assert_called_once()
+        purge_mock.assert_awaited_once_with(fake_session, older_than_days=90)
+        assert main_module._last_notification_purge_at is not None
+
+    @pytest.mark.asyncio
+    async def test_sweep_throttled_within_24h(self, monkeypatch):
+        import app.main as main_module
+
+        monkeypatch.setattr(
+            main_module,
+            "_last_notification_purge_at",
+            datetime.now(timezone.utc),
+        )
+        monkeypatch.setattr(
+            main_module.settings, "notification_retention_days", 90
+        )
+        purge_mock = AsyncMock(return_value=0)
+
+        with patch(
+            "app.services.core.notifications.retention.purge_read_notifications",
+            purge_mock,
+        ):
+            await main_module._purge_old_notifications()
+
+        purge_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sweep_disabled_when_retention_non_positive(
+        self, monkeypatch
+    ):
+        import app.main as main_module
+
+        monkeypatch.setattr(main_module, "_last_notification_purge_at", None)
+        monkeypatch.setattr(
+            main_module.settings, "notification_retention_days", 0
+        )
+        purge_mock = AsyncMock(return_value=0)
+
+        with patch(
+            "app.services.core.notifications.retention.purge_read_notifications",
+            purge_mock,
+        ):
+            await main_module._purge_old_notifications()
+
+        purge_mock.assert_not_awaited()
+        assert main_module._last_notification_purge_at is not None
+
+
+# ── dispatch_event Tests ─────────────────────────────────────────────────
+
+
+class TestDispatchEvent:
+    """dispatch_event fans an event out to subscribed org + user channels."""
+
+    async def _channel_with_sub(
+        self,
+        db,
+        *,
+        event_type,
+        org_id=None,
+        user_id=None,
+        sub_enabled=True,
+    ):
+        channel = NotificationChannel(
+            org_id=org_id,
+            user_id=user_id,
+            name="Dispatch Test Channel",
+            channel_type="CONSOLE",
+            config={},
+            enabled=True,
+        )
+        db.add(channel)
+        await db.flush()
+        sub = NotificationSubscription(
+            channel_id=channel.id,
+            event_type=event_type,
+            enabled=sub_enabled,
+        )
+        db.add(sub)
+        await db.flush()
+        return channel
+
+    def _messages(self, event_type="RUN_STARTED"):
+        personal = FormattedMessage(
+            event_type=event_type,
+            title="Personal",
+            body="personal body",
+            recipient="you@example.com",
+        )
+        broadcast = FormattedMessage(
+            event_type=event_type,
+            title="Broadcast",
+            body="broadcast body",
+            recipient="org",
+        )
+        return personal, broadcast
+
+    @pytest.mark.asyncio
+    async def test_org_channel_receives_broadcast(self, db_session, test_org):
+        await self._channel_with_sub(
+            db_session, event_type="RUN_STARTED", org_id=test_org.id
+        )
+        personal, broadcast = self._messages()
+
+        deliveries = await dispatcher.dispatch_event(
+            db_session, "RUN_STARTED", test_org.id, [], personal, broadcast
+        )
+
+        assert len(deliveries) == 1
+        assert deliveries[0].status == DeliveryStatus.SENT
+        # Verify the broadcast variant (recipient="org") reached the org channel,
+        # not the personal variant (recipient="you@example.com").
+        assert deliveries[0].recipient_info["recipient"] == "org"
+
+    @pytest.mark.asyncio
+    async def test_user_channel_receives_personal(
+        self, db_session, test_org, test_user
+    ):
+        await self._channel_with_sub(
+            db_session, event_type="RUN_COMPLETED", user_id=test_user.id
+        )
+        personal, broadcast = self._messages("RUN_COMPLETED")
+
+        deliveries = await dispatcher.dispatch_event(
+            db_session,
+            "RUN_COMPLETED",
+            test_org.id,
+            [test_user.id],
+            personal,
+            broadcast,
+        )
+
+        assert len(deliveries) == 1
+        assert deliveries[0].status == DeliveryStatus.SENT
+        # Verify the personal variant (recipient="you@example.com") was routed
+        # to the user channel, not the broadcast variant (recipient="org").
+        assert deliveries[0].recipient_info["recipient"] == "you@example.com"
+
+    @pytest.mark.asyncio
+    async def test_disabled_subscription_yields_no_delivery(
+        self, db_session, test_org
+    ):
+        await self._channel_with_sub(
+            db_session,
+            event_type="RUN_STARTED",
+            org_id=test_org.id,
+            sub_enabled=False,
+        )
+        personal, broadcast = self._messages()
+
+        deliveries = await dispatcher.dispatch_event(
+            db_session, "RUN_STARTED", test_org.id, [], personal, broadcast
+        )
+
+        assert deliveries == []
+
+    @pytest.mark.asyncio
+    async def test_event_with_no_channels_is_noop(
+        self, db_session, test_org
+    ):
+        personal, broadcast = self._messages("STEP_DEVIATION")
+
+        deliveries = await dispatcher.dispatch_event(
+            db_session,
+            "STEP_DEVIATION",
+            test_org.id,
+            [],
+            personal,
+            broadcast,
+        )
+
+        assert deliveries == []

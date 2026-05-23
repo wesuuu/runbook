@@ -157,8 +157,13 @@ class GlpSignoffRequest(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "glp_signoff_requests"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('OPEN','APPROVED','REJECTED','WITHDRAWN')",
+            "status IN ('OPEN','APPROVED','REJECTED','WITHDRAWN','CANCELLED')",
             name="ck_proto_appr_req_status",
+        ),
+        CheckConstraint(
+            "(protocol_id IS NOT NULL AND run_id IS NULL) OR "
+            "(protocol_id IS NULL AND run_id IS NOT NULL)",
+            name="ck_signoff_request_target",
         ),
         Index(
             "ix_proto_appr_req_open_unique",
@@ -167,11 +172,22 @@ class GlpSignoffRequest(Base, UUIDMixin, TimestampMixin):
             unique=True,
             postgresql_where=text("status = 'OPEN'"),
         ),
+        Index(
+            "ux_signoff_request_active_run",
+            "run_id",
+            "role",
+            unique=True,
+            postgresql_where=text("status = 'OPEN'"),
+        ),
     )
 
-    protocol_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False
+    protocol_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=True
     )
+    run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), nullable=True
+    )
+    role: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     requested_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -188,7 +204,12 @@ class GlpSignoffRequest(Base, UUIDMixin, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
-    protocol: Mapped["Protocol"] = relationship(back_populates="approval_requests")
+    protocol: Mapped[Optional["Protocol"]] = relationship(
+        back_populates="approval_requests"
+    )
+    run: Mapped[Optional["Run"]] = relationship(
+        "Run", foreign_keys=[run_id]
+    )
     requested_user: Mapped[Optional["User"]] = relationship(
         "app.models.iam.User", foreign_keys=[requested_user_id]
     )

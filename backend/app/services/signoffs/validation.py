@@ -24,7 +24,7 @@ from app.models.iam import ObjectType, OrganizationMember, OrgRole, PermissionLe
 from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Run, RunRoleAssignment
-from app.models.signoffs import GlpSignoff
+from app.models.signoffs import GlpSignoff, GlpSignoffRequest
 from app.services.core.permissions import check_permission
 
 
@@ -85,6 +85,61 @@ async def _glp_user_designated_for_role(
         )
         return member_row.scalar_one_or_none() is not None
     return False
+
+
+async def _authorized_via_run_signoff_request(
+    db: AsyncSession, run_id: UUID, user_id: UUID, role: str
+) -> bool:
+    """True if an OPEN run-scoped request for ``role`` authorizes this signer.
+
+    F-0080 routes run STUDY_DIRECTOR and QAU review through
+    ``GlpSignoffRequest`` rows (run_id/role), not the protocol's
+    ``glpSettings``. A signer is authorized when an OPEN request for the
+    role on the run either:
+
+    - names them directly (``requested_user_id == user_id``), or
+    - is unassigned (``requested_user_id IS NULL`` — the org QAU pool) and
+      the signer holds ``OrgRole.QAU`` in the run's organization.
+
+    The unassigned-pool fallback applies to QAU only: SD requests are
+    always assigned (an unassigned SD request blocks completion via
+    ``assert_run_completable``), so an unnamed signer is never authorized
+    for STUDY_DIRECTOR.
+    """
+    req_rows = await db.execute(
+        select(GlpSignoffRequest).where(
+            GlpSignoffRequest.run_id == run_id,
+            GlpSignoffRequest.role == role,
+            GlpSignoffRequest.status == "OPEN",
+        )
+    )
+    requests = list(req_rows.scalars().all())
+    if not requests:
+        return False
+    # Directly assigned to this signer.
+    if any(r.requested_user_id == user_id for r in requests):
+        return True
+    # Unassigned pool request — QAU only; the signer must hold the org QAU role.
+    if role != "QAU":
+        return False
+    if not any(r.requested_user_id is None for r in requests):
+        return False
+    org_row = await db.execute(
+        select(Project.organization_id)
+        .join(Run, Run.project_id == Project.id)
+        .where(Run.id == run_id)
+    )
+    org_id = org_row.scalar_one_or_none()
+    if org_id is None:
+        return False
+    member_row = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.roles.contains([OrgRole.QAU.value]),
+        )
+    )
+    return member_row.scalar_one_or_none() is not None
 
 
 @dataclass
@@ -274,6 +329,76 @@ async def assert_qau_independent(
             )
 
 
+def assert_reviewers_independent(
+    study_director_id: Optional[UUID], qau_reviewer_id: Optional[UUID]
+) -> None:
+    """§58.35: a run's QAU reviewer cannot also be its Study Director.
+
+    Structural check on the *designated* reviewers — distinct from
+    :func:`assert_qau_independent`, which checks the QAU signer against the
+    study's dynamic actors at sign time. SD == QAU can never become valid,
+    so it hard-blocks at designation rather than warning.
+
+    Raises HTTPException(400) with error="QAU_NOT_INDEPENDENT" and
+    conflict_role="STUDY_DIRECTOR" when both ids are set and equal.
+    """
+    if (
+        study_director_id is not None
+        and qau_reviewer_id is not None
+        and study_director_id == qau_reviewer_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "QAU_NOT_INDEPENDENT",
+                "conflict_role": "STUDY_DIRECTOR",
+                "message": (
+                    "The QAU reviewer must be independent of the "
+                    "Study Director."
+                ),
+            },
+        )
+
+
+def assert_glp_settings_reviewers_independent(
+    glp_settings: Optional[dict],
+) -> None:
+    """§58.35: a protocol's designated QAU reviewer cannot also be its
+    designated Study Director.
+
+    Reads ``study_director_user_id`` and ``qau_user_id`` from a protocol's
+    ``glpSettings`` block and delegates to :func:`assert_reviewers_independent`.
+    This is the protocol-side counterpart of the run reviewer check that
+    guards ``create_run`` / ``update_run_reviewers``; here it guards
+    ``submit-for-approval`` so a non-independent pairing can never generate
+    sign-off requests.
+
+    Only a ``SPECIFIC_USER`` QAU can statically conflict — an ``ANY_ORG_QAU``
+    pool is resolved with the Study Director excluded at sign time, so pool
+    mode is not checked here. A no-op unless both roles are required and both
+    ids are set and resolve to the same user.
+    """
+    if not isinstance(glp_settings, dict):
+        return
+    if not (
+        glp_settings.get("require_study_director")
+        and glp_settings.get("require_qau")
+    ):
+        return
+    if glp_settings.get("qau_mode") != "SPECIFIC_USER":
+        return
+    sd_raw = glp_settings.get("study_director_user_id")
+    qau_raw = glp_settings.get("qau_user_id")
+    if not sd_raw or not qau_raw:
+        return
+    try:
+        sd_id = UUID(str(sd_raw))
+        qau_id = UUID(str(qau_raw))
+    except (TypeError, ValueError):
+        return
+    assert_reviewers_independent(sd_id, qau_id)
+
+
 async def validate_signoff_role_assignable(
     db: AsyncSession,
     entity_type: Literal["protocol", "run"],
@@ -348,6 +473,15 @@ async def validate_signoff_role_assignable(
         designated = await _glp_user_designated_for_role(db, protocol_id, user_id, role)
         if designated:
             return
+        # F-0080: run STUDY_DIRECTOR and QAU review are routed through a
+        # GlpSignoffRequest, not the protocol's glpSettings. Honour an OPEN
+        # run-scoped request for the role — the assigned signer, or (QAU
+        # only) any org QAU for an unassigned pool request.
+        if entity_type == "run":
+            if await _authorized_via_run_signoff_request(
+                db, entity_id, user_id, role
+            ):
+                return
         obj_type = ObjectType.PROTOCOL
         obj_id = protocol_id
         required = PermissionLevel.APPROVE

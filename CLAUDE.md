@@ -59,3 +59,5 @@ Some features are gated by env vars so we can ship with them disabled and flip t
 | External protocols | `features.external_protocols.enabled` (master) + `features.external_protocols.<source>.enabled` (yaml) or `BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__<SOURCE>__ENABLED` (env) | n/a — server-gated | `false` | `protocol_knowledgebase` chat subagent searches OpenWetWare; conversion is HITL-gated via `requires_approval`. Sibling fields `request_timeout_seconds`, `rate_limit_per_minute`. Per-source sub-blocks: `openwetware` (default on), `protocols_io` (default off, needs `access_token`). A source is live iff master AND source flag. (F-0084, F-0090) |
 
 For flags with a frontend half, they must be set on **both** sides to take effect end-to-end. Server-gated flags (no `VITE_*`) only need the backend toggle; the chat UI surfaces or hides the capability based on what the agent emits.
+
+`BATCHRITE_NOTIFICATION_RETENTION_DAYS` (default `90`) bounds the in-app notification table: the recovery loop hard-deletes read notifications older than this window. Set to `0` to disable. (TD-0091b)

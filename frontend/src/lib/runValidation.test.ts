@@ -69,45 +69,37 @@ describe('validateCanCloseRun', () => {
         expect(result.missing).toEqual([]);
     });
 
-    it('requires OPERATOR on a GLP run', () => {
-        const result = validateCanCloseRun(
-            minimalRun,
-            settings({ require_study_director: true }),
-            [],
-        );
-        expect(result.ok).toBe(false);
-        expect(result.missing).toEqual(['OPERATOR', 'STUDY_DIRECTOR']);
-    });
-
-    it('flags missing QAU when required', () => {
+    // F-0080 (decision C1): Study Director and QAU review happen
+    // *asynchronously after* a run reaches COMPLETED. They no longer gate
+    // closure — only the OPERATOR sign-off does. This frontend preflight
+    // must mirror the backend `assert_run_can_close` predicate exactly,
+    // otherwise it blocks completion before the request reaches the server
+    // and the async review queue can never be populated.
+    it('does NOT flag missing QAU even when require_qau is set', () => {
         const result = validateCanCloseRun(
             minimalRun,
             settings({ require_qau: true }),
             [signoff('OPERATOR')],
         );
-        expect(result.ok).toBe(false);
-        expect(result.missing).toEqual(['QAU']);
+        expect(result.ok).toBe(true);
+        expect(result.missing).toEqual([]);
     });
 
-    it('flags missing STUDY_DIRECTOR when required', () => {
+    it('does NOT flag missing STUDY_DIRECTOR even when require_study_director is set', () => {
         const result = validateCanCloseRun(
             minimalRun,
             settings({ require_study_director: true }),
             [signoff('OPERATOR')],
         );
-        expect(result.ok).toBe(false);
-        expect(result.missing).toEqual(['STUDY_DIRECTOR']);
+        expect(result.ok).toBe(true);
+        expect(result.missing).toEqual([]);
     });
 
-    it('passes when all required roles have signed', () => {
+    it('passes with only an OPERATOR sign-off when SD+QAU are required', () => {
         const result = validateCanCloseRun(
             minimalRun,
             settings({ require_qau: true, require_study_director: true }),
-            [
-                signoff('OPERATOR', 'u-op'),
-                signoff('STUDY_DIRECTOR', 'u-sd'),
-                signoff('QAU', 'u-qau'),
-            ],
+            [signoff('OPERATOR', 'u-op')],
         );
         expect(result.ok).toBe(true);
         expect(result.missing).toEqual([]);

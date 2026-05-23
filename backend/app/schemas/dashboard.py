@@ -1,8 +1,13 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class BlockerReason(BaseModel):
+    code: str    # "LANES_UNASSIGNED" | "EQUIPMENT_CALIBRATION_OVERDUE"
+    label: str   # human "why" tag, plain text (HTML-escaped on render)
 
 
 class RunSummary(BaseModel):
@@ -18,6 +23,7 @@ class RunSummary(BaseModel):
     completed_steps: int = 0
     total_steps: int = 0
     updated_at: datetime
+    blockers: list[BlockerReason] = []
 
 
 class ActivityItem(BaseModel):
@@ -35,39 +41,52 @@ class ActivityItem(BaseModel):
 
 
 class Counters(BaseModel):
-    active_runs: int = 0
-    completed_this_week: int = 0
-    planned_runs: int = 0
-    # Org admin only
-    team_members: Optional[int] = None
-    active_projects: Optional[int] = None
-    total_protocols: Optional[int] = None
+    runs_blocked: int = 0       # user's blocked PLANNED runs
+    calibrations_due: int = 0   # org overdue + due-soon equipment
+    signoffs_pending: int = 0   # protocol approvals + involved-run sign-offs
+    active_runs: int = 0        # user's ACTIVE runs
 
 
 class MyWork(BaseModel):
     needs_action: list[RunSummary] = []
-    active_runs: list[RunSummary] = []
-    recently_completed: list[RunSummary] = []
-    planned_runs: list[RunSummary] = []
+    in_progress: list[RunSummary] = []
+    planned: list[RunSummary] = []
 
 
-class CompletionTrendItem(BaseModel):
-    date: str
-    count: int
+class CalibrationItem(BaseModel):
+    equipment_id: UUID
+    name: str
+    site_name: Optional[str] = None
+    next_calibration_date: Optional[date] = None
+    state: str   # "overdue" | "due_soon"
 
 
-class PendingAnalyses(BaseModel):
-    total_images: int = 0
-    total_runs: int = 0
+class CalibrationStatus(BaseModel):
+    overdue: list[CalibrationItem] = []
+    due_soon: list[CalibrationItem] = []
+
+
+class SignoffItem(BaseModel):
+    kind: str              # "protocol" | "run"
+    entity_id: UUID
+    entity_slug: Optional[str] = None   # protocol/run slug for URL building
+    name: str
+    project_name: Optional[str] = None
+    project_slug: Optional[str] = None  # owning project slug — runs only
+    detail: Optional[str] = None
+    waiting_since: Optional[datetime] = None  # sort key — oldest-waiting first
+
+
+class LabStatus(BaseModel):
+    calibration: CalibrationStatus = Field(default_factory=CalibrationStatus)
+    awaiting_signoff: list[SignoffItem] = []
 
 
 class DashboardResponse(BaseModel):
     my_work: MyWork
+    lab_status: LabStatus
     activity: list[ActivityItem] = []
     counters: Counters
-    completion_trend: list[CompletionTrendItem] = []
-    pending_analyses: Optional[PendingAnalyses] = None
-    is_admin: bool = False
 
 
 class ActivityPage(BaseModel):
@@ -75,3 +94,4 @@ class ActivityPage(BaseModel):
     total: int
     offset: int
     limit: int
+

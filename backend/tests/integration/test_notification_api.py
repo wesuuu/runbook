@@ -308,7 +308,9 @@ class TestSubscriptions:
 class TestInAppNotifications:
     @pytest.mark.asyncio
     async def test_list_empty(self, client, auth_headers):
-        resp = await client.get("/notifications/", headers=auth_headers)
+        resp = await client.get(
+            "/notifications/?include_total=true", headers=auth_headers
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
@@ -336,8 +338,10 @@ class TestInAppNotifications:
         db_session.add(notif)
         await db_session.flush()
 
-        # List
-        resp = await client.get("/notifications/", headers=auth_headers)
+        # List (include_total so the count is populated)
+        resp = await client.get(
+            "/notifications/?include_total=true", headers=auth_headers
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
@@ -401,6 +405,144 @@ class TestInAppNotifications:
             f"/notifications/{notif.id}/read", headers=second_auth_headers
         )
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_list_total_omitted_by_default(
+        self, client, auth_headers, test_user, db_session
+    ):
+        """Without include_total the count is skipped — total is 0 even
+        though items are returned."""
+        for i in range(2):
+            db_session.add(
+                Notification(
+                    user_id=test_user.id,
+                    event_type="RUN_STARTED",
+                    entity_type="run",
+                    entity_id=uuid4(),
+                    title=f"Notif {i}",
+                    message=f"Message {i}",
+                )
+            )
+        await db_session.flush()
+
+        resp = await client.get("/notifications/", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 2
+        assert data["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_list_total_included_when_requested(
+        self, client, auth_headers, test_user, db_session
+    ):
+        """include_total=true runs the COUNT and returns the real total."""
+        for i in range(3):
+            db_session.add(
+                Notification(
+                    user_id=test_user.id,
+                    event_type="RUN_STARTED",
+                    entity_type="run",
+                    entity_id=uuid4(),
+                    title=f"Notif {i}",
+                    message=f"Message {i}",
+                )
+            )
+        await db_session.flush()
+
+        resp = await client.get(
+            "/notifications/?include_total=true&limit=2", headers=auth_headers
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 2  # limited
+        assert data["total"] == 3  # full count
+
+    @pytest.mark.asyncio
+    async def test_list_resolves_deep_link_url_for_run(
+        self, client, auth_headers, db_session, test_user, test_project
+    ):
+        from app.models.notifications import Notification
+        from app.models.runs import Run
+
+        run = Run(name="CHO 7", slug="cho-7", project_id=test_project.id)
+        db_session.add(run)
+        await db_session.flush()
+        db_session.add(
+            Notification(
+                user_id=test_user.id,
+                event_type="RUN_STARTED",
+                entity_type="run",
+                entity_id=run.id,
+                title="Run started",
+                message="CHO-7 started",
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/notifications/", headers=auth_headers)
+
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert items[0]["url"] == (
+            "/test-org/projects/test-project/runs/cho-7"
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_url_is_null_for_unroutable_entity(
+        self, client, auth_headers, db_session, test_user
+    ):
+        from uuid import uuid4
+
+        from app.models.notifications import Notification
+
+        db_session.add(
+            Notification(
+                user_id=test_user.id,
+                event_type="INVITE_SENT",
+                entity_type="RevokedOfflineToken",
+                entity_id=uuid4(),
+                title="x",
+                message="y",
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/notifications/", headers=auth_headers)
+
+        assert resp.status_code == 200
+        assert resp.json()["items"][0]["url"] is None
+
+    @pytest.mark.asyncio
+    async def test_mark_read_returns_resolved_url(
+        self, client, auth_headers, db_session, test_user, test_project
+    ):
+        from app.models.notifications import Notification
+        from app.models.runs import Run
+
+        run = Run(name="CHO 8", slug="cho-8", project_id=test_project.id)
+        db_session.add(run)
+        await db_session.flush()
+        notif = Notification(
+            user_id=test_user.id,
+            event_type="RUN_STARTED",
+            entity_type="run",
+            entity_id=run.id,
+            title="Run started",
+            message="CHO-8 started",
+        )
+        db_session.add(notif)
+        await db_session.commit()
+
+        resp = await client.put(
+            f"/notifications/{notif.id}/read", headers=auth_headers
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["url"] == (
+            "/test-org/projects/test-project/runs/cho-8"
+        )
 
 
 # ── Channel Test Endpoint ────────────────────────────────────────────────

@@ -3,7 +3,7 @@ import { streamSse, type SseEvent } from '$lib/ai/sse-stream';
 import { getToken, logout } from '$lib/auth.svelte';
 import { API_BASE } from '$lib/config';
 import { _validateResponse, type RequestOptions } from '$lib/apiValidation';
-import { extractErrorMessage } from '$lib/apiError';
+import { ApiError, extractErrorMessage } from '$lib/apiError';
 import {
     SubscriptionStateSchema,
     PortalSessionResponseSchema,
@@ -23,17 +23,9 @@ import {
     type ApproveProtocolRequest,
     type RejectProtocolRequest,
 } from '$lib/schemas/glpSignoff';
+import { SignoffRequestListSchema, type SignoffRequestList } from '$lib/schemas/signoffRequests';
 
-export class ApiError extends Error {
-    status: number;
-    data: unknown;
-
-    constructor(status: number, message: string, data: unknown = null) {
-        super(message);
-        this.status = status;
-        this.data = data;
-    }
-}
+export { ApiError } from '$lib/apiError';
 
 
 function _authHeaders(contentType?: string): HeadersInit {
@@ -77,6 +69,9 @@ export async function _handleErrorResponse(response: Response, fallbackMessage: 
     try {
         const errorJson = await response.json();
         errorData = errorJson;
+        // Backend `detail` may be a string, a structured object, or a 422
+        // validation array — extractErrorMessage normalises all three so the
+        // ApiError.message is always real text, never "[object Object]".
         errorMessage = extractErrorMessage(errorJson, fallbackMessage);
     } catch {
         // Response body not JSON
@@ -370,6 +365,21 @@ export function completeRun(
 
 export function reopenRun(runId: string, reason: string): Promise<unknown> {
     return api.post<unknown>(`/runs/${runId}/reopen`, { reason });
+}
+
+// --- Sign-off review queue (F-0080) ---
+
+export function listSignoffRequests(): Promise<SignoffRequestList> {
+    return api.get<SignoffRequestList>('/signoff-requests', {
+        schema: SignoffRequestListSchema,
+    });
+}
+
+export function updateRunReviewers(
+    runId: string,
+    reviewers: { study_director_id: string | null; qau_reviewer_id: string | null },
+): Promise<unknown> {
+    return api.put<unknown>(`/runs/${runId}/reviewers`, reviewers);
 }
 
 export const glpSignoffApi = {
