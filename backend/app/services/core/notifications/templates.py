@@ -196,12 +196,17 @@ def protocol_approval_requested(ctx: dict, personal: bool = True) -> tuple[str, 
 
 
 def step_deviation(ctx: dict, personal: bool = True) -> tuple[str, str]:
-    """ctx: run_name, step_name, edited_by"""
+    """ctx: run_name, step_name, edited_by, additional_count (optional)"""
     title = f"Step deviation on {ctx['run_name']}"
     body = (
         f"Step \"{ctx['step_name']}\" on run {ctx['run_name']} was edited "
         f"post-completion by {ctx['edited_by']}."
     )
+    extra = ctx.get("additional_count", 0)
+    if extra:
+        body += (
+            f" ({extra} other step{'s' if extra != 1 else ''} also changed.)"
+        )
     return title, body
 
 

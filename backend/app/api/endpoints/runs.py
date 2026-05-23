@@ -115,6 +115,33 @@ def _run_status_str(run_obj: Run) -> str:
     return s if isinstance(s, str) else s.value
 
 
+async def _collect_step_deviation_recipients(
+    db: AsyncSession,
+    run_obj: Run,
+    actor_user_id: UUID,
+) -> list[UUID]:
+    """TD-0091c: return run assignees (excluding actor) who currently have VIEW
+    permission on the run. Filters out users whose VIEW was revoked but whose
+    RunRoleAssignment row was not cleaned up."""
+    rows = (
+        await db.execute(
+            select(RunRoleAssignment.user_id)
+            .where(RunRoleAssignment.run_id == run_obj.id)
+            .distinct()
+        )
+    ).scalars().all()
+    recipients: list[UUID] = []
+    for uid in rows:
+        if uid == actor_user_id:
+            continue
+        ok = await check_permission(
+            db, uid, ObjectType.RUN, run_obj.id, PermissionLevel.VIEW,
+        )
+        if ok:
+            recipients.append(uid)
+    return recipients
+
+
 # --- Runs ---
 
 
@@ -649,6 +676,7 @@ async def update_run(
             new_exec = update_data.execution_data
 
             step_index = index_steps(run_obj.graph)
+            deviated_step_ids: list[str] = []  # TD-0091c
 
             for step_id, new_step in new_exec.items():
                 if not isinstance(new_step, dict):
@@ -665,6 +693,18 @@ async def update_run(
 
                 old_results = old_step.get("results", {})
                 new_results = new_step.get("results", {})
+
+                # TD-0091c: track any results/value/notes deviation for the
+                # post-loop STEP_DEVIATION notification.
+                if (
+                    (old_results and new_results != old_results)
+                    or (
+                        old_step.get("value")
+                        and new_step.get("value") != old_step.get("value")
+                    )
+                    or (old_step.get("notes", "") != new_step.get("notes", ""))
+                ):
+                    deviated_step_ids.append(step_id)
                 # Only set original_results if not already set (preserve
                 # the very first completion data) and results differ
                 if (
@@ -748,6 +788,35 @@ async def update_run(
                             "new_value": new_notes,
                         },
                     )
+
+            # TD-0091c: emit one STEP_DEVIATION notification per request,
+            # naming the first deviated step + count of additional changes.
+            if deviated_step_ids:
+                first_step_id = deviated_step_ids[0]
+                additional = len(deviated_step_ids) - 1
+                recipients = await _collect_step_deviation_recipients(
+                    db, run_obj, actor_user_id=user.id,
+                )
+                if recipients:
+                    project = (await db.execute(
+                        select(Project).where(Project.id == run_obj.project_id)
+                    )).scalar_one_or_none()
+                    if project is not None:
+                        background_tasks.add_task(
+                            send_notification,
+                            db,
+                            "STEP_DEVIATION",
+                            project.organization_id,
+                            "run",
+                            run_obj.id,
+                            recipients,
+                            {
+                                "run_name": run_obj.name,
+                                "step_name": step_index.name_for(first_step_id),
+                                "edited_by": user.full_name or user.email,
+                                "additional_count": additional,
+                            },
+                        )
 
     # Audit log step completions and note changes by diffing execution_data
     # (note changes for EDITED status are handled in the block above)
@@ -1405,6 +1474,7 @@ async def create_run_role_assignment(
 async def delete_run_role_assignment(
     run_id: UUID,
     assignment_id: UUID,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
@@ -1438,6 +1508,18 @@ async def delete_run_role_assignment(
         "lane_node_id": assignment.lane_node_id,
         "role_name": assignment.role_name,
     }
+    removed_user_id = assignment.user_id
+    role_name = assignment.role_name
+
+    # Fetch the run (with its project, for org_id) before we delete.
+    run_obj = (
+        await db.execute(
+            select(Run).where(Run.id == run_id)
+        )
+    ).scalar_one_or_none()
+    project = (
+        await db.execute(select(Project).where(Project.id == run_obj.project_id))
+    ).scalar_one() if run_obj is not None else None
 
     await db.delete(assignment)
     await db.commit()
@@ -1449,6 +1531,26 @@ async def delete_run_role_assignment(
         assignment_id,
         assignment_data,
     )
+
+    # TD-0091c: notify the removed user.
+    if run_obj is not None and project is not None:
+        from app.services.core.notifications import send_notification
+
+        background_tasks.add_task(
+            send_notification,
+            db,
+            "ROLE_UNASSIGNED",
+            project.organization_id,
+            "run",
+            run_obj.id,
+            [removed_user_id],
+            {
+                "run_name": run_obj.name,
+                "role_name": role_name,
+                "removed_by": user.full_name or user.email,
+            },
+        )
+
     return {"ok": True}
 
 
