@@ -10,6 +10,28 @@
 
 ---
 
+## Review-panel revisions (2026-05-22, post-write review)
+
+Three review panels (adversarial-risk, dry-reuse, production-ops) caught real defects in v1 of this plan. The following must-fix and should-address findings are now folded in. Implementers do not need to re-read the review notes — the changes live inline below.
+
+- **Cache invalidation (must-fix):** `_cache_key` in `chat_agent.py` now includes external-protocols flag state, so flipping a flag rebuilds the agent on the next request instead of silently no-opping until restart.
+- **Sanitizer regex (must-fix):** `strip_bare_protocol_links` now uses the existing `prefix.count("\`\`\`") % 2 == 1` fenced-code guard from `_BARE_JSON_PATTERN` and emits a `logger.warning` when it fires — without that, we have no signal that fix #1 is working in production.
+- **Test file name (must-fix):** sanitizer tests extend the **existing** `backend/tests/unit/test_runtime_sanitize.py`. There is no `test_sanitize.py`.
+- **Stderr cap (must-fix):** `extract_job.py` writes at most 64 KB of stderr to `Document.error_message`; `BackgroundJobService.fail()`'s independent `[:500]` cap is left untouched (the BackgroundJob row is a short summary; the Document row holds the full message). Inline doc-comment explains the split so on-call knows where to look.
+- **`source_label` typing (must-fix):** typed `Literal["", "OpenWetWare", "protocols.io"]` so future drift can't smuggle markdown via a closing `)`.
+- **Slug-collision test (should-address):** new test covers two `"---"`-named orgs in the same membership set.
+- **Test assertion fragility (should-address):** `count("/") == 3` replaced with `startswith` + `endswith` pair.
+- **Integration test (should-address):** Task 1.7 is now mandatory — no "documented no-op" escape hatch.
+- **Empty-extraction downstream (should-address):** Task 3.4 now asserts the Document row still reaches READY when markdown is empty.
+
+Findings considered and deliberately deferred:
+
+- **Image-format coverage beyond PNG/JPG:** ops review confirms `InputFormat.IMAGE` in docling covers TIFF/WEBP. The library validator allow-list already gates uploads; no plan change needed.
+- **Renaming `_BARE_PROTOCOL_LINK` regex to handle absolute `https://app...` URLs:** out of scope — the model never has the deployment hostname; absolute-URL hallucination would be a different bug class.
+- **SKILL.md ↔ flag tension:** kept Option A (static mention of both sources). If the protocols.io flag is off, `protocol_knowledgebase` already returns "no results"; the model handles that the same way it handles any empty search. A follow-up tech-debt ticket could add a "source disabled" sentinel but the current plan does not require it.
+
+---
+
 ## Spec reference
 
 Implements `docs/superpowers/specs/2026-05-22-bug-0009-chat-agent-fixes-design.md`. Read it once before starting; it explains *why* each piece exists.
@@ -111,6 +133,17 @@ def test_no_alphanumeric_punctuation_returns_empty_slug():
     oid = uuid4()
     out = disambiguate_org_slugs([(oid, "!!!")])
     assert out[oid] == ""
+
+
+def test_two_blank_orgs_collide_to_blank_not_suffixed():
+    """Both orgs slugify to '' — implementation must not produce
+    f'-{prefix}' (hyphen-leading) for them. They stay blank and the
+    URL caller degrades. Regression for an adversarial-review finding."""
+    a = uuid4()
+    b = uuid4()
+    out = disambiguate_org_slugs([(a, "---"), (b, "---")])
+    assert out[a] == ""
+    assert out[b] == ""
 ```
 
 - [ ] **Step 2: Run tests, verify they fail**
@@ -195,7 +228,7 @@ async def disambiguated_org_slug_for_user(
 ```bash
 cd backend && source .venv/bin/activate && pytest tests/unit/test_org_slugs.py -v
 ```
-Expected: all 6 tests PASS.
+Expected: all 7 tests PASS.
 
 ### Task 1.2: Add disambiguated_org_slug_for_user tests (DB-backed)
 
@@ -415,11 +448,14 @@ async def test_create_protocol_returns_canonical_url_and_markdown_link(
     )
 
     # test_org.name slugifies; test_user is a member (fixture default)
+    # Canonical form is /{org-slug}/protocols/{protocol-slug} — assert via
+    # startswith + endswith pair so the assertion stays robust to future
+    # routing changes (e.g. /{org}/library/protocols/{slug}).
     assert result.protocol_url is not None
+    assert result.protocol_url.startswith("/")
     assert result.protocol_url.endswith("/protocols/buffer-mix-v1")
-    assert "/protocols/" in result.protocol_url
-    # Form is /{org-slug}/protocols/{protocol-slug}
-    assert result.protocol_url.count("/") == 3
+    # The first segment is the org slug, which is non-empty.
+    assert result.protocol_url.split("/")[1] != ""
     assert result.protocol_markdown_link == f"[Buffer Mix v1]({result.protocol_url})"
 
 
@@ -640,28 +676,22 @@ Expected: all 3 tests PASS.
 
 **Files:**
 - Modify: `backend/app/services/ai/runtime/sanitize.py`
-- Modify: `backend/tests/unit/` — extend existing sanitize tests if present, else create `test_sanitize.py`
+- Modify: `backend/tests/unit/test_runtime_sanitize.py` — **this file already exists; extend it**
 
-Note: the spec proposed a new `output_sanitizer.py` module, but `runtime/sanitize.py` already owns LLM-output cleaning. Extend it instead — keeping the pipeline single-pass.
+Note: the spec proposed a new `output_sanitizer.py` module, but `runtime/sanitize.py` already owns LLM-output cleaning. Extend it — pipeline stays single-pass.
 
-- [ ] **Step 1: Check what test file (if any) covers `sanitize_output`**
+- [ ] **Step 1: Confirm the test file**
 
 ```bash
-cd backend && source .venv/bin/activate && grep -l "from app.services.ai.runtime.sanitize" tests/
+cd backend && ls tests/unit/test_runtime_sanitize.py && grep -c "^def test_" tests/unit/test_runtime_sanitize.py
 ```
+Expected: file exists, 7 existing tests.
 
-If a test file exists, extend it. If not, create `backend/tests/unit/test_sanitize.py`.
+- [ ] **Step 2: Append the failing tests**
 
-- [ ] **Step 2: Write the failing tests**
-
-Create or extend with:
+Append to `backend/tests/unit/test_runtime_sanitize.py`:
 
 ```python
-"""Sanitizer tests for bare-protocol-link stripping."""
-
-from app.services.ai.runtime.sanitize import sanitize_output
-
-
 def test_strips_bare_protocol_uuid_link():
     """A `(/protocols/<uuid>)` link from a hallucinating model becomes
     plain text — the bracketed label stays so the user still sees the name."""
@@ -688,52 +718,95 @@ def test_strips_multiple_bare_links_in_one_message():
 def test_does_not_touch_non_protocol_links():
     text = "See [Project](/projects/foo) and [Run](/runs/bar)."
     assert sanitize_output(text) == text
+
+
+def test_does_not_strip_bare_protocol_link_inside_code_fence():
+    """Inside a fenced code block the text is example/illustration —
+    leave it alone the same way the existing _BARE_JSON_PATTERN does."""
+    text = (
+        "Here is what a bad link looks like:\n"
+        "```\n"
+        "[X](/protocols/abc-123)\n"
+        "```\n"
+        "Avoid emitting that."
+    )
+    assert sanitize_output(text) == text
+
+
+def test_does_not_strip_bare_protocol_link_inside_external_protocol_source():
+    """EXTERNAL_PROTOCOL_SOURCE JSON blocks are also fenced; same rule."""
+    text = (
+        "```EXTERNAL_PROTOCOL_SOURCE\n"
+        '{"href": "/protocols/some-id"}\n'
+        "```"
+    )
+    assert sanitize_output(text) == text
 ```
 
-- [ ] **Step 3: Run tests, verify they fail**
+- [ ] **Step 3: Run, verify failure**
 
 ```bash
-cd backend && source .venv/bin/activate && pytest tests/unit/test_sanitize.py -v
+cd backend && source .venv/bin/activate && pytest tests/unit/test_runtime_sanitize.py -v -k "protocol"
 ```
-Expected: FAIL — current `sanitize_output` does not touch protocol links.
+Expected: the new tests FAIL (`sanitize_output` does not touch protocol links yet).
 
-- [ ] **Step 4: Add the stripping pass to `sanitize_output`**
+- [ ] **Step 4: Add the fenced-aware stripping pass**
 
-In `backend/app/services/ai/runtime/sanitize.py`, after the existing module-level regex definitions (around line 27, after `_BARE_JSON_PATTERN`), add:
+In `backend/app/services/ai/runtime/sanitize.py`, add `import logging` at the top if not present, then after the existing module-level regex definitions (after `_BARE_JSON_PATTERN`), add:
 
 ```python
-# Strip `(/protocols/...)` from any markdown link whose path is NOT a
-# canonical /{org-slug}/protocols/{slug} form. Models occasionally
-# hallucinate a UUID-only path despite instructions; this is the
-# server-side backstop so the user never sees a broken link.
-#
-# The pattern matches `](/protocols/...)` only — a path starting with
-# `/{org-slug}` does not start with `/protocols`, so canonical links
-# pass through untouched.
-_BARE_PROTOCOL_LINK = re.compile(r"\]\(/protocols/[^)]+\)")
+logger = logging.getLogger(__name__)
+
+# Strip `](/protocols/<anything>)` from markdown links whose path is NOT
+# a canonical /{org-slug}/protocols/{slug} form. Models occasionally
+# hallucinate a UUID-only path; this is the server-side backstop.
+# Canonical /{org}/protocols/{slug} links pass through because the
+# pattern anchors on `](/protocols/` — a leading org segment breaks the
+# match.
+_BARE_PROTOCOL_LINK = re.compile(r"\]\(/protocols/[^)\s]+\)")
+
+
+def _strip_bare_protocol_link(match: "re.Match[str]", text: str) -> str:
+    """Replace `](/protocols/...)` with `]` ONLY if the match is not inside
+    an open fenced code block. Mirrors the `_wrap_json` fenced-code guard.
+    Emits a single warning per strip so we can monitor hallucination rate
+    in production (the only signal that the prompt + tool-result fix is
+    working)."""
+    prefix = text[: match.start()]
+    if prefix.count("```") % 2 == 1:
+        # Inside a fenced block — leave as-is.
+        return match.group(0)
+    logger.warning(
+        "chat: stripped bare /protocols/... link from agent output (%r)",
+        match.group(0),
+    )
+    return "]"
 ```
 
 Then inside the `sanitize_output` function, immediately before `return cleaned.strip()`, add:
 
 ```python
-    # Strip bare /protocols/... paths (canonical /{org}/protocols/... untouched).
-    cleaned = _BARE_PROTOCOL_LINK.sub("]", cleaned)
+    cleaned = _BARE_PROTOCOL_LINK.sub(
+        lambda m: _strip_bare_protocol_link(m, cleaned), cleaned
+    )
 ```
 
-Final `sanitize_output` body (relevant tail) becomes:
+Final tail of `sanitize_output` becomes:
 
 ```python
     cleaned = _BARE_JSON_PATTERN.sub(_wrap_json, cleaned)
-    cleaned = _BARE_PROTOCOL_LINK.sub("]", cleaned)
+    cleaned = _BARE_PROTOCOL_LINK.sub(
+        lambda m: _strip_bare_protocol_link(m, cleaned), cleaned
+    )
     return cleaned.strip()
 ```
 
-- [ ] **Step 5: Run tests, verify they pass**
+- [ ] **Step 5: Run, verify pass**
 
 ```bash
-cd backend && source .venv/bin/activate && pytest tests/unit/test_sanitize.py -v
+cd backend && source .venv/bin/activate && pytest tests/unit/test_runtime_sanitize.py -v
 ```
-Expected: all 4 tests PASS.
+Expected: all tests PASS (7 existing + 6 new = 13).
 
 ### Task 1.7: End-to-end integration test through `send_message_streaming`
 
@@ -750,39 +823,51 @@ Read one of them (e.g. `test_chat_*.py`) to understand the fixture pattern used 
 
 - [ ] **Step 2: Write the failing integration test**
 
-Create `backend/tests/integration/test_chat_protocol_link.py`:
+Create `backend/tests/integration/test_chat_protocol_link.py`. This test is **mandatory** — it is the only one that proves the sanitizer + tool-result wiring + prompt change cooperate end-to-end. If the existing chat integration tests do not give you a usable harness, write the harness here; do not skip.
+
+Mirror the model-stub pattern from the most similar `tests/integration/test_chat_*.py` file you find in step 1. The skeleton:
 
 ```python
 """End-to-end: chat agent emits canonical protocol URL (not UUID form)
-and the sanitizer scrubs any hallucinated /protocols/<uuid> link."""
+and the sanitizer scrubs any hallucinated /protocols/<uuid> link.
 
-# This is the only test that proves sanitizer + tool-result wiring
-# work together. Write it to drive send_message_streaming with a
-# stubbed model that:
-#   (a) calls task("protocol_creator", "<topic>") which calls
-#       create_protocol, then
-#   (b) emits a reply containing BOTH the correct markdown link AND
-#       a hallucinated [Other](/protocols/<uuid>) line.
-# Assert the persisted assistant message:
-#   - contains a /{org}/protocols/{slug} substring
-#   - does NOT contain any "(/protocols/<uuid>)" substring
-#
-# Follow the harness pattern from an existing chat integration test
-# (look for one that uses a stubbed model + drives send_message_streaming
-# end-to-end). If no such pattern exists, write a thinner test that calls
-# sanitize_output on a known string and asserts both branches — the
-# integration coverage already exists via the unit tests in Task 1.6;
-# this task is then a NO-OP and you mark it done.
+Mandatory regression for BUG-0009 #1. If this file is hard to write,
+the integration harness needs the missing pieces added here — do not
+mark this task done by omission.
+"""
+
+import pytest
+
+from app.services.ai.send_message import send_message_streaming
+
+
+@pytest.mark.asyncio
+async def test_chat_emits_canonical_url_and_strips_hallucinated_uuid_link(
+    db_session, test_user, test_org, test_project, stub_chat_model_factory
+):
+    """The model is stubbed to return a reply that contains BOTH a
+    correct markdown link (using the protocol_markdown_link from the
+    create_protocol tool result) AND a hallucinated UUID-form link.
+    The persisted assistant message must:
+      - contain a /{org-slug}/protocols/{slug} substring
+      - NOT contain `(/protocols/<uuid>)` anywhere
+    """
+    # The harness should let you wire a stub model that:
+    #   1. calls task("protocol_creator", "<topic>")
+    #   2. on the next turn emits text containing the markdown_link
+    #      AND a hallucinated bare /protocols/<uuid> link.
+    # Assert per the docstring above against the persisted ChatMessage.
+    ...
 ```
 
-If a clean integration-test harness exists, write the full test. If not, write a thinner repro-style test (per the comment above) and document why. The unit tests in Task 1.6 already cover the sanitizer behavior in isolation; the integration test adds value only when it goes through the live pipeline.
+If `stub_chat_model_factory` (or equivalent) does not exist, look for the pattern that the most recent chat-integration test uses. The point is: drive `send_message_streaming` end-to-end, force the model output, and read the persisted assistant message back.
 
 - [ ] **Step 3: Run the test**
 
 ```bash
 cd backend && source .venv/bin/activate && pytest tests/integration/test_chat_protocol_link.py -v
 ```
-Expected: PASS (or the test is a documented no-op if no harness exists).
+Expected: PASS.
 
 ### Task 1.8: Commit Sub-issue #1
 
@@ -794,7 +879,7 @@ cd backend && source .venv/bin/activate && pytest \
   tests/unit/test_notification_links.py \
   tests/unit/test_protocol_creator_tools.py \
   tests/unit/test_protocol_creator_prompt.py \
-  tests/unit/test_sanitize.py \
+  tests/unit/test_runtime_sanitize.py \
   tests/integration/test_chat_protocol_link.py \
   -v
 ```
@@ -803,12 +888,16 @@ Expected: all PASS.
 - [ ] **Step 2: Commit**
 
 ```bash
-git add backend/app/services/ai/subagents/shared/protocols/tools.py \
+git add backend/app/services/core/org_slugs.py \
+        backend/app/services/core/notifications/links.py \
+        backend/app/services/ai/subagents/shared/protocols/tools.py \
         backend/app/services/ai/subagents/protocol_creator/prompt.md \
         backend/app/services/ai/runtime/sanitize.py \
+        backend/tests/unit/test_org_slugs.py \
+        backend/tests/unit/test_notification_links.py \
         backend/tests/unit/test_protocol_creator_tools.py \
         backend/tests/unit/test_protocol_creator_prompt.py \
-        backend/tests/unit/test_sanitize.py \
+        backend/tests/unit/test_runtime_sanitize.py \
         backend/tests/integration/test_chat_protocol_link.py
 git commit -m "$(cat <<'EOF'
 fix(BUG-0009): emit canonical protocol URL from chat agent
@@ -871,13 +960,19 @@ Expected: `AttributeError: 'ExternalProtocolPayload' object has no attribute 'so
 
 - [ ] **Step 3: Add the field to the dataclass**
 
-In `backend/app/services/ai/subagents/protocol_knowledgebase/types.py`, add to `ExternalProtocolPayload` (after the `license_note` line):
+At the top of `backend/app/services/ai/subagents/protocol_knowledgebase/types.py`, add to the imports:
 
 ```python
-    # F-0090: the human-readable source name ("OpenWetWare" or "protocols.io")
-    # populated by the fetch tool, so the parent agent can cite the actual
-    # source verbatim instead of inferring it from the URL.
-    source_label: str = ""
+from typing import Literal
+```
+
+Then add to `ExternalProtocolPayload` (after the `license_note` line):
+
+```python
+    # F-0090: the human-readable source name. Typed Literal (not bare str)
+    # so a future connector cannot smuggle markdown via a closing `)` —
+    # the parent agent emits this value inside `[<source_label> source](<url>)`.
+    source_label: Literal["", "OpenWetWare", "protocols.io"] = ""
 ```
 
 - [ ] **Step 4: Populate `source_label` in both fetch tools**
@@ -1161,6 +1256,51 @@ Then replace the existing usage in `build_chat_agent`:
 
 (Inspect `backend/app/core/config.py:265` and the `ExternalProtocolsFeatureConfig` definition around line 47-59 to confirm the exact attribute names. If they differ, adjust.)
 
+**Cache invalidation (must-fix from review):** The rendered prompt is now flag-dependent, but `_cache_key` (around `chat_agent.py:92-107`) does not currently include flag state — flipping a flag silently fails until restart. Extend `_cache_key` to include the three flag booleans:
+
+```python
+def _cache_key(
+    chat_model: Any,
+    subagent_model: Any,
+    creation_model: Any,
+    editing_model: Any,
+    summary_model: Any,
+    context_window: int,
+) -> tuple[str, ...]:
+    ext = settings.features.external_protocols
+    return (
+        str(chat_model),
+        str(subagent_model),
+        str(creation_model),
+        str(editing_model),
+        str(summary_model),
+        str(context_window),
+        # Flag state: rebuild the cached Agent when any of these flip,
+        # so the rendered prompt reflects current capability. Without
+        # this, a flag toggle silently no-ops until process restart.
+        str(ext.enabled),
+        str(ext.openwetware.enabled),
+        str(ext.protocols_io.enabled),
+    )
+```
+
+Add a unit test in `test_chat_agent_prompt_rendering.py`:
+
+```python
+def test_cache_key_changes_when_external_protocols_flag_flips(monkeypatch):
+    """Flipping a flag must produce a different cache key so the next
+    build_chat_agent call re-renders the prompt instead of returning
+    the cached agent with the stale rendering."""
+    from app.services.ai.chat_agent import _cache_key
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings.features.external_protocols.protocols_io, "enabled", False)
+    key_off = _cache_key("m1", "m2", "m3", "m4", "m5", 8192)
+    monkeypatch.setattr(settings.features.external_protocols.protocols_io, "enabled", True)
+    key_on = _cache_key("m1", "m2", "m3", "m4", "m5", 8192)
+    assert key_off != key_on
+```
+
 - [ ] **Step 5: Run, verify pass**
 
 ```bash
@@ -1321,23 +1461,47 @@ cd backend && source .venv/bin/activate && pytest tests/unit/test_extract_job.py
 ```
 Expected: FAIL — message is currently truncated to 500.
 
-- [ ] **Step 4: Remove the truncation**
+- [ ] **Step 4: Replace the 500-cap with a self-explaining 64 KB cap**
 
-In `backend/app/services/documents/extraction/extract_job.py`:
+In `backend/app/services/documents/extraction/extract_job.py`, add a module-level constant near the top (next to other constants):
 
-- Line 173: change `doc.error_message = f"Extraction error: {message[:500]}"` to:
+```python
+# Hard cap on stderr persisted to Document.error_message. The column is
+# unbounded String, but a runaway docling crash can dump megabytes of
+# traceback and we don't want to bloat the documents table or hit row
+# limits. 64 KB is plenty to diagnose any real failure.
+_MAX_STDERR_BYTES = 64 * 1024
+```
+
+Then:
+
+- Line 173: change
 
   ```python
-  doc.error_message = f"Extraction error: {message}"
+  doc.error_message = f"Extraction error: {message[:500]}"
+  ```
+  to:
+  ```python
+  doc.error_message = f"Extraction error: {message[:_MAX_STDERR_BYTES]}"
   ```
 
-- Line 182: change `await BackgroundJobService.fail(session, job, message[:500])` to:
+- Line 182: change
 
   ```python
+  await BackgroundJobService.fail(session, job, message[:500])
+  ```
+  to:
+  ```python
+  # Note on the split:
+  # - Document.error_message gets up to 64 KB (full diagnostic context).
+  # - BackgroundJobService.fail() applies its own [:500] cap internally
+  #   (see services/core/background_jobs.py:102); the BackgroundJob row
+  #   stays a short summary by design. On-call should read
+  #   Document.error_message for the full stderr.
   await BackgroundJobService.fail(session, job, message)
   ```
 
-If `BackgroundJob.error_message` (or whichever column `fail` writes to) is a `String(N)` column with a length cap, leave that truncation in place at that level — but the `Document.error_message` `Text` column has no cap and benefits most from the full message.
+Verified column types (in `backend/app/models/library.py:144` and `backend/app/models/jobs.py:60`): both are unbounded `String`, so the only existing cap is the service-layer `[:500]` in `BackgroundJobService.fail`, which we leave alone.
 
 - Line 274: the existing `logger.error("... %s", msg[:500])` line is a fine length for log output; leave it as-is.
 
@@ -1552,7 +1716,33 @@ def test_extract_cli_on_image_writes_artifacts(tmp_path):
     assert (output_dir / "result.json").exists()
     result_json = json.loads((output_dir / "result.json").read_text())
     assert result_json.get("source_format") == "IMAGE"
+    # A solid-color image has no extractable text; an empty refined.md is
+    # the expected successful outcome (OCR is off). Regression guard so
+    # we never re-truncate or refuse the artifact path on empty output.
+    refined = (output_dir / "refined.md").read_text()
+    assert isinstance(refined, str)
 ```
+
+- [ ] **Step 2b: Add a downstream resilience test — Document reaches READY with empty markdown**
+
+Add to `backend/tests/unit/test_extract_job.py`:
+
+```python
+async def test_extract_marks_document_ready_when_markdown_is_empty(
+    db_session, ...
+):
+    """A solid-color image produces empty refined.md. The pipeline must
+    still mark the Document as READY (not stuck in PROCESSING and not
+    FAILED). Regression guard: empty extraction is a degraded-but-valid
+    outcome, not a failure."""
+    # Use the existing harness pattern (mirror an existing happy-path
+    # test in this file). Stub the docling subprocess to return rc=0
+    # with empty refined.md and a minimal result.json. Assert:
+    #   doc.status == DocumentStatus.READY
+    #   doc.error_message is None
+```
+
+Replace `...` with the actual fixtures used by the surrounding tests in the file.
 
 - [ ] **Step 3: Run on main (before the fix) to confirm it currently fails**
 
