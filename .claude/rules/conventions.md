@@ -53,6 +53,7 @@ New Svelte components under `frontend/src/lib/components/` MUST go in a domain s
 - `field-mode/` — tablet/field-mode flows
 - `modals/` — heavy dialogs wrapping a form, import, or picker flow (contrast with lightweight confirmation dialogs, which go in `shared/`)
 - `media/` — camera, image, PDF, barcode scanning
+- `notifications/` — notification inbox surfaces (shared notification row)
 - `document-refinement/` — library refinement editor surfaces (sidebar, queue, AI panel, Tiptap-backed editor)
 - `analytics/` — charts, audit trails, version history
 - `ai/` — chat and agent UX

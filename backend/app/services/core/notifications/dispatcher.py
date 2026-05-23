@@ -25,6 +25,11 @@ logger = logging.getLogger("notifications.dispatcher")
 
 MAX_RETRIES = 3
 RETRY_BACKOFF = [30, 120, 600]  # seconds
+# NOTE: _execute_send increments `attempts` before the
+# `attempts < MAX_RETRIES` check, so a delivery is sent at most 3 times
+# and only 2 retries occur — RETRY_BACKOFF[2] (600s) is never used. This
+# off-by-one is pre-existing and tracked in a separate TECH_DEBT task; it
+# is intentionally NOT changed here (this change is test-coverage only).
 
 
 async def dispatch_event(

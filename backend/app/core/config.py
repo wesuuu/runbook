@@ -167,6 +167,12 @@ class Settings(BaseSettings):
     # also disables notification delivery retries.
     recovery_interval_seconds: int = 90
 
+    # TD-0091b: read in-app notifications older than this many days are
+    # hard-deleted by the recovery-loop retention sweep. Unread
+    # notifications are kept regardless of age. Set to 0 (or negative) to
+    # disable the sweep entirely. Env: BATCHRITE_NOTIFICATION_RETENTION_DAYS.
+    notification_retention_days: int = 90
+
     # Docling extractor (TD-0085) — paths to the standalone ext/ project's
     # interpreter and CLI entrypoint. Defaults assume the repo layout
     # (backend/ and ext/ are siblings); override via env vars in deploy.

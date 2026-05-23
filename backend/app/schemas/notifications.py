@@ -71,6 +71,11 @@ class NotificationResponse(BaseModel):
     message: str
     read_at: Optional[datetime] = None
     created_at: datetime
+    # In-app deep link resolved server-side; None when the entity type is
+    # not routable, the target is gone, or it lives in an org the
+    # recipient cannot see. The endpoint sets this; it is not an ORM
+    # attribute, so it defaults to None for from_attributes validation.
+    url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

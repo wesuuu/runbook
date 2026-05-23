@@ -28,6 +28,10 @@ MAX_RECOVERY_ATTEMPTS = 3
 # heartbeat_at for all RUNNING jobs owned by this worker.
 _HEARTBEAT_INTERVAL_SECONDS = 15
 
+# Purge interval for the notification retention sweep — throttles it to at most
+# once per 24 hours per worker.
+_PURGE_INTERVAL: timedelta = timedelta(hours=24)
+
 
 # ── Heartbeat loop ──────────────────────────────────────────────────
 
@@ -305,6 +309,61 @@ async def _retry_pending_deliveries() -> None:
         logger.debug("Delivery retry sweep: no deliveries due")
 
 
+# Last time the notification retention sweep ran, per process.
+# Throttles the sweep to at most once per 24h *within a single worker* —
+# the recovery loop ticks far more often than a 90-day-window purge needs.
+# NOTE: this is process-local — a multi-worker / multi-pod deployment runs
+# one sweep per worker per 24h, and every restart resets it to None. The
+# sweep is idempotent, so that is safe (just not globally minimal); a
+# distributed throttle lock is tracked as a follow-up. A non-None sentinel
+# value also marks "disabled message already logged".
+_last_notification_purge_at: datetime | None = None
+
+
+async def _purge_old_notifications() -> None:
+    """Hard-delete read notifications past the retention window.
+
+    Runs as a sweep inside the recovery loop, throttled to at most once
+    per 24h. Loop-only (no startup sweep), uses a fresh session like the
+    delivery-retry sweep. When retention is disabled it logs once and
+    skips on every later tick.
+    """
+    global _last_notification_purge_at
+    from app.db.session import AsyncSessionLocal
+    from app.services.core.notifications.retention import (
+        purge_read_notifications,
+    )
+
+    retention_days = settings.notification_retention_days
+    if retention_days <= 0:
+        if _last_notification_purge_at is None:
+            logger.info(
+                "Notification retention sweep disabled "
+                "(notification_retention_days <= 0)"
+            )
+            # Sentinel: suppress the disabled log on every later tick.
+            _last_notification_purge_at = datetime.now(timezone.utc)
+        return
+
+    now = datetime.now(timezone.utc)
+    if _last_notification_purge_at is not None and (
+        now - _last_notification_purge_at
+    ) < _PURGE_INTERVAL:
+        return
+
+    async with AsyncSessionLocal() as session:
+        deleted = await purge_read_notifications(
+            session, older_than_days=retention_days
+        )
+    # Only advance the timestamp after a clean sweep so a failed sweep retries next tick.
+    _last_notification_purge_at = now
+    logger.info(
+        "Retention sweep: deleted %d read notifications older than %d days",
+        deleted,
+        retention_days,
+    )
+
+
 async def _recovery_loop() -> None:
     """Periodically re-run the stalled-jobs/stalled-docs sweeps and retry
     due notification deliveries.
@@ -316,13 +375,13 @@ async def _recovery_loop() -> None:
     — exceptions inside one don't kill the others, and don't kill the loop.
 
     Set BATCHRITE_RECOVERY_INTERVAL_SECONDS=0 to disable — this also
-    disables notification delivery retries.
+    disables notification delivery retries and the retention purge sweep.
     """
     interval = settings.recovery_interval_seconds
     if not interval or interval <= 0:
         logger.warning(
             "Recovery loop disabled (interval <= 0) — notification "
-            "delivery retries are also OFF"
+            "delivery retries and the retention purge sweep are also OFF"
         )
         return
 
@@ -339,6 +398,10 @@ async def _recovery_loop() -> None:
             await _retry_pending_deliveries()
         except Exception:
             logger.exception("Recovery loop: delivery retry sweep failed")
+        try:
+            await _purge_old_notifications()
+        except Exception:
+            logger.exception("Recovery loop: notification purge sweep failed")
         await asyncio.sleep(interval)
 
 
@@ -436,6 +499,9 @@ app.add_middleware(
         "http://localhost:5183",  # Parallel worktree dev
         "http://localhost:5193",  # Worktree 2 dev
         "http://localhost:5203",  # Worktree 3 dev (F-0083)
+        "http://localhost:5213",  # Worktree 4 dev
+        "http://localhost:5223",  # Worktree 5 dev
+        "http://localhost:5233",  # Worktree 6 dev (TD-0091b)
         "http://100.120.2.59:5174",
         "http://localhost:5176",  # Playwright E2E tests
     ],
