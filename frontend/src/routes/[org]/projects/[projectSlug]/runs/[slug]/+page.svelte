@@ -415,6 +415,11 @@
     // handled inside RoleWizard via initialStepId; observer view is a
     // deliberate no-op. Any future run status that renders step rows
     // must be added to isPageRendered.
+    //
+    // This $effect handles re-navigation while already on a run page (i.e.
+    // when stepIdFromHash changes because the user clicked a second
+    // notification). The initial-load case is handled inside loadData() once
+    // the run is fetched and the correct status branch is known.
     $effect(() => {
         if (!stepIdFromHash) return;
         if (!run) return;
@@ -460,6 +465,25 @@
             await refreshSignoffs();
             await loadUnanalyzedCount();
             await loadEditPermissions();
+
+            // Step deep-link: if the URL carried a #step-<id> fragment when
+            // the run page loaded (e.g. from a notification), focus the step
+            // now that all data is loaded and the DOM has fully rendered. Use
+            // tick() to flush Svelte's reactive DOM update for the status
+            // branch, then a requestAnimationFrame to ensure the browser has
+            // painted the conditional block before querying the element.
+            if (stepIdFromHash) {
+                const status = run?.status;
+                const isPageRendered =
+                    status === 'PLANNED' ||
+                    status === 'COMPLETED' ||
+                    status === 'EDITED';
+                if (isPageRendered) {
+                    const id = stepIdFromHash;
+                    await tick();
+                    requestAnimationFrame(() => focusStep(id));
+                }
+            }
         } catch (e: unknown) {
             error = e instanceof Error ? e.message : 'An error occurred';
         } finally {
