@@ -82,6 +82,10 @@ def _experiment_dict(exp: Experiment) -> dict:
         "content": exp.content or {},
         "status": exp.status if isinstance(exp.status, str) else exp.status.value,
         "notes": [ExperimentNote(**n) for n in (exp.notes or [])],
+        "conclusion": exp.conclusion,
+        "conclusion_locked_at": exp.conclusion_locked_at,
+        "conclusion_locked_by_id": exp.conclusion_locked_by_id,
+        "conclusion_locked_by_name": exp.conclusion_locked_by_name,
         "created_at": exp.created_at,
         "updated_at": exp.updated_at,
     }
@@ -441,8 +445,21 @@ async def update_experiment(
     # Slug is intentionally NOT regenerated on rename — keeps URLs and
     # bookmarks stable after the experiment is created (C2).
 
+    # F-0043: lock guard — while locked, ALL mutations 409.
+    if exp.conclusion_locked_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXPERIMENT_LOCKED",
+                "message": "Experiment conclusion is locked. Admin must unlock first.",
+            },
+        )
+
     changes = {}
-    for field in ("name", "description", "content", "objective", "success_criteria"):
+    for field in (
+        "name", "description", "content", "objective",
+        "success_criteria", "conclusion",
+    ):
         value = getattr(update_data, field)
         if value is not None:
             old = getattr(exp, field)
