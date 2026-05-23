@@ -71,3 +71,54 @@ def test_returns_original_when_sanitization_empties_text():
     out = sanitize_output(text)
     # All-thinking text returns original to avoid blank responses
     assert out == text
+
+
+def test_strips_bare_protocol_uuid_link():
+    """A `(/protocols/<uuid>)` link from a hallucinating model becomes
+    plain text — the bracketed label stays so the user still sees the name."""
+    out = sanitize_output("See [My Protocol](/protocols/abc-123-uuid).")
+    assert "/protocols/abc-123-uuid" not in out
+    assert "[My Protocol]" in out
+
+
+def test_leaves_canonical_org_scoped_link_alone():
+    """A correctly-formed /{org}/protocols/{slug} link is untouched."""
+    text = "Open [My Protocol](/acme/protocols/my-protocol)."
+    assert sanitize_output(text) == text
+
+
+def test_strips_multiple_bare_links_in_one_message():
+    out = sanitize_output(
+        "First [A](/protocols/aaa) and second [B](/protocols/bbb)."
+    )
+    assert "/protocols/aaa" not in out
+    assert "/protocols/bbb" not in out
+    assert "[A]" in out and "[B]" in out
+
+
+def test_does_not_touch_non_protocol_links():
+    text = "See [Project](/projects/foo) and [Run](/runs/bar)."
+    assert sanitize_output(text) == text
+
+
+def test_does_not_strip_bare_protocol_link_inside_code_fence():
+    """Inside a fenced code block the text is example/illustration —
+    leave it alone the same way the existing _BARE_JSON_PATTERN does."""
+    text = (
+        "Here is what a bad link looks like:\n"
+        "```\n"
+        "[X](/protocols/abc-123)\n"
+        "```\n"
+        "Avoid emitting that."
+    )
+    assert sanitize_output(text) == text
+
+
+def test_does_not_strip_bare_protocol_link_inside_external_protocol_source():
+    """EXTERNAL_PROTOCOL_SOURCE JSON blocks are also fenced; same rule."""
+    text = (
+        "```EXTERNAL_PROTOCOL_SOURCE\n"
+        '{"href": "/protocols/some-id"}\n'
+        "```"
+    )
+    assert sanitize_output(text) == text
