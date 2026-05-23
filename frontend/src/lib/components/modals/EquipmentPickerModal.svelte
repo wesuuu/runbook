@@ -124,11 +124,6 @@
 		resetCreateFormFields();
 	}
 
-	function closeCreateForm() {
-		// Surfaced via the sticky search row; same behavior as Discard.
-		discardCreateForm();
-	}
-
 	function handleCertificateFile(event: Event) {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
@@ -138,10 +133,13 @@
 	}
 
 	// Initialize selected items and (in pick mode) reset the create form on
-	// every open so a half-typed form doesn't leak across opens. In `create`
+	// each false→true open transition only. Tracking just `open` ensures a
+	// parent re-render that swaps `currentEquipment` or `mode` while the
+	// modal is already open won't clobber a half-typed form. In `create`
 	// mode the form is the whole modal — leave it untouched.
+	let wasOpen = false;
 	$effect(() => {
-		if (open) {
+		if (open && !wasOpen) {
 			selectedItems = new Map(
 				currentEquipment.map((e) => [
 					e.equipment_id,
@@ -153,6 +151,7 @@
 				resetCreateFormFields();
 			}
 		}
+		wasOpen = open;
 	});
 
 	// Scroll the create form into view when it opens so the user sees the
@@ -177,7 +176,7 @@
 				const entry = entries[0];
 				if (entry) isCreateFormInView = entry.isIntersecting;
 			},
-			{ threshold: 0.1 },
+			{ threshold: 0.3 },
 		);
 		obs.observe(target);
 		return () => obs.disconnect();
@@ -365,7 +364,7 @@
 						variant="link"
 						size="sm"
 						class="sticky-link h-auto p-0"
-						onclick={closeCreateForm}
+						onclick={discardCreateForm}
 					>
 						✕ Close form
 					</Button>
@@ -645,7 +644,7 @@
 		flex: 1;
 	}
 
-	:global(.sticky-link) {
+	.search-bar :global(.sticky-link) {
 		flex-shrink: 0;
 		white-space: nowrap;
 	}
