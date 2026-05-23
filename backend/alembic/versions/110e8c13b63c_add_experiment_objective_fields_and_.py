@@ -42,38 +42,49 @@ def upgrade() -> None:
         ),
     )
 
-    # 2. Indexes — the GET /experiments listing query is unindexed on main.
-    # `postgresql_ops` takes operator-class names, NOT a sort direction —
-    # express the DESC column with `sa.text(...)` instead.
-    op.create_index(
-        "ix_experiments_project_updated",
-        "experiments",
-        ["project_id", sa.text("updated_at DESC")],
-    )
-    op.create_index(
-        "ix_runs_experiment_created",
-        "runs",
-        ["experiment_id", "created_at"],
-    )
-    op.create_index(
-        "ix_experiments_created_by",
-        "experiments",
-        ["created_by_id"],
-    )
-
-    # 3. Status normalization — collapse legacy ACTIVE/COMPLETED so the column
+    # 2. Status normalization — collapse legacy ACTIVE/COMPLETED so the column
     #    means only "archived or not" (Phase 3 reads only ARCHIVED from it).
+    #    Done before the index step so the indexes are built on the final shape.
     op.execute(
         "UPDATE experiments SET status = 'DRAFT' "
         "WHERE status NOT IN ('DRAFT', 'ARCHIVED')"
     )
 
+    # 3. Indexes — the GET /experiments listing query is unindexed on main.
+    #    Built CONCURRENTLY so the runs table (which can carry hot writes)
+    #    is not locked while the index is created. CONCURRENTLY cannot run
+    #    inside a transaction, so we exit the surrounding tx via
+    #    autocommit_block.
+    with op.get_context().autocommit_block():
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
+            "ix_experiments_project_updated "
+            "ON experiments (project_id, updated_at DESC)"
+        )
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
+            "ix_runs_experiment_created "
+            "ON runs (experiment_id, created_at)"
+        )
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
+            "ix_experiments_created_by "
+            "ON experiments (created_by_id)"
+        )
+
 
 def downgrade() -> None:
     # Schema-only — status normalization is not reversed (one-way; see spec §2.2).
-    op.drop_index("ix_runs_experiment_created", table_name="runs")
-    op.drop_index("ix_experiments_created_by", table_name="experiments")
-    op.drop_index("ix_experiments_project_updated", table_name="experiments")
+    with op.get_context().autocommit_block():
+        op.execute(
+            "DROP INDEX CONCURRENTLY IF EXISTS ix_runs_experiment_created"
+        )
+        op.execute(
+            "DROP INDEX CONCURRENTLY IF EXISTS ix_experiments_created_by"
+        )
+        op.execute(
+            "DROP INDEX CONCURRENTLY IF EXISTS ix_experiments_project_updated"
+        )
     op.drop_column("experiments", "created_by_id")
     op.drop_column("experiments", "success_criteria")
     op.drop_column("experiments", "objective")

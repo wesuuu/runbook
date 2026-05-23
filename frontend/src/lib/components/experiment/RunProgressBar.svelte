@@ -37,7 +37,7 @@
     </div>
   {/if}
   <span class="whitespace-nowrap text-xs text-muted-foreground">
-    {runs.length}{hiddenCount > 0 ? `+${hiddenCount}` : ''} / {total} run{total === 1
+    {hiddenCount > 0 ? `${runs.length} of ${total}` : total} run{total === 1
       ? ''
       : 's'}
   </span>

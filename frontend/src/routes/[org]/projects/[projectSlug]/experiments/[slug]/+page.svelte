@@ -211,12 +211,13 @@
                     placeholder="Experiment name"
                 />
                 <span
-                    class="inline-block cursor-help rounded-full px-3 py-1 text-xs font-semibold {experimentStatusClasses(
+                    class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold cursor-help {experimentStatusClasses(
                         experiment?.lifecycle_status ?? 'DRAFT',
                     )}"
                     title="Status is derived from this experiment's runs — add or complete runs to advance it."
                 >
                     {experimentStatusLabel(experiment?.lifecycle_status ?? 'DRAFT')}
+                    <span class="opacity-70 font-normal">(auto)</span>
                 </span>
                 <Button
                     onclick={save}

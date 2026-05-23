@@ -84,7 +84,7 @@
     {#snippet mobileCard(e)}
         <button
             type="button"
-            class="w-full py-3 text-left"
+            class="flex w-full min-h-11 cursor-pointer flex-col justify-center px-2 py-3 text-left transition-colors hover:bg-muted/50"
             onclick={() => openExperiment(e)}
         >
             <div class="mb-1 flex items-center justify-between">
