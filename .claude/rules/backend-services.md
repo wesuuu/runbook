@@ -121,3 +121,25 @@ When a validation rule must hard-block an endpoint (publish, run, PDF), expose a
 ## Cross-context validators
 
 When a single rule applies to multiple parent entity types (e.g., protocol *and* run sign-offs share QAU-independence and attestation checks), expose the validators from a single module (`services/signoffs/validation.py`) and call them from each endpoint. Don't duplicate per-context. Both `POST /protocols/{id}/signoffs` and `POST /runs/{id}/signoffs` route through `services/signoffs/service.create_signoff`, which dispatches the validator chain.
+
+## Notification payload contract
+
+`Notification.payload` (JSONB, default `{}`) carries optional deep-link
+metadata. The column is schemaless; the resolver
+(`services/core/notifications/links.py`) only honors documented keys.
+
+| Key | Type | When honored |
+|-----|------|--------------|
+| `step_id` | string matching `^[A-Za-z0-9_-]{1,64}$` | `entity_type == "run"`; resolver appends `#step-<id>` to the deep link |
+
+Producers of step-scoped events on a run pass
+`payload={"step_id": "<id>"}` to `send_notification`. Ids must match the
+regex above — anything else is silently dropped by the resolver and the
+notification falls back to a bare run link. A 512-byte CHECK constraint
+on the column bounds payload bloat; raise the cap deliberately if a
+future key needs more.
+
+`NotificationResponse` (Pydantic) intentionally does not surface
+`payload` — the frontend consumes the already-resolved URL (with
+fragment) via `resolve_notification_urls`. Add the field to the schema
+only when a frontend feature needs the structured payload directly.
