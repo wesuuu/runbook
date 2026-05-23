@@ -7,10 +7,11 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.core.config import settings
 from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.session import get_db
@@ -34,9 +35,14 @@ from app.models.runs import Run, RunOutcome, RunStatus
 from app.models.templates import DocumentTemplate  # noqa: F401
 from app.services.billing import stripe_client as _stripe_client
 
-TEST_DATABASE_URL = (
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/batchrite_test"
-)
+# Derive the test DB from the configured dev DB by appending `_test`, so a
+# worktree that overrides BATCHRITE_DATABASE_URL (e.g. batchrite_wt5) gets an
+# isolated test DB (batchrite_wt5_test) instead of clobbering the shared one.
+# In the main workspace the dev DB is `batchrite`, yielding `batchrite_test`.
+_dev_url = make_url(settings.database_url)
+_test_url = _dev_url.set(database=f"{_dev_url.database}_test")
+# render_as_string(hide_password=False): plain str(URL) masks the password.
+TEST_DATABASE_URL = _test_url.render_as_string(hide_password=False)
 
 
 def pytest_addoption(parser):

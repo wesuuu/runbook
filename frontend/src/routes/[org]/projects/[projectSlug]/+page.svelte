@@ -3,7 +3,6 @@
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
     import { paths } from "$lib/paths";
-    import * as Dialog from "$lib/components/ui/dialog";
     import { Button } from "$lib/components/ui/button";
     import ProtocolsTab from "$lib/components/project/ProtocolsTab.svelte";
     import ExperimentsTab from "$lib/components/project/ExperimentsTab.svelte";
@@ -13,6 +12,7 @@
     import ProtocolImportModal from "$lib/components/modals/ProtocolImportModal.svelte";
     import RunCreatorWizardModal from "$lib/components/run/RunCreatorWizardModal.svelte";
     import BatchRecordImportModal from "$lib/components/modals/BatchRecordImportModal.svelte";
+    import ExperimentCreateModal from "$lib/components/experiment/ExperimentCreateModal.svelte";
     import { HelpMenu, TourModal, runProjectTour } from "$lib/onboarding";
     import { shouldShowDot, markDismissed, isCompleted, isDismissed, isHydrated } from "$lib/onboarding/tourStore.svelte";
     import { fade } from "svelte/transition";
@@ -57,11 +57,6 @@
 
     // -- Experiment Modal --
     let showExperimentModal = $state(false);
-    let newExperimentName = $state("");
-    let newExperimentDescription = $state("");
-    // Surfaces the backend 422 (e.g. SLUG_CONFLICT detail.message) in the
-    // dialog instead of swallowing it to the console (F-0091 M3).
-    let createExperimentError = $state<string | null>(null);
 
     // -- Onboarding Tour --
     let projectTourModalOpen = $state(false);
@@ -189,25 +184,6 @@
         }
     }
 
-    async function createExperiment() {
-        if (!newExperimentName) return;
-
-        createExperimentError = null;
-        try {
-            const newExp: any = await api.post("/experiments", {
-                name: newExperimentName,
-                project_id: project.id,
-                description: newExperimentDescription || null,
-            });
-            showExperimentModal = false;
-            newExperimentName = "";
-            newExperimentDescription = "";
-            goto(paths.experiment(newExp.project_slug, newExp.slug));
-        } catch (e: unknown) {
-            createExperimentError =
-                e instanceof Error ? e.message : "Failed to create experiment.";
-        }
-    }
 
 </script>
 
@@ -323,10 +299,7 @@
                 {#if activeTab === "experiments"}
                     <Button
                         size="sm"
-                        onclick={() => {
-                            createExperimentError = null;
-                            showExperimentModal = true;
-                        }}
+                        onclick={() => (showExperimentModal = true)}
                     >
                         + New Experiment
                     </Button>
@@ -379,7 +352,7 @@
         <!-- Tab Content -->
         <div class="min-h-[300px]">
             {#if activeTab === "experiments"}
-                <ExperimentsTab {experiments} {runs} {protocols} projectId={id} />
+                <ExperimentsTab {experiments} {runs} {protocols} projectId={id} onRunCreated={loadData} />
             {:else if activeTab === "runs"}
                 <RunsTab {runs} {protocols} {experiments} onDataChanged={loadData} />
             {:else if activeTab === "protocols"}
@@ -433,70 +406,11 @@
 />
 
 <!-- EXPERIMENT MODAL -->
-<Dialog.Root bind:open={showExperimentModal}>
-    <Dialog.Content class="sm:max-w-md">
-        <Dialog.Header>
-            <Dialog.Title>New Experiment</Dialog.Title>
-            <Dialog.Description>Create an experiment to organize related runs.</Dialog.Description>
-        </Dialog.Header>
-        <div class="space-y-3">
-            <div>
-                <label
-                    for="experiment-name"
-                    class="block text-sm font-medium text-gray-700 mb-1">Name</label
-                >
-                <input
-                    id="experiment-name"
-                    type="text"
-                    bind:value={newExperimentName}
-                    placeholder="e.g. Effect of MOI on transduction"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                />
-            </div>
-            <div>
-                <label
-                    for="experiment-desc"
-                    class="block text-sm font-medium text-gray-700 mb-1"
-                    >Description <span class="text-slate-400 font-normal">(optional)</span></label
-                >
-                <textarea
-                    id="experiment-desc"
-                    bind:value={newExperimentDescription}
-                    placeholder="Brief description of what you're investigating..."
-                    rows={3}
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
-                ></textarea>
-            </div>
-            {#if createExperimentError}
-                <p
-                    class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"
-                    role="alert"
-                >
-                    {createExperimentError}
-                </p>
-            {/if}
-        </div>
-        <Dialog.Footer>
-            <Button
-                variant="secondary"
-                onclick={() => {
-                    showExperimentModal = false;
-                    newExperimentName = "";
-                    newExperimentDescription = "";
-                    createExperimentError = null;
-                }}
-            >
-                Cancel
-            </Button>
-            <Button
-                onclick={createExperiment}
-                disabled={!newExperimentName}
-            >
-                Create
-            </Button>
-        </Dialog.Footer>
-    </Dialog.Content>
-</Dialog.Root>
+<ExperimentCreateModal
+    bind:open={showExperimentModal}
+    projectId={project?.id ?? ''}
+    onCreated={(exp) => goto(paths.experiment(exp.project_slug, exp.slug))}
+/>
 
 <!-- PROJECT TOUR MODAL -->
 <TourModal

@@ -42,7 +42,7 @@ from app.models.execution import AuditLog
 from app.models.iam import ObjectType, OrgRole, OrganizationMember, PermissionLevel, User
 from app.models.projects import Project
 from app.models.protocols import Protocol, ProtocolVersion, UnitOpDefinition
-from app.models.runs import Run, RunRoleAssignment
+from app.models.runs import Experiment, Run, RunRoleAssignment
 from app.models.signoffs import GlpSignoff
 from app.schemas.runs import (
     CheckLotNumberResponse,
@@ -71,6 +71,7 @@ from app.services.core.audit import log_audit
 from app.services.core.file_storage import IMAGE_MIME_TYPES, FileStorageService
 from app.services.core.notifications import send_notification
 from app.services.core.permissions import check_permission
+from app.services.experiments.status import LIFECYCLE_ARCHIVED
 from app.services.data.graph_processing import _parse_graph_roles_and_steps
 from app.services.protocols.equipment_context import build_equipment_context
 from app.services.protocols.template_engine import (
@@ -185,6 +186,45 @@ async def create_run(
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # F-0093 §1.6: a run's experiment must share its project and be non-archived.
+    if run_in.experiment_id is not None:
+        # No org filter on this lookup: org-scope isolation is enforced
+        # transitively — the run's project_id was already permission-checked
+        # above, and the project_id-equality check below rejects any
+        # experiment outside that project (hence outside the caller's org).
+        experiment = await get_or_404(db, Experiment, run_in.experiment_id)
+        if experiment.project_id != run_in.project_id:
+            logger.warning(
+                "POST /runs experiment-project mismatch: org=%s user=%s "
+                "project=%s experiment=%s",
+                user.selected_org_id, user.id, run_in.project_id,
+                run_in.experiment_id,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "RUN_EXPERIMENT_PROJECT_MISMATCH",
+                    "message": "Experiment must belong to the run's project.",
+                },
+            )
+        exp_status = (
+            experiment.status
+            if isinstance(experiment.status, str)
+            else experiment.status.value
+        )
+        if exp_status == LIFECYCLE_ARCHIVED:
+            logger.warning(
+                "POST /runs on archived experiment: org=%s user=%s experiment=%s",
+                user.selected_org_id, user.id, run_in.experiment_id,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "RUN_EXPERIMENT_ARCHIVED",
+                    "message": "Cannot add a run to an archived experiment.",
+                },
+            )
 
     initial_graph: dict = {}
     is_strict = False

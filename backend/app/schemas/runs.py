@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # Experiment Schemas
@@ -52,17 +52,88 @@ class ExperimentNoteListResponse(BaseModel):
     items: list[ExperimentNote] = []
 
 
-class ExperimentCreate(BaseModel):
+class ExperimentRunSummary(BaseModel):
+    """A child run reduced to what the index needs (F-0093)."""
+
+    status: str
+    outcome: Optional[str] = None
+
+
+class ExperimentOwner(BaseModel):
+    """The experiment's creator, for the index owner avatar (F-0093)."""
+
+    id: UUID
     name: str
+    initials: str
+
+
+class ExperimentSummary(BaseModel):
+    """Lightweight per-experiment row for the org-wide index (F-0093)."""
+
+    id: UUID
+    slug: str
+    name: str
+    objective: Optional[str] = None
     project_id: UUID
-    description: Optional[str] = None
+    project_slug: str
+    project_name: str
+    lifecycle_status: str
+    run_count: int
+    run_summaries: List[ExperimentRunSummary] = Field(default_factory=list)
+    owner: Optional[ExperimentOwner] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+EXPERIMENT_NAME_MAX = 200
+EXPERIMENT_DESCRIPTION_MAX = 5000
+
+
+def _validated_name(value: str) -> str:
+    """Reject blank/whitespace-only names; both schemas enforce this."""
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("Name must not be blank")
+    return stripped
+
+
+class ExperimentCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=EXPERIMENT_NAME_MAX)
+    project_id: UUID
+    description: Optional[str] = Field(
+        default=None, max_length=EXPERIMENT_DESCRIPTION_MAX
+    )
+    objective: Optional[str] = None
+    success_criteria: List[str] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        return _validated_name(v)
 
 
 class ExperimentUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    # `status` is intentionally absent — lifecycle status is derived, not set
+    # (F-0093 §3.3). `extra="forbid"` turns a stale `{"status": ...}` write
+    # into an explicit 422 instead of silently dropping it.
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(
+        default=None, min_length=1, max_length=EXPERIMENT_NAME_MAX
+    )
+    description: Optional[str] = Field(
+        default=None, max_length=EXPERIMENT_DESCRIPTION_MAX
+    )
     content: Optional[Dict[str, Any]] = None
-    status: Optional[ExperimentStatus] = None
+    objective: Optional[str] = None
+    success_criteria: Optional[List[str]] = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return _validated_name(v)
 
 
 # Run Schemas
@@ -266,8 +337,16 @@ class ExperimentResponse(BaseModel):
     project_slug: str
     name: str
     description: Optional[str] = None
+    objective: Optional[str] = None
+    success_criteria: List[str] = Field(default_factory=list)
+    created_by_id: Optional[UUID] = None
     content: Dict[str, Any] = Field(default_factory=dict)
+    # `status` is the stored archived/not-archived flag (it keeps a default for
+    # back-compat with callers that build the response by hand). `lifecycle_status`
+    # is *derived* from child runs at read time — every handler must supply it,
+    # so it is intentionally required (no default) to fail loudly if one forgets.
     status: str = ExperimentStatus.DRAFT
+    lifecycle_status: str
     notes: list[ExperimentNote] = Field(default_factory=list)
     runs: list[RunResponse] = Field(default_factory=list)
     run_count: int = 0

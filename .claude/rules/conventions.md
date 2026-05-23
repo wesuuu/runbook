@@ -60,6 +60,7 @@ New Svelte components under `frontend/src/lib/components/` MUST go in a domain s
 - `layout/` — global app chrome (nav, user menu, logo, banners that live in `+layout.svelte`)
 - `sites/` — Sites & Equipment management page surfaces (rail, dialogs, archive wizard, managers panel)
 - `equipment/` — equipment table, filter bar, form dialog, attachments list, tags input
+- `experiment/` — org-wide experiments index surfaces, run progress bar, experiment create modal
 - `shared/` — small cross-cutting presentational pieces (badges, small banners, markdown rendering, generic tables)
 
 If a component is used by only one domain's routes, prefer that domain's bucket over `modals/` or `shared/`.

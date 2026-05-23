@@ -2,7 +2,14 @@
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { api } from "$lib/api";
+    import { getUser } from "$lib/auth.svelte";
     import { Button } from "$lib/components/ui/button";
+    import { Input } from "$lib/components/ui/input";
+    import { Textarea } from "$lib/components/ui/textarea";
+    import { Trash2, X } from "lucide-svelte";
+
+    const EXPERIMENT_NAME_MAX = 200;
+    const EXPERIMENT_DESCRIPTION_MAX = 5000;
     import LoadingSpinner from '$lib/components/ui/loading-spinner.svelte';
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import RunCreatorWizardModal from "$lib/components/run/RunCreatorWizardModal.svelte";
@@ -18,21 +25,6 @@
     import { flip } from "svelte/animate";
     import { blockDuration, listDuration } from "$lib/transitions";
     import { paths } from "$lib/paths";
-    // Edra rich text editor — lazy loaded to avoid SSR issues
-    let EdraEditor: any = $state(null);
-    let EdraToolBar: any = $state(null);
-    import { onMount } from "svelte";
-    import type { Editor } from "@tiptap/core";
-
-    onMount(async () => {
-        try {
-            const edra = await import("$lib/components/edra/shadcn");
-            EdraEditor = edra.EdraEditor;
-            EdraToolBar = edra.EdraToolBar;
-        } catch (e) {
-            console.warn("Edra editor failed to load:", e);
-        }
-    });
 
     // Route params: experiments nest under their project (F-0091). The
     // experiment is fetched by project slug + experiment slug; once loaded,
@@ -48,14 +40,18 @@
     let loading = $state(true);
     let saving = $state(false);
     let error = $state<string | null>(null);
+    let saveError = $state<string | null>(null);
+    let noteError = $state<string | null>(null);
 
     // Editable fields
     let name = $state("");
     let description = $state("");
-    let status = $state("DRAFT");
 
-    // Edra editor
-    let editor = $state<Editor>();
+    // Objective block
+    let objective = $state("");
+    let successCriteria = $state<string[]>([]);
+    let editingObjective = $state(false);
+    let objectiveError = $state<string | null>(null);
 
     // Notes
     let notes = $state<any[]>([]);
@@ -66,8 +62,6 @@
     let showRunModal = $state(false);
     let showAddExistingModal = $state(false);
     let allProjectRuns = $state<any[]>([]);
-
-    const statusOptions = ["DRAFT", "ACTIVE", "COMPLETED", "ARCHIVED"];
 
     $effect(() => {
         const ps = projectSlug;
@@ -84,7 +78,8 @@
             );
             name = experiment.name;
             description = experiment.description ?? "";
-            status = experiment.status;
+            objective = experiment.objective ?? "";
+            successCriteria = [...(experiment.success_criteria ?? [])];
             notes = experiment.notes ?? [];
 
             // Load project, protocols, and all runs for breadcrumb and modals
@@ -103,22 +98,75 @@
         }
     }
 
+    const trimmedName = $derived(name.trim());
+    const nameInvalid = $derived(
+        trimmedName.length === 0 || name.length > EXPERIMENT_NAME_MAX,
+    );
+    const descriptionInvalid = $derived(
+        description.length > EXPERIMENT_DESCRIPTION_MAX,
+    );
+    const currentUserId = $derived(getUser()?.id ?? null);
+
     async function save() {
+        if (nameInvalid) {
+            saveError =
+                trimmedName.length === 0
+                    ? 'Name is required.'
+                    : `Name must be ${EXPERIMENT_NAME_MAX} characters or fewer.`;
+            return;
+        }
+        if (descriptionInvalid) {
+            saveError = `Description must be ${EXPERIMENT_DESCRIPTION_MAX} characters or fewer.`;
+            return;
+        }
         saving = true;
+        saveError = null;
         try {
-            const content = editor?.getJSON() ?? experiment.content ?? {};
             await api.put(`/experiments/${id}`, {
-                name,
+                name: trimmedName,
                 description: description || null,
-                content,
-                status,
             });
-            experiment.name = name;
+            experiment.name = trimmedName;
             experiment.description = description;
-            experiment.content = content;
-            experiment.status = status;
+            name = trimmedName;
         } catch (e: unknown) {
-            console.error(e instanceof Error ? e.message : e);
+            saveError = e instanceof Error ? e.message : 'Failed to save changes.';
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function deleteNote(noteId: string) {
+        try {
+            await api.delete(`/experiments/${id}/notes/${noteId}`);
+            notes = notes.filter((n) => n.id !== noteId);
+        } catch (e: unknown) {
+            noteError = e instanceof Error ? e.message : 'Failed to delete note.';
+        }
+    }
+
+    function cancelObjectiveEdit() {
+        objective = experiment?.objective ?? "";
+        successCriteria = [...(experiment?.success_criteria ?? [])];
+        objectiveError = null;
+        editingObjective = false;
+    }
+
+    async function saveObjective() {
+        saving = true;
+        objectiveError = null;
+        try {
+            // TODO(F-0093 follow-up): type api.put return when ExperimentSchema covers lifecycle/objective fields.
+            const updated: any = await api.put(`/experiments/${id}`, {
+                objective: objective.trim() || null,
+                success_criteria: successCriteria.map((c) => c.trim()).filter(Boolean),
+            });
+            experiment = updated;
+            objective = updated.objective ?? "";
+            successCriteria = [...(updated.success_criteria ?? [])];
+            editingObjective = false;
+        } catch (e: unknown) {
+            objectiveError = e instanceof Error ? e.message : "Failed to save objective.";
         } finally {
             saving = false;
         }
@@ -128,6 +176,7 @@
         const content = newNote.trim();
         if (!content) return;
         submittingNote = true;
+        noteError = null;
         try {
             const note = await api.post(
                 `/experiments/${id}/notes`,
@@ -136,7 +185,7 @@
             notes = [...notes, note as any];
             newNote = "";
         } catch (e: unknown) {
-            console.error(e instanceof Error ? e.message : e);
+            noteError = e instanceof Error ? e.message : 'Failed to add note.';
         } finally {
             submittingNote = false;
         }
@@ -160,7 +209,7 @@
 {:else if experiment}
     <div
         in:fade={{ duration: blockDuration() }}
-        class="min-h-[calc(100vh-57px)] w-full mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
+        class="min-h-[calc(100vh-57px)] w-full mx-auto bg-background rounded-xl border border-border shadow-sm overflow-hidden"
     >
         <!-- Header -->
         <div class="pt-5 sm:pt-7 px-4 sm:px-8">
@@ -168,21 +217,21 @@
             <nav class="flex items-center gap-2 mb-2.5 text-[13px]">
                 <a
                     href={paths.projects()}
-                    class="text-teal-600 font-medium hover:underline"
+                    class="text-primary font-medium hover:underline"
                     >Projects</a
                 >
-                <span class="text-slate-400">&rsaquo;</span>
+                <span class="text-muted-foreground">&rsaquo;</span>
                 {#if project}
                     <a
                         href={paths.project(projectSlug)}
-                        class="text-teal-600 font-medium hover:underline"
+                        class="text-primary font-medium hover:underline"
                         >{project.name}</a
                     >
                 {:else}
-                    <span class="text-slate-400">...</span>
+                    <span class="text-muted-foreground">...</span>
                 {/if}
-                <span class="text-slate-400">&rsaquo;</span>
-                <span class="text-slate-600 font-mono font-medium"
+                <span class="text-muted-foreground">&rsaquo;</span>
+                <span class="text-muted-foreground font-mono font-medium"
                     >EXP-{shortId(experiment.id)}</span
                 >
             </nav>
@@ -192,56 +241,144 @@
                 <input
                     type="text"
                     bind:value={name}
-                    class="text-[26px] font-bold text-slate-900 leading-tight bg-transparent border-none outline-none focus:ring-0 p-0 flex-1 min-w-0"
+                    maxlength={EXPERIMENT_NAME_MAX}
+                    aria-invalid={nameInvalid}
+                    class="text-[26px] font-bold text-foreground leading-tight bg-transparent border-b outline-none focus:ring-0 p-0 flex-1 min-w-0 {nameInvalid
+                        ? 'border-destructive'
+                        : 'border-transparent'}"
                     placeholder="Experiment name"
                 />
-                <select
-                    bind:value={status}
-                    class="text-xs font-semibold px-3 py-1 rounded-full border cursor-pointer {experimentStatusClasses(status)}"
+                <span
+                    class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold cursor-help {experimentStatusClasses(
+                        experiment?.lifecycle_status ?? 'DRAFT',
+                    )}"
+                    title="Status is derived from this experiment's runs — add or complete runs to advance it."
                 >
-                    {#each statusOptions as opt}
-                        <option value={opt}>{experimentStatusLabel(opt)}</option>
-                    {/each}
-                </select>
+                    {experimentStatusLabel(experiment?.lifecycle_status ?? 'DRAFT')}
+                    <span class="opacity-70 font-normal">(auto)</span>
+                </span>
                 <Button
                     onclick={save}
-                    disabled={saving}
+                    disabled={saving || nameInvalid || descriptionInvalid}
                     class="px-4 py-2 text-[13px] font-semibold"
                 >
-                    {saving ? "Saving..." : "Save"}
+                    {saving ? "Saving..." : "Save name & description"}
                 </Button>
             </div>
 
+            {#if saveError}
+                <p class="mb-3 text-sm text-destructive">{saveError}</p>
+            {/if}
+
             <!-- Description -->
             <div class="mb-5">
-                <textarea
+                <Textarea
                     bind:value={description}
                     placeholder="Add a brief description..."
                     rows={2}
-                    class="w-full text-sm text-slate-600 bg-transparent border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
-                ></textarea>
+                    maxlength={EXPERIMENT_DESCRIPTION_MAX}
+                    aria-invalid={descriptionInvalid}
+                    class="resize-none {descriptionInvalid ? 'border-destructive' : ''}"
+                />
+                {#if description.length > EXPERIMENT_DESCRIPTION_MAX * 0.9}
+                    <p
+                        class="mt-1 text-xs {descriptionInvalid
+                            ? 'text-destructive'
+                            : 'text-muted-foreground'}"
+                    >
+                        {description.length} / {EXPERIMENT_DESCRIPTION_MAX}
+                    </p>
+                {/if}
             </div>
         </div>
 
-        <!-- Content Editor -->
+        <!-- Objective -->
         <div class="px-4 sm:px-8 mb-6">
-            <h3 class="text-sm font-semibold text-slate-700 mb-2">Content</h3>
-            <div class="border border-slate-200 rounded-lg overflow-hidden">
-                {#if EdraEditor}
-                    {#if editor}
-                        <svelte:component this={EdraToolBar} {editor} class="border-b border-slate-200" />
+            <div class="rounded-lg border border-border bg-card p-5">
+                <div class="mb-3 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-foreground">Objective</h3>
+                    {#if !editingObjective}
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            class="min-h-11"
+                            onclick={() => (editingObjective = true)}
+                        >
+                            Edit
+                        </Button>
                     {/if}
-                    <svelte:component
-                        this={EdraEditor}
-                        bind:editor
-                        content={experiment.content && Object.keys(experiment.content).length > 0 ? experiment.content : undefined}
-                        editable={true}
-                        class="min-h-[200px] p-4"
-                    />
-                {:else}
-                    <div class="p-4 text-sm text-slate-400 min-h-[200px] flex items-center justify-center">
-                        Loading editor...
+                </div>
+
+                {#if editingObjective}
+                    <div class="space-y-4">
+                        <div class="space-y-1.5">
+                            <label class="text-xs font-medium text-muted-foreground" for="obj">
+                                The question
+                            </label>
+                            <Textarea id="obj" bind:value={objective} rows={3} />
+                        </div>
+                        <div class="space-y-1.5">
+                            <span class="text-xs font-medium text-muted-foreground">
+                                Success criteria
+                            </span>
+                            {#each successCriteria as _, i}
+                                <div class="flex items-center gap-2">
+                                    <Input bind:value={successCriteria[i]} placeholder="Criterion" />
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        class="shrink-0"
+                                        aria-label="Remove criterion"
+                                        onclick={() =>
+                                            (successCriteria = successCriteria.filter(
+                                                (_, j) => j !== i,
+                                            ))}
+                                    >
+                                        <X class="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            {/each}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onclick={() => (successCriteria = [...successCriteria, ''])}
+                            >
+                                + Add criterion
+                            </Button>
+                        </div>
+                        {#if objectiveError}
+                            <p class="text-sm text-destructive">{objectiveError}</p>
+                        {/if}
+                        <div class="flex justify-end gap-2">
+                            <Button variant="ghost" onclick={cancelObjectiveEdit}>Cancel</Button>
+                            <Button onclick={saveObjective} disabled={saving}>
+                                {saving ? 'Saving…' : 'Save objective'}
+                            </Button>
+                        </div>
                     </div>
+                {:else if objective}
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-xs font-medium text-muted-foreground">The question</p>
+                            <p class="mt-0.5 text-sm text-foreground">{objective}</p>
+                        </div>
+                        {#if successCriteria.length > 0}
+                            <div>
+                                <p class="text-xs font-medium text-muted-foreground">
+                                    Success criteria
+                                </p>
+                                <ul class="mt-1 list-inside list-disc space-y-0.5 text-sm text-foreground">
+                                    {#each successCriteria as c}
+                                        <li>{c}</li>
+                                    {/each}
+                                </ul>
+                            </div>
+                        {/if}
+                    </div>
+                {:else}
+                    <p class="text-sm italic text-muted-foreground">
+                        Objective not set yet — add an objective and the first run to begin.
+                    </p>
                 {/if}
             </div>
         </div>
@@ -249,7 +386,7 @@
         <!-- Runs Section -->
         <div class="px-4 sm:px-8 mb-6">
             <div class="flex items-center justify-between mb-3">
-                <h3 class="text-sm font-semibold text-slate-700">
+                <h3 class="text-sm font-semibold text-foreground">
                     Runs ({experiment.runs?.length ?? 0})
                 </h3>
                 <div class="flex gap-2">
@@ -280,7 +417,7 @@
 
         <!-- Notes Section -->
         <div class="px-4 sm:px-8 pb-8">
-            <h3 class="text-sm font-semibold text-slate-700 mb-3">
+            <h3 class="text-sm font-semibold text-foreground mb-3">
                 Notes ({notes.length})
             </h3>
 
@@ -288,13 +425,29 @@
                 <div class="space-y-3 mb-4">
                     {#each notes as note (note.id)}
                         <div
-                            class="bg-slate-50 border border-slate-200 rounded-lg p-3"
+                            class="bg-muted border border-border rounded-lg p-3 group"
                             animate:flip={{ duration: listDuration() }}
                             in:fade={{ duration: listDuration() }}
                         >
-                            <p class="text-sm text-slate-800">{note.content}</p>
+                            <div class="flex items-start justify-between gap-2">
+                                <p class="text-sm text-foreground flex-1 min-w-0 break-words">
+                                    {note.content}
+                                </p>
+                                {#if currentUserId && note.author_id === currentUserId}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        class="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                        aria-label="Delete note"
+                                        title="Delete note"
+                                        onclick={() => deleteNote(note.id)}
+                                    >
+                                        <Trash2 class="h-3.5 w-3.5" />
+                                    </Button>
+                                {/if}
+                            </div>
                             <div
-                                class="flex items-center gap-2 mt-2 text-xs text-slate-400"
+                                class="flex items-center gap-2 mt-2 text-xs text-muted-foreground"
                             >
                                 <span class="font-medium"
                                     >{note.author_name}</span
@@ -304,7 +457,7 @@
                                 {#if note.flags?.length > 0}
                                     {#each note.flags as flag}
                                         <span
-                                            class="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium"
+                                            class="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium dark:bg-amber-500/20 dark:text-amber-300"
                                             >{flag}</span
                                         >
                                     {/each}
@@ -315,15 +468,19 @@
                 </div>
             {/if}
 
+            {#if noteError}
+                <p class="mb-2 text-sm text-destructive">{noteError}</p>
+            {/if}
+
             <!-- Add note -->
             <div class="flex gap-2">
-                <textarea
+                <Textarea
                     bind:value={newNote}
                     onkeydown={handleNoteKeydown}
                     placeholder="Add a note... (Cmd+Enter to submit)"
                     rows={2}
-                    class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
-                ></textarea>
+                    class="flex-1 resize-none"
+                />
                 <Button
                     onclick={addNote}
                     disabled={!newNote.trim() || submittingNote}

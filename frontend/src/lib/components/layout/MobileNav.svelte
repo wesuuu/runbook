@@ -17,6 +17,7 @@
         getCurrentOrg()
             ? [
                   { href: '/', label: 'Dashboard' },
+                  { href: paths.experiments(), label: 'Experiments' },
                   { href: paths.library(), label: 'Library' },
                   { href: '/reviews', label: 'Reviews' },
                   { href: '/chat', label: 'AI Chat' },
