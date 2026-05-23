@@ -108,8 +108,8 @@
                 {#if displayParams.length > 0}
                     <div class="node-params">
                         {#each displayParams as param}
-                            <div class="param-row" title={`${param.label}: ${param.value}`}>
-                                <span class="param-label">{param.label}</span>
+                            <div class="param-row">
+                                <span class="param-label" title={param.label}>{param.label}</span>
                                 <span class="param-value" title={String(param.value)}>{param.value}</span>
                             </div>
                         {/each}

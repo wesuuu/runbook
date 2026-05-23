@@ -163,11 +163,14 @@ describe('EquipmentPickerModal create form layout', () => {
         expect(reopened.value).toBe('');
     });
 
-    it('pick mode: "Close form" appears in sticky search row only when form is open and out of view', () => {
+    it('pick mode: "Go to form" appears in sticky search row only when form is open and out of view', () => {
         const tpl = modalSource;
         expect(tpl).toMatch(/showCreateForm\s*&&\s*!isCreateFormInView/);
-        expect(tpl).toMatch(/Close form/);
         expect(tpl).toMatch(/Go to form/);
+        // The sticky "Close form" was removed: the in-form Discard button
+        // and the outer dialog Cancel cover that affordance, and a
+        // data-loss tap next to a nav tap in the same row was a UX risk.
+        expect(tpl).not.toMatch(/Close form/);
     });
 
     it('create mode: the form footer has only a Create Equipment button (no Discard)', () => {

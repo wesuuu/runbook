@@ -14,18 +14,27 @@ function extractParamRowTag(src: string): string {
     return m?.[0] ?? '';
 }
 
+function extractParamLabelTag(src: string): string {
+    const m = src.match(/<span\b[^>]*class="param-label"[^>]*>/);
+    return m?.[0] ?? '';
+}
+
 function extractParamValueTag(src: string): string {
     const m = src.match(/<span\b[^>]*class="param-value"[^>]*>/);
     return m?.[0] ?? '';
 }
 
 describe('UnitOpNode time-mode truncation contract', () => {
-    it('renders the param row with a title= attr containing both label and value', () => {
+    it('keeps the row title-less so each element owns its own tooltip', () => {
         const tag = extractParamRowTag(source);
         expect(tag).not.toBe('');
-        expect(tag).toMatch(/\btitle=\{/);
-        expect(tag).toMatch(/param\.label/);
-        expect(tag).toMatch(/param\.value/);
+        expect(tag).not.toMatch(/\btitle=/);
+    });
+
+    it('renders the param label with title={param.label}', () => {
+        const tag = extractParamLabelTag(source);
+        expect(tag).not.toBe('');
+        expect(tag).toContain('title={param.label}');
     });
 
     it('renders the param value with title={String(param.value)} exactly', () => {

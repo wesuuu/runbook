@@ -137,6 +137,9 @@
 	// parent re-render that swaps `currentEquipment` or `mode` while the
 	// modal is already open won't clobber a half-typed form. In `create`
 	// mode the form is the whole modal — leave it untouched.
+	// Contract: parents must toggle `open` (close → reopen) to refresh
+	// `currentEquipment` / `mode` mid-session. Current call sites
+	// (Inspector, RunOverridesEditor) honour this.
 	let wasOpen = false;
 	$effect(() => {
 		if (open && !wasOpen) {
@@ -171,12 +174,17 @@
 			return;
 		}
 		const target = createFormEl;
+		// threshold: 0 + isIntersecting means "any part of the form is in
+		// view". The sticky "Go to form" button only appears when the form
+		// is fully off-screen, which works regardless of viewport height —
+		// avoids the "form taller than viewport so it never crosses 30%
+		// intersection" trap from earlier threshold values.
 		const obs = new IntersectionObserver(
 			(entries) => {
 				const entry = entries[0];
 				if (entry) isCreateFormInView = entry.isIntersecting;
 			},
-			{ threshold: 0.3 },
+			{ threshold: 0 },
 		);
 		obs.observe(target);
 		return () => obs.disconnect();
@@ -359,14 +367,6 @@
 						onclick={scrollCreateFormIntoView}
 					>
 						Go to form ↓
-					</Button>
-					<Button
-						variant="link"
-						size="sm"
-						class="sticky-link h-auto p-0"
-						onclick={discardCreateForm}
-					>
-						✕ Close form
 					</Button>
 				{/if}
 			</div>
