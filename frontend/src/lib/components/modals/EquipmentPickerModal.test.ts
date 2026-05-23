@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { tick } from 'svelte';
 import EquipmentPickerModal from './EquipmentPickerModal.svelte';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -48,7 +49,7 @@ describe('EquipmentPickerModal create form layout', () => {
     afterEach(() => localStorage.clear());
 
     it('pick mode: in-form Discard button renders inside .create-form when expanded', async () => {
-        const { container, getByRole } = render(EquipmentPickerModal, {
+        const { getByRole } = render(EquipmentPickerModal, {
             props: {
                 sites,
                 open: true,
@@ -58,8 +59,9 @@ describe('EquipmentPickerModal create form layout', () => {
             },
         });
         (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
-        await Promise.resolve();
-        const createForm = container.querySelector('.create-form');
+        await tick();
+        // bits-ui Dialog portals into <body>, so query the document.
+        const createForm = document.querySelector('.create-form');
         expect(createForm).not.toBeNull();
         const footer = createForm!.querySelector('.create-form-footer');
         expect(footer).not.toBeNull();
@@ -70,7 +72,7 @@ describe('EquipmentPickerModal create form layout', () => {
     });
 
     it('pick mode: "+ Add New Equipment" toggle is hidden while the form is open', async () => {
-        const { container, getByRole, queryByRole } = render(EquipmentPickerModal, {
+        const { getByRole, queryByRole } = render(EquipmentPickerModal, {
             props: {
                 sites,
                 open: true,
@@ -81,13 +83,13 @@ describe('EquipmentPickerModal create form layout', () => {
         });
         const opener = getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement;
         opener.click();
-        await Promise.resolve();
+        await tick();
         expect(queryByRole('button', { name: /add new equipment/i })).toBeNull();
-        expect(container.querySelector('.create-form')).not.toBeNull();
+        expect(document.querySelector('.create-form')).not.toBeNull();
     });
 
     it('pick mode: clicking the in-form Discard closes the form and resets fields', async () => {
-        const { container, getByRole, getByLabelText } = render(EquipmentPickerModal, {
+        const { getByRole, getByLabelText } = render(EquipmentPickerModal, {
             props: {
                 sites,
                 open: true,
@@ -97,19 +99,19 @@ describe('EquipmentPickerModal create form layout', () => {
             },
         });
         (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
-        await Promise.resolve();
+        await tick();
         const nameInput = getByLabelText(/equipment name/i) as HTMLInputElement;
         nameInput.value = 'Scratch';
         nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-        await Promise.resolve();
-        const discardBtn = Array.from(container.querySelectorAll('.create-form-footer button'))
+        await tick();
+        const discardBtn = Array.from(document.querySelectorAll('.create-form-footer button'))
             .find((b) => (b.textContent ?? '').trim().toLowerCase() === 'discard') as HTMLButtonElement;
         expect(discardBtn).toBeTruthy();
         discardBtn.click();
-        await Promise.resolve();
-        expect(container.querySelector('.create-form')).toBeNull();
+        await tick();
+        expect(document.querySelector('.create-form')).toBeNull();
         (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
-        await Promise.resolve();
+        await tick();
         const reopened = getByLabelText(/equipment name/i) as HTMLInputElement;
         expect(reopened.value).toBe('');
     });
@@ -136,11 +138,11 @@ describe('EquipmentPickerModal create form layout', () => {
             },
         });
         (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
-        await Promise.resolve();
+        await tick();
         const nameInput = getByLabelText(/equipment name/i) as HTMLInputElement;
         nameInput.value = 'Leaked';
         nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-        await Promise.resolve();
+        await tick();
         await rerender({
             sites,
             open: false,
@@ -156,7 +158,7 @@ describe('EquipmentPickerModal create form layout', () => {
             onCreateEquipment: vi.fn(),
         });
         (getByRole('button', { name: /add new equipment/i }) as HTMLButtonElement).click();
-        await Promise.resolve();
+        await tick();
         const reopened = getByLabelText(/equipment name/i) as HTMLInputElement;
         expect(reopened.value).toBe('');
     });
@@ -169,7 +171,7 @@ describe('EquipmentPickerModal create form layout', () => {
     });
 
     it('create mode: the form footer has only a Create Equipment button (no Discard)', () => {
-        const { container } = render(EquipmentPickerModal, {
+        render(EquipmentPickerModal, {
             props: {
                 sites,
                 open: true,
@@ -177,7 +179,7 @@ describe('EquipmentPickerModal create form layout', () => {
                 onCreateEquipment: vi.fn(),
             },
         });
-        const footer = container.querySelector('.create-form-footer');
+        const footer = document.querySelector('.create-form-footer');
         expect(footer).not.toBeNull();
         const buttons = Array.from(footer!.querySelectorAll('button'));
         expect(buttons).toHaveLength(1);

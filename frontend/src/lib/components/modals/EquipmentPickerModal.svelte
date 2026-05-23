@@ -81,6 +81,8 @@
 	let searchQuery = $state('');
 	let showCreateForm = $state(mode === 'create');
 	let createSectionEl = $state<HTMLDivElement | null>(null);
+	let createFormEl = $state<HTMLDivElement | null>(null);
+	let isCreateFormInView = $state(true);
 	let selectedItems = $state<Map<string, { local_id: string; shareable: boolean }>>(new Map());
 	let isCreating = $state(false);
 
@@ -103,6 +105,30 @@
 		}
 	});
 
+	function resetCreateFormFields() {
+		newEquipmentName = '';
+		newEquipmentDescription = '';
+		newEquipmentType = '';
+		newEquipmentRoom = '';
+		newEquipmentLocation = '';
+		newEquipmentSerial = '';
+		newEquipmentLastCal = '';
+		newEquipmentNextCal = '';
+		newEquipmentCertPath = '';
+		createError = '';
+		// newSiteId intentionally stays — sticky preference (see resolveInitialSiteId).
+	}
+
+	function discardCreateForm() {
+		showCreateForm = false;
+		resetCreateFormFields();
+	}
+
+	function closeCreateForm() {
+		// Surfaced via the sticky search row; same behavior as Discard.
+		discardCreateForm();
+	}
+
 	function handleCertificateFile(event: Event) {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
@@ -111,7 +137,9 @@
 		}
 	}
 
-	// Initialize selected items when modal opens
+	// Initialize selected items and (in pick mode) reset the create form on
+	// every open so a half-typed form doesn't leak across opens. In `create`
+	// mode the form is the whole modal — leave it untouched.
 	$effect(() => {
 		if (open) {
 			selectedItems = new Map(
@@ -120,16 +148,44 @@
 					{ local_id: e.local_id ?? '', shareable: e.shareable }
 				])
 			);
+			if (mode !== 'create') {
+				showCreateForm = false;
+				resetCreateFormFields();
+			}
 		}
 	});
 
-	// Scroll the create form into view when it opens so the submit button is visible
+	// Scroll the create form into view when it opens so the user sees the
+	// fields, not the empty footer. `block: 'nearest'` avoids overshooting.
 	$effect(() => {
 		if (showCreateForm && createSectionEl) {
-			// Defer to allow DOM to render the form before scrolling
-			setTimeout(() => createSectionEl?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
+			setTimeout(
+				() => createSectionEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }),
+				50,
+			);
 		}
 	});
+
+	$effect(() => {
+		if (!showCreateForm || !createFormEl) {
+			isCreateFormInView = true;
+			return;
+		}
+		const target = createFormEl;
+		const obs = new IntersectionObserver(
+			(entries) => {
+				const entry = entries[0];
+				if (entry) isCreateFormInView = entry.isIntersecting;
+			},
+			{ threshold: 0.1 },
+		);
+		obs.observe(target);
+		return () => obs.disconnect();
+	});
+
+	function scrollCreateFormIntoView() {
+		createFormEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+	}
 
 	const filteredEquipment = $derived(() => {
 		const query = searchQuery.toLowerCase();
@@ -288,7 +344,7 @@
 
 		<div class="equipment-modal">
 			{#if mode !== 'create'}
-			<!-- Search bar -->
+			<!-- Search bar (sticky inside the single scroller) -->
 			<div class="search-bar">
 				<input
 					type="text"
@@ -296,6 +352,24 @@
 					bind:value={searchQuery}
 					class="search-input"
 				/>
+				{#if showCreateForm && !isCreateFormInView}
+					<Button
+						variant="link"
+						size="sm"
+						class="sticky-link h-auto p-0"
+						onclick={scrollCreateFormIntoView}
+					>
+						Go to form ↓
+					</Button>
+					<Button
+						variant="link"
+						size="sm"
+						class="sticky-link h-auto p-0"
+						onclick={closeCreateForm}
+					>
+						✕ Close form
+					</Button>
+				{/if}
 			</div>
 
 			<!-- Equipment list -->
@@ -381,19 +455,19 @@
 
 			<!-- Create new equipment section -->
 			<div class="create-section" bind:this={createSectionEl}>
-				{#if mode !== 'create'}
+				{#if mode !== 'create' && !showCreateForm}
 				<Button
 					variant="link"
 					size="sm"
 					class="h-auto p-0 justify-start font-medium"
-					onclick={() => (showCreateForm = !showCreateForm)}
+					onclick={() => (showCreateForm = true)}
 				>
-					{showCreateForm ? '✕ Cancel' : '+ Add New Equipment'}
+					+ Add New Equipment
 				</Button>
 				{/if}
 
 				{#if showCreateForm}
-					<div class="create-form">
+					<div class="create-form" bind:this={createFormEl}>
 						<h4>Create Equipment</h4>
 						<div class="form-group">
 							<label for="eq-name">Equipment Name *</label>
@@ -506,13 +580,23 @@
 							<div class="error-message">{createError}</div>
 						{/if}
 
-						<Button
-							class="w-full"
-							onclick={handleCreate}
-							disabled={isCreating}
-						>
-							{isCreating ? 'Creating...' : 'Create Equipment'}
-						</Button>
+						<div class="create-form-footer">
+							{#if mode !== 'create'}
+								<Button
+									variant="secondary"
+									onclick={discardCreateForm}
+									disabled={isCreating}
+								>
+									Discard
+								</Button>
+							{/if}
+							<Button
+								onclick={handleCreate}
+								disabled={isCreating}
+							>
+								{isCreating ? 'Creating...' : 'Create Equipment'}
+							</Button>
+						</div>
 					</div>
 				{/if}
 			</div>
@@ -540,12 +624,30 @@
 		flex-direction: column;
 		gap: 1rem;
 		padding: 1rem 1.5rem;
-		max-height: 500px;
 		overflow-y: auto;
+		min-height: 0;
+		flex: 1;
 	}
 
 	.search-bar {
 		flex-shrink: 0;
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		background: hsl(var(--background));
+		padding: 0.25rem 0;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.search-bar .search-input {
+		flex: 1;
+	}
+
+	:global(.sticky-link) {
+		flex-shrink: 0;
+		white-space: nowrap;
 	}
 
 	.search-input {
@@ -566,8 +668,6 @@
 	}
 
 	.equipment-list {
-		flex: 1;
-		overflow-y: auto;
 		border: 1px solid hsl(var(--border));
 		border-radius: 0.375rem;
 		padding: 0.5rem 0;
@@ -617,8 +717,8 @@
 	.type-badge {
 		display: inline-block;
 		padding: 0.25rem 0.5rem;
-		background-color: #e0f2fe;
-		color: #0369a1;
+		background-color: hsl(var(--muted));
+		color: hsl(var(--muted-foreground));
 		border-radius: 0.25rem;
 		font-size: 0.75rem;
 		font-weight: 500;
@@ -719,9 +819,10 @@
 	.create-form {
 		margin-top: 0.75rem;
 		padding: 0.75rem;
-		background-color: hsl(var(--muted));
+		background-color: hsl(var(--muted) / 0.4);
 		border-radius: 0.375rem;
 		border: 1px solid hsl(var(--border));
+		border-left: 4px solid hsl(var(--primary));
 	}
 
 	.create-form h4 {
@@ -750,7 +851,7 @@
 		border-radius: 0.25rem;
 		font-size: 0.875rem;
 		font-family: inherit;
-		background: hsl(var(--background));
+		background: hsl(var(--card));
 		color: hsl(var(--foreground));
 	}
 
@@ -762,11 +863,19 @@
 
 	.error-message {
 		padding: 0.5rem;
-		background-color: #fee2e2;
-		color: #991b1b;
+		background-color: hsl(var(--destructive) / 0.1);
+		color: hsl(var(--destructive));
 		border-radius: 0.25rem;
 		font-size: 0.875rem;
 		margin-bottom: 0.75rem;
 	}
 
+	.create-form-footer {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid hsl(var(--border));
+	}
 </style>
