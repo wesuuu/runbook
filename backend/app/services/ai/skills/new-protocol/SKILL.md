@@ -1,6 +1,6 @@
 ---
 name: new-protocol
-description: Create a new protocol grounded in a source you pick — your library, OpenWetWare, scratch, or all of the above.
+description: Create a new protocol grounded in a source you pick — your library, external repositories (OpenWetWare, protocols.io), scratch, or all of the above.
 icon: file-plus
 ---
 
@@ -12,14 +12,14 @@ When invoked, you orchestrate a new-protocol creation flow.
 
 Before asking the picker question, scan the user's most recent message for an unambiguous source hint and route directly. **Direct-routing signals are HIGHEST PRIORITY — showing the picker after the user has named a source is a workflow violation.** Apply this routing table in order:
 
-- Mentions "OpenWetWare", "OWW", "the web", "external sources", "online protocols", "public protocols", "from the internet" → **OpenWetWare** route. You MUST dispatch `task("protocol_knowledgebase", "<topic>")` immediately. Do NOT show the picker. Do NOT ask which source they want — they already told you.
+- Mentions "OpenWetWare", "OWW", "protocols.io", "protocols io", "the web", "external sources", "online protocols", "public protocols", "from the internet" → **External repositories** route. You MUST dispatch `task("protocol_knowledgebase", "<topic>")` immediately. The subagent picks the best source (OpenWetWare or protocols.io) for the query. Do NOT show the picker. Do NOT ask which source they want — they already told you.
 - Mentions "my library", "our library", "the library", "indexed documents", a specific library doc title, or asks you to "use my docs" / "use our SOPs" → **Library** route. You MUST dispatch `task("research_library", "<topic>")` immediately. Do NOT show the picker.
 - Mentions "from scratch", "no documents", "without any source", "draft one yourself", or "don't use the library" → **From scratch** route. You MUST dispatch `task("protocol_creator", "<topic>")` immediately. Do NOT show the picker.
 - Mentions "search all", "try everything", "look everywhere", "any source" → **Search all** route. Skip the picker.
 - Otherwise the intent is ambiguous. Reply with exactly these four options as a numbered list, then stop and wait for their reply:
 
 1. **Library** — ground the protocol on the org's indexed research library.
-2. **OpenWetWare** — search the public OpenWetWare knowledgebase (requires approval before any external content is used).
+2. **External repositories** — search OpenWetWare and protocols.io (requires approval before any external content is used).
 3. **From scratch** — draft without any source.
 4. **Search all** — try the library first, fall back to OpenWetWare if nothing relevant is found.
 
@@ -48,7 +48,7 @@ The three explicit options are hard-scoped. Library does not silently escalate t
 
 ### OpenWetWare
 
-Existing F-0084 flow. Dispatch `task("protocol_knowledgebase", "<topic>")`. The subagent surfaces an approval card; on approval, the parent calls `create_protocol_from_external_source`. Empty external result → reply: *"No matching OpenWetWare protocols. Want me to run Search all instead?"* and stop.
+Existing F-0084/F-0090 flow. Dispatch `task("protocol_knowledgebase", "<topic>")`. The subagent searches OpenWetWare and protocols.io and surfaces an approval card; on approval, the parent calls `create_protocol_from_external_source`. Empty external result → reply: *"No matching external protocols. Want me to run Search all instead?"* and stop.
 
 ### From scratch
 
