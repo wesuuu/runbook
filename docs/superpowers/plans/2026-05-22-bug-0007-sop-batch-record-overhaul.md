@@ -2738,20 +2738,51 @@ EOF
 
 ---
 
-## Task 15: Maximal sample renderer + baseline previews + visual XML assertions
+## Task 15: Verification-matrix sample renderer + baseline previews + visual XML assertions
+
+> **Why this task is matrix-driven, not single-sample**: The SOP template has many conditional branches — time markers, role grouping, figures, approvals, unapproved-warning watermark, critical-requirement banner, time-cycle warning, signoff variations. A single "maximal" sample exercises everything but proves nothing about the *fallback* shape of each branch when its variable is absent or false. The matrix below produces one rendered PDF per scenario, each crafted to exercise a specific subset of conditionals so visual regressions in any branch are caught locally and in the Chrome QA pass (Task 20).
+
+### Verification Matrix
+
+| # | Scenario | `is_role_based` | `time_enabled` | figures | `requires_approval` | `unapproved_warning` | `critical_requirement` | `time_warning` | Targets |
+|---|----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|---------|
+| 1 | `minimal` | F | F | none | F | F | none | none | All conditionals off — flat 3-step list, no headings, no banner, no approvals |
+| 2 | `role_based_basic` | T | F | none | F | F | none | none | Role 16pt headings; step 12pt headings; no time segment in step heading |
+| 3 | `time_only` | F | T | none | F | F | none | none | `T=…` appears in flat-list step headings; no role headings |
+| 4 | `time_and_roles` | T | T | none | F | F | none | none | Cumulative offsets across role boundaries (Role B step 1 starts where Role A step N ended) |
+| 5 | `figures_only` | F | F | mixed | F | F | none | none | Step 1: zero figures (no blank paragraph); Step 2: one figure; Step 3: two figures with monotonic numbering |
+| 6 | `approval_full` | T | F | none | T | F | none | none | Approvals table renders with sponsor, study director, QAU rows — each with signature image + attestation |
+| 7 | `approval_partial` | T | F | none | T | F | none | none | Only sponsor signed — study director/QAU rows show empty signature placeholder, no broken image |
+| 8 | `unapproved_draft` | T | F | none | T | T | none | none | `unapproved_warning=True` → DRAFT banner/watermark visible; approvals block still rendered but marked pending |
+| 9 | `critical_requirement` | T | F | none | F | F | set | none | Critical-requirement banner appears under purpose/scope, ahead of procedure body |
+| 10 | `cycle_warning` | F | T | none | F | F | none | `cycle_detected` | `time_warning` banner replaces the cumulative-offset assumption; warning copy is visible |
+| 11 | `maximal` | T | T | mixed | T | F | set | none | Everything on — mirrors `/tmp/render_maximal_sop.py` user-approved sample |
+| 12 | `edge_long_text` | T | F | none | F | F | none | none | 5 roles, 8 steps each, multi-paragraph step descriptions ≥600 chars — exercises page-break + column-width regressions |
+
+Each scenario is rendered to `docs/previews/sop_default/sop_<scenario>.{docx,pdf}` (+ per-page PNGs) and is the input to both the XML assertion suite (Task 15, Step 5), the end-to-end pytest suite (Task 19), and the Chrome browser pass (Task 20).
 
 **Files:**
 - Create: `backend/scripts/render_sample_sop.py`
+- Create: `backend/scripts/_sop_scenarios.py` (scenario registry — split out so the test layer can import it)
 - Create: `docs/previews/sop_default/README.md`
-- Create: `docs/previews/sop_default/sop_maximal_with_time.pdf` (generated)
-- Create: `docs/previews/sop_default/sop_maximal_without_time.pdf` (generated)
-- Create: `docs/previews/sop_default/sop_maximal_with_time-{1..N}.png` (generated)
-- Create: `docs/previews/sop_default/sop_maximal_without_time-{1..N}.png` (generated)
+- Create: `docs/previews/sop_default/sop_minimal.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_role_based_basic.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_time_only.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_time_and_roles.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_figures_only.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_approval_full.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_approval_partial.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_unapproved_draft.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_critical_requirement.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_cycle_warning.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_maximal.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_edge_long_text.{docx,pdf}` (generated)
+- Create: `docs/previews/sop_default/sop_<scenario>-{1..N}.png` per scenario (generated)
 - Create: `backend/tests/integration/test_sop_render_visual.py`
 
 - [ ] **Step 1: Write the failing XML-level assertion tests**
 
-Create `backend/tests/integration/test_sop_render_visual.py`:
+Create `backend/tests/integration/test_sop_render_visual.py`. The tests parametrize over `SCENARIOS` so every conditional branch is exercised structurally, then add scenario-specific assertions that lock down the *intent* of each scenario (time markers present iff time_enabled, role headings present iff is_role_based, etc.).
 
 ```python
 import re
@@ -2765,15 +2796,160 @@ REPO = Path(__file__).resolve().parents[2]
 RENDER = REPO / "scripts" / "render_sample_sop.py"
 PREVIEW_DIR = REPO.parent / "docs" / "previews" / "sop_default"
 
+# Import the registry directly so the test list stays in sync with the
+# renderer.
+from scripts._sop_scenarios import SCENARIOS  # noqa: E402
+
 
 @pytest.fixture(scope="module")
-def rendered_docx(tmp_path_factory):
+def rendered_dir(tmp_path_factory):
     out = tmp_path_factory.mktemp("sop_visual")
     subprocess.run(
-        ["python", str(RENDER), "--out-dir", str(out), "--no-pdf"],
+        ["python", str(RENDER), "--out-dir", str(out),
+         "--scenario", "all", "--no-pdf"],
         check=True,
     )
-    return out / "sop_maximal_with_time.docx"
+    return out
+
+
+def _body_xml(path: Path) -> str:
+    with zipfile.ZipFile(path) as z:
+        return z.read("word/document.xml").decode("utf-8")
+
+
+def _visible_text(xml: str) -> str:
+    return re.sub(r"<[^>]+>", "", xml)
+
+
+@pytest.fixture(scope="module")
+def rendered_docx(rendered_dir):
+    """Back-compat single-doc fixture, used by structural assertions below."""
+    return rendered_dir / "sop_maximal.docx"
+
+
+# ── Per-scenario structural assertions ───────────────────────────────
+
+@pytest.mark.parametrize("name", list(SCENARIOS.keys()))
+def test_every_scenario_renders(rendered_dir, name):
+    assert (rendered_dir / f"sop_{name}.docx").exists(), (
+        f"renderer did not emit sop_{name}.docx"
+    )
+
+
+def test_minimal_has_no_role_headings_or_time_markers(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_minimal.docx")
+    visible = _visible_text(xml)
+    # No `T=…` time marker anywhere.
+    assert not re.search(r"T=\d", visible)
+    # No 16pt-black-bold role heading (the rule we assert elsewhere for
+    # role-based scenarios) — but step 12pt-bold headings are still allowed.
+    role_pat = re.compile(
+        r'<w:rPr>(?=.*<w:b/>)(?=.*<w:sz w:val="32"/>)'
+        r'(?=.*<w:color w:val="000000"/>).*?</w:rPr>',
+        re.DOTALL,
+    )
+    assert not role_pat.search(xml)
+
+
+def test_role_based_basic_has_role_headings_but_no_time(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_role_based_basic.docx")
+    visible = _visible_text(xml)
+    assert "Upstream Operator" in visible
+    assert "QC Analyst" in visible
+    assert not re.search(r"T=\d", visible)
+
+
+def test_time_only_has_time_markers_in_step_headings(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_time_only.docx")
+    visible = _visible_text(xml)
+    assert "T=0" in visible
+    assert "T=30m" in visible
+
+
+def test_time_and_roles_offsets_are_cumulative_across_roles(rendered_dir):
+    """Role B step 1 should start where Role A step N ended (T=45m), not T=0."""
+    xml = _body_xml(rendered_dir / "sop_time_and_roles.docx")
+    visible = _visible_text(xml)
+    # Role A: T=0 + T=30m. Role B: T=45m + T=55m.
+    for marker in ("T=0", "T=30m", "T=45m", "T=55m"):
+        assert marker in visible, f"missing time marker {marker!r}"
+    # Critical: Role B does NOT restart at T=0 — only one T=0 in the doc.
+    assert visible.count("T=0") == 1
+
+
+def test_figures_only_has_monotonic_figure_numbers_skipping_step_with_none(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_figures_only.docx")
+    fig_nums = [int(m.group(1)) for m in re.finditer(r"Figure (\d+)\.", xml)]
+    # Step 1: 0 figures. Step 2: figure 1. Step 3: figures 2 and 3.
+    assert fig_nums == [1, 2, 3]
+    # No double-blank paragraph for the figureless step.
+    assert "<w:p/><w:p/>" not in xml
+
+
+def test_approval_full_has_three_signature_drawings(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_approval_full.docx")
+    # Three signature images plus zero figure-block images.
+    assert xml.count("<w:drawing") >= 3
+
+
+def test_approval_partial_has_one_signature_drawing(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_approval_partial.docx")
+    assert xml.count("<w:drawing") == 1
+    visible = _visible_text(xml)
+    # The other rows are still present (name lines), but no broken
+    # `[InlineImage:]` placeholder text leaks through.
+    assert "InlineImage" not in visible
+
+
+def test_unapproved_draft_emits_draft_banner(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_unapproved_draft.docx")
+    visible = _visible_text(xml).upper()
+    # The template can express the warning as "DRAFT" or "UNAPPROVED" —
+    # accept either, but require one.
+    assert "DRAFT" in visible or "UNAPPROVED" in visible
+
+
+def test_critical_requirement_banner_appears_above_procedure(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_critical_requirement.docx")
+    visible = _visible_text(xml)
+    crit_at = visible.find("aseptic technique")
+    proc_at = visible.find("Buffer Prep")  # first procedural step
+    assert 0 < crit_at < proc_at, (
+        "critical_requirement banner should precede the procedure body"
+    )
+
+
+def test_cycle_warning_renders_warning_copy_and_no_offsets(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_cycle_warning.docx")
+    visible = _visible_text(xml).lower()
+    assert "cycle" in visible  # warning copy mentions the detected cycle
+    # No T=… markers in step headings — the renderer should suppress them
+    # when a cycle is detected.
+    assert not re.search(r"T=\d", visible)
+
+
+def test_maximal_contains_all_features(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_maximal.docx")
+    visible = _visible_text(xml)
+    # Roles
+    assert "Upstream Operator" in visible and "QC Analyst" in visible
+    # Time
+    assert "T=0" in visible
+    # Figures (2 inline + 3 signatures = 5+ drawings)
+    assert xml.count("<w:drawing") >= 5
+    # Critical requirement
+    assert "aseptic" in visible
+    # Approvals
+    assert "Dana Park" in visible
+
+
+def test_edge_long_text_paginates_without_text_overflow(rendered_dir):
+    xml = _body_xml(rendered_dir / "sop_edge_long_text.docx")
+    # 5 roles × 8 steps = 40 step headings. Confirm we got them all
+    # (i.e. nothing was dropped by an off-by-one).
+    visible = _visible_text(xml)
+    step_count = sum(1 for _ in re.finditer(r"\bStep \d+\.\d+\b", visible))
+    assert step_count == 40
 
 
 def _body_xml(path: Path) -> str:
@@ -2857,53 +3033,437 @@ def test_baselines_checked_in():
 Run: `pytest backend/tests/integration/test_sop_render_visual.py -v`
 Expected: FileNotFoundError for the render script.
 
-- [ ] **Step 3: Author the sample renderer**
+- [ ] **Step 3: Author the scenario registry**
 
-Create `backend/scripts/render_sample_sop.py`. Use the derisked source at `/tmp/render_maximal_sop.py` as the body — it is the exact script that produced the user-approved preview. Required changes from the derisked version:
-
-1. Accept `--out-dir <path>` and `--no-pdf` CLI flags.
-2. Import `build_context()` and `render_to_docx()` from `app.services.protocols.template_engine` so the renderer exercises real code, not a hand-built context.
-3. Build a `Protocol`-like object (or use a SQLAlchemy in-memory session) with two roles, three steps each, two figures, three sign-offs, `timeEnabled=True` for one variant and `False` for the other.
-4. On `--no-pdf`, skip the LibreOffice conversion (keeps the test fast).
-5. Default `--out-dir` to `docs/previews/sop_default/`.
+Create `backend/scripts/_sop_scenarios.py`. This module exposes `SCENARIOS: dict[str, Callable[[DocxTemplate], dict]]` where each value returns the context dict for that scenario. Keeping it separate from the CLI lets `test_sop_render_visual.py` (Task 15 step 1) and `test_sop_render_end_to_end.py` (Task 19) import the same scenario list and parametrize across it — single source of truth for what the matrix is.
 
 ```python
-"""Render a maximal SOP sample for visual baselines + XML assertions.
+"""Scenario registry for the SOP verification matrix.
 
-Outputs to docs/previews/sop_default/ by default. Two variants:
-sop_maximal_with_time.{docx,pdf} and sop_maximal_without_time.{docx,pdf}.
-PDFs and per-page PNGs are committed (LFS-tracked) and serve as the
-visual specification of what the SOP should look like.
+Each scenario builder receives the docxtpl `DocxTemplate` (so it can attach
+`InlineImage`s) and returns a fully-formed context dict ready for
+`render_to_docx()`. Adding a new branch in the template? Add a scenario
+here that exercises it.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Callable
+
+from docx.shared import Inches, Mm
+from docxtpl import DocxTemplate, InlineImage
+
+# Asset paths — generated lazily by _ensure_assets(out_dir).
+ASSET_DIR_ENV = "SOP_PREVIEW_ASSET_DIR"
+
+
+def _ensure_assets(asset_dir: Path) -> dict[str, Path]:
+    """Materialize the figure/signature PNGs the scenarios reference."""
+    # Reuse the make_figure_image / make_signature_image helpers from
+    # /tmp/render_maximal_sop.py — copy them verbatim into this file.
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    paths = {
+        "fig_vessel": asset_dir / "fig_vessel.png",
+        "fig_hemo": asset_dir / "fig_hemo.png",
+        "sig_sponsor": asset_dir / "sig_sponsor.png",
+        "sig_sd": asset_dir / "sig_sd.png",
+        "sig_qau": asset_dir / "sig_qau.png",
+    }
+    if not paths["fig_vessel"].exists():
+        make_figure_image(paths["fig_vessel"], "Fig: Vessel A", (180, 210, 240))
+        make_figure_image(paths["fig_hemo"], "Fig: Hemocytometer", (220, 230, 200))
+        make_signature_image(paths["sig_sponsor"], "Dana Park")
+        make_signature_image(paths["sig_sd"], "Dr. Lin Yao")
+        make_signature_image(paths["sig_qau"], "Marcus Reid")
+    return paths
+
+
+def _base_metadata() -> dict:
+    """Constant metadata across scenarios — only the conditional fields vary."""
+    return {
+        "organization_name": "Acme Bio",
+        "project_name": "PD-2026-A — Cell Seeding Optimization",
+        "created_at": "2026-05-22",
+        "protocol_name": "Cell Seeding & QC v2.1",
+        "doc_number": "SOP-0042",
+        "version_number": "2.1",
+        "effective_date": "2026-06-01",
+        "purpose": "Reproducible cell seeding and QC procedure.",
+        "scope": "Applies to all CHO-K1 cultures in the PD lab.",
+        "figures": [],
+        "non_image_attachments": [],
+        "notes": [],
+    }
+
+
+def _step(name, description, *, duration_min=15, time_offset="", figures=None):
+    return {
+        "name": name,
+        "description": description,
+        "duration_min": duration_min,
+        "time_offset": time_offset,
+        "figures": figures or [],
+        "params": {},
+        "value_display": "",
+        "initials": "",
+        "notes_display": "",
+        "role_name": "",
+    }
+
+
+# ── Scenario builders ────────────────────────────────────────────────
+
+def build_minimal(tpl: DocxTemplate) -> dict:
+    """All conditionals off — flat 3-step list."""
+    return {
+        **_base_metadata(),
+        "unapproved_warning": False,
+        "critical_requirement": "",
+        "is_time_based": False,
+        "is_role_based": False,
+        "time_enabled": False,
+        "time_warning": "",
+        "time_points": [],
+        "roles": [],
+        "steps": [
+            _step("Prepare Reagents", "Combine reagents A and B per SOP-001."),
+            _step("Incubate", "Incubate at 37C for 30 minutes."),
+            _step("Record Result", "Document outcome in the LIMS."),
+        ],
+        "requires_approval": False,
+        "protocol_approvals": None,
+    }
+
+
+def build_role_based_basic(tpl: DocxTemplate) -> dict:
+    """2 roles, no time, no figures."""
+    ctx = build_minimal(tpl)
+    ctx["is_role_based"] = True
+    ctx["steps"] = []
+    ctx["roles"] = [
+        {
+            "name": "Upstream Operator",
+            "process_name": "Upstream Operator — Prep",
+            "steps": [
+                _step("Buffer Prep", "Prepare buffer per recipe."),
+                _step("Cell Thawing", "Thaw cryovial at 37C."),
+            ],
+        },
+        {
+            "name": "QC Analyst",
+            "process_name": "QC Analyst — Assay",
+            "steps": [
+                _step("Sample", "Withdraw 1 mL of culture."),
+                _step("Stain", "Apply trypan blue 1:1."),
+            ],
+        },
+    ]
+    return ctx
+
+
+def build_time_only(tpl: DocxTemplate) -> dict:
+    """Flat list + time_enabled. Exercises step-heading T=... suffix."""
+    ctx = build_minimal(tpl)
+    ctx["time_enabled"] = True
+    ctx["steps"] = [
+        _step("Prep", "Step body.", duration_min=30, time_offset="T=0"),
+        _step("Incubate", "Step body.", duration_min=60, time_offset="T=30m"),
+        _step("Record", "Step body.", duration_min=10, time_offset="T=1h 30m"),
+    ]
+    return ctx
+
+
+def build_time_and_roles(tpl: DocxTemplate) -> dict:
+    """Roles + time. Critical check: offsets are cumulative ACROSS role boundaries."""
+    ctx = build_role_based_basic(tpl)
+    ctx["time_enabled"] = True
+    # Role A: T=0 (30m) → T=30m (15m) = ends at T=45m
+    ctx["roles"][0]["steps"] = [
+        _step("Buffer Prep", "...", duration_min=30, time_offset="T=0"),
+        _step("Cell Thawing", "...", duration_min=15, time_offset="T=30m"),
+    ]
+    # Role B: starts where Role A ended.
+    ctx["roles"][1]["steps"] = [
+        _step("Sample", "...", duration_min=10, time_offset="T=45m"),
+        _step("Stain", "...", duration_min=20, time_offset="T=55m"),
+    ]
+    return ctx
+
+
+def build_figures_only(tpl: DocxTemplate) -> dict:
+    """Flat list, per-step figure variety: 0 / 1 / 2 figures."""
+    assets = _ensure_assets(Path(_assets_dir()))
+    fig1 = {
+        "number": 1,
+        "caption": "Vessel A — pre-stir configuration.",
+        "image": InlineImage(tpl, str(assets["fig_vessel"]), width=Inches(5.5)),
+        "image_ok": True,
+    }
+    fig2 = {
+        "number": 2,
+        "caption": "Hemocytometer field at 10x.",
+        "image": InlineImage(tpl, str(assets["fig_hemo"]), width=Inches(5.5)),
+        "image_ok": True,
+    }
+    fig3 = {
+        "number": 3,
+        "caption": "Hemocytometer reference grid.",
+        "image": InlineImage(tpl, str(assets["fig_hemo"]), width=Inches(5.5)),
+        "image_ok": True,
+    }
+    ctx = build_minimal(tpl)
+    ctx["steps"] = [
+        _step("Prep", "Step body — no figures attached."),
+        _step("Stain", "Step body — one figure attached.", figures=[fig1]),
+        _step("Count", "Step body — two figures attached.", figures=[fig2, fig3]),
+    ]
+    return ctx
+
+
+def build_approval_full(tpl: DocxTemplate) -> dict:
+    """All 3 approvals signed with signature images."""
+    assets = _ensure_assets(Path(_assets_dir()))
+    ctx = build_role_based_basic(tpl)
+    ctx["requires_approval"] = True
+    ctx["protocol_approvals"] = {
+        "sponsor": {
+            "name": "Dana Park",
+            "email": "dana@acme.bio",
+            "signed_at": "2026-05-19 14:22",
+            "attestation": "I attest the study director and QAU approved per 21 CFR §58.10.",
+            "signature_image": InlineImage(tpl, str(assets["sig_sponsor"]), width=Mm(45)),
+        },
+        "study_director": {
+            "name": "Dr. Lin Yao",
+            "email": "lin@acme.bio",
+            "signed_at": "2026-05-20 09:05",
+            "attestation": "Reviewed and conforms to 21 CFR §58.33.",
+            "signature_image": InlineImage(tpl, str(assets["sig_sd"]), width=Mm(45)),
+        },
+        "qau": {
+            "name": "Marcus Reid",
+            "email": "marcus@acme.bio",
+            "signed_at": "2026-05-21 16:40",
+            "attestation": "Independent QA review per 21 CFR §58.35.",
+            "signature_image": InlineImage(tpl, str(assets["sig_qau"]), width=Mm(45)),
+        },
+    }
+    return ctx
+
+
+def build_approval_partial(tpl: DocxTemplate) -> dict:
+    """Only sponsor signed. study_director + qau are present with `signed_at=None`."""
+    ctx = build_approval_full(tpl)
+    ctx["protocol_approvals"]["study_director"] = {
+        "name": "Dr. Lin Yao",
+        "email": "lin@acme.bio",
+        "signed_at": None,
+        "attestation": None,
+        "signature_image": None,
+    }
+    ctx["protocol_approvals"]["qau"] = {
+        "name": "Marcus Reid",
+        "email": "marcus@acme.bio",
+        "signed_at": None,
+        "attestation": None,
+        "signature_image": None,
+    }
+    return ctx
+
+
+def build_unapproved_draft(tpl: DocxTemplate) -> dict:
+    """unapproved_warning=True → DRAFT watermark/banner visible."""
+    ctx = build_approval_full(tpl)
+    ctx["unapproved_warning"] = True
+    # Strip the signed_at to make the draft state coherent.
+    for role in ("sponsor", "study_director", "qau"):
+        ctx["protocol_approvals"][role]["signed_at"] = None
+        ctx["protocol_approvals"][role]["signature_image"] = None
+    return ctx
+
+
+def build_critical_requirement(tpl: DocxTemplate) -> dict:
+    """critical_requirement banner exercise — under purpose/scope, above procedure body."""
+    ctx = build_role_based_basic(tpl)
+    ctx["critical_requirement"] = (
+        "Maintain aseptic technique throughout. Any deviation must be logged "
+        "and reviewed by the QA Unit per 21 CFR §58.81(b)."
+    )
+    return ctx
+
+
+def build_cycle_warning(tpl: DocxTemplate) -> dict:
+    """time_enabled + a graph with a cycle → renderer sets time_warning='cycle_detected'."""
+    ctx = build_time_only(tpl)
+    ctx["time_warning"] = "cycle_detected"
+    # Step time_offsets should be empty when a cycle is detected (the renderer
+    # falls back to author-specified offsets only).
+    for step in ctx["steps"]:
+        step["time_offset"] = ""
+    return ctx
+
+
+def build_maximal(tpl: DocxTemplate) -> dict:
+    """Everything on — the original user-approved sample."""
+    ctx = build_time_and_roles(tpl)
+    assets = _ensure_assets(Path(_assets_dir()))
+    fig1 = {
+        "number": 1,
+        "caption": "Vessel A — pre-stir configuration.",
+        "image": InlineImage(tpl, str(assets["fig_vessel"]), width=Inches(5.5)),
+        "image_ok": True,
+    }
+    fig2 = {
+        "number": 2,
+        "caption": "Hemocytometer field at 10x.",
+        "image": InlineImage(tpl, str(assets["fig_hemo"]), width=Inches(5.5)),
+        "image_ok": True,
+    }
+    ctx["roles"][0]["steps"][0]["figures"] = [fig1]
+    ctx["roles"][1]["steps"][1]["figures"] = [fig2]
+    ctx["critical_requirement"] = (
+        "Maintain aseptic technique throughout. Any deviation must be logged."
+    )
+    full = build_approval_full(tpl)
+    ctx["requires_approval"] = True
+    ctx["protocol_approvals"] = full["protocol_approvals"]
+    return ctx
+
+
+def build_edge_long_text(tpl: DocxTemplate) -> dict:
+    """5 roles, 8 steps each, ≥600-char descriptions. Page-break regression target."""
+    long = (
+        "This step description deliberately runs long to exercise the "
+        "description column's text-wrap and the page-break behavior between "
+        "step blocks. " * 6
+    )
+    ctx = build_role_based_basic(tpl)
+    ctx["roles"] = [
+        {
+            "name": f"Role {chr(65 + i)}",
+            "process_name": f"Role {chr(65 + i)} — Process",
+            "steps": [
+                _step(f"Step {i+1}.{j+1}", long, duration_min=10)
+                for j in range(8)
+            ],
+        }
+        for i in range(5)
+    ]
+    return ctx
+
+
+SCENARIOS: dict[str, Callable[[DocxTemplate], dict]] = {
+    "minimal": build_minimal,
+    "role_based_basic": build_role_based_basic,
+    "time_only": build_time_only,
+    "time_and_roles": build_time_and_roles,
+    "figures_only": build_figures_only,
+    "approval_full": build_approval_full,
+    "approval_partial": build_approval_partial,
+    "unapproved_draft": build_unapproved_draft,
+    "critical_requirement": build_critical_requirement,
+    "cycle_warning": build_cycle_warning,
+    "maximal": build_maximal,
+    "edge_long_text": build_edge_long_text,
+}
+
+
+def _assets_dir() -> str:
+    import os
+    return os.environ.get(ASSET_DIR_ENV, "/tmp/sop_preview_assets")
+
+
+# Copy make_figure_image and make_signature_image verbatim from
+# /tmp/render_maximal_sop.py.
+```
+
+- [ ] **Step 3b: Author the renderer CLI**
+
+Create `backend/scripts/render_sample_sop.py`. The CLI iterates `SCENARIOS`, renders each through the **real** `build_context()` + `render_to_docx()` pipeline (not docxtpl directly), and emits the `.docx` + `.pdf` (+ PNGs) to `--out-dir`. Required behavior:
+
+1. CLI flags: `--out-dir <path>` (default `docs/previews/sop_default/`), `--scenario <name|all>` (default `all`), `--no-pdf` (skip LibreOffice).
+2. Import `SCENARIOS` from `_sop_scenarios.py`.
+3. For each scenario name, construct a `DocxTemplate`, build the context, call `render_to_docx()`, save to `sop_<name>.docx`.
+4. If `not --no-pdf`: `libreoffice --headless --convert-to pdf --outdir <out_dir> <docx>`.
+5. If `pdftoppm` is on PATH and pdf produced: `pdftoppm -r 110 -png <pdf> <out_dir>/sop_<name>` → `sop_<name>-1.png`, etc.
+6. Print one line per scenario to stdout so a CI log clearly shows which scenarios ran.
+
+```python
+"""Render the SOP verification-matrix baselines.
+
+For each scenario in scripts._sop_scenarios.SCENARIOS, render
+docs/previews/sop_default/sop_<name>.{docx,pdf} (+ per-page PNGs).
+PDFs and PNGs are committed (LFS-tracked) and serve as the visual
+specification of how each conditional template branch must render.
 """
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-# (Adapt the derisked /tmp/render_maximal_sop.py body here, using the real
-# template_engine.build_context() and template_engine.render_to_docx()
-# instead of docxtpl directly.)
+from docxtpl import DocxTemplate
+
+# Real render pipeline — not docxtpl directly, so the script exercises
+# the same code path as production.
+from app.services.protocols.template_engine import render_to_docx
+from scripts._sop_scenarios import SCENARIOS
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = REPO.parent / "docs" / "previews" / "sop_default"
+TEMPLATE_PATH = (
+    REPO / "app" / "services" / "documents" / "templates" / "sop_default.docx"
+)
+
+
+def _render_scenario(name: str, out_dir: Path, no_pdf: bool) -> None:
+    tpl = DocxTemplate(str(TEMPLATE_PATH))
+    ctx = SCENARIOS[name](tpl)
+    docx_path = out_dir / f"sop_{name}.docx"
+    render_to_docx(template_path=TEMPLATE_PATH, context=ctx, out_path=docx_path)
+    print(f"[render] {name} -> {docx_path.name}")
+
+    if no_pdf:
+        return
+
+    subprocess.run(
+        ["libreoffice", "--headless", "--convert-to", "pdf",
+         "--outdir", str(out_dir), str(docx_path)],
+        check=True, capture_output=True,
+    )
+    pdf_path = docx_path.with_suffix(".pdf")
+    print(f"[pdf]    {name} -> {pdf_path.name}")
+
+    if shutil.which("pdftoppm"):
+        subprocess.run(
+            ["pdftoppm", "-r", "110", "-png",
+             str(pdf_path), str(out_dir / f"sop_{name}")],
+            check=True, capture_output=True,
+        )
+        print(f"[png]    {name} -> sop_{name}-*.png")
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT)
+    p.add_argument("--scenario", default="all",
+                   help="Scenario name from SCENARIOS, or 'all'")
     p.add_argument("--no-pdf", action="store_true")
     args = p.parse_args(argv)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    for time_enabled in (True, False):
-        # 1. Build the maximal-sample context dict (see derisked source).
-        # 2. Pass it through render_to_docx().
-        # 3. Save the .docx under args.out_dir.
-        # 4. If not --no-pdf, libreoffice --headless --convert-to pdf …
-        # 5. If pdf produced and pdftoppm available, render PNGs at -r 110.
-        ...
+    if args.scenario == "all":
+        names = list(SCENARIOS.keys())
+    else:
+        if args.scenario not in SCENARIOS:
+            print(f"unknown scenario: {args.scenario}", file=sys.stderr)
+            return 2
+        names = [args.scenario]
 
+    for name in names:
+        _render_scenario(name, args.out_dir, args.no_pdf)
     return 0
 
 
@@ -2915,8 +3475,22 @@ if __name__ == "__main__":
 
 ```bash
 cd backend
-python scripts/render_sample_sop.py
-# (writes to docs/previews/sop_default/ — PDFs and PNGs)
+python scripts/render_sample_sop.py --scenario all
+# (writes one .docx + .pdf + per-page PNGs per scenario to
+#  docs/previews/sop_default/, ~12 scenarios x ~3 pages = ~36 PNGs)
+```
+
+Quickly skim each PDF to confirm the *intent* of its scenario is visible:
+
+```bash
+ls docs/previews/sop_default/*.pdf
+# sop_minimal.pdf … sop_maximal.pdf … sop_edge_long_text.pdf
+
+# Open them in a viewer or convert to a quick contact sheet:
+montage docs/previews/sop_default/sop_*-1.png \
+        -tile 4x3 -geometry 200x \
+        /tmp/sop_matrix_contact_sheet.png && \
+        xdg-open /tmp/sop_matrix_contact_sheet.png
 ```
 
 Add the README:
@@ -2924,43 +3498,72 @@ Add the README:
 Create `docs/previews/sop_default/README.md`:
 
 ```markdown
-# SOP Maximal-Sample Baselines
+# SOP Verification-Matrix Baselines
 
 These PDFs and per-page PNGs are the **visual specification** of how the
-SOP renders. They are regenerated by `backend/scripts/render_sample_sop.py`
+SOP renders. Each file corresponds to one scenario in
+`backend/scripts/_sop_scenarios.py`. The matrix exercises every conditional
+branch of the template — time markers, role grouping, figures, approvals
+(full / partial), unapproved-draft warning, critical-requirement banner,
+time-cycle warning, and long-text page-break behavior.
+
+| File | Conditional branch exercised |
+|------|------------------------------|
+| sop_minimal.pdf | All conditionals off |
+| sop_role_based_basic.pdf | is_role_based only |
+| sop_time_only.pdf | time_enabled only |
+| sop_time_and_roles.pdf | Cumulative offsets across role boundaries |
+| sop_figures_only.pdf | Per-step figures: 0 / 1 / 2 mix |
+| sop_approval_full.pdf | All 3 approvals signed |
+| sop_approval_partial.pdf | Only sponsor signed |
+| sop_unapproved_draft.pdf | unapproved_warning watermark |
+| sop_critical_requirement.pdf | critical_requirement banner |
+| sop_cycle_warning.pdf | time_warning='cycle_detected' |
+| sop_maximal.pdf | Everything on (user-approved sample) |
+| sop_edge_long_text.pdf | 5 roles x 8 steps, ≥600-char descriptions |
+
+They are regenerated by `backend/scripts/render_sample_sop.py --scenario all`
 and checked in via git LFS. Any change touching:
 
 - `backend/app/services/protocols/template_engine.py`
 - `backend/app/services/data/graph_processing.py`
 - the `.docx` templates under `backend/app/services/documents/templates/`
 - the rewrite script `backend/scripts/rewrite_sop_step_tables.py`
+- `backend/scripts/_sop_scenarios.py`
 
-MUST be followed by `python backend/scripts/render_sample_sop.py` and a
-commit of the regenerated previews alongside the code change. PR review
-naturally surfaces an image diff and any unintended layout regression
-shows up side-by-side in the review UI.
+MUST be followed by `python backend/scripts/render_sample_sop.py --scenario all`
+and a commit of the regenerated previews alongside the code change. PR review
+naturally surfaces an image diff and any unintended layout regression shows
+up side-by-side in the review UI. Per-scenario PNG diffs are the fastest way
+to spot a branch-specific regression.
 ```
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `pytest backend/tests/integration/test_sop_render_visual.py -v`
-Expected: PASS (8 cases).
+Expected: PASS — 12 `test_every_scenario_renders[…]` cases + ~12 per-scenario assertions.
 
 - [ ] **Step 6: Commit script + baselines + tests together**
 
 ```bash
 git add backend/scripts/render_sample_sop.py \
+        backend/scripts/_sop_scenarios.py \
         backend/tests/integration/test_sop_render_visual.py \
         docs/previews/sop_default/
 git commit -m "$(cat <<'EOF'
-feat(BUG-0007): maximal SOP sample + baseline previews + XML asserts
+feat(BUG-0007): verification-matrix SOP sample + baseline previews + XML asserts
 
-scripts/render_sample_sop.py drives the real build_context() +
-render_to_docx() path, emitting two variants (with_time, without_time) to
-docs/previews/sop_default/. PDFs + per-page PNGs are committed via LFS and
-serve as the visual spec. Pytest layer asserts structural attributes that
-a PNG diff would miss (run-prop XML, no <w:tbl> in body, monotonic figure
-numbers, 10pt caption, no double-spaces in headings).
+scripts/_sop_scenarios.py defines 12 scenarios each targeting a specific
+conditional template branch (minimal / role_based_basic / time_only /
+time_and_roles / figures_only / approval_full / approval_partial /
+unapproved_draft / critical_requirement / cycle_warning / maximal /
+edge_long_text). scripts/render_sample_sop.py iterates them through the
+real build_context() + render_to_docx() pipeline. PDFs + per-page PNGs
+are committed via LFS and serve as the visual spec. The pytest layer
+parametrizes structural assertions across every scenario plus
+scenario-specific intent checks (cumulative time offsets across role
+boundaries, figure-numbering skipping empty steps, draft watermark,
+critical-requirement banner ordering, cycle-warning suppresses offsets).
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -3566,99 +4169,278 @@ EOF
 
 ---
 
-## Task 19: End-to-end render smoke test + manual verification
+## Task 19: End-to-end render smoke test (matrix-parametrized) + manual verification
+
+> **Difference from Task 15:** Task 15 invokes the *renderer script* directly with synthetic `dict` contexts. Task 19 walks a real `Protocol` row through the live FastAPI endpoint — it proves the same shape comes out when the input is a real DB graph, not a hand-built dict. We parametrize across the same scenario list so any branch that the script exercises is also covered end-to-end.
 
 **Files:**
 - Test: `backend/tests/integration/test_sop_render_end_to_end.py` (new)
+- Test: `backend/tests/conftest.py` (extend fixtures)
 
-- [ ] **Step 1: Write the end-to-end test**
+- [ ] **Step 1: Write the matrix-parametrized end-to-end test**
 
 Create `backend/tests/integration/test_sop_render_end_to_end.py`:
 
 ```python
+"""End-to-end SOP render via the FastAPI endpoint, one assertion-set per
+verification-matrix scenario. The scenarios match scripts._sop_scenarios.SCENARIOS
+exactly — Task 15 exercises the renderer with synthetic context dicts; this
+file exercises the same surface area through a real Protocol row + the
+HTTP endpoint."""
+
+import re
 import zipfile
+from pathlib import Path
 
 import pytest
 
+# Scenario builders that materialize a Protocol row + linked rows
+# matching the named scenario from the verification matrix.
+from tests.factories.sop_scenarios import build_protocol_for_scenario
+
+SCENARIO_NAMES = [
+    "minimal",
+    "role_based_basic",
+    "time_only",
+    "time_and_roles",
+    "figures_only",
+    "approval_full",
+    "approval_partial",
+    "unapproved_draft",
+    "critical_requirement",
+    "cycle_warning",
+    "maximal",
+    "edge_long_text",
+]
+
+
+def _docx_text(docx_bytes: bytes) -> str:
+    """Extract visible text from a docx blob for substring checks."""
+    import io
+    with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    return re.sub(r"<[^>]+>", "", xml)
+
+
+def _docx_drawing_count(docx_bytes: bytes) -> int:
+    import io
+    with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    return xml.count("<w:drawing")
+
 
 @pytest.mark.asyncio
-async def test_render_with_time_and_figures(
-    client, auth_user, protocol_with_two_roles_and_figures
-):
-    r = await client.get(
-        f"/protocols/{protocol_with_two_roles_and_figures.id}/sop.pdf"
+@pytest.mark.parametrize("scenario", SCENARIO_NAMES)
+async def test_endpoint_renders_scenario(client, auth_user, db, scenario):
+    """Every scenario returns 200 from the docx endpoint."""
+    protocol = await build_protocol_for_scenario(db, auth_user, scenario)
+    r = await client.get(f"/protocols/{protocol.id}/sop.docx")
+    assert r.status_code == 200, f"{scenario} returned {r.status_code}: {r.text}"
+    assert r.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml"
     )
-    assert r.status_code == 200
-    # Save to a tmp file and parse the docx variant for assertions.
-    # (or call the docx endpoint directly if it exists)
 
 
 @pytest.mark.asyncio
-async def test_render_with_time_disabled_omits_time_segment(
-    client, auth_user, protocol_with_two_roles_and_figures
-):
-    # Update graph timeEnabled=False, re-render
-    ...
+async def test_minimal_has_no_time_no_roles(client, auth_user, db):
+    p = await build_protocol_for_scenario(db, auth_user, "minimal")
+    text = _docx_text((await client.get(f"/protocols/{p.id}/sop.docx")).content)
+    assert not re.search(r"T=\d", text)
+    # No role process_name strings.
+    assert "Upstream Operator" not in text
+    assert "QC Analyst" not in text
 
 
 @pytest.mark.asyncio
-async def test_render_with_no_figures_no_blank_paragraph(
-    client, auth_user, protocol_no_attachments
+async def test_time_only_emits_time_offsets_in_step_headings(
+    client, auth_user, db
 ):
-    ...
+    p = await build_protocol_for_scenario(db, auth_user, "time_only")
+    text = _docx_text((await client.get(f"/protocols/{p.id}/sop.docx")).content)
+    assert "T=0" in text
+    assert "T=30m" in text
 
 
 @pytest.mark.asyncio
-async def test_figure_numbers_global_monotonic_across_roles(
-    client, auth_user, protocol_with_two_roles_and_figures
+async def test_time_and_roles_offsets_cumulative_across_role_boundary(
+    client, auth_user, db
 ):
-    """Role A has 2 figures, Role B has 1. Rendered text must show Figures
-    1, 2, 3 — never restart at 1 in role B."""
-    ...
+    """Critical: Role B's first step starts where Role A's last step ended."""
+    p = await build_protocol_for_scenario(db, auth_user, "time_and_roles")
+    text = _docx_text((await client.get(f"/protocols/{p.id}/sop.docx")).content)
+    assert "T=0" in text and "T=45m" in text
+    # Only one T=0 — Role B does not restart the clock.
+    assert text.count("T=0") == 1
+
+
+@pytest.mark.asyncio
+async def test_figures_only_figure_numbering_skips_empty_step(
+    client, auth_user, db
+):
+    """Step 1 has 0 figures, step 2 has 1, step 3 has 2. Numbers must be 1,2,3."""
+    p = await build_protocol_for_scenario(db, auth_user, "figures_only")
+    body = (await client.get(f"/protocols/{p.id}/sop.docx")).content
+    text = _docx_text(body)
+    fig_nums = [int(m.group(1)) for m in re.finditer(r"Figure (\d+)\.", text)]
+    assert fig_nums == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_approval_full_renders_three_signature_images(
+    client, auth_user, db
+):
+    p = await build_protocol_for_scenario(db, auth_user, "approval_full")
+    body = (await client.get(f"/protocols/{p.id}/sop.docx")).content
+    assert _docx_drawing_count(body) >= 3
+
+
+@pytest.mark.asyncio
+async def test_approval_partial_only_signed_rows_show_image(
+    client, auth_user, db
+):
+    p = await build_protocol_for_scenario(db, auth_user, "approval_partial")
+    body = (await client.get(f"/protocols/{p.id}/sop.docx")).content
+    text = _docx_text(body)
+    # Sponsor signed, others not — no leaked `[InlineImage:]` placeholder.
+    assert "InlineImage" not in text
+    # All three names still appear in the approval block.
+    for name in ("Dana Park", "Dr. Lin Yao", "Marcus Reid"):
+        assert name in text
+
+
+@pytest.mark.asyncio
+async def test_unapproved_draft_shows_warning(client, auth_user, db):
+    p = await build_protocol_for_scenario(db, auth_user, "unapproved_draft")
+    text = _docx_text((await client.get(f"/protocols/{p.id}/sop.docx")).content)
+    upper = text.upper()
+    assert "DRAFT" in upper or "UNAPPROVED" in upper
+
+
+@pytest.mark.asyncio
+async def test_critical_requirement_appears_above_procedure(
+    client, auth_user, db
+):
+    p = await build_protocol_for_scenario(db, auth_user, "critical_requirement")
+    text = _docx_text((await client.get(f"/protocols/{p.id}/sop.docx")).content)
+    crit_at = text.find("aseptic technique")
+    proc_at = text.find("Buffer Prep")
+    assert 0 < crit_at < proc_at
+
+
+@pytest.mark.asyncio
+async def test_cycle_warning_suppresses_time_offsets(client, auth_user, db):
+    p = await build_protocol_for_scenario(db, auth_user, "cycle_warning")
+    text = _docx_text((await client.get(f"/protocols/{p.id}/sop.docx")).content)
+    assert "cycle" in text.lower()
+    assert not re.search(r"T=\d", text)
+
+
+@pytest.mark.asyncio
+async def test_maximal_has_all_features(client, auth_user, db):
+    p = await build_protocol_for_scenario(db, auth_user, "maximal")
+    body = (await client.get(f"/protocols/{p.id}/sop.docx")).content
+    text = _docx_text(body)
+    assert "Upstream Operator" in text
+    assert "T=0" in text
+    assert _docx_drawing_count(body) >= 5
+    assert "aseptic" in text
+
+
+@pytest.mark.asyncio
+async def test_edge_long_text_does_not_lose_steps(client, auth_user, db):
+    p = await build_protocol_for_scenario(db, auth_user, "edge_long_text")
+    text = _docx_text((await client.get(f"/protocols/{p.id}/sop.docx")).content)
+    step_count = sum(1 for _ in re.finditer(r"\bStep \d+\.\d+\b", text))
+    assert step_count == 40
 
 
 @pytest.mark.asyncio
 async def test_caption_with_jinja_chars_rendered_literally(
     client, auth_user, factory
 ):
+    """Cross-cutting safety check: an attacker-controlled caption with
+    Jinja-looking syntax must NOT execute as a directive."""
     p = await factory.protocol()
     await factory.protocol_attachment(
         protocol_id=p.id, caption="{{ pwn }} {% if %}",
     )
-    r = await client.get(f"/protocols/{p.id}/sop.pdf")
+    r = await client.get(f"/protocols/{p.id}/sop.docx")
     assert r.status_code == 200
-    # The caption appears in the PDF text as the literal string,
-    # not interpreted as a Jinja directive.
-    ...
+    text = _docx_text(r.content)
+    assert "{{ pwn }}" in text
+    assert "{% if %}" in text
 ```
 
-Fill in the bodies based on the existing test fixtures in `conftest.py`. The point of this task is the end-to-end pipeline check — render really happens, figures really embed, time markers really appear.
+- [ ] **Step 2: Implement the `build_protocol_for_scenario` fixture**
 
-- [ ] **Step 2: Implement fixtures as needed**
+Create `backend/tests/factories/sop_scenarios.py`. The factory takes a scenario name and returns a `Protocol` row (with linked `unit_op_instances`, role swimlane nodes, `protocol_attachments`, `protocol_approvals`) shaped to match the scenario from the matrix. Keep the scenario shapes in **lockstep** with `scripts/_sop_scenarios.py` — every conditional that the renderer script exercises with a synthetic dict should also exist in a real row here.
 
-Add `protocol_with_two_roles_and_figures`, `protocol_no_attachments` to `backend/tests/conftest.py` if they don't exist.
+```python
+"""Per-scenario Protocol-row factories. Names mirror SCENARIOS in
+scripts/_sop_scenarios.py one-to-one."""
 
-- [ ] **Step 3: Run the tests to verify they pass**
+from uuid import uuid4
+
+# Reuse the existing factory helpers in tests/factories/protocol.py
+# for unit_op_instance, lane node, attachment, approval rows.
+from tests.factories.protocol import (
+    protocol_factory, lane_node, unit_op_instance,
+    attachment_factory, approval_factory,
+)
+
+async def build_minimal(db, user): ...
+async def build_role_based_basic(db, user): ...
+# ... one per scenario ...
+
+BUILDERS = {
+    "minimal": build_minimal,
+    "role_based_basic": build_role_based_basic,
+    "time_only": build_time_only,
+    "time_and_roles": build_time_and_roles,
+    "figures_only": build_figures_only,
+    "approval_full": build_approval_full,
+    "approval_partial": build_approval_partial,
+    "unapproved_draft": build_unapproved_draft,
+    "critical_requirement": build_critical_requirement,
+    "cycle_warning": build_cycle_warning,
+    "maximal": build_maximal,
+    "edge_long_text": build_edge_long_text,
+}
+
+
+async def build_protocol_for_scenario(db, user, name):
+    return await BUILDERS[name](db, user)
+```
+
+Stub bodies aside, each builder writes a real `Protocol` row whose `graph_json` and child rows reflect the scenario's intent: e.g. `time_and_roles` flips `graph_json.timeEnabled=True` and constructs lane→unit-op parent relationships so the renderer computes cumulative offsets.
+
+- [ ] **Step 3: Run the matrix-parametrized tests**
 
 Run: `pytest backend/tests/integration/test_sop_render_end_to_end.py -v`
-Expected: PASS.
+Expected: PASS — 12 `test_endpoint_renders_scenario[…]` cases + 12 per-scenario intent assertions + the Jinja-injection safety check.
 
 - [ ] **Step 4: Run the full backend suite for regression**
 
 Run: `cd backend && pytest`
-Expected: PASS across the board. Investigate any failure — Task 13 (`build_context`) and Task 14 (`protocol_pdfs.py`) are the most likely sources of incidental regressions.
+Expected: PASS across the board. Investigate any failure — Task 13 (`build_context`) and Task 14 (`protocol_pdfs.py`) are the most likely sources of incidental regressions. Any scenario in this matrix that newly fails is a load-bearing signal: it means a conditional branch in the template silently changed shape.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/tests/integration/test_sop_render_end_to_end.py backend/tests/conftest.py
+git add backend/tests/integration/test_sop_render_end_to_end.py \
+        backend/tests/factories/sop_scenarios.py \
+        backend/tests/conftest.py
 git commit -m "$(cat <<'EOF'
-test(BUG-0007): end-to-end SOP render smoke (time + figures + captions)
+test(BUG-0007): end-to-end SOP render matrix across 12 scenarios
 
-Walks a real Protocol with two roles and three figures through the live
-endpoint. Confirms time markers appear when timeEnabled, vanish when not,
-figure numbers are document-global, and Jinja-looking captions render
-literally (docxtpl autoescape).
+Walks a real Protocol row through the live endpoint for each scenario in
+the verification matrix (mirrors scripts/_sop_scenarios.py one-to-one).
+Per-scenario assertions lock down the observable consequence of each
+conditional template branch: cumulative time offsets across role
+boundaries, figure numbering that skips empty steps, draft watermark,
+critical-requirement banner ordering, cycle-warning suppresses offsets,
+partial-approval rows don't leak [InlineImage:] placeholders, etc.
+Includes a Jinja-injection safety check on attachment captions.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -3667,7 +4449,9 @@ EOF
 
 ---
 
-## Task 20: qa-verify pass + manual browser verification
+## Task 20: qa-verify pass + per-scenario Chrome browser verification
+
+> **Why per-scenario instead of one sweep:** Tasks 15 and 19 prove that *structurally* each conditional branch behaves correctly (right XML, right text). Browser verification proves that the final rendered PDF *looks* the way we agreed it should — for every branch. A single happy-path browser check leaves regressions in unapproved/cycle/partial-approval branches undetected until a user hits them in prod.
 
 **Files:** (none — verification only)
 
@@ -3678,28 +4462,89 @@ cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --port 
 cd frontend && VITE_API_PORT=8010 npm run dev -- --port 5183 &
 ```
 
-- [ ] **Step 2: Run qa-verify against the four sub-issues**
+Confirm: `curl -s localhost:8010/health` → 200; open `localhost:5183` in Chrome → login screen.
+
+- [ ] **Step 2: Seed one protocol per matrix scenario**
+
+Add a dev-only seed script `backend/scripts/seed_bug0007_matrix.py` that uses the same `BUILDERS` from `tests/factories/sop_scenarios.py` to materialize 12 protocols named `BUG0007 — <scenario>` in a dedicated `BUG-0007 QA` project. The protocols must persist (no rollback) so the browser pass can navigate to each.
+
+```bash
+cd backend && source .venv/bin/activate
+python scripts/seed_bug0007_matrix.py --org "Acme Bio" --user wesu07@gmail.com
+# Prints the 12 protocol IDs and a per-scenario URL to open in Chrome.
+```
+
+- [ ] **Step 3: Per-scenario Chrome browser verification**
+
+Use the `mcp__claude-in-chrome` tools. For *each* of the 12 scenarios, open the SOP preview, render the PDF, take a screenshot of every page, and verify against the agreed section-per-step mock. Stay strict on the per-scenario pass/fail criteria below — they are the precise observable consequences of each conditional template branch.
+
+Workflow per scenario:
+1. `tabs_create_mcp` → `localhost:5183/protocols/<id>` (the editor view).
+2. Confirm the Protocol Sidebar shows `doc_number = SOP-NNNN` for the auto-assigned value.
+3. Click "Preview SOP" → backend serves the PDF in-tab.
+4. `get_page_text` to dump the visible text of the PDF (Chrome renders the PDF inline) and scroll-screenshot every page.
+5. Compare visually against the corresponding `docs/previews/sop_default/sop_<scenario>-*.png` baseline. They should match — the seed protocol was built from the same scenario builder. Any drift = bug.
+
+Per-scenario pass/fail criteria (FAIL on any miss; POLISH on visible-but-ugly):
+
+| Scenario | Browser pass/fail criteria |
+|----------|----------------------------|
+| `minimal` | Flat 3-step list. No role headings. No T=… markers. No critical-requirement banner. No approvals block. No DRAFT watermark. Each step = bold 12pt heading + full-width body paragraph (no Instruction column). |
+| `role_based_basic` | Role headings "Upstream Operator" / "QC Analyst" rendered 16pt black bold (visually dominant). Steps grouped under each role. Still no T=… markers. |
+| `time_only` | Step headings of the form `1. Prep — T=0 (30 min)`. No role headings. |
+| `time_and_roles` | Role A steps show T=0, T=30m. Role B's first step shows **T=45m** (not T=0). Visually verify the clock does NOT reset across role boundary. |
+| `figures_only` | Step 1 has no figure block (no awkward empty paragraph). Step 2 shows Figure 1 inline under the description. Step 3 shows Figure 2 and Figure 3 in order. Figure caption renders below image at 10pt. |
+| `approval_full` | Approvals block at end with 3 rows. Each row shows: name, date, attestation text, **signature image** (hand-drawn-looking PNG). All three signature drawings render — no broken-image icons. |
+| `approval_partial` | Approvals block at end with 3 rows. Sponsor row has signature image. Study Director + QAU rows show "Pending" or empty signature line — no `[InlineImage:...]` literal text leaks through, no broken-image icon. |
+| `unapproved_draft` | Visible DRAFT or UNAPPROVED banner/watermark (top of page or diagonal across body). Approvals block still rendered but with all rows pending/empty. |
+| `critical_requirement` | Critical-requirement banner appears between Purpose/Scope and the first procedure step. Banner styling visually distinct (background fill or rule above/below). |
+| `cycle_warning` | Warning banner referencing "cycle" appears (color/icon distinct). Step headings do **not** include T=… markers. |
+| `maximal` | All of the above visible together. Mirrors `docs/previews/sop_default/sop_maximal-*.png` baseline within minor anti-aliasing differences. |
+| `edge_long_text` | All 40 step headings (`Step 1.1` … `Step 5.8`) render. No text overflow off the right margin. No step heading orphaned at bottom of page from its body. Page count > 6. |
+
+After each scenario, record one line:
+```
+[scenario] [PASS|FAIL|POLISH] [<one-line note if FAIL/POLISH>]
+```
+
+- [ ] **Step 4: Launch the qa-verify agent for cross-cutting + sub-issue verification**
 
 Launch the `qa-verify` agent with this brief:
 
-> Verify BUG-0007 SOP / Batch Record template overhaul. Login at `localhost:5183`, dev creds work. For a protocol in any project:
+> Verify BUG-0007 SOP / Batch Record template overhaul. Dev servers at `localhost:5183` (frontend) and `localhost:8010` (backend). Login with wesu07@gmail.com / any password. The seed script `backend/scripts/seed_bug0007_matrix.py` has created 12 named protocols under "BUG-0007 QA" project, one per scenario in `scripts/_sop_scenarios.py`.
 >
-> 1. **Sub-issue 1.** Open the Protocol Sidebar — `doc_number` should be visible (auto-generated `SOP-NNNN`). Click it; it becomes editable. Enter a value already in use by another protocol in the same org → expect inline red error citing the conflicting protocol's name. No toast.
-> 2. **Sub-issue 2.** Render the SOP preview (download PDF). The Instruction column should be **gone** — each step renders as a bold heading + a full-width description paragraph + optional figure block.
-> 3. **Sub-issue 3.** In the editor, enable "time" on the protocol. Re-render. Each step heading reads e.g. `1. Buffer Prep — T=30m (15 min)`. With time disabled, the `T=…` segment vanishes.
-> 4. **Sub-issue 4.** Select a unit-op node. The Inspector now has a "FIGURES" section (collapsed). Expand. Drag an image in or pick from file dialog. Thumbnail appears. Click it → full-screen modal. Add a caption, blur, re-render PDF → caption shows under the figure inline beneath that step's description. Delete the figure → thumbnail and rendered figure both gone.
+> **Cross-cutting sub-issue checklist** (run on the `maximal` protocol):
 >
-> Also check: visual hierarchy in the rendered PDF — role headings 16pt black bold dominate step headings 12pt black bold; no leftover blue Heading-3 color; body double-spaced.
+> 1. **Sub-issue 1 — doc_number.** Open Protocol Sidebar — `doc_number` visible and shows auto-generated `SOP-NNNN`. Click it → becomes editable. Enter a value already in use by another protocol in the same org → expect inline red error citing the conflicting protocol's name. No toast. Empty save → also inline error.
+> 2. **Sub-issue 2 — no Instruction column.** Render the SOP preview. The old narrow Instruction column is gone — each step renders as a bold heading on its own line + a full-width body paragraph spanning the page width + (optional) figure block below.
+> 3. **Sub-issue 3 — time markers.** Toggle time on/off in the editor on the `time_and_roles` protocol. Re-render. With time ON, step headings show `T=…` and cumulative offsets across roles. With time OFF, the `T=…` segment vanishes from every heading.
+> 4. **Sub-issue 4 — figure attachments.** Select a unit-op node. Inspector has a collapsible FIGURES section. Expand → drop an image (or use file picker). Thumbnail appears. Click thumbnail → full-screen modal. Add a caption, blur, re-render PDF → caption renders below image inline under that step's description. Delete the figure → thumbnail gone AND figure gone from rendered PDF.
 >
-> Fix anything that FAILs or needs POLISH before returning.
+> **Matrix verification** (per-scenario from step 3 above): for each of the 12 scenarios, open the preview and visually confirm the pass/fail criteria in the matrix table. If any scenario diverges from its baseline at `docs/previews/sop_default/sop_<scenario>-*.png`, that's a FAIL — fix and re-render.
+>
+> **Cross-cutting visual hygiene** (every PDF):
+> - Role headings 16pt black bold dominate step headings 12pt black bold.
+> - No residual blue Heading-3 color from the old template.
+> - Body double-spaced (lineRule auto, line=480 in XML).
+> - No `[InlineImage:…]` literal text anywhere.
+> - No double-spaces in step headings ("1.  Step" vs "1. Step").
+>
+> Fix anything that FAILs or needs POLISH before returning. Report the per-scenario pass/fail table and the four sub-issue results.
 
-- [ ] **Step 3: Land qa-verify's fixes (if any)**
+- [ ] **Step 5: Land qa-verify's fixes (if any)**
 
-The qa-verify agent commits its fixes inline. After it returns, review `git log` for the new commits and confirm they look reasonable.
+The qa-verify agent commits its fixes inline. After it returns, review `git log` for the new commits and confirm they look reasonable. If qa-verify edited the renderer script or `_sop_scenarios.py`, regenerate the baselines:
 
-- [ ] **Step 4: User sign-off**
+```bash
+cd backend && python scripts/render_sample_sop.py --scenario all
+git add docs/previews/sop_default/
+git diff --staged --stat  # confirm only the affected scenario(s) changed
+git commit -m "chore(BUG-0007): refresh preview baselines after qa-verify fixes"
+```
 
-Present the summary to the user. Wait for explicit "looks good" before moving to the cleanup step.
+- [ ] **Step 6: User sign-off**
+
+Present the per-scenario verification table + the sub-issue results to the user. Wait for explicit "looks good" before moving to the cleanup step. If the user wants to spot-check, attach `docs/previews/sop_default/sop_<scenario>.pdf` for any scenario they call out.
 
 ---
 
