@@ -16,6 +16,8 @@
         areStepFieldsLocked,
         barcodeScanApplies,
     } from "./roleWizardState";
+    import { tick, untrack } from "svelte";
+    import { focusStep } from "$lib/utils/stepDeepLink";
 
     interface SchemaProperty {
         type?: string;
@@ -57,6 +59,7 @@
         executionData = {},
         readonly = false,
         draftMode = false,
+        initialStepId = null,
         onDataUpdate,
         onAllStepsComplete,
     }: {
@@ -65,6 +68,7 @@
         executionData: Record<string, any>;
         readonly?: boolean;
         draftMode?: boolean;
+        initialStepId?: string | null;
         onDataUpdate?: (data: Record<string, any>) => void;
         onAllStepsComplete?: () => void;
     } = $props();
@@ -119,6 +123,65 @@
             };
         });
         stepData = newStepData;
+    });
+
+    // TD-0091d: track which initialStepId we've already processed so the
+    // seeding effect is strictly one-shot per value of the prop.
+    let lastSeededStepId = $state<string | null>(null);
+
+    function hasUnsavedExecutionData(): boolean {
+        const sid = steps[currentStepIdx]?.id;
+        if (!sid) return false;
+        const live = stepData[sid];
+        const snapshot = executionData?.[sid];
+        if (!live) return false;
+        const liveFields = {
+            results: live.results ?? null,
+            value: live.value ?? null,
+            notes: live.notes ?? null,
+        };
+        const snapFields = {
+            results: snapshot?.results ?? null,
+            value: snapshot?.value ?? null,
+            notes: snapshot?.notes ?? null,
+        };
+        return JSON.stringify(liveFields) !== JSON.stringify(snapFields);
+    }
+
+    // TD-0091d: seed currentStepIdx from a deep link, but only when safe.
+    // Tracks ONLY initialStepId (and steps.length transitions 0→N for
+    // async loads) by reading mutable state through untrack.
+    $effect(() => {
+        if (!initialStepId) return;
+        if (lastSeededStepId === initialStepId) return;
+        if (steps.length === 0) return;
+
+        untrack(() => {
+            const idx = steps.findIndex((s) => s.id === initialStepId);
+            if (idx < 0) {
+                lastSeededStepId = initialStepId;
+                return;
+            }
+            if (currentStepIdx !== 0) {
+                lastSeededStepId = initialStepId;
+                return;
+            }
+            if (hasUnsavedExecutionData()) {
+                lastSeededStepId = initialStepId;
+                return;
+            }
+            currentStepIdx = idx;
+            lastSeededStepId = initialStepId;
+        });
+    });
+
+    // TD-0091d: after currentStepIdx settles, scroll + highlight the
+    // wizard's step container. tick() waits for Svelte's DOM flush.
+    $effect(() => {
+        if (!initialStepId) return;
+        if (steps[currentStepIdx]?.id !== initialStepId) return;
+        const id = initialStepId;
+        tick().then(() => focusStep(id));
     });
 
     const currentStep = $derived(steps[currentStepIdx]);
@@ -561,7 +624,7 @@
             </div>
 
             <!-- Form Fields -->
-            <div class="flex-1 space-y-6 mb-8">
+            <div data-step-id={currentStep?.id} class="flex-1 space-y-6 mb-8">
                 {#if hasSchema}
                     <!-- Schema-driven fields from paramSchema -->
                     {#each editableFields as [key, prop]}
