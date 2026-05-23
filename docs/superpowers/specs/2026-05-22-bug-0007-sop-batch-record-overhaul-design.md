@@ -10,6 +10,8 @@ Bundles four QA-reported defects against the SOP / Batch Record preview generate
 > **Revision note.** Updated after a 5-agent review panel pass (adversarial-risk, db-scalability, dry-reuse, production-ops, ui-ux). Key changes from the first draft: attachments moved from `Protocol.attachments` JSONB to a new `protocol_attachments` child table to eliminate a lost-update race and an IDOR vector; partial unique index switched to `owner_org_id` (the always-non-null column); doc_number inline edit moved from the canvas header to `ProtocolSidebar.svelte`; migration split into a transactional backfill + a `CONCURRENTLY` index build; audit-log calls added to attachment endpoints; magic-byte / pixel-cap validation added; `render_to_docx()` figure swap extended to per-step nested lists.
 >
 > **Layout pivot (2026-05-22).** Step-tables were replaced with a **section-per-step** layout: each step renders as a bold heading paragraph followed by a description paragraph and an optional inline-figure block. Pivot was driven by a derisk test (`/tmp/derisk_tc_if.py`) which proved docxtpl's `{%tc if %}` strips the surrounding `<w:tc>` wrapper unconditionally — so a conditional single-column Time removal is not expressible. The new layout dissolves three problems at once: sub-issue 2 (squished Instruction column → full-width body text), sub-issue 3 (no structural conditional needed — plain `{% if time_enabled %}` inside the heading paragraph works), and sub-issue 4 (per-step inline figures sit naturally under the description). The two-template fallback is dropped.
+>
+> **Second-pass review hardening (2026-05-22).** A second 5-agent review of the pivoted spec surfaced: (a) N+1 against `protocol_attachments` in the render path — moved fetch into the async endpoint with a single bulk query grouped by `node_id`, eliminating both the N+1 and a sync/AsyncSession boundary violation; (b) silent drift between the two seeded `.docx` template pairs — added a CI hash-parity check; (c) silent degradation of the role-heading restyle if marker tokens are renamed — added a machine-readable pytest assertion against the rendered docx XML; (d) figure-number renumbering after delete (GLP exposure) — documented that figure numbers reflect render-time order and that **captions** are the stable referent; (e) step-heading spacing typo (`Buffer Prep  —  T=0   (30 min)` with irregular whitespace) — fixed to single-space; (f) `_swap_step_figures()` divergence from existing top-level swap — unified into one helper; (g) `_get_attachment_or_404()` extraction across 4 endpoints; (h) `validate_image_file()` moved to `core/file_storage.py` for future reuse; (i) figure caption font 9pt → 10pt and figure width Inches(4) → Inches(5.5) for print legibility; (j) duplicate index on `protocol_id` (composite already covers leading column) removed; (k) audit log + stable error code added on PATCH caption; (l) script idempotency requirement made explicit.
 
 ---
 
@@ -122,10 +124,18 @@ Downgrade uses `DROP INDEX CONCURRENTLY` inside `autocommit_block()`. Pattern ma
 Drop the four-column step-table entirely. Render each step as a sequence of paragraphs:
 
 ```
-N. <step name>   [— <time_offset>]   (<duration_min> min)        ← 12pt bold black
+N. <step name> [— <time_offset>] (<duration_min> min)            ← 12pt bold black
 <step description, full page width>                              ← body, double-spaced
 [per-step inline figure block — see sub-issue 4]
 ```
+
+The heading template uses **single spaces only** (no double-spaces, no padded em-dash). Canonical Jinja string committed in the templates:
+
+```
+{{ loop.index }}. {{ step.name }}{% if time_enabled %} — {{ step.time_offset }}{% endif %} ({{ step.duration_min }} min)
+```
+
+Rendered example: `1. Buffer Preparation — T=0 (30 min)`. A regression test asserts that the rendered text never contains the substring `"  "` (two consecutive spaces) inside step heading paragraphs.
 
 This dissolves the squished Instruction column (sub-issue 2), the docxtpl single-column conditional problem (sub-issue 3), and provides a natural anchor for inline figures (sub-issue 4).
 
@@ -134,6 +144,8 @@ Visual hierarchy is preserved: existing role headings (`{{ role.process_name or 
 ### Template restructure (one-time)
 
 The three step-tables in the two `.docx` templates are rewritten in-place to section-per-step paragraphs. This is a binary-asset change, performed once via a checked-in script (`scripts/rewrite_sop_step_tables.py`, derived from the derisked `/tmp/rewrite_template_to_sections.py`). The script is committed for reproducibility but the rewritten `.docx` is the authoritative artifact at render time — the script is **not** run as part of `build_context()` or render.
+
+The script is **idempotent**: it detects already-rewritten templates by checking for the absence of the two header-signature tables before applying changes, and exits cleanly with a "no-op: template already in section-per-step form" message if so. A unit test asserts that running the script twice in sequence produces a byte-identical output the second time.
 
 Tables targeted by header signature:
 
@@ -154,6 +166,11 @@ Then a post-pass walks every `<w:p>` in the body:
 - If the paragraph text contains a role-heading marker (`{{ role.process_name or role.name }}` or `{{ tp.name }}`), rewrite each run's `<w:rPr>` to remove existing color/size/bold and append `w:color=000000`, `w:sz=32` (16pt), `w:b`. The paragraph-level `Heading3` style stays in place (for outline / TOC), but the run-level overrides win.
 - For every paragraph (heading and body), drop any existing `<w:spacing>` and append `<w:spacing w:line="480" w:lineRule="auto" w:before="0" w:after="120"/>` to enforce double line spacing with a 6pt after-gap.
 
+The restyle pass relies on text-pattern matching against marker tokens, which is fragile if a future template author renames the loop variable. To guard against silent regression, two assertions run in CI:
+
+1. **Marker presence assertion**: after running the script, count the paragraphs that matched a marker. If the count is zero (i.e., no role / time-point headings were restyled), the script exits with a non-zero status and a clear error.
+2. **Rendered-output assertion**: an integration test renders a real role-based SOP context, parses the output `.docx`, and asserts that at least one run in a role-heading paragraph has `w:color=000000` AND `w:sz=32` AND `w:b`. This fails loudly if a future change ever lets the blue Heading-3 color leak through.
+
 ### Templates affected
 
 - `backend/app/services/documents/templates/sop_default.docx`
@@ -165,6 +182,27 @@ Add a `.gitattributes` line for `.docx` LFS tracking before committing the rewri
 ```
 *.docx filter=lfs diff=lfs merge=lfs -text
 ```
+
+(Pre-existing `.docx` blobs in older commits remain non-LFS — only new commits use LFS. Not a regression; future clones see a mix and resolve correctly.)
+
+### Template-pair hash parity (CI)
+
+The four `.docx` files live in two locations:
+
+- `backend/app/services/documents/templates/sop_default.docx` (and `batch_record_default.docx`)
+- `backend/uploads/system/document_templates/sop_default.docx` (and `batch_record_default.docx`)
+
+These pairs must stay byte-identical. A pytest test (`tests/integration/test_template_parity.py`) SHA-256 hashes each pair and fails CI on any divergence:
+
+```python
+def test_template_pairs_identical():
+    for name in ("sop_default.docx", "batch_record_default.docx"):
+        a = hashlib.sha256(TEMPLATES_DIR.joinpath(name).read_bytes()).hexdigest()
+        b = hashlib.sha256(SEEDED_DIR.joinpath(name).read_bytes()).hexdigest()
+        assert a == b, f"{name}: templates/ ({a[:8]}) != uploads/ ({b[:8]})"
+```
+
+This catches the failure mode where a contributor edits one copy and forgets the other.
 
 ### Backend changes
 
@@ -204,6 +242,10 @@ When `time_warning == "cycle_detected"`, the template renders `T=?` for every st
 - `build_context()` adds `time_enabled: bool` from `graph.timeEnabled`, optional `time_warning: str`, and per-step `time_offset: str` (rendered by `format_time_offset()` from the computed minutes).
 - The rewritten templates (sub-issue 2) reference `{{ step.time_offset }}` inside an inline `{% if time_enabled %}…{% endif %}` in the step heading paragraph. No `{%tc if %}`, no separate Time column.
 
+### Role iteration order (stable)
+
+`build_context()` iterates roles in a **stable, deterministic order** so figure numbers and visual sequence don't shift across renders of an unmodified protocol. Sort key: `(lane_node_id, node_id)` from the graph data — never `role.name` (display string can be edited; sort would re-order on a typo fix). An integration test confirms that adding/removing a role in a way that doesn't touch the existing roles' lane_node_ids leaves figure numbers stable for the unmodified roles.
+
 ### Logging
 
 `build_context()` emits a structured `logger.warning("protocol_graph_cycle", protocol_id=..., cycle_nodes=...)` on cycle detection so the event is queryable / alertable.
@@ -229,7 +271,7 @@ class ProtocolAttachment(Base, TimestampMixin):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     protocol_id: Mapped[UUID] = mapped_column(
-        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False
     )
     node_id: Mapped[str] = mapped_column(String(128), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -245,19 +287,56 @@ class ProtocolAttachment(Base, TimestampMixin):
     )
 ```
 
-Composite index `(protocol_id, node_id)` covers the render-path filter for "give me figures for this step." `protocol_id` index alone covers the per-protocol list path.
+Composite index `(protocol_id, node_id)` covers both the render-path filter ("give me figures for this step") and the per-protocol list path (leading-column prefix scan). No standalone `protocol_id` index is needed — the composite serves both.
 
 ### Validation
+
+The image-validation logic lives in `app/services/core/file_storage.py` as a reusable helper, **not inline in the endpoint** (future run / field-mode attachment surfaces will need the same guard):
+
+```python
+def validate_image_file(
+    path: Path,
+    declared_content_type: str,
+    *,
+    max_pixels: int = 25_000_000,
+) -> None:
+    """Raise `InvalidImage` if path is not a valid image whose magic bytes
+    match declared_content_type, or if pixel count exceeds `max_pixels`."""
+```
 
 In the upload endpoint:
 
 - `content_type in IMAGE_MIME_TYPES` — imported from `app/services/core/file_storage.py:8`, **not redefined**. Reject `image/svg+xml` explicitly (XSS / SSRF surface).
-- Stream-read with running size counter against `MAX_FIGURE_SIZE_BYTES = 10 * 1024 * 1024`. Abort early once exceeded.
-- After upload, run `PIL.Image.open(path)` + `verify()` to confirm magic bytes match content_type. Reject mismatches (deletes the staged file).
-- Pixel cap: reject images where `width * height > 25_000_000` (25 MP) to guard against decompression bombs.
-- Stable error codes returned: `ATTACHMENT_UNSUPPORTED_TYPE` (415), `ATTACHMENT_TOO_LARGE` (413), `ATTACHMENT_INVALID_IMAGE` (422), `ATTACHMENT_LIMIT_REACHED` (422).
+- The endpoint reads the full multipart body via `await file.read()` (matching the existing `FileStorageService.store_file()` pattern at `file_storage.py:37-81`), checks size against `MAX_FIGURE_SIZE_BYTES = 10 * 1024 * 1024` before write, then writes via `store_file()`. **Streaming early-abort** is logged as a TECH_DEBT follow-up — the existing `store_file()` is non-streaming and adopting streaming requires a separate change; the 10 MB hard cap bounds the worst case in the interim.
+- After write, the endpoint calls `validate_image_file(path, content_type)`. On failure, the staged file is deleted via `FileStorageService.delete_file()` before returning 422.
+- Pixel cap: `width * height > 25_000_000` (25 MP) → 422 (decompression-bomb guard).
+- Stable error codes returned: `ATTACHMENT_UNSUPPORTED_TYPE` (415), `ATTACHMENT_TOO_LARGE` (413), `ATTACHMENT_INVALID_IMAGE` (422), `ATTACHMENT_LIMIT_REACHED` (422), `ATTACHMENT_CAPTION_TOO_LONG` (422).
 - Per-protocol count cap: max **50 non-deleted attachments** per protocol. Returns 422 with code `ATTACHMENT_LIMIT_REACHED`.
+- Caption length cap: 500 chars, enforced via Pydantic `constr(max_length=500)` on `ProtocolAttachmentCaptionPatch`. Over-length returns 422 with code `ATTACHMENT_CAPTION_TOO_LONG`.
 - Sanitize `filename` for the response `Content-Disposition` header via RFC 5987 encoding (`filename*=UTF-8''…`) on the stream endpoint.
+
+### Shared `_get_attachment_or_404` helper
+
+PATCH, DELETE, and GET-stream endpoints all scope lookups by `(protocol_id, attachment_id)`. The new module `protocol_attachments.py` defines a module-level helper:
+
+```python
+async def _get_attachment_or_404(
+    db: AsyncSession, protocol_id: UUID, attachment_id: UUID
+) -> ProtocolAttachment:
+    """Fetch attachment scoped by protocol_id. 404 on mismatch or soft-deleted."""
+    row = await db.scalar(
+        select(ProtocolAttachment).where(
+            ProtocolAttachment.id == attachment_id,
+            ProtocolAttachment.protocol_id == protocol_id,
+            ProtocolAttachment.deleted == False,
+        )
+    )
+    if row is None:
+        raise HTTPException(404, detail="attachment_not_found")
+    return row
+```
+
+All three read-paths route through this. The DELETE path additionally calls it before flipping `deleted=True` and removing the storage file.
 
 ### Endpoints (new)
 
@@ -272,7 +351,8 @@ New module `backend/app/api/endpoints/protocol_attachments.py`, registered along
   - Calls `log_audit(db, actor_id, action="attachment.upload", entity_type="protocol", entity_id=protocol_id, changes={"attachment_id": ..., "filename": ..., "size_bytes": ..., "node_id": ...})`.
   - Returns the attachment row as JSON.
 - `PATCH /protocols/{protocol_id}/attachments/{attachment_id}`
-  - Requires EDIT permission. Scopes lookup by `(protocol_id, id)`. Body: `{"caption": str | null}` (max 500 chars). 404 on mismatch.
+  - Requires EDIT permission. Routes through `_get_attachment_or_404()`. Body: `ProtocolAttachmentCaptionPatch` (`caption: constr(max_length=500) | None`). Over-length returns 422 with `ATTACHMENT_CAPTION_TOO_LONG`.
+  - Calls `log_audit(action="attachment.caption_edit", entity_type="protocol", entity_id=protocol_id, changes={"attachment_id": ..., "before": prior_caption, "after": new_caption})`. Audit captures both states so any caption mutation is traceable in the regulated record.
 - `DELETE /protocols/{protocol_id}/attachments/{attachment_id}`
   - Requires EDIT permission. Scopes the lookup by `(protocol_id, id)` — IDOR-safe. 404 on mismatch or unknown.
   - Sets `deleted=True` on the row **and** hard-deletes the underlying storage file (`FileStorageService.delete_file()`). This prevents an upload+delete loop from filling disk.
@@ -290,7 +370,7 @@ New `frontend/src/lib/components/protocol/InspectorFigures.svelte`, included fro
 - Thumbnail grid (`grid-template-columns: repeat(auto-fill, minmax(80px, 1fr))`). Tap target ≥ 80px; this is tablet-friendly.
 - Each thumbnail: image preview (loaded via `api.fetchBlobUrl()` for auth), `title={filename}` tooltip, absolute-positioned delete button at top-right, minimum 24×24px (gloved-hand sizing). Pattern: `media/ImageGallery.svelte` lines 65–70.
 - Click thumbnail → opens enlarge modal.
-- Below each thumbnail: inline-editable caption input (placeholder = filename). Debounced PATCH on blur via `PATCH /protocols/{protocol_id}/attachments/{attachment_id}` body `{"caption": "..."}`. Empty / unset captions fall back to the filename at render time (see `caption or filename` in `build_context()`).
+- Below each thumbnail: inline-editable caption input. Placeholder text: `"Caption (filename used if blank)"` — this surfaces the fallback explicitly so scientists understand why `IMG_3847.jpg` appears as the printed caption if they leave it blank. PATCH fires **on `blur` / Enter only** (not on `input`) so a 40-char caption produces exactly one audit-log row per edit session, not 40. Empty / unset captions fall back to the filename at render time (`caption or filename` in `build_context()`).
 
 **Enlarge modal:** reuse the existing `ui/FullScreenModal.svelte` (scroll-lock, header with close, `fixed inset-0 z-50`). Do **not** create a new `media/ImageModal.svelte` — the existing primitive composes for this case.
 
@@ -300,17 +380,30 @@ Adversarial findings called out a third duplicate of the soft-delete scan patter
 
 ### Template render
 
-`build_context()` extends every step ctx. A single counter is threaded through step iteration order so figure numbers are document-global (Figure 1, 2, 3, …) rather than per-step:
+Attachment fetching happens **once** in the async endpoint (`protocol_pdfs.py`) — not per-step inside `build_context()` — to eliminate the N+1 query pattern AND the sync/AsyncSession boundary violation (`build_context()` is sync and cannot safely call an async DB session):
+
+```python
+# In protocol_pdfs.py, before calling build_context():
+rows = (await db.execute(
+    select(ProtocolAttachment)
+    .where(
+        ProtocolAttachment.protocol_id == protocol.id,
+        ProtocolAttachment.deleted == False,
+    )
+    .order_by(ProtocolAttachment.created_at)
+)).scalars().all()
+attachments_by_node = collections.defaultdict(list)
+for row in rows:
+    attachments_by_node[row.node_id].append(row)
+
+context = build_context(protocol, ..., attachments_by_node=attachments_by_node)
+```
+
+`build_context()` accepts the pre-fetched dict and threads a document-global counter through step iteration order:
 
 ```python
 fig_counter = itertools.count(1)
 for step_ctx, node_id in steps_in_render_order:
-    step_attachments = (
-        db.query(ProtocolAttachment)
-          .filter_by(protocol_id=protocol.id, node_id=node_id, deleted=False)
-          .order_by(ProtocolAttachment.created_at)
-          .all()
-    )
     step_ctx["figures"] = [
         {
             "number": next(fig_counter),
@@ -318,52 +411,84 @@ for step_ctx, node_id in steps_in_render_order:
             "caption": a.caption or a.filename,
             "_file_path": storage.resolve_path(a.file_path),
         }
-        for a in step_attachments
+        for a in attachments_by_node.get(node_id, [])
     ]
 ```
 
-Render order matches the document order: bare `steps` list first (for no-role protocols), or `roles[i].steps` walked role-by-role. Time-point action lists do not carry figures (no `node_id` mapping).
+Render order matches the document order: bare `steps` list first (for no-role protocols), or `roles[i].steps` walked role-by-role in the stable iteration order pinned under sub-issue 3. Time-point action lists do not carry figures (no `node_id` mapping).
+
+### Figure number stability (and why captions are the stable referent)
+
+Figure numbers reflect **render-time order** of non-deleted attachments. If a user uploads A, B, C (Figures 1, 2, 3) and then deletes B, the next render produces A=1, C=2 (C is renumbered from 3 to 2). This is by design: the alternative — persisting `figure_number` on the row at upload time and never reusing — produces gaps (Figure 1, Figure 3) in the printed document, which is worse for a regulated record.
+
+The implication is that **captions, not figure numbers, are the stable reference**. The Inspector caption-input placeholder hints at this by exposing the filename fallback. The spec recommends in-step text references read like "see the hemocytometer micrograph below" rather than "see Figure 2." This is documented in a comment in `template_engine.py` next to the figure block so future template editors understand the trade-off.
+
+Once protocol versioning lands (separate F-task), a printed historical revision is frozen by its docx output, so the renumbering concern is bounded to design-time edits, not historical record integrity.
 
 Render the per-step figure block right under `{{ step.description }}` in both `.docx` templates, inside the section-per-step paragraph sequence:
 
 ```jinja
 {%p for fig in step.figures %}
 {{ fig.image }}
-Figure {{ fig.number }}. {{ fig.caption }}
+{% if fig.image_ok %}Figure {{ fig.number }}. {{ fig.caption }}{% else %}Figure {{ fig.number }} — unavailable{% endif %}
 {%p endfor %}
 ```
 
-The `%p` mode dissolves the surrounding `<w:p>` wrappers so the loop expands to one image paragraph + one caption paragraph per attachment. Caption text is rendered at 9pt; `fig.number` is the per-document sequence (assigned in `build_context()` by enumerating attachments across all steps in render order). When a step has no attachments the loop emits zero paragraphs, leaving no visual gap.
+The `%p` mode dissolves the surrounding `<w:p>` wrappers so the loop expands to one image paragraph + one caption paragraph per attachment. Caption text is rendered at **10pt** (raised from 9pt for GLP print legibility — under fluorescent lighting or on a photographed batch record, 9pt is marginal). Image width is `Inches(5.5)` (raised from `Inches(4)` to give microscopy and gel images enough horizontal resolution to remain scientifically useful; for portrait-orientation figures the layout will still letterbox, logged as a TECH_DEBT follow-up).
 
-### `render_to_docx()` figure swap extension
+`fig.number` is the per-document sequence assigned in `build_context()` by enumerating attachments across all steps in render order. When a step has no attachments the loop emits zero paragraphs, leaving no visual gap. `fig.image_ok` is set False in the `_swap` helper if the file is missing on disk — the caption line then reads "Figure N — unavailable" rather than "Figure N. <caption>" sitting under a placeholder string, which would falsely imply a real figure exists with that caption.
 
-The existing `_file_path` → `InlineImage` swap (`template_engine.py:733-741`) only walks the top-level `figures` list. Extend it to also walk nested per-step `figures` lists, in both `context["steps"]` (no-role variant) and `context["roles"][...]["steps"]` (role variant):
+### `render_to_docx()` figure swap — unified helper
+
+The existing `_file_path` → `InlineImage` swap at `template_engine.py:733-741` is consolidated with the new per-step swap into a single shared helper, parameterized by width. This eliminates a near-duplicate and makes the miss-handling consistent across both call sites:
 
 ```python
-def _swap_step_figures(steps, doc):
-    for step in steps or []:
-        for fig in step.get("figures", []) or []:
-            fpath_str = fig.pop("_file_path", None)
-            if not fpath_str:
-                continue
-            try:
-                fig["image"] = InlineImage(doc, str(fpath_str), width=Inches(4))
-            except Exception as exc:
-                logger.warning(
-                    "inline_image_failed",
-                    file_path=fpath_str,
-                    error=str(exc),
-                )
-                fig["image"] = f"[Figure unavailable: {fig.get('filename', 'unknown')}]"
+def _swap_file_path_to_inline_image(
+    figs: list[dict], doc: DocxTemplate, *, width: Inches
+) -> None:
+    """Swap each fig's `_file_path` string for an InlineImage. On missing
+    file or unreadable image, set `image_ok=False` and substitute a text
+    placeholder for `image`, so the caller can render a graceful fallback."""
+    for fig in figs or []:
+        fpath_str = fig.pop("_file_path", None)
+        if not fpath_str:
+            continue
+        fpath = Path(fpath_str)
+        try:
+            fig["image"] = InlineImage(doc, str(fpath), width=width)
+            fig["image_ok"] = True
+        except FileNotFoundError:
+            fig["image"] = f"[Figure file missing: {fig.get('filename', 'unknown')}]"
+            fig["image_ok"] = False
+            logger.warning("inline_image_missing", file_path=str(fpath))
+        except Exception as exc:  # corrupt / unreadable image
+            fig["image"] = f"[Figure unreadable: {fig.get('filename', 'unknown')}]"
+            fig["image_ok"] = False
+            logger.warning(
+                "inline_image_failed", file_path=str(fpath), error=str(exc),
+            )
 
-_swap_step_figures(context.get("steps"), doc)
-for role in context.get("roles", []) or []:
-    _swap_step_figures(role.get("steps"), doc)
+# Call sites:
+_swap_file_path_to_inline_image(
+    context.get("figures") or [], doc, width=Mm(150)
+)
+_swap_file_path_to_inline_image(
+    context.get("non_image_attachments") or [], doc, width=Mm(150)
+)  # unchanged
+for step in (context.get("steps") or []):
+    _swap_file_path_to_inline_image(
+        step.get("figures") or [], doc, width=Inches(5.5)
+    )
+for role in (context.get("roles") or []):
+    for step in (role.get("steps") or []):
+        _swap_file_path_to_inline_image(
+            step.get("figures") or [], doc, width=Inches(5.5)
+        )
 ```
 
-Per-figure try/except prevents one corrupt upload from aborting the entire PDF render.
+Width difference is intentional: top-level `Mm(150)` matches the existing report-level figure block; per-step `Inches(5.5)` is sized for in-procedure inline figures (microscopy, gel, vessel photos). The narrow `Inches(4)` from the first draft is dropped — under-sized for the use case.
 
-Sizing: spec uses `width=Inches(4)`. A future refinement to use `min(Inches(4), natural_width_inches)` would render narrow / portrait figures more gracefully — logged as **TECH_DEBT follow-up**.
+`FileNotFoundError` is caught separately so we don't silently swallow other docxtpl errors (catching bare `Exception` is reserved for the "corrupt image" path, where the exception type from docxtpl/PIL is intentionally varied). The `image_ok` flag drives the caption-line fallback in the Jinja template (see the figure block above).
 
 ---
 
@@ -374,13 +499,15 @@ Sizing: spec uses `width=Inches(4)`. A future refinement to use `min(Inches(4), 
 - `app/models/protocols.py` — add `ProtocolAttachment` model.
 - `app/schemas/protocols.py` — add `ProtocolAttachmentResponse`; surface attachments in `ProtocolResponse` as a list of those.
 - `app/services/protocols/doc_number.py` (new) — `generate_default_doc_number()` with advisory-lock pattern.
-- `app/services/protocols/template_engine.py` — add `doc_number`, `time_enabled`, `time_warning`, per-step `time_offset` (string), per-step `figures` (with `number`, `caption`, `_file_path`) to context; thread a document-global figure counter through render order; extend `render_to_docx()` figure swap to per-step lists; per-figure try/except.
+- `app/services/protocols/template_engine.py` — add `doc_number`, `time_enabled`, `time_warning`, per-step `time_offset` (string), per-step `figures` (with `number`, `caption`, `_file_path`) to context; thread a document-global figure counter through stable role iteration order; replace the existing top-level figure swap with the unified `_swap_file_path_to_inline_image()` helper, called for both top-level `figures` and nested per-step `figures` lists; set `image_ok` flag for caption-line fallback.
+- `app/services/core/file_storage.py` — add `validate_image_file(path, declared_content_type, *, max_pixels)` helper (PIL `verify()` + magic-byte match + pixel-cap). Used by the new attachment endpoint and reserved for future run / field-mode attachment surfaces.
 - `app/services/data/graph_processing.py` — `compute_time_offsets()`, `format_time_offset()`, with bounded `duration_min` coercion and orphan-edge filtering.
-- `app/api/endpoints/protocol_pdfs.py` — pass `protocol.doc_number` and time offsets / attachments to `build_context()`.
+- `app/api/endpoints/protocol_pdfs.py` — pre-fetch `protocol_attachments` in a single async query and group by `node_id`; pass `protocol.doc_number`, time offsets, and the `attachments_by_node` dict into `build_context()`. Confirm the render call runs inside `run_in_threadpool` (or equivalent) so blocking PIL / docxtpl I/O does not stall the async event loop.
 - `app/api/endpoints/protocols.py` — call `generate_default_doc_number()` on create when `doc_number` is null.
-- `app/api/endpoints/protocol_attachments.py` (new) — upload, patch (caption), delete, stream endpoints with audit logging, IDOR-safe lookups, magic-byte + pixel-cap validation, per-protocol count cap, RFC 5987 filenames. Wire into the router in `app/api/__init__.py`.
-- New Alembic migration: `protocol_attachments` table (with `caption` column + indexes), partial unique index on `(owner_org_id, doc_number)` (CONCURRENTLY in autocommit_block), backfill NULL doc_numbers with a preflight duplicate check.
-- `scripts/rewrite_sop_step_tables.py` (new, checked-in but not run at request time) — the one-time step-table → section-per-step + role-heading restyle + double-spacing post-pass script. Used to regenerate the seeded `.docx` templates from source-controlled originals if they ever need to be re-derived. Includes a regression test that asserts the rewritten templates contain no `<w:tbl>` elements between the procedure heading and the approvals block.
+- `app/api/endpoints/protocol_attachments.py` (new) — upload, patch (caption), delete, stream endpoints with audit logging, IDOR-safe lookups via shared `_get_attachment_or_404()` helper, calls `validate_image_file()` from `core/file_storage.py`, per-protocol count cap (50), caption length cap (500), RFC 5987 filenames, stable error codes including `ATTACHMENT_CAPTION_TOO_LONG`. Wire into the router in `app/api/__init__.py`.
+- New Alembic migration: `protocol_attachments` table with `caption` column and a single composite index `(protocol_id, node_id)` — no standalone `protocol_id` index, the composite covers the leading-column scan. Partial unique index on `(owner_org_id, doc_number)` (CONCURRENTLY in autocommit_block). Backfill NULL doc_numbers with a preflight duplicate check.
+- `scripts/rewrite_sop_step_tables.py` (new, checked-in but not run at request time) — the one-time step-table → section-per-step + role-heading restyle + double-spacing post-pass script. Idempotent (detects already-rewritten templates and no-ops). Used to regenerate the seeded `.docx` templates from source-controlled originals if they ever need to be re-derived. Companion tests assert no `<w:tbl>` in procedure body, byte-identical idempotent run, and machine-readable role-heading XML attributes.
+- `tests/integration/test_template_parity.py` (new) — SHA-256 hash-parity test across the two `.docx` pairs in `templates/` vs `uploads/system/document_templates/`.
 
 ### Frontend
 
@@ -432,17 +559,29 @@ Sizing: spec uses `width=Inches(4)`. A future refinement to use `min(Inches(4), 
 - Protocol create: `doc_number` populated when omitted; user-supplied value preserved.
 - Unique-index conflict surfaces 409 with conflicting protocol info.
 - Attachment lifecycle: upload → list (in Protocol response) → stream → soft-delete → underlying file removed from storage; subsequent GET → 404.
+- Attachment lifecycle with caption: upload → PATCH caption → stream → re-PATCH caption → audit log records both before/after pairs.
 - IDOR test: protocol A's user requests `/protocols/A/attachments/{B-attachment-id}/file` → 404.
+- IDOR on PATCH: protocol A's user PATCHes `/protocols/A/attachments/{B-attachment-id}` → 404.
 - Concurrent attachment uploads (10 parallel) → all 10 rows present.
+- N+1 guard: rendering a 40-step protocol with 5 attachments executes exactly one `SELECT FROM protocol_attachments` query against the DB, not 40 (assert via SQLAlchemy event listener in the test).
 - PDF render with figures + time enabled → docx Jinja loop unrolls per-step figures inline under each step heading, and each step heading shows `T=…` between the step name and the duration parens.
 - PDF render with figures + time disabled → step heading omits the `T=…` segment but the figure block still renders.
 - PDF render with no figures attached → step description is followed directly by the next step heading; no stray blank paragraph.
 - Figure numbers are document-global and increase monotonically across roles (Role A step 1 has Figure 1; Role B step 2 has Figure 2, not Figure 1 again).
+- Figure renumbering on delete: upload A, B, C → delete B → re-render → A is Figure 1, C is Figure 2 (renumbered from 3). Asserts the documented "captions are stable, numbers reflect order" policy.
+- Role with zero steps sandwiched between two roles with figures → figure counter does not skip; numbers stay contiguous (1, 2 across role A; role B contributes none; 3, 4 in role C).
 - Caption fallback: attachment with `caption IS NULL` renders the filename in the caption line; attachment with a non-empty caption renders that text instead.
-- PDF render where one attachment file is missing from disk → still renders, with `[Figure unavailable: ...]` placeholder.
+- Caption containing Jinja-looking chars (`{{ }}`, `{% %}`) is rendered as literal text (docxtpl autoescape verified).
+- Caption containing XML-looking chars (`<w:br/>`, `&lt;script&gt;`) is escaped, not interpreted.
+- Over-length caption (501 chars) → 422 with `ATTACHMENT_CAPTION_TOO_LONG`.
+- PDF render where one attachment file is missing from disk → still renders; the figure block emits "Figure N — unavailable" (caption line uses `fig.image_ok` fallback), not "Figure N. <stale caption>".
 - Rewritten templates contain zero `<w:tbl>` elements in the procedure body (regression guard against accidentally re-introducing a step-table).
+- Step heading text never contains two consecutive spaces (`"  "`) — guards against the spacing typo that prompted the heading-string fix.
+- Role-heading XML assertion: rendered output has at least one paragraph run with `w:color=000000`, `w:sz=32`, and `w:b` (catches silent regression if marker tokens are ever renamed or restyle pass no-ops).
+- Template-pair hash parity: `templates/*.docx` SHA-256 == `uploads/system/document_templates/*.docx` for each pair (test fails CI on divergence).
+- Rewrite-script idempotency: running `scripts/rewrite_sop_step_tables.py` twice in sequence produces byte-identical output on the second run.
 - Migration preflight aborts cleanly on existing duplicate doc_numbers.
-- Audit-log entries written for upload, caption-patch, and delete.
+- Audit-log entries written for upload, caption-patch (with before/after), and delete.
 
 ### Frontend
 
@@ -466,7 +605,10 @@ Sizing: spec uses `width=Inches(4)`. A future refinement to use `min(Inches(4), 
 - Per-org / per-protocol total-bytes storage quota.
 - Rate-limit middleware on the upload endpoint.
 - Auto-cleanup of orphaned attachments when a graph node is deleted (today: orphans survive silently; not rendered because no matching step). Follow-up: surface "node X has N attachments; delete them?" preflight on graph save.
-- `InlineImage(width=min(Inches(4), natural_width))` for narrow / portrait figures.
+- `InlineImage(width=min(Inches(5.5), natural_width))` for portrait / narrow figures.
 - Streaming write in `FileStorageService.store_file()` (currently reads full file into memory; bounded by the 10 MB cap).
 - Soft-delete helper extraction across run + protocol attachment models.
 - `ProtocolSidebar.saveName()` silent error swallowing (pre-existing bug).
+- Reordering figures within a step via drag-drop in `InspectorFigures.svelte`.
+- Protocol versioning for figure-number stability across historical revisions (broader F-task, depends on a versioning model not in this scope).
+- `w:keepWithNext` on signature blocks to avoid orphan signers on a near-empty final page.
