@@ -18,6 +18,7 @@ from sqlalchemy import select
 from app.models.projects import Project
 from app.models.protocols import Protocol, ProtocolRole, UnitOpDefinition
 from app.services.ai.deps import ChatDeps
+from app.services.core.org_slugs import disambiguated_org_slug_for_user
 from app.services.protocols.creation import ProtocolSpec, ProtocolStep
 from app.services.protocols.creation import (
     create_protocol_from_spec as create_protocol_from_spec_service,
@@ -125,6 +126,8 @@ class CreateProtocolResult:
     protocol_slug: str
     protocol_name: str
     project_id: str
+    protocol_url: str | None = None
+    protocol_markdown_link: str | None = None
 
 
 # ─── Tools ─────────────────────────────────────────────────────────────────────
@@ -310,11 +313,23 @@ async def create_protocol(
         }
     )
 
+    org_slug = await disambiguated_org_slug_for_user(
+        ctx.deps.db, ctx.deps.user_id, ctx.deps.org_id
+    )
+    if org_slug:
+        protocol_url = f"/{org_slug}/protocols/{protocol.slug}"
+        protocol_markdown_link = f"[{protocol.name}]({protocol_url})"
+    else:
+        protocol_url = None
+        protocol_markdown_link = None
+
     return CreateProtocolResult(
         protocol_id=str(protocol.id),
         protocol_slug=protocol.slug,
         protocol_name=protocol.name,
         project_id=str(protocol.project_id),
+        protocol_url=protocol_url,
+        protocol_markdown_link=protocol_markdown_link,
     )
 
 
