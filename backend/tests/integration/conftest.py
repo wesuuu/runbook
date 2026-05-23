@@ -9,7 +9,7 @@ from app.models.runs import Experiment, Run, RunStatus
 
 @pytest_asyncio.fixture
 async def experiment_with_open_run(db_session, test_project):
-    """Experiment with one PLANNED run."""
+    """Experiment with one COMPLETED + one PLANNED run (exercises OPEN_RUNS branch)."""
     exp = Experiment(
         name="Experiment with Open Run",
         description="Test experiment with open run",
@@ -21,14 +21,24 @@ async def experiment_with_open_run(db_session, test_project):
     db_session.add(exp)
     await db_session.flush()
 
-    run = Run(
-        name="Open Run",
-        slug="open-run",
-        project_id=test_project.id,
-        experiment_id=exp.id,
-        status=RunStatus.PLANNED,
+    db_session.add(
+        Run(
+            name="Completed Run",
+            slug="open-run-completed",
+            project_id=test_project.id,
+            experiment_id=exp.id,
+            status=RunStatus.COMPLETED,
+        )
     )
-    db_session.add(run)
+    db_session.add(
+        Run(
+            name="Open Run",
+            slug="open-run-planned",
+            project_id=test_project.id,
+            experiment_id=exp.id,
+            status=RunStatus.PLANNED,
+        )
+    )
     await db_session.flush()
     return exp
 

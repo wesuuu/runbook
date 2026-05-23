@@ -174,7 +174,7 @@ async def test_lock_audit_row_atomic_with_state(
     from sqlalchemy import text
     rows = await db_session.execute(
         text(
-            "SELECT count(*) FROM audit_log "
+            "SELECT count(*) FROM audit_logs "
             "WHERE entity_type='Experiment' AND entity_id=:eid AND action='conclusion.lock'"
         ),
         {"eid": experiment_ready_to_lock.id},

@@ -515,8 +515,7 @@ async def lock_experiment_conclusion(
 
     # GxP signature durability: require profile name. Fall back to "User
     # {id}" instead of leaking email into the permanent record.
-    profile_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
-    user_name = profile_name if profile_name else f"User {user.id}"
+    user_name = (user.full_name or "").strip() or f"User {user.id}"
 
     # Atomic UPDATE: race-free against concurrent run transitions AND against
     # concurrent lock attempts (asyncpg returns a row when the WHERE matches;
@@ -685,6 +684,15 @@ async def add_run_to_experiment(
             },
         )
 
+    # TOCTOU: pin the experiment row + re-read locked state under that lock so
+    # a concurrent POST /conclusion/lock cannot slip its UPDATE between our
+    # check and our INSERT. The lock UPDATE's `NOT EXISTS open_runs` guard is
+    # the matching half of this pair.
+    await db.execute(
+        text("SELECT 1 FROM experiments WHERE id = :id FOR UPDATE"),
+        {"id": experiment_id},
+    )
+    await db.refresh(exp, ["conclusion_locked_at"])
     if exp.conclusion_locked_at is not None:
         raise HTTPException(
             status_code=409,
