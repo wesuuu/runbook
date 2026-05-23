@@ -3703,7 +3703,299 @@ Present the summary to the user. Wait for explicit "looks good" before moving to
 
 ---
 
-## Task 21: Cleanup — refresh project rules + ClickUp + close worktree
+## Task 21: Update `KNOWN_VARIABLES` for template-converter parity
+
+> **Why this task exists**: `template_engine.KNOWN_VARIABLES` (line 29) is consumed by `parse_template()` (line 65) and by the LLM template-converter at `backend/app/services/protocols/template_converter.py`. Without `doc_number` in this set, `parse_template()` flags `{{ doc_number }}` as an *unrecognized* variable in any uploaded template — the settings UI then shows a scary "unknown variable" warning on a perfectly valid upload.
+
+**Files:**
+- Modify: `backend/app/services/protocols/template_engine.py:29-62`
+- Test: `backend/tests/unit/services/protocols/test_template_engine.py` (add or extend)
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# backend/tests/unit/services/protocols/test_template_engine.py
+from app.services.protocols.template_engine import KNOWN_VARIABLES, parse_template
+
+
+def test_known_variables_contains_doc_number_and_time_flags():
+    """BUG-0007 added doc_number, time_enabled, time_warning to the
+    render context. The converter and parse_template must recognize
+    them so uploaded templates with these tokens don't flag as unknown."""
+    assert "doc_number" in KNOWN_VARIABLES
+    assert "time_enabled" in KNOWN_VARIABLES
+    assert "time_warning" in KNOWN_VARIABLES
+
+
+def test_parse_template_recognizes_step_time_offset_and_figures(tmp_path):
+    """`{{ step.time_offset }}` and `{{ fig.image }}` inside a
+    `{%p for step in steps %}` loop must be recognized via the
+    top-level `steps` prefix already in KNOWN_VARIABLES."""
+    from docx import Document
+    doc = Document()
+    doc.add_paragraph("{%p for step in steps %}{{ step.time_offset }}{%p endfor %}")
+    doc.add_paragraph("{%p for fig in figures %}{{ fig.image }}{%p endfor %}")
+    p = tmp_path / "t.docx"
+    doc.save(p)
+    recognized, unrecognized = parse_template(p)
+    # step.time_offset → top-level "steps" is in KNOWN_VARIABLES → recognized
+    assert "step.time_offset" in recognized
+    assert "fig.image" in recognized
+    assert unrecognized == []
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/unit/services/protocols/test_template_engine.py::test_known_variables_contains_doc_number_and_time_flags -v
+```
+
+Expected: FAIL with `AssertionError: assert 'doc_number' in {…}` (set doesn't contain it).
+
+- [ ] **Step 3: Add the new variables to `KNOWN_VARIABLES`**
+
+```python
+# backend/app/services/protocols/template_engine.py:29
+KNOWN_VARIABLES = {
+    # Protocol
+    "protocol_name",
+    "protocol_description",
+    "version_number",
+    "created_at",
+    "doc_number",                 # BUG-0007
+    # Run
+    "run_name",
+    "run_status",
+    "started_at",
+    "completed_at",
+    # Project / Org
+    "project_name",
+    "organization_name",
+    # Layout
+    "is_role_based",
+    "page_break",
+    "time_enabled",               # BUG-0007
+    "time_warning",               # BUG-0007 (set when compute_time_offsets returns cycle_detected)
+    # Loops (top-level)
+    "roles",
+    "steps",
+    "notes",
+    "figures",
+    "non_image_attachments",
+    # Approval (F-0066)
+    "approval",
+    "approval_history",
+    "unapproved_warning",
+    "requires_approval",
+    # GLP sign-offs (F-0087)
+    "signoffs",
+    "protocol_approvals",
+    "run",
+    "equipment",
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+pytest tests/unit/services/protocols/test_template_engine.py -v -k "known_variables or parse_template_recognizes_step"
+```
+
+Expected: both PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/app/services/protocols/template_engine.py backend/tests/unit/services/protocols/test_template_engine.py
+git commit -m "$(cat <<'EOF'
+feat(BUG-0007): recognize doc_number / time flags in KNOWN_VARIABLES
+
+parse_template() and the LLM template-converter consult this set when
+deciding which Jinja tokens are valid. Without these entries the
+settings/templates upload flow flags uploaded SOPs with {{ doc_number }}
+as containing unknown variables.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Task 22: Update `get_mock_context()` for converter LLM preview parity
+
+> **Why this task exists**: `template_converter.py` (line 31) imports `get_mock_context` and feeds it to the LLM as a "what does a populated template look like" reference. With `doc_number` empty, time markers missing, and step figures absent, the LLM has no signal to map a user-uploaded doc-number cell to `{{ doc_number }}` or a step-image cell to `{{ fig.image }}`. After BUG-0007, the mock context must mirror the new fields end-to-end.
+
+**Files:**
+- Modify: `backend/app/services/protocols/template_engine.py:999+` (the `get_mock_context` function body)
+- Test: `backend/tests/unit/services/protocols/test_template_engine.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+def test_mock_context_includes_doc_number_and_time_markers():
+    """The LLM converter consumes this mock as its reference. Empty
+    or missing fields produce poor mappings for user-uploaded SOPs."""
+    from app.services.protocols.template_engine import get_mock_context
+    ctx = get_mock_context()
+
+    assert ctx["doc_number"], "doc_number must be populated for converter preview"
+    assert ctx["doc_number"].startswith("SOP-")
+    assert ctx["time_enabled"] is True
+
+    # Per-step time_offset and figures must be present on at least one step.
+    role0 = ctx["roles"][0]
+    step0 = role0["steps"][0]
+    assert "time_offset" in step0
+    assert step0["time_offset"].startswith("T="), "time_offset must format like 'T=0' / 'T=15m'"
+    assert isinstance(step0.get("figures", []), list)
+    # At least one step in the mock should have at least one figure attached,
+    # so the LLM sees what a per-step figure looks like.
+    has_any_figure = any(
+        bool(s.get("figures")) for r in ctx["roles"] for s in r["steps"]
+    )
+    assert has_any_figure, "mock context must include at least one per-step figure"
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+pytest tests/unit/services/protocols/test_template_engine.py::test_mock_context_includes_doc_number_and_time_markers -v
+```
+
+Expected: FAIL — `assert ctx["doc_number"]` because `build_context` was not passed `doc_number`.
+
+- [ ] **Step 3: Extend `get_mock_context()` to thread the new fields through**
+
+Edit the `build_context(...)` call inside `get_mock_context()`:
+
+```python
+def get_mock_context() -> dict[str, Any]:
+    """Build mock context for template preview. Lazy — only called when needed.
+
+    BUG-0007: includes doc_number, time_enabled, per-step time_offset, and
+    one per-step figure so the LLM template-converter sees what each new
+    Jinja token resolves to.
+    """
+    ctx, _ = build_context(
+        protocol_name="Example Protocol — Buffer Preparation",
+        protocol_description=(
+            "This protocol describes the preparation of phosphate-buffered "
+            "saline (PBS) for use in downstream cell culture applications."
+        ),
+        version_number=3,
+        created_at="January 15, 2026",
+        doc_number="SOP-0042",                  # BUG-0007
+        time_enabled=True,                      # BUG-0007
+        run_name="Run-2026-001",
+        run_status="COMPLETED",
+        started_at="2026-01-20 08:00",
+        completed_at="2026-01-20 14:30",
+        project_name="AAV Production Campaign Q1",
+        organization_name="Acme Therapeutics",
+        is_role_based=True,
+        roles_with_steps=[
+            {
+                "role_name": "Media Prep",
+                "steps": [
+                    {
+                        "name": "Weigh Reagents",
+                        "description": "Weigh out NaCl, KCl, and phosphate salts.",
+                        "params": {"nacl_g": 8.0, "kcl_g": 0.2},
+                        "param_schema": {
+                            "properties": {
+                                "nacl_g": {"title": "NaCl", "unit": "g"},
+                                "kcl_g": {"title": "KCl", "unit": "g"},
+                            }
+                        },
+                        "duration_min": 10,
+                        "time_offset": "T=0",      # BUG-0007
+                        "figures": [               # BUG-0007 — one figure on the first step
+                            {
+                                "number": 1,
+                                "caption": "Reagent weighing setup (10× balance).",
+                                "image_ok": True,
+                                # No InlineImage in the mock — the converter only inspects
+                                # caption + number text; the actual image is rendered live.
+                            },
+                        ],
+                    },
+                    {
+                        "name": "Dissolve in Water",
+                        "description": (
+                            "Add reagents to {{volume}} mL of purified water "
+                            "and stir until dissolved."
+                        ),
+                        "params": {"volume": 1000},
+                        "param_schema": {
+                            "properties": {"volume": {"title": "Volume", "unit": "mL"}}
+                        },
+                        "duration_min": 15,
+                        "time_offset": "T=10m",    # BUG-0007
+                        "figures": [],
+                    },
+                ],
+            },
+            {
+                "role_name": "QC",
+                "steps": [
+                    {
+                        "name": "Measure pH",
+                        "description": "Measure pH and adjust to target.",
+                        "params": {"target_ph": 7.4},
+                        "param_schema": {
+                            "properties": {"target_ph": {"title": "Target pH"}}
+                        },
+                        "duration_min": 5,
+                        "time_offset": "T=25m",    # BUG-0007
+                        "figures": [],
+                    },
+                ],
+            },
+        ],
+        # … rest of build_context kwargs unchanged (flat_steps, etc.)
+    )
+    return ctx
+```
+
+**Implementer note**: only the `build_context(...)` call body changes. The function's contract and return type are unchanged. The `flat_steps=` block (line 1061+) should mirror the same `time_offset` / `figures` additions on each step entry for consistency.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+pytest tests/unit/services/protocols/test_template_engine.py -v -k "mock_context"
+# Plus the existing template_converter regression suite, if any:
+pytest tests/unit/services/protocols/ -v -k "template_converter or get_mock_context"
+```
+
+Expected: PASS. No template_converter regressions.
+
+- [ ] **Step 5: Visual smoke check (manual, one-shot)**
+
+Open `/settings?tab=templates` in the running dev server, click "Upload template" on any test docx that contains a doc-number cell. Verify the converter's preview pane now shows `SOP-0042` (or whatever the mock sets) in the doc-number position, and that a step's preview shows `T=0` / `T=10m` instead of empty time fields. No code change here — just eyeball that the LLM is getting better signal.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/app/services/protocols/template_engine.py backend/tests/unit/services/protocols/test_template_engine.py
+git commit -m "$(cat <<'EOF'
+feat(BUG-0007): include doc_number / time / figures in get_mock_context
+
+The LLM template-converter consumes get_mock_context() as its reference
+for what a populated template looks like. Pre-BUG-0007 the mock had no
+doc_number, no time markers, and no per-step figures — so the LLM had
+no signal to tokenize matching content from user uploads. Threading
+these fields through keeps the settings/templates upload flow honest.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Task 23: Cleanup — refresh project rules + ClickUp + close worktree
 
 **Files:**
 - Modify: `CLAUDE.md` (if new env var / command surface introduced)
@@ -3751,7 +4043,7 @@ clickup_update_task(task_id="BUG-0007", status="complete")
 | `backend/app/services/data/graph_processing.py` | Add `compute_time_offsets`, `format_time_offset` |
 | `backend/app/services/protocols/doc_number.py` | New module |
 | `backend/app/services/core/file_storage.py` | Add `validate_image_file`, `InvalidImage` |
-| `backend/app/services/protocols/template_engine.py` | Add `_swap_file_path_to_inline_image`; extend `build_context` |
+| `backend/app/services/protocols/template_engine.py` | Add `_swap_file_path_to_inline_image`; extend `build_context`; add `doc_number` / `time_enabled` / `time_warning` to `KNOWN_VARIABLES`; thread new fields through `get_mock_context()` |
 | `backend/app/models/protocols.py` | Add `ProtocolAttachment` model |
 | `backend/app/schemas/protocols.py` | Add `ProtocolAttachmentResponse`, `ProtocolAttachmentCaptionPatch` |
 | `backend/app/api/endpoints/protocol_attachments.py` | New module — upload/patch/delete/stream |
