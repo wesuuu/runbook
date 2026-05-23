@@ -21,7 +21,7 @@ describe('focusStep', () => {
 
         expect(scrollSpy).toHaveBeenCalledWith(
             expect.objectContaining({
-                behavior: 'smooth',
+                behavior: 'auto',
                 block: 'center',
             }),
         );
@@ -29,7 +29,26 @@ describe('focusStep', () => {
     });
 
     it('is a silent no-op when the element is absent', async () => {
-        await expect(focusStep('missing')).resolves.toBeUndefined();
+        vi.useFakeTimers();
+        const p = focusStep('missing');
+        // advance past the 3s wait-for-element budget
+        await vi.advanceTimersByTimeAsync(3500);
+        vi.useRealTimers();
+        await expect(p).resolves.toBeUndefined();
+    });
+
+    it('waits for the element to appear (handles render race)', async () => {
+        const scrollSpy = vi.fn();
+        const p = focusStep('late-render');
+        // Mount the element 200ms later — focusStep should still find it.
+        setTimeout(() => {
+            const el = document.createElement('div');
+            el.setAttribute('data-step-id', 'late-render');
+            el.scrollIntoView = scrollSpy;
+            document.body.appendChild(el);
+        }, 200);
+        await p;
+        expect(scrollSpy).toHaveBeenCalled();
     });
 
     it('honors prefers-reduced-motion (instant scroll, no highlight)', async () => {
