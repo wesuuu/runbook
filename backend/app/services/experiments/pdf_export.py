@@ -76,7 +76,7 @@ def _objective(pdf: FPDF, experiment) -> None:
     pdf.set_font("DejaVu", "B", 12)
     pdf.cell(0, 8, "Objective", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("DejaVu", "", 10)
-    pdf.multi_cell(0, 5, experiment.objective)
+    pdf.multi_cell(0, 5, experiment.objective, new_x="LMARGIN", new_y="NEXT")
     if experiment.success_criteria:
         pdf.set_font("DejaVu", "B", 10)
         pdf.cell(0, 6, "Success criteria:", new_x="LMARGIN", new_y="NEXT")
@@ -101,7 +101,7 @@ def _conditions(pdf: FPDF, runs: Iterable[Any]) -> None:
             f"{rid}={c['value']}{(' ' + c['unit']) if c.get('unit') else ''}"
             for rid, c in row["perRun"].items()
         )
-        pdf.multi_cell(0, 5, line)
+        pdf.multi_cell(0, 5, line, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
 
@@ -129,7 +129,7 @@ def _conclusion(pdf: FPDF, experiment) -> None:
     pdf.cell(0, 8, "Conclusion", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("DejaVu", "", 10)
     if experiment.conclusion_locked_at:
-        pdf.multi_cell(0, 5, experiment.conclusion or "")
+        pdf.multi_cell(0, 5, experiment.conclusion or "", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
         pdf.set_font("DejaVu", "I", 9)
         signer = experiment.conclusion_locked_by_name or "system"
@@ -143,7 +143,7 @@ def _conclusion(pdf: FPDF, experiment) -> None:
         pdf.cell(0, 5, "Not yet locked — draft", new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(0, 0, 0)
         if experiment.conclusion:
-            pdf.multi_cell(0, 5, experiment.conclusion)
+            pdf.multi_cell(0, 5, experiment.conclusion, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
 
@@ -158,7 +158,7 @@ def _observations(pdf: FPDF, observations: list[dict]) -> None:
         ts = o["created_at"]
         body = o.get("body") or ""
         run = f" ({o['run_label']})" if o.get("run_label") else ""
-        pdf.multi_cell(0, 4, f"[{flag}] {ts}{run} — {body}")
+        pdf.multi_cell(0, 4, f"[{flag}] {ts}{run} — {body}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
 

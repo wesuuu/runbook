@@ -2,6 +2,7 @@
 import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 import EmptyState from '$lib/components/ui/empty-state/empty-state.svelte';
 import { paths } from '$lib/paths';
+import { formatDate } from '$lib/components/project/projectUtils';
 import type { ObservationItem } from '$lib/schemas/observation';
 
 interface Props {
@@ -33,7 +34,7 @@ let { items, truncated, loading }: Props = $props();
                             <div>
                                 <div class="text-sm">{item.body}</div>
                                 <div class="text-xs text-muted-foreground">
-                                    {item.author_name} • {new Date(item.created_at).toLocaleString()}
+                                    {item.author_name} • <span title={new Date(item.created_at).toLocaleString()}>{formatDate(item.created_at)}</span>
                                     {#if item.source === 'run' && item.run_label}
                                         {#if item.run_slug && item.run_project_slug}
                                             • <a class="underline" href={paths.run(item.run_project_slug, item.run_slug)}>{item.run_label}</a>

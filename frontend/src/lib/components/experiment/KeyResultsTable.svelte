@@ -55,7 +55,8 @@ function deltaPct(value: number): string {
             <EmptyState title="No key results yet"
                 description="Enter a key result on each run's detail page." />
         {:else}
-            <table class="w-full">
+            <div class="overflow-x-auto">
+            <table class="kr-table w-full">
                 <thead>
                     <tr><th>Run</th><th>Condition</th><th>Label</th><th>Value</th><th>vs. baseline</th></tr>
                 </thead>
@@ -78,11 +79,26 @@ function deltaPct(value: number): string {
                     {/each}
                 </tbody>
             </table>
+            </div>
         {/if}
     </CardContent>
 </Card>
 
 <style>
+.kr-table { border-collapse: collapse; }
+.kr-table th, .kr-table td {
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    font-size: 0.875rem;
+}
+.kr-table th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
 .best { background: color-mix(in oklch, var(--accent) 8%, transparent); }
 .tag-best { font-size: 0.75rem; color: var(--accent-fg); }
 </style>

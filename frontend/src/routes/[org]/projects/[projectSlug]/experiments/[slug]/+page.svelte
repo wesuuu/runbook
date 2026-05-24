@@ -173,7 +173,9 @@
                 objective: objective.trim() || null,
                 success_criteria: successCriteria.map((c) => c.trim()).filter(Boolean),
             });
-            experiment = updated;
+            // PUT returns runs=[] for performance; preserve the existing runs
+            // so the Conditions table and key-results chart don't go blank.
+            experiment = { ...updated, runs: experiment?.runs ?? [] };
             objective = updated.objective ?? "";
             successCriteria = [...(updated.success_criteria ?? [])];
             editingObjective = false;
@@ -278,11 +280,13 @@
 
     async function saveConclusion(next: string) {
         try {
-            experiment = await api.put(
+            const updated = await api.put(
                 `/experiments/${id}`,
                 { conclusion: next },
                 { schema: ExperimentSchema },
             );
+            // PUT returns runs=[] for performance; preserve existing runs.
+            experiment = { ...updated, runs: experiment?.runs ?? [] };
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Failed to save conclusion');
         }
@@ -290,11 +294,13 @@
 
     async function lockConclusion() {
         try {
-            experiment = await api.post(
+            const updated = await api.post(
                 `/experiments/${id}/conclusion/lock`,
                 {},
                 { schema: ExperimentSchema },
             );
+            // lock/unlock return runs=[] for performance; preserve existing runs.
+            experiment = { ...updated, runs: experiment?.runs ?? [] };
             loadObservations();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Failed to lock conclusion');
@@ -303,11 +309,13 @@
 
     async function unlockConclusion(reason: string) {
         try {
-            experiment = await api.post(
+            const updated = await api.post(
                 `/experiments/${id}/conclusion/unlock`,
                 { reason },
                 { schema: ExperimentSchema },
             );
+            // lock/unlock return runs=[] for performance; preserve existing runs.
+            experiment = { ...updated, runs: experiment?.runs ?? [] };
             loadObservations();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Failed to unlock conclusion');
