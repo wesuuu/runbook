@@ -14,6 +14,7 @@ identically — the same rule the frontend ``disambiguatedOrgSlug`` applies.
 
 from __future__ import annotations
 
+import re
 from typing import Optional, Sequence
 from uuid import UUID
 
@@ -30,6 +31,11 @@ from app.models.runs import Experiment, Run
 # Lower-cased ``entity_type`` values that resolve to a routed page. Any
 # other type (e.g. "RevokedOfflineToken") has no in-app destination.
 _ROUTABLE = frozenset({"run", "experiment", "protocol", "project"})
+
+# A Notification.payload.step_id is honored only when it matches this
+# shape. Mirrored at the frontend parser. The bound caps injection
+# surface area and matches the CHECK octet_length cap on the column.
+_STEP_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _disambiguated_org_slugs(
@@ -159,8 +165,17 @@ async def resolve_notification_urls(
         org_slug = org_slugs.get(org_id)
         # A blank or hyphen-leading slug means the org name had no
         # alphanumeric content — there is no valid route, so degrade.
-        if org_slug and not org_slug.startswith("-"):
-            result[n.id] = f"/{org_slug}{path}"
-        else:
+        if not (org_slug and not org_slug.startswith("-")):
             result[n.id] = None
+            continue
+        url = f"/{org_slug}{path}"
+        # Step deep link: run-only, validated step_id. Other entity types
+        # ignore payload here; future resolvers may opt in similarly.
+        if (n.entity_type or "").lower() == "run" and isinstance(
+            n.payload, dict
+        ):
+            step_id = n.payload.get("step_id")
+            if isinstance(step_id, str) and _STEP_ID_RE.match(step_id):
+                url = f"{url}#step-{step_id}"
+        result[n.id] = url
     return result

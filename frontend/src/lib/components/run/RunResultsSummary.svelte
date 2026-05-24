@@ -86,7 +86,10 @@
                         {@const origResults = stepData?.original_results}
                         {@const origValue = stepData?.original_value}
                         {@const isEdited = showEditAnnotations && !!(origResults || origValue)}
-                        <div class="p-3 rounded border {isEdited ? 'bg-amber-50 border-amber-200' : 'bg-background border-border'}">
+                        <div
+                            data-step-id={step.id}
+                            class="p-3 rounded border {isEdited ? 'bg-amber-50 border-amber-200' : 'bg-background border-border'}"
+                        >
                             <div class="flex items-start justify-between mb-2">
                                 <div>
                                     <p class="font-medium text-foreground">

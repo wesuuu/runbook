@@ -16,6 +16,8 @@
         areStepFieldsLocked,
         barcodeScanApplies,
     } from "./roleWizardState";
+    import { tick, untrack } from "svelte";
+    import { focusStep } from "$lib/utils/stepDeepLink";
 
     interface SchemaProperty {
         type?: string;
@@ -57,6 +59,7 @@
         executionData = {},
         readonly = false,
         draftMode = false,
+        initialStepId = null,
         onDataUpdate,
         onAllStepsComplete,
     }: {
@@ -65,6 +68,7 @@
         executionData: Record<string, any>;
         readonly?: boolean;
         draftMode?: boolean;
+        initialStepId?: string | null;
         onDataUpdate?: (data: Record<string, any>) => void;
         onAllStepsComplete?: () => void;
     } = $props();
@@ -119,6 +123,67 @@
             };
         });
         stepData = newStepData;
+    });
+
+    // Track which initialStepId we've already processed so the seeding
+    // effect is one-shot per value of the prop. Keyed by `${runId}:${stepId}`
+    // so a wizard remount for a different run resets the guard.
+    let lastSeededKey = $state<string | null>(null);
+
+    function hasUnsavedExecutionData(): boolean {
+        const sid = steps[currentStepIdx]?.id;
+        if (!sid) return false;
+        const live = stepData[sid];
+        const snapshot = executionData?.[sid];
+        if (!live) return false;
+        const liveFields = {
+            results: live.results ?? null,
+            value: live.value ?? null,
+            notes: live.notes ?? null,
+        };
+        const snapFields = {
+            results: snapshot?.results ?? null,
+            value: snapshot?.value ?? null,
+            notes: snapshot?.notes ?? null,
+        };
+        return JSON.stringify(liveFields) !== JSON.stringify(snapFields);
+    }
+
+    // Seed currentStepIdx from a deep link, but only when safe. Tracks
+    // ONLY initialStepId + runId + steps.length 0→N (async load) by
+    // reading mutable state through untrack.
+    $effect(() => {
+        if (!initialStepId) return;
+        const key = `${runId}:${initialStepId}`;
+        if (lastSeededKey === key) return;
+        if (steps.length === 0) return;
+
+        untrack(() => {
+            const idx = steps.findIndex((s) => s.id === initialStepId);
+            if (idx < 0) {
+                lastSeededKey = key;
+                return;
+            }
+            if (currentStepIdx !== 0) {
+                lastSeededKey = key;
+                return;
+            }
+            if (hasUnsavedExecutionData()) {
+                lastSeededKey = key;
+                return;
+            }
+            currentStepIdx = idx;
+            lastSeededKey = key;
+        });
+    });
+
+    // After currentStepIdx settles, scroll + highlight the wizard's step
+    // container. tick() waits for Svelte's DOM flush.
+    $effect(() => {
+        if (!initialStepId) return;
+        if (steps[currentStepIdx]?.id !== initialStepId) return;
+        const id = initialStepId;
+        tick().then(() => focusStep(id));
     });
 
     const currentStep = $derived(steps[currentStepIdx]);
@@ -561,7 +626,7 @@
             </div>
 
             <!-- Form Fields -->
-            <div class="flex-1 space-y-6 mb-8">
+            <div data-step-id={currentStep?.id} class="flex-1 space-y-6 mb-8">
                 {#if hasSchema}
                     <!-- Schema-driven fields from paramSchema -->
                     {#each editableFields as [key, prop]}
@@ -655,14 +720,14 @@
                     <!-- Legacy fallback for steps without paramSchema -->
                     <div>
                         <label
-                            for="step-value"
+                            for="step-value-input"
                             class="block text-base font-medium text-slate-700 mb-2"
                         >
                             Value / Measurement
                             <span class="text-red-400">*</span>
                         </label>
                         <input
-                            id="step-value"
+                            id="step-value-input"
                             type="text"
                             value={currentData.value || ""}
                             onchange={(e) =>
@@ -683,13 +748,13 @@
                 <!-- Notes -->
                 <div>
                     <label
-                        for="step-notes"
+                        for="step-notes-input"
                         class="block text-base font-medium text-slate-700 mb-2"
                     >
                         Notes & Observations
                     </label>
                     <textarea
-                        id="step-notes"
+                        id="step-notes-input"
                         value={currentData.notes || ""}
                         onchange={(e) => updateNotes(e.currentTarget.value)}
                         onblur={saveStepData}

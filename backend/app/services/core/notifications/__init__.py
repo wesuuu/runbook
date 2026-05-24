@@ -8,13 +8,15 @@ Usage in endpoints:
         entity_id, recipients, context,
     )
 
-TD-0091c amendment A: send_notification opens its own AsyncSessionLocal
-session so it stays valid after the request session is closed by FastAPI's
-BackgroundTasks teardown.
+send_notification opens its own AsyncSessionLocal session so it stays
+valid after the request session is closed by FastAPI's BackgroundTasks
+teardown.
 """
 
 import logging
 from uuid import UUID
+
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import AsyncSessionLocal
 from app.models.notifications import Notification
@@ -40,6 +42,7 @@ async def send_notification(
     entity_id: UUID,
     recipients: list[UUID],
     context: dict,
+    payload: dict | None = None,
 ) -> None:
     """Main entry point: create in-app notifications and dispatch to channels.
 
@@ -53,6 +56,11 @@ async def send_notification(
         entity_id: Entity UUID for deep linking.
         recipients: List of user IDs to notify.
         context: Template variables (run_name, role_name, etc.).
+        payload: Optional schemaless dict persisted on each Notification.
+            Pass {"step_id": "<id>"} (matching ^[A-Za-z0-9_-]{1,64}$)
+            for step-scoped events on a run; the resolver will append
+            #step-<id> to the deep link. Capped at 512 bytes by a CHECK
+            constraint on the column.
     """
     template_fn = TEMPLATES.get(event_type)
     if not template_fn:
@@ -66,6 +74,7 @@ async def send_notification(
         template_fn(context, personal=False)
     )
 
+    notif_payload = payload if payload is not None else {}
     async with AsyncSessionLocal() as db:
         try:
             for user_id in recipients:
@@ -77,6 +86,9 @@ async def send_notification(
                         entity_id=entity_id,
                         title=title_personal,
                         message=body_personal,
+                        # Per-row dict copy so SQLAlchemy doesn't hand the
+                        # same mutable dict to N ORM instances.
+                        payload=dict(notif_payload),
                     )
                 )
             await db.flush()
@@ -111,6 +123,22 @@ async def send_notification(
                 )
 
             await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            # Most likely the ck_notifications_payload_size CHECK firing
+            # — log enough to attribute the malformed producer, then
+            # re-raise so the background-task supervisor sees the failure.
+            logger.error(
+                "Notification persist failed (likely payload CHECK): "
+                "event=%s entity=%s/%s recipients=%d payload_bytes=%d err=%s",
+                event_type,
+                entity_type,
+                entity_id,
+                len(recipients),
+                len(str(notif_payload)),
+                exc.orig,
+            )
+            raise
         except Exception:
             await db.rollback()
             raise

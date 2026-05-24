@@ -470,11 +470,11 @@
                     {/each}
                 {:else}
                     <div>
-                        <label for="step-value" class="block text-sm font-medium text-slate-700 mb-1">
+                        <label for="step-value-input" class="block text-sm font-medium text-slate-700 mb-1">
                             Value / Measurement <span class="text-red-400">*</span>
                         </label>
                         <input
-                            id="step-value"
+                            id="step-value-input"
                             type="text"
                             value={currentData.value || ''}
                             onchange={(e) => updateLegacyValue(e.currentTarget.value)}
@@ -490,11 +490,11 @@
 
                 <!-- Notes -->
                 <div>
-                    <label for="step-notes" class="block text-sm font-medium text-slate-700 mb-1">
+                    <label for="step-notes-input" class="block text-sm font-medium text-slate-700 mb-1">
                         Notes
                     </label>
                     <textarea
-                        id="step-notes"
+                        id="step-notes-input"
                         value={currentData.notes || ''}
                         onchange={(e) => updateNotes(e.currentTarget.value)}
                         onblur={saveStepData}

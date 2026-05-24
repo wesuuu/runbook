@@ -68,9 +68,8 @@
         goto(`/notifications${query}`, { keepFocus: true, noScroll: true });
     }
 
-    // NOTE: markRead / markAllRead / handleSelect mirror the same logic in
-    // components/layout/NotificationBell.svelte (count-2, no shared store
-    // yet). Keep the mark-read error semantics in sync across both.
+    // markRead / markAllRead / handleSelect mirror the same logic in
+    // components/layout/NotificationBell.svelte. Keep error semantics in sync.
     async function markRead(id: string): Promise<void> {
         const idx = items.findIndex((n) => n.id === id);
         if (idx === -1 || items[idx].read_at) return;
@@ -108,7 +107,10 @@
     function handleSelect(item: NotificationItem): void {
         const href = item.url;
         if (!item.read_at) markRead(item.id);
-        if (href) goto(href);
+        if (!href) return;
+        // SvelteKit's goto preserves URL fragments; the run page's
+        // $effect on $page.url.hash picks up #step-<id> and focuses.
+        goto(href, { noScroll: true });
     }
 
     const hasUnread = $derived(items.some((n) => !n.read_at));
