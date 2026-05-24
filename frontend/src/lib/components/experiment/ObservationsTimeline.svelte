@@ -47,8 +47,12 @@ let { items, truncated, loading }: Props = $props();
                     {/each}
                 </ol>
                 {#if truncated}
-                    <div class="text-xs text-muted-foreground mt-2">
-                        Showing 500 most recent observations.
+                    <div class="text-xs text-amber-700 mt-2 flex items-start gap-1.5">
+                        <span aria-hidden="true">⚠</span>
+                        <span>
+                            Showing the 500 most recent observations.
+                            Older entries are hidden — export the PDF for a complete record.
+                        </span>
                     </div>
                 {/if}
             {/if}
