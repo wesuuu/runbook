@@ -452,6 +452,12 @@ async def lifespan(app: FastAPI):
 
     ensure_cursive_font_registered()
 
+    # F-0043: fail fast if the experiment-PDF Unicode fonts are missing,
+    # so the first export request doesn't 500 on production.
+    from app.services.experiments import pdf_export
+
+    pdf_export.assert_fonts_available()
+
     from app.services.lifecycle import loops_client
 
     if loops_client.is_configured():

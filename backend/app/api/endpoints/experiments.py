@@ -1112,8 +1112,8 @@ async def export_experiment_pdf(
     except asyncio.TimeoutError:
         elapsed_ms = int((time.monotonic() - started) * 1000)
         _log.warning(
-            "pdf_export_timeout experiment_id=%s timeout_s=%s elapsed_ms=%d",
-            experiment_id, EXPORT_TIMEOUT_SECONDS, elapsed_ms,
+            "pdf_export_timeout experiment_id=%s slug=%s timeout_s=%s elapsed_ms=%d",
+            experiment_id, exp.slug, EXPORT_TIMEOUT_SECONDS, elapsed_ms,
         )
         # Audit timeouts too — they are user-visible export failures and
         # appear in inspection histories.
@@ -1133,9 +1133,12 @@ async def export_experiment_pdf(
         )
 
     duration_ms = int((time.monotonic() - started) * 1000)
-    _log.info(
-        "pdf_export_ok experiment_id=%s bytes=%d duration_ms=%d",
-        experiment_id, len(content), duration_ms,
+    # Anything over 5s is worth investigating before it crosses the 30s
+    # timeout — emit as a warning so it surfaces in dashboards.
+    log_fn = _log.warning if duration_ms > 5000 else _log.info
+    log_fn(
+        "pdf_export_ok experiment_id=%s slug=%s bytes=%d duration_ms=%d",
+        experiment_id, exp.slug, len(content), duration_ms,
     )
 
     await log_audit(

@@ -10,7 +10,6 @@ Latin-1 only and would mojibake or raise on the first µ.
 """
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -19,12 +18,28 @@ from fpdf import FPDF
 from app.services.experiments.conditions import compute_conditions
 
 _FONT_DIR = Path(__file__).resolve().parents[2] / "static" / "fonts"
+_FONT_FILES = ("DejaVuSans.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans-Oblique.ttf")
 
 # Bounded thread pool so a burst of PDF requests can't exhaust the default
 # asyncio executor (which is shared with every other to_thread caller).
 # Two slots match the practical worker count and keep memory in check;
 # additional callers queue without blocking the event loop.
 PDF_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pdf-export")
+
+
+def assert_fonts_available() -> None:
+    """Fail fast at app startup if PDF fonts are missing.
+
+    Without this we'd raise at the first export request, after the user
+    already clicked "Export PDF" — much worse failure mode than a noisy
+    boot.
+    """
+    missing = [f for f in _FONT_FILES if not (_FONT_DIR / f).exists()]
+    if missing:
+        raise RuntimeError(
+            f"PDF export fonts missing in {_FONT_DIR}: {missing}. "
+            "Copy DejaVuSans* from a system install (e.g. fonts-dejavu)."
+        )
 
 
 def _make_pdf() -> FPDF:
@@ -39,9 +54,17 @@ def _header(pdf: FPDF, experiment) -> None:
     pdf.set_font("DejaVu", "B", 16)
     pdf.cell(0, 10, f"Experiment: {experiment.name}", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("DejaVu", "", 10)
+    # Byte-stable header: when the conclusion is locked, anchor "Exported"
+    # to the lock timestamp so two consecutive exports of the same locked
+    # experiment produce identical bytes (hash-based integrity, regulator
+    # round-trip tests, and the dedup cache all rely on this).
+    if experiment.conclusion_locked_at:
+        exported = experiment.conclusion_locked_at.isoformat()
+    else:
+        exported = "draft"
     pdf.cell(
         0, 6,
-        f"Slug: {experiment.slug}  •  Exported: {datetime.utcnow().isoformat()}Z",
+        f"Slug: {experiment.slug}  •  Exported: {exported}",
         new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(4)
