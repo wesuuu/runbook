@@ -15,9 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.deps import get_current_user, get_or_404, require_active_subscription
+from app.core.deps import (
+    get_current_user,
+    get_or_404,
+    require_active_subscription,
+    require_org_role,
+)
 from app.db.session import get_db
-from app.models.iam import ObjectType, PermissionLevel, User
+from app.models.iam import ObjectType, OrgRole, PermissionLevel, User
 from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Experiment, Run
@@ -616,13 +621,9 @@ async def unlock_experiment_conclusion(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
+    __: User = Depends(require_org_role(OrgRole.ADMIN)),
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
-    allowed = await check_permission(
-        db, user.id, ObjectType.PROJECT, exp.project_id, PermissionLevel.ADMIN,
-    )
-    if not allowed:
-        raise HTTPException(403, "Admin only")
 
     conclusion_before = exp.conclusion
     locked_by_before = exp.conclusion_locked_by_name

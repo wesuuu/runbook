@@ -401,6 +401,66 @@ async def test_role_assignment_blocked_when_parent_experiment_locked(
 
 
 @pytest.mark.asyncio
+async def test_unlock_403_for_project_admin_who_is_not_org_admin(
+    client, locked_experiment, db_session, test_org
+):
+    """Unlock must require OrgRole.ADMIN, not PROJECT.ADMIN.
+
+    A user with PROJECT.ADMIN on the parent project but only OrgRole.MEMBER
+    would pass the old check; the tightened check must reject them.
+    """
+    from app.core.security import create_access_token, hash_password
+    from app.models.iam import (
+        ObjectPermission,
+        ObjectType,
+        OrganizationMember,
+        PermissionLevel,
+        PrincipalType,
+        User,
+    )
+
+    project_admin = User(
+        email="proj-admin-only@example.com",
+        hashed_password=hash_password("pw"),
+        full_name="Project Admin Only",
+        selected_org_id=test_org.id,
+        email_verified=True,
+    )
+    db_session.add(project_admin)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(
+            user_id=project_admin.id,
+            organization_id=test_org.id,
+            roles=["MEMBER"],
+        )
+    )
+    db_session.add(
+        ObjectPermission(
+            principal_type=PrincipalType.USER,
+            principal_id=project_admin.id,
+            object_type=ObjectType.PROJECT.value,
+            object_id=locked_experiment.project_id,
+            permission_level=PermissionLevel.ADMIN.value,
+        )
+    )
+    await db_session.flush()
+
+    token = create_access_token(
+        project_admin.id,
+        org_id=test_org.id,
+        subscription_tier=test_org.subscription_tier,
+        email_verified=True,
+    )
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/conclusion/unlock",
+        json={"reason": "Should be rejected — not org admin."},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_unlink_run_blocked_when_experiment_locked(
     client, locked_experiment, db_session, auth_headers
 ):
