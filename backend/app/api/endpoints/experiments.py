@@ -38,6 +38,7 @@ from app.schemas.runs import (
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission, get_visible_project_ids
 from app.services.experiments import pdf_export
+from app.services.experiments.lock_guard import locked_409
 from app.services.experiments.observations import aggregate_observations
 from app.services.experiments.status import (
     derive_lifecycle_status,
@@ -456,12 +457,8 @@ async def update_experiment(
 
     # F-0043: lock guard — while locked, ALL mutations 409.
     if exp.conclusion_locked_at is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "EXPERIMENT_LOCKED",
-                "message": "Experiment conclusion is locked. Admin must unlock first.",
-            },
+        raise locked_409(
+            "Experiment conclusion is locked. Admin must unlock first."
         )
 
     changes = {}
@@ -772,13 +769,7 @@ async def add_run_to_experiment(
     )
     await db.refresh(exp, ["conclusion_locked_at"])
     if exp.conclusion_locked_at is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "EXPERIMENT_LOCKED",
-                "message": "Cannot add a run to a locked experiment.",
-            },
-        )
+        raise locked_409("Cannot add a run to a locked experiment.")
 
     if body.run_id:
         # Link existing run
@@ -851,6 +842,11 @@ async def unlink_run_from_experiment(
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
 
+    # F-0043: lock guard — unlinking a run from a locked experiment would
+    # silently mutate the locked record's run set.
+    if exp.conclusion_locked_at is not None:
+        raise locked_409("Cannot unlink a run from a locked experiment.")
+
     allowed = await check_permission(
         db,
         user.id,
@@ -897,13 +893,7 @@ async def add_experiment_note(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     if exp.conclusion_locked_at is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "EXPERIMENT_LOCKED",
-                "message": "Notes are frozen after the conclusion is locked.",
-            },
-        )
+        raise locked_409("Notes are frozen after the conclusion is locked.")
 
     allowed = await check_permission(
         db,
@@ -982,13 +972,7 @@ async def delete_experiment_note(
     exp = await get_or_404(db, Experiment, experiment_id)
 
     if exp.conclusion_locked_at is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "EXPERIMENT_LOCKED",
-                "message": "Notes are frozen after the conclusion is locked.",
-            },
-        )
+        raise locked_409("Notes are frozen after the conclusion is locked.")
 
     allowed = await check_permission(
         db,

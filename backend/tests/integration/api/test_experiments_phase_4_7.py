@@ -309,3 +309,117 @@ async def test_export_pdf_503_on_timeout(
     )
     assert res.status_code == 503
     assert res.json()["detail"]["code"] == "EXPORT_TIMEOUT"
+
+
+# --- Lock guard on run-side endpoints (review-panel fix) ---
+
+
+@pytest.mark.asyncio
+async def test_put_run_blocked_when_parent_experiment_locked(
+    client, locked_experiment, db_session, auth_headers
+):
+    """PUT /runs/{id} must 409 when parent experiment is locked."""
+    from app.models.runs import Run, RunStatus
+
+    run = Run(
+        name="Run on locked exp",
+        slug="run-on-locked-exp",
+        project_id=locked_experiment.project_id,
+        experiment_id=locked_experiment.id,
+        status=RunStatus.COMPLETED,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    for body in (
+        {"key_result_label": "titer", "key_result_value": 5.0, "key_result_unit": "g/L"},
+        {"name": "renamed"},
+    ):
+        res = await client.put(
+            f"/runs/{run.id}",
+            json=body,
+            headers=auth_headers,
+        )
+        assert res.status_code == 409, body
+        assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_post_run_note_blocked_when_parent_experiment_locked(
+    client, locked_experiment, db_session, auth_headers
+):
+    """POST /runs/{id}/notes must 409 when parent experiment is locked."""
+    from app.models.runs import Run, RunStatus
+
+    run = Run(
+        name="Note run",
+        slug="note-run-locked",
+        project_id=locked_experiment.project_id,
+        experiment_id=locked_experiment.id,
+        status=RunStatus.COMPLETED,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    res = await client.post(
+        f"/runs/{run.id}/notes",
+        json={"content": "post-lock note", "flags": []},
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_role_assignment_blocked_when_parent_experiment_locked(
+    client, locked_experiment, db_session, auth_headers, test_user
+):
+    """POST /runs/{id}/role-assignments must 409 when parent locked."""
+    from app.models.runs import Run, RunStatus
+
+    run = Run(
+        name="Role run",
+        slug="role-run-locked",
+        project_id=locked_experiment.project_id,
+        experiment_id=locked_experiment.id,
+        status=RunStatus.COMPLETED,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    res = await client.post(
+        f"/runs/{run.id}/role-assignments",
+        json={
+            "lane_node_id": "lane-1",
+            "role_name": "operator",
+            "user_id": str(test_user.id),
+        },
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
+
+
+@pytest.mark.asyncio
+async def test_unlink_run_blocked_when_experiment_locked(
+    client, locked_experiment, db_session, auth_headers
+):
+    """DELETE /experiments/{id}/runs/{run_id} must 409 when locked."""
+    from app.models.runs import Run, RunStatus
+
+    run = Run(
+        name="Linked run",
+        slug="linked-run-locked",
+        project_id=locked_experiment.project_id,
+        experiment_id=locked_experiment.id,
+        status=RunStatus.COMPLETED,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    res = await client.delete(
+        f"/experiments/{locked_experiment.id}/runs/{run.id}",
+        headers=auth_headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "EXPERIMENT_LOCKED"
