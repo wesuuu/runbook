@@ -55,6 +55,24 @@ if (typeof Element !== 'undefined' && !(Element.prototype as any).getAnimations)
     };
 }
 
+// jsdom does not implement IntersectionObserver. Components that observe
+// visibility (e.g. EquipmentPickerModal's create-form scroll-into-view link)
+// instantiate it on mount, so provide a no-op stub.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).IntersectionObserver = class IntersectionObserverStub {
+        root: Element | null = null;
+        rootMargin = '';
+        thresholds: ReadonlyArray<number> = [];
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+        takeRecords(): IntersectionObserverEntry[] {
+            return [];
+        }
+    };
+}
+
 afterEach(() => {
     cleanup();
 });

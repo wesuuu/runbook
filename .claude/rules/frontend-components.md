@@ -99,5 +99,5 @@ function setTab(tab: TabName) {
 ## Page & Element Transitions
 
 - **Page navigation**: Use Svelte transitions on page-level content so route changes feel smooth, not jarring. Apply `fade` or `fly` from `svelte/transition` on the top-level wrapper of each page.
-- **Element creation/destruction**: When elements enter or leave the DOM (lists, cards, modals, toasts), apply Svelte transitions (`fade`, `fly`, `slide`, `scale`). Use `animate:flip` for reordering lists.
+- **Element creation/destruction**: When elements enter or leave the DOM (lists, cards, modals, toasts), apply Svelte transitions (`fade`, `fly`, `slide`, `scale`). Use `animate:flip` for reordering lists. If the controlling `{#if}` lives in a *parent* component (e.g. an `Inspector` whose `<aside>` is the root and `{#if selectedNode}` is in the page), use the `|global` modifier (`transition:fly|global={{...}}`) — local transitions only fire when the immediate enclosing `{#if}` flips.
 - **Loading states**: Transition between loading skeletons and loaded content with `fade` to avoid hard pops.

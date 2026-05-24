@@ -1,6 +1,6 @@
 <script lang="ts">
     import { getContext, onMount } from "svelte";
-    import { slide } from "svelte/transition";
+    import { slide, fly } from "svelte/transition";
     import { cubicOut } from "svelte/easing";
     import type { Node } from "@xyflow/svelte";
     import { X } from "lucide-svelte";
@@ -260,7 +260,11 @@
 </script>
 
 {#if node}
-    <aside class="inspector" data-tour="protocol-inspector">
+    <aside
+        class="inspector"
+        data-tour="protocol-inspector"
+        transition:fly|global={{ x: 320, duration: 220, easing: cubicOut, opacity: 1 }}
+    >
         <!-- Header -->
         <div class="inspector-header">
             <div class="header-top">
@@ -524,6 +528,8 @@
         flex-direction: column;
         overflow-y: auto;
         font-family: "Inter", system-ui, sans-serif;
+        position: relative;
+        z-index: 20;
     }
 
     .inspector-header {

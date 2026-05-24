@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Equipment Picker — Option B · Detail Dock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap">
+<style>
+    /* ---------- shadcn-svelte theme tokens (lab-glass) ---------- */
+    :root {
+        --bg:           hsl(200 25% 97%);
+        --fg:           hsl(215 40% 12%);
+        --card:         hsl(0 0% 100%);
+        --card-fg:      hsl(215 40% 12%);
+        --muted:        hsl(205 25% 94%);
+        --muted-fg:     hsl(215 15% 42%);
+        --primary:      hsl(195 85% 22%);
+        --primary-fg:   hsl(195 30% 98%);
+        --accent:       hsl(155 70% 38%);
+        --accent-fg:    hsl(155 30% 98%);
+        --destructive:  hsl(355 75% 50%);
+        --border:       hsl(205 22% 87%);
+        --ring:         hsl(195 85% 22%);
+
+        --radius:    0.625rem;
+        --radius-md: 0.375rem;
+        --radius-sm: 0.125rem;
+
+        --font-sans: 'DM Sans', system-ui, sans-serif;
+        --font-mono: 'DM Mono', ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+        margin: 0;
+        font-family: var(--font-sans);
+        font-size: 14px;
+        color: var(--fg);
+        background:
+            radial-gradient(1100px 580px at 12% -8%, hsl(195 70% 88% / .55), transparent 60%),
+            radial-gradient(900px 520px at 88% 110%, hsl(155 60% 88% / .45), transparent 55%),
+            var(--bg);
+        min-height: 100vh;
+        padding: 4rem 1rem;
+        display: grid;
+        place-items: start center;
+    }
+
+    .caption {
+        max-width: 32rem;
+        margin: 0 auto 1.25rem;
+        text-align: center;
+        color: var(--muted-fg);
+        font-size: 0.8125rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .caption strong { color: var(--fg); font-weight: 600; letter-spacing: 0; text-transform: none; }
+
+    .stage {
+        position: relative;
+        width: min(100%, 64rem);
+        min-height: 720px;
+        border-radius: 1rem;
+        background:
+            linear-gradient(180deg, hsl(215 30% 12% / .35), hsl(215 30% 12% / .45));
+        padding: 2rem;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 30px 60px -20px hsl(215 50% 18% / .35);
+        overflow: hidden;
+    }
+    .stage::before {
+        content: "";
+        position: absolute; inset: 0;
+        background-image: radial-gradient(hsl(0 0% 100% / .04) 1px, transparent 1px);
+        background-size: 14px 14px;
+        opacity: .6;
+        pointer-events: none;
+    }
+
+    /* ---------- Dialog.Content shell ---------- */
+    .dialog {
+        position: relative;
+        width: 100%;
+        max-width: 32rem;
+        max-height: 85vh;
+        min-height: 640px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow:
+            0 24px 50px -12px hsl(215 50% 14% / .25),
+            0 8px 16px -6px hsl(215 50% 14% / .15);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    /* ---------- segmented tabs in header ---------- */
+    .dialog-header {
+        padding: 1.25rem 1.5rem 0;
+    }
+    .dialog-title {
+        font-size: 1.0625rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 0.125rem;
+    }
+    .dialog-subtitle {
+        font-size: 0.75rem;
+        color: var(--muted-fg);
+        margin: 0 0 0.875rem;
+    }
+    .tabs {
+        display: inline-flex;
+        background: var(--muted);
+        border-radius: var(--radius-md);
+        padding: 0.1875rem;
+        gap: 0.125rem;
+    }
+    .tab {
+        appearance: none;
+        border: none;
+        background: transparent;
+        font: inherit;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--muted-fg);
+        padding: 0.3125rem 0.75rem;
+        border-radius: calc(var(--radius-md) - 0.125rem);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+    }
+    .tab.active {
+        background: var(--card);
+        color: var(--fg);
+        box-shadow: 0 1px 2px hsl(215 30% 18% / .08);
+    }
+    .tab .count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.125rem;
+        padding: 0 0.3125rem;
+        height: 1.0625rem;
+        border-radius: 999px;
+        background: var(--primary);
+        color: var(--primary-fg);
+        font-size: 0.6875rem;
+        font-weight: 600;
+        line-height: 1;
+    }
+    .tab:not(.active) .count {
+        background: hsl(205 22% 78%);
+        color: var(--fg);
+    }
+    .close-x {
+        position: absolute;
+        right: 1rem; top: 1rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.75rem;
+        height: 1.75rem;
+        border: none;
+        background: transparent;
+        color: var(--muted-fg);
+        border-radius: 0.25rem;
+        cursor: pointer;
+    }
+    .close-x:hover { background: var(--muted); color: var(--fg); }
+
+    /* ---------- body ---------- */
+    .dialog-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0.875rem 1.5rem 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.875rem;
+    }
+
+    /* ---------- search row (sticky) ---------- */
+    .search-row {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: linear-gradient(180deg, var(--bg) 86%, transparent);
+        padding: 0.125rem 0 0.5rem;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    .input {
+        height: 2.25rem;
+        width: 100%;
+        min-width: 0;
+        padding: 0.25rem 0.75rem;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        font-family: inherit;
+        font-size: 0.875rem;
+        box-shadow: 0 1px 0 hsl(215 30% 18% / .04);
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .input::placeholder { color: var(--muted-fg); }
+    .input:focus-visible {
+        outline: none;
+        border-color: var(--ring);
+        box-shadow: 0 0 0 3px hsl(195 85% 22% / .25);
+    }
+    .input-with-icon { position: relative; flex: 1; }
+    .input-with-icon .input { padding-left: 2.125rem; }
+    .input-icon {
+        position: absolute;
+        left: 0.75rem; top: 50%;
+        translate: 0 -50%;
+        color: var(--muted-fg);
+        pointer-events: none;
+    }
+
+    /* ---------- card grid of equipment ---------- */
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+    .eq-card {
+        position: relative;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--card);
+        padding: 0.625rem 0.75rem;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        transition: border-color .15s, box-shadow .15s, transform .15s;
+        min-width: 0;
+    }
+    .eq-card:hover {
+        border-color: hsl(205 22% 76%);
+        box-shadow: 0 2px 8px hsl(215 50% 14% / .06);
+    }
+    .eq-card.selected {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px var(--primary), 0 2px 10px hsl(195 85% 22% / .12);
+    }
+    .eq-name {
+        font-weight: 500;
+        font-size: 0.875rem;
+        color: var(--fg);
+        line-height: 1.25;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding-right: 1.5rem; /* leave room for check icon */
+    }
+    .eq-meta {
+        font-size: 0.6875rem;
+        color: var(--muted-fg);
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .eq-meta .chip {
+        display: inline-flex;
+        height: 1.125rem;
+        padding: 0 0.4375rem;
+        border-radius: 999px;
+        background: var(--muted);
+        color: var(--muted-fg);
+        font-size: 0.625rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        align-items: center;
+    }
+    .check-icon {
+        position: absolute;
+        top: 0.5rem; right: 0.5rem;
+        width: 1.0625rem;
+        height: 1.0625rem;
+        border-radius: 999px;
+        background: var(--primary);
+        color: var(--primary-fg);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* ---------- create panel (full-form view) ---------- */
+    .create-panel {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--card);
+        padding: 1rem 1rem 0.875rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .create-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+    }
+    .create-panel-title {
+        margin: 0;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted-fg);
+    }
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.625rem 0.75rem;
+    }
+    .form-grid .full { grid-column: span 2; }
+    .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        min-width: 0;
+    }
+    .form-field > label {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        color: var(--muted-fg);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        display: flex;
+        gap: 0.25rem;
+        align-items: center;
+    }
+    .form-field .req {
+        color: var(--destructive);
+        font-weight: 700;
+    }
+    .select {
+        appearance: none;
+        background-image:
+            linear-gradient(45deg, transparent 50%, var(--muted-fg) 50%),
+            linear-gradient(135deg, var(--muted-fg) 50%, transparent 50%);
+        background-position:
+            calc(100% - 1rem) 50%,
+            calc(100% - 0.625rem) 50%;
+        background-size: 5px 5px, 5px 5px;
+        background-repeat: no-repeat;
+        padding-right: 1.875rem;
+    }
+    .file-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .file-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        height: 2.25rem;
+        padding: 0 0.75rem;
+        border-radius: var(--radius-md);
+        border: 1px dashed var(--border);
+        background: hsl(205 30% 96%);
+        color: var(--muted-fg);
+        font-size: 0.8125rem;
+        cursor: pointer;
+    }
+    .file-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .file-name {
+        font-size: 0.75rem;
+        color: var(--muted-fg);
+        font-family: var(--font-mono);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .create-panel-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--border);
+    }
+
+    /* ---------- detail dock (selected equipment, above footer) ---------- */
+    .dock {
+        flex-shrink: 0;
+        border-top: 1px solid var(--border);
+        background: hsl(195 60% 96%);
+        padding: 0.625rem 1.5rem 0.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .dock-title {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .dock-title .pill {
+        background: var(--primary);
+        color: var(--primary-fg);
+        font-weight: 700;
+        font-size: 0.6875rem;
+        padding: 0.0625rem 0.4375rem;
+        border-radius: 999px;
+        letter-spacing: 0;
+    }
+    .dock-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3125rem;
+        max-height: 8.5rem;
+        overflow-y: auto;
+    }
+    .dock-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto auto;
+        gap: 0.5rem;
+        align-items: center;
+        background: var(--card);
+        border: 1px solid hsl(195 50% 82%);
+        border-radius: var(--radius-sm);
+        padding: 0.3125rem 0.5rem 0.3125rem 0.625rem;
+    }
+    .dock-row .badge-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 999px;
+        background: var(--primary);
+        color: var(--primary-fg);
+        font-family: var(--font-mono);
+        font-size: 0.625rem;
+        font-weight: 600;
+    }
+    .dock-name {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .dock-id {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3125rem;
+    }
+    .dock-id .id-label {
+        font-size: 0.625rem;
+        font-weight: 700;
+        color: var(--muted-fg);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+    .id-input {
+        height: 1.625rem;
+        width: 4.25rem;
+        padding: 0 0.4375rem;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--card);
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        text-align: center;
+        color: var(--fg);
+    }
+    .id-input:focus-visible {
+        outline: none;
+        border-color: var(--ring);
+        box-shadow: 0 0 0 2px hsl(195 85% 22% / .2);
+    }
+    .dock-remove {
+        appearance: none;
+        background: transparent;
+        border: none;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 999px;
+        color: var(--muted-fg);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .dock-remove:hover { background: hsl(355 75% 92%); color: var(--destructive); }
+
+    /* ---------- buttons & footer ---------- */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.375rem;
+        height: 2.25rem;
+        padding: 0 0.875rem;
+        border-radius: var(--radius-md);
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition: all .12s ease;
+        white-space: nowrap;
+    }
+    .btn-primary {
+        background: var(--primary);
+        color: var(--primary-fg);
+        box-shadow: 0 1px 0 hsl(215 50% 14% / .12);
+    }
+    .btn-primary:hover { background: hsl(195 85% 18%); }
+    .btn-secondary {
+        background: var(--muted);
+        color: var(--fg);
+    }
+    .btn-secondary:hover { background: hsl(205 25% 90%); }
+    .btn-ghost {
+        background: transparent;
+        color: var(--muted-fg);
+    }
+    .btn-ghost:hover { background: var(--muted); color: var(--fg); }
+    .btn-new {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        height: 2.25rem;
+        padding: 0 0.75rem;
+        background: var(--card);
+        color: var(--primary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+    }
+    .btn-new:hover { border-color: var(--primary); }
+
+    .dialog-footer {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.875rem 1.5rem;
+        border-top: 1px solid var(--border);
+        background: var(--bg);
+    }
+    .footer-spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+<div class="caption">
+    <strong>Option B — Detail Dock.</strong> Cards for browsing. Selected items collect into a teal dock where IDs are managed together.
+</div>
+
+<div class="stage">
+<div class="dialog" role="dialog" aria-labelledby="title-b">
+    <button class="close-x" aria-label="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+
+    <div class="dialog-header">
+        <h2 class="dialog-title" id="title-b">Select Equipment</h2>
+        <p class="dialog-subtitle">Pick equipment for this step, then assign protocol-local IDs.</p>
+        <div class="tabs" role="tablist">
+            <button class="tab active" role="tab">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                Browse
+                <span class="count">38</span>
+            </button>
+            <button class="tab" role="tab">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New equipment
+            </button>
+        </div>
+    </div>
+
+    <div class="dialog-body">
+        <!-- search -->
+        <div class="search-row">
+            <div class="input-with-icon">
+                <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input class="input" type="text" placeholder="Search 38 items in San Diego HQ…" />
+            </div>
+        </div>
+
+        <!-- card grid -->
+        <div class="grid">
+            <div class="eq-card selected">
+                <div class="check-icon">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div class="eq-name">Beckman Avanti J-26 XPI</div>
+                <div class="eq-meta">
+                    <span class="chip">Centrifuge</span>
+                    <span>Rm 204 · A2</span>
+                </div>
+            </div>
+
+            <div class="eq-card selected">
+                <div class="check-icon">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div class="eq-name">Mettler XPR205 Balance</div>
+                <div class="eq-meta">
+                    <span class="chip">Balance</span>
+                    <span>Rm 204 · A1</span>
+                </div>
+            </div>
+
+            <div class="eq-card">
+                <div class="eq-name">Eppendorf 5810R</div>
+                <div class="eq-meta">
+                    <span class="chip">Centrifuge</span>
+                    <span>Rm 208 · C4</span>
+                </div>
+            </div>
+
+            <div class="eq-card">
+                <div class="eq-name">Sorvall Legend Micro 17</div>
+                <div class="eq-meta">
+                    <span class="chip">Microcentrifuge</span>
+                    <span>Rm 208 · C5</span>
+                </div>
+            </div>
+
+            <div class="eq-card">
+                <div class="eq-name">Biostat B 5L Bioreactor</div>
+                <div class="eq-meta">
+                    <span class="chip">Bioreactor</span>
+                    <span>Rm 312 · Bay 1</span>
+                </div>
+            </div>
+
+            <div class="eq-card">
+                <div class="eq-name">VWR Symphony 7 pH Meter</div>
+                <div class="eq-meta">
+                    <span class="chip">pH meter</span>
+                    <span>Rm 204 · B1</span>
+                </div>
+            </div>
+
+            <div class="eq-card">
+                <div class="eq-name">Thermo Heratherm Incubator</div>
+                <div class="eq-meta">
+                    <span class="chip">Incubator</span>
+                    <span>Rm 208 · D1</span>
+                </div>
+            </div>
+
+            <div class="eq-card">
+                <div class="eq-name">NanoDrop One Spectrophotometer</div>
+                <div class="eq-meta">
+                    <span class="chip">Spec</span>
+                    <span>Rm 204 · A4</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- new-equipment opener (the "New equipment" tab swaps body to the form view; this is the Browse-tab inline opener) -->
+        <button class="btn-new" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add equipment not in this list
+        </button>
+    </div>
+
+    <!-- selection dock -->
+    <div class="dock">
+        <div class="dock-title">
+            <span>Selected for this step</span>
+            <span class="pill">2</span>
+        </div>
+        <div class="dock-list">
+            <div class="dock-row">
+                <span class="badge-num">1</span>
+                <span class="dock-name">Beckman Avanti J-26 XPI</span>
+                <div class="dock-id">
+                    <span class="id-label">ID</span>
+                    <input class="id-input" value="E-001" />
+                </div>
+                <button class="dock-remove" aria-label="Remove">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                </button>
+            </div>
+            <div class="dock-row">
+                <span class="badge-num">2</span>
+                <span class="dock-name">Mettler XPR205 Balance</span>
+                <div class="dock-id">
+                    <span class="id-label">ID</span>
+                    <input class="id-input" value="E-002" />
+                </div>
+                <button class="dock-remove" aria-label="Remove">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="dialog-footer">
+        <div class="footer-spacer"></div>
+        <button class="btn btn-secondary" type="button">Cancel</button>
+        <button class="btn btn-primary" type="button">Apply</button>
+    </div>
+</div>
+</div>
+
+</body>
+</html>
