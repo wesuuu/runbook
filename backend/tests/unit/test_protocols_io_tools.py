@@ -85,7 +85,7 @@ def _enabled(monkeypatch):
 async def test_search_raises_when_master_flag_off(monkeypatch):
     monkeypatch.setattr(settings.features.external_protocols, "enabled", False)
     ctx = _FakeCtx(deps=_FakeDeps())
-    with pytest.raises(ValueError, match="disabled"):
+    with pytest.raises(ValueError, match="not available right now"):
         await kb.search_protocols_io(ctx, "miniprep")
 
 
@@ -95,7 +95,7 @@ async def test_search_raises_when_source_flag_off(monkeypatch):
     monkeypatch.setattr(ep, "enabled", True)
     monkeypatch.setattr(ep.protocols_io, "enabled", False)
     ctx = _FakeCtx(deps=_FakeDeps())
-    with pytest.raises(ValueError, match="protocols.io source is disabled"):
+    with pytest.raises(ValueError, match="not available right now"):
         await kb.search_protocols_io(ctx, "miniprep")
 
 
@@ -106,7 +106,7 @@ async def test_search_raises_when_token_missing(monkeypatch):
     monkeypatch.setattr(ep.protocols_io, "enabled", True)
     monkeypatch.setattr(ep.protocols_io, "access_token", "")
     ctx = _FakeCtx(deps=_FakeDeps())
-    with pytest.raises(ValueError, match="access token"):
+    with pytest.raises(ValueError, match="not available right now"):
         await kb.search_protocols_io(ctx, "miniprep")
 
 

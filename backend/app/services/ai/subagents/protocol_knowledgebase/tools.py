@@ -9,11 +9,14 @@ HTTP, and licensing logic lives in the connector modules and licenses.py.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 
 from pydantic_ai import RunContext
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 from app.services.ai.deps import ChatDeps
 from app.services.ai.subagents.protocol_knowledgebase import (
     openwetware,
@@ -36,21 +39,29 @@ TOOL_LABELS: dict[str, str] = {
 }
 
 
+_UNAVAILABLE_MSG = (
+    "External protocol search is not available right now. "
+    "Use the library or draft from scratch instead."
+)
+
+
 def _require_master_enabled() -> None:
     if not settings.features.external_protocols.enabled:
-        raise ValueError(
-            "External protocols feature is disabled. Ask an admin to enable "
-            "BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__ENABLED."
+        logger.warning(
+            "external_protocols disabled "
+            "(set BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__ENABLED=true to enable)"
         )
+        raise ValueError(_UNAVAILABLE_MSG)
 
 
 def _require_openwetware() -> None:
     _require_master_enabled()
     if not settings.features.external_protocols.openwetware.enabled:
-        raise ValueError(
-            "The OpenWetWare source is disabled "
-            "(BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__OPENWETWARE__ENABLED)."
+        logger.warning(
+            "OpenWetWare source disabled "
+            "(BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__OPENWETWARE__ENABLED)"
         )
+        raise ValueError(_UNAVAILABLE_MSG)
 
 
 def _require_protocols_io() -> str:
@@ -58,15 +69,17 @@ def _require_protocols_io() -> str:
     _require_master_enabled()
     cfg = settings.features.external_protocols.protocols_io
     if not cfg.enabled:
-        raise ValueError(
-            "The protocols.io source is disabled "
-            "(BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__PROTOCOLS_IO__ENABLED)."
+        logger.warning(
+            "protocols.io source disabled "
+            "(BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__PROTOCOLS_IO__ENABLED)"
         )
+        raise ValueError(_UNAVAILABLE_MSG)
     if not cfg.access_token.strip():
-        raise ValueError(
-            "protocols.io is enabled but no access token is configured "
-            "(BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__PROTOCOLS_IO__ACCESS_TOKEN)."
+        logger.warning(
+            "protocols.io enabled but missing access token "
+            "(BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__PROTOCOLS_IO__ACCESS_TOKEN)"
         )
+        raise ValueError(_UNAVAILABLE_MSG)
     return cfg.access_token
 
 
@@ -122,6 +135,7 @@ async def fetch_openwetware_protocol(
         ctx.deps.org_id, "openwetware", cfg.rate_limit_per_minute
     )
     payload = await openwetware.fetch(url, timeout=cfg.request_timeout_seconds)
+    payload.source_label = "OpenWetWare"
 
     # Cache iff this is not a genuine failure — the approval tool reads it
     # back. (For OpenWetWare, error is None iff steps were parsed.)
@@ -197,6 +211,7 @@ async def fetch_protocols_io(
     payload = await protocols_io.fetch_protocols_io(
         url, access_token=token, timeout=cfg.request_timeout_seconds
     )
+    payload.source_label = "protocols.io"
 
     # Cache iff not a genuine failure — a license-restricted but valid
     # payload IS cached so the approval tool can re-check import_allowed.

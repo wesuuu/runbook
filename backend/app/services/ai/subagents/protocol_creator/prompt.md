@@ -198,25 +198,34 @@ edits.
 ## End of turn
 
 Once `create_protocol` returns `ok=true`, your final reply MUST include
-a markdown link to the new protocol so the user can jump straight to it:
-`[Protocol Name](/protocols/<protocol_id>)`. This is non-negotiable —
-the protocol_id is returned from the tool call, use it verbatim.
+a markdown link to the new protocol so the user can jump straight to it.
+
+**The tool result already contains a pre-formatted link in
+`protocol_markdown_link`. Emit it verbatim. Do NOT construct any
+`/protocols/...` URL yourself — the server has computed the correct
+org-scoped form for you.**
+
+If `protocol_markdown_link` is `None`, the link could not be resolved
+(rare — happens only when the user is not a member of the org). In that
+case, mention the protocol name as plain text and add a one-sentence
+note that the link could not be generated.
 
 If the protocol was imported from an external source (the dispatch
 prompt contained `EXTERNAL_PROTOCOL_SOURCE` with a `source_url`), your
-final reply MUST also include a markdown link to that source:
-`[OpenWetWare source](<source_url>)`. Cite the source so the user can
-verify the origin in one click.
+final reply MUST also include a markdown link to that source, labeled
+according to the source domain:
+
+- openwetware.org → `[OpenWetWare source](<source_url>)`
+- protocols.io → `[protocols.io source](<source_url>)`
 
 Example final reply for an external import:
 
-  "Drafted [Heat-shock transformation of E. coli](/protocols/abc-123)
-  in the Cell Culture project, copied verbatim from the
+  "Drafted {{protocol_markdown_link verbatim}} in the Cell Culture
+  project, copied verbatim from the
   [OpenWetWare source](https://openwetware.org/wiki/Sauer:Heat_shock_transformation_of_E._coli).
   Two user deviations are noted on the description."
 
-Do not omit either link. Do not say "I created the protocol" without
-the protocol link. Do not paste raw URLs — they must be clickable
+Do not omit either link. Do not paste raw URLs — they must be clickable
 markdown links.
 
 **Never claim a creation you didn't actually execute via a tool call.**

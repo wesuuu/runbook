@@ -16,3 +16,4 @@
 - [BUG-005 Chat Turn Heartbeat QA](project_bug005_chat_heartbeat.md) — all 3 scenarios pass; worktree DB needs manual Pro tier update; pre-seeded interrupted session confirmed banner + dismiss
 - [F-0095 Settings Sidenav QA](project_f0095_settings_sidenav_qa.md) — 2 bugs fixed: toast on deep-link guard (tick() deferred), collapse toggle icon misaligned
 - [F-0093 Experiments Workspace QA](project_f0093_experiments_workspace.md) — schema fix (uuidString vs .uuid()); ExperimentsTab via ?tab= param; nav-active CSS class; wt5 DB starts empty
+- [BUG-0009 Chat Agent Fixes QA](project_bug0009_chat_agent_fixes.md) — canonical URL, protocols.io copy, image pipeline; docling venv uninstalled blocks live sub-issue #4 test
