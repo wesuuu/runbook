@@ -234,6 +234,23 @@ async def test_unlock_422_short_reason(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["        ", "\t\t\t\t\t\t\t\t", "  short  "])
+async def test_unlock_422_whitespace_padded_short_reason(
+    client, locked_experiment, admin_headers, reason
+):
+    """Eight whitespace chars (or padded-short) must not satisfy min_length=8.
+
+    UI trims before submit; backend must too, or chat/API clients can bypass.
+    """
+    res = await client.post(
+        f"/experiments/{locked_experiment.id}/conclusion/unlock",
+        json={"reason": reason},
+        headers=admin_headers,
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_unlock_happy_path(
     client, locked_experiment, admin_headers
 ):
@@ -296,6 +313,38 @@ async def test_export_pdf_returns_pdf_with_lock_signature(
     assert res.headers["content-type"] == "application/pdf"
     assert len(res.content) > 1000  # non-trivial PDF
     assert res.content.startswith(b"%PDF-")
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_byte_stable_when_locked(
+    client, locked_experiment, auth_headers
+):
+    """Two consecutive exports of a locked experiment must be byte-identical.
+
+    This is the regulatory-integrity claim in pdf_export.py: hash-based
+    round-trip checks and dedup caching depend on it. fpdf2 embeds its own
+    /CreationDate in PDF metadata, which must also be pinned to the lock
+    timestamp (not wall-clock).
+    """
+    import asyncio
+    res1 = await client.get(
+        f"/experiments/{locked_experiment.id}/export.pdf",
+        headers=auth_headers,
+    )
+    # Cross a 1-second boundary so any wall-clock-derived bytes drift if the
+    # implementation is not pinned. fpdf2's PDF /CreationDate has second
+    # resolution.
+    await asyncio.sleep(1.1)
+    res2 = await client.get(
+        f"/experiments/{locked_experiment.id}/export.pdf",
+        headers=auth_headers,
+    )
+    assert res1.status_code == 200
+    assert res2.status_code == 200
+    assert res1.content == res2.content, (
+        f"locked PDFs differ at byte "
+        f"{next((i for i, (a, b) in enumerate(zip(res1.content, res2.content)) if a != b), 'N/A')}"
+    )
 
 
 @pytest.mark.asyncio

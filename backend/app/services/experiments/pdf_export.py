@@ -168,6 +168,12 @@ def generate_experiment_pdf(experiment, runs: list[Any], observations: list[dict
     Synchronous and CPU-bound — caller is responsible for asyncio.to_thread.
     """
     pdf = _make_pdf()
+    # Pin fpdf2's own PDF /CreationDate metadata to the lock timestamp so the
+    # whole document (not just our header text) is byte-stable across repeated
+    # exports of a locked experiment. Without this, /CreationDate drifts every
+    # second and breaks the hash-based integrity claim in the module docstring.
+    if experiment.conclusion_locked_at:
+        pdf.creation_date = experiment.conclusion_locked_at
     pdf.add_page()
     _header(pdf, experiment)
     _objective(pdf, experiment)

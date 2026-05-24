@@ -138,7 +138,18 @@ class ExperimentUpdate(BaseModel):
 
 
 class ConclusionUnlockRequest(BaseModel):
-    reason: str = Field(min_length=8, max_length=1000)
+    reason: str = Field(max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _strip_and_require_8_chars(cls, v: str) -> str:
+        # Strip first, then length-check: 8 whitespace chars are not a reason.
+        # UI already trims in ConclusionCard.svelte; this closes the API gap
+        # for chat agents and direct callers.
+        stripped = v.strip()
+        if len(stripped) < 8:
+            raise ValueError("reason must be at least 8 non-whitespace characters")
+        return stripped
 
 
 # Run Schemas
