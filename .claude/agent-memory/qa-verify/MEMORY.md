@@ -15,3 +15,4 @@
 - [F-0092 Dashboard Action Rail QA](project_f0092_dashboard_action_rail.md) — PASS; CORS/ToS/TourModal gotchas for QA driver; pulse animation verified; blocker tags verified
 - [BUG-005 Chat Turn Heartbeat QA](project_bug005_chat_heartbeat.md) — all 3 scenarios pass; worktree DB needs manual Pro tier update; pre-seeded interrupted session confirmed banner + dismiss
 - [F-0095 Settings Sidenav QA](project_f0095_settings_sidenav_qa.md) — 2 bugs fixed: toast on deep-link guard (tick() deferred), collapse toggle icon misaligned
+- [BUG-0009 Chat Agent Fixes QA](project_bug0009_chat_agent_fixes.md) — canonical URL, protocols.io copy, image pipeline; docling venv uninstalled blocks live sub-issue #4 test
