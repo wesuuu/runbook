@@ -21,6 +21,8 @@ class ObservationItem:
     source: ObservationSource
     source_id: UUID
     run_label: Optional[str]
+    run_slug: Optional[str]
+    run_project_slug: Optional[str]
     flag: ObservationFlag
     body: str
     author_name: str
@@ -57,6 +59,8 @@ async def aggregate_observations(
                     'experiment'::text AS source,
                     e.id AS source_id,
                     NULL::text AS run_label,
+                    NULL::text AS run_slug,
+                    NULL::text AS run_project_slug,
                     (note->>'id') AS note_id,
                     CASE
                         WHEN note->'flags' ? 'anomaly' THEN 'anomaly'
@@ -79,12 +83,15 @@ async def aggregate_observations(
                     'run'::text AS source,
                     r.id AS source_id,
                     r.name AS run_label,
+                    r.slug AS run_slug,
+                    p.slug AS run_project_slug,
                     (note->>'id') AS note_id,
                     'anomaly'::text AS flag,
                     (note->>'content') AS body,
                     COALESCE(note->>'author_name', 'Unknown') AS author_name,
                     (note->>'created_at')::timestamptz AS created_at
                 FROM runs r
+                JOIN projects p ON p.id = r.project_id
                 CROSS JOIN LATERAL jsonb_array_elements(r.notes) AS note
                 WHERE r.experiment_id = :exp_id
                   AND r.status != 'ARCHIVED'
@@ -121,6 +128,8 @@ async def aggregate_observations(
             source=r["source"],
             source_id=r["source_id"],
             run_label=r["run_label"],
+            run_slug=r["run_slug"],
+            run_project_slug=r["run_project_slug"],
             flag=r["flag"],
             body=r["body"] or "",
             author_name=r["author_name"],

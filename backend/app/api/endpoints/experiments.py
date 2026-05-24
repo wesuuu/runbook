@@ -1034,6 +1034,8 @@ async def get_experiment_observations(
                     "source": i.source,
                     "source_id": str(i.source_id),
                     "run_label": i.run_label,
+                    "run_slug": i.run_slug,
+                    "run_project_slug": i.run_project_slug,
                     "flag": i.flag,
                     "body": i.body,
                     "author_name": i.author_name,

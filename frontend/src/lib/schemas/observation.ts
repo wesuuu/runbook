@@ -9,6 +9,8 @@ export const ObservationItemSchema = z.object({
     source: z.enum(['experiment', 'run']),
     source_id: uuidString(),
     run_label: z.string().nullable().optional(),
+    run_slug: z.string().nullable().optional(),
+    run_project_slug: z.string().nullable().optional(),
     flag: ObservationFlagEnum,
     body: z.string(),
     author_name: z.string(),

@@ -1,6 +1,7 @@
 <script lang="ts">
 import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 import EmptyState from '$lib/components/ui/empty-state/empty-state.svelte';
+import { paths } from '$lib/paths';
 import type { ObservationItem } from '$lib/schemas/observation';
 
 interface Props {
@@ -34,7 +35,11 @@ let { items, truncated, loading }: Props = $props();
                                 <div class="text-xs text-muted-foreground">
                                     {item.author_name} • {new Date(item.created_at).toLocaleString()}
                                     {#if item.source === 'run' && item.run_label}
-                                        • <a class="underline" href={`/runs/${item.source_id}`}>{item.run_label}</a>
+                                        {#if item.run_slug && item.run_project_slug}
+                                            • <a class="underline" href={paths.run(item.run_project_slug, item.run_slug)}>{item.run_label}</a>
+                                        {:else}
+                                            • {item.run_label}
+                                        {/if}
                                     {/if}
                                 </div>
                             </div>

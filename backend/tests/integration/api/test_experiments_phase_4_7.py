@@ -271,6 +271,18 @@ async def test_observations_endpoint(client, experiment_with_notes, auth_headers
     body = res.json()
     assert "items" in body and "truncated" in body
 
+    # F-0043 review-panel fix: run-source items carry slug + project slug so
+    # the UI can build the canonical /:org/projects/:p/runs/:r URL.
+    run_items = [i for i in body["items"] if i["source"] == "run"]
+    assert run_items, "fixture should produce at least one run observation"
+    for i in run_items:
+        assert i["run_slug"], i
+        assert i["run_project_slug"], i
+    exp_items = [i for i in body["items"] if i["source"] == "experiment"]
+    for i in exp_items:
+        assert i["run_slug"] is None
+        assert i["run_project_slug"] is None
+
 
 @pytest.mark.asyncio
 async def test_export_pdf_returns_pdf_with_lock_signature(
