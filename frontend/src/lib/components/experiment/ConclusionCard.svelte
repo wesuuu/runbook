@@ -2,7 +2,9 @@
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '$lib/components/ui/card';
 import { Button } from '$lib/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '$lib/components/ui/dialog';
+import { Textarea } from '$lib/components/ui/textarea';
 import ExportSummaryButton from './ExportSummaryButton.svelte';
+import { formatDate } from '$lib/components/project/projectUtils';
 import type { Experiment } from '$lib/schemas/experiments';
 
 interface Props {
@@ -28,7 +30,9 @@ const lockReason = $derived(
         ? 'Cannot lock — conclusion is empty.'
         : ''
 );
-const unlockSubmitDisabled = $derived(unlockReason.trim().length < 8);
+const hasUnsaved = $derived(!isLocked && draft !== (experiment.conclusion ?? ''));
+const unlockReasonChars = $derived(unlockReason.trim().length);
+const unlockSubmitDisabled = $derived(unlockReasonChars < 8);
 
 function saveDraft() {
     if (draft !== (experiment.conclusion ?? '')) onSave(draft);
@@ -52,18 +56,26 @@ function submitUnlock() {
                 </div>
             {/if}
 
-            <textarea class="w-full min-h-[160px] border rounded p-2"
+            <Textarea class="min-h-[160px]"
                       bind:value={draft}
                       onblur={saveDraft}
-                      placeholder="Write the conclusion of this investigation…"></textarea>
-            {#if lockReason}
-                <p class="mt-2 text-sm text-muted-foreground" id="lock-reason">{lockReason}</p>
-            {/if}
+                      placeholder="Write the conclusion of this investigation…" />
+            <div class="mt-2 flex items-center justify-between text-sm">
+                {#if lockReason}
+                    <p class="text-muted-foreground" id="lock-reason">{lockReason}</p>
+                {:else}
+                    <span></span>
+                {/if}
+                {#if hasUnsaved}
+                    <span class="text-amber-600" aria-live="polite">Unsaved changes</span>
+                {/if}
+            </div>
         {:else}
             <div class="prose whitespace-pre-wrap">{experiment.conclusion}</div>
-            <div class="mt-3 text-sm text-muted-foreground italic">
+            <div class="mt-3 text-sm text-muted-foreground italic"
+                 title={new Date(experiment.conclusion_locked_at!).toLocaleString()}>
                 Locked by {experiment.conclusion_locked_by_name ?? 'system'}
-                on {new Date(experiment.conclusion_locked_at!).toLocaleString()}
+                {formatDate(experiment.conclusion_locked_at!)}
             </div>
         {/if}
     </CardContent>
@@ -95,11 +107,16 @@ function submitUnlock() {
         <label for="unlock-reason" class="text-sm">
             Reason (required, &ge; 8 characters)
         </label>
-        <textarea id="unlock-reason"
+        <Textarea id="unlock-reason"
                   aria-label="Reason"
                   bind:value={unlockReason}
-                  class="w-full border rounded p-2 min-h-[100px]"
-                  placeholder="e.g. Updated titer data from re-analysis"></textarea>
+                  class="min-h-[100px]"
+                  placeholder="e.g. Updated titer data from re-analysis" />
+        <p class="text-xs text-muted-foreground text-right"
+           class:text-amber-600={unlockReasonChars > 0 && unlockReasonChars < 8}
+           aria-live="polite">
+            {unlockReasonChars} / 8 characters
+        </p>
         <DialogFooter>
             <Button variant="outline"
                     onclick={() => { unlockOpen = false; unlockReason = ''; }}>
