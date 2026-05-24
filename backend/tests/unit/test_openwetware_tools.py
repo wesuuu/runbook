@@ -76,7 +76,7 @@ def _enabled(monkeypatch):
 async def test_search_disabled_when_flag_off():
     settings.features.external_protocols.enabled = False
     ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
-    with pytest.raises(ValueError, match="disabled"):
+    with pytest.raises(ValueError, match="not available right now"):
         await kb.search_openwetware(ctx, "anything")
 
 
@@ -86,7 +86,7 @@ async def test_search_disabled_when_openwetware_source_off(_enabled, monkeypatch
         settings.features.external_protocols.openwetware, "enabled", False
     )
     ctx = _FakeCtx(deps=_FakeDeps(org_id=uuid4()))
-    with pytest.raises(ValueError, match="OpenWetWare source is disabled"):
+    with pytest.raises(ValueError, match="not available right now"):
         await kb.search_openwetware(ctx, "anything")
 
 

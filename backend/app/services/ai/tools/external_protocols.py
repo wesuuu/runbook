@@ -10,11 +10,14 @@ string the parent prompt feeds to ``protocol_creator``.
 from __future__ import annotations
 
 import json
+import logging
 
 from pydantic_ai import RunContext
 
 from app.core.config import settings
 from app.services.ai.deps import ChatDeps
+
+logger = logging.getLogger(__name__)
 
 APPROVED_SENTINEL = "EXTERNAL_PROTOCOL_APPROVED"
 
@@ -49,7 +52,14 @@ async def create_protocol_from_external_source(
             confirm the destination on the approval card.
     """
     if not settings.features.external_protocols.enabled:
-        raise ValueError("External protocols feature is disabled.")
+        logger.warning(
+            "external_protocols disabled at approval time "
+            "(BATCHRITE_FEATURES__EXTERNAL_PROTOCOLS__ENABLED)"
+        )
+        raise ValueError(
+            "External protocol search is not available right now. "
+            "Use the library or draft from scratch instead."
+        )
 
     if not project_name or not project_name.strip():
         raise ValueError(

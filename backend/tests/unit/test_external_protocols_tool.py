@@ -109,7 +109,7 @@ async def test_raises_when_feature_disabled(monkeypatch):
     deps = _FakeDeps()
     deps.external_protocol_cache["https://openwetware.org/wiki/X"] = "{}"
     ctx = _FakeCtx(deps=deps)
-    with pytest.raises(ValueError, match="disabled"):
+    with pytest.raises(ValueError, match="not available right now"):
         await create_protocol_from_external_source(
             ctx,
             source_url="https://openwetware.org/wiki/X",
