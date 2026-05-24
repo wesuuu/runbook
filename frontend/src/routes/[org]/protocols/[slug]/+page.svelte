@@ -538,6 +538,16 @@
         }
     });
 
+    // Inspector X must also deselect the canvas node; otherwise the
+    // selection $effect above immediately re-syncs selectedNodeId from
+    // the still-selected node and the panel reopens.
+    function closeInspector() {
+        if (nodes.some((n) => n.selected)) {
+            nodes = nodes.map((n) => (n.selected ? { ...n, selected: false } : n));
+        }
+        selectedNodeId = null;
+    }
+
     const selectedNode = $derived(
         selectedNodeId
             ? nodes.find((n) => n.id === selectedNodeId) || null
@@ -1690,7 +1700,7 @@
             <ProcessStartInspector
                 node={selectedNode}
                 onApply={handleProcessStartInspectorApply}
-                onClose={() => (selectedNodeId = null)}
+                onClose={closeInspector}
             />
         {:else}
             <Inspector
@@ -1702,7 +1712,7 @@
                 onApply={handleInspectorApply}
                 onSaveAsNew={handleSaveAsNew}
                 onCreateEquipment={handleCreateEquipment}
-                onClose={() => (selectedNodeId = null)}
+                onClose={closeInspector}
                 branchErrors={selectedNodeId ? branchValidationErrors().filter((e) => e.sourceNodeId === selectedNodeId) : []}
             />
         {/if}
