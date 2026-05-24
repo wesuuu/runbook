@@ -15,3 +15,4 @@ export * from './legal';
 export * from './sites';
 export * from './signoffRequests';
 export * from './notifications';
+export * from './observation';

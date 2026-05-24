@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 import uuid as uuid_mod
 from datetime import datetime, timezone
 from enum import Enum
@@ -6,19 +8,26 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel as PydanticBaseModel
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import lazyload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.deps import get_current_user, get_or_404, require_active_subscription
+from app.core.deps import (
+    get_current_user,
+    get_or_404,
+    require_active_subscription,
+    require_org_role,
+)
 from app.db.session import get_db
-from app.models.iam import ObjectType, PermissionLevel, User
+from app.models.iam import ObjectType, OrgRole, PermissionLevel, User
 from app.models.projects import Project
 from app.models.protocols import Protocol
 from app.models.runs import Experiment, Run
 from app.schemas.runs import (
+    ConclusionUnlockRequest,
     ExperimentCreate,
     ExperimentNote,
     ExperimentNoteCreate,
@@ -33,6 +42,9 @@ from app.schemas.runs import (
 )
 from app.services.core.audit import log_audit
 from app.services.core.permissions import check_permission, get_visible_project_ids
+from app.services.experiments import pdf_export
+from app.services.experiments.lock_guard import locked_409
+from app.services.experiments.observations import aggregate_observations
 from app.services.experiments.status import (
     derive_lifecycle_status,
     lifecycle_counts_from_runs,
@@ -40,6 +52,9 @@ from app.services.experiments.status import (
 from app.services.slugs import assign_slug_or_422
 
 logger = logging.getLogger(__name__)
+_log = logger
+
+EXPORT_TIMEOUT_SECONDS = 30.0
 
 router = APIRouter()
 
@@ -82,6 +97,10 @@ def _experiment_dict(exp: Experiment) -> dict:
         "content": exp.content or {},
         "status": exp.status if isinstance(exp.status, str) else exp.status.value,
         "notes": [ExperimentNote(**n) for n in (exp.notes or [])],
+        "conclusion": exp.conclusion,
+        "conclusion_locked_at": exp.conclusion_locked_at,
+        "conclusion_locked_by_id": exp.conclusion_locked_by_id,
+        "conclusion_locked_by_name": exp.conclusion_locked_by_name,
         "created_at": exp.created_at,
         "updated_at": exp.updated_at,
     }
@@ -200,7 +219,9 @@ async def list_experiments(
             **_experiment_dict(exp),
             runs=[],
             run_count=cnt,
-            lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+            lifecycle_status=derive_lifecycle_status(
+                exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+            ),
         )
         for exp, cnt, live, open_ in rows
     ]
@@ -248,7 +269,9 @@ async def get_experiment_by_slug(
         **_experiment_dict(exp),
         runs=[RunResponse.model_validate(r) for r in runs],
         run_count=len(runs),
-        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+        ),
     )
 
 
@@ -360,7 +383,9 @@ async def list_all_experiments(
                 project_id=exp.project_id,
                 project_slug=project_slug,
                 project_name=project_name,
-                lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+                lifecycle_status=derive_lifecycle_status(
+                    exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+                ),
                 run_count=total,
                 run_summaries=summaries.get(exp.id, []),
                 owner=_owner_summary(exp.created_by),
@@ -406,7 +431,9 @@ async def get_experiment(
         **_experiment_dict(exp),
         runs=[RunResponse.model_validate(r) for r in runs],
         run_count=len(runs),
-        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+        ),
     )
 
 
@@ -433,8 +460,17 @@ async def update_experiment(
     # Slug is intentionally NOT regenerated on rename — keeps URLs and
     # bookmarks stable after the experiment is created (C2).
 
+    # F-0043: lock guard — while locked, ALL mutations 409.
+    if exp.conclusion_locked_at is not None:
+        raise locked_409(
+            "Experiment conclusion is locked. Admin must unlock first."
+        )
+
     changes = {}
-    for field in ("name", "description", "content", "objective", "success_criteria"):
+    for field in (
+        "name", "description", "content", "objective",
+        "success_criteria", "conclusion",
+    ):
         value = getattr(update_data, field)
         if value is not None:
             old = getattr(exp, field)
@@ -465,7 +501,178 @@ async def update_experiment(
         **_experiment_dict(exp),
         runs=[],
         run_count=run_count,
-        lifecycle_status=derive_lifecycle_status(exp.status, live, open_),
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=exp.conclusion_locked_at is not None
+        ),
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/conclusion/lock",
+    response_model=ExperimentResponse,
+)
+async def lock_experiment_conclusion(
+    experiment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    exp = await get_or_404(db, Experiment, experiment_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, exp.project_id, PermissionLevel.EDIT,
+    )
+    if not allowed:
+        raise HTTPException(403, "Not allowed")
+
+    # GxP signature durability: require profile name. Fall back to "User
+    # {id}" instead of leaking email into the permanent record.
+    user_name = (user.full_name or "").strip() or f"User {user.id}"
+
+    # Atomic UPDATE: race-free against concurrent run transitions AND against
+    # concurrent lock attempts (asyncpg returns a row when the WHERE matches;
+    # asyncpg's `result.rowcount` is unreliable for `UPDATE ... RETURNING`,
+    # so we branch on the returned row count via `result.all()`).
+    #
+    # Additional guard: require at least one COMPLETED run. Without this an
+    # experiment whose only runs are ARCHIVED — which reads as DRAFT via
+    # lifecycle_counts_from_runs — could be locked into COMPLETE state, a
+    # contradiction.
+    result = await db.execute(
+        text(
+            """
+            UPDATE experiments
+            SET conclusion_locked_at = NOW(),
+                conclusion_locked_by_id = :user_id,
+                conclusion_locked_by_name = :user_name
+            WHERE id = :exp_id
+              AND conclusion_locked_at IS NULL
+              AND conclusion IS NOT NULL
+              AND length(trim(conclusion)) > 0
+              AND EXISTS (
+                SELECT 1 FROM runs
+                WHERE experiment_id = :exp_id
+                  AND status = 'COMPLETED'
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM runs
+                WHERE experiment_id = :exp_id
+                  AND status IN ('PLANNED', 'ACTIVE', 'EDITED')
+              )
+            RETURNING id, conclusion
+            """
+        ),
+        {"exp_id": exp.id, "user_id": user.id, "user_name": user_name},
+    )
+    rows = result.all()
+    if not rows:
+        # Disambiguate the failure for the client. Re-read the row in the
+        # same transaction; `db.refresh()` reads from snapshot which is
+        # acceptable here because we're branching on already-committed state.
+        await db.refresh(exp)
+        has_completed = await db.scalar(
+            select(func.count(Run.id)).where(
+                Run.experiment_id == exp.id, Run.status == "COMPLETED"
+            )
+        )
+        if exp.conclusion_locked_at is not None:
+            code, message = "ALREADY_LOCKED", "This experiment is already locked. Refresh and try again."
+        elif not (exp.conclusion or "").strip():
+            code, message = "EMPTY_CONCLUSION", "Write a conclusion before locking."
+        elif not has_completed:
+            code, message = "NO_COMPLETED_RUNS", "At least one run must be COMPLETED before locking."
+        else:
+            code, message = "OPEN_RUNS", "This experiment has open runs. Refresh and try again."
+        raise HTTPException(409, {"code": code, "message": message})
+
+    # Atomic audit: log_audit only db.add()s the row. Insert it BEFORE the
+    # single commit so business state and audit row land together. If
+    # log_audit raises, the UPDATE rolls back too. See projects.py for the
+    # established pattern.
+    locked_row = rows[0]
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="conclusion.lock",
+        entity_type="Experiment",
+        entity_id=exp.id,
+        changes={"conclusion_snapshot": locked_row.conclusion},
+    )
+    await db.commit()
+    await db.refresh(exp)
+
+    run_count, live, open_ = await _run_lifecycle_counts(db, experiment_id)
+    return ExperimentResponse(
+        **_experiment_dict(exp),
+        runs=[],
+        run_count=run_count,
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=True,
+        ),
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/conclusion/unlock",
+    response_model=ExperimentResponse,
+)
+async def unlock_experiment_conclusion(
+    experiment_id: UUID,
+    body: ConclusionUnlockRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+    __: User = Depends(require_org_role(OrgRole.ADMIN)),
+):
+    exp = await get_or_404(db, Experiment, experiment_id)
+
+    conclusion_before = exp.conclusion
+    locked_by_before = exp.conclusion_locked_by_name
+    locked_at_before = exp.conclusion_locked_at
+    result = await db.execute(
+        text(
+            """
+            UPDATE experiments
+            SET conclusion_locked_at = NULL,
+                conclusion_locked_by_id = NULL,
+                conclusion_locked_by_name = NULL
+            WHERE id = :exp_id
+              AND conclusion_locked_at IS NOT NULL
+            RETURNING id
+            """
+        ),
+        {"exp_id": exp.id},
+    )
+    rows = result.all()
+    if not rows:
+        raise HTTPException(
+            409, {"code": "ALREADY_UNLOCKED", "message": "Not locked"},
+        )
+
+    # Atomic audit: insert before single commit. See lock endpoint above.
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="conclusion.unlock",
+        entity_type="Experiment",
+        entity_id=exp.id,
+        changes={
+            "reason": body.reason,
+            "conclusion_before": conclusion_before,
+            "locked_by_before": locked_by_before,
+            "locked_at_before": locked_at_before.isoformat() if locked_at_before else None,
+        },
+    )
+    await db.commit()
+    await db.refresh(exp)
+
+    run_count, live, open_ = await _run_lifecycle_counts(db, experiment_id)
+    return ExperimentResponse(
+        **_experiment_dict(exp),
+        runs=[],
+        run_count=run_count,
+        lifecycle_status=derive_lifecycle_status(
+            exp.status, live, open_, conclusion_locked=False,
+        ),
     )
 
 
@@ -553,6 +760,18 @@ async def add_run_to_experiment(
             },
         )
 
+    # TOCTOU: pin the experiment row + re-read locked state under that lock so
+    # a concurrent POST /conclusion/lock cannot slip its UPDATE between our
+    # check and our INSERT. The lock UPDATE's `NOT EXISTS open_runs` guard is
+    # the matching half of this pair.
+    await db.execute(
+        text("SELECT 1 FROM experiments WHERE id = :id FOR UPDATE"),
+        {"id": experiment_id},
+    )
+    await db.refresh(exp, ["conclusion_locked_at"])
+    if exp.conclusion_locked_at is not None:
+        raise locked_409("Cannot add a run to a locked experiment.")
+
     if body.run_id:
         # Link existing run
         run = await get_or_404(db, Run, body.run_id)
@@ -624,6 +843,11 @@ async def unlink_run_from_experiment(
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
 
+    # F-0043: lock guard — unlinking a run from a locked experiment would
+    # silently mutate the locked record's run set.
+    if exp.conclusion_locked_at is not None:
+        raise locked_409("Cannot unlink a run from a locked experiment.")
+
     allowed = await check_permission(
         db,
         user.id,
@@ -668,6 +892,9 @@ async def add_experiment_note(
     _: User = Depends(require_active_subscription()),
 ):
     exp = await get_or_404(db, Experiment, experiment_id)
+
+    if exp.conclusion_locked_at is not None:
+        raise locked_409("Notes are frozen after the conclusion is locked.")
 
     allowed = await check_permission(
         db,
@@ -745,6 +972,9 @@ async def delete_experiment_note(
     """Delete a note. Only the original author may delete (audit-friendly)."""
     exp = await get_or_404(db, Experiment, experiment_id)
 
+    if exp.conclusion_locked_at is not None:
+        raise locked_409("Notes are frozen after the conclusion is locked.")
+
     allowed = await check_permission(
         db,
         user.id,
@@ -776,3 +1006,155 @@ async def delete_experiment_note(
         changes={"note_id": note_id_str},
     )
     await db.commit()
+
+
+# --- Observations ---
+
+
+@router.get("/experiments/{experiment_id}/observations")
+async def get_experiment_observations(
+    experiment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    exp = await get_or_404(db, Experiment, experiment_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, exp.project_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(403, "Not allowed")
+
+    result = await aggregate_observations(db, experiment_id)
+    response = JSONResponse(
+        content={
+            "items": [
+                {
+                    "id": i.id,
+                    "source": i.source,
+                    "source_id": str(i.source_id),
+                    "run_label": i.run_label,
+                    "run_slug": i.run_slug,
+                    "run_project_slug": i.run_project_slug,
+                    "flag": i.flag,
+                    "body": i.body,
+                    "author_name": i.author_name,
+                    "created_at": i.created_at.isoformat(),
+                }
+                for i in result.items
+            ],
+            "truncated": result.truncated,
+        },
+    )
+    response.headers["Cache-Control"] = "private, max-age=30"
+    return response
+
+
+@router.get("/experiments/{experiment_id}/export.pdf")
+async def export_experiment_pdf(
+    experiment_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_active_subscription()),
+):
+    exp = await get_or_404(db, Experiment, experiment_id)
+    allowed = await check_permission(
+        db, user.id, ObjectType.PROJECT, exp.project_id, PermissionLevel.VIEW,
+    )
+    if not allowed:
+        raise HTTPException(403, "Not allowed")
+
+    # Project only the columns the PDF actually consumes. Run.notes and
+    # Run.execution_data can be megabytes of JSONB per row — never load them
+    # for an export that doesn't read them. ORDER BY locks byte-stable output
+    # so two consecutive exports of a locked experiment produce identical PDFs
+    # (regulators and tests both rely on this).
+    runs_result = await db.execute(
+        select(
+            Run.id,
+            Run.name,
+            Run.graph,
+            Run.status,
+            Run.key_result_label,
+            Run.key_result_value,
+            Run.key_result_unit,
+            Run.created_at,
+        )
+        .where(Run.experiment_id == experiment_id)
+        .order_by(Run.created_at, Run.id)
+    )
+    runs = list(runs_result.all())
+
+    obs = await aggregate_observations(db, experiment_id)
+    obs_items = [
+        {
+            "flag": o.flag,
+            "created_at": o.created_at.isoformat(),
+            "body": o.body,
+            "run_label": o.run_label,
+        }
+        for o in obs.items
+    ]
+
+    started = time.monotonic()
+    try:
+        loop = asyncio.get_running_loop()
+        content = await asyncio.wait_for(
+            loop.run_in_executor(
+                pdf_export.PDF_EXECUTOR,
+                pdf_export.generate_experiment_pdf,
+                exp,
+                runs,
+                obs_items,
+            ),
+            timeout=EXPORT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        _log.warning(
+            "pdf_export_timeout experiment_id=%s slug=%s timeout_s=%s elapsed_ms=%d",
+            experiment_id, exp.slug, EXPORT_TIMEOUT_SECONDS, elapsed_ms,
+        )
+        # Audit timeouts too — they are user-visible export failures and
+        # appear in inspection histories.
+        await log_audit(
+            db,
+            actor_id=user.id,
+            action="export.pdf.timeout",
+            entity_type="Experiment",
+            entity_id=exp.id,
+            changes={"timeout_s": EXPORT_TIMEOUT_SECONDS,
+                     "elapsed_ms": elapsed_ms},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "EXPORT_TIMEOUT", "message": "PDF generation timed out"},
+        )
+
+    duration_ms = int((time.monotonic() - started) * 1000)
+    # Anything over 5s is worth investigating before it crosses the 30s
+    # timeout — emit as a warning so it surfaces in dashboards.
+    log_fn = _log.warning if duration_ms > 5000 else _log.info
+    log_fn(
+        "pdf_export_ok experiment_id=%s slug=%s bytes=%d duration_ms=%d",
+        experiment_id, exp.slug, len(content), duration_ms,
+    )
+
+    await log_audit(
+        db,
+        actor_id=user.id,
+        action="export.pdf",
+        entity_type="Experiment",
+        entity_id=exp.id,
+        changes={"bytes": len(content), "duration_ms": duration_ms},
+    )
+    await db.commit()
+
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="experiment-{exp.slug}.pdf"',
+        },
+    )

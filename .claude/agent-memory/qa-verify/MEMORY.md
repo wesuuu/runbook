@@ -20,3 +20,4 @@
 - [BUG-0008 Protocol Editor UI QA](project_bug0008_protocol_editor_ui.md) — PASS (both passes); title split on param-label/value; no Close-form btn; threshold=0 IntersectionObserver; 6 adversarial paths PASS
 - [TD-0091b Notification Inbox QA](project_td0091b_notification_inbox.md) — all 5 gaps verified PASS; CORS + TOS + tour-modal gotchas; CORS diff left unstaged in main.py
 - [BUG-0007 SOP Overhaul QA](project_bug0007_sop_overhaul.md) — 6 bugs found+fixed: doc_number length/empty, PIL SyntaxError, graph null→500, PDF no-template 404, CORS :5213; approval gate PASS
+- [F-0043 Phases 4-7 QA](project_f0043_phases_4_7.md) — PDF 500 (multi_cell x-cursor bug fixed), runs lost after PUT (merge pattern fixed), timestamp polish, KeyResultsTable header styling

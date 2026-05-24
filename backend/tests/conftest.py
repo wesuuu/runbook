@@ -31,7 +31,7 @@ from app.models.iam import (
 from app.models.library import Document, DocumentStatus
 from app.models.projects import Project
 from app.models.protocols import Protocol, ProtocolRole
-from app.models.runs import Run, RunOutcome, RunStatus
+from app.models.runs import Experiment, Run, RunOutcome, RunStatus
 from app.models.templates import DocumentTemplate  # noqa: F401
 from app.services.billing import stripe_client as _stripe_client
 
@@ -1155,3 +1155,67 @@ async def expired_equipment(db_session, glp_org, default_site_id) -> Equipment:
     db_session.add(eq)
     await db_session.flush()
     return eq
+
+
+@pytest_asyncio.fixture
+async def seeded_experiment(db_session, test_project) -> Experiment:
+    """An unlocked experiment in a test project."""
+    exp = Experiment(
+        name="Test Experiment",
+        description="A test experiment for F-0043",
+        project_id=test_project.id,
+        slug="test-exp",
+        status="DRAFT",
+    )
+    db_session.add(exp)
+    await db_session.flush()
+    return exp
+
+
+@pytest_asyncio.fixture
+async def locked_experiment(db_session, test_project) -> Experiment:
+    """An experiment with conclusion_locked_at set to now."""
+    from datetime import datetime, timezone
+
+    exp = Experiment(
+        name="Locked Experiment",
+        description="A locked experiment for F-0043",
+        project_id=test_project.id,
+        slug="locked-exp",
+        status="DRAFT",
+        conclusion="Result X is best.",
+        conclusion_locked_at=datetime.now(timezone.utc),
+    )
+    db_session.add(exp)
+    await db_session.flush()
+    return exp
+
+
+@pytest_asyncio.fixture
+async def locked_experiment_with_note(db_session, test_project) -> Experiment:
+    """A locked experiment that already has a note."""
+    from datetime import datetime, timezone
+    import uuid as uuid_mod
+
+    exp = Experiment(
+        name="Locked Experiment",
+        description="A locked experiment for F-0043",
+        project_id=test_project.id,
+        slug="locked-exp-note",
+        status="DRAFT",
+        conclusion="Result X is best.",
+        conclusion_locked_at=datetime.now(timezone.utc),
+        notes=[
+            {
+                "id": str(uuid_mod.uuid4()),
+                "content": "pre-lock note",
+                "author_id": "test-author-id",
+                "author_name": "Test Author",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "flags": [],
+            }
+        ],
+    )
+    db_session.add(exp)
+    await db_session.flush()
+    return exp

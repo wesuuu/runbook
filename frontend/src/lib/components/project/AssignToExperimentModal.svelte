@@ -24,8 +24,16 @@
     let submitting = $state(false);
     let error = $state<string | null>(null);
 
+    // Locked experiments (conclusion signed off) and archived experiments
+    // are both off-limits for new run assignments — the former because
+    // adding a run would invalidate the locked conclusion snapshot, the
+    // latter because they're closed records.
     const availableExperiments = $derived(
-        experiments.filter((e: any) => e.status?.toUpperCase() !== 'ARCHIVED')
+        experiments.filter(
+            (e: any) =>
+                e.status?.toUpperCase() !== 'ARCHIVED' &&
+                e.conclusion_locked_at == null,
+        ),
     );
 
     async function assign() {

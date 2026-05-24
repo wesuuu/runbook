@@ -1,0 +1,131 @@
+{
+  "scenarios": [
+    {
+      "name": "identical_runs_yield_no_varied",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Seeding",
+            "params": {"density": 100000},
+            "paramSchema": {"properties": {"density": {"unit": "cells/mL"}}}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Seeding",
+            "params": {"density": 100000},
+            "paramSchema": {"properties": {"density": {"unit": "cells/mL"}}}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Seeding", "paramKey": "density", "varied": false,
+         "perRun": {"r1": {"value": 100000, "unit": "cells/mL"},
+                    "r2": {"value": 100000, "unit": "cells/mL"}}}
+      ]
+    },
+    {
+      "name": "single_differing_param",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Feed",
+            "params": {"glucose": 6, "ph": 7.0}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Feed",
+            "params": {"glucose": 8, "ph": 7.0}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Feed", "paramKey": "glucose", "varied": true,
+         "perRun": {"r1": {"value": 6}, "r2": {"value": 8}}},
+        {"nodeLabel": "Feed", "paramKey": "ph", "varied": false,
+         "perRun": {"r1": {"value": 7.0}, "r2": {"value": 7.0}}}
+      ]
+    },
+    {
+      "name": "missing_node_yields_null_cell",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Harvest", "params": {"day": 12}}}]}},
+        {"id": "r2", "graph": {"nodes": []}}
+      ],
+      "expected": [
+        {"nodeLabel": "Harvest", "paramKey": "day", "varied": true,
+         "perRun": {"r1": {"value": 12}, "r2": {"value": null}}}
+      ]
+    },
+    {
+      "name": "float_with_trailing_zero_matches_int",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "pH", "params": {"target": 7}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "pH", "params": {"target": 7.0}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "pH", "paramKey": "target", "varied": false,
+         "perRun": {"r1": {"value": 7}, "r2": {"value": 7.0}}}
+      ]
+    },
+    {
+      "name": "string_params_compare_canonically",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Buffer", "params": {"name": "Tris"}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Buffer", "params": {"name": "Tris"}}}]}},
+        {"id": "r3", "graph": {"nodes": [{"id": "n3", "type": "unitOp",
+          "data": {"label": "Buffer", "params": {"name": "PBS"}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Buffer", "paramKey": "name", "varied": true,
+         "perRun": {"r1": {"value": "Tris"}, "r2": {"value": "Tris"},
+                    "r3": {"value": "PBS"}}}
+      ]
+    },
+    {
+      "name": "boolean_and_null_distinct",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Sparge", "params": {"enabled": true}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Sparge", "params": {"enabled": false}}}]}},
+        {"id": "r3", "graph": {"nodes": [{"id": "n3", "type": "unitOp",
+          "data": {"label": "Sparge", "params": {"enabled": null}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Sparge", "paramKey": "enabled", "varied": true,
+         "perRun": {"r1": {"value": true}, "r2": {"value": false},
+                    "r3": {"value": null}}}
+      ]
+    },
+    {
+      "name": "nested_object_param",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Sparge",
+            "params": {"gas": {"o2": 21, "co2": 5}}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Sparge",
+            "params": {"gas": {"o2": 30, "co2": 5}}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Sparge", "paramKey": "gas", "varied": true,
+         "perRun": {"r1": {"value": {"o2": 21, "co2": 5}},
+                    "r2": {"value": {"o2": 30, "co2": 5}}}}
+      ]
+    },
+    {
+      "name": "unit_conflict_flagged",
+      "runs": [
+        {"id": "r1", "graph": {"nodes": [{"id": "n1", "type": "unitOp",
+          "data": {"label": "Feed",
+            "params": {"glucose": 6},
+            "paramSchema": {"properties": {"glucose": {"unit": "g/L"}}}}}]}},
+        {"id": "r2", "graph": {"nodes": [{"id": "n2", "type": "unitOp",
+          "data": {"label": "Feed",
+            "params": {"glucose": 6},
+            "paramSchema": {"properties": {"glucose": {"unit": "mg/mL"}}}}}]}}
+      ],
+      "expected": [
+        {"nodeLabel": "Feed", "paramKey": "glucose", "varied": true,
+         "unitConflict": true,
+         "perRun": {"r1": {"value": 6, "unit": "g/L"},
+                    "r2": {"value": 6, "unit": "mg/mL"}}}
+      ]
+    }
+  ]
+}

@@ -61,7 +61,14 @@ async def backfill_objectives(
     }
     cursor = None
     while True:
-        stmt = select(Experiment).where(Experiment.objective.is_(None))
+        # Never touch a locked experiment — its conclusion is signed and
+        # backfilling metadata after the fact would mutate the inspector
+        # snapshot. Locked rows with NULL objective are skipped silently;
+        # operators unlock + re-run if they need backfill on those.
+        stmt = select(Experiment).where(
+            Experiment.objective.is_(None),
+            Experiment.conclusion_locked_at.is_(None),
+        )
         if cursor is not None:
             stmt = stmt.where(Experiment.id > cursor)
         stmt = stmt.order_by(Experiment.id).limit(batch_size)

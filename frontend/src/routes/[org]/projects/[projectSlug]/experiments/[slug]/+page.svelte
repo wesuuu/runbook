@@ -1,8 +1,10 @@
 <script lang="ts">
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
+    import { onMount, onDestroy } from "svelte";
+    import { toast } from "svelte-sonner";
     import { api } from "$lib/api";
-    import { getUser } from "$lib/auth.svelte";
+    import { getUser, getCurrentOrgRoles } from "$lib/auth.svelte";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import { Textarea } from "$lib/components/ui/textarea";
@@ -15,6 +17,16 @@
     import RunCreatorWizardModal from "$lib/components/run/RunCreatorWizardModal.svelte";
     import AddExistingRunModal from "$lib/components/project/AddExistingRunModal.svelte";
     import RunsTab from "$lib/components/project/RunsTab.svelte";
+    import ConditionsTable from "$lib/components/experiment/ConditionsTable.svelte";
+    import KeyResultsTable from "$lib/components/experiment/KeyResultsTable.svelte";
+    import KeyResultsChart from "$lib/components/experiment/KeyResultsChart.svelte";
+    import ConclusionCard from "$lib/components/experiment/ConclusionCard.svelte";
+    import ObservationsTimeline from "$lib/components/experiment/ObservationsTimeline.svelte";
+    import {
+        ObservationsResponseSchema,
+        type ObservationItem,
+    } from "$lib/schemas/observation";
+    import { ExperimentSchema } from "$lib/schemas/experiments";
     import {
         shortId,
         formatDate,
@@ -161,7 +173,9 @@
                 objective: objective.trim() || null,
                 success_criteria: successCriteria.map((c) => c.trim()).filter(Boolean),
             });
-            experiment = updated;
+            // PUT returns runs=[] for performance; preserve the existing runs
+            // so the Conditions table and key-results chart don't go blank.
+            experiment = { ...updated, runs: experiment?.runs ?? [] };
             objective = updated.objective ?? "";
             successCriteria = [...(updated.success_criteria ?? [])];
             editingObjective = false;
@@ -194,6 +208,117 @@
     function handleNoteKeydown(e: KeyboardEvent) {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             addNote();
+        }
+    }
+
+    // F-0043: observations timeline + key-results/conclusion wiring
+    let observations = $state<ObservationItem[]>([]);
+    let observationsTruncated = $state(false);
+    let observationsLoading = $state(true);
+    let observationsError = $state<string | null>(null);
+
+    async function loadObservations() {
+        if (!id) return;
+        observationsLoading = true;
+        observationsError = null;
+        try {
+            const res = await api.get(
+                `/experiments/${id}/observations`,
+                { schema: ObservationsResponseSchema },
+            );
+            observations = res.items;
+            observationsTruncated = res.truncated;
+        } catch (err) {
+            observationsError =
+                err instanceof Error ? err.message : 'Failed to load observations';
+        } finally {
+            observationsLoading = false;
+        }
+    }
+
+    async function refetchExperiment() {
+        if (!id) return;
+        try {
+            experiment = await api.get(
+                `/experiments/${id}`,
+                { schema: ExperimentSchema },
+            );
+        } catch {
+            // swallow background refresh errors
+        }
+    }
+
+    function onVisible() {
+        if (document.visibilityState === 'visible') {
+            loadObservations();
+            refetchExperiment();
+        }
+    }
+
+    // Once `experiment` is loaded the first time, hydrate observations and
+    // start listening for tab-focus refreshes.
+    let observationsBooted = false;
+    $effect(() => {
+        if (id && !observationsBooted) {
+            observationsBooted = true;
+            loadObservations();
+        }
+    });
+
+    onMount(() => {
+        document.addEventListener('visibilitychange', onVisible);
+    });
+    onDestroy(() => {
+        document.removeEventListener('visibilitychange', onVisible);
+    });
+
+    const runs = $derived((experiment?.runs ?? []) as any[]);
+    const hasOpenRuns = $derived(
+        runs.some((r: any) => ['PLANNED', 'ACTIVE', 'EDITED'].includes(r.status)),
+    );
+    const canAdmin = $derived(getCurrentOrgRoles().includes('ADMIN'));
+
+    async function saveConclusion(next: string) {
+        try {
+            const updated = await api.put(
+                `/experiments/${id}`,
+                { conclusion: next },
+                { schema: ExperimentSchema },
+            );
+            // PUT returns runs=[] for performance; preserve existing runs.
+            experiment = { ...updated, runs: experiment?.runs ?? [] };
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to save conclusion');
+        }
+    }
+
+    async function lockConclusion() {
+        try {
+            const updated = await api.post(
+                `/experiments/${id}/conclusion/lock`,
+                {},
+                { schema: ExperimentSchema },
+            );
+            // lock/unlock return runs=[] for performance; preserve existing runs.
+            experiment = { ...updated, runs: experiment?.runs ?? [] };
+            loadObservations();
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to lock conclusion');
+        }
+    }
+
+    async function unlockConclusion(reason: string) {
+        try {
+            const updated = await api.post(
+                `/experiments/${id}/conclusion/unlock`,
+                { reason },
+                { schema: ExperimentSchema },
+            );
+            // lock/unlock return runs=[] for performance; preserve existing runs.
+            experiment = { ...updated, runs: experiment?.runs ?? [] };
+            loadObservations();
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to unlock conclusion');
         }
     }
 </script>
@@ -292,8 +417,10 @@
             </div>
         </div>
 
+        <div class="experiment-grid px-4 sm:px-8 pb-8">
+        <div class="main-col flex flex-col gap-6 min-w-0">
         <!-- Objective -->
-        <div class="px-4 sm:px-8 mb-6">
+        <div>
             <div class="rounded-lg border border-border bg-card p-5">
                 <div class="mb-3 flex items-center justify-between">
                     <h3 class="text-sm font-semibold text-foreground">Objective</h3>
@@ -383,8 +510,27 @@
             </div>
         </div>
 
+        <!-- F-0043: Conditions matrix -->
+        <ConditionsTable {runs} />
+
+        <!-- F-0043: Key results table + chart -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <KeyResultsTable {runs} />
+            <KeyResultsChart {runs} experimentId={experiment.id} />
+        </div>
+
+        <!-- F-0043: Conclusion card -->
+        <ConclusionCard
+            {experiment}
+            {hasOpenRuns}
+            {canAdmin}
+            onSave={saveConclusion}
+            onLock={lockConclusion}
+            onUnlock={unlockConclusion}
+        />
+
         <!-- Runs Section -->
-        <div class="px-4 sm:px-8 mb-6">
+        <div>
             <div class="flex items-center justify-between mb-3">
                 <h3 class="text-sm font-semibold text-foreground">
                     Runs ({experiment.runs?.length ?? 0})
@@ -416,7 +562,7 @@
         </div>
 
         <!-- Notes Section -->
-        <div class="px-4 sm:px-8 pb-8">
+        <div>
             <h3 class="text-sm font-semibold text-foreground mb-3">
                 Notes ({notes.length})
             </h3>
@@ -490,6 +636,22 @@
                 </Button>
             </div>
         </div>
+        </div><!-- /main-col -->
+
+        <aside class="observations-col min-w-0 self-start">
+            {#if observationsError}
+                <div class="p-3 mb-2 border rounded bg-destructive/10 text-destructive text-sm">
+                    {observationsError}
+                    <button class="underline ml-2" onclick={loadObservations}>Retry</button>
+                </div>
+            {/if}
+            <ObservationsTimeline
+                items={observations}
+                truncated={observationsTruncated}
+                loading={observationsLoading}
+            />
+        </aside>
+        </div><!-- /experiment-grid -->
     </div>
 {/if}
 
@@ -510,3 +672,16 @@
         onAdded={loadData}
     />
 {/if}
+
+<style>
+    .experiment-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    @media (min-width: 1024px) {
+        .experiment-grid {
+            grid-template-columns: minmax(0, 1fr) 320px;
+        }
+    }
+</style>

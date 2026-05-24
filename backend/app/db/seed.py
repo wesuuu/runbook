@@ -375,6 +375,73 @@ async def seed_newbie_user(db: AsyncSession):
     await db.flush()
 
 
+async def seed_phases_4_7_fixture(db: AsyncSession):
+    """F-0043 — idempotent experiment + 3 completed runs for the e2e golden path.
+
+    Seeds one experiment in `mAb Production v2` with three COMPLETED runs that
+    each carry a structured key result. Used by the
+    `experiments-phase-4-7.spec.ts` Playwright spec to exercise the Results
+    table, comparison chart, conclusion locking, and PDF export flows.
+    """
+    from decimal import Decimal
+
+    from app.models.runs import Experiment, Run, RunStatus
+
+    EXP_ID = uuid.UUID("50000000-0043-0000-0000-000000000001")
+    RUN_IDS = [
+        uuid.UUID("50000000-0043-0000-0000-000000000010"),
+        uuid.UUID("50000000-0043-0000-0000-000000000011"),
+        uuid.UUID("50000000-0043-0000-0000-000000000012"),
+    ]
+
+    await _upsert(
+        db,
+        Experiment,
+        EXP_ID,
+        name="F-0043 Phases 4-7 Seed",
+        slug="phases-4-7-seed",
+        project_id=PROJECT_MAB,
+        status="ACTIVE",
+        objective="Compare titer across three feed strategies",
+        description="E2E fixture for phases 4-7 surfaces",
+        conclusion=None,
+        notes=[],
+    )
+
+    for idx, run_id in enumerate(RUN_IDS):
+        glucose = 6 + idx * 2  # 6, 8, 10
+        titer = Decimal("4.0") + Decimal(idx) * Decimal("0.5")  # 4.0, 4.5, 5.0
+        await _upsert(
+            db,
+            Run,
+            run_id,
+            name=f"RUN-{idx + 1}",
+            slug=f"phases-4-7-seed-run-{idx + 1}",
+            project_id=PROJECT_MAB,
+            experiment_id=EXP_ID,
+            status=RunStatus.COMPLETED,
+            key_result_label="Titer",
+            key_result_value=titer,
+            key_result_unit="g/L",
+            graph={
+                "nodes": [
+                    {
+                        "id": f"feed-{idx + 1}",
+                        "type": "unitOp",
+                        "data": {
+                            "label": "Feed",
+                            "params": {"glucose_g_per_L": glucose},
+                        },
+                    },
+                ],
+                "edges": [],
+            },
+            notes=[],
+        )
+
+    await db.flush()
+
+
 async def seed_document_templates(db: AsyncSession):
     """Seed system-wide default document templates."""
     from app.services.core.file_storage import FileStorageService
@@ -455,6 +522,8 @@ async def run_seed():
         await seed_library_subscriptions(db)
         print("Seeding newbie user...")
         await seed_newbie_user(db)
+        print("Seeding F-0043 phases 4-7 fixture...")
+        await seed_phases_4_7_fixture(db)
 
         await db.commit()
         print("Seed complete!")

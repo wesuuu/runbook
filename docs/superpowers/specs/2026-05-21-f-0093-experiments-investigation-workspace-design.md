@@ -1,6 +1,8 @@
 # F-0093 — Experiments Redesign: Investigation Workspace (Phases 1–3)
 
-**Status:** Design approved · **Date:** 2026-05-21 · **Scope:** Phases 1–3 of ClickUp F-0093
+**Status:** Implemented · **Date:** 2026-05-21 · **Scope:** Phases 1–3 of ClickUp F-0093
+
+> **Phases 4–7 superseded by** [`2026-05-22-experiments-phases-4-7-design.md`](2026-05-22-experiments-phases-4-7-design.md) (ClickUp F-0043).
 
 ## Context
 

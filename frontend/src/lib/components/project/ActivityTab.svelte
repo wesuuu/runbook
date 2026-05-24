@@ -31,7 +31,7 @@
     let activitySearch = $state("");
     let activitySearchDebounce: ReturnType<typeof setTimeout> | null = null;
 
-    const allEntityTypes = ["Project", "Protocol", "Run"];
+    const allEntityTypes = ["Project", "Protocol", "Run", "Experiment"];
     const allActionTypes = [
         { value: "CREATE", label: "Created" },
         { value: "UPDATE", label: "Updated" },
@@ -39,6 +39,10 @@
         { value: "STEP_COMPLETE", label: "Step Complete" },
         { value: "STEP_UNCOMPLETE", label: "Step Uncomplete" },
         { value: "STEP_EDIT", label: "Step Edit" },
+        { value: "conclusion.lock", label: "Conclusion Locked" },
+        { value: "conclusion.unlock", label: "Conclusion Unlocked" },
+        { value: "key_result.set", label: "Key Result Set" },
+        { value: "export.pdf", label: "PDF Exported" },
     ];
 
     const hasActiveFilters = $derived(

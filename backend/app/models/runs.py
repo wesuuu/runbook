@@ -2,11 +2,12 @@
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from typing import TYPE_CHECKING, Any, List, Optional
 
-from sqlalchemy import (Boolean, DateTime, ForeignKey, Index, String, Text,
-                        UniqueConstraint, text)
+from sqlalchemy import (Boolean, DateTime, ForeignKey, Index, Numeric, String,
+                        Text, UniqueConstraint, text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -114,6 +115,17 @@ class Run(Base, UUIDMixin, TimestampMixin):
     lot_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     batch_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
+    # F-0043: structured key result for the experiment Results table + chart
+    key_result_label: Mapped[Optional[str]] = mapped_column(
+        String(120), nullable=True
+    )
+    key_result_value: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(20, 6), nullable=True
+    )
+    key_result_unit: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True
+    )
+
     # GLP run lifecycle timestamps and outcome (21 CFR Part 58)
     started_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -198,6 +210,21 @@ class Experiment(Base, UUIDMixin, TimestampMixin):
     )
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # F-0043: conclusion + lock
+    conclusion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    conclusion_locked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    conclusion_locked_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    conclusion_locked_by_name: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
+    conclusion_locked_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[conclusion_locked_by_id]
     )
 
     # Relationships

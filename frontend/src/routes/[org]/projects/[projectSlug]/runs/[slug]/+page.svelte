@@ -10,6 +10,7 @@
     import ErrorAlert from '$lib/components/ui/error-alert.svelte';
     import * as Table from '$lib/components/ui/table';
     import RunDocuments from "$lib/components/run/RunDocuments.svelte";
+    import RunKeyResultFields from "$lib/components/run/RunKeyResultFields.svelte";
     import RoleAssignmentPanel from "$lib/components/run/RoleAssignmentPanel.svelte";
     import RunResultsSummary from "$lib/components/run/RunResultsSummary.svelte";
     import RunEditMode from "$lib/components/run/RunEditMode.svelte";
@@ -795,6 +796,26 @@
         lotDraftLotNumber = run.lot_number ?? '';
         lotDuplicateCount = 0;
     }
+
+    // F-0043: key result fields. Save inline on blur via PUT /runs/{id}.
+    async function saveKeyResult(next: {
+        label: string | null;
+        value: number | null;
+        unit: string | null;
+    }) {
+        if (!run) return;
+        try {
+            const updated = await api.put(`/runs/${run.id}`, {
+                key_result_label: next.label,
+                key_result_value: next.value,
+                key_result_unit: next.unit,
+            });
+            run = updated as any;
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : 'Failed to save key result';
+            toast.error(msg);
+        }
+    }
 </script>
 
 <div class="min-h-screen bg-background">
@@ -913,6 +934,20 @@
                         </Button>
                     </div>
                 {/if}
+            </div>
+
+            <!-- F-0043: Key Result card (peer metadata to lot_number) -->
+            <div class="rounded-xl border border-border bg-card text-card-foreground shadow-sm p-5 space-y-3 mt-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Key result</p>
+                    <p class="text-sm mt-1 text-muted-foreground">Headline measurement for this run (e.g. titer, yield).</p>
+                </div>
+                <RunKeyResultFields
+                    label={run.key_result_label}
+                    value={run.key_result_value}
+                    unit={run.key_result_unit}
+                    onChange={saveKeyResult}
+                />
             </div>
         </div>
 

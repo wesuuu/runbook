@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # Experiment Schemas
@@ -127,6 +127,7 @@ class ExperimentUpdate(BaseModel):
     content: Optional[Dict[str, Any]] = None
     objective: Optional[str] = None
     success_criteria: Optional[List[str]] = None
+    conclusion: Optional[str] = Field(default=None, max_length=65536)
 
     @field_validator("name")
     @classmethod
@@ -134,6 +135,21 @@ class ExperimentUpdate(BaseModel):
         if v is None:
             return None
         return _validated_name(v)
+
+
+class ConclusionUnlockRequest(BaseModel):
+    reason: str = Field(max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _strip_and_require_8_chars(cls, v: str) -> str:
+        # Strip first, then length-check: 8 whitespace chars are not a reason.
+        # UI already trims in ConclusionCard.svelte; this closes the API gap
+        # for chat agents and direct callers.
+        stripped = v.strip()
+        if len(stripped) < 8:
+            raise ValueError("reason must be at least 8 non-whitespace characters")
+        return stripped
 
 
 # Run Schemas
@@ -237,6 +253,33 @@ class RunUpdate(BaseModel):
     # QA-0008: GxP execution metadata
     lot_number: Optional[str] = None
     batch_number: Optional[str] = None
+    key_result_label: Optional[str] = Field(default=None, max_length=120)
+    key_result_value: Optional[float] = None
+    key_result_unit: Optional[str] = Field(default=None, max_length=32)
+
+    @field_validator("key_result_value")
+    @classmethod
+    def _bound_key_result(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        # Reject NaN / Inf and bound magnitude to Numeric(14,6) integer digits.
+        if not (v == v):  # NaN
+            raise ValueError("key_result_value cannot be NaN")
+        if v in (float("inf"), float("-inf")):
+            raise ValueError("key_result_value cannot be infinite")
+        if abs(v) >= 10**14:
+            raise ValueError("key_result_value magnitude exceeds 14 integer digits")
+        return v
+
+    @model_validator(mode="after")
+    def _key_result_pairing(self) -> "RunUpdate":
+        label_present = self.key_result_label is not None
+        value_present = self.key_result_value is not None
+        if label_present != value_present:
+            raise ValueError(
+                "key_result_label and key_result_value must be set together"
+            )
+        return self
 
 
 class RunStateUpdate(BaseModel):
@@ -279,6 +322,9 @@ class RunResponse(RunBase):
     # QA-0008: GxP execution metadata
     lot_number: Optional[str] = None
     batch_number: Optional[str] = None
+    key_result_label: Optional[str] = None
+    key_result_value: Optional[float] = None
+    key_result_unit: Optional[str] = None
     # F-0087 GLP lifecycle
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -340,6 +386,10 @@ class ExperimentResponse(BaseModel):
     objective: Optional[str] = None
     success_criteria: List[str] = Field(default_factory=list)
     created_by_id: Optional[UUID] = None
+    conclusion: Optional[str] = None
+    conclusion_locked_at: Optional[datetime] = None
+    conclusion_locked_by_id: Optional[UUID] = None
+    conclusion_locked_by_name: Optional[str] = None
     content: Dict[str, Any] = Field(default_factory=dict)
     # `status` is the stored archived/not-archived flag (it keeps a default for
     # back-compat with callers that build the response by hand). `lifecycle_status`

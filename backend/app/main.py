@@ -452,6 +452,12 @@ async def lifespan(app: FastAPI):
 
     ensure_cursive_font_registered()
 
+    # F-0043: fail fast if the experiment-PDF Unicode fonts are missing,
+    # so the first export request doesn't 500 on production.
+    from app.services.experiments import pdf_export
+
+    pdf_export.assert_fonts_available()
+
     from app.services.lifecycle import loops_client
 
     if loops_client.is_configured():
@@ -503,6 +509,7 @@ app.add_middleware(
         "http://localhost:5223",  # Worktree 5 dev
         "http://localhost:5233",  # Worktree 6 dev (TD-0091b)
         "http://localhost:5243",  # Worktree 7 dev (BUG-0008)
+        "http://localhost:5253",  # Worktree 8 dev (F-0043 phases 4-7)
         "http://100.120.2.59:5174",
         "http://localhost:5176",  # Playwright E2E tests
     ],

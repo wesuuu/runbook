@@ -43,6 +43,7 @@ from app.models.iam import ObjectType, OrgRole, OrganizationMember, PermissionLe
 from app.models.projects import Project
 from app.models.protocols import Protocol, ProtocolVersion, UnitOpDefinition
 from app.models.runs import Experiment, Run, RunRoleAssignment
+from app.services.experiments.lock_guard import assert_experiment_unlocked, locked_409
 from app.models.signoffs import GlpSignoff
 from app.schemas.runs import (
     CheckLotNumberResponse,
@@ -225,6 +226,9 @@ async def create_run(
                     "message": "Cannot add a run to an archived experiment.",
                 },
             )
+
+        if experiment.conclusion_locked_at is not None:
+            raise locked_409("Cannot add a run to a locked experiment.")
 
     initial_graph: dict = {}
     is_strict = False
@@ -587,6 +591,16 @@ async def update_run(
         run_obj.status if isinstance(run_obj.status, str) else run_obj.status.value
     )
 
+    # F-0043: parent experiment lock freezes ALL run mutations. The single
+    # exception is the audit-trail-only EDITED status transition, which is
+    # already blocked because it requires either ACTIVE→COMPLETED→EDITED or
+    # COMPLETED→EDITED; both paths are guarded here.
+    await assert_experiment_unlocked(
+        db,
+        run_obj.experiment_id,
+        "Run cannot be edited while parent experiment conclusion is locked.",
+    )
+
     allowed = await check_permission(
         db,
         user.id,
@@ -657,7 +671,10 @@ async def update_run(
             "PLANNED": {"ACTIVE"},
             "ACTIVE": {"COMPLETED"},
             "COMPLETED": {"EDITED"},
-            "EDITED": {"EDITED"},
+            # EDITED must close back to COMPLETED so the experiment can
+            # progress to AWAITING_CONCLUSION; otherwise any edit cycle
+            # leaves the parent stuck in IN_PROGRESS forever.
+            "EDITED": {"EDITED", "COMPLETED"},
         }
         allowed_next = valid_transitions.get(current_status, set())
         if new_status not in allowed_next:
@@ -960,6 +977,17 @@ async def update_run(
         run_obj.id,
         changes,
     )
+
+    # Audit key_result triple separately (F-0043)
+    if any(k in changes for k in ("key_result_label", "key_result_value", "key_result_unit")):
+        await log_audit(
+            db,
+            actor_id=user.id,
+            action="key_result.set",
+            entity_type="Run",
+            entity_id=run_obj.id,
+            changes={k: changes[k] for k in ("key_result_label", "key_result_value", "key_result_unit") if k in changes},
+        )
 
     if new_status == "COMPLETED" and current_status != "COMPLETED":
         await on_run_completed(db, run_obj, background_tasks)
@@ -1394,6 +1422,12 @@ async def create_run_role_assignment(
 
     run_obj = await get_or_404(db, Run, run_id)
 
+    await assert_experiment_unlocked(
+        db,
+        run_obj.experiment_id,
+        "Role assignments are frozen while the parent experiment conclusion is locked.",
+    )
+
     # Verify user exists
     await get_or_404(db, User, assignment.user_id)
 
@@ -1537,6 +1571,15 @@ async def delete_run_role_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
+    run_obj_for_lock = (
+        await db.execute(select(Run.experiment_id).where(Run.id == run_id))
+    ).scalar_one_or_none()
+    await assert_experiment_unlocked(
+        db,
+        run_obj_for_lock,
+        "Role assignments are frozen while the parent experiment conclusion is locked.",
+    )
+
     assignment_data = {
         "run_id": str(assignment.run_id),
         "user_id": str(assignment.user_id),
@@ -1632,6 +1675,12 @@ async def add_run_note(
 
     run_obj = await get_or_404(db, Run, run_id)
 
+    await assert_experiment_unlocked(
+        db,
+        run_obj.experiment_id,
+        "Notes are frozen while the parent experiment conclusion is locked.",
+    )
+
     run_status = _run_status_str(run_obj)
 
     note = RunNote(
@@ -1719,6 +1768,12 @@ async def upload_attachment(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     run_obj = await get_or_404(db, Run, run_id)
+
+    await assert_experiment_unlocked(
+        db,
+        run_obj.experiment_id,
+        "Attachments are frozen while the parent experiment conclusion is locked.",
+    )
 
     org_id = get_org_id_from_request(request)
     storage = FileStorageService()
@@ -1825,6 +1880,12 @@ async def soft_delete_attachment(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     run_obj = await get_or_404(db, Run, run_id)
+
+    await assert_experiment_unlocked(
+        db,
+        run_obj.experiment_id,
+        "Attachments are frozen while the parent experiment conclusion is locked.",
+    )
 
     run_status = _run_status_str(run_obj)
 
