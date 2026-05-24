@@ -1,0 +1,1 @@
+- [F-0043 coupling patterns](project_f0043_coupling_patterns.md) — lifecycle state consumers, lock-guard coverage, audit rendering gaps, stale test name and spec doc

@@ -16,3 +16,4 @@
 - [BUG-005 Chat Turn Heartbeat QA](project_bug005_chat_heartbeat.md) — all 3 scenarios pass; worktree DB needs manual Pro tier update; pre-seeded interrupted session confirmed banner + dismiss
 - [F-0095 Settings Sidenav QA](project_f0095_settings_sidenav_qa.md) — 2 bugs fixed: toast on deep-link guard (tick() deferred), collapse toggle icon misaligned
 - [F-0093 Experiments Workspace QA](project_f0093_experiments_workspace.md) — schema fix (uuidString vs .uuid()); ExperimentsTab via ?tab= param; nav-active CSS class; wt5 DB starts empty
+- [F-0043 Phases 4-7 QA](project_f0043_phases_4_7.md) — PDF 500 (multi_cell x-cursor bug fixed), runs lost after PUT (merge pattern fixed), timestamp polish, KeyResultsTable header styling
