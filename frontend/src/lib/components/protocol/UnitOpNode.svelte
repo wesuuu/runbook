@@ -234,7 +234,9 @@
         border-radius: 10px;
         min-width: 120px;
         width: 100%;
-        height: 100%;
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
         box-shadow:
             0 1px 3px rgba(0, 0, 0, 0.06),
             0 1px 2px rgba(0, 0, 0, 0.04);
@@ -266,6 +268,7 @@
         height: 4px;
         width: 100%;
         border-radius: 10px 10px 0 0;
+        flex-shrink: 0;
     }
 
     .node-header {
@@ -274,6 +277,8 @@
         gap: 8px;
         padding: 10px 12px 6px;
         cursor: pointer;
+        flex-shrink: 0;
+        min-width: 0;
     }
 
     .node-icon {
@@ -309,6 +314,8 @@
         border-top: 1px solid #f1f5f9;
         margin-top: 2px;
         overflow: hidden;
+        flex: 1 1 auto;
+        min-height: 0;
     }
 
     .param-row {
@@ -348,6 +355,7 @@
         align-items: center;
         gap: 4px;
         border-top: 1px solid #f1f5f9;
+        flex-shrink: 0;
     }
 
     .duration-icon {
