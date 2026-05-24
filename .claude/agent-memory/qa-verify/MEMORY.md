@@ -18,3 +18,5 @@
 - [F-0093 Experiments Workspace QA](project_f0093_experiments_workspace.md) — schema fix (uuidString vs .uuid()); ExperimentsTab via ?tab= param; nav-active CSS class; wt5 DB starts empty
 - [BUG-0009 Chat Agent Fixes QA](project_bug0009_chat_agent_fixes.md) — canonical URL, protocols.io copy, image pipeline; docling venv uninstalled blocks live sub-issue #4 test
 - [BUG-0008 Protocol Editor UI QA](project_bug0008_protocol_editor_ui.md) — PASS (both passes); title split on param-label/value; no Close-form btn; threshold=0 IntersectionObserver; 6 adversarial paths PASS
+- [TD-0091b Notification Inbox QA](project_td0091b_notification_inbox.md) — all 5 gaps verified PASS; CORS + TOS + tour-modal gotchas; CORS diff left unstaged in main.py
+- [BUG-0007 SOP Overhaul QA](project_bug0007_sop_overhaul.md) — 6 bugs found+fixed: doc_number length/empty, PIL SyntaxError, graph null→500, PDF no-template 404, CORS :5213; approval gate PASS
