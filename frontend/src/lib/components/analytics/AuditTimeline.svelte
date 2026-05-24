@@ -122,6 +122,10 @@
             ATTACHMENT_UPLOADED: 'uploaded a file to',
             ATTACHMENT_DELETED: 'removed a file from',
             ATTACHMENT_RESTORED: 'restored a file in',
+            'conclusion.lock': 'locked the conclusion on',
+            'conclusion.unlock': 'unlocked the conclusion on',
+            'key_result.set': 'set the key result on',
+            'export.pdf': 'exported PDF for',
         };
         return labels[entry.action] ?? entry.action.toLowerCase();
     }
@@ -131,6 +135,7 @@
             case 'Project': return 'bg-purple-50 text-purple-600 border-purple-200';
             case 'Protocol': return 'bg-sky-50 text-sky-600 border-sky-200';
             case 'Run': return 'bg-amber-50 text-amber-600 border-amber-200';
+            case 'Experiment': return 'bg-violet-50 text-violet-600 border-violet-200';
             default: return 'bg-slate-50 text-slate-600 border-slate-200';
         }
     }
