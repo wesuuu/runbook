@@ -207,7 +207,11 @@ Both endpoints share the same forensic-ERROR-row + final `error` SSE on exceptio
 
 ## Output Sanitization
 
-Chat responses pass through `_sanitize_llm_output()` (strips `<think>` blocks, bold "Thought Process" sections, wraps bare JSON in code fences). Apply to any user-facing LLM text — workflow outputs included.
+Chat responses pass through `_sanitize_llm_output()` (strips `<think>` blocks, bold "Thought Process" sections, wraps bare JSON in code fences, and strips hallucinated bare `/protocols/<uuid>` markdown links the model sometimes invents instead of using the server-formatted `protocol_markdown_link` returned by `create_protocol`). Apply to any user-facing LLM text — workflow outputs included.
+
+## Disabled-feature errors
+
+Tools that gate on a feature flag (e.g. `_require_master_enabled`, `_require_protocols_io` in `subagents/protocol_knowledgebase/tools.py`) must surface a single generic chat-facing message — "External protocol search is not available right now. Use the library or draft from scratch instead." — and `logger.warning` the specific env-var that would re-enable the path. Never bleed env-var names into the model-visible `ValueError` (BUG-0009): the chat agent will quote them at users verbatim.
 
 ## Context Management
 
