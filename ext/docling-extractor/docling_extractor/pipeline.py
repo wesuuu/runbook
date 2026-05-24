@@ -51,14 +51,13 @@ def build_converter(num_threads: int) -> DocumentConverter:
         device=AcceleratorDevice.AUTO,
     )
 
-    # IMAGE pipeline: OCR off. The EasyOCR model cache is not guaranteed
-    # to be present on the docling subprocess host, and a missing cache
-    # surfaces as the bare "[Errno 2] No such file or directory" the
-    # user sees on image uploads. Layout-only extraction always works;
-    # gate OCR-on-images on a flag if a customer ever needs it.
     image_options = PdfPipelineOptions()
-    image_options.do_ocr = False
+    image_options.do_ocr = True
     image_options.generate_picture_images = True
+    image_options.ocr_options = EasyOcrOptions(
+        lang=["en"],
+        force_full_page_ocr=True,
+    )
     image_options.accelerator_options = AcceleratorOptions(
         num_threads=num_threads,
         device=AcceleratorDevice.AUTO,

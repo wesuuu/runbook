@@ -1,7 +1,8 @@
 """Regression test: image input must extract without Errno 2 (BUG-0009 #4).
 
-Uses a tiny solid-color PNG and runs the pipeline with do_ocr=False, so
-the test does not depend on the EasyOCR model cache being present.
+Uses a tiny solid-color PNG and runs the pipeline end-to-end. OCR is on
+for images, so this test requires the EasyOCR model cache to be present
+on the host.
 """
 
 import json
