@@ -121,8 +121,18 @@ function tapPoint(p: { id: string; name: string; x: number; y: number }) {
                     {#each points() as p}
                         <circle cx={scaleX(p.x)} cy={scaleY(p.y)} r="6"
                                 class:best={best && p.id === best.id}
-                                onclick={() => tapPoint(p)}
                                 fill={best && p.id === best.id ? 'var(--accent)' : 'var(--primary)'}>
+                            <title>{p.name}: ({p.x}, {p.y})</title>
+                        </circle>
+                    {/each}
+                    {#each points() as p}
+                        <circle cx={scaleX(p.x)} cy={scaleY(p.y)} r="22"
+                                class="hit-target"
+                                role="button"
+                                tabindex="0"
+                                onclick={() => tapPoint(p)}
+                                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapPoint(p); } }}
+                                aria-label={`${p.name}: ${p.x}, ${p.y}`}>
                             <title>{p.name}: ({p.x}, {p.y})</title>
                         </circle>
                     {/each}
@@ -140,4 +150,5 @@ function tapPoint(p: { id: string; name: string; x: number; y: number }) {
 
 <style>
 .tick { fill: var(--muted-fg); }
+.hit-target { fill: transparent; cursor: pointer; }
 </style>

@@ -630,7 +630,7 @@
         </div>
         </div><!-- /main-col -->
 
-        <aside class="observations-col min-w-0">
+        <aside class="observations-col min-w-0 self-start">
             {#if observationsError}
                 <div class="p-3 mb-2 border rounded bg-destructive/10 text-destructive text-sm">
                     {observationsError}
