@@ -1,0 +1,4 @@
+- [Notification subsystem coupling map](project_notification_coupling.md) — send_notification call sites (13, not 5), test fixture constructors, goto/fragment behavior in both bell and inbox page
+- [F-0043 phases 4-7 coupling map](project_f0043_phases47_coupling.md) — 6 derive_lifecycle_status call sites, ExperimentUpdate field tuple miss, index page filter/stats miss, existing test_experiment_status.py breakage
+- [F-0019d lifecycle surfacing coupling map](project_f0019d_lifecycle_coupling.md) — TEMPLATES/DEFAULT_POLICY sync contracts, app_host missing, PUBLIC_PATHS mechanism, _ROUTABLE gate, db/base.py import needed
+- [F-0019d in-app lifecycle detailed gaps](project_f0019d_lifecycle_surfacing_coupling.md) — template signature mismatch (personal param), SubscriptionLockoutModal overlap, settings EVENT_TYPES hardcoded, links.py merge pattern, .env.example missing
