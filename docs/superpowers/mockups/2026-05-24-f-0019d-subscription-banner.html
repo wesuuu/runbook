@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="en" data-theme="lab-glass">
+<head>
+<meta charset="utf-8" />
+<title>F-0019d · Subscription Banner States</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ── Theme tokens copied from frontend/src/app.css :root (lab-glass) ── */
+  :root,
+  [data-theme="lab-glass"] {
+    --bg:           hsl(200 25% 97%);
+    --fg:           hsl(215 40% 12%);
+    --card:         hsl(0 0% 100%);
+    --card-fg:      hsl(215 40% 12%);
+    --muted:        hsl(205 25% 94%);
+    --muted-fg:     hsl(215 15% 42%);
+    --primary:      hsl(195 85% 22%);
+    --primary-fg:   hsl(195 30% 98%);
+    --accent:       hsl(155 70% 38%);
+    --accent-fg:    hsl(155 30% 98%);
+    --destructive:  hsl(355 75% 50%);
+    --border:       hsl(205 22% 87%);
+    --ring:         hsl(195 85% 22%);
+    --grid-dot:     hsl(205 30% 70% / 0.25);
+
+    --radius: 0.625rem;
+    --radius-md: 0.375rem;
+    --radius-sm: 0.125rem;
+
+    /* Tailwind raw colors used elsewhere in the codebase for banners */
+    --amber-50:  #fffbeb;
+    --amber-100: #fef3c7;
+    --amber-400: #fbbf24;
+    --amber-500: #f59e0b;
+    --amber-600: #d97706;
+    --amber-700: #b45309;
+    --amber-800: #92400e;
+    --amber-900: #78350f;
+
+    --red-100: #fee2e2;
+    --red-500: #ef4444;
+    --red-600: #dc2626;
+    --red-700: #b91c1c;
+    --red-800: #991b1b;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-weight: 400;
+    color: var(--fg);
+    background: var(--bg);
+    min-height: 100vh;
+    padding: 56px 40px 96px;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0.6;
+  }
+
+  /* Page header */
+  .page-header {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto 48px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-header h1 {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600;
+    font-size: 28px;
+    line-height: 1.15;
+    margin: 0;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+  .page-header h1 span {
+    color: var(--muted-fg);
+    font-weight: 400;
+  }
+  .page-header h1::after {
+    content: '';
+    display: block;
+    margin-top: 10px;
+    height: 2px;
+    width: 80px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+  .page-header .meta {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted-fg);
+    text-align: right;
+    line-height: 1.7;
+  }
+  .page-header .meta b {
+    color: var(--primary);
+    font-weight: 500;
+  }
+
+  .section-heading {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted-fg);
+  }
+  .section-heading b { color: var(--fg); font-weight: 500; }
+
+  .stack {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  /* Label column + simulated app frame */
+  .example {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+  .example .label {
+    position: sticky;
+    top: 24px;
+    line-height: 1.55;
+  }
+  .example .label .num {
+    display: inline-block;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--primary);
+    text-align: center;
+    line-height: 22px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+  .example .label .title {
+    display: block;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+    margin-bottom: 4px;
+  }
+  .example .label .note {
+    font-size: 12.5px;
+    color: var(--muted-fg);
+    line-height: 1.5;
+  }
+  .example .label .note b { color: var(--fg); font-weight: 500; }
+  .example .label .tag {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 3px 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--card);
+    color: var(--muted-fg);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .example .label .tokens {
+    margin-top: 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted-fg);
+    line-height: 1.7;
+  }
+  .example .label .tokens code {
+    color: var(--primary);
+  }
+
+  /* Simulated app chrome */
+  .app {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow:
+        0 1px 2px hsl(0 0% 0% / 0.06),
+        0 4px 12px hsl(0 0% 0% / 0.04);
+  }
+
+  /* ── Banner base — full-width strip, role="status" or "alert" ── */
+  .banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.45;
+  }
+  .banner svg.icon {
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+  }
+  .banner .text { font-weight: 500; }
+  .banner .text b { font-weight: 600; }
+  .banner .text .count {
+    font-family: 'DM Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    margin-right: 2px;
+  }
+  .banner .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    line-height: 1;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    background: transparent;
+    color: currentColor;
+    transition: background 120ms ease;
+  }
+  .banner .cta.solid {
+    text-decoration: none;
+    padding: 7px 12px;
+  }
+  .banner .dismiss {
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 24px; height: 24px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: currentColor;
+    opacity: 0.7;
+    cursor: pointer;
+    margin-left: 4px;
+  }
+  .banner .dismiss:hover { opacity: 1; background: rgba(255,255,255,0.15); }
+
+  /* ── Tier — INFO (trial 14-8) :: soft, uses --primary token ── */
+  .banner.tier-info {
+    background: color-mix(in srgb, var(--primary) 6%, transparent);
+    color: var(--primary);
+    border-left: 4px solid var(--primary);
+    border-bottom: 1px solid var(--border);
+    justify-content: flex-start;
+  }
+  .banner.tier-info .cta.solid {
+    background: var(--primary);
+    color: var(--primary-fg);
+  }
+  .banner.tier-info .cta.solid:hover { background: color-mix(in srgb, var(--primary) 88%, black); }
+  .banner.tier-info .dismiss:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+
+  /* ── Tier — WARN (trial 7-3) :: amber soft inline pattern (matches IndexingStatusBanner) ── */
+  .banner.tier-warn {
+    background: var(--amber-50);
+    color: var(--amber-900);
+    border-left: 4px solid var(--amber-500);
+    border-bottom: 1px solid var(--border);
+    justify-content: flex-start;
+  }
+  .banner.tier-warn svg.icon { color: var(--amber-600); }
+  .banner.tier-warn .cta.solid {
+    background: var(--amber-600);
+    color: white;
+  }
+  .banner.tier-warn .cta.solid:hover { background: var(--amber-700); }
+  .banner.tier-warn .dismiss:hover { background: rgba(180, 83, 9, 0.1); }
+
+  /* ── Tier — CRIT (trial 2-0) :: solid red (matches ExpiryWarningBanner red) ── */
+  .banner.tier-crit {
+    background: var(--red-600);
+    color: white;
+  }
+  .banner.tier-crit svg.icon { color: var(--red-100); }
+  .banner.tier-crit .cta.solid {
+    background: white;
+    color: var(--red-700);
+  }
+  .banner.tier-crit .cta.solid:hover { background: var(--red-100); }
+  .banner.tier-crit .dismiss { color: var(--red-100); }
+
+  /* ── Tier — CANCEL (cancel-at-period-end) :: amber soft, persistent ── */
+  .banner.tier-cancel {
+    background: var(--amber-50);
+    color: var(--amber-900);
+    border-left: 4px solid var(--amber-600);
+    border-bottom: 1px solid var(--border);
+    justify-content: flex-start;
+  }
+  .banner.tier-cancel svg.icon { color: var(--amber-700); }
+  .banner.tier-cancel .cta.solid {
+    background: var(--amber-700);
+    color: white;
+  }
+  .banner.tier-cancel .cta.solid:hover { background: var(--amber-800); }
+
+  /* ── Tier — LOCK (locked-out) :: solid destructive, strongest ── */
+  .banner.tier-lock {
+    background: var(--destructive);
+    color: white;
+    padding: 14px 16px;
+  }
+  .banner.tier-lock svg.icon { color: white; opacity: 0.85; animation: pulse 2.5s ease-in-out infinite; }
+  .banner.tier-lock .cta.solid {
+    background: white;
+    color: var(--destructive);
+  }
+  .banner.tier-lock .cta.solid:hover { background: var(--red-100); }
+  .banner.tier-lock .cta.ghost {
+    color: white;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.85; }
+    50%      { opacity: 0.45; }
+  }
+
+  /* ── Simulated nav under the banner ── */
+  .nav {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 18px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+  }
+  .nav .brand {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+    color: var(--primary);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .nav .brand .logo {
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    background: var(--primary);
+    display: inline-block;
+    position: relative;
+  }
+  .nav .brand .logo::after {
+    content: '';
+    position: absolute;
+    inset: 4px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+  .nav .links {
+    display: flex;
+    gap: 22px;
+    font-size: 13px;
+    color: var(--muted-fg);
+    font-weight: 500;
+  }
+  .nav .links span:first-child {
+    color: var(--primary);
+    font-weight: 600;
+    position: relative;
+  }
+  .nav .links span:first-child::after {
+    content: '';
+    position: absolute;
+    bottom: -14px; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+  .nav .user {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--primary);
+    color: var(--primary-fg);
+    display: grid; place-items: center;
+    font-size: 11px; font-weight: 600;
+  }
+
+  /* Faux body */
+  .body {
+    padding: 22px 20px;
+    color: var(--muted-fg);
+    font-size: 13px;
+    line-height: 1.6;
+    background: var(--card);
+  }
+  .body .row {
+    display: grid;
+    grid-template-columns: 110px 1fr 60px;
+    align-items: center;
+    gap: 14px;
+    height: 22px;
+  }
+  .body .row .k {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted-fg);
+  }
+  .body .row .bar {
+    height: 4px;
+    border-radius: 1px;
+    background: linear-gradient(90deg, var(--primary) 0 var(--w, 60%), var(--muted) var(--w, 60%) 100%);
+  }
+  .body .row .v {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    text-align: right;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Theme switcher */
+  .theme-switch {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto 16px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted-fg);
+  }
+  .theme-switch button {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted-fg);
+    cursor: pointer;
+  }
+  .theme-switch button.active {
+    background: var(--primary);
+    color: var(--primary-fg);
+    border-color: var(--primary);
+  }
+
+  /* Footer note */
+  .footer-note {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 64px auto 0;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+    font-size: 12.5px;
+    color: var(--muted-fg);
+    line-height: 1.55;
+  }
+  .footer-note h4 {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--fg);
+    margin: 0 0 6px;
+    letter-spacing: -0.005em;
+  }
+  .footer-note code {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    background: var(--muted);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    color: var(--primary);
+  }
+
+  /* ─── Blueprint theme overrides ─── */
+  [data-theme="blueprint"] {
+    --bg:           hsl(210 32% 96%);
+    --fg:           hsl(218 55% 14%);
+    --card:         hsl(210 45% 99%);
+    --card-fg:      hsl(218 55% 14%);
+    --muted:        hsl(210 28% 92%);
+    --muted-fg:     hsl(218 18% 42%);
+    --primary:      hsl(218 70% 22%);
+    --primary-fg:   hsl(210 40% 98%);
+    --accent:       hsl(35 95% 55%);
+    --accent-fg:    hsl(35 80% 12%);
+    --destructive:  hsl(0 72% 50%);
+    --border:       hsl(210 28% 84%);
+    --ring:         hsl(218 70% 30%);
+    --grid-dot:     hsl(218 50% 45% / 0.22);
+  }
+  [data-theme="apothecary"] {
+    --bg:           hsl(60 20% 96%);
+    --fg:           hsl(150 28% 12%);
+    --card:         hsl(45 28% 98%);
+    --card-fg:      hsl(150 28% 12%);
+    --muted:        hsl(60 14% 92%);
+    --muted-fg:     hsl(150 12% 38%);
+    --primary:      hsl(155 45% 20%);
+    --primary-fg:   hsl(60 25% 97%);
+    --accent:       hsl(15 70% 45%);
+    --accent-fg:    hsl(60 25% 97%);
+    --destructive:  hsl(8 70% 42%);
+    --border:       hsl(60 14% 84%);
+    --ring:         hsl(155 45% 25%);
+    --grid-dot:     hsl(150 25% 50% / 0.22);
+  }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>Subscription banner <span>· five states, themed</span></h1>
+  <div class="meta">
+    <b>F-0019d</b><br>
+    Part 2 · Frontend<br>
+    2026-05-24
+  </div>
+</header>
+
+<div class="theme-switch">
+  <span>Theme:</span>
+  <button class="active" onclick="document.documentElement.setAttribute('data-theme','lab-glass'); for (const b of document.querySelectorAll('.theme-switch button')) b.classList.toggle('active', b.textContent.trim().toLowerCase() === 'lab-glass');">lab-glass</button>
+  <button onclick="document.documentElement.setAttribute('data-theme','blueprint'); for (const b of document.querySelectorAll('.theme-switch button')) b.classList.toggle('active', b.textContent.trim().toLowerCase() === 'blueprint');">blueprint</button>
+  <button onclick="document.documentElement.setAttribute('data-theme','apothecary'); for (const b of document.querySelectorAll('.theme-switch button')) b.classList.toggle('active', b.textContent.trim().toLowerCase() === 'apothecary');">apothecary</button>
+</div>
+
+<div class="section-heading">
+  Rendered above the global nav · <b>priority order: lock → cancel → trial</b>
+</div>
+
+<div class="stack">
+
+  <!-- 1. TRIAL — INFO (14–8 days) -->
+  <section class="example">
+    <div class="label">
+      <span class="num">1</span>
+      <span class="title">Trial — Informational</span>
+      <span class="note">Days remaining: <b>14 → 8</b></span>
+      <span class="tag">dismissible</span>
+      <div class="tokens">
+        bg: <code>primary/6</code><br>
+        ink: <code>primary</code><br>
+        rail: <code>primary</code>
+      </div>
+    </div>
+    <div class="app">
+      <div class="banner tier-info" role="status">
+        <!-- lucide info -->
+        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4M12 8h.01"/></svg>
+        <span class="text"><span class="count">11 days</span>left on your Batchrite trial — add a payment method to keep things running.</span>
+        <button class="cta solid">Manage billing</button>
+        <button class="dismiss" title="Hide until tomorrow">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="nav">
+        <div class="brand"><span class="logo"></span> Batchrite</div>
+        <div class="links"><span>Protocols</span><span>Experiments</span><span>Runs</span><span>Library</span></div>
+        <div class="user">WS</div>
+      </div>
+      <div class="body">
+        <div class="row"><span class="k">PRTC-018</span><span class="bar" style="--w:78%"></span><span class="v">78%</span></div>
+        <div class="row"><span class="k">PRTC-019</span><span class="bar" style="--w:42%"></span><span class="v">42%</span></div>
+        <div class="row"><span class="k">PRTC-020</span><span class="bar" style="--w:91%"></span><span class="v">91%</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. TRIAL — WARN (7–3 days) -->
+  <section class="example">
+    <div class="label">
+      <span class="num">2</span>
+      <span class="title">Trial — Caution</span>
+      <span class="note">Days remaining: <b>7 → 3</b></span>
+      <span class="tag">dismissible</span>
+      <div class="tokens">
+        bg: <code>amber-50</code><br>
+        ink: <code>amber-900</code><br>
+        rail: <code>amber-500</code>
+      </div>
+    </div>
+    <div class="app">
+      <div class="banner tier-warn" role="status">
+        <!-- lucide alert-triangle -->
+        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+        <span class="text"><span class="count">5 days</span>until your trial ends. After that, your team loses write access until billing is set up.</span>
+        <button class="cta solid">Add payment method</button>
+        <button class="dismiss" title="Hide until tomorrow">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="nav">
+        <div class="brand"><span class="logo"></span> Batchrite</div>
+        <div class="links"><span>Protocols</span><span>Experiments</span><span>Runs</span><span>Library</span></div>
+        <div class="user">WS</div>
+      </div>
+      <div class="body">
+        <div class="row"><span class="k">PRTC-018</span><span class="bar" style="--w:78%"></span><span class="v">78%</span></div>
+        <div class="row"><span class="k">PRTC-019</span><span class="bar" style="--w:42%"></span><span class="v">42%</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. TRIAL — CRIT (2–0 days) -->
+  <section class="example">
+    <div class="label">
+      <span class="num">3</span>
+      <span class="title">Trial — Critical</span>
+      <span class="note">Days remaining: <b>2 → 0</b></span>
+      <span class="tag">dismissible</span>
+      <div class="tokens">
+        bg: <code>red-600</code><br>
+        ink: <code>white</code><br>
+        cta: <code>white</code>
+      </div>
+    </div>
+    <div class="app">
+      <div class="banner tier-crit" role="alert">
+        <!-- lucide alert-circle -->
+        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4M12 16h.01"/></svg>
+        <span class="text">Your trial ends <b>tomorrow</b>. Add a payment method now or runs and protocols become <b>read-only at midnight UTC</b>.</span>
+        <button class="cta solid">Add payment method</button>
+        <button class="dismiss" title="Hide until tomorrow">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="nav">
+        <div class="brand"><span class="logo"></span> Batchrite</div>
+        <div class="links"><span>Protocols</span><span>Experiments</span><span>Runs</span><span>Library</span></div>
+        <div class="user">WS</div>
+      </div>
+      <div class="body">
+        <div class="row"><span class="k">PRTC-018</span><span class="bar" style="--w:78%"></span><span class="v">78%</span></div>
+        <div class="row"><span class="k">PRTC-019</span><span class="bar" style="--w:42%"></span><span class="v">42%</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. CANCEL-AT-PERIOD-END -->
+  <section class="example">
+    <div class="label">
+      <span class="num">4</span>
+      <span class="title">Cancel at period end</span>
+      <span class="note">Active paid period · cancellation queued</span>
+      <span class="tag">not dismissible</span>
+      <div class="tokens">
+        bg: <code>amber-50</code><br>
+        ink: <code>amber-900</code><br>
+        rail: <code>amber-600</code>
+      </div>
+    </div>
+    <div class="app">
+      <div class="banner tier-cancel" role="status">
+        <!-- lucide calendar-x -->
+        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 4h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V9a2 2 0 012-2zm3 8l4-4m0 4l-4-4"/></svg>
+        <span class="text">Your subscription is set to cancel on <b>June 18, 2026</b>. You'll keep full access until then.</span>
+        <button class="cta solid">Resume subscription</button>
+      </div>
+      <div class="nav">
+        <div class="brand"><span class="logo"></span> Batchrite</div>
+        <div class="links"><span>Protocols</span><span>Experiments</span><span>Runs</span><span>Library</span></div>
+        <div class="user">WS</div>
+      </div>
+      <div class="body">
+        <div class="row"><span class="k">PRTC-018</span><span class="bar" style="--w:78%"></span><span class="v">78%</span></div>
+        <div class="row"><span class="k">PRTC-019</span><span class="bar" style="--w:42%"></span><span class="v">42%</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. LOCKED-OUT -->
+  <section class="example">
+    <div class="label">
+      <span class="num">5</span>
+      <span class="title">Locked out</span>
+      <span class="note">Trial expired or subscription canceled · no write access</span>
+      <span class="tag">blocking</span>
+      <div class="tokens">
+        bg: <code>destructive</code><br>
+        ink: <code>white</code><br>
+        cta: <code>white</code>
+      </div>
+    </div>
+    <div class="app">
+      <div class="banner tier-lock" role="alert">
+        <!-- lucide lock -->
+        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        <span class="text">Your workspace is in <b>read-only</b> mode. Restore billing to resume creating runs, editing protocols, and signing off steps.</span>
+        <button class="cta solid">Restore billing</button>
+        <button class="cta ghost">Contact support</button>
+      </div>
+      <div class="nav">
+        <div class="brand"><span class="logo"></span> Batchrite</div>
+        <div class="links"><span>Protocols</span><span>Experiments</span><span>Runs</span><span>Library</span></div>
+        <div class="user">WS</div>
+      </div>
+      <div class="body">
+        <div class="row"><span class="k">PRTC-018</span><span class="bar" style="--w:78%"></span><span class="v">78%</span></div>
+        <div class="row"><span class="k">PRTC-019</span><span class="bar" style="--w:42%"></span><span class="v">42%</span></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="footer-note">
+  <div>
+    <h4>Theming</h4>
+    All banners pull from theme tokens (<code>--primary</code>, <code>--destructive</code>, <code>--border</code>, <code>--muted-fg</code>). Amber states use raw Tailwind <code>amber-*</code> utilities to match the existing <code>ConnectivityBanner</code> and <code>IndexingStatusBanner</code> patterns. Switch palettes in the header to see lab-glass, blueprint, and apothecary.
+  </div>
+  <div>
+    <h4>Component reuse</h4>
+    CTAs ship as shadcn <code>Button</code> (sizes: <code>sm</code>, variants: <code>default</code>, <code>secondary</code>, <code>ghost</code>). Icons from <code>lucide-svelte</code>: <code>Info</code>, <code>AlertTriangle</code>, <code>AlertCircle</code>, <code>CalendarX</code>, <code>Lock</code>, <code>X</code> — same set already in the codebase.
+  </div>
+  <div>
+    <h4>Priority &amp; dismissal</h4>
+    <code>locked-out → cancel → trial</code>. Only one renders at a time. Trial tiers cascade purely on <code>days_remaining_in_trial</code>. Dismiss key is a per-day <code>localStorage</code> entry — lasts the calendar day only. Cancel and lockout cannot be dismissed.
+  </div>
+</div>
+
+</body>
+</html>
