@@ -9,6 +9,7 @@ from a system install if absent) and use it for every cell. Helvetica is
 Latin-1 only and would mojibake or raise on the first µ.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
@@ -18,6 +19,12 @@ from fpdf import FPDF
 from app.services.experiments.conditions import compute_conditions
 
 _FONT_DIR = Path(__file__).resolve().parents[2] / "static" / "fonts"
+
+# Bounded thread pool so a burst of PDF requests can't exhaust the default
+# asyncio executor (which is shared with every other to_thread caller).
+# Two slots match the practical worker count and keep memory in check;
+# additional callers queue without blocking the event loop.
+PDF_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pdf-export")
 
 
 def _make_pdf() -> FPDF:

@@ -1098,8 +1098,15 @@ async def export_experiment_pdf(
 
     started = time.monotonic()
     try:
+        loop = asyncio.get_running_loop()
         content = await asyncio.wait_for(
-            asyncio.to_thread(pdf_export.generate_experiment_pdf, exp, runs, obs_items),
+            loop.run_in_executor(
+                pdf_export.PDF_EXECUTOR,
+                pdf_export.generate_experiment_pdf,
+                exp,
+                runs,
+                obs_items,
+            ),
             timeout=EXPORT_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:

@@ -671,7 +671,10 @@ async def update_run(
             "PLANNED": {"ACTIVE"},
             "ACTIVE": {"COMPLETED"},
             "COMPLETED": {"EDITED"},
-            "EDITED": {"EDITED"},
+            # EDITED must close back to COMPLETED so the experiment can
+            # progress to AWAITING_CONCLUSION; otherwise any edit cycle
+            # leaves the parent stuck in IN_PROGRESS forever.
+            "EDITED": {"EDITED", "COMPLETED"},
         }
         allowed_next = valid_transitions.get(current_status, set())
         if new_status not in allowed_next:
