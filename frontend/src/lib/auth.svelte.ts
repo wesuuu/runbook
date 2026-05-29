@@ -302,11 +302,17 @@ export async function handleOAuthCallback(provider: string, code: string, state:
     sessionStorage.removeItem(`oauth_state_${provider}`);
 }
 
-export async function register(email: string, password: string, fullName: string): Promise<void> {
+export async function register(
+    email: string,
+    password: string,
+    fullName: string,
+    inviteToken?: string | null,
+): Promise<void> {
     const res = await authFetch<{ verification_token: string }>('POST', '/auth/register', {
         email,
         password,
         full_name: fullName,
+        ...(inviteToken ? { invite_token: inviteToken } : {}),
     });
     token = res.verification_token;
     localStorage.setItem('auth_token', token);
