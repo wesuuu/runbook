@@ -146,7 +146,7 @@
                 </Card>
             </div>
         {:else}
-            <div in:fade={{ duration: blockDuration() }}>
+            <div in:fade={{ duration: blockDuration() }} class="card-warm rounded-xl p-1">
                 <RegistrationWaitlist calendlyUrl={CALENDLY_WAITLIST_URL} />
             </div>
         {/if}

@@ -190,10 +190,15 @@ async def register(
             db, body.invite_token, body.email
         )
         if not allowed:
+            logger.info(
+                "Registration gate blocked sign-up (invite_token_present=%s)",
+                bool(body.invite_token),
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=REGISTRATION_DISABLED_DETAIL,
             )
+        logger.info("Registration gate allowed invited sign-up")
 
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none() is not None:

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { ExternalLink } from 'lucide-svelte';
     import { Button } from '$lib/components/ui/button';
     import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
 
@@ -9,17 +10,15 @@
     let { calendlyUrl }: Props = $props();
 </script>
 
-<Card>
-    <CardHeader>
-        <CardTitle>Join the first cohort</CardTitle>
-        <CardDescription>
-            Batchrite is currently in early access. Request an invite to be among the
-            first Process Development teams on the platform.
-        </CardDescription>
+<Card class="border-0 shadow-none bg-transparent">
+    <CardHeader class="pb-4">
+        <CardTitle class="text-lg">Join the first cohort</CardTitle>
+        <CardDescription>Batchrite is currently invite-only.</CardDescription>
     </CardHeader>
     <CardContent class="space-y-4">
         <Button href={calendlyUrl} target="_blank" rel="noopener noreferrer" class="w-full">
             Request early access
+            <ExternalLink class="ml-1.5 h-3.5 w-3.5 opacity-70" />
         </Button>
         <Button variant="outline" href="/login" class="w-full">
             Back to sign in
