@@ -17,8 +17,9 @@
 **Backend**
 - `backend/app/core/config.py` — add `RegistrationFeatureConfig`, wire into `FeaturesConfig`.
 - `backend/app/schemas/auth.py` — add `invite_token` to `RegisterRequest`.
-- `backend/app/api/endpoints/auth.py` — gate `register()`, add `_invite_permits_registration` helper, fix invite redirect, make `VERIFY_ERROR_HTML` flag-aware.
-- `backend/app/api/endpoints/iam.py` — gate `create_organization()`.
+- `backend/app/core/deps.py` — add `REGISTRATION_DISABLED_DETAIL` constant + `require_registration_enabled()` factory dependency.
+- `backend/app/api/endpoints/auth.py` — gate `register()` (inline, needs invite exemption), add `_invite_permits_registration` helper, fix invite redirect, make `VERIFY_ERROR_HTML` flag-aware.
+- `backend/app/api/endpoints/iam.py` — gate `create_organization()` via the shared dependency.
 - `backend/.env.example`, `backend/settings.example.yaml` — document the flag.
 - Tests: `backend/tests/unit/test_settings_registration.py` (new), `backend/tests/integration/test_auth_api.py`, `backend/tests/integration/test_iam_api.py`.
 
@@ -26,8 +27,9 @@
 - `frontend/src/lib/feature-flags.ts` — add `REGISTRATION_ENABLED`.
 - `frontend/src/lib/auth.svelte.ts` — `register()` forwards `inviteToken`.
 - `frontend/src/lib/components/shared/RegistrationWaitlist.svelte` — new card.
-- `frontend/src/routes/register/+page.svelte` — flag/invite gating.
+- `frontend/src/routes/register/+page.svelte` — flag/invite gating + login-matching branding.
 - `frontend/src/routes/login/+page.svelte` — flag-aware register link.
+- `frontend/src/routes/check-email/+page.svelte` — flag-aware "Start over" link.
 - `frontend/.env.example` — add `VITE_REGISTRATION_ENABLED`.
 - Tests: `frontend/src/routes/register/page.test.ts` (new), `frontend/src/lib/components/shared/RegistrationWaitlist.test.ts` (new).
 
@@ -246,9 +248,57 @@ async def test_register_blocked_with_email_mismatched_invite(
         },
     )
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_invite_token_cannot_mint_second_account(
+    client: AsyncClient, db_session: AsyncSession, test_org, test_user, monkeypatch
+):
+    """A valid invite is a single-use registration key bounded by the
+    duplicate-email 409: once the invited email registers, the same token
+    cannot mint another account (the invitation legitimately stays PENDING
+    until the invitee clicks accept-invite a second time to join the org)."""
+    monkeypatch.setattr(_settings.features.registration, "enabled", False)
+    inv = Invitation(
+        organization_id=test_org.id,
+        invited_email="cohort@example.com",
+        role="MEMBER",
+        invited_by=test_user.id,
+        token="invite-tok-789",
+        status=InvitationStatus.PENDING,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+    )
+    db_session.add(inv)
+    await db_session.commit()
+
+    with patch("app.api.endpoints.auth.get_email_provider") as mock_provider:
+        mock_provider.return_value = AsyncMock()
+        mock_provider.return_value.send = AsyncMock()
+        first = await client.post(
+            "/auth/register",
+            json={
+                "email": "cohort@example.com",
+                "password": "securepass",
+                "invite_token": "invite-tok-789",
+            },
+        )
+    assert first.status_code == 200
+
+    # Same token + same email a second time → duplicate-email 409, not a new user.
+    second = await client.post(
+        "/auth/register",
+        json={
+            "email": "cohort@example.com",
+            "password": "securepass",
+            "invite_token": "invite-tok-789",
+        },
+    )
+    assert second.status_code == 409
 ```
 
 Add `func` to the existing sqlalchemy import line in the test file (`from sqlalchemy import func, select`).
+
+**Security note (do NOT change behavior):** the invitation stays `PENDING` after `register()` on purpose — actual org membership is created when the invitee clicks the accept-invite email link a second time (existing `accept_invite` flow at `auth.py:553-582` marks it `ACCEPTED`). Consuming/accepting the invite inside `register()` would break that join. The reuse window is bounded: the token only permits registration for `invitation.invited_email` (email-match in `_invite_permits_registration`), and the duplicate-email 409 blocks any second account for that email. The token is therefore a single-use-per-email registration key for exactly the pre-invited person — by design.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -282,6 +332,12 @@ async def _invite_permits_registration(
 
 - [ ] **Step 4: Add the gate at the top of `register()`**
 
+`register()` keeps an **inline** gate (rather than the `require_registration_enabled()` dependency used by `iam.py` in Task 4) because it needs `body.invite_token`/`body.email` for the invite exemption, which a parameterless dependency can't see. Import the shared detail constant so the 403 message stays in one place:
+
+```python
+from app.core.deps import REGISTRATION_DISABLED_DETAIL
+```
+
 In `register()` (currently starting with the duplicate-email lookup at L172), insert as the **first** statements inside the function body:
 
 ```python
@@ -292,7 +348,7 @@ In `register()` (currently starting with the duplicate-email lookup at L172), in
         if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Registration is not available right now.",
+                detail=REGISTRATION_DISABLED_DETAIL,
             )
 ```
 
@@ -334,10 +390,11 @@ git commit -m "feat(F-0091): gate register endpoint with invite exemption"
 
 ---
 
-## Task 4: Gate `create_organization()`
+## Task 4: Shared `require_registration_enabled` dep + gate `create_organization()`
 
 **Files:**
-- Modify: `backend/app/api/endpoints/iam.py` (`create_organization` body, after L143)
+- Modify: `backend/app/core/deps.py` (add constant + factory dependency)
+- Modify: `backend/app/api/endpoints/iam.py` (`create_organization` signature)
 - Test: `backend/tests/integration/test_iam_api.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -381,29 +438,57 @@ async def test_create_organization_allowed_when_flag_on(
 Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_iam_api.py -k organization_blocked -v` (adjust filename)
 Expected: FAIL (returns 201, not 403).
 
-- [ ] **Step 3: Add the gate**
+- [ ] **Step 3: Add the shared dependency + detail constant**
 
-In `backend/app/api/endpoints/iam.py`, at the very top of the `create_organization` function body (before `org = Organization(...)`):
+In `backend/app/core/deps.py`, alongside the existing `require_*` factories (`require_permission`, `require_tier`, etc.), add:
 
 ```python
-    if not settings.features.registration.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Registration is not available right now.",
-        )
+REGISTRATION_DISABLED_DETAIL = "Registration is not available right now."
+
+
+def require_registration_enabled():
+    """Gate factory (F-0091): 403 when self-service registration is off.
+
+    Use on self-service entry points that have no invite-exemption path
+    (e.g. new-org creation). `register()` gates inline instead because it
+    must inspect the invite token in the request body.
+    """
+
+    async def _check() -> None:
+        if not settings.features.registration.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=REGISTRATION_DISABLED_DETAIL,
+            )
+
+    return _check
 ```
 
-`settings`, `HTTPException`, and `status` are already imported in `iam.py`.
+`settings`, `HTTPException`, and `status` are already imported in `deps.py` (used by the existing factories). If `settings` is not yet imported there, add `from app.core.config import settings`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Wire the dependency into `create_organization`**
+
+In `backend/app/api/endpoints/iam.py`, import the factory and add it to the `create_organization` signature as a no-bind dependency (alongside the existing `require_active_subscription()` dep):
+
+```python
+from app.core.deps import require_registration_enabled
+```
+
+```python
+    _reg: None = Depends(require_registration_enabled()),
+```
+
+No body change needed — the dependency raises before the handler runs.
+
+- [ ] **Step 5: Run to verify it passes**
 
 Run: `cd backend && source .venv/bin/activate && pytest tests/integration/test_iam_api.py -k organization -v` (adjust filename)
 Expected: both pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/api/endpoints/iam.py backend/tests/integration/test_iam_api.py
+git add backend/app/core/deps.py backend/app/api/endpoints/iam.py backend/tests/integration/test_iam_api.py
 git commit -m "feat(F-0091): gate org creation behind registration flag"
 ```
 
@@ -450,6 +535,8 @@ Then at each `VERIFY_ERROR_HTML.format(...)` call site, compute and pass `cta_li
 ```
 
 and add `cta_link=cta_link` to the existing `.format(message=..., frontend_url=...)` calls that use `VERIFY_ERROR_HTML`.
+
+**There are TWO render sites** — `auth.py:301` and `auth.py:312` (grep `VERIFY_ERROR_HTML.format` to confirm both). Both must compute and pass `cta_link`; missing either raises a `KeyError: 'cta_link'` at render time (a 500 instead of the intended error page). Add the `cta_link = (...)` block before each `.format(...)` call (or compute it once just inside `verify_email` if both sites share scope).
 
 - [ ] **Step 3: Run the auth suite**
 
@@ -646,7 +733,7 @@ Create `frontend/src/lib/components/shared/RegistrationWaitlist.svelte`:
             first Process Development teams on the platform.
         </CardDescription>
     </CardHeader>
-    <CardContent class="space-y-3">
+    <CardContent class="space-y-4">
         <Button
             href={calendlyUrl}
             target="_blank"
@@ -747,11 +834,12 @@ Expected: FAIL (page doesn't render the waitlist; "Join the first cohort" not fo
 
 - [ ] **Step 3: Update the page**
 
-Edit `frontend/src/routes/register/+page.svelte`. In `<script>`, add imports and derived gating:
+Edit `frontend/src/routes/register/+page.svelte`. In `<script>`, add imports and gating:
 
 ```typescript
     import { REGISTRATION_ENABLED } from '$lib/feature-flags';
     import RegistrationWaitlist from '$lib/components/shared/RegistrationWaitlist.svelte';
+    import Logo from '$lib/components/layout/Logo.svelte';
 
     const CALENDLY_WAITLIST_URL = 'https://calendly.com/wes-batchrite/30min'; // F-0091
 
@@ -762,11 +850,30 @@ Edit `frontend/src/routes/register/+page.svelte`. In `<script>`, add imports and
     const showForm = REGISTRATION_ENABLED || !!inviteToken;
 ```
 
+**Do NOT switch this to `$app/stores`/`$page`.** This app sets `export const ssr = false` globally (`src/routes/+layout.ts`), uses `adapter-static`, and reads query params via `new URLSearchParams(window.location.search)` everywhere (`login/+page.svelte:28`, `+layout.svelte:78`). `$app/stores` is used nowhere in `src`. The `typeof window` guard keeps it safe; `register` is a fresh full navigation entry point (the invite link reloads the page), so a one-time read at init is correct and matches the login page's identical `next`-param read. `REGISTRATION_ENABLED` is a build-time `const`, so there is no flag-resolution flash.
+
 Change the `register(...)` call in `handleSubmit` to forward the token:
 
 ```typescript
             await register(email, password, fullName, inviteToken);
 ```
+
+**Branding upgrade (match the login page).** The register page currently uses a plain `bg-muted/40` wrapper and a bare `B` logo div. When the flag is off this page is a prospect's first impression, so bring it up to the login page's polish. Replace the outer wrapper + header block (lines ~45-55) with login's structure:
+
+```svelte
+<div class="min-h-screen flex items-center justify-center bg-background dot-grid px-4 relative overflow-hidden">
+    <!-- Decorative blobs -->
+    <div class="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-primary/[0.03] blur-3xl"></div>
+    <div class="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-accent/[0.04] blur-3xl"></div>
+
+    <div class="w-full max-w-sm relative z-10">
+        <div class="flex flex-col items-center mb-10">
+            <Logo size="lg" variant="full" animated orientation="stacked" />
+            <p class="mt-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Laboratory Execution System</p>
+        </div>
+```
+
+(Close the two wrapper `</div>`s at the end of the file as before.)
 
 In the markup, wrap the existing `<Card>...</Card>` (the sign-up card) so it only renders when `showForm`, and render the waitlist otherwise. Replace the `<Card>` block with:
 
@@ -776,11 +883,13 @@ In the markup, wrap the existing `<Card>...</Card>` (the sign-up card) so it onl
                 <!-- ...existing CardHeader/CardContent/form unchanged... -->
             </Card>
         {:else}
-            <RegistrationWaitlist calendlyUrl={CALENDLY_WAITLIST_URL} />
+            <div in:fade={{ duration: blockDuration() }}>
+                <RegistrationWaitlist calendlyUrl={CALENDLY_WAITLIST_URL} />
+            </div>
         {/if}
 ```
 
-Keep the existing logo/header block above it unchanged (it renders in both states).
+`fade` and `blockDuration` are already imported in this file. The transition keeps the waitlist swap from popping in hard.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -838,6 +947,38 @@ git add frontend/src/routes/login/+page.svelte
 git commit -m "feat(F-0091): flag-aware register/waitlist link on login page"
 ```
 
+- [ ] **Step 3: Fix the check-email "Start over" link**
+
+`frontend/src/routes/check-email/+page.svelte:82` links "Start over" to `/register`. With the flag off, that dead-ends on the waitlist card instead of a usable form, so point it at `/login` when registration is off. Add the import:
+
+```typescript
+    import { REGISTRATION_ENABLED } from '$lib/feature-flags';
+```
+
+Replace the "Wrong email? Start over" paragraph (~L80-83) with:
+
+```svelte
+                <p class="text-sm text-center text-muted-foreground mt-4">
+                    {#if REGISTRATION_ENABLED}
+                        Wrong email?
+                        <a href="/register" class="text-primary font-medium hover:underline">Start over</a>
+                    {:else}
+                        Need help?
+                        <a href="/login" class="text-primary font-medium hover:underline">Back to sign in</a>
+                    {/if}
+                </p>
+```
+
+- [ ] **Step 4: Typecheck + commit**
+
+Run: `cd frontend && npm run check`
+Expected: no new errors.
+
+```bash
+git add frontend/src/routes/check-email/+page.svelte
+git commit -m "fix(F-0091): flag-aware start-over link on check-email page"
+```
+
 ---
 
 ## Task 12: CLAUDE.md flag table
@@ -874,6 +1015,8 @@ Expected: all pass.
 Run: `cd frontend && npm run test && npm run check`
 Expected: all pass, no new type errors.
 
+**Test-environment assumption:** every existing suite that hits `POST /auth/register` or `POST /iam/organizations` (e.g. `test_registration_billing.py`, `test_org_registration_default_site.py`, the 14 call sites in `test_auth_api.py`, and the Playwright `registerUser()` helper in `frontend/e2e/email-verification.spec.ts`) relies on the flag's **default-ON** value — none monkeypatch it on. The only suites that flip it off are the new F-0091 tests, which set it explicitly via `monkeypatch`. Do not set `BATCHRITE_FEATURES__REGISTRATION__ENABLED`/`VITE_REGISTRATION_ENABLED` in CI or the e2e environment, or those pre-existing suites will get 403s. (Documented in the CLAUDE.md row.)
+
 - [ ] **Step 3: Manual smoke (during /implement-task browser verification)**
 
 - Flag ON (default): `/register` shows the form; registration works.
@@ -884,4 +1027,12 @@ Expected: all pass, no new type errors.
 
 ## Spec coverage check
 
-- Backend flag → Task 1. Schema field → Task 2. Register gate + invite exemption → Task 3. Org gate → Task 4. Invite redirect fix + verify-error link → Task 5. Backend docs → Task 6. Frontend flag → Task 7. register() forward → Task 8. Waitlist card → Task 9. Register page gating → Task 10. Login link → Task 11. CLAUDE.md → Task 12. Verification → Task 13. All spec sections mapped.
+- Backend flag → Task 1. Schema field → Task 2. Register gate + invite exemption + reuse-bound test → Task 3. Shared `require_registration_enabled` dep + org gate → Task 4. Invite redirect fix + flag-aware verify-error link (both render sites) → Task 5. Backend docs → Task 6. Frontend flag → Task 7. register() forward → Task 8. Waitlist card → Task 9. Register page gating + login-matching branding → Task 10. Login link + check-email link → Task 11. CLAUDE.md → Task 12. Verification + test-env assumption → Task 13. All spec sections mapped.
+
+## Review-panel findings applied (2026-05-29)
+
+- **DRY:** extracted `require_registration_enabled()` + `REGISTRATION_DISABLED_DETAIL` into `deps.py` (Task 4); `register()` gates inline (needs invite token) but shares the constant.
+- **Coupling:** both `VERIFY_ERROR_HTML.format` sites updated (Task 5); `check-email` "Start over" link made flag-aware (Task 11); test-env assumption documented (Task 13).
+- **Security:** invitation stays `PENDING` by design; reuse bounded by email-match + duplicate-email 409, proved by `test_invite_token_cannot_mint_second_account` (Task 3).
+- **UI/UX:** register page upgraded to login-page branding; `fade` transition on the waitlist swap; `space-y-4` consistency (Tasks 9-10).
+- **Rejected:** switching to `$app/stores`/`$page` (app is `ssr=false` + `adapter-static`, uses `window.location.search` everywhere — note added in Task 10); consuming the invite inside `register()` (would break the accept-invite membership join).
