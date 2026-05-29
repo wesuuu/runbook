@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.security import TokenPayload
 from app.db.session import get_db
 from app.models.iam import (
@@ -21,6 +22,24 @@ T = TypeVar("T")
 
 # F-0091: used by the registration gate in auth.py and the require_registration_enabled dep (Task 4)
 REGISTRATION_DISABLED_DETAIL = "Registration is not available right now."
+
+
+def require_registration_enabled():
+    """Gate factory (F-0091): 403 when self-service registration is off.
+
+    Use on self-service entry points that have no invite-exemption path
+    (e.g. new-org creation). `register()` gates inline instead because it
+    must inspect the invite token in the request body.
+    """
+
+    async def _check() -> None:
+        if not settings.features.registration.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=REGISTRATION_DISABLED_DETAIL,
+            )
+
+    return _check
 
 
 async def get_or_404(

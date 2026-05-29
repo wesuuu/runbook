@@ -504,3 +504,34 @@ async def test_search_users_logs_cross_org_attempt(
     assert len(resp.json()) == 0  # second_user excluded
     assert "Cross-org user search detected" in caplog.text
     assert str(test_user.id) in caplog.text
+
+
+# --- Registration gate (F-0091) ---
+
+
+from app.core.config import settings as _settings
+
+
+@pytest.mark.asyncio
+async def test_create_organization_blocked_when_flag_off(
+    client: AsyncClient, auth_headers, monkeypatch
+):
+    monkeypatch.setattr(_settings.features.registration, "enabled", False)
+    resp = await client.post(
+        "/iam/organizations",
+        json={"name": "New Tenant"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_organization_allowed_when_flag_on(
+    client: AsyncClient, auth_headers
+):
+    resp = await client.post(
+        "/iam/organizations",
+        json={"name": "New Tenant On"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201

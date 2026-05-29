@@ -10,7 +10,12 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user, get_or_404, require_active_subscription
+from app.core.deps import (
+    get_current_user,
+    get_or_404,
+    require_active_subscription,
+    require_registration_enabled,
+)
 from app.core.security import generate_verification_token
 from app.db.session import get_db
 from app.models.iam import (
@@ -140,6 +145,7 @@ async def create_organization(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_active_subscription()),
+    _reg: None = Depends(require_registration_enabled()),
 ):
     org = Organization(name=body.name)
     db.add(org)
