@@ -35,6 +35,12 @@ class ProtocolsIoSourceConfig(BaseModel):
     rate_limit_per_minute: int = 10
 
 
+class RegistrationFeatureConfig(BaseModel):
+    """Self-service registration flag (F-0091). Default-on; flip OFF in prod."""
+
+    enabled: bool = True
+
+
 class ExternalProtocolsFeatureConfig(BaseModel):
     """External protocol knowledgebase feature flag (F-0084, F-0090).
 
@@ -59,6 +65,7 @@ class FeaturesConfig(BaseModel):
     external_protocols: ExternalProtocolsFeatureConfig = (
         ExternalProtocolsFeatureConfig()
     )
+    registration: RegistrationFeatureConfig = RegistrationFeatureConfig()
 
 
 class Settings(BaseSettings):
