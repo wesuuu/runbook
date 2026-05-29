@@ -334,7 +334,6 @@ async def verify_email(
         return HTMLResponse(
             VERIFY_ERROR_HTML.format(
                 message="This verification link is invalid or has expired.",
-                frontend_url=settings.frontend_url,
                 cta_link=cta_link,
             ),
             status_code=400,
@@ -346,7 +345,6 @@ async def verify_email(
         return HTMLResponse(
             VERIFY_ERROR_HTML.format(
                 message="This verification link is invalid.",
-                frontend_url=settings.frontend_url,
                 cta_link=cta_link,
             ),
             status_code=400,
