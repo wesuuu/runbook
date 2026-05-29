@@ -26,9 +26,9 @@
         </Button>
         <p class="text-xs text-muted-foreground text-center pt-2">
             By requesting access, you agree to our
-            <a href="/legal/terms" class="underline hover:text-foreground transition-all duration-150">Terms of Service</a>
+            <a href="/legal/terms" class="underline hover:text-foreground transition-all duration-150 cursor-pointer">Terms of Service</a>
             and
-            <a href="/legal/privacy" class="underline hover:text-foreground transition-all duration-150">Privacy Policy</a>.
+            <a href="/legal/privacy" class="underline hover:text-foreground transition-all duration-150 cursor-pointer">Privacy Policy</a>.
         </p>
     </CardContent>
 </Card>
