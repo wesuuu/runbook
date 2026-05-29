@@ -175,7 +175,7 @@ VERIFY_ERROR_HTML = """<!DOCTYPE html>
   <div style="text-align: center; max-width: 400px;">
     <h2 style="color: #dc2626;">Verification Failed</h2>
     <p style="color: #666;">{message}</p>
-    <a href="{frontend_url}/register" style="color: #2563eb;">Create a new account</a>
+    {cta_link}
   </div>
 </body></html>"""
 
@@ -311,6 +311,14 @@ async def verify_email(
     email: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
+    cta_link = (
+        f'<a href="{settings.frontend_url}/register" style="color: #2563eb;">'
+        "Create a new account</a>"
+        if settings.features.registration.enabled
+        else f'<a href="{settings.frontend_url}/login" style="color: #2563eb;">'
+        "Return to sign in</a>"
+    )
+
     # Look up token
     result = await db.execute(
         select(VerificationToken).where(
@@ -327,6 +335,7 @@ async def verify_email(
             VERIFY_ERROR_HTML.format(
                 message="This verification link is invalid or has expired.",
                 frontend_url=settings.frontend_url,
+                cta_link=cta_link,
             ),
             status_code=400,
         )
@@ -338,6 +347,7 @@ async def verify_email(
             VERIFY_ERROR_HTML.format(
                 message="This verification link is invalid.",
                 frontend_url=settings.frontend_url,
+                cta_link=cta_link,
             ),
             status_code=400,
         )
@@ -570,9 +580,7 @@ async def accept_invite(
 
     if invited_user is None:
         # No account — redirect to registration with invite token
-        redirect_url = (
-            f"{settings.frontend_url}/#/register" f"?invite={invitation.token}"
-        )
+        redirect_url = f"{settings.frontend_url}/register?invite={invitation.token}"
         return RedirectResponse(url=redirect_url, status_code=302)
 
     # User exists — create org membership
