@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings as _settings
 from app.core.security import (
     create_access_token,
     create_verification_jwt,
@@ -581,8 +582,6 @@ async def test_update_preferences_does_not_clobber_other_keys(
 
 # ---------- F-0091: registration gate ----------
 
-from app.core.config import settings as _settings
-
 
 @pytest.mark.asyncio
 async def test_register_blocked_when_flag_off_no_invite(
@@ -655,6 +654,34 @@ async def test_register_blocked_with_email_mismatched_invite(
             "email": "attacker@example.com",
             "password": "securepass",
             "invite_token": "invite-tok-456",
+        },
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_register_blocked_with_expired_invite(
+    client: AsyncClient, db_session: AsyncSession, test_org, test_user, monkeypatch
+):
+    monkeypatch.setattr(_settings.features.registration, "enabled", False)
+    inv = Invitation(
+        organization_id=test_org.id,
+        invited_email="expired-invitee@example.com",
+        role="MEMBER",
+        invited_by=test_user.id,
+        token="invite-tok-expired",
+        status=InvitationStatus.PENDING,
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    db_session.add(inv)
+    await db_session.commit()
+
+    resp = await client.post(
+        "/auth/register",
+        json={
+            "email": "expired-invitee@example.com",
+            "password": "securepass",
+            "invite_token": "invite-tok-expired",
         },
     )
     assert resp.status_code == 403
