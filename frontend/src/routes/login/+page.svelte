@@ -10,6 +10,7 @@
     import { fade } from 'svelte/transition';
     import { blockDuration } from '$lib/transitions';
     import Logo from '$lib/components/layout/Logo.svelte';
+    import { REGISTRATION_ENABLED } from '$lib/feature-flags';
 
     let email = $state('');
     let password = $state('');
@@ -124,8 +125,13 @@
                     </form>
 
                     <p class="text-sm text-center text-muted-foreground mt-6">
-                        Don't have an account?
-                        <a href="/register" class="text-primary font-semibold hover:underline">Register</a>
+                        {#if REGISTRATION_ENABLED}
+                            Don't have an account?
+                            <a href="/register" class="text-primary font-semibold hover:underline">Register</a>
+                        {:else}
+                            Not on Batchrite yet?
+                            <a href="/register" class="text-primary font-semibold hover:underline">Join the waitlist</a>
+                        {/if}
                     </p>
 
                     <p class="text-xs text-muted-foreground text-center mt-4">
