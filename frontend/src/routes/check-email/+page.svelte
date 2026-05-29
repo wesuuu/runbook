@@ -5,6 +5,7 @@
     import { Button } from '$lib/components/ui/button';
     import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
     import { toast } from 'svelte-sonner';
+    import { REGISTRATION_ENABLED } from '$lib/feature-flags';
 
     let sending = $state(false);
     const userEmail = $derived(getUser()?.email ?? '');
@@ -78,8 +79,13 @@
                 </Button>
 
                 <p class="text-sm text-center text-muted-foreground mt-4">
-                    Wrong email?
-                    <a href="/register" class="text-primary font-medium hover:underline">Start over</a>
+                    {#if REGISTRATION_ENABLED}
+                        Wrong email?
+                        <a href="/register" class="text-primary font-medium hover:underline">Start over</a>
+                    {:else}
+                        Need help?
+                        <a href="/login" class="text-primary font-medium hover:underline">Back to sign in</a>
+                    {/if}
                 </p>
             </CardContent>
         </Card>
