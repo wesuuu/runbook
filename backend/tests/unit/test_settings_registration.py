@@ -1,7 +1,5 @@
 """F-0091: registration feature flag defaults and env override."""
 
-import pytest
-
 from app.core.config import RegistrationFeatureConfig, Settings
 
 
