@@ -4,6 +4,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings as _settings
 from app.core.security import hash_password
 from app.models.iam import (
     ObjectPermission,
@@ -507,9 +508,6 @@ async def test_search_users_logs_cross_org_attempt(
 
 
 # --- Registration gate (F-0091) ---
-
-
-from app.core.config import settings as _settings
 
 
 @pytest.mark.asyncio
