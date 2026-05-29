@@ -19,6 +19,9 @@ from app.services.core.permissions import check_permission
 
 T = TypeVar("T")
 
+# F-0091: used by the registration gate in auth.py and the require_registration_enabled dep (Task 4)
+REGISTRATION_DISABLED_DETAIL = "Registration is not available right now."
+
 
 async def get_or_404(
     db: AsyncSession,

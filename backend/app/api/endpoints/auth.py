@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user
+from app.core.deps import REGISTRATION_DISABLED_DETAIL, get_current_user
 from app.core.security import (
     create_access_token,
     create_verification_jwt,
@@ -148,6 +148,24 @@ async def _send_verification_email(email: str, token: str) -> None:
         logger.exception("Failed to send verification email to %s", email)
 
 
+async def _invite_permits_registration(
+    db: AsyncSession, token: Optional[str], email: str
+) -> bool:
+    """True iff `token` is a pending, unexpired invitation for `email` (F-0091)."""
+    if not token:
+        return False
+    result = await db.execute(
+        select(Invitation).where(
+            Invitation.token == token,
+            Invitation.status == InvitationStatus.PENDING,
+        )
+    )
+    inv = result.scalar_one_or_none()
+    if inv is None or inv.expires_at < datetime.now(timezone.utc):
+        return False
+    return inv.invited_email == email
+
+
 # ---------- register ----------
 
 VERIFY_ERROR_HTML = """<!DOCTYPE html>
@@ -167,6 +185,16 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    if not settings.features.registration.enabled:
+        allowed = await _invite_permits_registration(
+            db, body.invite_token, body.email
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=REGISTRATION_DISABLED_DETAIL,
+            )
+
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(

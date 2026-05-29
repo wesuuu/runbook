@@ -12,7 +12,12 @@ from app.core.security import (
     decode_access_token,
     hash_password,
 )
-from app.models.iam import User, VerificationToken
+from app.models.iam import (
+    Invitation,
+    InvitationStatus,
+    User,
+    VerificationToken,
+)
 
 # ---------- register ----------
 
@@ -572,3 +577,129 @@ async def test_update_preferences_does_not_clobber_other_keys(
     await db_session.refresh(test_user)
     assert test_user.preferences.get("font_size") == "large"
     assert test_user.preferences.get("theme") == "apothecary"
+
+
+# ---------- F-0091: registration gate ----------
+
+from app.core.config import settings as _settings
+
+
+@pytest.mark.asyncio
+async def test_register_blocked_when_flag_off_no_invite(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setattr(_settings.features.registration, "enabled", False)
+    resp = await client.post(
+        "/auth/register",
+        json={"email": "blocked@example.com", "password": "securepass"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Registration is not available right now."
+    blocked = await db_session.scalar(
+        select(User).where(User.email == "blocked@example.com")
+    )
+    assert blocked is None
+
+
+@pytest.mark.asyncio
+async def test_register_allowed_with_valid_invite_when_flag_off(
+    client: AsyncClient, db_session: AsyncSession, test_org, test_user, monkeypatch
+):
+    monkeypatch.setattr(_settings.features.registration, "enabled", False)
+    inv = Invitation(
+        organization_id=test_org.id,
+        invited_email="invitee@example.com",
+        role="MEMBER",
+        invited_by=test_user.id,
+        token="invite-tok-123",
+        status=InvitationStatus.PENDING,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+    )
+    db_session.add(inv)
+    await db_session.commit()
+
+    with patch("app.api.endpoints.auth.get_email_provider") as mock_provider:
+        mock_provider.return_value = AsyncMock()
+        mock_provider.return_value.send = AsyncMock()
+        resp = await client.post(
+            "/auth/register",
+            json={
+                "email": "invitee@example.com",
+                "password": "securepass",
+                "invite_token": "invite-tok-123",
+            },
+        )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_register_blocked_with_email_mismatched_invite(
+    client: AsyncClient, db_session: AsyncSession, test_org, test_user, monkeypatch
+):
+    monkeypatch.setattr(_settings.features.registration, "enabled", False)
+    inv = Invitation(
+        organization_id=test_org.id,
+        invited_email="someone-else@example.com",
+        role="MEMBER",
+        invited_by=test_user.id,
+        token="invite-tok-456",
+        status=InvitationStatus.PENDING,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+    )
+    db_session.add(inv)
+    await db_session.commit()
+
+    resp = await client.post(
+        "/auth/register",
+        json={
+            "email": "attacker@example.com",
+            "password": "securepass",
+            "invite_token": "invite-tok-456",
+        },
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_invite_token_cannot_mint_second_account(
+    client: AsyncClient, db_session: AsyncSession, test_org, test_user, monkeypatch
+):
+    """A valid invite is a single-use registration key bounded by the
+    duplicate-email 409: once the invited email registers, the same token
+    cannot mint another account (the invitation legitimately stays PENDING
+    until the invitee clicks accept-invite a second time to join the org)."""
+    monkeypatch.setattr(_settings.features.registration, "enabled", False)
+    inv = Invitation(
+        organization_id=test_org.id,
+        invited_email="cohort@example.com",
+        role="MEMBER",
+        invited_by=test_user.id,
+        token="invite-tok-789",
+        status=InvitationStatus.PENDING,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+    )
+    db_session.add(inv)
+    await db_session.commit()
+
+    with patch("app.api.endpoints.auth.get_email_provider") as mock_provider:
+        mock_provider.return_value = AsyncMock()
+        mock_provider.return_value.send = AsyncMock()
+        first = await client.post(
+            "/auth/register",
+            json={
+                "email": "cohort@example.com",
+                "password": "securepass",
+                "invite_token": "invite-tok-789",
+            },
+        )
+    assert first.status_code == 200
+
+    second = await client.post(
+        "/auth/register",
+        json={
+            "email": "cohort@example.com",
+            "password": "securepass",
+            "invite_token": "invite-tok-789",
+        },
+    )
+    assert second.status_code == 409
