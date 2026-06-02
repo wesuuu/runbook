@@ -86,17 +86,19 @@ cp mockups/sales-wireframes/batchrite-roadmap.css   marketing/css/
 
 - [ ] **Step 2: Repoint the `<link rel="stylesheet">` hrefs to `css/`**
 
-The pages reference `batchrite.css` etc. at the root; they now live in `css/`.
+The pages reference `batchrite.css` etc. at the root; they now live in `css/`. Use a
+**root-absolute** path (`/css/…`) for a uniform convention with `/favicon.svg` and so the
+links don't break if a nested route is ever added.
 
 ```bash
 cd /home/wesuuu/Code/trellisbio/marketing
-sed -i 's|href="batchrite|href="css/batchrite|g' index.html about.html roadmap.html
+sed -i 's|href="batchrite|href="/css/batchrite|g' index.html about.html roadmap.html
 ```
 
 - [ ] **Step 3: Verify CSS links updated, no root-level refs remain**
 
 Run: `cd /home/wesuuu/Code/trellisbio/marketing && grep -h 'rel="stylesheet"' *.html | grep -oE 'href="[^"]*"' | sort -u`
-Expected: every href starts with `css/batchrite` (e.g. `href="css/batchrite.css"`, `href="css/batchrite-sections.css"`, page-specific ones for about/roadmap). No bare `href="batchrite...`.
+Expected: every href starts with `/css/batchrite` (e.g. `href="/css/batchrite.css"`). No bare `href="batchrite...`.
 
 - [ ] **Step 4: Commit**
 
@@ -129,9 +131,11 @@ The authoring component (`mockups/sales-wireframes/image-slot.js`, 641 ln) depen
  * window.omelette sidecar, its startup fetch, drag/drop, click-to-browse, and
  * reframe/crop — is removed; none of it can run on a static CDN.
  *
- * Honored attributes: shape, radius, mask, fit, position, placeholder, src.
+ * Honored attributes:
+ *   shape     'rect' | 'rounded' | 'circle' | 'pill'   (default 'rounded')
+ *   radius, mask, fit, position, placeholder, src
  * (`id` stays a plain HTML attribute for CSS targeting; it is no longer a
- * persistence key.)
+ * persistence key. `shape="rect"` matches no radius branch -> square corners.)
  */
 (function () {
   'use strict';
@@ -227,13 +231,13 @@ About references `image-slot.js` at the root.
 
 ```bash
 cd /home/wesuuu/Code/trellisbio/marketing
-sed -i 's|src="image-slot.js"|src="js/image-slot.js"|' about.html
+sed -i 's|src="image-slot.js"|src="/js/image-slot.js"|' about.html
 ```
 
 - [ ] **Step 3: Verify the slim file is omelette-free and the path is fixed**
 
-Run: `cd /home/wesuuu/Code/trellisbio/marketing && grep -c 'omelette\|writeFile\|ResizeObserver\|fetch(' js/image-slot.js; grep -o 'src="js/image-slot.js"' about.html`
-Expected: first count is `0`; second prints `src="js/image-slot.js"`.
+Run: `cd /home/wesuuu/Code/trellisbio/marketing && grep -c 'omelette\|writeFile\|ResizeObserver\|fetch(' js/image-slot.js; grep -o 'src="/js/image-slot.js"' about.html`
+Expected: first count is `0`; second prints `src="/js/image-slot.js"`.
 
 - [ ] **Step 4: Confirm About uses only honored attributes**
 
@@ -278,11 +282,18 @@ Expected: `CLEAN`.
 
 - [ ] **Step 3: Retarget the nav "Sign in" buttons to the app**
 
-"Sign in" currently points at `/#beta`. It should open the product login. (The anchor text is `Sign in`; match on it to avoid touching the adjacent "Join SD pilot" CTA, which keeps `/#beta`.)
+"Sign in" should open the product login. It comes in **two href forms**: `index.html`
+(the landing page) has the bare same-page anchor `href="#beta"` (Step 1 doesn't touch it,
+since Step 1 only rewrites `Batchrite.html#…`), while `about.html`/`roadmap.html` produce
+`href="/#beta"` after Step 1. Cover both, matching on the `Sign in` text to leave the
+adjacent "Join SD pilot" CTA (which keeps `/#beta`) untouched.
 
 ```bash
 cd /home/wesuuu/Code/trellisbio/marketing
-sed -i 's|href="/#beta" class="btn btn-ghost">Sign in|href="https://app.batchrite.com" class="btn btn-ghost">Sign in|g' index.html about.html roadmap.html
+sed -i \
+  -e 's|href="/#beta" class="btn btn-ghost">Sign in|href="https://app.batchrite.com" class="btn btn-ghost">Sign in|g' \
+  -e 's|href="#beta" class="btn btn-ghost">Sign in|href="https://app.batchrite.com" class="btn btn-ghost">Sign in|g' \
+  index.html about.html roadmap.html
 ```
 
 - [ ] **Step 4: Add `target="_blank" rel="noopener"` to the Calendly CTAs**
@@ -296,52 +307,61 @@ sed -i 's|href="https://calendly.com/batchrite/founding-partner"\([^>]*\)class=|
 
 - [ ] **Step 5: Retarget About's bottom "Join the SD pilot" CTA to Calendly**
 
-It currently encodes `mailto:pilot@…` as a Cloudflare token. Replace the whole `<a …>Join the SD pilot &rarr;</a>` href with Calendly. The token is unique to that button; match on the `btn-on-dark` + label.
-
-```bash
-cd /home/wesuuu/Code/trellisbio/marketing
-sed -i -E 's#<a href="/cdn-cgi/l/email-protection#[^"]*" class="btn btn-on-dark">Join the SD pilot#<a href="https://calendly.com/batchrite/founding-partner" target="_blank" rel="noopener" class="btn btn-on-dark">Join the SD pilot#' about.html
-```
-
-> NOTE: if the `#` inside the URL confuses the `#` sed delimiter above, use this exact Python one-liner instead:
-> ```bash
-> python3 - <<'PY'
-> import re, pathlib
-> p = pathlib.Path("about.html"); s = p.read_text()
-> s = re.sub(r'<a href="/cdn-cgi/l/email-protection#[^"]*"(\s+class="btn btn-on-dark">Join the SD pilot)',
->            '<a href="https://calendly.com/batchrite/founding-partner" target="_blank" rel="noopener"\\1', s)
-> p.write_text(s)
-> PY
-> ```
-
-- [ ] **Step 6: Remove the About press / brand-assets section (3 dead download stubs)**
-
-The press block holds `brand-kit.zip`, `product-screens.zip`, `one-pager.pdf` — all `href="#"`. Remove the whole block. First locate its bounds:
-
-Run: `grep -n 'brand-kit.zip\|brand assets\|<section\|press' about.html | sed -n '1,40p'`
-
-Then delete the enclosing `<section>…</section>` (or the press `<div>` block) that contains the `.kit` download links. Make the cut so the surrounding sections stay intact; confirm with a render check in Task 11. Use a Python slice on the unique markers:
+It currently encodes `mailto:pilot@…` as a Cloudflare token (`class="btn btn-on-dark">Join
+the SD pilot`). Replace that whole `<a …>` href with Calendly. Use Python — a `sed`
+`#`-delimiter collides with the `#` inside the `email-protection#…` token, so the sed form
+is unreliable; Python is the primary path:
 
 ```bash
 cd /home/wesuuu/Code/trellisbio/marketing
 python3 - <<'PY'
-import pathlib, re
+import re, pathlib
 p = pathlib.Path("about.html"); s = p.read_text()
-# The press block is the <section> ... </section> containing brand-kit.zip.
-# Find the <section ...> start that precedes the first brand-kit.zip, and its
-# matching </section>.
+s, n = re.subn(
+    r'<a href="/cdn-cgi/l/email-protection#[^"]*"(\s+class="btn btn-on-dark">Join the SD pilot)',
+    '<a href="https://calendly.com/batchrite/founding-partner" target="_blank" rel="noopener"\\1',
+    s)
+assert n == 1, f"expected 1 replacement, made {n}"
+p.write_text(s)
+print("about bottom CTA -> calendly")
+PY
+```
+
+- [ ] **Step 6: Remove the entire "Press & contact" section**
+
+Confirmed DOM (verified in source): the dead download stubs live in
+`<section class="press" id="press">…</section>`, which holds **two** cards — a contact
+card (`pilot@` + `security@` rows) and a journalist card (`press@` + the 3 `href="#"`
+download stubs). Per the product decision, **remove the whole section** (the `security@`
+contact goes with it — it appears nowhere else; this is intentional). The slice below
+targets the `<section class="press">` that contains `brand-kit.zip`; that section *is*
+the whole press block, so `rindex("<section", …)` lands on its opening tag.
+
+```bash
+cd /home/wesuuu/Code/trellisbio/marketing
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("about.html"); s = p.read_text()
 idx = s.index("brand-kit.zip")
 start = s.rindex("<section", 0, idx)
 end = s.index("</section>", idx) + len("</section>")
 removed = s[start:end]
-assert "brand-kit.zip" in removed and "product-screens.zip" in removed and "one-pager.pdf" in removed, "wrong slice"
+# guard: the slice must be the press section and nothing more/less
+assert 'class="press"' in removed, "slice did not start at the press section"
+assert all(x in removed for x in ("brand-kit.zip", "product-screens.zip", "one-pager.pdf")), "missing download stubs"
+assert "Press &amp; contact" in removed, "slice missing press heading"
+# guard: must NOT swallow a neighbour (final-CTA / values / team sections)
+assert "final-cta" not in removed and "Build the" not in removed, "slice swallowed the final CTA"
 s = s[:start] + s[end:]
 p.write_text(s)
-print("removed", len(removed), "chars")
+print("removed press section:", len(removed), "chars")
 PY
 ```
 
-> If the download links are NOT wrapped in their own `<section>` (e.g. they sit in a `<div class="kit">` inside a larger "Press" section), adjust the slice to the nearest enclosing block that holds only the press/brand-assets content — verify by re-reading the file around the cut before committing.
+- [ ] **Step 6b: Remove any now-dangling `#press` anchor links**
+
+Run: `cd /home/wesuuu/Code/trellisbio/marketing && grep -rn 'href="[^"]*#press"' *.html || echo "no #press links"`
+If any exist (nav/footer), drop that link item. Expected after fix: `no #press links`.
 
 - [ ] **Step 7: Verify CTAs + press removal**
 
@@ -419,7 +439,11 @@ echo "cdn-cgi refs (expect 0):"; grep -c 'cdn-cgi' *.html
 echo "__cf_email__ (expect 0):"; grep -c '__cf_email__' *.html
 echo "mailto addresses:"; grep -oE 'mailto:[a-zA-Z0-9._%+-]+@batchrite\.com' *.html | sort | uniq -c
 ```
-Expected: all `cdn-cgi` counts `0`; all `__cf_email__` counts `0`; mailto list shows only `@batchrite.com` addresses (`pilot@`, `partners@`, `hello@`, `security@` — `press@` is gone with the press section).
+Expected: all `cdn-cgi` counts `0`; all `__cf_email__` counts `0`; mailto list shows only
+`@batchrite.com` addresses — `pilot@` (the conference note on index), `partners@`, and
+`hello@`. **`security@` and `press@` are NOT present** — they lived only in the About
+press section removed in Task 3, and the About bottom `pilot@` CTA became Calendly. (If
+`security@`/`press@` appear, Task 3's section removal didn't run before this task.)
 
 - [ ] **Step 3: Verify the brand-mark inline script survived**
 
@@ -577,20 +601,38 @@ git commit -m "feat(F-0079): canonical + Open Graph + Twitter meta per page"
 </svg>
 ```
 
-- [ ] **Step 2: Rasterize to PNG (1200×630)**
+- [ ] **Step 2: Rasterize to PNG (1200×630) — the PNG MUST exist before shipping**
 
-Try, in order, whichever tool is installed:
+OG meta points at `og-image.png`; a missing file = a 404 social card. Try installed
+SVG tools first:
 
 ```bash
 cd /home/wesuuu/Code/trellisbio/marketing/assets
-rsvg-convert -w 1200 -h 630 og-image.svg -o og-image.png \
-  || (command -v inkscape && inkscape og-image.svg --export-type=png --export-filename=og-image.png -w 1200 -h 630) \
-  || (command -v magick && magick -background none -size 1200x630 og-image.svg og-image.png) \
-  || (command -v convert && convert -background none -density 150 -resize 1200x630 og-image.svg og-image.png) \
+rsvg-convert -w 1200 -h 630 og-image.svg -o og-image.png 2>/dev/null \
+  || (command -v inkscape >/dev/null && inkscape og-image.svg --export-type=png --export-filename=og-image.png -w 1200 -h 630) \
+  || (command -v magick   >/dev/null && magick -background none -size 1200x630 og-image.svg og-image.png) \
+  || (command -v convert  >/dev/null && convert -background none -density 150 -resize 1200x630 og-image.svg og-image.png) \
   || echo "NO_RASTERIZER"
 ```
 
-If all print `NO_RASTERIZER`, capture it with headless Chromium during Task 11's browser QA (load the SVG, screenshot at 1200×630 → `og-image.png`). Until a PNG exists, the OG meta still resolves to a real file once produced; do not ship a missing image.
+**If that prints `NO_RASTERIZER`**, use the guaranteed headless-Chrome path (Chrome is
+available in this environment). Wrap the SVG in a sized HTML page and screenshot it:
+
+```bash
+cd /home/wesuuu/Code/trellisbio/marketing/assets
+printf '<!doctype html><meta charset=utf-8><style>html,body{margin:0}</style>' > _og.html
+cat og-image.svg >> _og.html
+# Option A — Chrome/Chromium CLI:
+( command -v google-chrome || command -v chromium || command -v chromium-browser ) >/dev/null && \
+  "$(command -v google-chrome || command -v chromium || command -v chromium-browser)" \
+    --headless --no-sandbox --force-device-scale-factor=1 \
+    --window-size=1200,630 --screenshot=og-image.png "$(pwd)/_og.html"
+rm -f _og.html
+```
+
+> If no Chrome CLI binary exists either, drive the **Claude-in-Chrome MCP** during Task 11:
+> navigate to `file://…/marketing/assets/_og.html`, resize the window to 1200×630, screenshot,
+> and save as `og-image.png`. Do **not** finish the feature with the PNG missing.
 
 - [ ] **Step 3: Verify**
 
@@ -709,10 +751,11 @@ production deploy.
 ## Local preview
 
 Use Wrangler so `_headers` (the CSP) is actually applied — `npx serve` skips it and
-hides CSP breakage:
+hides CSP breakage. Requires **Node 16.17+**; the version is pinned to avoid v2/v3 CLI
+drift:
 
 ```bash
-npx wrangler pages dev marketing
+npx wrangler@3 pages dev marketing
 ```
 
 ## Deploy (Cloudflare Pages)
@@ -726,12 +769,18 @@ Custom domains). Not done from this repo.
 
 ## Retargeting the domain
 
-The base origin `https://batchrite.com` is hardcoded in the canonical/OG meta,
-`sitemap.xml`, and `robots.txt` (~10 places). To change it:
+The base origin `https://batchrite.com` is hardcoded across the canonical/OG meta (4
+tags × 3 pages), `sitemap.xml` (3), and `robots.txt` (1) — all occurrences. To change it:
 
 ```bash
 grep -rl 'https://batchrite.com' marketing/ | xargs sed -i 's#https://batchrite.com#https://NEW-ORIGIN#g'
 ```
+
+**Two externals the grep above does NOT catch** (different hosts — repoint manually):
+- `https://app.batchrite.com` — the nav "Sign in" CTA (the marketing site's only runtime
+  link to the app). `grep -rl 'app.batchrite.com' marketing/`.
+- `https://calendly.com/batchrite/founding-partner` — every pilot CTA (~4 across the 3
+  pages). `grep -rl 'calendly.com/batchrite' marketing/`.
 
 ## Brand colors
 
@@ -774,9 +823,9 @@ git commit -m "docs(F-0079): marketing/ deploy + domain-retarget + brand-lineage
 
 ```bash
 cd /home/wesuuu/Code/trellisbio
-npx wrangler pages dev marketing --port 8788
+npx wrangler@3 pages dev marketing --port 8788
 ```
-(If wrangler isn't installed: `npm i -D wrangler` in a scratch dir, or `npx wrangler@latest`.)
+(Requires Node 16.17+. `npx` fetches wrangler on first run.)
 
 - [ ] **Step 2: Grep audit (no residue, links clean)**
 
@@ -786,8 +835,11 @@ echo "cdn-cgi (0):"; grep -rc 'cdn-cgi' *.html
 echo "cap .html cross-links (none):"; grep -roE 'href="(Batchrite|About|Roadmap)\.html' *.html || echo none
 echo "omelette in shipped js (0):"; grep -c omelette js/image-slot.js
 echo "press stubs (0):"; grep -c 'brand-kit.zip' about.html
+echo "dangling #press links (0):"; grep -rc 'href="[^"]*#press"' *.html | grep -v ':0' || echo "none"
+echo "css/js root-absolute:"; grep -hoE '(href|src)="/?(css|js)/[^"]*"' *.html | sort -u
 ```
-Expected: cdn-cgi `0`/page; `none`; `0`; `0`.
+Expected: cdn-cgi `0`/page; `none`; `0`; `0`; `none`; every css/js path begins with
+`/css/` or `/js/` (root-absolute, uniform with `/favicon.svg`).
 
 - [ ] **Step 3: Browser QA via the qa-verify agent**
 
@@ -798,7 +850,10 @@ Load `http://localhost:8788/`, `/about`, `/roadmap`. Confirm for each:
 - All Calendly CTAs open `founding-partner` in a new tab; "Sign in" → `app.batchrite.com`.
 - All `mailto:` links open a composer with a real `@batchrite.com` address.
 - About `<image-slot>` placeholders render (circle avatars + founder portrait), no blanks.
-- About press section is gone.
+- About press section is gone (no "Press & contact" heading, no download stubs).
+- **Clean URLs**: navigating to `/about/` (trailing slash) redirects to `/about` and the
+  page renders with CSS intact (confirms root-absolute `/css/` paths survive the trailing
+  slash). `/about` and `/roadmap` both load directly.
 - Responsive: spot-check mobile (≤480px) and desktop.
 
 - [ ] **Step 4: Lighthouse**
