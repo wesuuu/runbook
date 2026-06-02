@@ -89,6 +89,10 @@
 # YAML keys use snake_case under `features:`.
 #
 # features:
+#   registration:
+#     # Self-service sign-up + new-org creation (F-0091). Default-on.
+#     # Set false in prod; invitees with a valid pending invite are exempt.
+#     enabled: true
 #   external_protocols:
 #     # Master switch for the protocol_knowledgebase chat subagent + HITL
 #     # approval gate. Requires outbound HTTPS to source APIs. (F-0084, F-0090)

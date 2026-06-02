@@ -12,6 +12,7 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     full_name: Optional[str] = None
+    invite_token: Optional[str] = None  # F-0091: gate bypass for invitees
 
 
 class LoginRequest(BaseModel):
